@@ -48,8 +48,20 @@ typedef struct {
     bool enabled;
     Color color;
     int probe_idx;
-    double offset;
+    double offset;      // vertical offset in volts
 } ScopeChannel;
+
+// Predefined probe colors for oscilloscope channels
+static const Color PROBE_COLORS[MAX_PROBES] = {
+    {0xff, 0xff, 0x00, 0xff},  // Yellow (CH1)
+    {0x00, 0xff, 0xff, 0xff},  // Cyan (CH2)
+    {0xff, 0x00, 0xff, 0xff},  // Magenta (CH3)
+    {0x00, 0xff, 0x00, 0xff},  // Green (CH4)
+    {0xff, 0x80, 0x00, 0xff},  // Orange (CH5)
+    {0x80, 0x80, 0xff, 0xff},  // Light Blue (CH6)
+    {0xff, 0x80, 0x80, 0xff},  // Pink (CH7)
+    {0x80, 0xff, 0x80, 0xff},  // Light Green (CH8)
+};
 
 // UI state
 typedef struct {
@@ -81,11 +93,20 @@ typedef struct {
     int num_properties;
     Component *editing_component;
 
-    // Oscilloscope
+    // Oscilloscope settings
     Rect scope_rect;
-    ScopeChannel scope_channels[2];
-    double scope_time_div;
-    double scope_volt_div;
+    ScopeChannel scope_channels[MAX_PROBES];
+    int scope_num_channels;         // Number of active channels (from probes)
+    double scope_time_div;          // Time per division (seconds)
+    double scope_volt_div;          // Volts per division
+    int scope_selected_channel;     // Currently selected channel for adjustment
+    bool scope_paused;              // Freeze oscilloscope display
+
+    // Oscilloscope control buttons
+    Button btn_scope_volt_up;
+    Button btn_scope_volt_down;
+    Button btn_scope_time_up;
+    Button btn_scope_time_down;
 
     // Measurements display
     double voltmeter_value;
@@ -134,6 +155,11 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_CLEAR         5
 #define UI_ACTION_SAVE          6
 #define UI_ACTION_LOAD          7
+#define UI_ACTION_SCOPE_VOLT_UP    10
+#define UI_ACTION_SCOPE_VOLT_DOWN  11
+#define UI_ACTION_SCOPE_TIME_UP    12
+#define UI_ACTION_SCOPE_TIME_DOWN  13
+#define UI_ACTION_SCOPE_PAUSE      14
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type
 
@@ -142,5 +168,8 @@ void ui_set_status(UIState *ui, const char *msg);
 
 // Update measurements
 void ui_update_measurements(UIState *ui, Simulation *sim, Circuit *circuit);
+
+// Update oscilloscope channels from circuit probes
+void ui_update_scope_channels(UIState *ui, Circuit *circuit);
 
 #endif // UI_H

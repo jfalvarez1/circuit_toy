@@ -245,10 +245,29 @@ void ui_init(UIState *ui) {
 
     // Oscilloscope settings
     ui->scope_rect = (Rect){WINDOW_WIDTH - PROPERTIES_WIDTH + 10, 400, 260, 180};
-    ui->scope_channels[0] = (ScopeChannel){true, {0xff, 0xff, 0x00, 0xff}, 0, 0};
-    ui->scope_channels[1] = (ScopeChannel){false, {0x00, 0xff, 0xff, 0xff}, 1, 0};
-    ui->scope_time_div = 0.001;
-    ui->scope_volt_div = 1.0;
+    ui->scope_num_channels = 0;
+    ui->scope_time_div = 0.001;   // 1ms per division
+    ui->scope_volt_div = 1.0;     // 1V per division
+    ui->scope_selected_channel = 0;
+    ui->scope_paused = false;
+
+    // Initialize all channels with predefined colors
+    for (int i = 0; i < MAX_PROBES; i++) {
+        ui->scope_channels[i] = (ScopeChannel){false, PROBE_COLORS[i], i, 0.0};
+    }
+
+    // Oscilloscope control buttons (positioned below the scope)
+    int scope_btn_y = ui->scope_rect.y + ui->scope_rect.h + 5;
+    int scope_btn_w = 30, scope_btn_h = 20;
+    int scope_btn_x = ui->scope_rect.x;
+
+    ui->btn_scope_volt_up = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "V+", "Increase V/div", false, false, true, false};
+    scope_btn_x += scope_btn_w + 5;
+    ui->btn_scope_volt_down = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "V-", "Decrease V/div", false, false, true, false};
+    scope_btn_x += scope_btn_w + 15;
+    ui->btn_scope_time_up = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "T+", "Increase time/div", false, false, true, false};
+    scope_btn_x += scope_btn_w + 5;
+    ui->btn_scope_time_down = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "T-", "Decrease time/div", false, false, true, false};
 
     strncpy(ui->status_message, "Ready", sizeof(ui->status_message));
 }
@@ -564,6 +583,10 @@ void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
     Rect *r = &ui->scope_rect;
 
+    // Title
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    ui_draw_text(renderer, "Oscilloscope", r->x, r->y - 20);
+
     // Background (black)
     SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xff);
     SDL_Rect bg = {r->x, r->y, r->w, r->h};
@@ -585,9 +608,9 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     SDL_RenderDrawLine(renderer, r->x + r->w / 2, r->y, r->x + r->w / 2, r->y + r->h);
     SDL_RenderDrawLine(renderer, r->x, r->y + r->h / 2, r->x + r->w, r->y + r->h / 2);
 
-    // Draw traces if simulation has data
-    if (sim && sim->history_count > 1) {
-        for (int ch = 0; ch < 2; ch++) {
+    // Draw traces for all active channels (based on probes)
+    if (sim && sim->history_count > 1 && !ui->scope_paused) {
+        for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
             if (!ui->scope_channels[ch].enabled) continue;
 
             SDL_SetRenderDrawColor(renderer,
@@ -597,26 +620,84 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
             double times[MAX_HISTORY];
             double values[MAX_HISTORY];
-            int count = simulation_get_history(sim, ch, times, values, r->w);
+            int probe_idx = ui->scope_channels[ch].probe_idx;
+            int count = simulation_get_history(sim, probe_idx, times, values, r->w);
 
             int center_y = r->y + r->h / 2;
             double scale = (r->h / 8.0) / ui->scope_volt_div;
+            double offset = ui->scope_channels[ch].offset;
 
             for (int i = 1; i < count; i++) {
                 int x1 = r->x + (i - 1);
                 int x2 = r->x + i;
-                int y1 = center_y - (int)(values[i-1] * scale);
-                int y2 = center_y - (int)(values[i] * scale);
+                int y1 = center_y - (int)((values[i-1] + offset) * scale);
+                int y2 = center_y - (int)((values[i] + offset) * scale);
                 y1 = CLAMP(y1, r->y, r->y + r->h);
                 y2 = CLAMP(y2, r->y, r->y + r->h);
                 SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
             }
+
+            // Draw channel marker on left side
+            int marker_y = center_y - (int)(offset * scale);
+            marker_y = CLAMP(marker_y, r->y + 5, r->y + r->h - 5);
+            SDL_RenderDrawLine(renderer, r->x, marker_y - 3, r->x + 5, marker_y);
+            SDL_RenderDrawLine(renderer, r->x, marker_y + 3, r->x + 5, marker_y);
         }
     }
 
     // Border
     SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
     SDL_RenderDrawRect(renderer, &bg);
+
+    // Draw control buttons
+    draw_button(renderer, &ui->btn_scope_volt_up);
+    draw_button(renderer, &ui->btn_scope_volt_down);
+    draw_button(renderer, &ui->btn_scope_time_up);
+    draw_button(renderer, &ui->btn_scope_time_down);
+
+    // Display settings below buttons
+    int info_y = r->y + r->h + 28;
+    char buf[64];
+
+    // Time/div display
+    SDL_SetRenderDrawColor(renderer, 0xb0, 0xb0, 0xb0, 0xff);
+    if (ui->scope_time_div >= 1.0) {
+        snprintf(buf, sizeof(buf), "T: %.1fs/div", ui->scope_time_div);
+    } else if (ui->scope_time_div >= 0.001) {
+        snprintf(buf, sizeof(buf), "T: %.1fms/div", ui->scope_time_div * 1000);
+    } else {
+        snprintf(buf, sizeof(buf), "T: %.1fus/div", ui->scope_time_div * 1000000);
+    }
+    ui_draw_text(renderer, buf, r->x, info_y);
+
+    // Volts/div display
+    if (ui->scope_volt_div >= 1.0) {
+        snprintf(buf, sizeof(buf), "V: %.1fV/div", ui->scope_volt_div);
+    } else {
+        snprintf(buf, sizeof(buf), "V: %.0fmV/div", ui->scope_volt_div * 1000);
+    }
+    ui_draw_text(renderer, buf, r->x + 110, info_y);
+
+    // Channel legend
+    info_y += 15;
+    for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
+        if (!ui->scope_channels[ch].enabled) continue;
+
+        SDL_SetRenderDrawColor(renderer,
+            ui->scope_channels[ch].color.r,
+            ui->scope_channels[ch].color.g,
+            ui->scope_channels[ch].color.b, 0xff);
+
+        snprintf(buf, sizeof(buf), "CH%d", ch + 1);
+        ui_draw_text(renderer, buf, r->x + ch * 40, info_y);
+    }
+
+    // Show "No probes" message if no channels active
+    if (ui->scope_num_channels == 0) {
+        SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+        ui_draw_text(renderer, "Place probes to", r->x + 70, r->y + r->h/2 - 12);
+        ui_draw_text(renderer, "see waveforms", r->x + 75, r->y + r->h/2 + 4);
+    }
 }
 
 void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer) {
@@ -729,6 +810,20 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             return UI_ACTION_LOAD;
         }
 
+        // Check oscilloscope control buttons
+        if (point_in_rect(x, y, &ui->btn_scope_volt_up.bounds) && ui->btn_scope_volt_up.enabled) {
+            return UI_ACTION_SCOPE_VOLT_UP;
+        }
+        if (point_in_rect(x, y, &ui->btn_scope_volt_down.bounds) && ui->btn_scope_volt_down.enabled) {
+            return UI_ACTION_SCOPE_VOLT_DOWN;
+        }
+        if (point_in_rect(x, y, &ui->btn_scope_time_up.bounds) && ui->btn_scope_time_up.enabled) {
+            return UI_ACTION_SCOPE_TIME_UP;
+        }
+        if (point_in_rect(x, y, &ui->btn_scope_time_down.bounds) && ui->btn_scope_time_down.enabled) {
+            return UI_ACTION_SCOPE_TIME_DOWN;
+        }
+
         // Check palette items
         for (int i = 0; i < ui->num_palette_items; i++) {
             if (point_in_rect(x, y, &ui->palette_items[i].bounds)) {
@@ -765,6 +860,12 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_save.hovered = point_in_rect(x, y, &ui->btn_save.bounds);
     ui->btn_load.hovered = point_in_rect(x, y, &ui->btn_load.bounds);
 
+    // Update oscilloscope button hover states
+    ui->btn_scope_volt_up.hovered = point_in_rect(x, y, &ui->btn_scope_volt_up.bounds);
+    ui->btn_scope_volt_down.hovered = point_in_rect(x, y, &ui->btn_scope_volt_down.bounds);
+    ui->btn_scope_time_up.hovered = point_in_rect(x, y, &ui->btn_scope_time_up.bounds);
+    ui->btn_scope_time_down.hovered = point_in_rect(x, y, &ui->btn_scope_time_down.bounds);
+
     // Update palette hover states
     for (int i = 0; i < ui->num_palette_items; i++) {
         ui->palette_items[i].hovered = point_in_rect(x, y, &ui->palette_items[i].bounds);
@@ -790,5 +891,28 @@ void ui_update_measurements(UIState *ui, Simulation *sim, Circuit *circuit) {
     if (circuit) {
         ui->node_count = circuit->num_nodes;
         ui->component_count = circuit->num_components;
+    }
+}
+
+void ui_update_scope_channels(UIState *ui, Circuit *circuit) {
+    if (!ui || !circuit) return;
+
+    // Update oscilloscope channels based on probes in circuit
+    ui->scope_num_channels = circuit->num_probes;
+
+    for (int i = 0; i < circuit->num_probes && i < MAX_PROBES; i++) {
+        ui->scope_channels[i].enabled = true;
+        ui->scope_channels[i].probe_idx = i;
+        ui->scope_channels[i].color = PROBE_COLORS[i];
+
+        // Update probe with channel info
+        circuit->probes[i].channel_num = i;
+        circuit->probes[i].color = PROBE_COLORS[i];
+        snprintf(circuit->probes[i].label, sizeof(circuit->probes[i].label), "CH%d", i + 1);
+    }
+
+    // Disable unused channels
+    for (int i = circuit->num_probes; i < MAX_PROBES; i++) {
+        ui->scope_channels[i].enabled = false;
     }
 }

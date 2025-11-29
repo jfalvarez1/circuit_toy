@@ -35,6 +35,8 @@ typedef struct {
     float x, y;
     Color color;
     double voltage;
+    int channel_num;    // Oscilloscope channel number (0-based)
+    char label[8];      // Label like "CH1", "CH2", etc.
 } Probe;
 
 // Undo action types

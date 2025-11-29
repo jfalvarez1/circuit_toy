@@ -4,6 +4,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include <math.h>
 #include "render.h"
 
@@ -383,11 +384,36 @@ void render_node(RenderContext *ctx, Node *node, bool show_voltage) {
 void render_probe(RenderContext *ctx, Probe *probe, int index) {
     if (!probe) return;
 
+    // Draw probe body with channel color
     render_set_color(ctx, probe->color);
-    render_fill_circle(ctx, probe->x, probe->y, 8);
+    render_fill_circle(ctx, probe->x, probe->y, 10);
 
+    // Draw white border
     render_set_color(ctx, COLOR_TEXT);
-    render_draw_circle(ctx, probe->x, probe->y, 8);
+    render_draw_circle(ctx, probe->x, probe->y, 10);
+
+    // Draw probe tip (arrow pointing down)
+    render_set_color(ctx, probe->color);
+    render_draw_line(ctx, probe->x, probe->y + 10, probe->x, probe->y + 18);
+    render_draw_line(ctx, probe->x - 3, probe->y + 15, probe->x, probe->y + 18);
+    render_draw_line(ctx, probe->x + 3, probe->y + 15, probe->x, probe->y + 18);
+
+    // Draw channel label above the probe
+    int sx, sy;
+    render_world_to_screen(ctx, probe->x, probe->y - 20, &sx, &sy);
+    if (probe->label[0]) {
+        render_draw_text(ctx, probe->label, sx - 12, sy, probe->color);
+    } else {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "P%d", index + 1);
+        render_draw_text(ctx, buf, sx - 8, sy, probe->color);
+    }
+
+    // Draw voltage reading below the probe
+    char volt_str[16];
+    snprintf(volt_str, sizeof(volt_str), "%.2fV", probe->voltage);
+    render_world_to_screen(ctx, probe->x, probe->y + 25, &sx, &sy);
+    render_draw_text(ctx, volt_str, sx - 16, sy, COLOR_TEXT);
 }
 
 void render_circuit(RenderContext *ctx, Circuit *circuit) {

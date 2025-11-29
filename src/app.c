@@ -180,9 +180,32 @@ void app_handle_events(App *app) {
             case UI_ACTION_LOAD:
                 app_load_circuit(app);
                 break;
+            case UI_ACTION_SCOPE_VOLT_UP:
+                // Increase volts/div (zoom out vertically)
+                app->ui.scope_volt_div *= 2.0;
+                if (app->ui.scope_volt_div > 100.0) app->ui.scope_volt_div = 100.0;
+                break;
+            case UI_ACTION_SCOPE_VOLT_DOWN:
+                // Decrease volts/div (zoom in vertically)
+                app->ui.scope_volt_div /= 2.0;
+                if (app->ui.scope_volt_div < 0.001) app->ui.scope_volt_div = 0.001;
+                break;
+            case UI_ACTION_SCOPE_TIME_UP:
+                // Increase time/div (zoom out horizontally)
+                app->ui.scope_time_div *= 2.0;
+                if (app->ui.scope_time_div > 1.0) app->ui.scope_time_div = 1.0;
+                break;
+            case UI_ACTION_SCOPE_TIME_DOWN:
+                // Decrease time/div (zoom in horizontally)
+                app->ui.scope_time_div /= 2.0;
+                if (app->ui.scope_time_div < 1e-6) app->ui.scope_time_div = 1e-6;
+                break;
         }
         app->input.pending_ui_action = UI_ACTION_NONE;
     }
+
+    // Update oscilloscope channels from probes
+    ui_update_scope_channels(&app->ui, app->circuit);
 }
 
 void app_update(App *app) {
