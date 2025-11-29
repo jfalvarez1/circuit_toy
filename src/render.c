@@ -127,8 +127,9 @@ RenderContext *render_create(SDL_Renderer *renderer) {
     if (!ctx) return NULL;
 
     ctx->renderer = renderer;
-    ctx->offset_x = CANVAS_WIDTH / 2;
-    ctx->offset_y = CANVAS_HEIGHT / 2;
+    // Align initial offset to grid for proper grid line alignment
+    ctx->offset_x = (CANVAS_WIDTH / 2 / GRID_SIZE) * GRID_SIZE;
+    ctx->offset_y = (CANVAS_HEIGHT / 2 / GRID_SIZE) * GRID_SIZE;
     ctx->zoom = 1.0f;
     ctx->show_grid = true;
     ctx->snap_to_grid = true;
@@ -170,8 +171,9 @@ void render_zoom(RenderContext *ctx, float factor, int center_x, int center_y) {
 }
 
 void render_reset_view(RenderContext *ctx) {
-    ctx->offset_x = ctx->canvas_rect.w / 2;
-    ctx->offset_y = ctx->canvas_rect.h / 2;
+    // Align offset to grid for proper grid line alignment
+    ctx->offset_x = (ctx->canvas_rect.w / 2 / GRID_SIZE) * GRID_SIZE;
+    ctx->offset_y = (ctx->canvas_rect.h / 2 / GRID_SIZE) * GRID_SIZE;
     ctx->zoom = 1.0f;
 }
 
@@ -266,10 +268,11 @@ void render_grid(RenderContext *ctx) {
     render_screen_to_world(ctx, 0, 0, &left, &top);
     render_screen_to_world(ctx, ctx->canvas_rect.w, ctx->canvas_rect.h, &right, &bottom);
 
-    int start_x = ((int)(left / GRID_SIZE) - 1) * GRID_SIZE;
-    int start_y = ((int)(top / GRID_SIZE) - 1) * GRID_SIZE;
-    int end_x = ((int)(right / GRID_SIZE) + 1) * GRID_SIZE;
-    int end_y = ((int)(bottom / GRID_SIZE) + 1) * GRID_SIZE;
+    // Use floor() to handle negative coordinates correctly
+    int start_x = ((int)floor(left / GRID_SIZE) - 1) * GRID_SIZE;
+    int start_y = ((int)floor(top / GRID_SIZE) - 1) * GRID_SIZE;
+    int end_x = ((int)ceil(right / GRID_SIZE) + 1) * GRID_SIZE;
+    int end_y = ((int)ceil(bottom / GRID_SIZE) + 1) * GRID_SIZE;
 
     // Vertical lines
     for (int x = start_x; x <= end_x; x += GRID_SIZE) {

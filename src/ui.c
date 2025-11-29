@@ -290,14 +290,16 @@ void ui_init(UIState *ui) {
     ui->btn_scope_time_down = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "T-", "Decrease time/div", false, false, true, false};
 
     // Second row of scope buttons for trigger controls
-    scope_btn_y += scope_btn_h + 25;  // Move down for second row
+    scope_btn_y += scope_btn_h + 5;  // Move down for second row
     scope_btn_x = ui->scope_rect.x;
 
-    ui->btn_scope_trig_mode = (Button){{scope_btn_x, scope_btn_y, 40, scope_btn_h}, "AUTO", "Trigger mode", false, false, true, false};
+    ui->btn_scope_trig_mode = (Button){{scope_btn_x, scope_btn_y, 40, scope_btn_h}, "AUTO", "Trigger mode (Auto/Normal/Single)", false, false, true, false};
     scope_btn_x += 45;
-    ui->btn_scope_trig_edge = (Button){{scope_btn_x, scope_btn_y, 25, scope_btn_h}, "/\\", "Trigger edge", false, false, true, false};
+    ui->btn_scope_trig_edge = (Button){{scope_btn_x, scope_btn_y, 25, scope_btn_h}, "/\\", "Trigger edge (Rising/Falling/Both)", false, false, true, false};
     scope_btn_x += 30;
-    ui->btn_scope_mode = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "Y-T", "Display mode", false, false, true, false};
+    ui->btn_scope_mode = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "Y-T", "Display mode (Y-T/X-Y)", false, false, true, false};
+    scope_btn_x += 40;
+    ui->btn_scope_screenshot = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "CAP", "Capture screenshot (saves scope.bmp)", false, false, true, false};
 
     // Initialize trigger settings
     ui->trigger_mode = TRIG_AUTO;
@@ -710,15 +712,29 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     Rect *r = &ui->scope_rect;
     char buf[64];
 
+    // Update button labels based on current settings
+    static const char *trig_mode_labels[] = {"AUTO", "NORM", "SNGL"};
+    static const char *trig_edge_labels[] = {"/\\", "\\/", "/\\\\/"};
+    static const char *mode_labels[] = {"Y-T", "X-Y"};
+
+    ui->btn_scope_trig_mode.label = trig_mode_labels[ui->trigger_mode];
+    ui->btn_scope_trig_edge.label = trig_edge_labels[ui->trigger_edge];
+    ui->btn_scope_mode.label = mode_labels[ui->display_mode];
+
     // Title bar with settings
     SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
     ui_draw_text(renderer, "SCOPE", r->x, r->y - 18);
 
-    // Show time/div in title area
-    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-    format_time_value(buf, sizeof(buf), ui->scope_time_div);
-    ui_draw_text(renderer, buf, r->x + 55, r->y - 18);
-    ui_draw_text(renderer, "/div", r->x + 100, r->y - 18);
+    // Show time/div in title area (only for Y-T mode)
+    if (ui->display_mode == SCOPE_MODE_YT) {
+        SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+        format_time_value(buf, sizeof(buf), ui->scope_time_div);
+        ui_draw_text(renderer, buf, r->x + 55, r->y - 18);
+        ui_draw_text(renderer, "/div", r->x + 100, r->y - 18);
+    } else {
+        SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+        ui_draw_text(renderer, "X-Y Mode", r->x + 55, r->y - 18);
+    }
 
     // Background (dark green like classic scopes)
     SDL_SetRenderDrawColor(renderer, 0x00, 0x10, 0x00, 0xff);
@@ -775,39 +791,100 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
     // Draw traces for all active channels (based on probes)
     if (sim && sim->history_count > 1 && !ui->scope_paused) {
-        for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
-            if (!ui->scope_channels[ch].enabled) continue;
+        double scale = (r->h / 8.0) / ui->scope_volt_div;
 
-            SDL_SetRenderDrawColor(renderer,
-                ui->scope_channels[ch].color.r,
-                ui->scope_channels[ch].color.g,
-                ui->scope_channels[ch].color.b, 0xff);
+        if (ui->display_mode == SCOPE_MODE_YT) {
+            // Y-T mode: standard time-domain display
+            for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
+                if (!ui->scope_channels[ch].enabled) continue;
 
-            double times[MAX_HISTORY];
-            double values[MAX_HISTORY];
-            int probe_idx = ui->scope_channels[ch].probe_idx;
-            int count = simulation_get_history(sim, probe_idx, times, values, r->w);
+                SDL_SetRenderDrawColor(renderer,
+                    ui->scope_channels[ch].color.r,
+                    ui->scope_channels[ch].color.g,
+                    ui->scope_channels[ch].color.b, 0xff);
 
-            double scale = (r->h / 8.0) / ui->scope_volt_div;
-            double offset = ui->scope_channels[ch].offset;
+                double times[MAX_HISTORY];
+                double values[MAX_HISTORY];
+                int probe_idx = ui->scope_channels[ch].probe_idx;
+                int count = simulation_get_history(sim, probe_idx, times, values, r->w);
 
-            for (int i = 1; i < count; i++) {
-                int x1 = r->x + (i - 1);
-                int x2 = r->x + i;
-                int y1 = center_y - (int)((values[i-1] + offset) * scale);
-                int y2 = center_y - (int)((values[i] + offset) * scale);
-                y1 = CLAMP(y1, r->y, r->y + r->h);
-                y2 = CLAMP(y2, r->y, r->y + r->h);
-                SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
+                double offset = ui->scope_channels[ch].offset;
+
+                for (int i = 1; i < count; i++) {
+                    int x1 = r->x + (i - 1);
+                    int x2 = r->x + i;
+                    int y1 = center_y - (int)((values[i-1] + offset) * scale);
+                    int y2 = center_y - (int)((values[i] + offset) * scale);
+                    y1 = CLAMP(y1, r->y, r->y + r->h);
+                    y2 = CLAMP(y2, r->y, r->y + r->h);
+                    SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
+                }
+
+                // Draw ground reference arrow on left side (channel color)
+                int gnd_y = center_y - (int)(offset * scale);
+                gnd_y = CLAMP(gnd_y, r->y + 8, r->y + r->h - 8);
+                // Arrow pointing right
+                SDL_RenderDrawLine(renderer, r->x + 2, gnd_y, r->x + 8, gnd_y);
+                SDL_RenderDrawLine(renderer, r->x + 5, gnd_y - 3, r->x + 8, gnd_y);
+                SDL_RenderDrawLine(renderer, r->x + 5, gnd_y + 3, r->x + 8, gnd_y);
             }
 
-            // Draw ground reference arrow on left side (channel color)
-            int gnd_y = center_y - (int)(offset * scale);
-            gnd_y = CLAMP(gnd_y, r->y + 8, r->y + r->h - 8);
-            // Arrow pointing right
-            SDL_RenderDrawLine(renderer, r->x + 2, gnd_y, r->x + 8, gnd_y);
-            SDL_RenderDrawLine(renderer, r->x + 5, gnd_y - 3, r->x + 8, gnd_y);
-            SDL_RenderDrawLine(renderer, r->x + 5, gnd_y + 3, r->x + 8, gnd_y);
+            // Draw trigger level line (dashed, in trigger channel color)
+            if (ui->trigger_mode != TRIG_AUTO && ui->scope_num_channels > 0) {
+                int trig_ch = ui->trigger_channel;
+                if (trig_ch < ui->scope_num_channels && ui->scope_channels[trig_ch].enabled) {
+                    double trig_offset = ui->scope_channels[trig_ch].offset;
+                    int trig_y = center_y - (int)((ui->trigger_level + trig_offset) * scale);
+                    trig_y = CLAMP(trig_y, r->y, r->y + r->h);
+
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);  // Orange
+                    // Draw dashed line
+                    for (int x = r->x; x < r->x + r->w; x += 8) {
+                        SDL_RenderDrawLine(renderer, x, trig_y, MIN(x + 4, r->x + r->w), trig_y);
+                    }
+                    // Draw trigger level indicator on right side
+                    SDL_RenderDrawLine(renderer, r->x + r->w - 8, trig_y, r->x + r->w - 2, trig_y);
+                    SDL_RenderDrawLine(renderer, r->x + r->w - 5, trig_y - 3, r->x + r->w - 2, trig_y);
+                    SDL_RenderDrawLine(renderer, r->x + r->w - 5, trig_y + 3, r->x + r->w - 2, trig_y);
+                }
+            }
+        } else {
+            // X-Y mode: Lissajous display
+            // Channel X (xy_channel_x) on horizontal axis, Channel Y (xy_channel_y) on vertical axis
+            if (ui->scope_num_channels >= 2 &&
+                ui->xy_channel_x < ui->scope_num_channels &&
+                ui->xy_channel_y < ui->scope_num_channels) {
+
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x00, 0xff);  // Green for X-Y trace
+
+                double times_x[MAX_HISTORY], values_x[MAX_HISTORY];
+                double times_y[MAX_HISTORY], values_y[MAX_HISTORY];
+
+                int count_x = simulation_get_history(sim, ui->xy_channel_x, times_x, values_x, MAX_HISTORY);
+                int count_y = simulation_get_history(sim, ui->xy_channel_y, times_y, values_y, MAX_HISTORY);
+                int count = MIN(count_x, count_y);
+
+                double offset_x = ui->scope_channels[ui->xy_channel_x].offset;
+                double offset_y = ui->scope_channels[ui->xy_channel_y].offset;
+
+                for (int i = 1; i < count; i++) {
+                    int x1 = center_x + (int)((values_x[i-1] + offset_x) * scale);
+                    int x2 = center_x + (int)((values_x[i] + offset_x) * scale);
+                    int y1 = center_y - (int)((values_y[i-1] + offset_y) * scale);
+                    int y2 = center_y - (int)((values_y[i] + offset_y) * scale);
+
+                    x1 = CLAMP(x1, r->x, r->x + r->w);
+                    x2 = CLAMP(x2, r->x, r->x + r->w);
+                    y1 = CLAMP(y1, r->y, r->y + r->h);
+                    y2 = CLAMP(y2, r->y, r->y + r->h);
+
+                    SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
+                }
+            } else {
+                // Not enough channels for X-Y mode
+                SDL_SetRenderDrawColor(renderer, 0x80, 0x60, 0x00, 0xff);
+                ui_draw_text(renderer, "X-Y needs 2+ probes", r->x + 50, center_y);
+            }
         }
     }
 
@@ -817,14 +894,29 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     SDL_Rect outer = {r->x - 1, r->y - 1, r->w + 2, r->h + 2};
     SDL_RenderDrawRect(renderer, &outer);
 
-    // Draw control buttons
+    // Draw control buttons (first row: V+, V-, T+, T-)
     draw_button(renderer, &ui->btn_scope_volt_up);
     draw_button(renderer, &ui->btn_scope_volt_down);
     draw_button(renderer, &ui->btn_scope_time_up);
     draw_button(renderer, &ui->btn_scope_time_down);
 
+    // Draw trigger control buttons (second row)
+    draw_button(renderer, &ui->btn_scope_trig_mode);
+    draw_button(renderer, &ui->btn_scope_trig_edge);
+    draw_button(renderer, &ui->btn_scope_mode);
+    draw_button(renderer, &ui->btn_scope_screenshot);
+
+    // Show trigger level next to mode button
+    if (ui->trigger_mode != TRIG_AUTO) {
+        int trig_info_x = ui->btn_scope_mode.bounds.x + ui->btn_scope_mode.bounds.w + 10;
+        int trig_info_y = ui->btn_scope_mode.bounds.y + 6;
+        SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);  // Orange
+        snprintf(buf, sizeof(buf), "T:%.1fV", ui->trigger_level);
+        ui_draw_text(renderer, buf, trig_info_x, trig_info_y);
+    }
+
     // Display settings panel below scope
-    int info_y = r->y + r->h + 28;
+    int info_y = r->y + r->h + 50;
 
     // Time/div with label
     SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
@@ -1000,6 +1092,9 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_scope_mode.bounds) && ui->btn_scope_mode.enabled) {
             return UI_ACTION_SCOPE_MODE;
         }
+        if (point_in_rect(x, y, &ui->btn_scope_screenshot.bounds) && ui->btn_scope_screenshot.enabled) {
+            return UI_ACTION_SCOPE_SCREENSHOT;
+        }
 
         // Check palette items
         for (int i = 0; i < ui->num_palette_items; i++) {
@@ -1045,6 +1140,7 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_scope_trig_mode.hovered = point_in_rect(x, y, &ui->btn_scope_trig_mode.bounds);
     ui->btn_scope_trig_edge.hovered = point_in_rect(x, y, &ui->btn_scope_trig_edge.bounds);
     ui->btn_scope_mode.hovered = point_in_rect(x, y, &ui->btn_scope_mode.bounds);
+    ui->btn_scope_screenshot.hovered = point_in_rect(x, y, &ui->btn_scope_screenshot.bounds);
 
     // Update palette hover states
     for (int i = 0; i < ui->num_palette_items; i++) {

@@ -110,6 +110,7 @@ typedef struct {
     Button btn_scope_trig_mode;      // Cycle through trigger modes
     Button btn_scope_trig_edge;      // Toggle trigger edge
     Button btn_scope_mode;           // Toggle Y-T / X-Y mode
+    Button btn_scope_screenshot;     // Capture scope display
 
     // Trigger settings
     TriggerMode trigger_mode;        // Auto, Normal, Single
@@ -182,6 +183,7 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_SCOPE_MODE       17
 #define UI_ACTION_SCOPE_TRIG_UP    18
 #define UI_ACTION_SCOPE_TRIG_DOWN  19
+#define UI_ACTION_SCOPE_SCREENSHOT 20
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type
 

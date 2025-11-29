@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "app.h"
 #include "file_io.h"
 
@@ -245,6 +246,61 @@ void app_handle_events(App *app) {
                             app->ui.scope_time_div = time_steps[i - 1];
                             break;
                         }
+                    }
+                }
+                break;
+            case UI_ACTION_SCOPE_TRIG_MODE:
+                // Cycle through trigger modes: Auto -> Normal -> Single -> Auto
+                app->ui.trigger_mode = (app->ui.trigger_mode + 1) % 3;
+                if (app->ui.trigger_mode == TRIG_SINGLE) {
+                    app->ui.trigger_armed = true;
+                    app->ui.triggered = false;
+                }
+                break;
+            case UI_ACTION_SCOPE_TRIG_EDGE:
+                // Cycle through trigger edges: Rising -> Falling -> Both -> Rising
+                app->ui.trigger_edge = (app->ui.trigger_edge + 1) % 3;
+                break;
+            case UI_ACTION_SCOPE_MODE:
+                // Toggle between Y-T and X-Y mode
+                app->ui.display_mode = (app->ui.display_mode == SCOPE_MODE_YT) ?
+                                       SCOPE_MODE_XY : SCOPE_MODE_YT;
+                break;
+            case UI_ACTION_SCOPE_TRIG_UP:
+                // Increase trigger level by 0.1V (or scaled by volts/div)
+                app->ui.trigger_level += app->ui.scope_volt_div * 0.2;
+                break;
+            case UI_ACTION_SCOPE_TRIG_DOWN:
+                // Decrease trigger level by 0.1V (or scaled by volts/div)
+                app->ui.trigger_level -= app->ui.scope_volt_div * 0.2;
+                break;
+            case UI_ACTION_SCOPE_SCREENSHOT:
+                // Capture oscilloscope display as BMP
+                {
+                    Rect *sr = &app->ui.scope_rect;
+                    SDL_Surface *surface = SDL_CreateRGBSurface(0, sr->w, sr->h, 32,
+                        0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000);
+                    if (surface) {
+                        // Read pixels from renderer
+                        SDL_Rect read_rect = {sr->x, sr->y, sr->w, sr->h};
+                        if (SDL_RenderReadPixels(app->renderer, &read_rect,
+                                SDL_PIXELFORMAT_ARGB8888, surface->pixels, surface->pitch) == 0) {
+                            // Generate filename with timestamp
+                            char filename[64];
+                            time_t now = time(NULL);
+                            struct tm *t = localtime(&now);
+                            snprintf(filename, sizeof(filename), "scope_%04d%02d%02d_%02d%02d%02d.bmp",
+                                t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+                                t->tm_hour, t->tm_min, t->tm_sec);
+                            if (SDL_SaveBMP(surface, filename) == 0) {
+                                char msg[128];
+                                snprintf(msg, sizeof(msg), "Screenshot saved: %s", filename);
+                                ui_set_status(&app->ui, msg);
+                            } else {
+                                ui_set_status(&app->ui, "Failed to save screenshot");
+                            }
+                        }
+                        SDL_FreeSurface(surface);
                     }
                 }
                 break;

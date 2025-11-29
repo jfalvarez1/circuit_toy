@@ -143,9 +143,9 @@ typedef struct {
 #define CLAMP(x, lo, hi) (MIN(MAX(x, lo), hi))
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
-// Snap to grid
+// Snap to grid (handles negative values correctly using round)
 static inline int snap_to_grid(float val) {
-    return ((int)(val / GRID_SIZE + 0.5f)) * GRID_SIZE;
+    return (int)round(val / GRID_SIZE) * GRID_SIZE;
 }
 
 #endif // TYPES_H
