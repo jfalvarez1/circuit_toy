@@ -86,6 +86,9 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             // Check for existing nodes near terminals before placing
                             Component *temp = component_create(input->placing_component, snapped_x, snapped_y);
                             if (temp) {
+                                // Apply placing rotation
+                                temp->rotation = input->placing_rotation;
+
                                 // Find existing nodes near each terminal before adding component
                                 int existing_nodes[8] = {0};
                                 for (int i = 0; i < temp->num_terminals && i < 8; i++) {
@@ -369,8 +372,11 @@ void input_handle_key(InputState *input, SDL_Keycode key,
 
         case SDLK_r:
             if (ctrl) {
-                // Ctrl+R: Rotate selected component
-                if (input->selected_component) {
+                // Ctrl+R: Rotate selected component or component being placed
+                if (input->placing_component != COMP_NONE) {
+                    // Rotate component being placed (before clicking)
+                    input->placing_rotation = (input->placing_rotation + 90) % 360;
+                } else if (input->selected_component) {
                     component_rotate(input->selected_component);
                     circuit_update_component_nodes(circuit, input->selected_component);
                 }
@@ -433,15 +439,21 @@ void input_handle_key(InputState *input, SDL_Keycode key,
             }
             break;
 
-        case SDLK_x:
-            if (ctrl) {
-                input_cut(input, circuit);
-            }
-            break;
-
         case SDLK_v:
             if (ctrl) {
                 input_paste(input, circuit, render);
+            } else if (input->shift_down) {
+                // Shift+V: Add AC voltage source
+                input_start_placing(input, COMP_AC_VOLTAGE);
+            } else {
+                // V: Add DC voltage source
+                input_start_placing(input, COMP_DC_VOLTAGE);
+            }
+            break;
+
+        case SDLK_x:
+            if (ctrl) {
+                input_cut(input, circuit);
             }
             break;
 
@@ -623,6 +635,7 @@ void input_start_placing(InputState *input, ComponentType type) {
     input_cancel_action(input);
     input->current_tool = TOOL_COMPONENT;
     input->placing_component = type;
+    input->placing_rotation = 0;
 }
 
 void input_cancel_action(InputState *input) {

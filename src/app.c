@@ -418,7 +418,7 @@ void app_render(App *app) {
         ghost.type = app->input.placing_component;
         ghost.x = snap_to_grid(app->ui.world_x);
         ghost.y = snap_to_grid(app->ui.world_y);
-        ghost.rotation = 0;
+        ghost.rotation = app->input.placing_rotation;
         render_ghost_component(app->render, &ghost);
     }
 

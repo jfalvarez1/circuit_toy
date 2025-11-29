@@ -46,6 +46,7 @@ typedef struct InputState {
     // Current tool
     ToolType current_tool;
     ComponentType placing_component;
+    int placing_rotation;  // 0, 90, 180, 270 - rotation while placing
 
     // Interaction state
     bool is_panning;
