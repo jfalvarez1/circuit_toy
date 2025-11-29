@@ -580,22 +580,74 @@ void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     ui_draw_text(renderer, amp_str, x + 100, y + 55);
 }
 
+// Helper to format scope values with proper units
+static void format_time_value(char *buf, size_t size, double val) {
+    if (val >= 1.0) {
+        snprintf(buf, size, "%.0fs", val);
+    } else if (val >= 0.1) {
+        snprintf(buf, size, "%.0fms", val * 1000);
+    } else if (val >= 0.001) {
+        snprintf(buf, size, "%.0fms", val * 1000);
+    } else if (val >= 0.0001) {
+        snprintf(buf, size, "%.0fus", val * 1000000);
+    } else {
+        snprintf(buf, size, "%.1fus", val * 1000000);
+    }
+}
+
+static void format_volt_value(char *buf, size_t size, double val) {
+    if (val >= 1.0) {
+        snprintf(buf, size, "%.0fV", val);
+    } else if (val >= 0.1) {
+        snprintf(buf, size, "%.0fmV", val * 1000);
+    } else {
+        snprintf(buf, size, "%.1fmV", val * 1000);
+    }
+}
+
 void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
     Rect *r = &ui->scope_rect;
+    char buf[64];
 
-    // Title
+    // Title bar with settings
     SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
-    ui_draw_text(renderer, "Oscilloscope", r->x, r->y - 20);
+    ui_draw_text(renderer, "SCOPE", r->x, r->y - 18);
 
-    // Background (black)
-    SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xff);
+    // Show time/div in title area
+    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+    format_time_value(buf, sizeof(buf), ui->scope_time_div);
+    ui_draw_text(renderer, buf, r->x + 55, r->y - 18);
+    ui_draw_text(renderer, "/div", r->x + 100, r->y - 18);
+
+    // Background (dark green like classic scopes)
+    SDL_SetRenderDrawColor(renderer, 0x00, 0x10, 0x00, 0xff);
     SDL_Rect bg = {r->x, r->y, r->w, r->h};
     SDL_RenderFillRect(renderer, &bg);
 
-    // Grid
-    SDL_SetRenderDrawColor(renderer, 0x33, 0x33, 0x33, 0xff);
     int div_x = r->w / 10;
     int div_y = r->h / 8;
+
+    // Draw dotted subdivision lines (5 subdivisions per division)
+    SDL_SetRenderDrawColor(renderer, 0x20, 0x30, 0x20, 0xff);
+    for (int i = 0; i < 10; i++) {
+        for (int sub = 1; sub < 5; sub++) {
+            int x = r->x + i * div_x + (sub * div_x / 5);
+            for (int y = r->y; y < r->y + r->h; y += 4) {
+                SDL_RenderDrawPoint(renderer, x, y);
+            }
+        }
+    }
+    for (int i = 0; i < 8; i++) {
+        for (int sub = 1; sub < 5; sub++) {
+            int y = r->y + i * div_y + (sub * div_y / 5);
+            for (int x = r->x; x < r->x + r->w; x += 4) {
+                SDL_RenderDrawPoint(renderer, x, y);
+            }
+        }
+    }
+
+    // Main grid lines
+    SDL_SetRenderDrawColor(renderer, 0x30, 0x50, 0x30, 0xff);
     for (int i = 0; i <= 10; i++) {
         SDL_RenderDrawLine(renderer, r->x + i * div_x, r->y, r->x + i * div_x, r->y + r->h);
     }
@@ -603,10 +655,22 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         SDL_RenderDrawLine(renderer, r->x, r->y + i * div_y, r->x + r->w, r->y + i * div_y);
     }
 
-    // Center lines (brighter)
-    SDL_SetRenderDrawColor(renderer, 0x55, 0x55, 0x55, 0xff);
-    SDL_RenderDrawLine(renderer, r->x + r->w / 2, r->y, r->x + r->w / 2, r->y + r->h);
-    SDL_RenderDrawLine(renderer, r->x, r->y + r->h / 2, r->x + r->w, r->y + r->h / 2);
+    // Center crosshair (brighter, with tick marks)
+    SDL_SetRenderDrawColor(renderer, 0x50, 0x80, 0x50, 0xff);
+    int center_x = r->x + r->w / 2;
+    int center_y = r->y + r->h / 2;
+    SDL_RenderDrawLine(renderer, center_x, r->y, center_x, r->y + r->h);
+    SDL_RenderDrawLine(renderer, r->x, center_y, r->x + r->w, center_y);
+
+    // Draw small tick marks on center lines
+    for (int i = 0; i <= 10; i++) {
+        int x = r->x + i * div_x;
+        SDL_RenderDrawLine(renderer, x, center_y - 3, x, center_y + 3);
+    }
+    for (int i = 0; i <= 8; i++) {
+        int y = r->y + i * div_y;
+        SDL_RenderDrawLine(renderer, center_x - 3, y, center_x + 3, y);
+    }
 
     // Draw traces for all active channels (based on probes)
     if (sim && sim->history_count > 1 && !ui->scope_paused) {
@@ -623,7 +687,6 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             int probe_idx = ui->scope_channels[ch].probe_idx;
             int count = simulation_get_history(sim, probe_idx, times, values, r->w);
 
-            int center_y = r->y + r->h / 2;
             double scale = (r->h / 8.0) / ui->scope_volt_div;
             double offset = ui->scope_channels[ch].offset;
 
@@ -637,17 +700,21 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
             }
 
-            // Draw channel marker on left side
-            int marker_y = center_y - (int)(offset * scale);
-            marker_y = CLAMP(marker_y, r->y + 5, r->y + r->h - 5);
-            SDL_RenderDrawLine(renderer, r->x, marker_y - 3, r->x + 5, marker_y);
-            SDL_RenderDrawLine(renderer, r->x, marker_y + 3, r->x + 5, marker_y);
+            // Draw ground reference arrow on left side (channel color)
+            int gnd_y = center_y - (int)(offset * scale);
+            gnd_y = CLAMP(gnd_y, r->y + 8, r->y + r->h - 8);
+            // Arrow pointing right
+            SDL_RenderDrawLine(renderer, r->x + 2, gnd_y, r->x + 8, gnd_y);
+            SDL_RenderDrawLine(renderer, r->x + 5, gnd_y - 3, r->x + 8, gnd_y);
+            SDL_RenderDrawLine(renderer, r->x + 5, gnd_y + 3, r->x + 8, gnd_y);
         }
     }
 
-    // Border
-    SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
+    // Border (scope bezel)
+    SDL_SetRenderDrawColor(renderer, 0x40, 0x40, 0x40, 0xff);
     SDL_RenderDrawRect(renderer, &bg);
+    SDL_Rect outer = {r->x - 1, r->y - 1, r->w + 2, r->h + 2};
+    SDL_RenderDrawRect(renderer, &outer);
 
     // Draw control buttons
     draw_button(renderer, &ui->btn_scope_volt_up);
@@ -655,30 +722,24 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     draw_button(renderer, &ui->btn_scope_time_up);
     draw_button(renderer, &ui->btn_scope_time_down);
 
-    // Display settings below buttons
+    // Display settings panel below scope
     int info_y = r->y + r->h + 28;
-    char buf[64];
 
-    // Time/div display
-    SDL_SetRenderDrawColor(renderer, 0xb0, 0xb0, 0xb0, 0xff);
-    if (ui->scope_time_div >= 1.0) {
-        snprintf(buf, sizeof(buf), "T: %.1fs/div", ui->scope_time_div);
-    } else if (ui->scope_time_div >= 0.001) {
-        snprintf(buf, sizeof(buf), "T: %.1fms/div", ui->scope_time_div * 1000);
-    } else {
-        snprintf(buf, sizeof(buf), "T: %.1fus/div", ui->scope_time_div * 1000000);
-    }
-    ui_draw_text(renderer, buf, r->x, info_y);
+    // Time/div with label
+    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+    ui_draw_text(renderer, "TIME", r->x, info_y);
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x00, 0xff);
+    format_time_value(buf, sizeof(buf), ui->scope_time_div);
+    ui_draw_text(renderer, buf, r->x + 40, info_y);
 
-    // Volts/div display
-    if (ui->scope_volt_div >= 1.0) {
-        snprintf(buf, sizeof(buf), "V: %.1fV/div", ui->scope_volt_div);
-    } else {
-        snprintf(buf, sizeof(buf), "V: %.0fmV/div", ui->scope_volt_div * 1000);
-    }
-    ui_draw_text(renderer, buf, r->x + 110, info_y);
+    // Volts/div with label
+    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+    ui_draw_text(renderer, "VOLTS", r->x + 110, info_y);
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x00, 0xff);
+    format_volt_value(buf, sizeof(buf), ui->scope_volt_div);
+    ui_draw_text(renderer, buf, r->x + 160, info_y);
 
-    // Channel legend
+    // Channel info with voltage readings
     info_y += 15;
     for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
         if (!ui->scope_channels[ch].enabled) continue;
@@ -688,13 +749,19 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             ui->scope_channels[ch].color.g,
             ui->scope_channels[ch].color.b, 0xff);
 
-        snprintf(buf, sizeof(buf), "CH%d", ch + 1);
-        ui_draw_text(renderer, buf, r->x + ch * 40, info_y);
+        // Get current voltage from probe
+        double voltage = 0;
+        if (sim && sim->circuit && ch < sim->circuit->num_probes) {
+            voltage = sim->circuit->probes[ch].voltage;
+        }
+
+        snprintf(buf, sizeof(buf), "CH%d:%.2fV", ch + 1, voltage);
+        ui_draw_text(renderer, buf, r->x + ch * 80, info_y);
     }
 
     // Show "No probes" message if no channels active
     if (ui->scope_num_channels == 0) {
-        SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+        SDL_SetRenderDrawColor(renderer, 0x40, 0x60, 0x40, 0xff);
         ui_draw_text(renderer, "Place probes to", r->x + 70, r->y + r->h/2 - 12);
         ui_draw_text(renderer, "see waveforms", r->x + 75, r->y + r->h/2 + 4);
     }

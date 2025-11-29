@@ -181,24 +181,72 @@ void app_handle_events(App *app) {
                 app_load_circuit(app);
                 break;
             case UI_ACTION_SCOPE_VOLT_UP:
-                // Increase volts/div (zoom out vertically)
-                app->ui.scope_volt_div *= 2.0;
-                if (app->ui.scope_volt_div > 100.0) app->ui.scope_volt_div = 100.0;
+                // Increase volts/div using 1-2-5 sequence (like real scopes)
+                {
+                    static const double volt_steps[] = {
+                        0.001, 0.002, 0.005, 0.01, 0.02, 0.05,
+                        0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0
+                    };
+                    int n = sizeof(volt_steps) / sizeof(volt_steps[0]);
+                    for (int i = 0; i < n - 1; i++) {
+                        if (app->ui.scope_volt_div <= volt_steps[i] * 1.01) {
+                            app->ui.scope_volt_div = volt_steps[i + 1];
+                            break;
+                        }
+                    }
+                }
                 break;
             case UI_ACTION_SCOPE_VOLT_DOWN:
-                // Decrease volts/div (zoom in vertically)
-                app->ui.scope_volt_div /= 2.0;
-                if (app->ui.scope_volt_div < 0.001) app->ui.scope_volt_div = 0.001;
+                // Decrease volts/div using 1-2-5 sequence
+                {
+                    static const double volt_steps[] = {
+                        0.001, 0.002, 0.005, 0.01, 0.02, 0.05,
+                        0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0
+                    };
+                    int n = sizeof(volt_steps) / sizeof(volt_steps[0]);
+                    for (int i = n - 1; i > 0; i--) {
+                        if (app->ui.scope_volt_div >= volt_steps[i] * 0.99) {
+                            app->ui.scope_volt_div = volt_steps[i - 1];
+                            break;
+                        }
+                    }
+                }
                 break;
             case UI_ACTION_SCOPE_TIME_UP:
-                // Increase time/div (zoom out horizontally)
-                app->ui.scope_time_div *= 2.0;
-                if (app->ui.scope_time_div > 1.0) app->ui.scope_time_div = 1.0;
+                // Increase time/div using 1-2-5 sequence
+                {
+                    static const double time_steps[] = {
+                        1e-6, 2e-6, 5e-6, 10e-6, 20e-6, 50e-6,
+                        100e-6, 200e-6, 500e-6,
+                        1e-3, 2e-3, 5e-3, 10e-3, 20e-3, 50e-3,
+                        100e-3, 200e-3, 500e-3, 1.0
+                    };
+                    int n = sizeof(time_steps) / sizeof(time_steps[0]);
+                    for (int i = 0; i < n - 1; i++) {
+                        if (app->ui.scope_time_div <= time_steps[i] * 1.01) {
+                            app->ui.scope_time_div = time_steps[i + 1];
+                            break;
+                        }
+                    }
+                }
                 break;
             case UI_ACTION_SCOPE_TIME_DOWN:
-                // Decrease time/div (zoom in horizontally)
-                app->ui.scope_time_div /= 2.0;
-                if (app->ui.scope_time_div < 1e-6) app->ui.scope_time_div = 1e-6;
+                // Decrease time/div using 1-2-5 sequence
+                {
+                    static const double time_steps[] = {
+                        1e-6, 2e-6, 5e-6, 10e-6, 20e-6, 50e-6,
+                        100e-6, 200e-6, 500e-6,
+                        1e-3, 2e-3, 5e-3, 10e-3, 20e-3, 50e-3,
+                        100e-3, 200e-3, 500e-3, 1.0
+                    };
+                    int n = sizeof(time_steps) / sizeof(time_steps[0]);
+                    for (int i = n - 1; i > 0; i--) {
+                        if (app->ui.scope_time_div >= time_steps[i] * 0.99) {
+                            app->ui.scope_time_div = time_steps[i - 1];
+                            break;
+                        }
+                    }
+                }
                 break;
         }
         app->input.pending_ui_action = UI_ACTION_NONE;
