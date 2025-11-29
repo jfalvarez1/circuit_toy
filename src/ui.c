@@ -795,6 +795,14 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
         if (ui->display_mode == SCOPE_MODE_YT) {
             // Y-T mode: standard time-domain display
+            // Calculate time window (10 divisions on the scope)
+            double time_window = 10.0 * ui->scope_time_div;
+
+            // Calculate how many samples we need based on time_step
+            int samples_needed = (int)(time_window / sim->time_step);
+            if (samples_needed < 2) samples_needed = 2;
+            if (samples_needed > MAX_HISTORY) samples_needed = MAX_HISTORY;
+
             for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
                 if (!ui->scope_channels[ch].enabled) continue;
 
@@ -806,15 +814,30 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 double times[MAX_HISTORY];
                 double values[MAX_HISTORY];
                 int probe_idx = ui->scope_channels[ch].probe_idx;
-                int count = simulation_get_history(sim, probe_idx, times, values, r->w);
+                int count = simulation_get_history(sim, probe_idx, times, values, samples_needed);
+
+                if (count < 2) continue;
 
                 double offset = ui->scope_channels[ch].offset;
 
+                // Get time range of retrieved samples
+                double t_start = times[0];
+                double t_end = times[count - 1];
+                double t_span = t_end - t_start;
+
+                // If we have less data than the time window, scale to what we have
+                if (t_span < 1e-12) t_span = time_window;
+
                 for (int i = 1; i < count; i++) {
-                    int x1 = r->x + (i - 1);
-                    int x2 = r->x + i;
+                    // Scale x-coordinates based on actual time values
+                    double x_frac1 = (times[i-1] - t_start) / t_span;
+                    double x_frac2 = (times[i] - t_start) / t_span;
+                    int x1 = r->x + (int)(x_frac1 * r->w);
+                    int x2 = r->x + (int)(x_frac2 * r->w);
                     int y1 = center_y - (int)((values[i-1] + offset) * scale);
                     int y2 = center_y - (int)((values[i] + offset) * scale);
+                    x1 = CLAMP(x1, r->x, r->x + r->w);
+                    x2 = CLAMP(x2, r->x, r->x + r->w);
                     y1 = CLAMP(y1, r->y, r->y + r->h);
                     y2 = CLAMP(y2, r->y, r->y + r->h);
                     SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
