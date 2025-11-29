@@ -395,10 +395,29 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
     SDL_Rect panel = {x, y, PROPERTIES_WIDTH, 200};
     SDL_RenderFillRect(renderer, &panel);
 
-    // Title bar
+    // Title
     SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
-    SDL_Rect title = {x + 10, y + 10, 100, 15};
-    SDL_RenderFillRect(renderer, &title);
+    ui_draw_text(renderer, "Properties", x + 10, y + 10);
+
+    // Show selected component info
+    if (selected) {
+        SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+        ui_draw_text(renderer, "Component:", x + 10, y + 35);
+
+        // Component type name
+        const char *type_names[] = {
+            "None", "Ground", "DC Voltage", "AC Voltage", "DC Current",
+            "Resistor", "Capacitor", "Inductor", "Diode",
+            "NPN BJT", "PNP BJT", "NMOS", "PMOS", "Op-Amp"
+        };
+        if (selected->type < COMP_TYPE_COUNT) {
+            SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+            ui_draw_text(renderer, type_names[selected->type], x + 100, y + 35);
+        }
+    } else {
+        SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+        ui_draw_text(renderer, "No selection", x + 10, y + 35);
+    }
 
     // Border
     SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
@@ -416,8 +435,23 @@ void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
     // Title
     SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
-    SDL_Rect title = {x + 10, y + 10, 100, 15};
-    SDL_RenderFillRect(renderer, &title);
+    ui_draw_text(renderer, "Measurements", x + 10, y + 10);
+
+    // Voltmeter
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    ui_draw_text(renderer, "Voltmeter:", x + 10, y + 35);
+    char volt_str[32];
+    snprintf(volt_str, sizeof(volt_str), "%.3f V", ui->voltmeter_value);
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+    ui_draw_text(renderer, volt_str, x + 100, y + 35);
+
+    // Ammeter
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    ui_draw_text(renderer, "Ammeter:", x + 10, y + 55);
+    char amp_str[32];
+    snprintf(amp_str, sizeof(amp_str), "%.3f mA", ui->ammeter_value * 1000.0);
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);
+    ui_draw_text(renderer, amp_str, x + 100, y + 55);
 }
 
 void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
@@ -486,23 +520,30 @@ void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer) {
     SDL_Rect bar = {0, y, WINDOW_WIDTH, STATUSBAR_HEIGHT};
     SDL_RenderFillRect(renderer, &bar);
 
-    // Status indicators (placeholder rectangles)
+    // Status message
     SDL_SetRenderDrawColor(renderer, 0xb0, 0xb0, 0xb0, 0xff);
-    SDL_Rect status_rect = {10, y + 5, 300, 14};
-    SDL_RenderFillRect(renderer, &status_rect);
+    if (ui->status_message[0]) {
+        ui_draw_text(renderer, ui->status_message, 10, y + 8);
+    } else {
+        ui_draw_text(renderer, "Ready - Press F1 for help", 10, y + 8);
+    }
 
     // Time display
+    char time_str[32];
+    snprintf(time_str, sizeof(time_str), "t=%.3fs", ui->sim_time);
     SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
-    SDL_Rect time_rect = {WINDOW_WIDTH - 200, y + 5, 80, 14};
-    SDL_RenderFillRect(renderer, &time_rect);
+    ui_draw_text(renderer, time_str, WINDOW_WIDTH - 250, y + 8);
 
-    // Counts
+    // Component/Node counts
+    char count_str[32];
+    snprintf(count_str, sizeof(count_str), "C:%d N:%d", ui->component_count, ui->node_count);
     SDL_SetRenderDrawColor(renderer, 0xb0, 0xb0, 0xb0, 0xff);
-    SDL_Rect nodes_rect = {WINDOW_WIDTH - 100, y + 5, 80, 14};
-    SDL_RenderFillRect(renderer, &nodes_rect);
+    ui_draw_text(renderer, count_str, WINDOW_WIDTH - 120, y + 8);
 }
 
 void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer) {
+    if (!ui->show_shortcuts_dialog) return;
+
     // Semi-transparent overlay
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xb0);
@@ -510,7 +551,7 @@ void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer) {
     SDL_RenderFillRect(renderer, &overlay);
 
     // Dialog box
-    int dw = 400, dh = 300;
+    int dw = 350, dh = 320;
     int dx = (WINDOW_WIDTH - dw) / 2;
     int dy = (WINDOW_HEIGHT - dh) / 2;
 
@@ -522,8 +563,29 @@ void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer) {
     SDL_RenderDrawRect(renderer, &dialog);
 
     // Title
-    SDL_Rect title = {dx + 20, dy + 20, 200, 20};
-    SDL_RenderFillRect(renderer, &title);
+    ui_draw_text(renderer, "Keyboard Shortcuts", dx + 20, dy + 15);
+
+    // Shortcuts list
+    SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+    int line_y = dy + 45;
+    int line_h = 18;
+
+    ui_draw_text(renderer, "Escape    - Cancel/Deselect", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "Delete    - Delete selected", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "R         - Rotate component", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "Ctrl+C    - Copy", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "Ctrl+X    - Cut", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "Ctrl+V    - Paste", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "Ctrl+D    - Duplicate", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "Space     - Run/Pause sim", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "G         - Toggle grid", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "S         - Toggle snap", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "Scroll    - Zoom in/out", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "Mid-drag  - Pan view", dx + 20, line_y); line_y += line_h;
+
+    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+    line_y += 10;
+    ui_draw_text(renderer, "Press Escape or F1 to close", dx + 20, line_y);
 
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }
