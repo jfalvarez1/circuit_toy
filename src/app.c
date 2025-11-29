@@ -129,8 +129,17 @@ void app_handle_events(App *app) {
                     // Handle window resize
                     int w, h;
                     SDL_GetWindowSize(app->window, &w, &h);
+
+                    // Update UI dimensions
+                    app->ui.window_width = w;
+                    app->ui.window_height = h;
+
+                    // Update canvas area
                     app->render->canvas_rect.w = w - PALETTE_WIDTH - PROPERTIES_WIDTH;
                     app->render->canvas_rect.h = h - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
+
+                    // Update oscilloscope position (anchored to right side)
+                    app->ui.scope_rect.x = w - PROPERTIES_WIDTH + 10;
                 }
                 break;
 
@@ -147,8 +156,33 @@ void app_handle_events(App *app) {
         }
     }
 
-    // Handle UI actions
-    // (These are triggered by ui_handle_click returning action IDs)
+    // Handle UI actions from button clicks
+    if (app->input.pending_ui_action != UI_ACTION_NONE) {
+        switch (app->input.pending_ui_action) {
+            case UI_ACTION_RUN:
+                app_run_simulation(app);
+                break;
+            case UI_ACTION_PAUSE:
+                app_pause_simulation(app);
+                break;
+            case UI_ACTION_STEP:
+                app_step_simulation(app);
+                break;
+            case UI_ACTION_RESET:
+                app_reset_simulation(app);
+                break;
+            case UI_ACTION_CLEAR:
+                app_new_circuit(app);
+                break;
+            case UI_ACTION_SAVE:
+                app_save_circuit(app);
+                break;
+            case UI_ACTION_LOAD:
+                app_load_circuit(app);
+                break;
+        }
+        app->input.pending_ui_action = UI_ACTION_NONE;
+    }
 }
 
 void app_update(App *app) {
@@ -199,12 +233,16 @@ void app_render(App *app) {
     SDL_SetRenderDrawColor(r, COLOR_BG.r, COLOR_BG.g, COLOR_BG.b, 255);
     SDL_RenderClear(r);
 
+    // Calculate dynamic canvas dimensions
+    int canvas_w = app->ui.window_width - PALETTE_WIDTH - PROPERTIES_WIDTH;
+    int canvas_h = app->ui.window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
+
     // Render canvas area (circuit)
-    SDL_Rect canvas_clip = {CANVAS_X, CANVAS_Y, CANVAS_WIDTH, CANVAS_HEIGHT};
+    SDL_Rect canvas_clip = {CANVAS_X, CANVAS_Y, canvas_w, canvas_h};
     SDL_RenderSetClipRect(r, &canvas_clip);
 
     // Set render offset to canvas position
-    app->render->canvas_rect = (Rect){CANVAS_X, CANVAS_Y, CANVAS_WIDTH, CANVAS_HEIGHT};
+    app->render->canvas_rect = (Rect){CANVAS_X, CANVAS_Y, canvas_w, canvas_h};
 
     // Render grid
     if (app->render->show_grid) {

@@ -129,6 +129,10 @@ static void ui_draw_text(SDL_Renderer *r, const char *text, int x, int y) {
 void ui_init(UIState *ui) {
     memset(ui, 0, sizeof(UIState));
 
+    // Set initial window dimensions
+    ui->window_width = WINDOW_WIDTH;
+    ui->window_height = WINDOW_HEIGHT;
+
     // Initialize toolbar buttons
     int btn_x = 200;
     int btn_w = 60, btn_h = 30;
@@ -338,7 +342,7 @@ static void draw_palette_item(SDL_Renderer *r, PaletteItem *item) {
 void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     // Toolbar background
     SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xff);
-    SDL_Rect toolbar = {0, 0, WINDOW_WIDTH, TOOLBAR_HEIGHT};
+    SDL_Rect toolbar = {0, 0, ui->window_width, TOOLBAR_HEIGHT};
     SDL_RenderFillRect(renderer, &toolbar);
 
     // Title
@@ -367,13 +371,13 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
 
     // Toolbar border
     SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
-    SDL_RenderDrawLine(renderer, 0, TOOLBAR_HEIGHT - 1, WINDOW_WIDTH, TOOLBAR_HEIGHT - 1);
+    SDL_RenderDrawLine(renderer, 0, TOOLBAR_HEIGHT - 1, ui->window_width, TOOLBAR_HEIGHT - 1);
 }
 
 void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
     // Palette background
     SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xff);
-    SDL_Rect palette = {0, TOOLBAR_HEIGHT, PALETTE_WIDTH, WINDOW_HEIGHT - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT};
+    SDL_Rect palette = {0, TOOLBAR_HEIGHT, PALETTE_WIDTH, ui->window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT};
     SDL_RenderFillRect(renderer, &palette);
 
     // Palette items
@@ -383,11 +387,11 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
 
     // Border
     SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
-    SDL_RenderDrawLine(renderer, PALETTE_WIDTH - 1, TOOLBAR_HEIGHT, PALETTE_WIDTH - 1, WINDOW_HEIGHT - STATUSBAR_HEIGHT);
+    SDL_RenderDrawLine(renderer, PALETTE_WIDTH - 1, TOOLBAR_HEIGHT, PALETTE_WIDTH - 1, ui->window_height - STATUSBAR_HEIGHT);
 }
 
 void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *selected) {
-    int x = WINDOW_WIDTH - PROPERTIES_WIDTH;
+    int x = ui->window_width - PROPERTIES_WIDTH;
     int y = TOOLBAR_HEIGHT;
 
     // Background
@@ -524,11 +528,11 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
 
     // Border
     SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
-    SDL_RenderDrawLine(renderer, x, y, x, WINDOW_HEIGHT - STATUSBAR_HEIGHT);
+    SDL_RenderDrawLine(renderer, x, y, x, ui->window_height - STATUSBAR_HEIGHT);
 }
 
 void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
-    int x = WINDOW_WIDTH - PROPERTIES_WIDTH;
+    int x = ui->window_width - PROPERTIES_WIDTH;
     int y = TOOLBAR_HEIGHT + 210;
 
     // Background
@@ -616,11 +620,11 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 }
 
 void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer) {
-    int y = WINDOW_HEIGHT - STATUSBAR_HEIGHT;
+    int y = ui->window_height - STATUSBAR_HEIGHT;
 
     // Background
     SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
-    SDL_Rect bar = {0, y, WINDOW_WIDTH, STATUSBAR_HEIGHT};
+    SDL_Rect bar = {0, y, ui->window_width, STATUSBAR_HEIGHT};
     SDL_RenderFillRect(renderer, &bar);
 
     // Status message
@@ -635,13 +639,13 @@ void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer) {
     char time_str[32];
     snprintf(time_str, sizeof(time_str), "t=%.3fs", ui->sim_time);
     SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
-    ui_draw_text(renderer, time_str, WINDOW_WIDTH - 250, y + 8);
+    ui_draw_text(renderer, time_str, ui->window_width - 250, y + 8);
 
     // Component/Node counts
     char count_str[32];
     snprintf(count_str, sizeof(count_str), "C:%d N:%d", ui->component_count, ui->node_count);
     SDL_SetRenderDrawColor(renderer, 0xb0, 0xb0, 0xb0, 0xff);
-    ui_draw_text(renderer, count_str, WINDOW_WIDTH - 120, y + 8);
+    ui_draw_text(renderer, count_str, ui->window_width - 120, y + 8);
 }
 
 void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer) {
@@ -650,13 +654,13 @@ void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer) {
     // Semi-transparent overlay
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xb0);
-    SDL_Rect overlay = {0, 0, WINDOW_WIDTH, WINDOW_HEIGHT};
+    SDL_Rect overlay = {0, 0, ui->window_width, ui->window_height};
     SDL_RenderFillRect(renderer, &overlay);
 
     // Dialog box
     int dw = 350, dh = 320;
-    int dx = (WINDOW_WIDTH - dw) / 2;
-    int dy = (WINDOW_HEIGHT - dh) / 2;
+    int dx = (ui->window_width - dw) / 2;
+    int dy = (ui->window_height - dh) / 2;
 
     SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xff);
     SDL_Rect dialog = {dx, dy, dw, dh};

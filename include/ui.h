@@ -53,6 +53,10 @@ typedef struct {
 
 // UI state
 typedef struct {
+    // Current window dimensions (updated on resize)
+    int window_width;
+    int window_height;
+
     // Toolbar buttons
     Button btn_run;
     Button btn_pause;

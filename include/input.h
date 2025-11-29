@@ -48,6 +48,9 @@ typedef struct {
 
     // Selection
     Component *selected_component;
+
+    // Pending UI action (set by ui_handle_click, processed by app)
+    int pending_ui_action;
 } InputState;
 
 // Initialize input state

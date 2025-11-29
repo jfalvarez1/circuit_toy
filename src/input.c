@@ -11,6 +11,7 @@ void input_init(InputState *input) {
     memset(input, 0, sizeof(InputState));
     input->current_tool = TOOL_SELECT;
     input->placing_component = COMP_NONE;
+    input->pending_ui_action = UI_ACTION_NONE;
 }
 
 bool input_handle_event(InputState *input, SDL_Event *event,
@@ -31,19 +32,22 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     input_set_tool(input, action - UI_ACTION_SELECT_TOOL);
                 } else if (action >= UI_ACTION_SELECT_COMP) {
                     input_start_placing(input, action - UI_ACTION_SELECT_COMP);
+                } else {
+                    // Store simulation/file actions for app to process
+                    input->pending_ui_action = action;
                 }
                 return true;
             }
 
-            // Check if in canvas area
-            if (x < CANVAS_X || x >= CANVAS_X + CANVAS_WIDTH ||
-                y < CANVAS_Y || y >= CANVAS_Y + CANVAS_HEIGHT) {
+            // Check if in canvas area (use dynamic canvas bounds)
+            if (x < render->canvas_rect.x || x >= render->canvas_rect.x + render->canvas_rect.w ||
+                y < render->canvas_rect.y || y >= render->canvas_rect.y + render->canvas_rect.h) {
                 return false;
             }
 
             // Convert to world coordinates
             float wx, wy;
-            render_screen_to_world(render, x - CANVAS_X, y - CANVAS_Y, &wx, &wy);
+            render_screen_to_world(render, x - render->canvas_rect.x, y - render->canvas_rect.y, &wx, &wy);
 
             if (event->button.button == SDL_BUTTON_LEFT) {
                 input->left.down = true;
@@ -250,14 +254,14 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 return true;
             }
 
-            // Check if in canvas area
-            if (x < CANVAS_X || x >= CANVAS_X + CANVAS_WIDTH ||
-                y < CANVAS_Y || y >= CANVAS_Y + CANVAS_HEIGHT) {
+            // Check if in canvas area (use dynamic canvas bounds)
+            if (x < render->canvas_rect.x || x >= render->canvas_rect.x + render->canvas_rect.w ||
+                y < render->canvas_rect.y || y >= render->canvas_rect.y + render->canvas_rect.h) {
                 return false;
             }
 
             float wx, wy;
-            render_screen_to_world(render, x - CANVAS_X, y - CANVAS_Y, &wx, &wy);
+            render_screen_to_world(render, x - render->canvas_rect.x, y - render->canvas_rect.y, &wx, &wy);
 
             // Dragging component
             if (input->is_dragging && input->dragging_component) {
@@ -291,8 +295,8 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             int x = input->mouse_x;
             int y = input->mouse_y;
 
-            if (x >= CANVAS_X && x < CANVAS_X + CANVAS_WIDTH &&
-                y >= CANVAS_Y && y < CANVAS_Y + CANVAS_HEIGHT) {
+            if (x >= render->canvas_rect.x && x < render->canvas_rect.x + render->canvas_rect.w &&
+                y >= render->canvas_rect.y && y < render->canvas_rect.y + render->canvas_rect.h) {
                 float factor = event->wheel.y > 0 ? 1.1f : 0.9f;
                 render_zoom(render, factor, x, y);
                 return true;
@@ -353,6 +357,20 @@ void input_handle_key(InputState *input, SDL_Keycode key,
             }
             break;
 
+        case SDLK_w:
+            // Wire tool
+            if (!ctrl) {
+                input_set_tool(input, TOOL_WIRE);
+            }
+            break;
+
+        case SDLK_s:
+            // Select tool (not Ctrl+S which would be save)
+            if (!ctrl) {
+                input_set_tool(input, TOOL_SELECT);
+            }
+            break;
+
         case SDLK_c:
             if (ctrl) {
                 input_copy(input, circuit);
@@ -399,7 +417,8 @@ void input_handle_key(InputState *input, SDL_Keycode key,
         case SDLK_PLUS:
         case SDLK_EQUALS:
             if (ctrl) {
-                render_zoom(render, 1.2f, CANVAS_X + CANVAS_WIDTH/2, CANVAS_Y + CANVAS_HEIGHT/2);
+                render_zoom(render, 1.2f, render->canvas_rect.x + render->canvas_rect.w/2,
+                           render->canvas_rect.y + render->canvas_rect.h/2);
             } else if (input->selected_component) {
                 // Increase component value
                 Component *c = input->selected_component;
@@ -430,7 +449,8 @@ void input_handle_key(InputState *input, SDL_Keycode key,
 
         case SDLK_MINUS:
             if (ctrl) {
-                render_zoom(render, 0.8f, CANVAS_X + CANVAS_WIDTH/2, CANVAS_Y + CANVAS_HEIGHT/2);
+                render_zoom(render, 0.8f, render->canvas_rect.x + render->canvas_rect.w/2,
+                           render->canvas_rect.y + render->canvas_rect.h/2);
             } else if (input->selected_component) {
                 // Decrease component value
                 Component *c = input->selected_component;
@@ -536,14 +556,14 @@ void input_paste(InputState *input, Circuit *circuit, RenderContext *render) {
 
     // Paste at current mouse position or center of canvas
     float wx, wy;
-    if (input->mouse_x >= CANVAS_X && input->mouse_x < CANVAS_X + CANVAS_WIDTH &&
-        input->mouse_y >= CANVAS_Y && input->mouse_y < CANVAS_Y + CANVAS_HEIGHT) {
+    if (input->mouse_x >= render->canvas_rect.x && input->mouse_x < render->canvas_rect.x + render->canvas_rect.w &&
+        input->mouse_y >= render->canvas_rect.y && input->mouse_y < render->canvas_rect.y + render->canvas_rect.h) {
         render_screen_to_world(render,
-            input->mouse_x - CANVAS_X,
-            input->mouse_y - CANVAS_Y,
+            input->mouse_x - render->canvas_rect.x,
+            input->mouse_y - render->canvas_rect.y,
             &wx, &wy);
     } else {
-        render_screen_to_world(render, CANVAS_WIDTH/2, CANVAS_HEIGHT/2, &wx, &wy);
+        render_screen_to_world(render, render->canvas_rect.w/2, render->canvas_rect.h/2, &wx, &wy);
     }
 
     float snapped_x = snap_to_grid(wx);
