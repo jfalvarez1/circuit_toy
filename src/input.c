@@ -173,6 +173,8 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                         if (node) {
                             circuit_add_probe(circuit, node->id, node->x, node->y);
                             ui_set_status(ui, "Probe placed");
+                        } else {
+                            ui_set_status(ui, "Click on a node or wire junction to place probe");
                         }
                         break;
                     }

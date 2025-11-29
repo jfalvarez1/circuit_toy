@@ -4,6 +4,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include <math.h>
 #include "circuit.h"
 
@@ -339,21 +340,26 @@ int circuit_add_probe(Circuit *circuit, int node_id, float x, float y) {
     if (!circuit || circuit->num_probes >= MAX_PROBES) return -1;
 
     static const Color probe_colors[] = {
-        {0xff, 0xff, 0x00, 0xff},
-        {0x00, 0xff, 0xff, 0xff},
-        {0xff, 0x00, 0xff, 0xff},
-        {0x00, 0xff, 0x00, 0xff},
-        {0xff, 0x88, 0x00, 0xff},
-        {0x88, 0x88, 0xff, 0xff},
+        {0xff, 0xff, 0x00, 0xff},  // Yellow (CH1)
+        {0x00, 0xff, 0xff, 0xff},  // Cyan (CH2)
+        {0xff, 0x00, 0xff, 0xff},  // Magenta (CH3)
+        {0x00, 0xff, 0x00, 0xff},  // Green (CH4)
+        {0xff, 0x80, 0x00, 0xff},  // Orange (CH5)
+        {0x80, 0x80, 0xff, 0xff},  // Light Blue (CH6)
+        {0xff, 0x80, 0x80, 0xff},  // Pink (CH7)
+        {0x80, 0xff, 0x80, 0xff},  // Light Green (CH8)
     };
 
-    Probe *probe = &circuit->probes[circuit->num_probes];
-    probe->id = circuit->num_probes + 1;
+    int idx = circuit->num_probes;
+    Probe *probe = &circuit->probes[idx];
+    probe->id = idx + 1;
     probe->node_id = node_id;
     probe->x = x;
     probe->y = y;
-    probe->color = probe_colors[circuit->num_probes % 6];
+    probe->color = probe_colors[idx % 8];
     probe->voltage = 0;
+    probe->channel_num = idx;
+    snprintf(probe->label, sizeof(probe->label), "CH%d", idx + 1);
 
     circuit->num_probes++;
     return probe->id;
