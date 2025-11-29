@@ -347,6 +347,9 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         }
 
         case COMP_CAPACITOR: {
+            // Backward Euler companion model for capacitor:
+            // i_C = C * dv/dt ≈ C * (v - v_prev) / dt = Geq * v - Ieq
+            // where Geq = C/dt and Ieq = C * v_prev / dt
             double C = comp->props.capacitor.capacitance;
             double Geq = C / dt;
             double Ieq = 0;
@@ -358,8 +361,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             }
 
             STAMP_CONDUCTANCE(n[0], n[1], Geq);
-            if (n[0] > 0) vector_add(b, n[0]-1, -Ieq);
-            if (n[1] > 0) vector_add(b, n[1]-1, Ieq);
+            // Ieq represents the capacitor's "memory" current
+            // Positive Ieq means capacitor was charged (n1 > n2), so it sources current at n1
+            if (n[0] > 0) vector_add(b, n[0]-1, Ieq);
+            if (n[1] > 0) vector_add(b, n[1]-1, -Ieq);
             break;
         }
 

@@ -220,7 +220,8 @@ void app_handle_events(App *app) {
                         1e-6, 2e-6, 5e-6, 10e-6, 20e-6, 50e-6,
                         100e-6, 200e-6, 500e-6,
                         1e-3, 2e-3, 5e-3, 10e-3, 20e-3, 50e-3,
-                        100e-3, 200e-3, 500e-3, 1.0
+                        100e-3, 200e-3, 500e-3,
+                        1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0
                     };
                     int n = sizeof(time_steps) / sizeof(time_steps[0]);
                     for (int i = 0; i < n - 1; i++) {
@@ -238,7 +239,8 @@ void app_handle_events(App *app) {
                         1e-6, 2e-6, 5e-6, 10e-6, 20e-6, 50e-6,
                         100e-6, 200e-6, 500e-6,
                         1e-3, 2e-3, 5e-3, 10e-3, 20e-3, 50e-3,
-                        100e-3, 200e-3, 500e-3, 1.0
+                        100e-3, 200e-3, 500e-3,
+                        1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0
                     };
                     int n = sizeof(time_steps) / sizeof(time_steps[0]);
                     for (int i = n - 1; i > 0; i--) {
