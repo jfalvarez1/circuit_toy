@@ -30,6 +30,11 @@ typedef union {
     struct { double beta; double is; double va; } bjt;
     struct { double kn; double vth; double lambda; } mosfet;
     struct { double gain; double voffset; double vmax; double vmin; } opamp;
+    // Waveform generators
+    struct { double amplitude; double frequency; double phase; double offset; double duty; } square_wave;
+    struct { double amplitude; double frequency; double phase; double offset; } triangle_wave;
+    struct { double amplitude; double frequency; double phase; double offset; } sawtooth_wave;
+    struct { double amplitude; double seed; } noise_source;
 } ComponentProps;
 
 // Component structure

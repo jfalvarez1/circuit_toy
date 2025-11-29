@@ -78,6 +78,10 @@ void render_diode(RenderContext *ctx, float x, float y, int rotation);
 void render_bjt(RenderContext *ctx, float x, float y, int rotation, bool is_pnp);
 void render_mosfet(RenderContext *ctx, float x, float y, int rotation, bool is_pmos);
 void render_opamp(RenderContext *ctx, float x, float y, int rotation);
+void render_square_wave(RenderContext *ctx, float x, float y, int rotation);
+void render_triangle_wave(RenderContext *ctx, float x, float y, int rotation);
+void render_sawtooth_wave(RenderContext *ctx, float x, float y, int rotation);
+void render_noise_source(RenderContext *ctx, float x, float y, int rotation);
 
 // Ghost component (while placing)
 void render_ghost_component(RenderContext *ctx, Component *comp);

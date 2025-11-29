@@ -107,6 +107,23 @@ typedef struct {
     Button btn_scope_volt_down;
     Button btn_scope_time_up;
     Button btn_scope_time_down;
+    Button btn_scope_trig_mode;      // Cycle through trigger modes
+    Button btn_scope_trig_edge;      // Toggle trigger edge
+    Button btn_scope_mode;           // Toggle Y-T / X-Y mode
+
+    // Trigger settings
+    TriggerMode trigger_mode;        // Auto, Normal, Single
+    TriggerEdge trigger_edge;        // Rising, Falling, Both
+    int trigger_channel;             // Channel used for trigger (0-based)
+    double trigger_level;            // Trigger voltage level
+    bool trigger_armed;              // Single-shot mode armed
+    bool triggered;                  // Has triggered (for single-shot)
+    double trigger_holdoff;          // Time to wait after trigger before re-arming
+
+    // Display mode
+    ScopeDisplayMode display_mode;   // Y-T or X-Y
+    int xy_channel_x;                // X channel for X-Y mode (0-based)
+    int xy_channel_y;                // Y channel for X-Y mode (0-based)
 
     // Measurements display
     double voltmeter_value;
@@ -160,6 +177,11 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_SCOPE_TIME_UP    12
 #define UI_ACTION_SCOPE_TIME_DOWN  13
 #define UI_ACTION_SCOPE_PAUSE      14
+#define UI_ACTION_SCOPE_TRIG_MODE  15
+#define UI_ACTION_SCOPE_TRIG_EDGE  16
+#define UI_ACTION_SCOPE_MODE       17
+#define UI_ACTION_SCOPE_TRIG_UP    18
+#define UI_ACTION_SCOPE_TRIG_DOWN  19
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type
 

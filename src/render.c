@@ -340,6 +340,18 @@ void render_component(RenderContext *ctx, Component *comp) {
         case COMP_OPAMP:
             render_opamp(ctx, comp->x, comp->y, comp->rotation);
             break;
+        case COMP_SQUARE_WAVE:
+            render_square_wave(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_TRIANGLE_WAVE:
+            render_triangle_wave(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_SAWTOOTH_WAVE:
+            render_sawtooth_wave(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_NOISE_SOURCE:
+            render_noise_source(ctx, comp->x, comp->y, comp->rotation);
+            break;
         default:
             break;
     }
@@ -568,6 +580,68 @@ void render_opamp(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_line(ctx, x - 40, y + 20, x - 25, y + 20);
     // Output
     render_draw_line(ctx, x + 30, y, x + 40, y);
+}
+
+void render_square_wave(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (0, -40) and (0, 40), same as voltage sources
+    render_draw_circle(ctx, x, y, 18);
+    render_draw_line(ctx, x, y - 18, x, y - 40);
+    render_draw_line(ctx, x, y + 18, x, y + 40);
+
+    // Square wave symbol inside circle
+    render_draw_line(ctx, x - 10, y + 6, x - 10, y - 6);  // left edge up
+    render_draw_line(ctx, x - 10, y - 6, x - 3, y - 6);   // top left
+    render_draw_line(ctx, x - 3, y - 6, x - 3, y + 6);    // down
+    render_draw_line(ctx, x - 3, y + 6, x + 3, y + 6);    // bottom middle
+    render_draw_line(ctx, x + 3, y + 6, x + 3, y - 6);    // up
+    render_draw_line(ctx, x + 3, y - 6, x + 10, y - 6);   // top right
+    render_draw_line(ctx, x + 10, y - 6, x + 10, y + 6);  // right edge down
+}
+
+void render_triangle_wave(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (0, -40) and (0, 40)
+    render_draw_circle(ctx, x, y, 18);
+    render_draw_line(ctx, x, y - 18, x, y - 40);
+    render_draw_line(ctx, x, y + 18, x, y + 40);
+
+    // Triangle wave symbol inside circle
+    render_draw_line(ctx, x - 10, y + 6, x - 5, y - 6);   // up slope
+    render_draw_line(ctx, x - 5, y - 6, x, y + 6);        // down slope
+    render_draw_line(ctx, x, y + 6, x + 5, y - 6);        // up slope
+    render_draw_line(ctx, x + 5, y - 6, x + 10, y + 6);   // down slope
+}
+
+void render_sawtooth_wave(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (0, -40) and (0, 40)
+    render_draw_circle(ctx, x, y, 18);
+    render_draw_line(ctx, x, y - 18, x, y - 40);
+    render_draw_line(ctx, x, y + 18, x, y + 40);
+
+    // Sawtooth wave symbol inside circle
+    render_draw_line(ctx, x - 10, y + 6, x - 3, y - 6);   // ramp up
+    render_draw_line(ctx, x - 3, y - 6, x - 3, y + 6);    // drop down
+    render_draw_line(ctx, x - 3, y + 6, x + 4, y - 6);    // ramp up
+    render_draw_line(ctx, x + 4, y - 6, x + 4, y + 6);    // drop down
+    render_draw_line(ctx, x + 4, y + 6, x + 10, y - 2);   // partial ramp
+}
+
+void render_noise_source(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (0, -40) and (0, 40)
+    render_draw_circle(ctx, x, y, 18);
+    render_draw_line(ctx, x, y - 18, x, y - 40);
+    render_draw_line(ctx, x, y + 18, x, y + 40);
+
+    // Random-looking noise symbol inside circle
+    render_draw_line(ctx, x - 10, y, x - 8, y - 4);
+    render_draw_line(ctx, x - 8, y - 4, x - 6, y + 6);
+    render_draw_line(ctx, x - 6, y + 6, x - 4, y - 2);
+    render_draw_line(ctx, x - 4, y - 2, x - 2, y + 4);
+    render_draw_line(ctx, x - 2, y + 4, x, y - 6);
+    render_draw_line(ctx, x, y - 6, x + 2, y + 3);
+    render_draw_line(ctx, x + 2, y + 3, x + 4, y - 4);
+    render_draw_line(ctx, x + 4, y - 4, x + 6, y + 5);
+    render_draw_line(ctx, x + 6, y + 5, x + 8, y - 3);
+    render_draw_line(ctx, x + 8, y - 3, x + 10, y + 1);
 }
 
 void render_ghost_component(RenderContext *ctx, Component *comp) {

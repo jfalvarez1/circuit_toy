@@ -345,10 +345,31 @@ void input_handle_key(InputState *input, SDL_Keycode key,
             break;
 
         case SDLK_r:
-            // Rotate selected component
-            if (input->selected_component) {
-                component_rotate(input->selected_component);
-                circuit_update_component_nodes(circuit, input->selected_component);
+            if (ctrl) {
+                // Ctrl+R: Rotate selected component
+                if (input->selected_component) {
+                    component_rotate(input->selected_component);
+                    circuit_update_component_nodes(circuit, input->selected_component);
+                }
+            } else {
+                // R: Add resistor
+                input_start_placing(input, COMP_RESISTOR);
+            }
+            break;
+
+        case SDLK_l:
+            if (!ctrl) {
+                // L: Add inductor
+                input_start_placing(input, COMP_INDUCTOR);
+            }
+            break;
+
+        case SDLK_d:
+            if (ctrl) {
+                input_duplicate(input, circuit);
+            } else {
+                // D: Add diode
+                input_start_placing(input, COMP_DIODE);
             }
             break;
 
@@ -376,6 +397,9 @@ void input_handle_key(InputState *input, SDL_Keycode key,
         case SDLK_c:
             if (ctrl) {
                 input_copy(input, circuit);
+            } else {
+                // C: Add capacitor
+                input_start_placing(input, COMP_CAPACITOR);
             }
             break;
 
@@ -388,12 +412,6 @@ void input_handle_key(InputState *input, SDL_Keycode key,
         case SDLK_v:
             if (ctrl) {
                 input_paste(input, circuit, render);
-            }
-            break;
-
-        case SDLK_d:
-            if (ctrl) {
-                input_duplicate(input, circuit);
             }
             break;
 
@@ -443,6 +461,18 @@ void input_handle_key(InputState *input, SDL_Keycode key,
                     case COMP_INDUCTOR:
                         c->props.inductor.inductance *= 1.1;
                         break;
+                    case COMP_SQUARE_WAVE:
+                        c->props.square_wave.amplitude *= 1.1;
+                        break;
+                    case COMP_TRIANGLE_WAVE:
+                        c->props.triangle_wave.amplitude *= 1.1;
+                        break;
+                    case COMP_SAWTOOTH_WAVE:
+                        c->props.sawtooth_wave.amplitude *= 1.1;
+                        break;
+                    case COMP_NOISE_SOURCE:
+                        c->props.noise_source.amplitude *= 1.1;
+                        break;
                     default:
                         break;
                 }
@@ -477,6 +507,26 @@ void input_handle_key(InputState *input, SDL_Keycode key,
                     case COMP_INDUCTOR:
                         c->props.inductor.inductance /= 1.1;
                         break;
+                    case COMP_SQUARE_WAVE:
+                        c->props.square_wave.amplitude /= 1.1;
+                        if (c->props.square_wave.amplitude < 0.001)
+                            c->props.square_wave.amplitude = 0.001;
+                        break;
+                    case COMP_TRIANGLE_WAVE:
+                        c->props.triangle_wave.amplitude /= 1.1;
+                        if (c->props.triangle_wave.amplitude < 0.001)
+                            c->props.triangle_wave.amplitude = 0.001;
+                        break;
+                    case COMP_SAWTOOTH_WAVE:
+                        c->props.sawtooth_wave.amplitude /= 1.1;
+                        if (c->props.sawtooth_wave.amplitude < 0.001)
+                            c->props.sawtooth_wave.amplitude = 0.001;
+                        break;
+                    case COMP_NOISE_SOURCE:
+                        c->props.noise_source.amplitude /= 1.1;
+                        if (c->props.noise_source.amplitude < 0.001)
+                            c->props.noise_source.amplitude = 0.001;
+                        break;
                     default:
                         break;
                 }
@@ -484,16 +534,38 @@ void input_handle_key(InputState *input, SDL_Keycode key,
             break;
 
         case SDLK_f:
-            // Adjust AC voltage frequency
-            if (input->selected_component && input->selected_component->type == COMP_AC_VOLTAGE) {
-                if (input->shift_down) {
-                    // Shift+F decreases frequency
-                    input->selected_component->props.ac_voltage.frequency /= 1.2;
-                    if (input->selected_component->props.ac_voltage.frequency < 0.1)
-                        input->selected_component->props.ac_voltage.frequency = 0.1;
-                } else {
-                    // F increases frequency
-                    input->selected_component->props.ac_voltage.frequency *= 1.2;
+            // Adjust frequency for waveform sources
+            if (input->selected_component) {
+                Component *c = input->selected_component;
+                double *freq = NULL;
+
+                switch (c->type) {
+                    case COMP_AC_VOLTAGE:
+                        freq = &c->props.ac_voltage.frequency;
+                        break;
+                    case COMP_SQUARE_WAVE:
+                        freq = &c->props.square_wave.frequency;
+                        break;
+                    case COMP_TRIANGLE_WAVE:
+                        freq = &c->props.triangle_wave.frequency;
+                        break;
+                    case COMP_SAWTOOTH_WAVE:
+                        freq = &c->props.sawtooth_wave.frequency;
+                        break;
+                    default:
+                        break;
+                }
+
+                if (freq) {
+                    if (input->shift_down) {
+                        // Shift+F decreases frequency
+                        *freq /= 1.2;
+                        if (*freq < 0.1) *freq = 0.1;
+                    } else {
+                        // F increases frequency
+                        *freq *= 1.2;
+                        if (*freq > 100000000) *freq = 100000000;  // 100MHz max
+                    }
                 }
             }
             break;

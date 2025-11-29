@@ -103,6 +103,35 @@ static const ComponentTypeInfo component_info[] = {
         80, 60,
         { .opamp = { 100000.0, 0.0, 15.0, -15.0 } }
     },
+
+    // Waveform generators
+    [COMP_SQUARE_WAVE] = {
+        "Square Wave", "SQ", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .square_wave = { 5.0, 1000.0, 0.0, 0.0, 0.5 } }  // 5V, 1kHz, 50% duty
+    },
+
+    [COMP_TRIANGLE_WAVE] = {
+        "Triangle Wave", "TRI", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .triangle_wave = { 5.0, 1000.0, 0.0, 0.0 } }  // 5V, 1kHz
+    },
+
+    [COMP_SAWTOOTH_WAVE] = {
+        "Sawtooth Wave", "SAW", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .sawtooth_wave = { 5.0, 1000.0, 0.0, 0.0 } }  // 5V, 1kHz
+    },
+
+    [COMP_NOISE_SOURCE] = {
+        "Noise Source", "N", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .noise_source = { 1.0, 12345 } }  // 1V amplitude, seed
+    },
 };
 
 static int next_component_id = 1;
@@ -139,7 +168,11 @@ Component *component_create(ComponentType type, float x, float y) {
     comp->needs_voltage_var = (type == COMP_DC_VOLTAGE ||
                                type == COMP_AC_VOLTAGE ||
                                type == COMP_INDUCTOR ||
-                               type == COMP_OPAMP);
+                               type == COMP_OPAMP ||
+                               type == COMP_SQUARE_WAVE ||
+                               type == COMP_TRIANGLE_WAVE ||
+                               type == COMP_SAWTOOTH_WAVE ||
+                               type == COMP_NOISE_SOURCE);
 
     return comp;
 }
@@ -465,6 +498,113 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             break;
         }
 
+        case COMP_SQUARE_WAVE: {
+            double amp = comp->props.square_wave.amplitude;
+            double freq = comp->props.square_wave.frequency;
+            double phase = comp->props.square_wave.phase * M_PI / 180.0;
+            double offset = comp->props.square_wave.offset;
+            double duty = comp->props.square_wave.duty;
+
+            // Calculate normalized position in period (0 to 1)
+            double period = 1.0 / freq;
+            double t_norm = fmod(time + phase / (2 * M_PI * freq), period) / period;
+            if (t_norm < 0) t_norm += 1.0;
+
+            // Square wave: high for duty cycle, low otherwise
+            double V = (t_norm < duty) ? (amp + offset) : (-amp + offset);
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+
+            if (n[0] > 0) {
+                matrix_add(A, volt_idx, n[0]-1, 1);
+                matrix_add(A, n[0]-1, volt_idx, 1);
+            }
+            if (n[1] > 0) {
+                matrix_add(A, volt_idx, n[1]-1, -1);
+                matrix_add(A, n[1]-1, volt_idx, -1);
+            }
+            vector_add(b, volt_idx, V);
+            break;
+        }
+
+        case COMP_TRIANGLE_WAVE: {
+            double amp = comp->props.triangle_wave.amplitude;
+            double freq = comp->props.triangle_wave.frequency;
+            double phase = comp->props.triangle_wave.phase * M_PI / 180.0;
+            double offset = comp->props.triangle_wave.offset;
+
+            // Calculate normalized position in period (0 to 1)
+            double period = 1.0 / freq;
+            double t_norm = fmod(time + phase / (2 * M_PI * freq), period) / period;
+            if (t_norm < 0) t_norm += 1.0;
+
+            // Triangle wave: rises for first half, falls for second half
+            double V;
+            if (t_norm < 0.5) {
+                V = amp * (4.0 * t_norm - 1.0) + offset;
+            } else {
+                V = amp * (3.0 - 4.0 * t_norm) + offset;
+            }
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+
+            if (n[0] > 0) {
+                matrix_add(A, volt_idx, n[0]-1, 1);
+                matrix_add(A, n[0]-1, volt_idx, 1);
+            }
+            if (n[1] > 0) {
+                matrix_add(A, volt_idx, n[1]-1, -1);
+                matrix_add(A, n[1]-1, volt_idx, -1);
+            }
+            vector_add(b, volt_idx, V);
+            break;
+        }
+
+        case COMP_SAWTOOTH_WAVE: {
+            double amp = comp->props.sawtooth_wave.amplitude;
+            double freq = comp->props.sawtooth_wave.frequency;
+            double phase = comp->props.sawtooth_wave.phase * M_PI / 180.0;
+            double offset = comp->props.sawtooth_wave.offset;
+
+            // Calculate normalized position in period (0 to 1)
+            double period = 1.0 / freq;
+            double t_norm = fmod(time + phase / (2 * M_PI * freq), period) / period;
+            if (t_norm < 0) t_norm += 1.0;
+
+            // Sawtooth wave: linear ramp from -amp to +amp
+            double V = amp * (2.0 * t_norm - 1.0) + offset;
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+
+            if (n[0] > 0) {
+                matrix_add(A, volt_idx, n[0]-1, 1);
+                matrix_add(A, n[0]-1, volt_idx, 1);
+            }
+            if (n[1] > 0) {
+                matrix_add(A, volt_idx, n[1]-1, -1);
+                matrix_add(A, n[1]-1, volt_idx, -1);
+            }
+            vector_add(b, volt_idx, V);
+            break;
+        }
+
+        case COMP_NOISE_SOURCE: {
+            double amp = comp->props.noise_source.amplitude;
+            // Simple pseudo-random noise using time-based seed
+            // Uses a combination of sine functions at irrational ratios for pseudo-randomness
+            double V = amp * (sin(time * 12345.6789) + sin(time * 9876.5432 + 1.234) +
+                             sin(time * 5678.1234 + 2.345)) / 3.0;
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+
+            if (n[0] > 0) {
+                matrix_add(A, volt_idx, n[0]-1, 1);
+                matrix_add(A, n[0]-1, volt_idx, 1);
+            }
+            if (n[1] > 0) {
+                matrix_add(A, volt_idx, n[1]-1, -1);
+                matrix_add(A, n[1]-1, volt_idx, -1);
+            }
+            vector_add(b, volt_idx, V);
+            break;
+        }
+
         default:
             break;
     }
@@ -519,6 +659,18 @@ void component_get_value_string(Component *comp, char *buf, size_t buf_size) {
             break;
         case COMP_INDUCTOR:
             format_engineering(comp->props.inductor.inductance, "H", buf, buf_size);
+            break;
+        case COMP_SQUARE_WAVE:
+            format_engineering(comp->props.square_wave.amplitude, "V", buf, buf_size);
+            break;
+        case COMP_TRIANGLE_WAVE:
+            format_engineering(comp->props.triangle_wave.amplitude, "V", buf, buf_size);
+            break;
+        case COMP_SAWTOOTH_WAVE:
+            format_engineering(comp->props.sawtooth_wave.amplitude, "V", buf, buf_size);
+            break;
+        case COMP_NOISE_SOURCE:
+            format_engineering(comp->props.noise_source.amplitude, "V", buf, buf_size);
             break;
         default:
             buf[0] = '\0';

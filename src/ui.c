@@ -198,6 +198,26 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_DC_CURRENT, TOOL_COMPONENT, false, "DC I", false, false
     };
 
+    // Waveform generators section
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_SQUARE_WAVE, TOOL_COMPONENT, false, "Square", false, false
+    };
+    col++;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_TRIANGLE_WAVE, TOOL_COMPONENT, false, "Tri", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_SAWTOOTH_WAVE, TOOL_COMPONENT, false, "Saw", false, false
+    };
+    col++;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_NOISE_SOURCE, TOOL_COMPONENT, false, "Noise", false, false
+    };
+
     // Passives section
     pal_y += pal_h + 20;
     col = 0;
@@ -268,6 +288,30 @@ void ui_init(UIState *ui) {
     ui->btn_scope_time_up = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "T+", "Increase time/div", false, false, true, false};
     scope_btn_x += scope_btn_w + 5;
     ui->btn_scope_time_down = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "T-", "Decrease time/div", false, false, true, false};
+
+    // Second row of scope buttons for trigger controls
+    scope_btn_y += scope_btn_h + 25;  // Move down for second row
+    scope_btn_x = ui->scope_rect.x;
+
+    ui->btn_scope_trig_mode = (Button){{scope_btn_x, scope_btn_y, 40, scope_btn_h}, "AUTO", "Trigger mode", false, false, true, false};
+    scope_btn_x += 45;
+    ui->btn_scope_trig_edge = (Button){{scope_btn_x, scope_btn_y, 25, scope_btn_h}, "/\\", "Trigger edge", false, false, true, false};
+    scope_btn_x += 30;
+    ui->btn_scope_mode = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "Y-T", "Display mode", false, false, true, false};
+
+    // Initialize trigger settings
+    ui->trigger_mode = TRIG_AUTO;
+    ui->trigger_edge = TRIG_EDGE_RISING;
+    ui->trigger_channel = 0;
+    ui->trigger_level = 0.0;
+    ui->trigger_armed = true;
+    ui->triggered = false;
+    ui->trigger_holdoff = 0.001;  // 1ms holdoff
+
+    // Initialize display mode
+    ui->display_mode = SCOPE_MODE_YT;
+    ui->xy_channel_x = 0;
+    ui->xy_channel_y = 1;
 
     strncpy(ui->status_message, "Ready", sizeof(ui->status_message));
 }
@@ -431,7 +475,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
         const char *type_names[] = {
             "None", "Ground", "DC Voltage", "AC Voltage", "DC Current",
             "Resistor", "Capacitor", "Inductor", "Diode",
-            "NPN BJT", "PNP BJT", "NMOS", "PMOS", "Op-Amp"
+            "NPN BJT", "PNP BJT", "NMOS", "PMOS", "Op-Amp",
+            "Square Wave", "Triangle Wave", "Sawtooth", "Noise"
         };
         if (selected->type < COMP_TYPE_COUNT) {
             SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
@@ -529,6 +574,62 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     snprintf(buf, sizeof(buf), "%.2f mH", selected->props.inductor.inductance * 1e3);
                 else
                     snprintf(buf, sizeof(buf), "%.2f uH", selected->props.inductor.inductance * 1e6);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y);
+                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                ui_draw_text(renderer, "[+/-] to adjust", x + 10, prop_y + 20);
+                break;
+
+            case COMP_SQUARE_WAVE:
+                ui_draw_text(renderer, "Amplitude:", x + 10, prop_y);
+                snprintf(buf, sizeof(buf), "%.2f V", selected->props.square_wave.amplitude);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y);
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Frequency:", x + 10, prop_y + 18);
+                snprintf(buf, sizeof(buf), "%.1f Hz", selected->props.square_wave.frequency);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 18);
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Duty:", x + 10, prop_y + 36);
+                snprintf(buf, sizeof(buf), "%.0f%%", selected->props.square_wave.duty * 100);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 36);
+
+                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                ui_draw_text(renderer, "[+/-] amplitude", x + 10, prop_y + 55);
+                ui_draw_text(renderer, "[F/f] frequency", x + 10, prop_y + 70);
+                break;
+
+            case COMP_TRIANGLE_WAVE:
+            case COMP_SAWTOOTH_WAVE:
+                ui_draw_text(renderer, "Amplitude:", x + 10, prop_y);
+                snprintf(buf, sizeof(buf), "%.2f V",
+                    selected->type == COMP_TRIANGLE_WAVE ?
+                    selected->props.triangle_wave.amplitude :
+                    selected->props.sawtooth_wave.amplitude);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y);
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Frequency:", x + 10, prop_y + 18);
+                snprintf(buf, sizeof(buf), "%.1f Hz",
+                    selected->type == COMP_TRIANGLE_WAVE ?
+                    selected->props.triangle_wave.frequency :
+                    selected->props.sawtooth_wave.frequency);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 18);
+
+                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                ui_draw_text(renderer, "[+/-] amplitude", x + 10, prop_y + 40);
+                ui_draw_text(renderer, "[F/f] frequency", x + 10, prop_y + 55);
+                break;
+
+            case COMP_NOISE_SOURCE:
+                ui_draw_text(renderer, "Amplitude:", x + 10, prop_y);
+                snprintf(buf, sizeof(buf), "%.2f V", selected->props.noise_source.amplitude);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
                 ui_draw_text(renderer, buf, x + 100, prop_y);
                 SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
@@ -890,6 +991,15 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_scope_time_down.bounds) && ui->btn_scope_time_down.enabled) {
             return UI_ACTION_SCOPE_TIME_DOWN;
         }
+        if (point_in_rect(x, y, &ui->btn_scope_trig_mode.bounds) && ui->btn_scope_trig_mode.enabled) {
+            return UI_ACTION_SCOPE_TRIG_MODE;
+        }
+        if (point_in_rect(x, y, &ui->btn_scope_trig_edge.bounds) && ui->btn_scope_trig_edge.enabled) {
+            return UI_ACTION_SCOPE_TRIG_EDGE;
+        }
+        if (point_in_rect(x, y, &ui->btn_scope_mode.bounds) && ui->btn_scope_mode.enabled) {
+            return UI_ACTION_SCOPE_MODE;
+        }
 
         // Check palette items
         for (int i = 0; i < ui->num_palette_items; i++) {
@@ -932,6 +1042,9 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_scope_volt_down.hovered = point_in_rect(x, y, &ui->btn_scope_volt_down.bounds);
     ui->btn_scope_time_up.hovered = point_in_rect(x, y, &ui->btn_scope_time_up.bounds);
     ui->btn_scope_time_down.hovered = point_in_rect(x, y, &ui->btn_scope_time_down.bounds);
+    ui->btn_scope_trig_mode.hovered = point_in_rect(x, y, &ui->btn_scope_trig_mode.bounds);
+    ui->btn_scope_trig_edge.hovered = point_in_rect(x, y, &ui->btn_scope_trig_edge.bounds);
+    ui->btn_scope_mode.hovered = point_in_rect(x, y, &ui->btn_scope_mode.bounds);
 
     // Update palette hover states
     for (int i = 0; i < ui->num_palette_items; i++) {

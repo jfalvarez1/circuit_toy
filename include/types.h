@@ -58,8 +58,33 @@ typedef enum {
     COMP_NMOS,
     COMP_PMOS,
     COMP_OPAMP,
+    // Waveform generators
+    COMP_SQUARE_WAVE,
+    COMP_TRIANGLE_WAVE,
+    COMP_SAWTOOTH_WAVE,
+    COMP_NOISE_SOURCE,
     COMP_TYPE_COUNT
 } ComponentType;
+
+// Oscilloscope trigger modes
+typedef enum {
+    TRIG_AUTO = 0,      // Always triggers, free-running if no signal
+    TRIG_NORMAL,        // Only triggers on valid edge
+    TRIG_SINGLE         // Single shot - triggers once then stops
+} TriggerMode;
+
+// Oscilloscope trigger edge
+typedef enum {
+    TRIG_EDGE_RISING = 0,
+    TRIG_EDGE_FALLING,
+    TRIG_EDGE_BOTH
+} TriggerEdge;
+
+// Oscilloscope display mode
+typedef enum {
+    SCOPE_MODE_YT = 0,  // Normal time-domain
+    SCOPE_MODE_XY       // X-Y mode (Lissajous)
+} ScopeDisplayMode;
 
 // Tool types
 typedef enum {
