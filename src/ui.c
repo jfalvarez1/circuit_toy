@@ -573,13 +573,13 @@ void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer) {
     ui_draw_text(renderer, "Escape    - Cancel/Deselect", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Delete    - Delete selected", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "R         - Rotate component", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "Ctrl+Z    - Undo", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Ctrl+C    - Copy", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Ctrl+X    - Cut", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Ctrl+V    - Paste", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Ctrl+D    - Duplicate", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Space     - Run/Pause sim", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "G         - Toggle grid", dx + 20, line_y); line_y += line_h;
-    ui_draw_text(renderer, "S         - Toggle snap", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Scroll    - Zoom in/out", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Mid-drag  - Pan view", dx + 20, line_y); line_y += line_h;
 

@@ -50,15 +50,25 @@ void circuit_clear(Circuit *circuit) {
     }
     circuit->num_components = 0;
 
-    // Clear nodes
+    // Clear nodes - zero out array to prevent stale data
+    memset(circuit->nodes, 0, sizeof(circuit->nodes));
     circuit->num_nodes = 0;
     circuit->ground_node_id = 0;
 
-    // Clear wires
+    // Clear wires - zero out array
+    memset(circuit->wires, 0, sizeof(circuit->wires));
     circuit->num_wires = 0;
 
-    // Clear probes
+    // Clear probes - zero out array
+    memset(circuit->probes, 0, sizeof(circuit->probes));
     circuit->num_probes = 0;
+
+    // Clear node map
+    memset(circuit->node_map, 0, sizeof(circuit->node_map));
+    circuit->num_matrix_nodes = 0;
+
+    // Clear undo stack
+    circuit_clear_undo(circuit);
 
     // Reset IDs
     circuit->next_component_id = 1;
@@ -100,7 +110,11 @@ void circuit_remove_component(Circuit *circuit, int comp_id) {
                 circuit->components[j] = circuit->components[j + 1];
             }
             circuit->num_components--;
+            circuit->components[circuit->num_components] = NULL;
             circuit->modified = true;
+
+            // Clean up orphaned nodes
+            circuit_cleanup_orphaned_nodes(circuit);
             return;
         }
     }
@@ -214,7 +228,13 @@ void circuit_remove_wire(Circuit *circuit, int wire_id) {
                 circuit->wires[j] = circuit->wires[j + 1];
             }
             circuit->num_wires--;
+
+            // Zero out the last slot
+            memset(&circuit->wires[circuit->num_wires], 0, sizeof(Wire));
             circuit->modified = true;
+
+            // Clean up orphaned nodes
+            circuit_cleanup_orphaned_nodes(circuit);
             return;
         }
     }
@@ -249,6 +269,70 @@ Wire *circuit_find_wire_at(Circuit *circuit, float x, float y, float threshold) 
         }
     }
     return NULL;
+}
+
+// Check if a node is connected to any component or wire
+static bool is_node_connected(Circuit *circuit, int node_id) {
+    // Check components
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+        for (int j = 0; j < comp->num_terminals; j++) {
+            if (comp->node_ids[j] == node_id) {
+                return true;
+            }
+        }
+    }
+
+    // Check wires
+    for (int i = 0; i < circuit->num_wires; i++) {
+        if (circuit->wires[i].start_node_id == node_id ||
+            circuit->wires[i].end_node_id == node_id) {
+            return true;
+        }
+    }
+
+    // Check probes
+    for (int i = 0; i < circuit->num_probes; i++) {
+        if (circuit->probes[i].node_id == node_id) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Remove a node by index and update all references
+static void remove_node_by_index(Circuit *circuit, int index) {
+    if (index < 0 || index >= circuit->num_nodes) return;
+
+    int removed_id = circuit->nodes[index].id;
+
+    // Clear ground if this was the ground node
+    if (circuit->ground_node_id == removed_id) {
+        circuit->ground_node_id = 0;
+    }
+
+    // Shift remaining nodes
+    for (int i = index; i < circuit->num_nodes - 1; i++) {
+        circuit->nodes[i] = circuit->nodes[i + 1];
+    }
+    circuit->num_nodes--;
+
+    // Zero out the last slot
+    memset(&circuit->nodes[circuit->num_nodes], 0, sizeof(Node));
+}
+
+// Clean up nodes that are no longer connected to anything
+void circuit_cleanup_orphaned_nodes(Circuit *circuit) {
+    if (!circuit) return;
+
+    // Iterate in reverse to safely remove nodes
+    for (int i = circuit->num_nodes - 1; i >= 0; i--) {
+        int node_id = circuit->nodes[i].id;
+        if (!is_node_connected(circuit, node_id)) {
+            remove_node_by_index(circuit, i);
+        }
+    }
 }
 
 int circuit_add_probe(Circuit *circuit, int node_id, float x, float y) {
@@ -464,4 +548,103 @@ void circuit_delete_selected(Circuit *circuit) {
             circuit_remove_component(circuit, circuit->components[i]->id);
         }
     }
+}
+
+// Undo operations
+void circuit_push_undo(Circuit *circuit, UndoActionType type, int id, Component *backup, float old_x, float old_y) {
+    if (!circuit) return;
+
+    // Shift stack if full
+    if (circuit->undo_count >= MAX_UNDO) {
+        // Free the oldest backup if it exists
+        if (circuit->undo_stack[0].component_backup) {
+            component_free(circuit->undo_stack[0].component_backup);
+        }
+        // Shift everything down
+        for (int i = 0; i < MAX_UNDO - 1; i++) {
+            circuit->undo_stack[i] = circuit->undo_stack[i + 1];
+        }
+        circuit->undo_count = MAX_UNDO - 1;
+    }
+
+    UndoAction *action = &circuit->undo_stack[circuit->undo_count++];
+    action->type = type;
+    action->id = id;
+    action->component_backup = backup;
+    action->old_x = old_x;
+    action->old_y = old_y;
+}
+
+bool circuit_undo(Circuit *circuit) {
+    if (!circuit || circuit->undo_count == 0) return false;
+
+    UndoAction *action = &circuit->undo_stack[--circuit->undo_count];
+
+    switch (action->type) {
+        case UNDO_ADD_COMPONENT:
+            // Remove the component that was added
+            circuit_remove_component(circuit, action->id);
+            // Don't push this removal to undo stack
+            if (circuit->undo_count > 0) {
+                // Check if we just pushed an undo for this removal and remove it
+                UndoAction *last = &circuit->undo_stack[circuit->undo_count - 1];
+                if (last->type == UNDO_REMOVE_COMPONENT && last->id == action->id) {
+                    if (last->component_backup) {
+                        component_free(last->component_backup);
+                    }
+                    circuit->undo_count--;
+                }
+            }
+            break;
+
+        case UNDO_REMOVE_COMPONENT:
+            // Re-add the component that was removed
+            if (action->component_backup) {
+                action->component_backup->id = action->id;
+                circuit->components[circuit->num_components++] = action->component_backup;
+                action->component_backup = NULL;  // Don't free it
+            }
+            break;
+
+        case UNDO_MOVE_COMPONENT:
+            // Move component back to old position
+            for (int i = 0; i < circuit->num_components; i++) {
+                if (circuit->components[i]->id == action->id) {
+                    circuit->components[i]->x = action->old_x;
+                    circuit->components[i]->y = action->old_y;
+                    circuit_update_component_nodes(circuit, circuit->components[i]);
+                    break;
+                }
+            }
+            break;
+
+        case UNDO_ADD_WIRE:
+            circuit_remove_wire(circuit, action->id);
+            break;
+
+        case UNDO_REMOVE_WIRE:
+            circuit_add_wire(circuit, action->wire_start, action->wire_end);
+            break;
+    }
+
+    // Clean up backup if not used
+    if (action->component_backup) {
+        component_free(action->component_backup);
+        action->component_backup = NULL;
+    }
+
+    circuit->modified = true;
+    return true;
+}
+
+void circuit_clear_undo(Circuit *circuit) {
+    if (!circuit) return;
+
+    for (int i = 0; i < circuit->undo_count; i++) {
+        if (circuit->undo_stack[i].component_backup) {
+            component_free(circuit->undo_stack[i].component_backup);
+            circuit->undo_stack[i].component_backup = NULL;
+        }
+    }
+    circuit->undo_count = 0;
 }

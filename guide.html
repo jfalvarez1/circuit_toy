@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Circuit Playground - User Guide</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+        h1 {
+            color: #00d9ff;
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+        }
+        .subtitle {
+            color: #888;
+            font-size: 1.2em;
+        }
+        h2 {
+            color: #00d9ff;
+            margin: 40px 0 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #0f3460;
+        }
+        h3 {
+            color: #e94560;
+            margin: 25px 0 15px;
+        }
+        .section {
+            background: rgba(15, 52, 96, 0.3);
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 30px;
+            border: 1px solid #0f3460;
+        }
+        .component-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .component-card {
+            background: rgba(22, 33, 62, 0.8);
+            border-radius: 8px;
+            padding: 15px;
+            border: 1px solid #2a2a4e;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .component-card:hover {
+            transform: translateY(-3px);
+            border-color: #00d9ff;
+        }
+        .component-card h4 {
+            color: #00d9ff;
+            margin-bottom: 8px;
+        }
+        .component-card p {
+            font-size: 0.9em;
+            color: #b0b0b0;
+        }
+        .shortcut-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .shortcut-table th,
+        .shortcut-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #0f3460;
+        }
+        .shortcut-table th {
+            background: rgba(0, 217, 255, 0.1);
+            color: #00d9ff;
+        }
+        .shortcut-table tr:hover {
+            background: rgba(0, 217, 255, 0.05);
+        }
+        kbd {
+            background: #2a2a4e;
+            border: 1px solid #3a3a5e;
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-family: monospace;
+            color: #00d9ff;
+        }
+        .tip {
+            background: rgba(0, 255, 136, 0.1);
+            border-left: 4px solid #00ff88;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .tip-title {
+            color: #00ff88;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .warning {
+            background: rgba(255, 170, 0, 0.1);
+            border-left: 4px solid #ffaa00;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .warning-title {
+            color: #ffaa00;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        ul {
+            margin-left: 25px;
+            margin-bottom: 15px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .workflow-step {
+            display: flex;
+            align-items: flex-start;
+            margin: 15px 0;
+        }
+        .step-number {
+            background: #e94560;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+        code {
+            background: #2a2a4e;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            color: #e94560;
+        }
+        footer {
+            text-align: center;
+            margin-top: 50px;
+            padding: 30px;
+            color: #666;
+            border-top: 1px solid #0f3460;
+        }
+        footer a {
+            color: #00d9ff;
+            text-decoration: none;
+        }
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Circuit Playground</h1>
+            <p class="subtitle">Interactive Circuit Simulator - User Guide</p>
+        </header>
+
+        <section class="section">
+            <h2>Getting Started</h2>
+            <p>Circuit Playground is an interactive circuit simulator inspired by The Powder Toy. Build electronic circuits, simulate their behavior, and visualize voltages and currents in real-time.</p>
+
+            <h3>Quick Start Workflow</h3>
+            <div class="workflow-step">
+                <span class="step-number">1</span>
+                <div>
+                    <strong>Place a Ground</strong> - Every circuit needs a ground reference. Select "GND" from the left palette and click on the canvas to place it.
+                </div>
+            </div>
+            <div class="workflow-step">
+                <span class="step-number">2</span>
+                <div>
+                    <strong>Add Components</strong> - Click on component buttons (R, C, L, DC V, etc.) and click on the canvas to place them.
+                </div>
+            </div>
+            <div class="workflow-step">
+                <span class="step-number">3</span>
+                <div>
+                    <strong>Connect with Wires</strong> - Select the "Wire" tool and click on component terminals to connect them.
+                </div>
+            </div>
+            <div class="workflow-step">
+                <span class="step-number">4</span>
+                <div>
+                    <strong>Run Simulation</strong> - Click the "Run" button or press <kbd>Space</kbd> to start the simulation.
+                </div>
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Tip</div>
+                Press <kbd>F1</kbd> at any time to see all keyboard shortcuts!
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>Components</h2>
+
+            <h3>Sources</h3>
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>GND - Ground</h4>
+                    <p>Reference point (0V) for your circuit. Every circuit needs at least one ground.</p>
+                </div>
+                <div class="component-card">
+                    <h4>DC V - DC Voltage Source</h4>
+                    <p>Provides constant voltage. Adjustable voltage level.</p>
+                </div>
+                <div class="component-card">
+                    <h4>AC V - AC Voltage Source</h4>
+                    <p>Provides alternating voltage. Adjustable amplitude, frequency, and phase.</p>
+                </div>
+                <div class="component-card">
+                    <h4>DC I - DC Current Source</h4>
+                    <p>Provides constant current. Adjustable current level.</p>
+                </div>
+            </div>
+
+            <h3>Passive Components</h3>
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>R - Resistor</h4>
+                    <p>Opposes current flow. V = I &times; R. Adjustable resistance value.</p>
+                </div>
+                <div class="component-card">
+                    <h4>C - Capacitor</h4>
+                    <p>Stores energy in electric field. I = C &times; dV/dt. Supports transient simulation.</p>
+                </div>
+                <div class="component-card">
+                    <h4>L - Inductor</h4>
+                    <p>Stores energy in magnetic field. V = L &times; dI/dt. Supports transient simulation.</p>
+                </div>
+                <div class="component-card">
+                    <h4>D - Diode</h4>
+                    <p>Allows current in one direction. Uses Shockley equation model.</p>
+                </div>
+            </div>
+
+            <h3>Semiconductors</h3>
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>NPN / PNP - BJT Transistors</h4>
+                    <p>Bipolar junction transistors. Uses simplified Ebers-Moll model with adjustable beta.</p>
+                </div>
+                <div class="component-card">
+                    <h4>NMOS / PMOS - MOSFETs</h4>
+                    <p>Field-effect transistors. Uses square-law model with adjustable Vth and Kn.</p>
+                </div>
+                <div class="component-card">
+                    <h4>OpAmp - Operational Amplifier</h4>
+                    <p>Ideal op-amp with adjustable gain and rail voltages.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>Tools</h2>
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>Select</h4>
+                    <p>Click to select components. Drag to move them. Click empty space to deselect.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Wire</h4>
+                    <p>Click on a terminal to start a wire, click another terminal to complete the connection.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Delete</h4>
+                    <p>Click on components or wires to delete them.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Probe</h4>
+                    <p>Place voltage probes on nodes to see their values in the measurements panel.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>Keyboard Shortcuts</h2>
+            <table class="shortcut-table">
+                <thead>
+                    <tr>
+                        <th>Shortcut</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><kbd>Escape</kbd></td>
+                        <td>Cancel current action / Deselect</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td>
+                        <td>Delete selected component</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>R</kbd></td>
+                        <td>Rotate selected component</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Ctrl</kbd> + <kbd>Z</kbd></td>
+                        <td>Undo last action</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Ctrl</kbd> + <kbd>C</kbd></td>
+                        <td>Copy selected component</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Ctrl</kbd> + <kbd>X</kbd></td>
+                        <td>Cut selected component</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Ctrl</kbd> + <kbd>V</kbd></td>
+                        <td>Paste component</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Ctrl</kbd> + <kbd>D</kbd></td>
+                        <td>Duplicate selected component</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Ctrl</kbd> + <kbd>A</kbd></td>
+                        <td>Select all components</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Space</kbd></td>
+                        <td>Run/Pause simulation</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>G</kbd></td>
+                        <td>Toggle grid visibility</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>F1</kbd></td>
+                        <td>Show/hide shortcuts dialog</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Scroll Wheel</kbd></td>
+                        <td>Zoom in/out</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Middle Mouse</kbd> drag</td>
+                        <td>Pan the view</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Ctrl</kbd> + <kbd>0</kbd></td>
+                        <td>Reset zoom to 100%</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="section">
+            <h2>Simulation</h2>
+            <h3>Controls</h3>
+            <ul>
+                <li><strong>Run</strong> - Start continuous simulation</li>
+                <li><strong>Pause</strong> - Pause the simulation</li>
+                <li><strong>Step</strong> - Advance simulation by one time step</li>
+                <li><strong>Reset</strong> - Reset simulation time and component states</li>
+            </ul>
+
+            <h3>How It Works</h3>
+            <p>Circuit Playground uses <strong>Modified Nodal Analysis (MNA)</strong> to solve circuit equations:</p>
+            <ul>
+                <li>Each component "stamps" its contribution to a conductance matrix</li>
+                <li>The system of equations is solved using Gaussian elimination</li>
+                <li>For nonlinear components (diodes, transistors), Newton-Raphson iteration is used</li>
+                <li>Capacitors and inductors use backward Euler integration for transient analysis</li>
+            </ul>
+
+            <div class="warning">
+                <div class="warning-title">Important</div>
+                Every circuit must have exactly one ground (GND) component to provide a voltage reference point. Without ground, the simulation cannot determine absolute voltage values.
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>Measurements</h2>
+            <h3>Properties Panel</h3>
+            <p>When you select a component, its properties appear in the right panel. You can see the component type and its parameters.</p>
+
+            <h3>Measurements Panel</h3>
+            <ul>
+                <li><strong>Voltmeter</strong> - Shows voltage measurement (place probes to measure)</li>
+                <li><strong>Ammeter</strong> - Shows current measurement</li>
+            </ul>
+
+            <h3>Oscilloscope</h3>
+            <p>The oscilloscope displays voltage waveforms over time. Place probes on nodes to view their voltage on the scope.</p>
+
+            <h3>Status Bar</h3>
+            <p>Shows simulation time (t=), component count (C:), and node count (N:).</p>
+        </section>
+
+        <section class="section">
+            <h2>Tips & Tricks</h2>
+            <div class="tip">
+                <div class="tip-title">Snapping</div>
+                Components automatically snap to the grid for easy alignment. Wire connections also snap to component terminals.
+            </div>
+            <div class="tip">
+                <div class="tip-title">Navigation</div>
+                Use the scroll wheel to zoom, and middle-mouse-drag to pan around large circuits.
+            </div>
+            <div class="tip">
+                <div class="tip-title">Component Rotation</div>
+                Select a component and press <kbd>R</kbd> to rotate it 90 degrees. This is useful for orienting transistors and diodes correctly.
+            </div>
+            <div class="tip">
+                <div class="tip-title">Quick Duplication</div>
+                Select a component and press <kbd>Ctrl</kbd> + <kbd>D</kbd> to quickly duplicate it with a small offset.
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>Building the Application</h2>
+            <h3>Requirements</h3>
+            <ul>
+                <li>Meson build system</li>
+                <li>C11 compatible compiler (MSVC, GCC, or Clang)</li>
+                <li>SDL2 (automatically downloaded by Meson)</li>
+            </ul>
+
+            <h3>Build Commands (Windows PowerShell)</h3>
+            <pre style="background: #1a1a2e; padding: 15px; border-radius: 8px; overflow-x: auto;">
+<code>mkdir subprojects
+meson wrap install sdl2
+meson setup build
+meson compile -C build
+Copy-Item "build\subprojects\SDL2-*\SDL2-*.dll" "build\"
+.\build\circuit-playground.exe</code>
+            </pre>
+
+            <h3>Build Commands (Linux/macOS)</h3>
+            <pre style="background: #1a1a2e; padding: 15px; border-radius: 8px; overflow-x: auto;">
+<code>mkdir subprojects
+meson wrap install sdl2
+meson setup build
+meson compile -C build
+./build/circuit-playground</code>
+            </pre>
+        </section>
+
+        <footer>
+            <p>Circuit Playground - Inspired by <a href="https://github.com/The-Powder-Toy/The-Powder-Toy" target="_blank">The Powder Toy</a></p>
+            <p style="margin-top: 10px;">Version 1.0.0</p>
+        </footer>
+    </div>
+</body>
+</html>

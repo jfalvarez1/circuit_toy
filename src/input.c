@@ -77,10 +77,33 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                         if (input->placing_component != COMP_NONE) {
                             float snapped_x = snap_to_grid(wx);
                             float snapped_y = snap_to_grid(wy);
-                            Component *comp = component_create(input->placing_component, snapped_x, snapped_y);
-                            if (comp) {
-                                circuit_add_component(circuit, comp);
-                                ui_set_status(ui, "Component placed");
+
+                            // Check for existing nodes near terminals before placing
+                            Component *temp = component_create(input->placing_component, snapped_x, snapped_y);
+                            if (temp) {
+                                // Find existing nodes near each terminal before adding component
+                                int existing_nodes[8] = {0};
+                                for (int i = 0; i < temp->num_terminals && i < 8; i++) {
+                                    float tx, ty;
+                                    component_get_terminal_pos(temp, i, &tx, &ty);
+                                    Node *existing = circuit_find_node_at(circuit, tx, ty, 10);
+                                    existing_nodes[i] = existing ? existing->id : 0;
+                                }
+
+                                // Now add the component (this creates new nodes for terminals)
+                                circuit_add_component(circuit, temp);
+
+                                // Auto-wire: connect to existing nodes at terminal positions
+                                for (int i = 0; i < temp->num_terminals && i < 8; i++) {
+                                    if (existing_nodes[i] > 0 && temp->node_ids[i] != existing_nodes[i]) {
+                                        // Create wire between new terminal node and existing node
+                                        circuit_add_wire(circuit, temp->node_ids[i], existing_nodes[i]);
+                                    }
+                                }
+
+                                // Push undo action for component placement
+                                circuit_push_undo(circuit, UNDO_ADD_COMPONENT, temp->id, NULL, 0, 0);
+                                ui_set_status(ui, "Component placed (Ctrl+Z to undo)");
                             }
                         }
                         break;
@@ -101,8 +124,17 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             // End wire
                             int end_node_id = circuit_find_or_create_node(circuit, snapped_x, snapped_y, 10);
                             if (end_node_id != input->wire_start_node) {
-                                circuit_add_wire(circuit, input->wire_start_node, end_node_id);
-                                ui_set_status(ui, "Wire connected");
+                                int wire_id = circuit_add_wire(circuit, input->wire_start_node, end_node_id);
+                                if (wire_id >= 0) {
+                                    // Push undo action for wire placement
+                                    UndoAction *action = &circuit->undo_stack[circuit->undo_count++];
+                                    action->type = UNDO_ADD_WIRE;
+                                    action->id = wire_id;
+                                    action->wire_start = input->wire_start_node;
+                                    action->wire_end = end_node_id;
+                                    action->component_backup = NULL;
+                                }
+                                ui_set_status(ui, "Wire connected (Ctrl+Z to undo)");
                             }
                             input->drawing_wire = false;
                         }
@@ -157,6 +189,38 @@ bool input_handle_event(InputState *input, SDL_Event *event,
         case SDL_MOUSEBUTTONUP: {
             int button = event->button.button;
             if (button == SDL_BUTTON_LEFT) {
+                // Auto-wire when dropping a component near other terminals
+                if (input->is_dragging && input->dragging_component) {
+                    Component *comp = input->dragging_component;
+                    for (int i = 0; i < comp->num_terminals && i < 8; i++) {
+                        float tx, ty;
+                        component_get_terminal_pos(comp, i, &tx, &ty);
+
+                        // Find existing nodes near this terminal (excluding component's own nodes)
+                        for (int j = 0; j < circuit->num_nodes; j++) {
+                            Node *existing = &circuit->nodes[j];
+                            if (existing->id == comp->node_ids[i]) continue;
+
+                            float dx = existing->x - tx;
+                            float dy = existing->y - ty;
+                            if (sqrt(dx*dx + dy*dy) <= 10) {
+                                // Check if wire already exists
+                                bool wire_exists = false;
+                                for (int k = 0; k < circuit->num_wires; k++) {
+                                    Wire *w = &circuit->wires[k];
+                                    if ((w->start_node_id == comp->node_ids[i] && w->end_node_id == existing->id) ||
+                                        (w->start_node_id == existing->id && w->end_node_id == comp->node_ids[i])) {
+                                        wire_exists = true;
+                                        break;
+                                    }
+                                }
+                                if (!wire_exists) {
+                                    circuit_add_wire(circuit, comp->node_ids[i], existing->id);
+                                }
+                            }
+                        }
+                    }
+                }
                 input->left.down = false;
                 input->is_dragging = false;
                 input->dragging_component = NULL;
@@ -316,6 +380,13 @@ void input_handle_key(InputState *input, SDL_Keycode key,
         case SDLK_a:
             if (ctrl) {
                 circuit_select_all(circuit);
+            }
+            break;
+
+        case SDLK_z:
+            if (ctrl) {
+                circuit_undo(circuit);
+                input->selected_component = NULL;
             }
             break;
 

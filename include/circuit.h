@@ -37,6 +37,26 @@ typedef struct {
     double voltage;
 } Probe;
 
+// Undo action types
+typedef enum {
+    UNDO_ADD_COMPONENT,
+    UNDO_REMOVE_COMPONENT,
+    UNDO_ADD_WIRE,
+    UNDO_REMOVE_WIRE,
+    UNDO_MOVE_COMPONENT
+} UndoActionType;
+
+// Undo action
+typedef struct {
+    UndoActionType type;
+    int id;
+    Component *component_backup;  // For remove/move actions
+    float old_x, old_y;           // For move actions
+    int wire_start, wire_end;     // For wire actions
+} UndoAction;
+
+#define MAX_UNDO 100
+
 // Circuit structure
 typedef struct {
     // Components
@@ -68,6 +88,10 @@ typedef struct {
     float clipboard_offset_x;
     float clipboard_offset_y;
 
+    // Undo stack
+    UndoAction undo_stack[MAX_UNDO];
+    int undo_count;
+
     // Modified flag
     bool modified;
 } Circuit;
@@ -95,6 +119,9 @@ int circuit_add_wire(Circuit *circuit, int start_node_id, int end_node_id);
 void circuit_remove_wire(Circuit *circuit, int wire_id);
 Wire *circuit_find_wire_at(Circuit *circuit, float x, float y, float threshold);
 
+// Node cleanup
+void circuit_cleanup_orphaned_nodes(Circuit *circuit);
+
 // Probe operations
 int circuit_add_probe(Circuit *circuit, int node_id, float x, float y);
 void circuit_remove_probe(Circuit *circuit, int probe_id);
@@ -118,6 +145,11 @@ Component *circuit_duplicate_component(Circuit *circuit, Component *comp);
 void circuit_select_all(Circuit *circuit);
 void circuit_deselect_all(Circuit *circuit);
 void circuit_delete_selected(Circuit *circuit);
+
+// Undo operations
+void circuit_push_undo(Circuit *circuit, UndoActionType type, int id, Component *backup, float old_x, float old_y);
+bool circuit_undo(Circuit *circuit);
+void circuit_clear_undo(Circuit *circuit);
 
 // Serialization
 bool circuit_save(Circuit *circuit, const char *filename);
