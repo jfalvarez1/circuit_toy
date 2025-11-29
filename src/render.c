@@ -415,122 +415,133 @@ void render_circuit(RenderContext *ctx, Circuit *circuit) {
 }
 
 // Component shape rendering functions
+// NOTE: All dimensions are scaled to match grid-aligned terminal positions (multiples of 20)
 void render_ground(RenderContext *ctx, float x, float y, int rotation) {
-    render_draw_line(ctx, x, y - 15, x, y);
-    render_draw_line(ctx, x - 12, y, x + 12, y);
-    render_draw_line(ctx, x - 8, y + 5, x + 8, y + 5);
-    render_draw_line(ctx, x - 4, y + 10, x + 4, y + 10);
+    // Terminal at (0, -20)
+    render_draw_line(ctx, x, y - 20, x, y);
+    render_draw_line(ctx, x - 15, y, x + 15, y);
+    render_draw_line(ctx, x - 10, y + 6, x + 10, y + 6);
+    render_draw_line(ctx, x - 5, y + 12, x + 5, y + 12);
 }
 
 void render_voltage_source(RenderContext *ctx, float x, float y, int rotation, bool is_ac) {
-    render_draw_circle(ctx, x, y, 15);
-    render_draw_line(ctx, x, y - 15, x, y - 25);
-    render_draw_line(ctx, x, y + 15, x, y + 25);
+    // Terminals at (0, -40) and (0, 40)
+    render_draw_circle(ctx, x, y, 18);
+    render_draw_line(ctx, x, y - 18, x, y - 40);
+    render_draw_line(ctx, x, y + 18, x, y + 40);
 
     if (is_ac) {
         // Sine wave symbol
-        for (int i = 0; i < 16; i++) {
-            float x1 = x - 8 + i;
-            float x2 = x - 8 + i + 1;
-            float y1 = y + 6 * sin((i / 16.0) * 2 * M_PI);
-            float y2 = y + 6 * sin(((i + 1) / 16.0) * 2 * M_PI);
+        for (int i = 0; i < 20; i++) {
+            float x1 = x - 10 + i;
+            float x2 = x - 10 + i + 1;
+            float y1 = y + 8 * sin((i / 20.0) * 2 * M_PI);
+            float y2 = y + 8 * sin(((i + 1) / 20.0) * 2 * M_PI);
             render_draw_line(ctx, x1, y1, x2, y2);
         }
     } else {
         // + and - symbols
-        render_draw_line(ctx, x - 4, y - 6, x + 4, y - 6);
-        render_draw_line(ctx, x, y - 10, x, y - 2);
-        render_draw_line(ctx, x - 4, y + 6, x + 4, y + 6);
+        render_draw_line(ctx, x - 5, y - 8, x + 5, y - 8);
+        render_draw_line(ctx, x, y - 13, x, y - 3);
+        render_draw_line(ctx, x - 5, y + 8, x + 5, y + 8);
     }
 }
 
 void render_current_source(RenderContext *ctx, float x, float y, int rotation) {
-    render_draw_circle(ctx, x, y, 15);
-    render_draw_line(ctx, x, y - 15, x, y - 25);
-    render_draw_line(ctx, x, y + 15, x, y + 25);
+    // Terminals at (0, -40) and (0, 40)
+    render_draw_circle(ctx, x, y, 18);
+    render_draw_line(ctx, x, y - 18, x, y - 40);
+    render_draw_line(ctx, x, y + 18, x, y + 40);
     // Arrow
-    render_draw_line(ctx, x, y + 8, x, y - 8);
-    render_draw_line(ctx, x - 4, y - 4, x, y - 8);
-    render_draw_line(ctx, x + 4, y - 4, x, y - 8);
+    render_draw_line(ctx, x, y + 10, x, y - 10);
+    render_draw_line(ctx, x - 5, y - 5, x, y - 10);
+    render_draw_line(ctx, x + 5, y - 5, x, y - 10);
 }
 
 void render_resistor(RenderContext *ctx, float x, float y, int rotation) {
-    render_draw_line(ctx, x - 35, y, x - 25, y);
-    // Zigzag
-    int points[][2] = {{-25,0},{-20,-8},{-12,8},{-4,-8},{4,8},{12,-8},{20,8},{25,0}};
-    for (int i = 0; i < 7; i++) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line(ctx, x - 40, y, x - 28, y);
+    // Zigzag scaled to fit 80px width
+    int points[][2] = {{-28,0},{-21,-8},{-7,8},{7,-8},{21,8},{28,0}};
+    for (int i = 0; i < 5; i++) {
         render_draw_line(ctx, x + points[i][0], y + points[i][1],
                         x + points[i+1][0], y + points[i+1][1]);
     }
-    render_draw_line(ctx, x + 25, y, x + 35, y);
+    render_draw_line(ctx, x + 28, y, x + 40, y);
 }
 
 void render_capacitor(RenderContext *ctx, float x, float y, int rotation) {
-    render_draw_line(ctx, x - 25, y, x - 5, y);
-    render_draw_line(ctx, x - 5, y - 12, x - 5, y + 12);
-    render_draw_line(ctx, x + 5, y - 12, x + 5, y + 12);
-    render_draw_line(ctx, x + 5, y, x + 25, y);
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line(ctx, x - 40, y, x - 6, y);
+    render_draw_line(ctx, x - 6, y - 14, x - 6, y + 14);
+    render_draw_line(ctx, x + 6, y - 14, x + 6, y + 14);
+    render_draw_line(ctx, x + 6, y, x + 40, y);
 }
 
 void render_inductor(RenderContext *ctx, float x, float y, int rotation) {
-    render_draw_line(ctx, x - 35, y, x - 25, y);
-    // Coils
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line(ctx, x - 40, y, x - 28, y);
+    // Coils scaled to fit
     for (int i = 0; i < 4; i++) {
-        float cx = x - 18 + i * 12;
+        float cx = x - 21 + i * 14;
         for (int a = 180; a <= 360; a += 15) {
             float r = a * M_PI / 180;
             float r2 = (a + 15) * M_PI / 180;
-            render_draw_line(ctx, cx + 6*cos(r), y + 6*sin(r),
-                            cx + 6*cos(r2), y + 6*sin(r2));
+            render_draw_line(ctx, cx + 7*cos(r), y + 7*sin(r),
+                            cx + 7*cos(r2), y + 7*sin(r2));
         }
     }
-    render_draw_line(ctx, x + 25, y, x + 35, y);
+    render_draw_line(ctx, x + 28, y, x + 40, y);
 }
 
 void render_diode(RenderContext *ctx, float x, float y, int rotation) {
-    render_draw_line(ctx, x - 25, y, x - 8, y);
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line(ctx, x - 40, y, x - 10, y);
     // Triangle
-    render_draw_line(ctx, x - 8, y - 10, x - 8, y + 10);
-    render_draw_line(ctx, x - 8, y - 10, x + 8, y);
-    render_draw_line(ctx, x - 8, y + 10, x + 8, y);
+    render_draw_line(ctx, x - 10, y - 12, x - 10, y + 12);
+    render_draw_line(ctx, x - 10, y - 12, x + 10, y);
+    render_draw_line(ctx, x - 10, y + 12, x + 10, y);
     // Bar
-    render_draw_line(ctx, x + 8, y - 10, x + 8, y + 10);
-    render_draw_line(ctx, x + 8, y, x + 25, y);
+    render_draw_line(ctx, x + 10, y - 12, x + 10, y + 12);
+    render_draw_line(ctx, x + 10, y, x + 40, y);
 }
 
 void render_bjt(RenderContext *ctx, float x, float y, int rotation, bool is_pnp) {
-    render_draw_circle(ctx, x, y, 20);
-    render_draw_line(ctx, x - 25, y, x - 5, y);
-    render_draw_line(ctx, x - 5, y - 12, x - 5, y + 12);
-    render_draw_line(ctx, x - 5, y - 6, x + 12, y - 16);
-    render_draw_line(ctx, x + 12, y - 16, x + 15, y - 20);
-    render_draw_line(ctx, x - 5, y + 6, x + 12, y + 16);
-    render_draw_line(ctx, x + 12, y + 16, x + 15, y + 20);
+    // Terminals: B at (-20, 0), C at (20, -20), E at (20, 20)
+    render_draw_circle(ctx, x, y, 18);
+    render_draw_line(ctx, x - 20, y, x - 5, y);
+    render_draw_line(ctx, x - 5, y - 10, x - 5, y + 10);
+    render_draw_line(ctx, x - 5, y - 5, x + 12, y - 15);
+    render_draw_line(ctx, x + 12, y - 15, x + 20, y - 20);
+    render_draw_line(ctx, x - 5, y + 5, x + 12, y + 15);
+    render_draw_line(ctx, x + 12, y + 15, x + 20, y + 20);
 }
 
 void render_mosfet(RenderContext *ctx, float x, float y, int rotation, bool is_pmos) {
-    render_draw_line(ctx, x - 25, y, x - 10, y);
-    render_draw_line(ctx, x - 10, y - 10, x - 10, y + 10);
-    render_draw_line(ctx, x - 5, y - 12, x - 5, y - 4);
-    render_draw_line(ctx, x - 5, y + 4, x - 5, y + 12);
-    render_draw_line(ctx, x - 5, y - 8, x + 10, y - 8);
-    render_draw_line(ctx, x + 10, y - 8, x + 10, y - 20);
-    render_draw_line(ctx, x + 10, y - 20, x + 15, y - 20);
-    render_draw_line(ctx, x - 5, y + 8, x + 10, y + 8);
-    render_draw_line(ctx, x + 10, y + 8, x + 10, y + 20);
-    render_draw_line(ctx, x + 10, y + 20, x + 15, y + 20);
+    // Terminals: G at (-20, 0), D at (20, -20), S at (20, 20)
+    render_draw_line(ctx, x - 20, y, x - 8, y);
+    render_draw_line(ctx, x - 8, y - 10, x - 8, y + 10);
+    render_draw_line(ctx, x - 3, y - 12, x - 3, y - 4);
+    render_draw_line(ctx, x - 3, y + 4, x - 3, y + 12);
+    render_draw_line(ctx, x - 3, y - 8, x + 12, y - 8);
+    render_draw_line(ctx, x + 12, y - 8, x + 12, y - 20);
+    render_draw_line(ctx, x + 12, y - 20, x + 20, y - 20);
+    render_draw_line(ctx, x - 3, y + 8, x + 12, y + 8);
+    render_draw_line(ctx, x + 12, y + 8, x + 12, y + 20);
+    render_draw_line(ctx, x + 12, y + 20, x + 20, y + 20);
 }
 
 void render_opamp(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals: - at (-40, -20), + at (-40, 20), OUT at (40, 0)
     // Triangle
-    render_draw_line(ctx, x - 25, y - 25, x - 25, y + 25);
-    render_draw_line(ctx, x - 25, y - 25, x + 25, y);
-    render_draw_line(ctx, x - 25, y + 25, x + 25, y);
+    render_draw_line(ctx, x - 25, y - 30, x - 25, y + 30);
+    render_draw_line(ctx, x - 25, y - 30, x + 30, y);
+    render_draw_line(ctx, x - 25, y + 30, x + 30, y);
     // Inputs
-    render_draw_line(ctx, x - 35, y - 12, x - 25, y - 12);
-    render_draw_line(ctx, x - 35, y + 12, x - 25, y + 12);
+    render_draw_line(ctx, x - 40, y - 20, x - 25, y - 20);
+    render_draw_line(ctx, x - 40, y + 20, x - 25, y + 20);
     // Output
-    render_draw_line(ctx, x + 25, y, x + 35, y);
+    render_draw_line(ctx, x + 30, y, x + 40, y);
 }
 
 void render_ghost_component(RenderContext *ctx, Component *comp) {

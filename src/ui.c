@@ -414,9 +414,112 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
             SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
             ui_draw_text(renderer, type_names[selected->type], x + 100, y + 35);
         }
+
+        // Show component properties
+        int prop_y = y + 55;
+        char buf[64];
+        SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+
+        switch (selected->type) {
+            case COMP_DC_VOLTAGE:
+                ui_draw_text(renderer, "Voltage:", x + 10, prop_y);
+                snprintf(buf, sizeof(buf), "%.2f V", selected->props.dc_voltage.voltage);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y);
+                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                ui_draw_text(renderer, "[+/-] to adjust", x + 10, prop_y + 20);
+                break;
+
+            case COMP_AC_VOLTAGE:
+                ui_draw_text(renderer, "Amplitude:", x + 10, prop_y);
+                snprintf(buf, sizeof(buf), "%.2f V", selected->props.ac_voltage.amplitude);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y);
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Frequency:", x + 10, prop_y + 18);
+                snprintf(buf, sizeof(buf), "%.1f Hz", selected->props.ac_voltage.frequency);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 18);
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Phase:", x + 10, prop_y + 36);
+                snprintf(buf, sizeof(buf), "%.1f deg", selected->props.ac_voltage.phase);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 36);
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Offset:", x + 10, prop_y + 54);
+                snprintf(buf, sizeof(buf), "%.2f V", selected->props.ac_voltage.offset);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 54);
+
+                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                ui_draw_text(renderer, "[+/-] amplitude", x + 10, prop_y + 75);
+                ui_draw_text(renderer, "[F/f] frequency", x + 10, prop_y + 90);
+                break;
+
+            case COMP_DC_CURRENT:
+                ui_draw_text(renderer, "Current:", x + 10, prop_y);
+                snprintf(buf, sizeof(buf), "%.3f mA", selected->props.dc_current.current * 1000.0);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y);
+                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                ui_draw_text(renderer, "[+/-] to adjust", x + 10, prop_y + 20);
+                break;
+
+            case COMP_RESISTOR:
+                ui_draw_text(renderer, "Resistance:", x + 10, prop_y);
+                if (selected->props.resistor.resistance >= 1e6)
+                    snprintf(buf, sizeof(buf), "%.2f MOhm", selected->props.resistor.resistance / 1e6);
+                else if (selected->props.resistor.resistance >= 1e3)
+                    snprintf(buf, sizeof(buf), "%.2f kOhm", selected->props.resistor.resistance / 1e3);
+                else
+                    snprintf(buf, sizeof(buf), "%.1f Ohm", selected->props.resistor.resistance);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y);
+                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                ui_draw_text(renderer, "[+/-] to adjust", x + 10, prop_y + 20);
+                break;
+
+            case COMP_CAPACITOR:
+                ui_draw_text(renderer, "Capacitance:", x + 10, prop_y);
+                if (selected->props.capacitor.capacitance >= 1e-3)
+                    snprintf(buf, sizeof(buf), "%.2f mF", selected->props.capacitor.capacitance * 1e3);
+                else if (selected->props.capacitor.capacitance >= 1e-6)
+                    snprintf(buf, sizeof(buf), "%.2f uF", selected->props.capacitor.capacitance * 1e6);
+                else if (selected->props.capacitor.capacitance >= 1e-9)
+                    snprintf(buf, sizeof(buf), "%.2f nF", selected->props.capacitor.capacitance * 1e9);
+                else
+                    snprintf(buf, sizeof(buf), "%.2f pF", selected->props.capacitor.capacitance * 1e12);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y);
+                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                ui_draw_text(renderer, "[+/-] to adjust", x + 10, prop_y + 20);
+                break;
+
+            case COMP_INDUCTOR:
+                ui_draw_text(renderer, "Inductance:", x + 10, prop_y);
+                if (selected->props.inductor.inductance >= 1.0)
+                    snprintf(buf, sizeof(buf), "%.2f H", selected->props.inductor.inductance);
+                else if (selected->props.inductor.inductance >= 1e-3)
+                    snprintf(buf, sizeof(buf), "%.2f mH", selected->props.inductor.inductance * 1e3);
+                else
+                    snprintf(buf, sizeof(buf), "%.2f uH", selected->props.inductor.inductance * 1e6);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                ui_draw_text(renderer, buf, x + 100, prop_y);
+                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                ui_draw_text(renderer, "[+/-] to adjust", x + 10, prop_y + 20);
+                break;
+
+            default:
+                break;
+        }
     } else {
         SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
         ui_draw_text(renderer, "No selection", x + 10, y + 35);
+        ui_draw_text(renderer, "Click component", x + 10, y + 55);
+        ui_draw_text(renderer, "to edit properties", x + 10, y + 70);
     }
 
     // Border

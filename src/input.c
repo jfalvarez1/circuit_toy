@@ -400,12 +400,79 @@ void input_handle_key(InputState *input, SDL_Keycode key,
         case SDLK_EQUALS:
             if (ctrl) {
                 render_zoom(render, 1.2f, CANVAS_X + CANVAS_WIDTH/2, CANVAS_Y + CANVAS_HEIGHT/2);
+            } else if (input->selected_component) {
+                // Increase component value
+                Component *c = input->selected_component;
+                switch (c->type) {
+                    case COMP_DC_VOLTAGE:
+                        c->props.dc_voltage.voltage *= 1.1;
+                        break;
+                    case COMP_AC_VOLTAGE:
+                        c->props.ac_voltage.amplitude *= 1.1;
+                        break;
+                    case COMP_DC_CURRENT:
+                        c->props.dc_current.current *= 1.1;
+                        break;
+                    case COMP_RESISTOR:
+                        c->props.resistor.resistance *= 1.1;
+                        break;
+                    case COMP_CAPACITOR:
+                        c->props.capacitor.capacitance *= 1.1;
+                        break;
+                    case COMP_INDUCTOR:
+                        c->props.inductor.inductance *= 1.1;
+                        break;
+                    default:
+                        break;
+                }
             }
             break;
 
         case SDLK_MINUS:
             if (ctrl) {
                 render_zoom(render, 0.8f, CANVAS_X + CANVAS_WIDTH/2, CANVAS_Y + CANVAS_HEIGHT/2);
+            } else if (input->selected_component) {
+                // Decrease component value
+                Component *c = input->selected_component;
+                switch (c->type) {
+                    case COMP_DC_VOLTAGE:
+                        c->props.dc_voltage.voltage /= 1.1;
+                        break;
+                    case COMP_AC_VOLTAGE:
+                        c->props.ac_voltage.amplitude /= 1.1;
+                        break;
+                    case COMP_DC_CURRENT:
+                        c->props.dc_current.current /= 1.1;
+                        break;
+                    case COMP_RESISTOR:
+                        c->props.resistor.resistance /= 1.1;
+                        if (c->props.resistor.resistance < 0.1)
+                            c->props.resistor.resistance = 0.1;
+                        break;
+                    case COMP_CAPACITOR:
+                        c->props.capacitor.capacitance /= 1.1;
+                        break;
+                    case COMP_INDUCTOR:
+                        c->props.inductor.inductance /= 1.1;
+                        break;
+                    default:
+                        break;
+                }
+            }
+            break;
+
+        case SDLK_f:
+            // Adjust AC voltage frequency
+            if (input->selected_component && input->selected_component->type == COMP_AC_VOLTAGE) {
+                if (input->shift_down) {
+                    // Shift+F decreases frequency
+                    input->selected_component->props.ac_voltage.frequency /= 1.2;
+                    if (input->selected_component->props.ac_voltage.frequency < 0.1)
+                        input->selected_component->props.ac_voltage.frequency = 0.1;
+                } else {
+                    // F increases frequency
+                    input->selected_component->props.ac_voltage.frequency *= 1.2;
+                }
             }
             break;
 

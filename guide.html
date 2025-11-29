@@ -371,6 +371,22 @@
                         <td><kbd>Ctrl</kbd> + <kbd>0</kbd></td>
                         <td>Reset zoom to 100%</td>
                     </tr>
+                    <tr>
+                        <td><kbd>+</kbd> / <kbd>=</kbd></td>
+                        <td>Increase selected component value (voltage, resistance, etc.)</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>-</kbd></td>
+                        <td>Decrease selected component value</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>F</kbd></td>
+                        <td>Increase AC voltage frequency</td>
+                    </tr>
+                    <tr>
+                        <td><kbd>Shift</kbd> + <kbd>F</kbd></td>
+                        <td>Decrease AC voltage frequency</td>
+                    </tr>
                 </tbody>
             </table>
         </section>
@@ -401,18 +417,63 @@
         </section>
 
         <section class="section">
-            <h2>Measurements</h2>
+            <h2>Editing Component Values</h2>
             <h3>Properties Panel</h3>
-            <p>When you select a component, its properties appear in the right panel. You can see the component type and its parameters.</p>
+            <p>When you select a component, its properties appear in the right panel on the screen. The panel shows:</p>
+            <ul>
+                <li>Component type (Resistor, Capacitor, AC Voltage, etc.)</li>
+                <li>Current value(s) of the component</li>
+                <li>Keyboard shortcuts for adjusting values</li>
+            </ul>
+
+            <h3>Adjusting Values</h3>
+            <p>Select a component and use these keys:</p>
+            <ul>
+                <li><kbd>+</kbd> or <kbd>=</kbd> - Increase the primary value by 10%</li>
+                <li><kbd>-</kbd> - Decrease the primary value by 10%</li>
+                <li><kbd>F</kbd> - Increase AC voltage frequency (AC sources only)</li>
+                <li><kbd>Shift</kbd>+<kbd>F</kbd> - Decrease AC voltage frequency</li>
+            </ul>
+
+            <h3>What Each Component Shows</h3>
+            <ul>
+                <li><strong>DC Voltage</strong> - Voltage in volts</li>
+                <li><strong>AC Voltage</strong> - Amplitude, frequency (Hz), phase (degrees), and DC offset</li>
+                <li><strong>DC Current</strong> - Current in mA</li>
+                <li><strong>Resistor</strong> - Resistance (Ohm, kOhm, or MOhm)</li>
+                <li><strong>Capacitor</strong> - Capacitance (pF, nF, uF, or mF)</li>
+                <li><strong>Inductor</strong> - Inductance (uH, mH, or H)</li>
+            </ul>
+        </section>
+
+        <section class="section">
+            <h2>Oscilloscope & Probes</h2>
+            <h3>Using Probes</h3>
+            <ol>
+                <li>Select the <strong>Probe</strong> tool from the left palette</li>
+                <li>Click on a node (junction point) in your circuit</li>
+                <li>The probe will appear as a colored circle on the node</li>
+                <li>The voltage at that node will be tracked in the oscilloscope</li>
+            </ol>
+
+            <h3>Reading the Oscilloscope</h3>
+            <p>The oscilloscope is displayed in the right panel below the measurements. It shows:</p>
+            <ul>
+                <li>Horizontal axis: Time</li>
+                <li>Vertical axis: Voltage</li>
+                <li>Each probe is shown as a different colored trace</li>
+            </ul>
+
+            <div class="tip">
+                <div class="tip-title">Viewing AC Signals</div>
+                To see AC waveforms clearly, place a probe on a node with an AC voltage source and run the simulation. The oscilloscope will display the sine wave.
+            </div>
 
             <h3>Measurements Panel</h3>
             <ul>
-                <li><strong>Voltmeter</strong> - Shows voltage measurement (place probes to measure)</li>
-                <li><strong>Ammeter</strong> - Shows current measurement</li>
+                <li><strong>Voltmeter</strong> - Shows instantaneous voltage at the first probe</li>
+                <li><strong>Ammeter</strong> - Shows current measurement through probed components</li>
             </ul>
-
-            <h3>Oscilloscope</h3>
-            <p>The oscilloscope displays voltage waveforms over time. Place probes on nodes to view their voltage on the scope.</p>
 
             <h3>Status Bar</h3>
             <p>Shows simulation time (t=), component count (C:), and node count (N:).</p>
@@ -447,7 +508,17 @@
                 <li>SDL2 (automatically downloaded by Meson)</li>
             </ul>
 
-            <h3>Build Commands (Windows PowerShell)</h3>
+            <h3>Build Commands (Windows - Easy Method)</h3>
+            <p>Use the provided batch scripts:</p>
+            <pre style="background: #1a1a2e; padding: 15px; border-radius: 8px; overflow-x: auto;">
+<code>mkdir subprojects
+meson wrap install sdl2
+.\build.bat        # Build the project (auto-copies DLL)
+.\run.bat          # Build and run
+.\rebuild.bat      # Clean rebuild from scratch</code>
+            </pre>
+
+            <h3>Build Commands (Windows PowerShell - Manual)</h3>
             <pre style="background: #1a1a2e; padding: 15px; border-radius: 8px; overflow-x: auto;">
 <code>mkdir subprojects
 meson wrap install sdl2
