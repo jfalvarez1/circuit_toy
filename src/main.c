@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <SDL.h>
+#include <SDL_main.h>
 #include "app.h"
 
 int main(int argc, char *argv[]) {

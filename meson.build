@@ -5,9 +5,11 @@ project('circuit-playground', 'c',
 
 # Find SDL2 dependency (with subproject fallback for Windows)
 sdl2_dep = dependency('sdl2', required : false)
+sdl2main_dep = dependency('sdl2main', required : false)
 if not sdl2_dep.found()
   sdl2_proj = subproject('sdl2', required : true)
   sdl2_dep = sdl2_proj.get_variable('sdl2_dep')
+  sdl2main_dep = sdl2_proj.get_variable('sdl2main_dep')
 endif
 
 # Source files
@@ -31,7 +33,7 @@ inc_dirs = include_directories('include')
 executable('circuit-playground',
   src_files,
   include_directories : inc_dirs,
-  dependencies : [sdl2_dep],
+  dependencies : [sdl2_dep, sdl2main_dep],
   install : true,
   win_subsystem : 'windows'  # Hide console window on Windows
 )
