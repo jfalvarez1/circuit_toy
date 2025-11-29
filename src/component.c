@@ -45,7 +45,7 @@ static const ComponentTypeInfo component_info[] = {
         "Resistor", "R", 2,
         {{ -40, 0, "1" }, { 40, 0, "2" }},
         80, 20,
-        { .resistor = { 1000.0 } }
+        { .resistor = { 1000.0, 5.0, 0.25, 0.0 } }  // 1k, 5% tolerance, 1/4W rating, 0W dissipated
     },
 
     [COMP_CAPACITOR] = {

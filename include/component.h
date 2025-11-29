@@ -23,7 +23,7 @@ typedef union {
     struct { double voltage; } dc_voltage;
     struct { double amplitude; double frequency; double phase; double offset; } ac_voltage;
     struct { double current; } dc_current;
-    struct { double resistance; } resistor;
+    struct { double resistance; double tolerance; double power_rating; double power_dissipated; } resistor;
     struct { double capacitance; double voltage; } capacitor;  // voltage = state
     struct { double inductance; double current; } inductor;    // current = state
     struct { double is; double vt; double n; } diode;

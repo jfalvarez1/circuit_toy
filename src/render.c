@@ -317,6 +317,17 @@ void render_component(RenderContext *ctx, Component *comp) {
             render_current_source(ctx, comp->x, comp->y, comp->rotation);
             break;
         case COMP_RESISTOR:
+            // Color based on power dissipation vs rating
+            if (!comp->selected && !comp->highlighted) {
+                double pwr_ratio = comp->props.resistor.power_dissipated / comp->props.resistor.power_rating;
+                if (pwr_ratio > 1.5) {
+                    render_set_color(ctx, (Color){0xff, 0x20, 0x20, 0xff});  // Bright red - burning!
+                } else if (pwr_ratio > 1.0) {
+                    render_set_color(ctx, (Color){0xff, 0x60, 0x00, 0xff});  // Red-orange - overheating
+                } else if (pwr_ratio > 0.8) {
+                    render_set_color(ctx, (Color){0xff, 0xaa, 0x00, 0xff});  // Orange - warning
+                }
+            }
             render_resistor(ctx, comp->x, comp->y, comp->rotation);
             break;
         case COMP_CAPACITOR:
@@ -382,6 +393,63 @@ void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
     }
 
     render_draw_line(ctx, start->x, start->y, end->x, end->y);
+
+    // Draw current flow arrow (conventional current: high to low voltage)
+    if (ctx->show_current) {
+        double v_diff = start->voltage - end->voltage;
+        double abs_diff = v_diff < 0 ? -v_diff : v_diff;
+
+        // Only show arrow if voltage difference is significant
+        if (abs_diff > 0.001) {
+            // Arrow direction: from higher voltage to lower voltage
+            float from_x, from_y, to_x, to_y;
+            if (v_diff > 0) {
+                from_x = start->x; from_y = start->y;
+                to_x = end->x; to_y = end->y;
+            } else {
+                from_x = end->x; from_y = end->y;
+                to_x = start->x; to_y = start->y;
+            }
+
+            // Calculate midpoint and direction
+            float mid_x = (from_x + to_x) / 2;
+            float mid_y = (from_y + to_y) / 2;
+            float dx = to_x - from_x;
+            float dy = to_y - from_y;
+            float len = sqrt(dx*dx + dy*dy);
+
+            if (len > 20) {  // Only draw on wires long enough
+                // Normalize direction
+                dx /= len;
+                dy /= len;
+
+                // Arrow size scales with zoom
+                float arrow_size = 8 / ctx->zoom;
+                if (arrow_size < 3) arrow_size = 3;
+                if (arrow_size > 10) arrow_size = 10;
+
+                // Calculate arrow points
+                // Arrow tip slightly ahead of midpoint
+                float tip_x = mid_x + dx * (arrow_size / 2);
+                float tip_y = mid_y + dy * (arrow_size / 2);
+
+                // Perpendicular direction for arrow wings
+                float px = -dy;
+                float py = dx;
+
+                // Arrow wing points
+                float wing1_x = tip_x - dx * arrow_size + px * (arrow_size * 0.5f);
+                float wing1_y = tip_y - dy * arrow_size + py * (arrow_size * 0.5f);
+                float wing2_x = tip_x - dx * arrow_size - px * (arrow_size * 0.5f);
+                float wing2_y = tip_y - dy * arrow_size - py * (arrow_size * 0.5f);
+
+                // Draw arrow in orange/yellow color
+                render_set_color(ctx, (Color){0xff, 0xaa, 0x00, 0xff});
+                render_draw_line(ctx, tip_x, tip_y, wing1_x, wing1_y);
+                render_draw_line(ctx, tip_x, tip_y, wing2_x, wing2_y);
+            }
+        }
+    }
 }
 
 void render_node(RenderContext *ctx, Node *node, bool show_voltage) {

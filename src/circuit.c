@@ -469,6 +469,21 @@ void circuit_update_voltages(Circuit *circuit, Vector *solution) {
         Node *node = circuit_get_node(circuit, circuit->probes[i].node_id);
         circuit->probes[i].voltage = node ? node->voltage : 0;
     }
+
+    // Calculate power dissipation for components
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+        if (comp->type == COMP_RESISTOR && comp->num_terminals >= 2) {
+            Node *n1 = circuit_get_node(circuit, comp->node_ids[0]);
+            Node *n2 = circuit_get_node(circuit, comp->node_ids[1]);
+            if (n1 && n2) {
+                double v_diff = n1->voltage - n2->voltage;
+                double R = comp->props.resistor.resistance;
+                // P = V^2 / R
+                comp->props.resistor.power_dissipated = (v_diff * v_diff) / R;
+            }
+        }
+    }
 }
 
 void circuit_update_component_nodes(Circuit *circuit, Component *comp) {

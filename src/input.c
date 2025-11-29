@@ -397,9 +397,16 @@ void input_handle_key(InputState *input, SDL_Keycode key,
             break;
 
         case SDLK_g:
-            // Toggle grid
+            // G: Add ground
             if (!ctrl) {
-                render->show_grid = !render->show_grid;
+                input_start_placing(input, COMP_GROUND);
+            }
+            break;
+
+        case SDLK_i:
+            // I: Toggle current flow arrows
+            if (!ctrl) {
+                render->show_current = !render->show_current;
             }
             break;
 

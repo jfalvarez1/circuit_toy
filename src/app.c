@@ -139,8 +139,8 @@ void app_handle_events(App *app) {
                     app->render->canvas_rect.w = w - PALETTE_WIDTH - PROPERTIES_WIDTH;
                     app->render->canvas_rect.h = h - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
 
-                    // Update oscilloscope position (anchored to right side)
-                    app->ui.scope_rect.x = w - PROPERTIES_WIDTH + 10;
+                    // Update UI layout (scope position, buttons, etc.)
+                    ui_update_layout(&app->ui);
                 }
                 break;
 
@@ -260,6 +260,12 @@ void app_handle_events(App *app) {
             case UI_ACTION_SCOPE_TRIG_EDGE:
                 // Cycle through trigger edges: Rising -> Falling -> Both -> Rising
                 app->ui.trigger_edge = (app->ui.trigger_edge + 1) % 3;
+                break;
+            case UI_ACTION_SCOPE_TRIG_CH:
+                // Cycle through trigger channels
+                if (app->ui.scope_num_channels > 0) {
+                    app->ui.trigger_channel = (app->ui.trigger_channel + 1) % app->ui.scope_num_channels;
+                }
                 break;
             case UI_ACTION_SCOPE_MODE:
                 // Toggle between Y-T and X-Y mode

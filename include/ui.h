@@ -109,6 +109,7 @@ typedef struct {
     Button btn_scope_time_down;
     Button btn_scope_trig_mode;      // Cycle through trigger modes
     Button btn_scope_trig_edge;      // Toggle trigger edge
+    Button btn_scope_trig_ch;        // Cycle through trigger channel
     Button btn_scope_mode;           // Toggle Y-T / X-Y mode
     Button btn_scope_screenshot;     // Capture scope display
 
@@ -183,10 +184,11 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_SCOPE_PAUSE      14
 #define UI_ACTION_SCOPE_TRIG_MODE  15
 #define UI_ACTION_SCOPE_TRIG_EDGE  16
-#define UI_ACTION_SCOPE_MODE       17
-#define UI_ACTION_SCOPE_TRIG_UP    18
-#define UI_ACTION_SCOPE_TRIG_DOWN  19
-#define UI_ACTION_SCOPE_SCREENSHOT 20
+#define UI_ACTION_SCOPE_TRIG_CH    17
+#define UI_ACTION_SCOPE_MODE       18
+#define UI_ACTION_SCOPE_TRIG_UP    19
+#define UI_ACTION_SCOPE_TRIG_DOWN  20
+#define UI_ACTION_SCOPE_SCREENSHOT 21
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type
 #define UI_ACTION_PROP_APPLY    1000 // Apply property text edit
@@ -200,5 +202,8 @@ void ui_update_measurements(UIState *ui, Simulation *sim, Circuit *circuit);
 
 // Update oscilloscope channels from circuit probes
 void ui_update_scope_channels(UIState *ui, Circuit *circuit);
+
+// Update UI layout after window resize
+void ui_update_layout(UIState *ui);
 
 #endif // UI_H

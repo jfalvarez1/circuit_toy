@@ -298,9 +298,11 @@ void ui_init(UIState *ui) {
     scope_btn_x += 45;
     ui->btn_scope_trig_edge = (Button){{scope_btn_x, scope_btn_y, 25, scope_btn_h}, "/\\", "Trigger edge (Rising/Falling/Both)", false, false, true, false};
     scope_btn_x += 30;
-    ui->btn_scope_mode = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "Y-T", "Display mode (Y-T/X-Y)", false, false, true, false};
-    scope_btn_x += 40;
-    ui->btn_scope_screenshot = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "CAP", "Capture screenshot (saves scope.bmp)", false, false, true, false};
+    ui->btn_scope_trig_ch = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "CH1", "Trigger channel", false, false, true, false};
+    scope_btn_x += 35;
+    ui->btn_scope_mode = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "Y-T", "Display mode (Y-T/X-Y)", false, false, true, false};
+    scope_btn_x += 35;
+    ui->btn_scope_screenshot = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "CAP", "Capture screenshot (saves scope.bmp)", false, false, true, false};
 
     // Initialize trigger settings
     ui->trigger_mode = TRIG_AUTO;
@@ -590,6 +592,38 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Resistance:", buf,
                                    editing_value, edit_buf, cursor);
                 ui->properties[ui->num_properties++].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+
+                // Tolerance (read-only display for now)
+                prop_y += 18;
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Tolerance:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x80, 0xff, 0x80, 0xff);
+                snprintf(buf, sizeof(buf), "%.1f%%", selected->props.resistor.tolerance);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+
+                // Power rating
+                prop_y += 18;
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Pwr Rating:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x80, 0xff, 0x80, 0xff);
+                snprintf(buf, sizeof(buf), "%.2fW", selected->props.resistor.power_rating);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+
+                // Power dissipated (calculated)
+                prop_y += 18;
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Pwr Used:", x + 10, prop_y + 2);
+                double pwr_ratio = selected->props.resistor.power_dissipated / selected->props.resistor.power_rating;
+                if (pwr_ratio > 1.0) {
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0x40, 0x40, 0xff);  // Red - overheating
+                } else if (pwr_ratio > 0.8) {
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);  // Orange - warning
+                } else {
+                    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);  // Green - OK
+                }
+                snprintf(buf, sizeof(buf), "%.3fW (%.0f%%)", selected->props.resistor.power_dissipated,
+                         pwr_ratio * 100);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 2);
                 break;
 
             case COMP_CAPACITOR:
@@ -749,6 +783,11 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     ui->btn_scope_trig_mode.label = trig_mode_labels[ui->trigger_mode];
     ui->btn_scope_trig_edge.label = trig_edge_labels[ui->trigger_edge];
     ui->btn_scope_mode.label = mode_labels[ui->display_mode];
+
+    // Update trigger channel button label
+    static char trig_ch_label[8];
+    snprintf(trig_ch_label, sizeof(trig_ch_label), "CH%d", ui->trigger_channel + 1);
+    ui->btn_scope_trig_ch.label = trig_ch_label;
 
     // Title bar with settings
     SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
@@ -955,6 +994,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     // Draw trigger control buttons (second row)
     draw_button(renderer, &ui->btn_scope_trig_mode);
     draw_button(renderer, &ui->btn_scope_trig_edge);
+    draw_button(renderer, &ui->btn_scope_trig_ch);
     draw_button(renderer, &ui->btn_scope_mode);
     draw_button(renderer, &ui->btn_scope_screenshot);
 
@@ -1079,7 +1119,8 @@ void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer) {
     ui_draw_text(renderer, "Ctrl+V    - Paste", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Ctrl+D    - Duplicate", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Space     - Run/Pause sim", dx + 20, line_y); line_y += line_h;
-    ui_draw_text(renderer, "G         - Toggle grid", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "G         - Place ground", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "I         - Toggle current", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Scroll    - Zoom in/out", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Mid-drag  - Pan view", dx + 20, line_y); line_y += line_h;
 
@@ -1141,6 +1182,9 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_scope_trig_edge.bounds) && ui->btn_scope_trig_edge.enabled) {
             return UI_ACTION_SCOPE_TRIG_EDGE;
         }
+        if (point_in_rect(x, y, &ui->btn_scope_trig_ch.bounds) && ui->btn_scope_trig_ch.enabled) {
+            return UI_ACTION_SCOPE_TRIG_CH;
+        }
         if (point_in_rect(x, y, &ui->btn_scope_mode.bounds) && ui->btn_scope_mode.enabled) {
             return UI_ACTION_SCOPE_MODE;
         }
@@ -1200,6 +1244,7 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_scope_time_down.hovered = point_in_rect(x, y, &ui->btn_scope_time_down.bounds);
     ui->btn_scope_trig_mode.hovered = point_in_rect(x, y, &ui->btn_scope_trig_mode.bounds);
     ui->btn_scope_trig_edge.hovered = point_in_rect(x, y, &ui->btn_scope_trig_edge.bounds);
+    ui->btn_scope_trig_ch.hovered = point_in_rect(x, y, &ui->btn_scope_trig_ch.bounds);
     ui->btn_scope_mode.hovered = point_in_rect(x, y, &ui->btn_scope_mode.bounds);
     ui->btn_scope_screenshot.hovered = point_in_rect(x, y, &ui->btn_scope_screenshot.bounds);
 
@@ -1252,4 +1297,43 @@ void ui_update_scope_channels(UIState *ui, Circuit *circuit) {
     for (int i = circuit->num_probes; i < MAX_PROBES; i++) {
         ui->scope_channels[i].enabled = false;
     }
+}
+
+void ui_update_layout(UIState *ui) {
+    if (!ui) return;
+
+    // Update oscilloscope position (anchored to right side, vertically positioned based on height)
+    ui->scope_rect.x = ui->window_width - PROPERTIES_WIDTH + 10;
+    // Keep y position at 400 or adjust if window is too small
+    int max_scope_y = ui->window_height - STATUSBAR_HEIGHT - ui->scope_rect.h - 80;
+    if (ui->scope_rect.y > max_scope_y && max_scope_y > TOOLBAR_HEIGHT + 220) {
+        ui->scope_rect.y = max_scope_y;
+    }
+
+    // Update oscilloscope control buttons (first row: V+, V-, T+, T-)
+    int scope_btn_y = ui->scope_rect.y + ui->scope_rect.h + 5;
+    int scope_btn_w = 30, scope_btn_h = 20;
+    int scope_btn_x = ui->scope_rect.x;
+
+    ui->btn_scope_volt_up.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
+    scope_btn_x += scope_btn_w + 5;
+    ui->btn_scope_volt_down.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
+    scope_btn_x += scope_btn_w + 15;
+    ui->btn_scope_time_up.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
+    scope_btn_x += scope_btn_w + 5;
+    ui->btn_scope_time_down.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
+
+    // Second row of scope buttons for trigger controls
+    scope_btn_y += scope_btn_h + 5;
+    scope_btn_x = ui->scope_rect.x;
+
+    ui->btn_scope_trig_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
+    scope_btn_x += 45;
+    ui->btn_scope_trig_edge.bounds = (Rect){scope_btn_x, scope_btn_y, 25, scope_btn_h};
+    scope_btn_x += 30;
+    ui->btn_scope_trig_ch.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
+    scope_btn_x += 35;
+    ui->btn_scope_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
+    scope_btn_x += 35;
+    ui->btn_scope_screenshot.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
 }
