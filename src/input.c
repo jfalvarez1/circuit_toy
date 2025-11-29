@@ -167,9 +167,9 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     }
 
                     case TOOL_PROBE: {
-                        float snapped_x = snap_to_grid(wx);
-                        float snapped_y = snap_to_grid(wy);
-                        Node *node = circuit_find_node_at(circuit, snapped_x, snapped_y, 15);
+                        // Search at raw world coordinates with generous threshold
+                        // Don't snap - we want to find the nearest node to where user clicked
+                        Node *node = circuit_find_node_at(circuit, wx, wy, 25);
                         if (node) {
                             circuit_add_probe(circuit, node->id, node->x, node->y);
                             ui_set_status(ui, "Probe placed");
