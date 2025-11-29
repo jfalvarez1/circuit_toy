@@ -1,0 +1,364 @@
+/**
+ * Circuit Playground - Main Application Implementation
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include "app.h"
+#include "file_io.h"
+
+bool app_init(App *app) {
+    memset(app, 0, sizeof(App));
+
+    // Create window
+    app->window = SDL_CreateWindow(
+        "Circuit Playground",
+        SDL_WINDOWPOS_CENTERED,
+        SDL_WINDOWPOS_CENTERED,
+        WINDOW_WIDTH,
+        WINDOW_HEIGHT,
+        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
+    );
+
+    if (!app->window) {
+        fprintf(stderr, "Window creation failed: %s\n", SDL_GetError());
+        return false;
+    }
+
+    // Create renderer
+    app->renderer = SDL_CreateRenderer(
+        app->window,
+        -1,
+        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
+    );
+
+    if (!app->renderer) {
+        fprintf(stderr, "Renderer creation failed: %s\n", SDL_GetError());
+        SDL_DestroyWindow(app->window);
+        return false;
+    }
+
+    // Enable alpha blending
+    SDL_SetRenderDrawBlendMode(app->renderer, SDL_BLENDMODE_BLEND);
+
+    // Create render context
+    app->render = render_create(app->renderer);
+    if (!app->render) {
+        SDL_DestroyRenderer(app->renderer);
+        SDL_DestroyWindow(app->window);
+        return false;
+    }
+
+    // Create circuit
+    app->circuit = circuit_create();
+    if (!app->circuit) {
+        render_free(app->render);
+        SDL_DestroyRenderer(app->renderer);
+        SDL_DestroyWindow(app->window);
+        return false;
+    }
+
+    // Create simulation engine
+    app->simulation = simulation_create(app->circuit);
+    if (!app->simulation) {
+        circuit_free(app->circuit);
+        render_free(app->render);
+        SDL_DestroyRenderer(app->renderer);
+        SDL_DestroyWindow(app->window);
+        return false;
+    }
+
+    // Initialize UI
+    ui_init(&app->ui);
+
+    // Initialize input
+    input_init(&app->input);
+
+    // Set initial state
+    app->running = true;
+    app->show_voltages = false;
+    app->show_current = false;
+    app->last_frame_time = SDL_GetTicks();
+
+    // Center the view
+    render_reset_view(app->render);
+
+    ui_set_status(&app->ui, "Ready - Select a component or tool to begin");
+
+    return true;
+}
+
+void app_shutdown(App *app) {
+    if (app->simulation) {
+        simulation_free(app->simulation);
+        app->simulation = NULL;
+    }
+
+    if (app->circuit) {
+        circuit_free(app->circuit);
+        app->circuit = NULL;
+    }
+
+    if (app->render) {
+        render_free(app->render);
+        app->render = NULL;
+    }
+
+    if (app->renderer) {
+        SDL_DestroyRenderer(app->renderer);
+        app->renderer = NULL;
+    }
+
+    if (app->window) {
+        SDL_DestroyWindow(app->window);
+        app->window = NULL;
+    }
+}
+
+void app_handle_events(App *app) {
+    SDL_Event event;
+
+    while (SDL_PollEvent(&event)) {
+        switch (event.type) {
+            case SDL_QUIT:
+                app->running = false;
+                break;
+
+            case SDL_WINDOWEVENT:
+                if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
+                    // Handle window resize
+                    int w, h;
+                    SDL_GetWindowSize(app->window, &w, &h);
+                    app->render->canvas_rect.w = w - PALETTE_WIDTH - PROPERTIES_WIDTH;
+                    app->render->canvas_rect.h = h - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
+                }
+                break;
+
+            default:
+                // Let input handler process the event
+                if (input_handle_event(&app->input, &event,
+                                       app->circuit, app->render, &app->ui)) {
+                    // Event was handled, check for actions
+                    if (app->input.selected_component) {
+                        app_on_component_selected(app, app->input.selected_component);
+                    }
+                }
+                break;
+        }
+    }
+
+    // Handle UI actions
+    // (These are triggered by ui_handle_click returning action IDs)
+}
+
+void app_update(App *app) {
+    uint32_t current_time = SDL_GetTicks();
+    float delta_time = (current_time - app->last_frame_time) / 1000.0f;
+    app->last_frame_time = current_time;
+
+    // Update FPS counter
+    app->frame_count++;
+    static uint32_t fps_timer = 0;
+    if (current_time - fps_timer >= 1000) {
+        app->fps = app->frame_count;
+        app->frame_count = 0;
+        fps_timer = current_time;
+    }
+
+    // Run simulation if active
+    if (app->simulation->state == SIM_RUNNING) {
+        // Calculate steps based on speed
+        int steps = (int)(delta_time * app->simulation->speed * 1000);
+        steps = CLAMP(steps, 1, 1000);
+
+        for (int i = 0; i < steps; i++) {
+            if (!simulation_step(app->simulation)) {
+                simulation_pause(app->simulation);
+                ui_set_status(&app->ui, simulation_get_error(app->simulation));
+                break;
+            }
+        }
+    }
+
+    // Update UI state
+    ui_update(&app->ui, app->circuit, app->simulation);
+
+    // Update cursor position display
+    app->ui.cursor_x = app->input.mouse_x;
+    app->ui.cursor_y = app->input.mouse_y;
+    render_screen_to_world(app->render,
+                           app->input.mouse_x - CANVAS_X,
+                           app->input.mouse_y - CANVAS_Y,
+                           &app->ui.world_x, &app->ui.world_y);
+}
+
+void app_render(App *app) {
+    SDL_Renderer *r = app->renderer;
+
+    // Clear screen
+    SDL_SetRenderDrawColor(r, COLOR_BG.r, COLOR_BG.g, COLOR_BG.b, 255);
+    SDL_RenderClear(r);
+
+    // Render canvas area (circuit)
+    SDL_Rect canvas_clip = {CANVAS_X, CANVAS_Y, CANVAS_WIDTH, CANVAS_HEIGHT};
+    SDL_RenderSetClipRect(r, &canvas_clip);
+
+    // Set render offset to canvas position
+    app->render->canvas_rect = (Rect){CANVAS_X, CANVAS_Y, CANVAS_WIDTH, CANVAS_HEIGHT};
+
+    // Render grid
+    if (app->render->show_grid) {
+        render_grid(app->render);
+    }
+
+    // Render circuit
+    render_circuit(app->render, app->circuit);
+
+    // Render ghost component if placing
+    if (app->input.current_tool == TOOL_COMPONENT && app->input.placing_component != COMP_NONE) {
+        Component ghost = {0};
+        ghost.type = app->input.placing_component;
+        ghost.x = snap_to_grid(app->ui.world_x);
+        ghost.y = snap_to_grid(app->ui.world_y);
+        ghost.rotation = 0;
+        render_ghost_component(app->render, &ghost);
+    }
+
+    // Render wire preview
+    if (app->input.drawing_wire) {
+        Node *start = circuit_get_node(app->circuit, app->input.wire_start_node);
+        if (start) {
+            render_wire_preview(app->render,
+                               start->x, start->y,
+                               app->input.wire_preview_x,
+                               app->input.wire_preview_y);
+        }
+    }
+
+    SDL_RenderSetClipRect(r, NULL);
+
+    // Render UI elements
+    ui_render_toolbar(&app->ui, r);
+    ui_render_palette(&app->ui, r);
+    ui_render_properties(&app->ui, r, app->input.selected_component);
+    ui_render_measurements(&app->ui, r, app->simulation);
+    ui_render_oscilloscope(&app->ui, r, app->simulation);
+    ui_render_statusbar(&app->ui, r);
+
+    // Render dialogs
+    if (app->ui.show_shortcuts_dialog) {
+        ui_render_shortcuts_dialog(&app->ui, r);
+    }
+
+    // Present
+    SDL_RenderPresent(r);
+}
+
+void app_new_circuit(App *app) {
+    simulation_reset(app->simulation);
+    circuit_clear(app->circuit);
+    app->has_file = false;
+    app->current_file[0] = '\0';
+    input_cancel_action(&app->input);
+    app->input.selected_component = NULL;
+    ui_set_status(&app->ui, "New circuit created");
+}
+
+void app_save_circuit(App *app) {
+    if (!app->has_file) {
+        app_save_circuit_as(app);
+        return;
+    }
+
+    if (file_save_circuit(app->circuit, app->current_file)) {
+        app->circuit->modified = false;
+        ui_set_status(&app->ui, "Circuit saved");
+    } else {
+        ui_set_status(&app->ui, file_get_error());
+    }
+}
+
+void app_save_circuit_as(App *app) {
+    // In a real app, this would show a file dialog
+    // For now, use a default name
+    const char *filename = "circuit.json";
+
+    if (file_export_json(app->circuit, filename)) {
+        strncpy(app->current_file, filename, sizeof(app->current_file) - 1);
+        app->has_file = true;
+        app->circuit->modified = false;
+        ui_set_status(&app->ui, "Circuit saved");
+    } else {
+        ui_set_status(&app->ui, file_get_error());
+    }
+}
+
+void app_load_circuit(App *app) {
+    // In a real app, this would show a file dialog
+    const char *filename = "circuit.json";
+
+    if (file_import_json(app->circuit, filename)) {
+        strncpy(app->current_file, filename, sizeof(app->current_file) - 1);
+        app->has_file = true;
+        simulation_reset(app->simulation);
+        ui_set_status(&app->ui, "Circuit loaded");
+    } else {
+        ui_set_status(&app->ui, file_get_error());
+    }
+}
+
+void app_run_simulation(App *app) {
+    if (app->simulation->state == SIM_PAUSED) {
+        simulation_start(app->simulation);
+        ui_set_status(&app->ui, "Simulation resumed");
+        return;
+    }
+
+    // Run DC analysis first
+    if (!simulation_dc_analysis(app->simulation)) {
+        ui_set_status(&app->ui, simulation_get_error(app->simulation));
+        return;
+    }
+
+    simulation_start(app->simulation);
+    ui_set_status(&app->ui, "Simulation running");
+}
+
+void app_pause_simulation(App *app) {
+    simulation_pause(app->simulation);
+    ui_set_status(&app->ui, "Simulation paused");
+}
+
+void app_step_simulation(App *app) {
+    if (app->simulation->solution == NULL) {
+        if (!simulation_dc_analysis(app->simulation)) {
+            ui_set_status(&app->ui, simulation_get_error(app->simulation));
+            return;
+        }
+    }
+
+    if (simulation_step(app->simulation)) {
+        ui_set_status(&app->ui, "Step completed");
+    } else {
+        ui_set_status(&app->ui, simulation_get_error(app->simulation));
+    }
+}
+
+void app_reset_simulation(App *app) {
+    simulation_reset(app->simulation);
+    ui_set_status(&app->ui, "Simulation reset");
+}
+
+void app_on_component_selected(App *app, Component *comp) {
+    app->ui.editing_component = comp;
+    // Properties panel will be updated in ui_render_properties
+}
+
+void app_on_component_deselected(App *app) {
+    app->ui.editing_component = NULL;
+}
+
+void app_on_property_changed(App *app, Component *comp) {
+    circuit_update_component_nodes(app->circuit, comp);
+    app->circuit->modified = true;
+}

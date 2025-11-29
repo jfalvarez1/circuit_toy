@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-A web-based interactive circuit simulator inspired by The Powder Toy, but focused on electronic circuit simulation. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
+A native desktop circuit simulator written in C with SDL2, inspired by The Powder Toy. Build, simulate, and analyze electronic circuits with an intuitive interface.
 
 ## Features
 
@@ -49,16 +49,60 @@ A web-based interactive circuit simulator inspired by The Powder Toy, but focuse
 - Component rotation (double-click or 'R' key)
 - Wire routing between component terminals
 - Property editor panel for adjusting component values
-- Save/load circuits as JSON files
+- Save/load circuits (binary and JSON formats)
 
-## Getting Started
+## Building
 
-1. Open `index.html` in a modern web browser
-2. Select a component from the left palette
-3. Click on the canvas to place the component
-4. Use the Wire tool to connect component terminals
-5. Always include a Ground component as a reference
-6. Click Run to start the simulation
+### Requirements
+
+- CMake 3.16 or higher
+- SDL2 development libraries
+- C11 compatible compiler (GCC, Clang, or MSVC)
+
+### Linux
+
+```bash
+# Install dependencies (Ubuntu/Debian)
+sudo apt-get install cmake libsdl2-dev
+
+# Build
+mkdir build && cd build
+cmake ..
+make
+
+# Run
+./CircuitPlayground
+```
+
+### Windows
+
+```bash
+# Using vcpkg for dependencies
+vcpkg install sdl2
+
+# Build with CMake
+mkdir build && cd build
+cmake .. -DCMAKE_TOOLCHAIN_FILE=[vcpkg root]/scripts/buildsystems/vcpkg.cmake
+cmake --build . --config Release
+
+# Or use the NSIS installer
+cpack -G NSIS
+```
+
+### macOS
+
+```bash
+# Install dependencies
+brew install cmake sdl2
+
+# Build
+mkdir build && cd build
+cmake ..
+make
+
+# Run
+./CircuitPlayground
+```
 
 ## Keyboard Shortcuts
 
@@ -69,6 +113,16 @@ A web-based interactive circuit simulator inspired by The Powder Toy, but focuse
 | R | Rotate selected component |
 | G | Toggle grid visibility |
 | S | Toggle snap-to-grid |
+| Ctrl+C | Copy selected component |
+| Ctrl+X | Cut selected component |
+| Ctrl+V | Paste component |
+| Ctrl+D | Duplicate selected component |
+| Ctrl+S | Save circuit |
+| Ctrl+O | Open circuit |
+| Ctrl+Z | Undo |
+| Ctrl+Shift+Z | Redo |
+| Space | Start/pause simulation |
+| F1 | Show keyboard shortcuts |
 
 ## Technical Details
 
@@ -78,7 +132,7 @@ The simulator uses Modified Nodal Analysis (MNA) to solve the circuit equations:
 
 1. Build conductance matrix (G) and current vector (I)
 2. Each component "stamps" its contribution to the matrix
-3. Solve Gx = I using LU decomposition with partial pivoting
+3. Solve Gx = I using Gaussian elimination with partial pivoting
 4. Iterate for nonlinear components until convergence
 
 ### Transient Analysis
@@ -99,43 +153,38 @@ For time-domain simulation:
 
 ```
 circuit_toy/
-├── index.html              # Main HTML file
-├── css/
-│   └── styles.css          # Styling
-└── js/
-    ├── math/
-    │   ├── matrix.js       # Matrix/Vector classes
-    │   └── solver.js       # Linear solver & MNA builder
-    ├── core/
-    │   ├── component.js    # Base component class
-    │   ├── node.js         # Circuit node management
-    │   ├── wire.js         # Wire connections
-    │   └── circuit.js      # Circuit container
-    ├── components/
-    │   ├── ground.js       # Ground component
-    │   ├── sources.js      # Voltage/current sources
-    │   ├── passives.js     # R, L, C components
-    │   ├── semiconductors.js # Diode, BJT, MOSFET
-    │   └── opamp.js        # Operational amplifier
-    ├── simulation/
-    │   └── engine.js       # Simulation engine
-    ├── ui/
-    │   ├── canvas.js       # Canvas rendering & interaction
-    │   ├── palette.js      # Component palette
-    │   ├── properties.js   # Property editor
-    │   ├── oscilloscope.js # Oscilloscope display
-    │   └── measurements.js # Measurement panel
-    └── app.js              # Main application
+├── CMakeLists.txt          # CMake build configuration
+├── README.md               # This file
+├── include/                # Header files
+│   ├── types.h             # Common type definitions
+│   ├── matrix.h            # Matrix/Vector operations
+│   ├── component.h         # Component definitions
+│   ├── circuit.h           # Circuit container
+│   ├── simulation.h        # Simulation engine
+│   ├── render.h            # SDL2 rendering
+│   ├── ui.h                # UI system
+│   ├── input.h             # Input handling
+│   ├── file_io.h           # File I/O
+│   └── app.h               # Main application
+├── src/                    # Source files
+│   ├── main.c              # Entry point
+│   ├── app.c               # Application logic
+│   ├── matrix.c            # Linear algebra
+│   ├── component.c         # Component implementation
+│   ├── circuit.c           # Circuit management
+│   ├── simulation.c        # Simulation engine
+│   ├── render.c            # SDL2 rendering
+│   ├── ui.c                # UI rendering
+│   ├── input.c             # Input handling
+│   └── file_io.c           # File save/load
+└── resources/              # Assets (fonts, icons)
 ```
 
-## Browser Support
+## Platform Support
 
-Requires a modern browser with:
-- HTML5 Canvas
-- ES6+ JavaScript
-- CSS Grid/Flexbox
-
-Tested on Chrome, Firefox, Safari, and Edge.
+- Windows (x64)
+- Linux (x64)
+- macOS (x64, arm64)
 
 ## License
 
@@ -144,3 +193,4 @@ MIT License - See LICENSE file for details.
 ## Acknowledgments
 
 Inspired by [The Powder Toy](https://github.com/jfalvarez1/powder_toy) particle simulation game.
+Architecture follows the same C/SDL2 pattern used by The Powder Toy.
