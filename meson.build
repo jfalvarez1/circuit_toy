@@ -3,8 +3,12 @@ project('circuit-playground', 'c',
   default_options : ['c_std=c11', 'warning_level=2']
 )
 
-# Find SDL2 dependency
-sdl2_dep = dependency('sdl2', required : true)
+# Find SDL2 dependency (with subproject fallback for Windows)
+sdl2_dep = dependency('sdl2', required : false)
+if not sdl2_dep.found()
+  sdl2_proj = subproject('sdl2', required : true)
+  sdl2_dep = sdl2_proj.get_variable('sdl2_dep')
+endif
 
 # Source files
 src_files = files(
