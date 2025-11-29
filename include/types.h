@@ -8,6 +8,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <math.h>
+
+// Define M_PI if not available (MSVC)
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 // Window dimensions
 #define WINDOW_WIDTH 1280
