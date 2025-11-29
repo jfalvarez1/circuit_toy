@@ -457,194 +457,238 @@ void render_circuit(RenderContext *ctx, Circuit *circuit) {
 
 // Component shape rendering functions
 // NOTE: All dimensions are scaled to match grid-aligned terminal positions (multiples of 20)
+
+// Helper to rotate a point (dx, dy) around origin by rotation degrees (0, 90, 180, 270)
+static void rotate_point(float dx, float dy, int rotation, float *rx, float *ry) {
+    switch (rotation % 360) {
+        case 0:
+        default:
+            *rx = dx;
+            *ry = dy;
+            break;
+        case 90:
+            *rx = -dy;
+            *ry = dx;
+            break;
+        case 180:
+            *rx = -dx;
+            *ry = -dy;
+            break;
+        case 270:
+            *rx = dy;
+            *ry = -dx;
+            break;
+    }
+}
+
+// Helper to draw a rotated line
+static void render_draw_line_rotated(RenderContext *ctx, float cx, float cy,
+                                      float x1, float y1, float x2, float y2, int rotation) {
+    float rx1, ry1, rx2, ry2;
+    rotate_point(x1, y1, rotation, &rx1, &ry1);
+    rotate_point(x2, y2, rotation, &rx2, &ry2);
+    render_draw_line(ctx, cx + rx1, cy + ry1, cx + rx2, cy + ry2);
+}
+
+// Helper to draw a rotated circle (circle doesn't change, just position)
+static void render_draw_circle_rotated(RenderContext *ctx, float cx, float cy,
+                                        float dx, float dy, float r, int rotation) {
+    float rx, ry;
+    rotate_point(dx, dy, rotation, &rx, &ry);
+    render_draw_circle(ctx, cx + rx, cy + ry, r);
+}
+
 void render_ground(RenderContext *ctx, float x, float y, int rotation) {
     // Terminal at (0, -20)
-    render_draw_line(ctx, x, y - 20, x, y);
-    render_draw_line(ctx, x - 15, y, x + 15, y);
-    render_draw_line(ctx, x - 10, y + 6, x + 10, y + 6);
-    render_draw_line(ctx, x - 5, y + 12, x + 5, y + 12);
+    render_draw_line_rotated(ctx, x, y, 0, -20, 0, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, 0, 15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 6, 10, 6, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, 12, 5, 12, rotation);
 }
 
 void render_voltage_source(RenderContext *ctx, float x, float y, int rotation, bool is_ac) {
     // Terminals at (0, -40) and (0, 40)
     render_draw_circle(ctx, x, y, 18);
-    render_draw_line(ctx, x, y - 18, x, y - 40);
-    render_draw_line(ctx, x, y + 18, x, y + 40);
+    render_draw_line_rotated(ctx, x, y, 0, -18, 0, -40, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 18, 0, 40, rotation);
 
     if (is_ac) {
-        // Sine wave symbol
+        // Sine wave symbol (rotated)
         for (int i = 0; i < 20; i++) {
-            float x1 = x - 10 + i;
-            float x2 = x - 10 + i + 1;
-            float y1 = y + 8 * sin((i / 20.0) * 2 * M_PI);
-            float y2 = y + 8 * sin(((i + 1) / 20.0) * 2 * M_PI);
-            render_draw_line(ctx, x1, y1, x2, y2);
+            float dx1 = -10 + i;
+            float dx2 = -10 + i + 1;
+            float dy1 = 8 * sin((i / 20.0) * 2 * M_PI);
+            float dy2 = 8 * sin(((i + 1) / 20.0) * 2 * M_PI);
+            render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
         }
     } else {
         // + and - symbols
-        render_draw_line(ctx, x - 5, y - 8, x + 5, y - 8);
-        render_draw_line(ctx, x, y - 13, x, y - 3);
-        render_draw_line(ctx, x - 5, y + 8, x + 5, y + 8);
+        render_draw_line_rotated(ctx, x, y, -5, -8, 5, -8, rotation);
+        render_draw_line_rotated(ctx, x, y, 0, -13, 0, -3, rotation);
+        render_draw_line_rotated(ctx, x, y, -5, 8, 5, 8, rotation);
     }
 }
 
 void render_current_source(RenderContext *ctx, float x, float y, int rotation) {
     // Terminals at (0, -40) and (0, 40)
     render_draw_circle(ctx, x, y, 18);
-    render_draw_line(ctx, x, y - 18, x, y - 40);
-    render_draw_line(ctx, x, y + 18, x, y + 40);
+    render_draw_line_rotated(ctx, x, y, 0, -18, 0, -40, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 18, 0, 40, rotation);
     // Arrow
-    render_draw_line(ctx, x, y + 10, x, y - 10);
-    render_draw_line(ctx, x - 5, y - 5, x, y - 10);
-    render_draw_line(ctx, x + 5, y - 5, x, y - 10);
+    render_draw_line_rotated(ctx, x, y, 0, 10, 0, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, -5, 0, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, -5, 0, -10, rotation);
 }
 
 void render_resistor(RenderContext *ctx, float x, float y, int rotation) {
     // Terminals at (-40, 0) and (40, 0)
-    render_draw_line(ctx, x - 40, y, x - 28, y);
+    render_draw_line_rotated(ctx, x, y, -40, 0, -28, 0, rotation);
     // Zigzag scaled to fit 80px width
     int points[][2] = {{-28,0},{-21,-8},{-7,8},{7,-8},{21,8},{28,0}};
     for (int i = 0; i < 5; i++) {
-        render_draw_line(ctx, x + points[i][0], y + points[i][1],
-                        x + points[i+1][0], y + points[i+1][1]);
+        render_draw_line_rotated(ctx, x, y, points[i][0], points[i][1],
+                                 points[i+1][0], points[i+1][1], rotation);
     }
-    render_draw_line(ctx, x + 28, y, x + 40, y);
+    render_draw_line_rotated(ctx, x, y, 28, 0, 40, 0, rotation);
 }
 
 void render_capacitor(RenderContext *ctx, float x, float y, int rotation) {
     // Terminals at (-40, 0) and (40, 0)
-    render_draw_line(ctx, x - 40, y, x - 6, y);
-    render_draw_line(ctx, x - 6, y - 14, x - 6, y + 14);
-    render_draw_line(ctx, x + 6, y - 14, x + 6, y + 14);
-    render_draw_line(ctx, x + 6, y, x + 40, y);
+    render_draw_line_rotated(ctx, x, y, -40, 0, -6, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -6, -14, -6, 14, rotation);
+    render_draw_line_rotated(ctx, x, y, 6, -14, 6, 14, rotation);
+    render_draw_line_rotated(ctx, x, y, 6, 0, 40, 0, rotation);
 }
 
 void render_inductor(RenderContext *ctx, float x, float y, int rotation) {
     // Terminals at (-40, 0) and (40, 0)
-    render_draw_line(ctx, x - 40, y, x - 28, y);
+    render_draw_line_rotated(ctx, x, y, -40, 0, -28, 0, rotation);
     // Coils scaled to fit
     for (int i = 0; i < 4; i++) {
-        float cx = x - 21 + i * 14;
+        float coil_cx = -21 + i * 14;
         for (int a = 180; a <= 360; a += 15) {
             float r = a * M_PI / 180;
             float r2 = (a + 15) * M_PI / 180;
-            render_draw_line(ctx, cx + 7*cos(r), y + 7*sin(r),
-                            cx + 7*cos(r2), y + 7*sin(r2));
+            float dx1 = coil_cx + 7*cos(r);
+            float dy1 = 7*sin(r);
+            float dx2 = coil_cx + 7*cos(r2);
+            float dy2 = 7*sin(r2);
+            render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
         }
     }
-    render_draw_line(ctx, x + 28, y, x + 40, y);
+    render_draw_line_rotated(ctx, x, y, 28, 0, 40, 0, rotation);
 }
 
 void render_diode(RenderContext *ctx, float x, float y, int rotation) {
     // Terminals at (-40, 0) and (40, 0)
-    render_draw_line(ctx, x - 40, y, x - 10, y);
+    render_draw_line_rotated(ctx, x, y, -40, 0, -10, 0, rotation);
     // Triangle
-    render_draw_line(ctx, x - 10, y - 12, x - 10, y + 12);
-    render_draw_line(ctx, x - 10, y - 12, x + 10, y);
-    render_draw_line(ctx, x - 10, y + 12, x + 10, y);
+    render_draw_line_rotated(ctx, x, y, -10, -12, -10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -12, 10, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 12, 10, 0, rotation);
     // Bar
-    render_draw_line(ctx, x + 10, y - 12, x + 10, y + 12);
-    render_draw_line(ctx, x + 10, y, x + 40, y);
+    render_draw_line_rotated(ctx, x, y, 10, -12, 10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, 0, 40, 0, rotation);
 }
 
 void render_bjt(RenderContext *ctx, float x, float y, int rotation, bool is_pnp) {
     // Terminals: B at (-20, 0), C at (20, -20), E at (20, 20)
     render_draw_circle(ctx, x, y, 18);
-    render_draw_line(ctx, x - 20, y, x - 5, y);
-    render_draw_line(ctx, x - 5, y - 10, x - 5, y + 10);
-    render_draw_line(ctx, x - 5, y - 5, x + 12, y - 15);
-    render_draw_line(ctx, x + 12, y - 15, x + 20, y - 20);
-    render_draw_line(ctx, x - 5, y + 5, x + 12, y + 15);
-    render_draw_line(ctx, x + 12, y + 15, x + 20, y + 20);
+    render_draw_line_rotated(ctx, x, y, -20, 0, -5, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, -10, -5, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, -5, 12, -15, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, -15, 20, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, 5, 12, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, 15, 20, 20, rotation);
 }
 
 void render_mosfet(RenderContext *ctx, float x, float y, int rotation, bool is_pmos) {
     // Terminals: G at (-20, 0), D at (20, -20), S at (20, 20)
-    render_draw_line(ctx, x - 20, y, x - 8, y);
-    render_draw_line(ctx, x - 8, y - 10, x - 8, y + 10);
-    render_draw_line(ctx, x - 3, y - 12, x - 3, y - 4);
-    render_draw_line(ctx, x - 3, y + 4, x - 3, y + 12);
-    render_draw_line(ctx, x - 3, y - 8, x + 12, y - 8);
-    render_draw_line(ctx, x + 12, y - 8, x + 12, y - 20);
-    render_draw_line(ctx, x + 12, y - 20, x + 20, y - 20);
-    render_draw_line(ctx, x - 3, y + 8, x + 12, y + 8);
-    render_draw_line(ctx, x + 12, y + 8, x + 12, y + 20);
-    render_draw_line(ctx, x + 12, y + 20, x + 20, y + 20);
+    render_draw_line_rotated(ctx, x, y, -20, 0, -8, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -8, -10, -8, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, -3, -12, -3, -4, rotation);
+    render_draw_line_rotated(ctx, x, y, -3, 4, -3, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, -3, -8, 12, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, -8, 12, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, -20, 20, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -3, 8, 12, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, 8, 12, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, 20, 20, 20, rotation);
 }
 
 void render_opamp(RenderContext *ctx, float x, float y, int rotation) {
     // Terminals: - at (-40, -20), + at (-40, 20), OUT at (40, 0)
     // Triangle
-    render_draw_line(ctx, x - 25, y - 30, x - 25, y + 30);
-    render_draw_line(ctx, x - 25, y - 30, x + 30, y);
-    render_draw_line(ctx, x - 25, y + 30, x + 30, y);
+    render_draw_line_rotated(ctx, x, y, -25, -30, -25, 30, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, -30, 30, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, 30, 30, 0, rotation);
     // Inputs
-    render_draw_line(ctx, x - 40, y - 20, x - 25, y - 20);
-    render_draw_line(ctx, x - 40, y + 20, x - 25, y + 20);
+    render_draw_line_rotated(ctx, x, y, -40, -20, -25, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 20, -25, 20, rotation);
     // Output
-    render_draw_line(ctx, x + 30, y, x + 40, y);
+    render_draw_line_rotated(ctx, x, y, 30, 0, 40, 0, rotation);
 }
 
 void render_square_wave(RenderContext *ctx, float x, float y, int rotation) {
     // Terminals at (0, -40) and (0, 40), same as voltage sources
     render_draw_circle(ctx, x, y, 18);
-    render_draw_line(ctx, x, y - 18, x, y - 40);
-    render_draw_line(ctx, x, y + 18, x, y + 40);
+    render_draw_line_rotated(ctx, x, y, 0, -18, 0, -40, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 18, 0, 40, rotation);
 
     // Square wave symbol inside circle
-    render_draw_line(ctx, x - 10, y + 6, x - 10, y - 6);  // left edge up
-    render_draw_line(ctx, x - 10, y - 6, x - 3, y - 6);   // top left
-    render_draw_line(ctx, x - 3, y - 6, x - 3, y + 6);    // down
-    render_draw_line(ctx, x - 3, y + 6, x + 3, y + 6);    // bottom middle
-    render_draw_line(ctx, x + 3, y + 6, x + 3, y - 6);    // up
-    render_draw_line(ctx, x + 3, y - 6, x + 10, y - 6);   // top right
-    render_draw_line(ctx, x + 10, y - 6, x + 10, y + 6);  // right edge down
+    render_draw_line_rotated(ctx, x, y, -10, 6, -10, -6, rotation);   // left edge up
+    render_draw_line_rotated(ctx, x, y, -10, -6, -3, -6, rotation);   // top left
+    render_draw_line_rotated(ctx, x, y, -3, -6, -3, 6, rotation);     // down
+    render_draw_line_rotated(ctx, x, y, -3, 6, 3, 6, rotation);       // bottom middle
+    render_draw_line_rotated(ctx, x, y, 3, 6, 3, -6, rotation);       // up
+    render_draw_line_rotated(ctx, x, y, 3, -6, 10, -6, rotation);     // top right
+    render_draw_line_rotated(ctx, x, y, 10, -6, 10, 6, rotation);     // right edge down
 }
 
 void render_triangle_wave(RenderContext *ctx, float x, float y, int rotation) {
     // Terminals at (0, -40) and (0, 40)
     render_draw_circle(ctx, x, y, 18);
-    render_draw_line(ctx, x, y - 18, x, y - 40);
-    render_draw_line(ctx, x, y + 18, x, y + 40);
+    render_draw_line_rotated(ctx, x, y, 0, -18, 0, -40, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 18, 0, 40, rotation);
 
     // Triangle wave symbol inside circle
-    render_draw_line(ctx, x - 10, y + 6, x - 5, y - 6);   // up slope
-    render_draw_line(ctx, x - 5, y - 6, x, y + 6);        // down slope
-    render_draw_line(ctx, x, y + 6, x + 5, y - 6);        // up slope
-    render_draw_line(ctx, x + 5, y - 6, x + 10, y + 6);   // down slope
+    render_draw_line_rotated(ctx, x, y, -10, 6, -5, -6, rotation);    // up slope
+    render_draw_line_rotated(ctx, x, y, -5, -6, 0, 6, rotation);      // down slope
+    render_draw_line_rotated(ctx, x, y, 0, 6, 5, -6, rotation);       // up slope
+    render_draw_line_rotated(ctx, x, y, 5, -6, 10, 6, rotation);      // down slope
 }
 
 void render_sawtooth_wave(RenderContext *ctx, float x, float y, int rotation) {
     // Terminals at (0, -40) and (0, 40)
     render_draw_circle(ctx, x, y, 18);
-    render_draw_line(ctx, x, y - 18, x, y - 40);
-    render_draw_line(ctx, x, y + 18, x, y + 40);
+    render_draw_line_rotated(ctx, x, y, 0, -18, 0, -40, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 18, 0, 40, rotation);
 
     // Sawtooth wave symbol inside circle
-    render_draw_line(ctx, x - 10, y + 6, x - 3, y - 6);   // ramp up
-    render_draw_line(ctx, x - 3, y - 6, x - 3, y + 6);    // drop down
-    render_draw_line(ctx, x - 3, y + 6, x + 4, y - 6);    // ramp up
-    render_draw_line(ctx, x + 4, y - 6, x + 4, y + 6);    // drop down
-    render_draw_line(ctx, x + 4, y + 6, x + 10, y - 2);   // partial ramp
+    render_draw_line_rotated(ctx, x, y, -10, 6, -3, -6, rotation);    // ramp up
+    render_draw_line_rotated(ctx, x, y, -3, -6, -3, 6, rotation);     // drop down
+    render_draw_line_rotated(ctx, x, y, -3, 6, 4, -6, rotation);      // ramp up
+    render_draw_line_rotated(ctx, x, y, 4, -6, 4, 6, rotation);       // drop down
+    render_draw_line_rotated(ctx, x, y, 4, 6, 10, -2, rotation);      // partial ramp
 }
 
 void render_noise_source(RenderContext *ctx, float x, float y, int rotation) {
     // Terminals at (0, -40) and (0, 40)
     render_draw_circle(ctx, x, y, 18);
-    render_draw_line(ctx, x, y - 18, x, y - 40);
-    render_draw_line(ctx, x, y + 18, x, y + 40);
+    render_draw_line_rotated(ctx, x, y, 0, -18, 0, -40, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 18, 0, 40, rotation);
 
     // Random-looking noise symbol inside circle
-    render_draw_line(ctx, x - 10, y, x - 8, y - 4);
-    render_draw_line(ctx, x - 8, y - 4, x - 6, y + 6);
-    render_draw_line(ctx, x - 6, y + 6, x - 4, y - 2);
-    render_draw_line(ctx, x - 4, y - 2, x - 2, y + 4);
-    render_draw_line(ctx, x - 2, y + 4, x, y - 6);
-    render_draw_line(ctx, x, y - 6, x + 2, y + 3);
-    render_draw_line(ctx, x + 2, y + 3, x + 4, y - 4);
-    render_draw_line(ctx, x + 4, y - 4, x + 6, y + 5);
-    render_draw_line(ctx, x + 6, y + 5, x + 8, y - 3);
-    render_draw_line(ctx, x + 8, y - 3, x + 10, y + 1);
+    render_draw_line_rotated(ctx, x, y, -10, 0, -8, -4, rotation);
+    render_draw_line_rotated(ctx, x, y, -8, -4, -6, 6, rotation);
+    render_draw_line_rotated(ctx, x, y, -6, 6, -4, -2, rotation);
+    render_draw_line_rotated(ctx, x, y, -4, -2, -2, 4, rotation);
+    render_draw_line_rotated(ctx, x, y, -2, 4, 0, -6, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -6, 2, 3, rotation);
+    render_draw_line_rotated(ctx, x, y, 2, 3, 4, -4, rotation);
+    render_draw_line_rotated(ctx, x, y, 4, -4, 6, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, 6, 5, 8, -3, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, -3, 10, 1, rotation);
 }
 
 void render_ghost_component(RenderContext *ctx, Component *comp) {
