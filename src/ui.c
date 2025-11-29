@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "ui.h"
+#include "input.h"
 
 // Simple 8x8 bitmap font (same as render.c)
 static const unsigned char ui_font8x8[95][8] = {
@@ -455,7 +456,48 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
     SDL_RenderDrawLine(renderer, PALETTE_WIDTH - 1, TOOLBAR_HEIGHT, PALETTE_WIDTH - 1, ui->window_height - STATUSBAR_HEIGHT);
 }
 
-void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *selected) {
+// Helper to draw an editable property field
+static void draw_property_field(SDL_Renderer *renderer, int x, int y, int w,
+                                const char *label, const char *value,
+                                bool is_editing, const char *edit_buffer, int cursor_pos) {
+    // Label
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    ui_draw_text(renderer, label, x, y + 2);
+
+    // Value box
+    int value_x = x + 90;
+    int box_w = w - 90;
+    SDL_Rect box = {value_x, y, box_w, 14};
+
+    if (is_editing) {
+        // Editing - dark background with cyan border
+        SDL_SetRenderDrawColor(renderer, 0x10, 0x20, 0x30, 0xff);
+        SDL_RenderFillRect(renderer, &box);
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+        SDL_RenderDrawRect(renderer, &box);
+
+        // Draw input text
+        SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+        ui_draw_text(renderer, edit_buffer, value_x + 2, y + 3);
+
+        // Draw cursor
+        int cursor_x = value_x + 2 + cursor_pos * 8;
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+        SDL_RenderDrawLine(renderer, cursor_x, y + 2, cursor_x, y + 12);
+    } else {
+        // Not editing - clickable field
+        SDL_SetRenderDrawColor(renderer, 0x20, 0x30, 0x40, 0xff);
+        SDL_RenderFillRect(renderer, &box);
+        SDL_SetRenderDrawColor(renderer, 0x40, 0x50, 0x60, 0xff);
+        SDL_RenderDrawRect(renderer, &box);
+
+        // Draw value
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+        ui_draw_text(renderer, value, value_x + 2, y + 3);
+    }
+}
+
+void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *selected, struct InputState *input) {
     int x = ui->window_width - PROPERTIES_WIDTH;
     int y = TOOLBAR_HEIGHT;
 
@@ -467,6 +509,15 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
     // Title
     SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
     ui_draw_text(renderer, "Properties", x + 10, y + 10);
+
+    // Get editing state from input
+    bool editing_value = input && input->editing_property && input->editing_prop_type == 1;  // PROP_VALUE
+    bool editing_freq = input && input->editing_property && input->editing_prop_type == 2;   // PROP_FREQUENCY
+    bool editing_phase = input && input->editing_property && input->editing_prop_type == 3;  // PROP_PHASE
+    bool editing_offset = input && input->editing_property && input->editing_prop_type == 4; // PROP_OFFSET
+    bool editing_duty = input && input->editing_property && input->editing_prop_type == 5;   // PROP_DUTY
+    const char *edit_buf = input ? input->input_buffer : "";
+    int cursor = input ? input->input_cursor : 0;
 
     // Show selected component info
     if (selected) {
@@ -485,162 +536,140 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
             ui_draw_text(renderer, type_names[selected->type], x + 100, y + 35);
         }
 
-        // Show component properties
+        // Store property bounds for later reference
+        ui->num_properties = 0;
+
+        // Show component properties with clickable fields
         int prop_y = y + 55;
+        int prop_w = PROPERTIES_WIDTH - 20;
         char buf[64];
-        SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
 
         switch (selected->type) {
             case COMP_DC_VOLTAGE:
-                ui_draw_text(renderer, "Voltage:", x + 10, prop_y);
-                snprintf(buf, sizeof(buf), "%.2f V", selected->props.dc_voltage.voltage);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y);
-                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-                ui_draw_text(renderer, "[+/-] to adjust", x + 10, prop_y + 20);
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.dc_voltage.voltage);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Voltage:", buf,
+                                   editing_value, edit_buf, cursor);
+                ui->properties[ui->num_properties++].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 break;
 
             case COMP_AC_VOLTAGE:
-                ui_draw_text(renderer, "Amplitude:", x + 10, prop_y);
-                snprintf(buf, sizeof(buf), "%.2f V", selected->props.ac_voltage.amplitude);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y);
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.ac_voltage.amplitude);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
+                                   editing_value, edit_buf, cursor);
+                ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
 
-                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Frequency:", x + 10, prop_y + 18);
-                snprintf(buf, sizeof(buf), "%.1f Hz", selected->props.ac_voltage.frequency);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y + 18);
+                prop_y += 18;
+                snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.ac_voltage.frequency);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
+                                   editing_freq, edit_buf, cursor);
+                ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
 
-                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Phase:", x + 10, prop_y + 36);
+                prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.1f deg", selected->props.ac_voltage.phase);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y + 36);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Phase:", buf,
+                                   editing_phase, edit_buf, cursor);
+                ui->properties[2].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
 
-                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Offset:", x + 10, prop_y + 54);
-                snprintf(buf, sizeof(buf), "%.2f V", selected->props.ac_voltage.offset);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y + 54);
-
-                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-                ui_draw_text(renderer, "[+/-] amplitude", x + 10, prop_y + 75);
-                ui_draw_text(renderer, "[F/f] frequency", x + 10, prop_y + 90);
+                prop_y += 18;
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.ac_voltage.offset);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Offset:", buf,
+                                   editing_offset, edit_buf, cursor);
+                ui->properties[3].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->num_properties = 4;
                 break;
 
             case COMP_DC_CURRENT:
-                ui_draw_text(renderer, "Current:", x + 10, prop_y);
-                snprintf(buf, sizeof(buf), "%.3f mA", selected->props.dc_current.current * 1000.0);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y);
-                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-                ui_draw_text(renderer, "[+/-] to adjust", x + 10, prop_y + 20);
+                snprintf(buf, sizeof(buf), "%.3g A", selected->props.dc_current.current);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Current:", buf,
+                                   editing_value, edit_buf, cursor);
+                ui->properties[ui->num_properties++].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 break;
 
             case COMP_RESISTOR:
-                ui_draw_text(renderer, "Resistance:", x + 10, prop_y);
-                if (selected->props.resistor.resistance >= 1e6)
-                    snprintf(buf, sizeof(buf), "%.2f MOhm", selected->props.resistor.resistance / 1e6);
-                else if (selected->props.resistor.resistance >= 1e3)
-                    snprintf(buf, sizeof(buf), "%.2f kOhm", selected->props.resistor.resistance / 1e3);
-                else
-                    snprintf(buf, sizeof(buf), "%.1f Ohm", selected->props.resistor.resistance);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y);
-                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-                ui_draw_text(renderer, "[+/-] to adjust", x + 10, prop_y + 20);
+                snprintf(buf, sizeof(buf), "%.3g Ohm", selected->props.resistor.resistance);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Resistance:", buf,
+                                   editing_value, edit_buf, cursor);
+                ui->properties[ui->num_properties++].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 break;
 
             case COMP_CAPACITOR:
-                ui_draw_text(renderer, "Capacitance:", x + 10, prop_y);
-                if (selected->props.capacitor.capacitance >= 1e-3)
-                    snprintf(buf, sizeof(buf), "%.2f mF", selected->props.capacitor.capacitance * 1e3);
-                else if (selected->props.capacitor.capacitance >= 1e-6)
-                    snprintf(buf, sizeof(buf), "%.2f uF", selected->props.capacitor.capacitance * 1e6);
-                else if (selected->props.capacitor.capacitance >= 1e-9)
-                    snprintf(buf, sizeof(buf), "%.2f nF", selected->props.capacitor.capacitance * 1e9);
-                else
-                    snprintf(buf, sizeof(buf), "%.2f pF", selected->props.capacitor.capacitance * 1e12);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y);
-                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-                ui_draw_text(renderer, "[+/-] to adjust", x + 10, prop_y + 20);
+                snprintf(buf, sizeof(buf), "%.3g F", selected->props.capacitor.capacitance);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Capacitance:", buf,
+                                   editing_value, edit_buf, cursor);
+                ui->properties[ui->num_properties++].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 break;
 
             case COMP_INDUCTOR:
-                ui_draw_text(renderer, "Inductance:", x + 10, prop_y);
-                if (selected->props.inductor.inductance >= 1.0)
-                    snprintf(buf, sizeof(buf), "%.2f H", selected->props.inductor.inductance);
-                else if (selected->props.inductor.inductance >= 1e-3)
-                    snprintf(buf, sizeof(buf), "%.2f mH", selected->props.inductor.inductance * 1e3);
-                else
-                    snprintf(buf, sizeof(buf), "%.2f uH", selected->props.inductor.inductance * 1e6);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y);
-                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-                ui_draw_text(renderer, "[+/-] to adjust", x + 10, prop_y + 20);
+                snprintf(buf, sizeof(buf), "%.3g H", selected->props.inductor.inductance);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Inductance:", buf,
+                                   editing_value, edit_buf, cursor);
+                ui->properties[ui->num_properties++].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 break;
 
             case COMP_SQUARE_WAVE:
-                ui_draw_text(renderer, "Amplitude:", x + 10, prop_y);
-                snprintf(buf, sizeof(buf), "%.2f V", selected->props.square_wave.amplitude);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y);
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.square_wave.amplitude);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
+                                   editing_value, edit_buf, cursor);
+                ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
 
-                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Frequency:", x + 10, prop_y + 18);
-                snprintf(buf, sizeof(buf), "%.1f Hz", selected->props.square_wave.frequency);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y + 18);
+                prop_y += 18;
+                snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.square_wave.frequency);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
+                                   editing_freq, edit_buf, cursor);
+                ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
 
-                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Duty:", x + 10, prop_y + 36);
-                snprintf(buf, sizeof(buf), "%.0f%%", selected->props.square_wave.duty * 100);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y + 36);
-
-                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-                ui_draw_text(renderer, "[+/-] amplitude", x + 10, prop_y + 55);
-                ui_draw_text(renderer, "[F/f] frequency", x + 10, prop_y + 70);
+                prop_y += 18;
+                snprintf(buf, sizeof(buf), "%.0f %%", selected->props.square_wave.duty * 100);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Duty:", buf,
+                                   editing_duty, edit_buf, cursor);
+                ui->properties[2].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->num_properties = 3;
                 break;
 
             case COMP_TRIANGLE_WAVE:
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.triangle_wave.amplitude);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
+                                   editing_value, edit_buf, cursor);
+                ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+
+                prop_y += 18;
+                snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.triangle_wave.frequency);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
+                                   editing_freq, edit_buf, cursor);
+                ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->num_properties = 2;
+                break;
+
             case COMP_SAWTOOTH_WAVE:
-                ui_draw_text(renderer, "Amplitude:", x + 10, prop_y);
-                snprintf(buf, sizeof(buf), "%.2f V",
-                    selected->type == COMP_TRIANGLE_WAVE ?
-                    selected->props.triangle_wave.amplitude :
-                    selected->props.sawtooth_wave.amplitude);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y);
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.sawtooth_wave.amplitude);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
+                                   editing_value, edit_buf, cursor);
+                ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
 
-                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Frequency:", x + 10, prop_y + 18);
-                snprintf(buf, sizeof(buf), "%.1f Hz",
-                    selected->type == COMP_TRIANGLE_WAVE ?
-                    selected->props.triangle_wave.frequency :
-                    selected->props.sawtooth_wave.frequency);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y + 18);
-
-                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-                ui_draw_text(renderer, "[+/-] amplitude", x + 10, prop_y + 40);
-                ui_draw_text(renderer, "[F/f] frequency", x + 10, prop_y + 55);
+                prop_y += 18;
+                snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.sawtooth_wave.frequency);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
+                                   editing_freq, edit_buf, cursor);
+                ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->num_properties = 2;
                 break;
 
             case COMP_NOISE_SOURCE:
-                ui_draw_text(renderer, "Amplitude:", x + 10, prop_y);
-                snprintf(buf, sizeof(buf), "%.2f V", selected->props.noise_source.amplitude);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                ui_draw_text(renderer, buf, x + 100, prop_y);
-                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-                ui_draw_text(renderer, "[+/-] to adjust", x + 10, prop_y + 20);
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.noise_source.amplitude);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
+                                   editing_value, edit_buf, cursor);
+                ui->properties[ui->num_properties++].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 break;
 
             default:
                 break;
         }
+
+        // Help text
+        prop_y += 25;
+        SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
+        ui_draw_text(renderer, "Click value to edit", x + 10, prop_y);
+        ui_draw_text(renderer, "Use k,M,m,u,n,p suffix", x + 10, prop_y + 12);
     } else {
         SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
         ui_draw_text(renderer, "No selection", x + 10, y + 35);
@@ -1117,6 +1146,15 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
         if (point_in_rect(x, y, &ui->btn_scope_screenshot.bounds) && ui->btn_scope_screenshot.enabled) {
             return UI_ACTION_SCOPE_SCREENSHOT;
+        }
+
+        // Check property fields for click-to-edit
+        // Property type mapping: 0=value, 1=freq, 2=phase, 3=offset, 4=duty (same as render order)
+        static const int prop_type_map[] = {1, 2, 3, 4, 5};  // Maps to PROP_VALUE, PROP_FREQUENCY, etc.
+        for (int i = 0; i < ui->num_properties && i < 16; i++) {
+            if (point_in_rect(x, y, &ui->properties[i].bounds)) {
+                return UI_ACTION_PROP_EDIT + prop_type_map[i];
+            }
         }
 
         // Check palette items

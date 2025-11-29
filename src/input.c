@@ -3,6 +3,7 @@
  */
 
 #include <string.h>
+#include <stdlib.h>
 #include <math.h>
 #include "input.h"
 #include "app.h"
@@ -307,14 +308,36 @@ bool input_handle_event(InputState *input, SDL_Event *event,
         }
 
         case SDL_KEYDOWN: {
-            input_handle_key(input, event->key.keysym.sym, circuit, render);
-
-            // Update modifier state
+            // Update modifier state first
             SDL_Keymod mod = SDL_GetModState();
             input->shift_down = (mod & KMOD_SHIFT) != 0;
             input->ctrl_down = (mod & KMOD_CTRL) != 0;
             input->alt_down = (mod & KMOD_ALT) != 0;
+
+            // If editing a property, handle text editing keys
+            if (input->editing_property) {
+                SDL_Keycode key = event->key.keysym.sym;
+                if (key == SDLK_ESCAPE) {
+                    input_cancel_property_edit(input);
+                } else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
+                    // Apply will be handled by app layer which has component access
+                    input->pending_ui_action = 1000;  // Special action for property apply
+                } else {
+                    input_handle_text_key(input, key);
+                }
+                return true;
+            }
+
+            input_handle_key(input, event->key.keysym.sym, circuit, render);
             return true;
+        }
+
+        case SDL_TEXTINPUT: {
+            if (input->editing_property) {
+                input_handle_text_input(input, event->text.text);
+                return true;
+            }
+            break;
         }
 
         case SDL_KEYUP: {
@@ -668,4 +691,259 @@ void input_duplicate(InputState *input, Circuit *circuit) {
 void input_update_cursor(InputState *input) {
     // SDL cursor management would go here
     // For now, using default cursor
+}
+
+// Parse value with engineering notation (k, M, G, m, u/μ, n, p suffixes)
+double parse_engineering_value(const char *str) {
+    if (!str || !*str) return 0.0;
+
+    char *endptr;
+    double value = strtod(str, &endptr);
+
+    // Skip whitespace
+    while (*endptr == ' ') endptr++;
+
+    // Parse suffix
+    double multiplier = 1.0;
+    switch (*endptr) {
+        case 'T': case 't': multiplier = 1e12; break;
+        case 'G': case 'g': multiplier = 1e9; break;
+        case 'M': multiplier = 1e6; break;  // Keep M uppercase for Mega
+        case 'k': case 'K': multiplier = 1e3; break;
+        case 'm': multiplier = 1e-3; break;  // milli
+        case 'u': case 'U': multiplier = 1e-6; break;  // micro (u for μ)
+        case 'n': case 'N': multiplier = 1e-9; break;
+        case 'p': case 'P': multiplier = 1e-12; break;
+        case 'f': case 'F': multiplier = 1e-15; break;
+        default: break;
+    }
+
+    return value * multiplier;
+}
+
+void input_start_property_edit(InputState *input, PropertyType prop, const char *initial_value) {
+    if (!input) return;
+
+    input->editing_property = true;
+    input->editing_prop_type = prop;
+
+    if (initial_value) {
+        strncpy(input->input_buffer, initial_value, sizeof(input->input_buffer) - 1);
+        input->input_buffer[sizeof(input->input_buffer) - 1] = '\0';
+        input->input_len = strlen(input->input_buffer);
+    } else {
+        input->input_buffer[0] = '\0';
+        input->input_len = 0;
+    }
+    input->input_cursor = input->input_len;
+
+    // Start SDL text input
+    SDL_StartTextInput();
+}
+
+void input_cancel_property_edit(InputState *input) {
+    if (!input) return;
+
+    input->editing_property = false;
+    input->editing_prop_type = PROP_NONE;
+    input->input_buffer[0] = '\0';
+    input->input_len = 0;
+    input->input_cursor = 0;
+
+    SDL_StopTextInput();
+}
+
+bool input_apply_property_edit(InputState *input, Component *comp) {
+    if (!input || !comp || !input->editing_property) return false;
+
+    double value = parse_engineering_value(input->input_buffer);
+
+    // Validate and apply based on property type and component
+    bool applied = false;
+
+    switch (input->editing_prop_type) {
+        case PROP_VALUE:
+        case PROP_AMPLITUDE:
+            switch (comp->type) {
+                case COMP_DC_VOLTAGE:
+                    comp->props.dc_voltage.voltage = value;
+                    applied = true;
+                    break;
+                case COMP_AC_VOLTAGE:
+                    if (value > 0) { comp->props.ac_voltage.amplitude = value; applied = true; }
+                    break;
+                case COMP_DC_CURRENT:
+                    comp->props.dc_current.current = value;
+                    applied = true;
+                    break;
+                case COMP_RESISTOR:
+                    if (value > 0) { comp->props.resistor.resistance = value; applied = true; }
+                    break;
+                case COMP_CAPACITOR:
+                    if (value > 0) { comp->props.capacitor.capacitance = value; applied = true; }
+                    break;
+                case COMP_INDUCTOR:
+                    if (value > 0) { comp->props.inductor.inductance = value; applied = true; }
+                    break;
+                case COMP_SQUARE_WAVE:
+                    if (value > 0) { comp->props.square_wave.amplitude = value; applied = true; }
+                    break;
+                case COMP_TRIANGLE_WAVE:
+                    if (value > 0) { comp->props.triangle_wave.amplitude = value; applied = true; }
+                    break;
+                case COMP_SAWTOOTH_WAVE:
+                    if (value > 0) { comp->props.sawtooth_wave.amplitude = value; applied = true; }
+                    break;
+                case COMP_NOISE_SOURCE:
+                    if (value > 0) { comp->props.noise_source.amplitude = value; applied = true; }
+                    break;
+                default:
+                    break;
+            }
+            break;
+
+        case PROP_FREQUENCY:
+            if (value > 0 && value <= 1e9) {  // Max 1GHz
+                switch (comp->type) {
+                    case COMP_AC_VOLTAGE:
+                        comp->props.ac_voltage.frequency = value;
+                        applied = true;
+                        break;
+                    case COMP_SQUARE_WAVE:
+                        comp->props.square_wave.frequency = value;
+                        applied = true;
+                        break;
+                    case COMP_TRIANGLE_WAVE:
+                        comp->props.triangle_wave.frequency = value;
+                        applied = true;
+                        break;
+                    case COMP_SAWTOOTH_WAVE:
+                        comp->props.sawtooth_wave.frequency = value;
+                        applied = true;
+                        break;
+                    default:
+                        break;
+                }
+            }
+            break;
+
+        case PROP_PHASE:
+            switch (comp->type) {
+                case COMP_AC_VOLTAGE:
+                    comp->props.ac_voltage.phase = value;
+                    applied = true;
+                    break;
+                case COMP_SQUARE_WAVE:
+                    comp->props.square_wave.phase = value;
+                    applied = true;
+                    break;
+                case COMP_TRIANGLE_WAVE:
+                    comp->props.triangle_wave.phase = value;
+                    applied = true;
+                    break;
+                case COMP_SAWTOOTH_WAVE:
+                    comp->props.sawtooth_wave.phase = value;
+                    applied = true;
+                    break;
+                default:
+                    break;
+            }
+            break;
+
+        case PROP_OFFSET:
+            switch (comp->type) {
+                case COMP_AC_VOLTAGE:
+                    comp->props.ac_voltage.offset = value;
+                    applied = true;
+                    break;
+                case COMP_SQUARE_WAVE:
+                    comp->props.square_wave.offset = value;
+                    applied = true;
+                    break;
+                case COMP_TRIANGLE_WAVE:
+                    comp->props.triangle_wave.offset = value;
+                    applied = true;
+                    break;
+                case COMP_SAWTOOTH_WAVE:
+                    comp->props.sawtooth_wave.offset = value;
+                    applied = true;
+                    break;
+                default:
+                    break;
+            }
+            break;
+
+        case PROP_DUTY:
+            if (comp->type == COMP_SQUARE_WAVE && value >= 0 && value <= 100) {
+                comp->props.square_wave.duty = value / 100.0;  // Convert percentage to fraction
+                applied = true;
+            }
+            break;
+
+        default:
+            break;
+    }
+
+    input_cancel_property_edit(input);
+    return applied;
+}
+
+void input_handle_text_input(InputState *input, const char *text) {
+    if (!input || !input->editing_property || !text) return;
+
+    int text_len = strlen(text);
+    if (input->input_len + text_len >= sizeof(input->input_buffer) - 1) return;
+
+    // Insert text at cursor position
+    memmove(input->input_buffer + input->input_cursor + text_len,
+            input->input_buffer + input->input_cursor,
+            input->input_len - input->input_cursor + 1);
+    memcpy(input->input_buffer + input->input_cursor, text, text_len);
+
+    input->input_cursor += text_len;
+    input->input_len += text_len;
+}
+
+void input_handle_text_key(InputState *input, SDL_Keycode key) {
+    if (!input || !input->editing_property) return;
+
+    switch (key) {
+        case SDLK_BACKSPACE:
+            if (input->input_cursor > 0) {
+                memmove(input->input_buffer + input->input_cursor - 1,
+                        input->input_buffer + input->input_cursor,
+                        input->input_len - input->input_cursor + 1);
+                input->input_cursor--;
+                input->input_len--;
+            }
+            break;
+
+        case SDLK_DELETE:
+            if (input->input_cursor < input->input_len) {
+                memmove(input->input_buffer + input->input_cursor,
+                        input->input_buffer + input->input_cursor + 1,
+                        input->input_len - input->input_cursor);
+                input->input_len--;
+            }
+            break;
+
+        case SDLK_LEFT:
+            if (input->input_cursor > 0) input->input_cursor--;
+            break;
+
+        case SDLK_RIGHT:
+            if (input->input_cursor < input->input_len) input->input_cursor++;
+            break;
+
+        case SDLK_HOME:
+            input->input_cursor = 0;
+            break;
+
+        case SDLK_END:
+            input->input_cursor = input->input_len;
+            break;
+
+        default:
+            break;
+    }
 }

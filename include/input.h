@@ -18,8 +18,19 @@ typedef struct {
     int current_x, current_y;
 } MouseButton;
 
+// Property being edited
+typedef enum {
+    PROP_NONE = 0,
+    PROP_VALUE,         // Main value (resistance, capacitance, voltage, etc.)
+    PROP_FREQUENCY,
+    PROP_PHASE,
+    PROP_OFFSET,
+    PROP_DUTY,
+    PROP_AMPLITUDE
+} PropertyType;
+
 // Input state
-typedef struct {
+typedef struct InputState {
     // Mouse state
     MouseButton left;
     MouseButton middle;
@@ -48,6 +59,13 @@ typedef struct {
 
     // Selection
     Component *selected_component;
+
+    // Text input for property editing
+    bool editing_property;
+    PropertyType editing_prop_type;
+    char input_buffer[64];
+    int input_cursor;
+    int input_len;
 
     // Pending UI action (set by ui_handle_click, processed by app)
     int pending_ui_action;
@@ -86,5 +104,15 @@ void input_copy(InputState *input, Circuit *circuit);
 void input_cut(InputState *input, Circuit *circuit);
 void input_paste(InputState *input, Circuit *circuit, RenderContext *render);
 void input_duplicate(InputState *input, Circuit *circuit);
+
+// Property text editing
+void input_start_property_edit(InputState *input, PropertyType prop, const char *initial_value);
+void input_cancel_property_edit(InputState *input);
+bool input_apply_property_edit(InputState *input, Component *comp);
+void input_handle_text_input(InputState *input, const char *text);
+void input_handle_text_key(InputState *input, SDL_Keycode key);
+
+// Parse value with engineering notation (supports k, M, G, m, u, n, p suffixes)
+double parse_engineering_value(const char *str);
 
 #endif // INPUT_H

@@ -304,6 +304,31 @@ void app_handle_events(App *app) {
                     }
                 }
                 break;
+
+            case UI_ACTION_PROP_APPLY:
+                // Apply text-edited property value
+                if (app->input.selected_component) {
+                    if (input_apply_property_edit(&app->input, app->input.selected_component)) {
+                        circuit_update_component_nodes(app->circuit, app->input.selected_component);
+                        app->circuit->modified = true;
+                        ui_set_status(&app->ui, "Property updated");
+                    } else {
+                        ui_set_status(&app->ui, "Invalid value");
+                    }
+                }
+                break;
+
+            default:
+                // Handle property edit start actions (UI_ACTION_PROP_EDIT + prop_type)
+                if (app->input.pending_ui_action >= UI_ACTION_PROP_EDIT &&
+                    app->input.pending_ui_action < UI_ACTION_PROP_EDIT + 100) {
+                    int prop_type = app->input.pending_ui_action - UI_ACTION_PROP_EDIT;
+                    if (app->input.selected_component && !app->input.editing_property) {
+                        input_start_property_edit(&app->input, prop_type, "");
+                        ui_set_status(&app->ui, "Type value (use k,M,m,u,n,p suffix), Enter to apply");
+                    }
+                }
+                break;
         }
         app->input.pending_ui_action = UI_ACTION_NONE;
     }
@@ -405,7 +430,7 @@ void app_render(App *app) {
     // Render UI elements
     ui_render_toolbar(&app->ui, r);
     ui_render_palette(&app->ui, r);
-    ui_render_properties(&app->ui, r, app->input.selected_component);
+    ui_render_properties(&app->ui, r, app->input.selected_component, &app->input);
     ui_render_measurements(&app->ui, r, app->simulation);
     ui_render_oscilloscope(&app->ui, r, app->simulation);
     ui_render_statusbar(&app->ui, r);

@@ -150,10 +150,13 @@ void ui_init(UIState *ui);
 // Update UI state
 void ui_update(UIState *ui, Circuit *circuit, Simulation *sim);
 
+// Forward declaration for InputState (defined in input.h)
+struct InputState;
+
 // Render UI elements
 void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer);
 void ui_render_palette(UIState *ui, SDL_Renderer *renderer);
-void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *selected);
+void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *selected, struct InputState *input);
 void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
 void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
 void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer);
@@ -186,6 +189,8 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_SCOPE_SCREENSHOT 20
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type
+#define UI_ACTION_PROP_APPLY    1000 // Apply property text edit
+#define UI_ACTION_PROP_EDIT     1100 // + property type (PROP_VALUE, PROP_FREQUENCY, etc.)
 
 // Set status message
 void ui_set_status(UIState *ui, const char *msg);

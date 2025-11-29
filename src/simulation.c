@@ -165,10 +165,12 @@ bool simulation_dc_analysis(Simulation *sim) {
         }
 
         // Stamp all components
+        // Use large dt for DC analysis so capacitors → open circuit, inductors → short circuit
+        double dc_dt = 1e9;  // Very large dt for steady-state DC behavior
         for (int i = 0; i < circuit->num_components; i++) {
             component_stamp(circuit->components[i], A, b,
                            circuit->node_map, num_nodes,
-                           0, solution, sim->time_step);
+                           0, solution, dc_dt);
         }
 
         // Solve
