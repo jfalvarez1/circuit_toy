@@ -125,6 +125,7 @@ typedef struct {
     // Properties panel resizing
     int properties_width;           // Current width of properties panel
     bool props_resizing;            // Currently resizing properties panel
+    int properties_content_height;  // Height of properties content (for dynamic sizing)
 
     // Oscilloscope control buttons
     Button btn_scope_volt_up;

@@ -140,6 +140,7 @@ void ui_init(UIState *ui) {
     // Initialize properties panel width
     ui->properties_width = PROPERTIES_WIDTH;
     ui->props_resizing = false;
+    ui->properties_content_height = 200;  // Default height, updated dynamically
 
     // Initialize toolbar buttons
     int btn_x = 200;
@@ -822,14 +823,18 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
     int x = ui->window_width - ui->properties_width;
     int y = TOOLBAR_HEIGHT;
 
+    // Calculate panel height based on scope position (fill space between toolbar and scope)
+    int panel_height = ui->scope_rect.y - y - 25;  // Leave gap before scope
+    if (panel_height < 200) panel_height = 200;    // Minimum height
+
     // Draw resize handle on left edge
     SDL_SetRenderDrawColor(renderer, 0x40, 0x60, 0x80, 0xff);
-    SDL_Rect resize_handle = {x - 3, y, 6, 200};
+    SDL_Rect resize_handle = {x - 3, y, 6, panel_height};
     SDL_RenderFillRect(renderer, &resize_handle);
 
     // Background
     SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xff);
-    SDL_Rect panel = {x, y, ui->properties_width, 200};
+    SDL_Rect panel = {x, y, ui->properties_width, panel_height};
     SDL_RenderFillRect(renderer, &panel);
 
     // Title
@@ -1752,6 +1757,9 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
         SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
         ui_draw_text(renderer, "Click value to edit", x + 10, prop_y);
         ui_draw_text(renderer, "Use k,M,m,u,n,p suffix", x + 10, prop_y + 12);
+
+        // Track content height for oscilloscope positioning
+        ui->properties_content_height = prop_y + 30 - y;  // Include help text
     } else {
         // Reset num_properties when nothing is selected to avoid stale bounds
         ui->num_properties = 0;
@@ -1760,6 +1768,9 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
         ui_draw_text(renderer, "No selection", x + 10, y + 35);
         ui_draw_text(renderer, "Click component", x + 10, y + 55);
         ui_draw_text(renderer, "to edit properties", x + 10, y + 70);
+
+        // Minimal content height when nothing selected
+        ui->properties_content_height = 100;
     }
 
     // Border
@@ -2545,7 +2556,7 @@ void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
     // Semi-transparent background
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xe0);
-    SDL_Rect panel = {r->x - 10, r->y - 25, r->w + 20, r->h + 120};
+    SDL_Rect panel = {r->x - 10, r->y - 25, r->w + 20, r->h + 145};
     SDL_RenderFillRect(renderer, &panel);
 
     // Border
@@ -2770,8 +2781,46 @@ void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
         ui_draw_text(renderer, "Click Bode to run sweep", r->x, legend_y + 15);
     }
 
+    // Settings controls
+    int settings_y = legend_y + 35;
+
+    // Start frequency
+    SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+    ui_draw_text(renderer, "Start:", r->x, settings_y);
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    if (ui->bode_freq_start >= 1000) {
+        snprintf(buf, sizeof(buf), "[%.1fkHz]", ui->bode_freq_start / 1000);
+    } else {
+        snprintf(buf, sizeof(buf), "[%.0fHz]", ui->bode_freq_start);
+    }
+    ui_draw_text(renderer, buf, r->x + 50, settings_y);
+
+    // Stop frequency
+    SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+    ui_draw_text(renderer, "Stop:", r->x + 130, settings_y);
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    if (ui->bode_freq_stop >= 1000000) {
+        snprintf(buf, sizeof(buf), "[%.1fMHz]", ui->bode_freq_stop / 1000000);
+    } else if (ui->bode_freq_stop >= 1000) {
+        snprintf(buf, sizeof(buf), "[%.0fkHz]", ui->bode_freq_stop / 1000);
+    } else {
+        snprintf(buf, sizeof(buf), "[%.0fHz]", ui->bode_freq_stop);
+    }
+    ui_draw_text(renderer, buf, r->x + 175, settings_y);
+
+    // Number of points
+    SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+    ui_draw_text(renderer, "Points:", r->x + 270, settings_y);
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    snprintf(buf, sizeof(buf), "[%d]", ui->bode_num_points);
+    ui_draw_text(renderer, buf, r->x + 320, settings_y);
+
+    // Store clickable bounds for Bode settings (using properties array)
+    // We'll handle this with separate tracking - for now just make settings_y visible
+
     // Close button hint
-    ui_draw_text(renderer, "[ESC to close]", r->x + r->w - 100, legend_y + 15);
+    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+    ui_draw_text(renderer, "[ESC to close]", r->x + r->w - 100, settings_y + 15);
 }
 
 void ui_render_sweep_panel(UIState *ui, SDL_Renderer *renderer, void *analysis_ptr) {
@@ -3136,7 +3185,7 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             int panel_x = br->x - 10;
             int panel_y = br->y - 25;
             int panel_w = br->w + 20;
-            int panel_h = br->h + 120;
+            int panel_h = br->h + 145;
 
             // Check if clicking on edges for resizing (5 pixel zones)
             bool on_left = (x >= panel_x - 5 && x <= panel_x + 5 && y >= panel_y && y <= panel_y + panel_h);
@@ -3170,6 +3219,42 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
                 ui->bode_drag_start_y = y;
                 ui->bode_rect_start_x = br->x;
                 ui->bode_rect_start_y = br->y;
+                return UI_ACTION_NONE;
+            }
+
+            // Check if clicking on Bode plot settings
+            int settings_y = br->y + br->h + 55;  // legend_y + 35
+
+            // Start frequency control (x: br->x + 50 to br->x + 120)
+            if (x >= br->x + 50 && x <= br->x + 120 &&
+                y >= settings_y && y <= settings_y + 14) {
+                // Cycle through start frequencies: 1, 10, 100, 1000 Hz
+                if (ui->bode_freq_start <= 1.0) ui->bode_freq_start = 10.0;
+                else if (ui->bode_freq_start <= 10.0) ui->bode_freq_start = 100.0;
+                else if (ui->bode_freq_start <= 100.0) ui->bode_freq_start = 1000.0;
+                else ui->bode_freq_start = 1.0;
+                return UI_ACTION_NONE;
+            }
+
+            // Stop frequency control (x: br->x + 175 to br->x + 260)
+            if (x >= br->x + 175 && x <= br->x + 260 &&
+                y >= settings_y && y <= settings_y + 14) {
+                // Cycle through stop frequencies: 10k, 100k, 1M, 10M Hz
+                if (ui->bode_freq_stop <= 10000.0) ui->bode_freq_stop = 100000.0;
+                else if (ui->bode_freq_stop <= 100000.0) ui->bode_freq_stop = 1000000.0;
+                else if (ui->bode_freq_stop <= 1000000.0) ui->bode_freq_stop = 10000000.0;
+                else ui->bode_freq_stop = 10000.0;
+                return UI_ACTION_NONE;
+            }
+
+            // Points control (x: br->x + 320 to br->x + 370)
+            if (x >= br->x + 320 && x <= br->x + 370 &&
+                y >= settings_y && y <= settings_y + 14) {
+                // Cycle through number of points: 50, 100, 200, 500
+                if (ui->bode_num_points <= 50) ui->bode_num_points = 100;
+                else if (ui->bode_num_points <= 100) ui->bode_num_points = 200;
+                else if (ui->bode_num_points <= 200) ui->bode_num_points = 500;
+                else ui->bode_num_points = 50;
                 return UI_ACTION_NONE;
             }
         }
@@ -3433,7 +3518,7 @@ int ui_handle_motion(UIState *ui, int x, int y) {
 
         // Keep within window bounds
         int panel_w = ui->bode_rect.w + 20;
-        int panel_h = ui->bode_rect.h + 120;
+        int panel_h = ui->bode_rect.h + 145;
         int panel_x = new_x - 10;
         int panel_y = new_y - 25;
 
@@ -3565,9 +3650,16 @@ void ui_update_layout(UIState *ui) {
 
     // Update oscilloscope position (anchored to right side, vertically positioned based on height)
     ui->scope_rect.x = ui->window_width - ui->properties_width + 10;
+
+    // Ensure scope is positioned below properties content
+    int min_scope_y = TOOLBAR_HEIGHT + ui->properties_content_height + 25;
+    if (ui->scope_rect.y < min_scope_y) {
+        ui->scope_rect.y = min_scope_y;
+    }
+
     // Keep y position reasonable or adjust if window is too small
     int max_scope_y = ui->window_height - STATUSBAR_HEIGHT - ui->scope_rect.h - 100;
-    if (ui->scope_rect.y > max_scope_y && max_scope_y > TOOLBAR_HEIGHT + 200) {
+    if (ui->scope_rect.y > max_scope_y && max_scope_y > min_scope_y) {
         ui->scope_rect.y = max_scope_y;
     }
 

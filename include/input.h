@@ -113,7 +113,12 @@ typedef enum {
 
     // Text annotation parameters
     PROP_TEXT_CONTENT,            // Text content string
-    PROP_TEXT_SIZE                // Font size (1=small, 2=normal, 3=large)
+    PROP_TEXT_SIZE,               // Font size (1=small, 2=normal, 3=large)
+
+    // Bode plot parameters
+    PROP_BODE_FREQ_START,         // Start frequency
+    PROP_BODE_FREQ_STOP,          // Stop frequency
+    PROP_BODE_NUM_POINTS          // Number of frequency points
 } PropertyType;
 
 // Input state
