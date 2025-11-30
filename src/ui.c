@@ -1830,7 +1830,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 // Calculate how many samples to display (for the time window)
                 int display_samples = (int)(time_window / sim->time_step);
                 if (display_samples < 2) display_samples = 2;
-                if (display_samples > MAX_HISTORY / 2) display_samples = MAX_HISTORY / 2;
+                if (display_samples > SCOPE_CAPTURE_SIZE - 10) display_samples = SCOPE_CAPTURE_SIZE - 10;
 
                 // Capture data: start some samples before trigger for pre-trigger view
                 // Put trigger point at about 20% from left edge
@@ -1841,6 +1841,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 if (capture_end > trig_count) capture_end = trig_count;
 
                 ui->scope_capture_count = capture_end - capture_start;
+                if (ui->scope_capture_count > SCOPE_CAPTURE_SIZE) ui->scope_capture_count = SCOPE_CAPTURE_SIZE;
 
                 // Capture times (from trigger channel)
                 for (int i = 0; i < ui->scope_capture_count; i++) {
@@ -1870,11 +1871,13 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     int display_samples = (int)(time_window / sim->time_step);
                     if (display_samples < 2) display_samples = 2;
                     if (display_samples > trig_count) display_samples = trig_count;
+                    if (display_samples > SCOPE_CAPTURE_SIZE - 10) display_samples = SCOPE_CAPTURE_SIZE - 10;
 
                     int capture_start = trig_count - display_samples;
                     if (capture_start < 0) capture_start = 0;
 
                     ui->scope_capture_count = trig_count - capture_start;
+                    if (ui->scope_capture_count > SCOPE_CAPTURE_SIZE) ui->scope_capture_count = SCOPE_CAPTURE_SIZE;
 
                     for (int i = 0; i < ui->scope_capture_count; i++) {
                         ui->scope_capture_times[i] = trig_times[capture_start + i];

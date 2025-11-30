@@ -161,8 +161,10 @@ typedef struct {
     double trigger_holdoff;          // Time to wait after trigger before re-arming
 
     // Triggered capture state (for stable display)
-    double scope_capture_times[MAX_HISTORY];     // Time values of captured data
-    double scope_capture_values[MAX_PROBES][MAX_HISTORY];  // Voltage values per channel
+    // Use smaller buffer for display (1000 samples is plenty for visual display)
+    #define SCOPE_CAPTURE_SIZE 1000
+    double scope_capture_times[SCOPE_CAPTURE_SIZE];     // Time values of captured data
+    double scope_capture_values[MAX_PROBES][SCOPE_CAPTURE_SIZE];  // Voltage values per channel
     int scope_capture_count;                     // Number of captured samples
     double scope_capture_time;                   // Simulation time when captured
     bool scope_capture_valid;                    // Whether we have valid captured data
