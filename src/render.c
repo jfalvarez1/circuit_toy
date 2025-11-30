@@ -107,6 +107,12 @@ static const unsigned char font8x8[95][8] = {
     {0x6E,0x3B,0x00,0x00,0x00,0x00,0x00,0x00}, // '~'
 };
 
+// Forward declarations for component render functions
+void render_zener(RenderContext *ctx, float x, float y, int rotation);
+void render_schottky(RenderContext *ctx, float x, float y, int rotation);
+void render_led(RenderContext *ctx, float x, float y, int rotation);
+void render_capacitor_elec(RenderContext *ctx, float x, float y, int rotation);
+
 // Draw a single character using bitmap font
 static void draw_char(SDL_Renderer *renderer, char c, int x, int y) {
     if (c < 32 || c > 126) c = '?';
