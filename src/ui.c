@@ -309,6 +309,22 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_OPAMP, TOOL_COMPONENT, false, "OpAmp", false, false
     };
 
+    // === SWITCHES SECTION ===
+    pal_y += pal_h + 18;
+    col = 0;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_SPST_SWITCH, TOOL_COMPONENT, false, "SPST", false, false
+    };
+    col++;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_SPDT_SWITCH, TOOL_COMPONENT, false, "SPDT", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 3;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_PUSH_BUTTON, TOOL_COMPONENT, false, "PushB", false, false
+    };
+
     // === CIRCUITS SECTION ===
     pal_y += pal_h + 18;
     col = 0;
@@ -368,6 +384,44 @@ void ui_init(UIState *ui) {
     col++;
     ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_MULTISTAGE_AMP, "2Stg", false, false
+    };
+    // Additional transistor circuits
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_DIFFERENTIAL_PAIR, "Diff", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_CURRENT_MIRROR, "CMir", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_PUSH_PULL, "PP", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_CMOS_INVERTER, "CMOS", false, false
+    };
+    // Additional op-amp circuits
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_INTEGRATOR, "Intg", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_DIFFERENTIATOR, "Difr", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_SUMMING_AMP, "Sum", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_COMPARATOR, "Cmp", false, false
     };
 
     // Calculate palette content height (from toolbar to last item + padding)
@@ -507,6 +561,8 @@ void ui_update(UIState *ui, Circuit *circuit, Simulation *sim) {
         ui->btn_pause.enabled = (sim->state == SIM_RUNNING);
         ui->sim_time = sim->time;
         ui->display_time_step = sim->time_step;
+        // Sync speed slider value to simulation speed
+        sim->speed = (double)ui->speed_value;
     }
 
     if (circuit) {
@@ -3503,6 +3559,10 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (ui->scope_cursor_drag != 0) {
             ui->scope_cursor_drag = 0;
         }
+        // Release speed slider drag
+        if (ui->dragging_speed) {
+            ui->dragging_speed = false;
+        }
     }
 
     // Check toolbar buttons
@@ -3539,6 +3599,21 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
         if (point_in_rect(x, y, &ui->btn_timestep_auto.bounds) && ui->btn_timestep_auto.enabled) {
             return UI_ACTION_TIMESTEP_AUTO;
+        }
+
+        // Check speed slider click
+        int slider_x = ui->speed_slider.x + 50;
+        Rect slider_bounds = {slider_x, ui->speed_slider.y, ui->speed_slider.w, ui->speed_slider.h};
+        if (point_in_rect(x, y, &slider_bounds)) {
+            // Map click position to speed value (logarithmic: 1x to 100x)
+            float normalized = (float)(x - slider_x) / ui->speed_slider.w;
+            normalized = CLAMP(normalized, 0.0f, 1.0f);
+            // Convert from linear position to logarithmic scale
+            // position 0 = 1x, position 1 = 100x (log scale)
+            ui->speed_value = powf(10.0f, normalized * 2.0f);
+            ui->speed_value = CLAMP(ui->speed_value, 1.0f, 100.0f);
+            ui->dragging_speed = true;
+            return UI_ACTION_NONE;  // Handled internally
         }
 
         // Check oscilloscope control buttons
@@ -3767,6 +3842,17 @@ int ui_handle_motion(UIState *ui, int x, int y) {
         } else {
             ui->cursor2_time = normalized_x;
         }
+        return UI_ACTION_NONE;
+    }
+
+    // Handle speed slider dragging
+    if (ui->dragging_speed) {
+        int slider_x = ui->speed_slider.x + 50;
+        float normalized = (float)(x - slider_x) / ui->speed_slider.w;
+        normalized = CLAMP(normalized, 0.0f, 1.0f);
+        // Convert from linear position to logarithmic scale (1x to 100x)
+        ui->speed_value = powf(10.0f, normalized * 2.0f);
+        ui->speed_value = CLAMP(ui->speed_value, 1.0f, 100.0f);
         return UI_ACTION_NONE;
     }
 
