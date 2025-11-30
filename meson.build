@@ -19,6 +19,7 @@ src_files = files(
   'src/matrix.c',
   'src/component.c',
   'src/circuit.c',
+  'src/circuits.c',
   'src/simulation.c',
   'src/render.c',
   'src/ui.c',
