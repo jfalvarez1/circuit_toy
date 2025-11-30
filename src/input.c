@@ -346,6 +346,55 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             int x = input->mouse_x;
             int y = input->mouse_y;
 
+            // Check if mouse is in properties panel (right side)
+            // and there's a selected component - adjust value with wheel
+            if (x >= render->canvas_rect.x + render->canvas_rect.w && input->selected_component) {
+                Component *c = input->selected_component;
+                double factor = event->wheel.y > 0 ? 1.05 : 0.95;  // 5% per tick
+                if (input->shift_down) factor = event->wheel.y > 0 ? 1.2 : 0.8;  // 20% with shift
+
+                // Adjust primary value based on component type
+                switch (c->type) {
+                    case COMP_DC_VOLTAGE:
+                        c->props.dc_voltage.voltage *= factor;
+                        break;
+                    case COMP_AC_VOLTAGE:
+                        c->props.ac_voltage.amplitude *= factor;
+                        break;
+                    case COMP_DC_CURRENT:
+                        c->props.dc_current.current *= factor;
+                        break;
+                    case COMP_RESISTOR:
+                        c->props.resistor.resistance *= factor;
+                        if (c->props.resistor.resistance < 0.1) c->props.resistor.resistance = 0.1;
+                        break;
+                    case COMP_CAPACITOR:
+                        c->props.capacitor.capacitance *= factor;
+                        if (c->props.capacitor.capacitance < 1e-15) c->props.capacitor.capacitance = 1e-15;
+                        break;
+                    case COMP_INDUCTOR:
+                        c->props.inductor.inductance *= factor;
+                        if (c->props.inductor.inductance < 1e-12) c->props.inductor.inductance = 1e-12;
+                        break;
+                    case COMP_SQUARE_WAVE:
+                        c->props.square_wave.amplitude *= factor;
+                        break;
+                    case COMP_TRIANGLE_WAVE:
+                        c->props.triangle_wave.amplitude *= factor;
+                        break;
+                    case COMP_SAWTOOTH_WAVE:
+                        c->props.sawtooth_wave.amplitude *= factor;
+                        break;
+                    case COMP_NOISE_SOURCE:
+                        c->props.noise_source.amplitude *= factor;
+                        break;
+                    default:
+                        break;
+                }
+                ui_set_status(ui, "Value adjusted (Shift+wheel for larger steps)");
+                return true;
+            }
+
             if (x >= render->canvas_rect.x && x < render->canvas_rect.x + render->canvas_rect.w &&
                 y >= render->canvas_rect.y && y < render->canvas_rect.y + render->canvas_rect.h) {
                 float factor = event->wheel.y > 0 ? 1.1f : 0.9f;

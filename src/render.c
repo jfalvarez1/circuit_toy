@@ -734,6 +734,13 @@ void render_opamp(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_line_rotated(ctx, x, y, -40, 20, -25, 20, rotation);
     // Output
     render_draw_line_rotated(ctx, x, y, 30, 0, 40, 0, rotation);
+
+    // Draw - symbol for inverting input (top input at y=-20)
+    render_draw_line_rotated(ctx, x, y, -20, -20, -12, -20, rotation);
+
+    // Draw + symbol for non-inverting input (bottom input at y=+20)
+    render_draw_line_rotated(ctx, x, y, -20, 20, -12, 20, rotation);  // horizontal
+    render_draw_line_rotated(ctx, x, y, -16, 16, -16, 24, rotation);  // vertical
 }
 
 void render_square_wave(RenderContext *ctx, float x, float y, int rotation) {

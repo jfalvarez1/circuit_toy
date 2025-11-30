@@ -332,7 +332,53 @@ void app_handle_events(App *app) {
                     app->input.pending_ui_action < UI_ACTION_PROP_EDIT + 100) {
                     int prop_type = app->input.pending_ui_action - UI_ACTION_PROP_EDIT;
                     if (app->input.selected_component && !app->input.editing_property) {
-                        input_start_property_edit(&app->input, prop_type, "");
+                        // Get current value to show in edit field
+                        char current_value[64] = "";
+                        Component *c = app->input.selected_component;
+                        if (prop_type == PROP_VALUE || prop_type == PROP_AMPLITUDE) {
+                            switch (c->type) {
+                                case COMP_DC_VOLTAGE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_voltage.voltage); break;
+                                case COMP_AC_VOLTAGE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.ac_voltage.amplitude); break;
+                                case COMP_DC_CURRENT: snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_current.current); break;
+                                case COMP_RESISTOR: snprintf(current_value, sizeof(current_value), "%.6g", c->props.resistor.resistance); break;
+                                case COMP_CAPACITOR: snprintf(current_value, sizeof(current_value), "%.6g", c->props.capacitor.capacitance); break;
+                                case COMP_INDUCTOR: snprintf(current_value, sizeof(current_value), "%.6g", c->props.inductor.inductance); break;
+                                case COMP_SQUARE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.square_wave.amplitude); break;
+                                case COMP_TRIANGLE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.triangle_wave.amplitude); break;
+                                case COMP_SAWTOOTH_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.sawtooth_wave.amplitude); break;
+                                case COMP_NOISE_SOURCE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.noise_source.amplitude); break;
+                                default: break;
+                            }
+                        } else if (prop_type == PROP_FREQUENCY) {
+                            switch (c->type) {
+                                case COMP_AC_VOLTAGE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.ac_voltage.frequency); break;
+                                case COMP_SQUARE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.square_wave.frequency); break;
+                                case COMP_TRIANGLE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.triangle_wave.frequency); break;
+                                case COMP_SAWTOOTH_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.sawtooth_wave.frequency); break;
+                                default: break;
+                            }
+                        } else if (prop_type == PROP_PHASE) {
+                            switch (c->type) {
+                                case COMP_AC_VOLTAGE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.ac_voltage.phase); break;
+                                case COMP_SQUARE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.square_wave.phase); break;
+                                case COMP_TRIANGLE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.triangle_wave.phase); break;
+                                case COMP_SAWTOOTH_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.sawtooth_wave.phase); break;
+                                default: break;
+                            }
+                        } else if (prop_type == PROP_OFFSET) {
+                            switch (c->type) {
+                                case COMP_AC_VOLTAGE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.ac_voltage.offset); break;
+                                case COMP_SQUARE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.square_wave.offset); break;
+                                case COMP_TRIANGLE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.triangle_wave.offset); break;
+                                case COMP_SAWTOOTH_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.sawtooth_wave.offset); break;
+                                default: break;
+                            }
+                        } else if (prop_type == PROP_DUTY) {
+                            if (c->type == COMP_SQUARE_WAVE) {
+                                snprintf(current_value, sizeof(current_value), "%.1f", c->props.square_wave.duty * 100);
+                            }
+                        }
+                        input_start_property_edit(&app->input, prop_type, current_value);
                         ui_set_status(&app->ui, "Type value (use k,M,m,u,n,p suffix), Enter to apply");
                     }
                 }
