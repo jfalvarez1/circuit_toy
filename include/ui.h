@@ -50,6 +50,7 @@ typedef struct {
     char unit[8];
     bool editing;
     int cursor_pos;
+    int prop_type;  // PropertyType enum value (PROP_VALUE, PROP_FREQUENCY, etc.)
 } PropertyField;
 
 // Oscilloscope channel

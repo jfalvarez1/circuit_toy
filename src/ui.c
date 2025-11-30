@@ -713,7 +713,9 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.dc_voltage.voltage);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Voltage:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties++].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
                 break;
 
             case COMP_AC_VOLTAGE:
@@ -721,24 +723,28 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
                 ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[0].prop_type = PROP_VALUE;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.ac_voltage.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
                 ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[1].prop_type = PROP_FREQUENCY;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.1f deg", selected->props.ac_voltage.phase);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Phase:", buf,
                                    editing_phase, edit_buf, cursor);
                 ui->properties[2].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[2].prop_type = PROP_PHASE;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.ac_voltage.offset);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Offset:", buf,
                                    editing_offset, edit_buf, cursor);
                 ui->properties[3].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[3].prop_type = PROP_OFFSET;
                 ui->num_properties = 4;
                 break;
 
@@ -746,14 +752,18 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g A", selected->props.dc_current.current);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Current:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties++].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
                 break;
 
             case COMP_RESISTOR:
                 snprintf(buf, sizeof(buf), "%.3g Ohm", selected->props.resistor.resistance);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Resistance:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties++].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
 
                 // Tolerance (read-only display for now)
                 prop_y += 18;
@@ -792,14 +802,18 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g F", selected->props.capacitor.capacitance);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Capacitance:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties++].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
                 break;
 
             case COMP_INDUCTOR:
                 snprintf(buf, sizeof(buf), "%.3g H", selected->props.inductor.inductance);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Inductance:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties++].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
                 break;
 
             case COMP_SQUARE_WAVE:
@@ -807,18 +821,21 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
                 ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[0].prop_type = PROP_VALUE;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.square_wave.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
                 ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[1].prop_type = PROP_FREQUENCY;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.0f %%", selected->props.square_wave.duty * 100);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Duty:", buf,
                                    editing_duty, edit_buf, cursor);
                 ui->properties[2].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[2].prop_type = PROP_DUTY;
                 ui->num_properties = 3;
                 break;
 
@@ -827,12 +844,14 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
                 ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[0].prop_type = PROP_VALUE;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.triangle_wave.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
                 ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[1].prop_type = PROP_FREQUENCY;
                 ui->num_properties = 2;
                 break;
 
@@ -841,12 +860,14 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
                 ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[0].prop_type = PROP_VALUE;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.sawtooth_wave.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
                 ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[1].prop_type = PROP_FREQUENCY;
                 ui->num_properties = 2;
                 break;
 
@@ -854,7 +875,9 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.noise_source.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties++].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
                 break;
 
             case COMP_LED: {
@@ -863,6 +886,7 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Wavelength:", buf,
                                    editing_value, edit_buf, cursor);
                 ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[0].prop_type = PROP_VALUE;
 
                 // Color preview
                 prop_y += 18;
@@ -929,6 +953,9 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
         ui_draw_text(renderer, "Click value to edit", x + 10, prop_y);
         ui_draw_text(renderer, "Use k,M,m,u,n,p suffix", x + 10, prop_y + 12);
     } else {
+        // Reset num_properties when nothing is selected to avoid stale bounds
+        ui->num_properties = 0;
+
         SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
         ui_draw_text(renderer, "No selection", x + 10, y + 35);
         ui_draw_text(renderer, "Click component", x + 10, y + 55);
@@ -2172,11 +2199,10 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
 
         // Check property fields for click-to-edit
-        // Property type mapping: 0=value, 1=freq, 2=phase, 3=offset, 4=duty (same as render order)
-        static const int prop_type_map[] = {1, 2, 3, 4, 5};  // Maps to PROP_VALUE, PROP_FREQUENCY, etc.
+        // Each property field stores its prop_type directly
         for (int i = 0; i < ui->num_properties && i < 16; i++) {
             if (point_in_rect(x, y, &ui->properties[i].bounds)) {
-                return UI_ACTION_PROP_EDIT + prop_type_map[i];
+                return UI_ACTION_PROP_EDIT + ui->properties[i].prop_type;
             }
         }
 

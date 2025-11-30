@@ -434,6 +434,7 @@ void app_handle_events(App *app) {
                                 case COMP_TRIANGLE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.triangle_wave.amplitude); break;
                                 case COMP_SAWTOOTH_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.sawtooth_wave.amplitude); break;
                                 case COMP_NOISE_SOURCE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.noise_source.amplitude); break;
+                                case COMP_LED: snprintf(current_value, sizeof(current_value), "%.0f", c->props.led.wavelength); break;
                                 default: break;
                             }
                         } else if (prop_type == PROP_FREQUENCY) {
@@ -467,6 +468,10 @@ void app_handle_events(App *app) {
                         }
                         input_start_property_edit(&app->input, prop_type, current_value);
                         ui_set_status(&app->ui, "Type value (use k,M,m,u,n,p suffix), Enter to apply");
+                    } else if (!app->input.selected_component) {
+                        ui_set_status(&app->ui, "Select a component first");
+                    } else if (app->input.editing_property) {
+                        ui_set_status(&app->ui, "Press Enter to apply or Escape to cancel");
                     }
                 }
                 break;
