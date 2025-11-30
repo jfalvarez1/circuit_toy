@@ -591,7 +591,13 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 return true;
             }
 
-            // Check if mouse is in properties panel (right side)
+            // Check if mouse is in properties panel area - scroll properties
+            if (ui_point_in_properties(ui, x, y)) {
+                ui_properties_scroll(ui, event->wheel.y);
+                return true;
+            }
+
+            // Check if mouse is in properties panel (right side, below scroll area)
             // and there's a selected component - adjust value with wheel
             if (x >= render->canvas_rect.x + render->canvas_rect.w && input->selected_component) {
                 Component *c = input->selected_component;
