@@ -109,7 +109,11 @@ typedef enum {
     PROP_SWEEP_FREQ_END,          // End frequency
     PROP_SWEEP_FREQ_TIME,         // Sweep time
     PROP_SWEEP_FREQ_STEPS,        // Number of steps
-    PROP_SWEEP_FREQ_REPEAT        // Repeat sweep
+    PROP_SWEEP_FREQ_REPEAT,       // Repeat sweep
+
+    // Text annotation parameters
+    PROP_TEXT_CONTENT,            // Text content string
+    PROP_TEXT_SIZE                // Font size (1=small, 2=normal, 3=large)
 } PropertyType;
 
 // Input state
@@ -152,8 +156,9 @@ typedef struct InputState {
     Component *multi_selected[64];  // Array of multi-selected components
     int multi_selected_count;       // Number of multi-selected components
 
-    // Probe dragging
+    // Probe selection and dragging
     int dragging_probe_idx;         // Index of probe being dragged (-1 = none)
+    int selected_probe_idx;         // Index of selected probe (-1 = none)
 
     // Text input for property editing
     bool editing_property;

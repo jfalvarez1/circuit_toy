@@ -189,6 +189,11 @@ void ui_init(UIState *ui) {
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, TOOL_PROBE, true, "Probe", false, false
     };
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_TEXT, TOOL_COMPONENT, false, "Text", false, false
+    };
 
     // === SOURCES SECTION ===
     pal_y += pal_h + 18;
@@ -644,11 +649,11 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
     typedef struct { int start_idx; const char *label; } PaletteSection;
     PaletteSection sections[] = {
         {0, "Tools"},
-        {4, "Sources"},
-        {8, "Waveforms"},
-        {12, "Passives"},
-        {16, "Diodes"},
-        {20, "Transistors"}
+        {5, "Sources"},
+        {9, "Waveforms"},
+        {13, "Passives"},
+        {17, "Diodes"},
+        {21, "Transistors"}
     };
     int num_sections = sizeof(sections) / sizeof(sections[0]);
 
@@ -1709,6 +1714,32 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     snprintf(buf, sizeof(buf), "Gamma=%.2f Phi=%.2fV", selected->props.mosfet.gamma, selected->props.mosfet.phi);
                     ui_draw_text(renderer, buf, x + 10, prop_y + 2);
                 }
+                break;
+            }
+
+            case COMP_TEXT: {
+                // Text content (editable)
+                bool edit_text = input && input->editing_property && input->editing_prop_type == PROP_TEXT_CONTENT;
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Text:", selected->props.text.text,
+                                   edit_text, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_TEXT_CONTENT;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Font size selector
+                const char *size_names[] = {"Small", "Normal", "Large"};
+                int size_idx = selected->props.text.font_size - 1;
+                if (size_idx < 0) size_idx = 0;
+                if (size_idx > 2) size_idx = 2;
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Size:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                snprintf(buf, sizeof(buf), "[%s]", size_names[size_idx]);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 60, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_TEXT_SIZE;
+                ui->num_properties++;
                 break;
             }
 

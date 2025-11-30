@@ -67,6 +67,8 @@ typedef enum {
     COMP_TRIANGLE_WAVE,
     COMP_SAWTOOTH_WAVE,
     COMP_NOISE_SOURCE,
+    // Annotation
+    COMP_TEXT,
     COMP_TYPE_COUNT
 } ComponentType;
 

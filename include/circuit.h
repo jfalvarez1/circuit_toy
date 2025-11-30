@@ -37,6 +37,7 @@ typedef struct {
     double voltage;
     int channel_num;    // Oscilloscope channel number (0-based)
     char label[8];      // Label like "CH1", "CH2", etc.
+    bool selected;      // Whether probe is selected for deletion
 } Probe;
 
 // Undo action types

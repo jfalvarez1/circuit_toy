@@ -15,6 +15,7 @@ void input_init(InputState *input) {
     input->placing_component = COMP_NONE;
     input->pending_ui_action = UI_ACTION_NONE;
     input->dragging_probe_idx = -1;
+    input->selected_probe_idx = -1;
     input->selected_wire_idx = -1;
     input->multi_selected_count = 0;
 }
@@ -171,9 +172,27 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             float dy = probe->y - wy;
                             // Check if click is near probe tip (within 15 units)
                             if (sqrt(dx*dx + dy*dy) < 15) {
+                                // Clear previous selections
+                                if (input->selected_component) {
+                                    input->selected_component->selected = false;
+                                    input->selected_component = NULL;
+                                }
+                                if (input->selected_wire_idx >= 0 && input->selected_wire_idx < circuit->num_wires) {
+                                    circuit->wires[input->selected_wire_idx].selected = false;
+                                }
+                                input->selected_wire_idx = -1;
+                                // Clear previous probe selection
+                                if (input->selected_probe_idx >= 0 && input->selected_probe_idx < circuit->num_probes) {
+                                    circuit->probes[input->selected_probe_idx].selected = false;
+                                }
+                                input->multi_selected_count = 0;
+
+                                // Select this probe
+                                input->selected_probe_idx = i;
+                                probe->selected = true;
                                 input->dragging_probe_idx = i;
                                 found_probe = true;
-                                ui_set_status(ui, "Drag probe to move, release on node to connect");
+                                ui_set_status(ui, "Probe selected - drag to move, Delete to remove");
                                 break;
                             }
                         }
@@ -191,6 +210,11 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                     circuit->wires[input->selected_wire_idx].selected = false;
                                 }
                                 input->selected_wire_idx = -1;
+                                // Clear probe selection
+                                if (input->selected_probe_idx >= 0 && input->selected_probe_idx < circuit->num_probes) {
+                                    circuit->probes[input->selected_probe_idx].selected = false;
+                                }
+                                input->selected_probe_idx = -1;
                                 input->multi_selected_count = 0;
 
                                 comp->selected = true;
@@ -215,6 +239,11 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                     if (input->selected_wire_idx >= 0 && input->selected_wire_idx < circuit->num_wires) {
                                         circuit->wires[input->selected_wire_idx].selected = false;
                                     }
+                                    // Clear probe selection
+                                    if (input->selected_probe_idx >= 0 && input->selected_probe_idx < circuit->num_probes) {
+                                        circuit->probes[input->selected_probe_idx].selected = false;
+                                    }
+                                    input->selected_probe_idx = -1;
                                     input->multi_selected_count = 0;
 
                                     input->selected_wire_idx = wire_idx;
@@ -231,6 +260,11 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                         circuit->wires[input->selected_wire_idx].selected = false;
                                     }
                                     input->selected_wire_idx = -1;
+                                    // Clear probe selection
+                                    if (input->selected_probe_idx >= 0 && input->selected_probe_idx < circuit->num_probes) {
+                                        circuit->probes[input->selected_probe_idx].selected = false;
+                                    }
+                                    input->selected_probe_idx = -1;
 
                                     // Clear multi-selection
                                     for (int i = 0; i < input->multi_selected_count; i++) {
@@ -990,6 +1024,15 @@ void input_delete_selected(InputState *input, Circuit *circuit) {
         int wire_id = circuit->wires[input->selected_wire_idx].id;
         circuit_remove_wire(circuit, wire_id);
         input->selected_wire_idx = -1;
+        return;
+    }
+
+    // Delete selected probe
+    if (input->selected_probe_idx >= 0 && input->selected_probe_idx < circuit->num_probes) {
+        circuit->probes[input->selected_probe_idx].selected = false;
+        int probe_id = circuit->probes[input->selected_probe_idx].id;
+        circuit_remove_probe(circuit, probe_id);
+        input->selected_probe_idx = -1;
     }
 }
 
@@ -1593,6 +1636,15 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
 
         // Also handle Schottky Vf using LED_VF property type
         // (already handled in PROP_LED_VF - but we need schottky handling)
+
+        case PROP_TEXT_CONTENT:
+            if (comp->type == COMP_TEXT) {
+                // Copy text content (no numeric parsing needed)
+                strncpy(comp->props.text.text, input->input_buffer, sizeof(comp->props.text.text) - 1);
+                comp->props.text.text[sizeof(comp->props.text.text) - 1] = '\0';
+                applied = true;
+            }
+            break;
 
         default:
             // Handle special cases for reused property types

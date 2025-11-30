@@ -327,6 +327,17 @@ static const ComponentTypeInfo component_info[] = {
             .ideal = true
         }}
     },
+
+    [COMP_TEXT] = {
+        "Text", "T", 0,  // No terminals
+        {},
+        80, 20,  // Default width/height for hit detection
+        { .text = {
+            .text = "Label",
+            .font_size = 2,  // Normal size
+            .color = 0xFFFFFFFF  // White
+        }}
+    },
 };
 
 static int next_component_id = 1;

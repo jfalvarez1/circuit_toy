@@ -239,6 +239,13 @@ typedef union {
         bool ideal;             // Ideal mode
         SweepConfig amplitude_sweep;   // Amplitude sweep
     } noise_source;
+
+    // Text annotation
+    struct {
+        char text[128];         // Text content
+        int font_size;          // Font size (1=small, 2=normal, 3=large)
+        uint32_t color;         // Text color (RGBA packed)
+    } text;
 } ComponentProps;
 
 // Component structure

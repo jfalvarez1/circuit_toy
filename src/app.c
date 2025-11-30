@@ -861,6 +861,24 @@ void app_handle_events(App *app) {
                                 else if (offset == 3) snprintf(current_value, sizeof(current_value), "%d", sweep->num_steps);
                             }
                         }
+                        // Text annotation properties
+                        else if (prop_type == PROP_TEXT_CONTENT) {
+                            if (c->type == COMP_TEXT) {
+                                snprintf(current_value, sizeof(current_value), "%s", c->props.text.text);
+                            }
+                        }
+                        else if (prop_type == PROP_TEXT_SIZE) {
+                            // Toggle immediately, don't open text editor
+                            if (c->type == COMP_TEXT) {
+                                c->props.text.font_size = (c->props.text.font_size % 3) + 1;  // Cycle 1->2->3->1
+                                const char *sizes[] = {"Small", "Normal", "Large"};
+                                char msg[64];
+                                snprintf(msg, sizeof(msg), "Text size: %s", sizes[c->props.text.font_size - 1]);
+                                ui_set_status(&app->ui, msg);
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
                         input_start_property_edit(&app->input, prop_type, current_value);
                         ui_set_status(&app->ui, "Type value (use k,M,m,u,n,p suffix), Enter to apply");
                     } else if (!app->input.selected_component) {
