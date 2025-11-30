@@ -997,7 +997,10 @@ void app_on_component_deselected(App *app) {
 }
 
 void app_on_property_changed(App *app, Component *comp) {
-    circuit_update_component_nodes(app->circuit, comp);
+    // Note: We do NOT call circuit_update_component_nodes here because
+    // changing a property value doesn't change the component's position.
+    // Calling it would move shared junction nodes (created by circuit templates)
+    // to wrong positions and break wire connections.
     app->circuit->modified = true;
 
     // Re-adjust time step if a frequency-related component was changed

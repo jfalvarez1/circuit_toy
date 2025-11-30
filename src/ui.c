@@ -1958,8 +1958,8 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         ui_draw_text(renderer, buf, trig_info_x, trig_info_y);
     }
 
-    // Display settings panel below scope
-    int info_y = r->y + r->h + 50;
+    // Display settings panel below buttons (3 rows of buttons = ~79px, so start at +85)
+    int info_y = r->y + r->h + 85;
 
     // Time/div with label
     SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
