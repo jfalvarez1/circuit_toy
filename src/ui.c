@@ -924,6 +924,10 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
     SDL_Rect panel = {x, y, ui->properties_width, panel_height};
     SDL_RenderFillRect(renderer, &panel);
 
+    // Set clipping rect to prevent content from overflowing into scope area
+    SDL_Rect clip_rect = {x, y, ui->properties_width, panel_height};
+    SDL_RenderSetClipRect(renderer, &clip_rect);
+
     // Title
     SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
     ui_draw_text(renderer, "Properties", x + 10, y + 10);
@@ -1860,6 +1864,9 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
         // Minimal content height when nothing selected
         ui->properties_content_height = 100;
     }
+
+    // Reset clipping before drawing border
+    SDL_RenderSetClipRect(renderer, NULL);
 
     // Border
     SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
