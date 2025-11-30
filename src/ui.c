@@ -911,8 +911,9 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
     int y = TOOLBAR_HEIGHT;
 
     // Calculate panel height based on scope position (fill space between toolbar and scope)
-    int panel_height = ui->scope_rect.y - y - 25;  // Leave gap before scope
-    if (panel_height < 200) panel_height = 200;    // Minimum height
+    // The scope label is drawn 18px above scope_rect, so leave 25px gap to avoid overlap
+    int available_height = ui->scope_rect.y - y - 25;
+    int panel_height = available_height > 100 ? available_height : 100;  // Minimum 100 but don't exceed available
 
     // Draw resize handle on left edge
     SDL_SetRenderDrawColor(renderer, 0x40, 0x60, 0x80, 0xff);
