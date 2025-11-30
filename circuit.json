@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "components": [
+    {
+      "type": 3,
+      "x": 180.00,
+      "y": 220.00,
+      "rotation": 0,
+      "label": "~V10"
+    },
+    {
+      "type": 1,
+      "x": 180.00,
+      "y": 280.00,
+      "rotation": 0,
+      "label": "GND11"
+    },
+    {
+      "type": 17,
+      "x": 340.00,
+      "y": 160.00,
+      "rotation": 0,
+      "label": "U12"
+    }
+  ],
+  "nodes": [
+    {"id": 1, "x": 180.00, "y": 180.00, "ground": false},
+    {"id": 2, "x": 180.00, "y": 260.00, "ground": true},
+    {"id": 3, "x": 300.00, "y": 140.00, "ground": false},
+    {"id": 4, "x": 300.00, "y": 180.00, "ground": false},
+    {"id": 5, "x": 380.00, "y": 160.00, "ground": false},
+    {"id": 6, "x": 300.00, "y": 120.00, "ground": false},
+    {"id": 7, "x": 380.00, "y": 120.00, "ground": false}
+  ],
+  "wires": [
+    {"start": 1, "end": 4},
+    {"start": 3, "end": 6},
+    {"start": 6, "end": 7},
+    {"start": 7, "end": 5}
+  ]
+}
