@@ -513,6 +513,51 @@ void app_handle_events(App *app) {
                             app->input.pending_ui_action = UI_ACTION_NONE;
                             break;  // Don't start text edit for toggle
                         }
+                        // LED parameters
+                        else if (prop_type == PROP_LED_COLOR) {
+                            // Color selector - cycle through presets immediately
+                            if (c->type == COMP_LED) {
+                                // Cycle through colors: Red->Orange->Yellow->Green->Cyan->Blue->Violet->White->IR->Red
+                                double wl = c->props.led.wavelength;
+                                const char *new_color = "Red";
+                                if (wl >= 640 && wl <= 780) {
+                                    c->props.led.wavelength = 620; c->props.led.vf = 2.0; new_color = "Orange";
+                                } else if (wl >= 600 && wl < 640) {
+                                    c->props.led.wavelength = 590; c->props.led.vf = 2.1; new_color = "Yellow";
+                                } else if (wl >= 580 && wl < 600) {
+                                    c->props.led.wavelength = 550; c->props.led.vf = 2.2; new_color = "Green";
+                                } else if (wl >= 510 && wl < 580) {
+                                    c->props.led.wavelength = 500; c->props.led.vf = 3.0; new_color = "Cyan";
+                                } else if (wl >= 490 && wl < 510) {
+                                    c->props.led.wavelength = 470; c->props.led.vf = 3.2; new_color = "Blue";
+                                } else if (wl >= 440 && wl < 490) {
+                                    c->props.led.wavelength = 420; c->props.led.vf = 2.8; new_color = "Violet";
+                                } else if (wl >= 380 && wl < 440) {
+                                    c->props.led.wavelength = 0; c->props.led.vf = 3.2; new_color = "White";
+                                } else if (wl == 0) {
+                                    c->props.led.wavelength = 850; c->props.led.vf = 1.4;
+                                    c->props.led.max_current = 0.050; new_color = "IR";
+                                } else {
+                                    c->props.led.wavelength = 660; c->props.led.vf = 1.8;
+                                    c->props.led.max_current = 0.020; new_color = "Red";
+                                }
+                                char msg[64];
+                                snprintf(msg, sizeof(msg), "LED Color: %s (%.0f nm, Vf=%.1fV)",
+                                         new_color, c->props.led.wavelength, c->props.led.vf);
+                                ui_set_status(&app->ui, msg);
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;  // Don't start text edit for color selector
+                        } else if (prop_type == PROP_LED_VF) {
+                            if (c->type == COMP_LED) {
+                                snprintf(current_value, sizeof(current_value), "%.2f", c->props.led.vf);
+                            }
+                        } else if (prop_type == PROP_LED_IMAX) {
+                            if (c->type == COMP_LED) {
+                                // Display in mA
+                                snprintf(current_value, sizeof(current_value), "%.0f", c->props.led.max_current * 1000);
+                            }
+                        }
                         input_start_property_edit(&app->input, prop_type, current_value);
                         ui_set_status(&app->ui, "Type value (use k,M,m,u,n,p suffix), Enter to apply");
                     } else if (!app->input.selected_component) {

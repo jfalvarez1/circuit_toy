@@ -39,7 +39,11 @@ typedef enum {
     PROP_MOS_LAMBDA,    // Channel length modulation
     PROP_MOS_W,         // Channel width
     PROP_MOS_L,         // Channel length
-    PROP_MOS_IDEAL      // Ideal mode toggle
+    PROP_MOS_IDEAL,     // Ideal mode toggle
+    // LED parameters
+    PROP_LED_COLOR,     // Color selector (cycle through presets)
+    PROP_LED_VF,        // Forward voltage
+    PROP_LED_IMAX       // Max current
 } PropertyType;
 
 // Input state

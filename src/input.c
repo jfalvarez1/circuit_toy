@@ -1162,6 +1162,72 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             }
             break;
 
+        // LED parameters
+        case PROP_LED_COLOR: {
+            // Cycle through LED color presets
+            if (comp->type == COMP_LED) {
+                // Color presets: Red, Orange, Yellow, Green, Cyan, Blue, Violet, White, IR
+                double wl = comp->props.led.wavelength;
+                // Determine current color and move to next
+                if (wl >= 640 && wl <= 780) {
+                    // Red -> Orange
+                    comp->props.led.wavelength = 620;
+                    comp->props.led.vf = 2.0;
+                } else if (wl >= 600 && wl < 640) {
+                    // Orange -> Yellow
+                    comp->props.led.wavelength = 590;
+                    comp->props.led.vf = 2.1;
+                } else if (wl >= 580 && wl < 600) {
+                    // Yellow -> Green
+                    comp->props.led.wavelength = 550;
+                    comp->props.led.vf = 2.2;
+                } else if (wl >= 510 && wl < 580) {
+                    // Green -> Cyan
+                    comp->props.led.wavelength = 500;
+                    comp->props.led.vf = 3.0;
+                } else if (wl >= 490 && wl < 510) {
+                    // Cyan -> Blue
+                    comp->props.led.wavelength = 470;
+                    comp->props.led.vf = 3.2;
+                } else if (wl >= 440 && wl < 490) {
+                    // Blue -> Violet
+                    comp->props.led.wavelength = 420;
+                    comp->props.led.vf = 2.8;
+                } else if (wl >= 380 && wl < 440) {
+                    // Violet -> White
+                    comp->props.led.wavelength = 0;
+                    comp->props.led.vf = 3.2;
+                } else if (wl == 0) {
+                    // White -> IR
+                    comp->props.led.wavelength = 850;
+                    comp->props.led.vf = 1.4;
+                    comp->props.led.max_current = 0.050;
+                } else {
+                    // IR or unknown -> Red
+                    comp->props.led.wavelength = 660;
+                    comp->props.led.vf = 1.8;
+                    comp->props.led.max_current = 0.020;
+                }
+                applied = true;
+            }
+            break;
+        }
+
+        case PROP_LED_VF:
+            if (comp->type == COMP_LED && value > 0 && value <= 10) {
+                comp->props.led.vf = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_LED_IMAX:
+            // Value entered in mA, stored in A
+            if (comp->type == COMP_LED && value > 0 && value <= 1000) {
+                comp->props.led.max_current = value / 1000.0;  // Convert mA to A
+                applied = true;
+            }
+            break;
+
         default:
             break;
     }
