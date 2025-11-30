@@ -1011,133 +1011,157 @@ static int place_common_drain(Circuit *circuit, float x, float y) {
 
 // Two-Stage BJT Amplifier (CE-CE cascade):
 // Two common-emitter stages cascaded for higher gain
+// Layout uses a horizontal Vcc bus to avoid overlapping wires
 static int place_multistage_amp(Circuit *circuit, float x, float y) {
-    // Vcc supply - placed to the left, away from main circuit
-    Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x - 100, y - 60, 0);
+    // Vcc supply - positioned so the Vcc bus runs horizontally
+    Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x - 60, y - 100, 0);
     if (!vcc) return 0;
     vcc->props.dc_voltage.voltage = 12.0;
 
-    // Ground for Vcc (below the source)
-    Component *gnd_vcc = add_comp(circuit, COMP_GROUND, x - 100, y + 20, 0);
+    // Ground for Vcc
+    Component *gnd_vcc = add_comp(circuit, COMP_GROUND, x - 60, y - 20, 0);
 
     // AC input source
-    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 100, y + 100, 0);
+    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 60, y + 60, 0);
     vin->props.ac_voltage.amplitude = 0.01;  // 10mV - small input due to high gain
     vin->props.ac_voltage.frequency = 1000.0;
 
     // Ground for input source
-    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 100, y + 180, 0);
+    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 60, y + 140, 0);
 
     // Input coupling cap
-    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x, y + 60, 0);
+    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 20, y + 20, 0);
     c1->props.capacitor.capacitance = 10e-6;
 
     // === STAGE 1 ===
-    // Bias resistors
-    Component *r1a = add_comp(circuit, COMP_RESISTOR, x + 80, y - 20, 90);
+    // Bias resistor R1a - connects Vcc to base bias point
+    Component *r1a = add_comp(circuit, COMP_RESISTOR, x + 80, y - 60, 90);
     r1a->props.resistor.resistance = 47000.0;
 
-    Component *r2a = add_comp(circuit, COMP_RESISTOR, x + 80, y + 100, 90);
+    // Bias resistor R2a - connects base bias point to ground
+    Component *r2a = add_comp(circuit, COMP_RESISTOR, x + 80, y + 60, 90);
     r2a->props.resistor.resistance = 10000.0;
 
-    Component *gnd_r2a = add_comp(circuit, COMP_GROUND, x + 80, y + 160, 0);
+    Component *gnd_r2a = add_comp(circuit, COMP_GROUND, x + 80, y + 120, 0);
 
-    // First transistor - B at (-20,0), C at (20,-20), E at (20,20)
-    Component *q1 = add_comp(circuit, COMP_NPN_BJT, x + 160, y + 60, 0);
+    // First transistor Q1 - positioned so base aligns with bias resistors
+    // B at (-20,0), C at (20,-20), E at (20,20)
+    Component *q1 = add_comp(circuit, COMP_NPN_BJT, x + 140, y + 20, 0);
     q1->props.bjt.bf = 100;
 
-    // Collector resistor - bottom terminal aligns with C at (q1_x+20, q1_y-20)
-    Component *rc1 = add_comp(circuit, COMP_RESISTOR, x + 180, y, 90);
+    // Collector resistor Rc1 - aligned vertically with collector terminal
+    Component *rc1 = add_comp(circuit, COMP_RESISTOR, x + 160, y - 60, 90);
     rc1->props.resistor.resistance = 4700.0;
 
-    // Emitter resistor - top terminal aligns with E at (q1_x+20, q1_y+20)
-    Component *re1 = add_comp(circuit, COMP_RESISTOR, x + 180, y + 120, 90);
+    // Emitter resistor Re1 - aligned with emitter terminal
+    Component *re1 = add_comp(circuit, COMP_RESISTOR, x + 160, y + 80, 90);
     re1->props.resistor.resistance = 1000.0;
 
-    Component *gnd_re1 = add_comp(circuit, COMP_GROUND, x + 180, y + 180, 0);
+    Component *gnd_re1 = add_comp(circuit, COMP_GROUND, x + 160, y + 140, 0);
 
-    // Interstage coupling cap - connects to collector
-    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 260, y + 40, 0);
+    // Interstage coupling cap C2
+    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 220, y, 0);
     c2->props.capacitor.capacitance = 10e-6;
 
     // === STAGE 2 ===
-    Component *r1b = add_comp(circuit, COMP_RESISTOR, x + 340, y - 20, 90);
+    // Bias resistors for Q2
+    Component *r1b = add_comp(circuit, COMP_RESISTOR, x + 280, y - 60, 90);
     r1b->props.resistor.resistance = 47000.0;
 
-    Component *r2b = add_comp(circuit, COMP_RESISTOR, x + 340, y + 100, 90);
+    Component *r2b = add_comp(circuit, COMP_RESISTOR, x + 280, y + 60, 90);
     r2b->props.resistor.resistance = 10000.0;
 
-    Component *gnd_r2b = add_comp(circuit, COMP_GROUND, x + 340, y + 160, 0);
+    Component *gnd_r2b = add_comp(circuit, COMP_GROUND, x + 280, y + 120, 0);
 
-    // Second transistor
-    Component *q2 = add_comp(circuit, COMP_NPN_BJT, x + 420, y + 60, 0);
+    // Second transistor Q2
+    Component *q2 = add_comp(circuit, COMP_NPN_BJT, x + 340, y + 20, 0);
     q2->props.bjt.bf = 100;
 
-    // Collector resistor - bottom terminal aligns with C
-    Component *rc2 = add_comp(circuit, COMP_RESISTOR, x + 440, y, 90);
+    // Collector resistor Rc2
+    Component *rc2 = add_comp(circuit, COMP_RESISTOR, x + 360, y - 60, 90);
     rc2->props.resistor.resistance = 4700.0;
 
-    // Emitter resistor - top terminal aligns with E
-    Component *re2 = add_comp(circuit, COMP_RESISTOR, x + 440, y + 120, 90);
+    // Emitter resistor Re2
+    Component *re2 = add_comp(circuit, COMP_RESISTOR, x + 360, y + 80, 90);
     re2->props.resistor.resistance = 1000.0;
 
-    Component *gnd_re2 = add_comp(circuit, COMP_GROUND, x + 440, y + 180, 0);
+    Component *gnd_re2 = add_comp(circuit, COMP_GROUND, x + 360, y + 140, 0);
 
-    // Output coupling cap - connects to collector
-    Component *c3 = add_comp(circuit, COMP_CAPACITOR, x + 520, y + 40, 0);
+    // Output coupling cap C3
+    Component *c3 = add_comp(circuit, COMP_CAPACITOR, x + 420, y, 0);
     c3->props.capacitor.capacitance = 10e-6;
 
     // Text label
-    Component *label = add_comp(circuit, COMP_TEXT, x + 160, y - 80, 0);
+    Component *label = add_comp(circuit, COMP_TEXT, x + 120, y - 120, 0);
     strncpy(label->props.text.text, "Two-Stage CE Amplifier", sizeof(label->props.text.text)-1);
     label->props.text.font_size = 2;
 
-    // Connections
+    // === CONNECTIONS ===
+    // Ground connections
     connect_terminals(circuit, vin, 1, gnd_in, 0);
     connect_terminals(circuit, vcc, 1, gnd_vcc, 0);
-    connect_terminals(circuit, vin, 0, c1, 0);
     connect_terminals(circuit, r2a, 1, gnd_r2a, 0);
     connect_terminals(circuit, re1, 1, gnd_re1, 0);
     connect_terminals(circuit, r2b, 1, gnd_r2b, 0);
     connect_terminals(circuit, re2, 1, gnd_re2, 0);
 
-    // Get Vcc node
+    // Input to C1
+    connect_terminals(circuit, vin, 0, c1, 0);
+
+    // Get Vcc+ position for the Vcc bus (y = -140)
     float vcc_plus_x, vcc_plus_y;
     component_get_terminal_pos(vcc, 0, &vcc_plus_x, &vcc_plus_y);
     int vcc_node = circuit_find_or_create_node(circuit, vcc_plus_x, vcc_plus_y, 5.0f);
     vcc->node_ids[0] = vcc_node;
 
-    // Stage 1 connections
-    // C1 to base junction
+    // Create horizontal Vcc bus by connecting all top resistors at same y level
+    // R1a, Rc1, R1b, Rc2 all have top terminals at y-100
+    float r1a_top_x, r1a_top_y;
+    component_get_terminal_pos(r1a, 0, &r1a_top_x, &r1a_top_y);
+    float rc1_top_x, rc1_top_y;
+    component_get_terminal_pos(rc1, 0, &rc1_top_x, &rc1_top_y);
+    float r1b_top_x, r1b_top_y;
+    component_get_terminal_pos(r1b, 0, &r1b_top_x, &r1b_top_y);
+    float rc2_top_x, rc2_top_y;
+    component_get_terminal_pos(rc2, 0, &rc2_top_x, &rc2_top_y);
+
+    // Connect Vcc to R1a (direct horizontal since same y)
+    wire_L_shape(circuit, vcc_plus_x, vcc_plus_y, r1a_top_x, r1a_top_y, true);
+    r1a->node_ids[0] = vcc_node;
+
+    // Connect along Vcc bus: R1a to Rc1 to R1b to Rc2 (horizontal wires)
+    int bus_node = vcc_node;
+    circuit_add_wire(circuit, bus_node, circuit_find_or_create_node(circuit, rc1_top_x, rc1_top_y, 5.0f));
+    rc1->node_ids[0] = vcc_node;
+    circuit_add_wire(circuit, bus_node, circuit_find_or_create_node(circuit, r1b_top_x, r1b_top_y, 5.0f));
+    r1b->node_ids[0] = vcc_node;
+    circuit_add_wire(circuit, bus_node, circuit_find_or_create_node(circuit, rc2_top_x, rc2_top_y, 5.0f));
+    rc2->node_ids[0] = vcc_node;
+
+    // Stage 1: C1 output to base bias junction
     float c1_out_x, c1_out_y;
     component_get_terminal_pos(c1, 1, &c1_out_x, &c1_out_y);
+    float r1a_bot_x, r1a_bot_y;
+    component_get_terminal_pos(r1a, 1, &r1a_bot_x, &r1a_bot_y);
     float r2a_top_x, r2a_top_y;
     component_get_terminal_pos(r2a, 0, &r2a_top_x, &r2a_top_y);
-    int base1_node = circuit_find_or_create_node(circuit, r2a_top_x, r2a_top_y, 5.0f);
 
-    wire_L_shape(circuit, c1_out_x, c1_out_y, r2a_top_x, r2a_top_y, true);
-    c1->node_ids[1] = base1_node;
+    // Base bias junction is where R1a bottom meets R2a top
+    int base1_node = circuit_find_or_create_node(circuit, r1a_bot_x, r1a_bot_y, 5.0f);
     r1a->node_ids[1] = base1_node;
     r2a->node_ids[0] = base1_node;
 
+    // C1 to base junction
+    wire_L_shape(circuit, c1_out_x, c1_out_y, r1a_bot_x, r1a_bot_y, true);
+    c1->node_ids[1] = base1_node;
+
+    // Base junction to Q1 base
     float base1_x, base1_y;
     component_get_terminal_pos(q1, 0, &base1_x, &base1_y);
-    wire_L_shape(circuit, r2a_top_x, r2a_top_y, base1_x, base1_y, true);
+    wire_L_shape(circuit, r1a_bot_x, r1a_bot_y, base1_x, base1_y, true);
     q1->node_ids[0] = base1_node;
 
-    // R1a to Vcc
-    float r1a_top_x, r1a_top_y;
-    component_get_terminal_pos(r1a, 0, &r1a_top_x, &r1a_top_y);
-    wire_L_shape(circuit, r1a_top_x, r1a_top_y, vcc_plus_x, vcc_plus_y, true);
-    r1a->node_ids[0] = vcc_node;
-
-    // Rc1 to Vcc
-    float rc1_top_x, rc1_top_y;
-    component_get_terminal_pos(rc1, 0, &rc1_top_x, &rc1_top_y);
-    wire_L_shape(circuit, rc1_top_x, rc1_top_y, vcc_plus_x, vcc_plus_y, true);
-    rc1->node_ids[0] = vcc_node;
-
-    // Rc1 to collector
+    // Rc1 bottom to Q1 collector
     float rc1_bot_x, rc1_bot_y;
     component_get_terminal_pos(rc1, 1, &rc1_bot_x, &rc1_bot_y);
     float coll1_x, coll1_y;
@@ -1147,7 +1171,7 @@ static int place_multistage_amp(Circuit *circuit, float x, float y) {
     rc1->node_ids[1] = coll1_node;
     q1->node_ids[1] = coll1_node;
 
-    // Emitter to Re1
+    // Q1 emitter to Re1 top
     float emit1_x, emit1_y;
     component_get_terminal_pos(q1, 2, &emit1_x, &emit1_y);
     float re1_top_x, re1_top_y;
@@ -1157,42 +1181,34 @@ static int place_multistage_amp(Circuit *circuit, float x, float y) {
     q1->node_ids[2] = emit1_node;
     re1->node_ids[0] = emit1_node;
 
-    // Interstage: collector1 to C2
+    // Collector1 to C2 input
     float c2_in_x, c2_in_y;
     component_get_terminal_pos(c2, 0, &c2_in_x, &c2_in_y);
     wire_L_shape(circuit, coll1_x, coll1_y, c2_in_x, c2_in_y, true);
     c2->node_ids[0] = coll1_node;
 
-    // Stage 2 - same pattern
+    // Stage 2: C2 output to base2 bias junction
     float c2_out_x, c2_out_y;
     component_get_terminal_pos(c2, 1, &c2_out_x, &c2_out_y);
+    float r1b_bot_x, r1b_bot_y;
+    component_get_terminal_pos(r1b, 1, &r1b_bot_x, &r1b_bot_y);
     float r2b_top_x, r2b_top_y;
     component_get_terminal_pos(r2b, 0, &r2b_top_x, &r2b_top_y);
-    int base2_node = circuit_find_or_create_node(circuit, r2b_top_x, r2b_top_y, 5.0f);
 
-    wire_L_shape(circuit, c2_out_x, c2_out_y, r2b_top_x, r2b_top_y, true);
-    c2->node_ids[1] = base2_node;
+    int base2_node = circuit_find_or_create_node(circuit, r1b_bot_x, r1b_bot_y, 5.0f);
     r1b->node_ids[1] = base2_node;
     r2b->node_ids[0] = base2_node;
 
+    wire_L_shape(circuit, c2_out_x, c2_out_y, r1b_bot_x, r1b_bot_y, true);
+    c2->node_ids[1] = base2_node;
+
+    // Base2 junction to Q2 base
     float base2_x, base2_y;
     component_get_terminal_pos(q2, 0, &base2_x, &base2_y);
-    wire_L_shape(circuit, r2b_top_x, r2b_top_y, base2_x, base2_y, true);
+    wire_L_shape(circuit, r1b_bot_x, r1b_bot_y, base2_x, base2_y, true);
     q2->node_ids[0] = base2_node;
 
-    // R1b to Vcc
-    float r1b_top_x, r1b_top_y;
-    component_get_terminal_pos(r1b, 0, &r1b_top_x, &r1b_top_y);
-    wire_L_shape(circuit, r1b_top_x, r1b_top_y, vcc_plus_x, vcc_plus_y, true);
-    r1b->node_ids[0] = vcc_node;
-
-    // Rc2 to Vcc
-    float rc2_top_x, rc2_top_y;
-    component_get_terminal_pos(rc2, 0, &rc2_top_x, &rc2_top_y);
-    wire_L_shape(circuit, rc2_top_x, rc2_top_y, vcc_plus_x, vcc_plus_y, true);
-    rc2->node_ids[0] = vcc_node;
-
-    // Rc2 to collector
+    // Rc2 bottom to Q2 collector
     float rc2_bot_x, rc2_bot_y;
     component_get_terminal_pos(rc2, 1, &rc2_bot_x, &rc2_bot_y);
     float coll2_x, coll2_y;
@@ -1202,7 +1218,7 @@ static int place_multistage_amp(Circuit *circuit, float x, float y) {
     rc2->node_ids[1] = coll2_node;
     q2->node_ids[1] = coll2_node;
 
-    // Emitter to Re2
+    // Q2 emitter to Re2 top
     float emit2_x, emit2_y;
     component_get_terminal_pos(q2, 2, &emit2_x, &emit2_y);
     float re2_top_x, re2_top_y;
@@ -1212,7 +1228,7 @@ static int place_multistage_amp(Circuit *circuit, float x, float y) {
     q2->node_ids[2] = emit2_node;
     re2->node_ids[0] = emit2_node;
 
-    // Output: collector2 to C3
+    // Collector2 to C3 input
     float c3_in_x, c3_in_y;
     component_get_terminal_pos(c3, 0, &c3_in_x, &c3_in_y);
     wire_L_shape(circuit, coll2_x, coll2_y, c3_in_x, c3_in_y, true);
