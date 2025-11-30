@@ -101,28 +101,76 @@ static const ComponentTypeInfo component_info[] = {
         "NPN BJT", "Q", 3,
         {{ -20, 0, "B" }, { 20, -20, "C" }, { 20, 20, "E" }},
         60, 60,
-        { .bjt = { 100.0, 1e-14, 100.0 } }
+        { .bjt = {
+            .bf = 100.0,        // Forward current gain (beta)
+            .is = 1e-14,        // Saturation current
+            .vaf = 100.0,       // Forward Early voltage
+            .nf = 1.0,          // Forward emission coefficient
+            .br = 1.0,          // Reverse current gain
+            .var = 100.0,       // Reverse Early voltage
+            .nr = 1.0,          // Reverse emission coefficient
+            .ise = 0.0,         // B-E leakage saturation current
+            .isc = 0.0,         // B-C leakage saturation current
+            .temp = 300.0,      // Temperature (K)
+            .ideal = true       // Use ideal (simplified) model
+        }}
     },
 
     [COMP_PNP_BJT] = {
         "PNP BJT", "Q", 3,
         {{ -20, 0, "B" }, { 20, -20, "C" }, { 20, 20, "E" }},
         60, 60,
-        { .bjt = { 100.0, 1e-14, 100.0 } }
+        { .bjt = {
+            .bf = 100.0,
+            .is = 1e-14,
+            .vaf = 100.0,
+            .nf = 1.0,
+            .br = 1.0,
+            .var = 100.0,
+            .nr = 1.0,
+            .ise = 0.0,
+            .isc = 0.0,
+            .temp = 300.0,
+            .ideal = true
+        }}
     },
 
     [COMP_NMOS] = {
         "NMOS", "M", 3,
         {{ -20, 0, "G" }, { 20, -20, "D" }, { 20, 20, "S" }},
         60, 60,
-        { .mosfet = { 0.001, 1.0, 0.01 } }
+        { .mosfet = {
+            .vth = 0.7,         // Threshold voltage (V)
+            .kp = 110e-6,       // Transconductance parameter (A/V²)
+            .lambda = 0.04,     // Channel length modulation (1/V)
+            .w = 10e-6,         // Channel width (m) - 10um
+            .l = 1e-6,          // Channel length (m) - 1um
+            .tox = 10e-9,       // Gate oxide thickness (m) - 10nm
+            .gamma = 0.4,       // Body effect coefficient (V^0.5)
+            .phi = 0.65,        // Surface potential (V)
+            .nsub = 1e15,       // Substrate doping (1/cm³)
+            .temp = 300.0,      // Temperature (K)
+            .ideal = true       // Use ideal (simplified) model
+        }}
     },
 
     [COMP_PMOS] = {
         "PMOS", "M", 3,
         {{ -20, 0, "G" }, { 20, -20, "D" }, { 20, 20, "S" }},
         60, 60,
-        { .mosfet = { 0.0005, -1.0, 0.01 } }
+        { .mosfet = {
+            .vth = -0.7,        // Threshold voltage (V) - negative for PMOS
+            .kp = 50e-6,        // Transconductance parameter (A/V²) - lower for PMOS
+            .lambda = 0.04,     // Channel length modulation (1/V)
+            .w = 10e-6,         // Channel width (m)
+            .l = 1e-6,          // Channel length (m)
+            .tox = 10e-9,       // Gate oxide thickness (m)
+            .gamma = 0.4,       // Body effect coefficient (V^0.5)
+            .phi = 0.65,        // Surface potential (V)
+            .nsub = 1e15,       // Substrate doping (1/cm³)
+            .temp = 300.0,      // Temperature (K)
+            .ideal = true       // Use ideal (simplified) model
+        }}
     },
 
     [COMP_OPAMP] = {
@@ -528,29 +576,103 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             break;
         }
 
-        // Simplified stamps for transistors and op-amp
+        // BJT transistor stamps (Gummel-Poon model)
         case COMP_NPN_BJT:
         case COMP_PNP_BJT: {
-            // Simplified BJT model
-            double beta = comp->props.bjt.beta;
-            double Is = comp->props.bjt.is;
-            double Vt = 0.026;
+            double bf = comp->props.bjt.bf;      // Forward beta
+            double Is = comp->props.bjt.is;      // Saturation current
+            double Vaf = comp->props.bjt.vaf;    // Early voltage
+            double nf = comp->props.bjt.nf;      // Emission coefficient
+            double temp = comp->props.bjt.temp;  // Temperature
+            bool ideal = comp->props.bjt.ideal;
 
-            double Vbe = 0.6;
+            // Thermal voltage at temperature
+            double Vt = 8.617e-5 * temp;  // k*T/q
+
+            // For PNP, invert voltage polarities
+            double sign = (comp->type == COMP_PNP_BJT) ? -1.0 : 1.0;
+
+            double Vbe = 0.6 * sign;
+            double Vbc = 0.0;
             if (prev_solution) {
                 double vB = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                double vC = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
                 double vE = (n[2] > 0) ? vector_get(prev_solution, n[2]-1) : 0;
-                Vbe = CLAMP(vB - vE, -5*Vt, 40*Vt);
+                Vbe = sign * (vB - vE);
+                Vbc = sign * (vB - vC);
+                Vbe = CLAMP(Vbe, -5*nf*Vt, 40*nf*Vt);
+                Vbc = CLAMP(Vbc, -5*nf*Vt, 40*nf*Vt);
             }
 
-            double expBE = exp(Vbe / Vt);
-            double Gbe = (Is / (beta * Vt)) * expBE;
-            double Gm = (Is / Vt) * expBE;
+            double Gbe, Gbc, Gm, Ieq_be, Ieq_bc;
 
-            // B-E junction
+            if (ideal) {
+                // Ideal Ebers-Moll model (simplified)
+                double expBE = exp(Vbe / (nf * Vt));
+                double Ibe = (Is / bf) * (expBE - 1);
+                Gbe = (Is / (bf * nf * Vt)) * expBE + 1e-12;
+                Ieq_be = Ibe - Gbe * Vbe;
+
+                // Collector current - forward active
+                double Ic = Is * (expBE - 1);
+                Gm = (Is / (nf * Vt)) * expBE;
+
+                // Simplified: ignore B-C junction for ideal mode
+                Gbc = 1e-12;
+                Ieq_bc = 0;
+            } else {
+                // Non-ideal Gummel-Poon model with Early effect
+                double br = comp->props.bjt.br;
+                double nr = comp->props.bjt.nr;
+                double ise = comp->props.bjt.ise;
+                double isc = comp->props.bjt.isc;
+
+                // Forward B-E diode
+                double expBE = exp(Vbe / (nf * Vt));
+                double Ibe_main = (Is / bf) * (expBE - 1);
+                double Ibe_leak = ise * (exp(Vbe / (2 * nf * Vt)) - 1);  // Low-level injection
+                double Ibe = Ibe_main + Ibe_leak;
+                Gbe = (Is / (bf * nf * Vt)) * expBE + 1e-12;
+                Ieq_be = Ibe - Gbe * Vbe;
+
+                // Reverse B-C diode
+                double expBC = exp(Vbc / (nr * Vt));
+                double Ibc_main = (Is / br) * (expBC - 1);
+                double Ibc_leak = isc * (exp(Vbc / (2 * nr * Vt)) - 1);
+                double Ibc = Ibc_main + Ibc_leak;
+                Gbc = (Is / (br * nr * Vt)) * expBC + 1e-12;
+                Ieq_bc = Ibc - Gbc * Vbc;
+
+                // Collector current with Early effect
+                double early_factor = 1.0;
+                if (Vaf > 0) {
+                    double Vce = Vbe - Vbc;
+                    early_factor = 1.0 + Vce / Vaf;
+                }
+                double Ic_f = Is * (expBE - 1) * early_factor;
+                double Ic_r = Is * (expBC - 1);
+                Gm = (Is / (nf * Vt)) * expBE * early_factor;
+            }
+
+            // Apply sign for PNP
+            Gbe *= 1;  // Conductance is always positive
+            Gm *= sign;
+            Ieq_be *= sign;
+            Ieq_bc *= sign;
+
+            // Stamp B-E junction
             STAMP_CONDUCTANCE(n[0], n[2], Gbe);
+            if (n[0] > 0) vector_add(b, n[0]-1, -Ieq_be);
+            if (n[2] > 0) vector_add(b, n[2]-1, Ieq_be);
 
-            // Transconductance (simplified)
+            // Stamp B-C junction (for non-ideal mode)
+            if (!ideal) {
+                STAMP_CONDUCTANCE(n[0], n[1], Gbc);
+                if (n[0] > 0) vector_add(b, n[0]-1, -Ieq_bc);
+                if (n[1] > 0) vector_add(b, n[1]-1, Ieq_bc);
+            }
+
+            // Transconductance (collector current controlled by Vbe)
             if (n[1] > 0 && n[0] > 0) matrix_add(A, n[1]-1, n[0]-1, Gm);
             if (n[1] > 0 && n[2] > 0) matrix_add(A, n[1]-1, n[2]-1, -Gm);
             if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -Gm);
@@ -558,42 +680,103 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             break;
         }
 
+        // MOSFET transistor stamps (Level 1 SPICE model)
         case COMP_NMOS:
         case COMP_PMOS: {
-            // Simplified MOSFET square-law model
-            double Kn = comp->props.mosfet.kn;
             double Vth = comp->props.mosfet.vth;
+            double Kp = comp->props.mosfet.kp;
+            double lambda = comp->props.mosfet.lambda;
+            double W = comp->props.mosfet.w;
+            double L = comp->props.mosfet.l;
+            bool ideal = comp->props.mosfet.ideal;
 
-            double Vgs = 0, Vds = 0;
+            // Effective transconductance: K = Kp * W / L
+            double K = Kp * (W / L);
+
+            // For PMOS, work with absolute values and invert at end
+            double sign = (comp->type == COMP_PMOS) ? -1.0 : 1.0;
+            double Vth_eff = fabs(Vth);
+
+            double Vgs = 0, Vds = 0, Vsb = 0;
             if (prev_solution) {
                 double vG = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
                 double vD = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
                 double vS = (n[2] > 0) ? vector_get(prev_solution, n[2]-1) : 0;
-                Vgs = vG - vS;
-                Vds = vD - vS;
-            }
 
-            double Gds = 1e-12;
-            double Gm = 0;
-
-            if (Vgs > Vth) {
-                if (Vds < Vgs - Vth) {
-                    // Triode
-                    Gm = Kn * Vds;
-                    Gds = Kn * (Vgs - Vth - Vds);
+                if (comp->type == COMP_PMOS) {
+                    // For PMOS: Vsg, Vsd (source and drain swapped in equations)
+                    Vgs = vS - vG;
+                    Vds = vS - vD;
+                    Vsb = 0;  // Assume body tied to source
                 } else {
-                    // Saturation
-                    Gm = Kn * (Vgs - Vth);
-                    Gds = 1e-12;
+                    Vgs = vG - vS;
+                    Vds = vD - vS;
+                    Vsb = 0;
                 }
             }
 
-            Gds = MAX(Gds, 1e-12);
+            // Body effect (non-ideal mode only)
+            double Vth_adj = Vth_eff;
+            if (!ideal && Vsb > 0) {
+                double gamma = comp->props.mosfet.gamma;
+                double phi = comp->props.mosfet.phi;
+                Vth_adj = Vth_eff + gamma * (sqrt(phi + Vsb) - sqrt(phi));
+            }
 
-            // D-S conductance
+            double Gds = 1e-12;  // Minimum conductance
+            double Gm = 0;
+            double Id = 0;
+            double Ieq = 0;
+
+            double Vov = Vgs - Vth_adj;  // Overdrive voltage
+
+            if (Vov <= 0) {
+                // Cutoff region
+                Gds = 1e-12;
+                Gm = 0;
+                Id = 0;
+            } else if (Vds < Vov) {
+                // Triode (linear) region
+                // Id = K * (Vov * Vds - Vds²/2) * (1 + lambda * Vds)
+                double lambda_term = ideal ? 1.0 : (1.0 + lambda * Vds);
+                Id = K * (Vov * Vds - 0.5 * Vds * Vds) * lambda_term;
+
+                // Derivatives for Newton-Raphson linearization
+                Gm = K * Vds * lambda_term;  // dId/dVgs
+                Gds = K * (Vov - Vds) * lambda_term;  // dId/dVds
+                if (!ideal) {
+                    Gds += K * (Vov * Vds - 0.5 * Vds * Vds) * lambda;
+                }
+            } else {
+                // Saturation region
+                // Id = (K/2) * Vov² * (1 + lambda * Vds)
+                double lambda_term = ideal ? 1.0 : (1.0 + lambda * Vds);
+                Id = 0.5 * K * Vov * Vov * lambda_term;
+
+                // Derivatives
+                Gm = K * Vov * lambda_term;  // dId/dVgs
+                Gds = ideal ? 1e-12 : (0.5 * K * Vov * Vov * lambda);  // dId/dVds (channel length modulation)
+            }
+
+            // Ensure minimum conductance
+            Gds = MAX(Gds, 1e-12);
+            Gm = MAX(Gm, 0);
+
+            // Equivalent current source: Ieq = Id - Gm*Vgs - Gds*Vds
+            Ieq = Id - Gm * Vgs - Gds * Vds;
+
+            // Apply sign for PMOS (currents flow opposite direction)
+            Gm *= sign;
+            Ieq *= sign;
+
+            // Stamp D-S conductance
             STAMP_CONDUCTANCE(n[1], n[2], Gds);
 
-            // Transconductance
+            // Stamp equivalent current source
+            if (n[1] > 0) vector_add(b, n[1]-1, -Ieq);
+            if (n[2] > 0) vector_add(b, n[2]-1, Ieq);
+
+            // Transconductance (drain current controlled by Vgs)
             if (n[1] > 0 && n[0] > 0) matrix_add(A, n[1]-1, n[0]-1, Gm);
             if (n[1] > 0 && n[2] > 0) matrix_add(A, n[1]-1, n[2]-1, -Gm);
             if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -Gm);

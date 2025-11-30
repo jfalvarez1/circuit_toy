@@ -31,8 +31,53 @@ typedef union {
     struct { double is; double vt; double n; double vz; } zener;  // vz = breakdown voltage
     struct { double is; double vt; double n; } schottky;       // Lower Vf than standard diode
     struct { double is; double vt; double n; double vf; double max_current; double wavelength; double current; } led;  // vf=forward voltage, wavelength in nm for color
-    struct { double beta; double is; double va; } bjt;
-    struct { double kn; double vth; double lambda; } mosfet;
+    // BJT transistor (NPN/PNP) - Gummel-Poon model parameters
+    struct {
+        // Basic DC parameters
+        double bf;         // BF - Forward current gain (beta), default: 100
+        double is;         // IS - Saturation current (A), default: 1e-14
+        double vaf;        // VAF - Forward Early voltage (V), default: 100
+        double nf;         // NF - Forward emission coefficient, default: 1.0
+
+        // Reverse parameters
+        double br;         // BR - Reverse current gain, default: 1.0
+        double var;        // VAR - Reverse Early voltage (V), default: 100
+        double nr;         // NR - Reverse emission coefficient, default: 1.0
+
+        // Leakage currents
+        double ise;        // ISE - B-E leakage saturation current (A), default: 0
+        double isc;        // ISC - B-C leakage saturation current (A), default: 0
+
+        // Temperature
+        double temp;       // Operating temperature (K), default: 300
+
+        // Mode
+        bool ideal;        // Use ideal (simplified) model, default: true
+    } bjt;
+
+    // MOSFET transistor (NMOS/PMOS) - Level 1 SPICE model parameters
+    struct {
+        // Basic parameters
+        double vth;        // VTO - Threshold voltage (V), NMOS: 0.7, PMOS: -0.7
+        double kp;         // KP - Transconductance parameter (A/V²), default: 110e-6
+        double lambda;     // LAMBDA - Channel length modulation (1/V), default: 0.04
+
+        // Physical dimensions
+        double w;          // W - Channel width (m), default: 10e-6
+        double l;          // L - Channel length (m), default: 1e-6
+        double tox;        // TOX - Gate oxide thickness (m), default: 10e-9
+
+        // Body effect parameters
+        double gamma;      // GAMMA - Body effect coefficient (V^0.5), default: 0.4
+        double phi;        // PHI - Surface potential (V), default: 0.65
+        double nsub;       // NSUB - Substrate doping (1/cm³), default: 1e15
+
+        // Temperature
+        double temp;       // Operating temperature (K), default: 300
+
+        // Mode
+        bool ideal;        // Use ideal (simplified) model, default: true
+    } mosfet;
     struct { double gain; double voffset; double vmax; double vmin; } opamp;
     // Waveform generators
     struct { double amplitude; double frequency; double phase; double offset; double duty; } square_wave;

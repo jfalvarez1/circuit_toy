@@ -943,6 +943,134 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 break;
             }
 
+            case COMP_NPN_BJT:
+            case COMP_PNP_BJT: {
+                // Beta (forward current gain)
+                bool editing_beta = input && input->editing_property && input->editing_prop_type == PROP_BJT_BETA;
+                snprintf(buf, sizeof(buf), "%.1f", selected->props.bjt.bf);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Beta (BF):", buf,
+                                   editing_beta, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_BJT_BETA;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Saturation current (Is)
+                bool editing_is = input && input->editing_property && input->editing_prop_type == PROP_BJT_IS;
+                format_engineering(selected->props.bjt.is, "A", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Is:", buf,
+                                   editing_is, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_BJT_IS;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Early voltage (VAF)
+                bool editing_vaf = input && input->editing_property && input->editing_prop_type == PROP_BJT_VAF;
+                snprintf(buf, sizeof(buf), "%.1f V", selected->props.bjt.vaf);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "VAF:", buf,
+                                   editing_vaf, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_BJT_VAF;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Ideal/Non-ideal mode toggle (read-only display, click to toggle)
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                if (selected->props.bjt.ideal) {
+                    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                    ui_draw_text(renderer, "[Ideal]", x + 100, prop_y + 2);
+                } else {
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);
+                    ui_draw_text(renderer, "[SPICE]", x + 100, prop_y + 2);
+                }
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_BJT_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Additional SPICE params shown only in non-ideal mode
+                if (!selected->props.bjt.ideal) {
+                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                    snprintf(buf, sizeof(buf), "NF=%.2f BR=%.1f", selected->props.bjt.nf, selected->props.bjt.br);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                    prop_y += 14;
+                    snprintf(buf, sizeof(buf), "VAR=%.1fV T=%.0fK", selected->props.bjt.var, selected->props.bjt.temp);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                }
+                break;
+            }
+
+            case COMP_NMOS:
+            case COMP_PMOS: {
+                // Threshold voltage (Vth)
+                bool editing_vth = input && input->editing_property && input->editing_prop_type == PROP_MOS_VTH;
+                snprintf(buf, sizeof(buf), "%.2f V", selected->props.mosfet.vth);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Vth:", buf,
+                                   editing_vth, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_MOS_VTH;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Transconductance parameter (Kp)
+                bool editing_kp = input && input->editing_property && input->editing_prop_type == PROP_MOS_KP;
+                format_engineering(selected->props.mosfet.kp, "A/V2", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Kp:", buf,
+                                   editing_kp, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_MOS_KP;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Channel width (W)
+                bool editing_w = input && input->editing_property && input->editing_prop_type == PROP_MOS_W;
+                format_engineering(selected->props.mosfet.w, "m", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "W:", buf,
+                                   editing_w, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_MOS_W;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Channel length (L)
+                bool editing_l = input && input->editing_property && input->editing_prop_type == PROP_MOS_L;
+                format_engineering(selected->props.mosfet.l, "m", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "L:", buf,
+                                   editing_l, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_MOS_L;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Ideal/Non-ideal mode toggle
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                if (selected->props.mosfet.ideal) {
+                    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                    ui_draw_text(renderer, "[Ideal]", x + 100, prop_y + 2);
+                } else {
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);
+                    ui_draw_text(renderer, "[SPICE]", x + 100, prop_y + 2);
+                }
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_MOS_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Additional SPICE params shown only in non-ideal mode
+                if (!selected->props.mosfet.ideal) {
+                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                    snprintf(buf, sizeof(buf), "Lambda=%.3f", selected->props.mosfet.lambda);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                    prop_y += 14;
+                    snprintf(buf, sizeof(buf), "Gamma=%.2f Phi=%.2fV", selected->props.mosfet.gamma, selected->props.mosfet.phi);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                }
+                break;
+            }
+
             default:
                 break;
         }

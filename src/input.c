@@ -1092,6 +1092,76 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             }
             break;
 
+        // BJT parameters
+        case PROP_BJT_BETA:
+            if ((comp->type == COMP_NPN_BJT || comp->type == COMP_PNP_BJT) && value > 0 && value <= 10000) {
+                comp->props.bjt.bf = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_BJT_IS:
+            if ((comp->type == COMP_NPN_BJT || comp->type == COMP_PNP_BJT) && value > 0 && value <= 1e-6) {
+                comp->props.bjt.is = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_BJT_VAF:
+            if ((comp->type == COMP_NPN_BJT || comp->type == COMP_PNP_BJT) && value > 0 && value <= 1000) {
+                comp->props.bjt.vaf = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_BJT_IDEAL:
+            // Toggle ideal mode for BJT (doesn't use value, just toggles)
+            if (comp->type == COMP_NPN_BJT || comp->type == COMP_PNP_BJT) {
+                comp->props.bjt.ideal = !comp->props.bjt.ideal;
+                applied = true;
+            }
+            break;
+
+        // MOSFET parameters
+        case PROP_MOS_VTH:
+            if (comp->type == COMP_NMOS || comp->type == COMP_PMOS) {
+                // Allow negative values for PMOS, typical range -5V to 5V
+                if (value >= -10 && value <= 10) {
+                    comp->props.mosfet.vth = value;
+                    applied = true;
+                }
+            }
+            break;
+
+        case PROP_MOS_KP:
+            if ((comp->type == COMP_NMOS || comp->type == COMP_PMOS) && value > 0 && value <= 1) {
+                comp->props.mosfet.kp = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_MOS_W:
+            if ((comp->type == COMP_NMOS || comp->type == COMP_PMOS) && value > 0 && value <= 1) {
+                comp->props.mosfet.w = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_MOS_L:
+            if ((comp->type == COMP_NMOS || comp->type == COMP_PMOS) && value > 0 && value <= 1) {
+                comp->props.mosfet.l = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_MOS_IDEAL:
+            // Toggle ideal mode for MOSFET (doesn't use value, just toggles)
+            if (comp->type == COMP_NMOS || comp->type == COMP_PMOS) {
+                comp->props.mosfet.ideal = !comp->props.mosfet.ideal;
+                applied = true;
+            }
+            break;
+
         default:
             break;
     }

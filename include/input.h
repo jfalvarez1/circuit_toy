@@ -26,7 +26,20 @@ typedef enum {
     PROP_PHASE,
     PROP_OFFSET,
     PROP_DUTY,
-    PROP_AMPLITUDE
+    PROP_AMPLITUDE,
+    // BJT parameters
+    PROP_BJT_BETA,      // Forward current gain (BF)
+    PROP_BJT_IS,        // Saturation current
+    PROP_BJT_VAF,       // Early voltage
+    PROP_BJT_NF,        // Forward emission coefficient
+    PROP_BJT_IDEAL,     // Ideal mode toggle
+    // MOSFET parameters
+    PROP_MOS_VTH,       // Threshold voltage
+    PROP_MOS_KP,        // Transconductance parameter
+    PROP_MOS_LAMBDA,    // Channel length modulation
+    PROP_MOS_W,         // Channel width
+    PROP_MOS_L,         // Channel length
+    PROP_MOS_IDEAL      // Ideal mode toggle
 } PropertyType;
 
 // Input state

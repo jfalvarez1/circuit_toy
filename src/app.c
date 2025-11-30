@@ -465,6 +465,54 @@ void app_handle_events(App *app) {
                                 snprintf(current_value, sizeof(current_value), "%.1f", c->props.square_wave.duty * 100);
                             }
                         }
+                        // BJT parameters
+                        else if (prop_type == PROP_BJT_BETA) {
+                            if (c->type == COMP_NPN_BJT || c->type == COMP_PNP_BJT) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.bjt.bf);
+                            }
+                        } else if (prop_type == PROP_BJT_IS) {
+                            if (c->type == COMP_NPN_BJT || c->type == COMP_PNP_BJT) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.bjt.is);
+                            }
+                        } else if (prop_type == PROP_BJT_VAF) {
+                            if (c->type == COMP_NPN_BJT || c->type == COMP_PNP_BJT) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.bjt.vaf);
+                            }
+                        } else if (prop_type == PROP_BJT_IDEAL) {
+                            // Ideal mode toggle - just toggle immediately, no text input
+                            if (c->type == COMP_NPN_BJT || c->type == COMP_PNP_BJT) {
+                                c->props.bjt.ideal = !c->props.bjt.ideal;
+                                ui_set_status(&app->ui, c->props.bjt.ideal ? "BJT: Ideal model" : "BJT: SPICE model (Gummel-Poon)");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;  // Don't start text edit for toggle
+                        }
+                        // MOSFET parameters
+                        else if (prop_type == PROP_MOS_VTH) {
+                            if (c->type == COMP_NMOS || c->type == COMP_PMOS) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.mosfet.vth);
+                            }
+                        } else if (prop_type == PROP_MOS_KP) {
+                            if (c->type == COMP_NMOS || c->type == COMP_PMOS) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.mosfet.kp);
+                            }
+                        } else if (prop_type == PROP_MOS_W) {
+                            if (c->type == COMP_NMOS || c->type == COMP_PMOS) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.mosfet.w);
+                            }
+                        } else if (prop_type == PROP_MOS_L) {
+                            if (c->type == COMP_NMOS || c->type == COMP_PMOS) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.mosfet.l);
+                            }
+                        } else if (prop_type == PROP_MOS_IDEAL) {
+                            // Ideal mode toggle - just toggle immediately, no text input
+                            if (c->type == COMP_NMOS || c->type == COMP_PMOS) {
+                                c->props.mosfet.ideal = !c->props.mosfet.ideal;
+                                ui_set_status(&app->ui, c->props.mosfet.ideal ? "MOSFET: Ideal model" : "MOSFET: SPICE Level 1 model");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;  // Don't start text edit for toggle
+                        }
                         input_start_property_edit(&app->input, prop_type, current_value);
                         ui_set_status(&app->ui, "Type value (use k,M,m,u,n,p suffix), Enter to apply");
                     } else if (!app->input.selected_component) {
