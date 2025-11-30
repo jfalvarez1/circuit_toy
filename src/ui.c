@@ -264,13 +264,15 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_OPAMP, TOOL_COMPONENT, false, "OpAmp", false, false
     };
 
-    // Oscilloscope settings
-    ui->scope_rect = (Rect){WINDOW_WIDTH - PROPERTIES_WIDTH + 10, 400, 260, 180};
+    // Oscilloscope settings - larger default size for better visibility
+    ui->scope_rect = (Rect){WINDOW_WIDTH - PROPERTIES_WIDTH + 10, 300, 260, 280};
     ui->scope_num_channels = 0;
     ui->scope_time_div = 0.001;   // 1ms per division
     ui->scope_volt_div = 1.0;     // 1V per division
     ui->scope_selected_channel = 0;
     ui->scope_paused = false;
+    ui->scope_resizing = false;
+    ui->scope_resize_edge = -1;
 
     // Initialize all channels with predefined colors
     for (int i = 0; i < MAX_PROBES; i++) {
@@ -809,6 +811,19 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     SDL_Rect bg = {r->x, r->y, r->w, r->h};
     SDL_RenderFillRect(renderer, &bg);
 
+    // Draw resize grip at top-left corner (small diagonal lines)
+    SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
+    for (int i = 0; i < 3; i++) {
+        SDL_RenderDrawLine(renderer, r->x + 2 + i*3, r->y + 8, r->x + 8, r->y + 2 + i*3);
+    }
+    // Highlight grip if resizing
+    if (ui->scope_resizing) {
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);
+        for (int i = 0; i < 3; i++) {
+            SDL_RenderDrawLine(renderer, r->x + 2 + i*3, r->y + 8, r->x + 8, r->y + 2 + i*3);
+        }
+    }
+
     int div_x = r->w / 10;
     int div_y = r->h / 8;
 
@@ -1138,6 +1153,36 @@ static bool point_in_rect(int x, int y, Rect *r) {
 int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
     if (!ui) return UI_ACTION_NONE;
 
+    // Handle scope resizing
+    if (is_down) {
+        // Check if clicking on top edge of scope (resize handle)
+        int top_edge = ui->scope_rect.y;
+        int left_edge = ui->scope_rect.x;
+        int right_edge = ui->scope_rect.x + ui->scope_rect.w;
+
+        // Top edge drag zone (5 pixels)
+        if (y >= top_edge - 5 && y <= top_edge + 5 &&
+            x >= left_edge && x <= right_edge) {
+            ui->scope_resizing = true;
+            ui->scope_resize_edge = 0;  // top edge
+            return UI_ACTION_NONE;
+        }
+        // Left edge drag zone (5 pixels)
+        if (x >= left_edge - 5 && x <= left_edge + 5 &&
+            y >= top_edge && y <= ui->scope_rect.y + ui->scope_rect.h) {
+            ui->scope_resizing = true;
+            ui->scope_resize_edge = 1;  // left edge
+            return UI_ACTION_NONE;
+        }
+    } else {
+        // Release resize
+        if (ui->scope_resizing) {
+            ui->scope_resizing = false;
+            ui->scope_resize_edge = -1;
+            ui_update_layout(ui);  // Update button positions
+        }
+    }
+
     // Check toolbar buttons
     if (is_down) {
         if (point_in_rect(x, y, &ui->btn_run.bounds) && ui->btn_run.enabled) {
@@ -1227,6 +1272,34 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
 
 int ui_handle_motion(UIState *ui, int x, int y) {
     if (!ui) return UI_ACTION_NONE;
+
+    // Handle scope resizing
+    if (ui->scope_resizing) {
+        if (ui->scope_resize_edge == 0) {
+            // Resizing top edge - changes height and y position
+            int new_y = y;
+            int bottom = ui->scope_rect.y + ui->scope_rect.h;
+            int new_height = bottom - new_y;
+
+            // Minimum and maximum height constraints
+            if (new_height >= 100 && new_height <= 500 && new_y >= TOOLBAR_HEIGHT + 200) {
+                ui->scope_rect.y = new_y;
+                ui->scope_rect.h = new_height;
+            }
+        } else if (ui->scope_resize_edge == 1) {
+            // Resizing left edge - changes width and x position
+            int new_x = x;
+            int right = ui->scope_rect.x + ui->scope_rect.w;
+            int new_width = right - new_x;
+
+            // Minimum and maximum width constraints
+            if (new_width >= 150 && new_width <= 400 && new_x >= ui->window_width - PROPERTIES_WIDTH) {
+                ui->scope_rect.x = new_x;
+                ui->scope_rect.w = new_width;
+            }
+        }
+        return UI_ACTION_NONE;
+    }
 
     // Update button hover states
     ui->btn_run.hovered = point_in_rect(x, y, &ui->btn_run.bounds);

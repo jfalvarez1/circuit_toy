@@ -102,6 +102,10 @@ typedef struct {
     int scope_selected_channel;     // Currently selected channel for adjustment
     bool scope_paused;              // Freeze oscilloscope display
 
+    // Scope resizing
+    bool scope_resizing;            // Currently resizing scope panel
+    int scope_resize_edge;          // Which edge is being dragged (0=top, 1=left)
+
     // Oscilloscope control buttons
     Button btn_scope_volt_up;
     Button btn_scope_volt_down;

@@ -13,6 +13,7 @@ void input_init(InputState *input) {
     input->current_tool = TOOL_SELECT;
     input->placing_component = COMP_NONE;
     input->pending_ui_action = UI_ACTION_NONE;
+    input->dragging_probe_idx = -1;
 }
 
 bool input_handle_event(InputState *input, SDL_Event *event,
@@ -57,22 +58,39 @@ bool input_handle_event(InputState *input, SDL_Event *event,
 
                 switch (input->current_tool) {
                     case TOOL_SELECT: {
-                        // Find component at click position
-                        Component *comp = circuit_find_component_at(circuit, wx, wy);
-                        if (comp) {
-                            // Deselect previous
-                            if (input->selected_component && input->selected_component != comp) {
-                                input->selected_component->selected = false;
+                        // Check for probe click first (probes have visual priority)
+                        bool found_probe = false;
+                        for (int i = 0; i < circuit->num_probes; i++) {
+                            Probe *probe = &circuit->probes[i];
+                            float dx = probe->x - wx;
+                            float dy = probe->y - wy;
+                            // Check if click is near probe tip (within 15 units)
+                            if (sqrt(dx*dx + dy*dy) < 15) {
+                                input->dragging_probe_idx = i;
+                                found_probe = true;
+                                ui_set_status(ui, "Drag probe to move, release on node to connect");
+                                break;
                             }
-                            comp->selected = true;
-                            input->selected_component = comp;
-                            input->is_dragging = true;
-                            input->dragging_component = comp;
-                        } else {
-                            // Deselect
-                            if (input->selected_component) {
-                                input->selected_component->selected = false;
-                                input->selected_component = NULL;
+                        }
+
+                        if (!found_probe) {
+                            // Find component at click position
+                            Component *comp = circuit_find_component_at(circuit, wx, wy);
+                            if (comp) {
+                                // Deselect previous
+                                if (input->selected_component && input->selected_component != comp) {
+                                    input->selected_component->selected = false;
+                                }
+                                comp->selected = true;
+                                input->selected_component = comp;
+                                input->is_dragging = true;
+                                input->dragging_component = comp;
+                            } else {
+                                // Deselect
+                                if (input->selected_component) {
+                                    input->selected_component->selected = false;
+                                    input->selected_component = NULL;
+                                }
                             }
                         }
                         break;
@@ -231,6 +249,25 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                         }
                     }
                 }
+
+                // Finalize probe dragging - connect to nearest node
+                if (input->dragging_probe_idx >= 0 && input->dragging_probe_idx < circuit->num_probes) {
+                    Probe *probe = &circuit->probes[input->dragging_probe_idx];
+
+                    // Find nearest node to probe position
+                    Node *nearest = circuit_find_node_at(circuit, probe->x, probe->y, 30);
+                    if (nearest) {
+                        // Snap probe to node and update connection
+                        probe->x = nearest->x;
+                        probe->y = nearest->y;
+                        probe->node_id = nearest->id;
+                        ui_set_status(ui, "Probe connected to node");
+                    } else {
+                        ui_set_status(ui, "Probe not near any node - voltage reading may be incorrect");
+                    }
+                    input->dragging_probe_idx = -1;
+                }
+
                 input->left.down = false;
                 input->is_dragging = false;
                 input->dragging_component = NULL;
@@ -276,6 +313,14 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 input->dragging_component->x = snapped_x;
                 input->dragging_component->y = snapped_y;
                 circuit_update_component_nodes(circuit, input->dragging_component);
+                return true;
+            }
+
+            // Dragging probe
+            if (input->dragging_probe_idx >= 0 && input->dragging_probe_idx < circuit->num_probes) {
+                Probe *probe = &circuit->probes[input->dragging_probe_idx];
+                probe->x = wx;
+                probe->y = wy;
                 return true;
             }
 

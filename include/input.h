@@ -61,6 +61,9 @@ typedef struct InputState {
     // Selection
     Component *selected_component;
 
+    // Probe dragging
+    int dragging_probe_idx;         // Index of probe being dragged (-1 = none)
+
     // Text input for property editing
     bool editing_property;
     PropertyType editing_prop_type;
