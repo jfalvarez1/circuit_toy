@@ -723,6 +723,144 @@ void app_handle_events(App *app) {
                             app->input.pending_ui_action = UI_ACTION_NONE;
                             break;
                         }
+                        // Sweep enable toggles
+                        else if (prop_type == PROP_SWEEP_VOLTAGE_ENABLE) {
+                            SweepConfig *sweep = NULL;
+                            if (c->type == COMP_DC_VOLTAGE) sweep = &c->props.dc_voltage.voltage_sweep;
+                            else if (c->type == COMP_DC_CURRENT) sweep = &c->props.dc_current.current_sweep;
+                            if (sweep) {
+                                sweep->enabled = !sweep->enabled;
+                                if (sweep->enabled && sweep->sweep_time <= 0) {
+                                    sweep->sweep_time = 1.0;  // Default 1 second
+                                    sweep->mode = SWEEP_LINEAR;
+                                    sweep->num_steps = 10;
+                                }
+                                ui_set_status(&app->ui, sweep->enabled ? "Voltage/Current sweep enabled" : "Voltage/Current sweep disabled");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
+                        else if (prop_type == PROP_SWEEP_AMP_ENABLE) {
+                            SweepConfig *sweep = NULL;
+                            if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.amplitude_sweep;
+                            else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.amplitude_sweep;
+                            else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.amplitude_sweep;
+                            else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.amplitude_sweep;
+                            else if (c->type == COMP_NOISE_SOURCE) sweep = &c->props.noise_source.amplitude_sweep;
+                            if (sweep) {
+                                sweep->enabled = !sweep->enabled;
+                                if (sweep->enabled && sweep->sweep_time <= 0) {
+                                    sweep->sweep_time = 1.0;
+                                    sweep->mode = SWEEP_LINEAR;
+                                    sweep->num_steps = 10;
+                                }
+                                ui_set_status(&app->ui, sweep->enabled ? "Amplitude sweep enabled" : "Amplitude sweep disabled");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
+                        else if (prop_type == PROP_SWEEP_FREQ_ENABLE) {
+                            SweepConfig *sweep = NULL;
+                            if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.frequency_sweep;
+                            else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.frequency_sweep;
+                            else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.frequency_sweep;
+                            else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.frequency_sweep;
+                            if (sweep) {
+                                sweep->enabled = !sweep->enabled;
+                                if (sweep->enabled && sweep->sweep_time <= 0) {
+                                    sweep->sweep_time = 1.0;
+                                    sweep->mode = SWEEP_LOG;  // Log is better for frequency
+                                    sweep->num_steps = 10;
+                                }
+                                ui_set_status(&app->ui, sweep->enabled ? "Frequency sweep enabled" : "Frequency sweep disabled");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
+                        // Sweep mode cycling
+                        else if (prop_type == PROP_SWEEP_VOLTAGE_MODE || prop_type == PROP_SWEEP_AMP_MODE || prop_type == PROP_SWEEP_FREQ_MODE) {
+                            SweepConfig *sweep = NULL;
+                            if (prop_type == PROP_SWEEP_VOLTAGE_MODE) {
+                                if (c->type == COMP_DC_VOLTAGE) sweep = &c->props.dc_voltage.voltage_sweep;
+                                else if (c->type == COMP_DC_CURRENT) sweep = &c->props.dc_current.current_sweep;
+                            } else if (prop_type == PROP_SWEEP_AMP_MODE) {
+                                if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.amplitude_sweep;
+                                else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.amplitude_sweep;
+                                else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.amplitude_sweep;
+                                else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.amplitude_sweep;
+                                else if (c->type == COMP_NOISE_SOURCE) sweep = &c->props.noise_source.amplitude_sweep;
+                            } else {
+                                if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.frequency_sweep;
+                                else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.frequency_sweep;
+                                else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.frequency_sweep;
+                                else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.frequency_sweep;
+                            }
+                            if (sweep) {
+                                sweep->mode = (sweep->mode + 1) % 4;
+                                if (sweep->mode == SWEEP_NONE) sweep->mode = SWEEP_LINEAR;
+                                const char *mode_names[] = {"None", "Linear", "Log", "Step"};
+                                char msg[64];
+                                snprintf(msg, sizeof(msg), "Sweep mode: %s", mode_names[sweep->mode]);
+                                ui_set_status(&app->ui, msg);
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
+                        // Sweep repeat toggle
+                        else if (prop_type == PROP_SWEEP_VOLTAGE_REPEAT || prop_type == PROP_SWEEP_AMP_REPEAT || prop_type == PROP_SWEEP_FREQ_REPEAT) {
+                            SweepConfig *sweep = NULL;
+                            if (prop_type == PROP_SWEEP_VOLTAGE_REPEAT) {
+                                if (c->type == COMP_DC_VOLTAGE) sweep = &c->props.dc_voltage.voltage_sweep;
+                                else if (c->type == COMP_DC_CURRENT) sweep = &c->props.dc_current.current_sweep;
+                            } else if (prop_type == PROP_SWEEP_AMP_REPEAT) {
+                                if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.amplitude_sweep;
+                                else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.amplitude_sweep;
+                                else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.amplitude_sweep;
+                                else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.amplitude_sweep;
+                                else if (c->type == COMP_NOISE_SOURCE) sweep = &c->props.noise_source.amplitude_sweep;
+                            } else {
+                                if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.frequency_sweep;
+                                else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.frequency_sweep;
+                                else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.frequency_sweep;
+                                else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.frequency_sweep;
+                            }
+                            if (sweep) {
+                                sweep->repeat = !sweep->repeat;
+                                ui_set_status(&app->ui, sweep->repeat ? "Sweep repeat: ON" : "Sweep repeat: OFF");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
+                        // Sweep value edits (start, end, time, steps)
+                        else if (prop_type >= PROP_SWEEP_VOLTAGE_START && prop_type <= PROP_SWEEP_FREQ_REPEAT) {
+                            SweepConfig *sweep = NULL;
+                            int base_prop = 0;
+                            if (prop_type >= PROP_SWEEP_VOLTAGE_START && prop_type <= PROP_SWEEP_VOLTAGE_REPEAT) {
+                                base_prop = PROP_SWEEP_VOLTAGE_START;
+                                if (c->type == COMP_DC_VOLTAGE) sweep = &c->props.dc_voltage.voltage_sweep;
+                                else if (c->type == COMP_DC_CURRENT) sweep = &c->props.dc_current.current_sweep;
+                            } else if (prop_type >= PROP_SWEEP_AMP_START && prop_type <= PROP_SWEEP_AMP_REPEAT) {
+                                base_prop = PROP_SWEEP_AMP_START;
+                                if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.amplitude_sweep;
+                                else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.amplitude_sweep;
+                                else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.amplitude_sweep;
+                                else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.amplitude_sweep;
+                                else if (c->type == COMP_NOISE_SOURCE) sweep = &c->props.noise_source.amplitude_sweep;
+                            } else if (prop_type >= PROP_SWEEP_FREQ_START && prop_type <= PROP_SWEEP_FREQ_REPEAT) {
+                                base_prop = PROP_SWEEP_FREQ_START;
+                                if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.frequency_sweep;
+                                else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.frequency_sweep;
+                                else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.frequency_sweep;
+                                else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.frequency_sweep;
+                            }
+                            if (sweep) {
+                                int offset = prop_type - base_prop;
+                                if (offset == 0) snprintf(current_value, sizeof(current_value), "%.6g", sweep->start_value);
+                                else if (offset == 1) snprintf(current_value, sizeof(current_value), "%.6g", sweep->end_value);
+                                else if (offset == 2) snprintf(current_value, sizeof(current_value), "%.6g", sweep->sweep_time);
+                                else if (offset == 3) snprintf(current_value, sizeof(current_value), "%d", sweep->num_steps);
+                            }
+                        }
                         input_start_property_edit(&app->input, prop_type, current_value);
                         ui_set_status(&app->ui, "Type value (use k,M,m,u,n,p suffix), Enter to apply");
                     } else if (!app->input.selected_component) {

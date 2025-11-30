@@ -164,11 +164,15 @@ void ui_init(UIState *ui) {
     ui->speed_value = 1.0f;
 
     // Initialize palette items
-    int pal_y = TOOLBAR_HEIGHT + 30;
-    int pal_h = 40;
+    int pal_y = TOOLBAR_HEIGHT + 18;
+    int pal_h = 35;
     int col = 0;
 
-    // Tools section
+    // === TOOLS SECTION ===
+    // Header drawn at pal_y - 14
+    int tools_header_y = pal_y - 14;
+    (void)tools_header_y;  // Will use in render
+    pal_y += 4;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, TOOL_SELECT, true, "Select", false, true
     };
@@ -177,7 +181,7 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, TOOL_WIRE, true, "Wire", false, false
     };
     col = 0;
-    pal_y += pal_h + 10;
+    pal_y += pal_h + 5;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, TOOL_DELETE, true, "Delete", false, false
     };
@@ -186,8 +190,8 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, TOOL_PROBE, true, "Probe", false, false
     };
 
-    // Sources section
-    pal_y += pal_h + 20;
+    // === SOURCES SECTION ===
+    pal_y += pal_h + 18;
     col = 0;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_GROUND, TOOL_COMPONENT, false, "GND", false, false
@@ -197,7 +201,7 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_DC_VOLTAGE, TOOL_COMPONENT, false, "DC V", false, false
     };
     col = 0;
-    pal_y += pal_h + 5;
+    pal_y += pal_h + 3;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_AC_VOLTAGE, TOOL_COMPONENT, false, "AC V", false, false
     };
@@ -206,9 +210,9 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_DC_CURRENT, TOOL_COMPONENT, false, "DC I", false, false
     };
 
-    // Waveform generators section
+    // === WAVEFORMS SECTION ===
     col = 0;
-    pal_y += pal_h + 5;
+    pal_y += pal_h + 18;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_SQUARE_WAVE, TOOL_COMPONENT, false, "Square", false, false
     };
@@ -226,8 +230,8 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_NOISE_SOURCE, TOOL_COMPONENT, false, "Noise", false, false
     };
 
-    // Passives section
-    pal_y += pal_h + 20;
+    // === PASSIVES SECTION ===
+    pal_y += pal_h + 18;
     col = 0;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_RESISTOR, TOOL_COMPONENT, false, "R", false, false
@@ -237,7 +241,7 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_CAPACITOR, TOOL_COMPONENT, false, "C", false, false
     };
     col = 0;
-    pal_y += pal_h + 5;
+    pal_y += pal_h + 3;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_CAPACITOR_ELEC, TOOL_COMPONENT, false, "Elec", false, false
     };
@@ -246,8 +250,8 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_INDUCTOR, TOOL_COMPONENT, false, "L", false, false
     };
 
-    // Diodes section
-    pal_y += pal_h + 5;
+    // === DIODES SECTION ===
+    pal_y += pal_h + 18;
     col = 0;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_DIODE, TOOL_COMPONENT, false, "Diode", false, false
@@ -257,7 +261,7 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_ZENER, TOOL_COMPONENT, false, "Zener", false, false
     };
     col = 0;
-    pal_y += pal_h + 5;
+    pal_y += pal_h + 3;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_SCHOTTKY, TOOL_COMPONENT, false, "Schky", false, false
     };
@@ -266,8 +270,8 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_LED, TOOL_COMPONENT, false, "LED", false, false
     };
 
-    // Semiconductors section
-    pal_y += pal_h + 20;
+    // === TRANSISTORS SECTION ===
+    pal_y += pal_h + 18;
     col = 0;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_NPN_BJT, TOOL_COMPONENT, false, "NPN", false, false
@@ -277,7 +281,7 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_PNP_BJT, TOOL_COMPONENT, false, "PNP", false, false
     };
     col = 0;
-    pal_y += pal_h + 5;
+    pal_y += pal_h + 3;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_NMOS, TOOL_COMPONENT, false, "NMOS", false, false
     };
@@ -286,13 +290,13 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_PMOS, TOOL_COMPONENT, false, "PMOS", false, false
     };
     col = 0;
-    pal_y += pal_h + 5;
+    pal_y += pal_h + 3;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_OPAMP, TOOL_COMPONENT, false, "OpAmp", false, false
     };
 
-    // Circuit templates section
-    pal_y += pal_h + 25;
+    // === CIRCUITS SECTION ===
+    pal_y += pal_h + 18;
     col = 0;
     ui->num_circuit_items = 0;
     ui->selected_circuit_type = -1;
@@ -635,6 +639,27 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
     SDL_Rect palette = {0, TOOLBAR_HEIGHT, PALETTE_WIDTH, ui->window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT};
     SDL_RenderFillRect(renderer, &palette);
 
+    // Draw category headers based on known component indices
+    // Tools: items 0-3, Sources: 4-7, Waveforms: 8-11, Passives: 12-15, Diodes: 16-19, Transistors: 20-24
+    typedef struct { int start_idx; const char *label; } PaletteSection;
+    PaletteSection sections[] = {
+        {0, "Tools"},
+        {4, "Sources"},
+        {8, "Waveforms"},
+        {12, "Passives"},
+        {16, "Diodes"},
+        {20, "Transistors"}
+    };
+    int num_sections = sizeof(sections) / sizeof(sections[0]);
+
+    for (int s = 0; s < num_sections; s++) {
+        if (sections[s].start_idx < ui->num_palette_items) {
+            int header_y = ui->palette_items[sections[s].start_idx].bounds.y - 14;
+            SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);  // Cyan for headers
+            ui_draw_text(renderer, sections[s].label, 10, header_y);
+        }
+    }
+
     // Palette items
     for (int i = 0; i < ui->num_palette_items; i++) {
         draw_palette_item(renderer, &ui->palette_items[i]);
@@ -642,8 +667,8 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
 
     // Circuits section header
     if (ui->num_circuit_items > 0) {
-        int header_y = ui->circuit_items[0].bounds.y - 18;
-        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+        int header_y = ui->circuit_items[0].bounds.y - 14;
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
         ui_draw_text(renderer, "Circuits", 10, header_y);
     }
 
@@ -696,6 +721,96 @@ static void draw_property_field(SDL_Renderer *renderer, int x, int y, int w,
         SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
         ui_draw_text(renderer, value, value_x + 2, y + 3);
     }
+}
+
+// Helper to draw sweep configuration section
+// Returns the new prop_y position after drawing
+static int draw_sweep_config(SDL_Renderer *renderer, UIState *ui, int x, int prop_y, int prop_w,
+                             const char *label, SweepConfig *sweep,
+                             int enable_prop, int mode_prop, int start_prop, int end_prop,
+                             int time_prop, int steps_prop, int repeat_prop,
+                             struct InputState *input, const char *unit) {
+    char buf[64];
+
+    // Sweep enable toggle
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);  // Orange for sweep section
+    ui_draw_text(renderer, label, x + 10, prop_y + 2);
+    SDL_SetRenderDrawColor(renderer, sweep->enabled ? 0x00, 0xff, 0x88, 0xff : 0x80, 0x80, 0x80, 0xff);
+    ui_draw_text(renderer, sweep->enabled ? "[ON]" : "[OFF]", x + 100, prop_y + 2);
+    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 40, 14};
+    ui->properties[ui->num_properties].prop_type = enable_prop;
+    ui->num_properties++;
+    prop_y += 16;
+
+    if (sweep->enabled) {
+        // Mode selection
+        const char *mode_names[] = {"Linear", "Log", "Step"};
+        int mode_idx = (sweep->mode >= SWEEP_LINEAR && sweep->mode <= SWEEP_STEP) ? sweep->mode - 1 : 0;
+        if (mode_idx < 0) mode_idx = 0;
+        SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+        ui_draw_text(renderer, "  Mode:", x + 10, prop_y + 2);
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+        snprintf(buf, sizeof(buf), "[%s]", mode_names[mode_idx]);
+        ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 60, 14};
+        ui->properties[ui->num_properties].prop_type = mode_prop;
+        ui->num_properties++;
+        prop_y += 16;
+
+        // Start value
+        bool edit_start = input && input->editing_property && input->editing_prop_type == start_prop;
+        snprintf(buf, sizeof(buf), "%.3g %s", sweep->start_value, unit);
+        draw_property_field(renderer, x + 10, prop_y, prop_w, "  Start:", buf,
+                           edit_start, input ? input->input_buffer : "", input ? input->input_cursor : 0);
+        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+        ui->properties[ui->num_properties].prop_type = start_prop;
+        ui->num_properties++;
+        prop_y += 16;
+
+        // End value
+        bool edit_end = input && input->editing_property && input->editing_prop_type == end_prop;
+        snprintf(buf, sizeof(buf), "%.3g %s", sweep->end_value, unit);
+        draw_property_field(renderer, x + 10, prop_y, prop_w, "  End:", buf,
+                           edit_end, input ? input->input_buffer : "", input ? input->input_cursor : 0);
+        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+        ui->properties[ui->num_properties].prop_type = end_prop;
+        ui->num_properties++;
+        prop_y += 16;
+
+        // Sweep time
+        bool edit_time = input && input->editing_property && input->editing_prop_type == time_prop;
+        snprintf(buf, sizeof(buf), "%.3g s", sweep->sweep_time);
+        draw_property_field(renderer, x + 10, prop_y, prop_w, "  Time:", buf,
+                           edit_time, input ? input->input_buffer : "", input ? input->input_cursor : 0);
+        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+        ui->properties[ui->num_properties].prop_type = time_prop;
+        ui->num_properties++;
+        prop_y += 16;
+
+        // Steps (only for step mode)
+        if (sweep->mode == SWEEP_STEP) {
+            bool edit_steps = input && input->editing_property && input->editing_prop_type == steps_prop;
+            snprintf(buf, sizeof(buf), "%d", sweep->num_steps);
+            draw_property_field(renderer, x + 10, prop_y, prop_w, "  Steps:", buf,
+                               edit_steps, input ? input->input_buffer : "", input ? input->input_cursor : 0);
+            ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+            ui->properties[ui->num_properties].prop_type = steps_prop;
+            ui->num_properties++;
+            prop_y += 16;
+        }
+
+        // Repeat toggle
+        SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+        ui_draw_text(renderer, "  Repeat:", x + 10, prop_y + 2);
+        SDL_SetRenderDrawColor(renderer, sweep->repeat ? 0x00, 0xff, 0x88, 0xff : 0x80, 0x80, 0x80, 0xff);
+        ui_draw_text(renderer, sweep->repeat ? "[Yes]" : "[No]", x + 100, prop_y + 2);
+        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 40, 14};
+        ui->properties[ui->num_properties].prop_type = repeat_prop;
+        ui->num_properties++;
+        prop_y += 16;
+    }
+
+    return prop_y;
 }
 
 void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *selected, struct InputState *input) {
@@ -779,7 +894,17 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                     ui->properties[ui->num_properties].prop_type = PROP_R_SERIES;
                     ui->num_properties++;
+                    prop_y += 18;
                 }
+
+                // Voltage sweep configuration
+                prop_y += 4;  // Add spacing before sweep section
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "V Sweep:", &selected->props.dc_voltage.voltage_sweep,
+                    PROP_SWEEP_VOLTAGE_ENABLE, PROP_SWEEP_VOLTAGE_MODE,
+                    PROP_SWEEP_VOLTAGE_START, PROP_SWEEP_VOLTAGE_END,
+                    PROP_SWEEP_VOLTAGE_TIME, PROP_SWEEP_VOLTAGE_STEPS,
+                    PROP_SWEEP_VOLTAGE_REPEAT, input, "V");
                 break;
             }
 
@@ -834,7 +959,26 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                     ui->properties[ui->num_properties].prop_type = PROP_R_SERIES;
                     ui->num_properties++;
+                    prop_y += 18;
                 }
+
+                // Amplitude sweep configuration
+                prop_y += 4;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Amp Sweep:", &selected->props.ac_voltage.amplitude_sweep,
+                    PROP_SWEEP_AMP_ENABLE, PROP_SWEEP_AMP_MODE,
+                    PROP_SWEEP_AMP_START, PROP_SWEEP_AMP_END,
+                    PROP_SWEEP_AMP_TIME, PROP_SWEEP_AMP_STEPS,
+                    PROP_SWEEP_AMP_REPEAT, input, "V");
+
+                // Frequency sweep configuration
+                prop_y += 4;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Freq Sweep:", &selected->props.ac_voltage.frequency_sweep,
+                    PROP_SWEEP_FREQ_ENABLE, PROP_SWEEP_FREQ_MODE,
+                    PROP_SWEEP_FREQ_START, PROP_SWEEP_FREQ_END,
+                    PROP_SWEEP_FREQ_TIME, PROP_SWEEP_FREQ_STEPS,
+                    PROP_SWEEP_FREQ_REPEAT, input, "Hz");
                 break;
             }
 
@@ -865,7 +1009,17 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                     ui->properties[ui->num_properties].prop_type = PROP_R_PARALLEL;
                     ui->num_properties++;
+                    prop_y += 18;
                 }
+
+                // Current sweep configuration (reuse voltage sweep props)
+                prop_y += 4;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "I Sweep:", &selected->props.dc_current.current_sweep,
+                    PROP_SWEEP_VOLTAGE_ENABLE, PROP_SWEEP_VOLTAGE_MODE,
+                    PROP_SWEEP_VOLTAGE_START, PROP_SWEEP_VOLTAGE_END,
+                    PROP_SWEEP_VOLTAGE_TIME, PROP_SWEEP_VOLTAGE_STEPS,
+                    PROP_SWEEP_VOLTAGE_REPEAT, input, "A");
                 break;
             }
 
@@ -997,55 +1151,113 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.square_wave.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[0].prop_type = PROP_VALUE;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.square_wave.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
-                ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[1].prop_type = PROP_FREQUENCY;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.0f %%", selected->props.square_wave.duty * 100);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Duty:", buf,
                                    editing_duty, edit_buf, cursor);
-                ui->properties[2].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[2].prop_type = PROP_DUTY;
-                ui->num_properties = 3;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_DUTY;
+                ui->num_properties++;
+
+                // Amplitude sweep
+                prop_y += 22;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Amp Sweep:", &selected->props.square_wave.amplitude_sweep,
+                    PROP_SWEEP_AMP_ENABLE, PROP_SWEEP_AMP_MODE,
+                    PROP_SWEEP_AMP_START, PROP_SWEEP_AMP_END,
+                    PROP_SWEEP_AMP_TIME, PROP_SWEEP_AMP_STEPS,
+                    PROP_SWEEP_AMP_REPEAT, input, "V");
+
+                // Frequency sweep
+                prop_y += 4;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Freq Sweep:", &selected->props.square_wave.frequency_sweep,
+                    PROP_SWEEP_FREQ_ENABLE, PROP_SWEEP_FREQ_MODE,
+                    PROP_SWEEP_FREQ_START, PROP_SWEEP_FREQ_END,
+                    PROP_SWEEP_FREQ_TIME, PROP_SWEEP_FREQ_STEPS,
+                    PROP_SWEEP_FREQ_REPEAT, input, "Hz");
                 break;
 
             case COMP_TRIANGLE_WAVE:
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.triangle_wave.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[0].prop_type = PROP_VALUE;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.triangle_wave.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
-                ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[1].prop_type = PROP_FREQUENCY;
-                ui->num_properties = 2;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                ui->num_properties++;
+
+                // Amplitude sweep
+                prop_y += 22;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Amp Sweep:", &selected->props.triangle_wave.amplitude_sweep,
+                    PROP_SWEEP_AMP_ENABLE, PROP_SWEEP_AMP_MODE,
+                    PROP_SWEEP_AMP_START, PROP_SWEEP_AMP_END,
+                    PROP_SWEEP_AMP_TIME, PROP_SWEEP_AMP_STEPS,
+                    PROP_SWEEP_AMP_REPEAT, input, "V");
+
+                // Frequency sweep
+                prop_y += 4;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Freq Sweep:", &selected->props.triangle_wave.frequency_sweep,
+                    PROP_SWEEP_FREQ_ENABLE, PROP_SWEEP_FREQ_MODE,
+                    PROP_SWEEP_FREQ_START, PROP_SWEEP_FREQ_END,
+                    PROP_SWEEP_FREQ_TIME, PROP_SWEEP_FREQ_STEPS,
+                    PROP_SWEEP_FREQ_REPEAT, input, "Hz");
                 break;
 
             case COMP_SAWTOOTH_WAVE:
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.sawtooth_wave.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[0].prop_type = PROP_VALUE;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.sawtooth_wave.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
-                ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[1].prop_type = PROP_FREQUENCY;
-                ui->num_properties = 2;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                ui->num_properties++;
+
+                // Amplitude sweep
+                prop_y += 22;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Amp Sweep:", &selected->props.sawtooth_wave.amplitude_sweep,
+                    PROP_SWEEP_AMP_ENABLE, PROP_SWEEP_AMP_MODE,
+                    PROP_SWEEP_AMP_START, PROP_SWEEP_AMP_END,
+                    PROP_SWEEP_AMP_TIME, PROP_SWEEP_AMP_STEPS,
+                    PROP_SWEEP_AMP_REPEAT, input, "V");
+
+                // Frequency sweep
+                prop_y += 4;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Freq Sweep:", &selected->props.sawtooth_wave.frequency_sweep,
+                    PROP_SWEEP_FREQ_ENABLE, PROP_SWEEP_FREQ_MODE,
+                    PROP_SWEEP_FREQ_START, PROP_SWEEP_FREQ_END,
+                    PROP_SWEEP_FREQ_TIME, PROP_SWEEP_FREQ_STEPS,
+                    PROP_SWEEP_FREQ_REPEAT, input, "Hz");
                 break;
 
             case COMP_NOISE_SOURCE:
@@ -1055,6 +1267,15 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 ui->properties[ui->num_properties].prop_type = PROP_VALUE;
                 ui->num_properties++;
+
+                // Amplitude sweep
+                prop_y += 22;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Amp Sweep:", &selected->props.noise_source.amplitude_sweep,
+                    PROP_SWEEP_AMP_ENABLE, PROP_SWEEP_AMP_MODE,
+                    PROP_SWEEP_AMP_START, PROP_SWEEP_AMP_END,
+                    PROP_SWEEP_AMP_TIME, PROP_SWEEP_AMP_STEPS,
+                    PROP_SWEEP_AMP_REPEAT, input, "V");
                 break;
 
             case COMP_DIODE: {

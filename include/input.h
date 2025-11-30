@@ -86,7 +86,30 @@ typedef enum {
 
     // Waveform parameters
     PROP_RISE_TIME,     // Rise time
-    PROP_FALL_TIME      // Fall time
+    PROP_FALL_TIME,     // Fall time
+
+    // Sweep parameters
+    PROP_SWEEP_VOLTAGE_ENABLE,    // Toggle voltage sweep
+    PROP_SWEEP_VOLTAGE_MODE,      // Sweep mode (linear/log/step)
+    PROP_SWEEP_VOLTAGE_START,     // Start value
+    PROP_SWEEP_VOLTAGE_END,       // End value
+    PROP_SWEEP_VOLTAGE_TIME,      // Sweep time
+    PROP_SWEEP_VOLTAGE_STEPS,     // Number of steps (for stepped mode)
+    PROP_SWEEP_VOLTAGE_REPEAT,    // Repeat sweep
+    PROP_SWEEP_AMP_ENABLE,        // Toggle amplitude sweep
+    PROP_SWEEP_AMP_MODE,          // Sweep mode
+    PROP_SWEEP_AMP_START,         // Start value
+    PROP_SWEEP_AMP_END,           // End value
+    PROP_SWEEP_AMP_TIME,          // Sweep time
+    PROP_SWEEP_AMP_STEPS,         // Number of steps
+    PROP_SWEEP_AMP_REPEAT,        // Repeat sweep
+    PROP_SWEEP_FREQ_ENABLE,       // Toggle frequency sweep
+    PROP_SWEEP_FREQ_MODE,         // Sweep mode
+    PROP_SWEEP_FREQ_START,        // Start frequency
+    PROP_SWEEP_FREQ_END,          // End frequency
+    PROP_SWEEP_FREQ_TIME,         // Sweep time
+    PROP_SWEEP_FREQ_STEPS,        // Number of steps
+    PROP_SWEEP_FREQ_REPEAT        // Repeat sweep
 } PropertyType;
 
 // Input state

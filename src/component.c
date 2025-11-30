@@ -469,6 +469,77 @@ int component_get_terminal_at(Component *comp, float px, float py, float thresho
     } \
 } while(0)
 
+// Calculate sweep value at given time
+double sweep_get_value(const SweepConfig *sweep, double base_value, double time) {
+    if (!sweep || !sweep->enabled || sweep->sweep_time <= 0) {
+        return base_value;
+    }
+
+    double progress;
+    if (sweep->repeat) {
+        // Repeating sweep
+        if (sweep->bidirectional) {
+            // Triangle pattern: 0->1->0->1->...
+            double cycle_time = sweep->sweep_time * 2.0;
+            double t_in_cycle = fmod(time, cycle_time);
+            if (t_in_cycle < sweep->sweep_time) {
+                progress = t_in_cycle / sweep->sweep_time;
+            } else {
+                progress = 1.0 - (t_in_cycle - sweep->sweep_time) / sweep->sweep_time;
+            }
+        } else {
+            // Sawtooth pattern: 0->1, 0->1, ...
+            progress = fmod(time, sweep->sweep_time) / sweep->sweep_time;
+        }
+    } else {
+        // One-shot sweep
+        if (time >= sweep->sweep_time) {
+            if (sweep->bidirectional) {
+                return base_value;  // Return to start
+            }
+            return sweep->end_value;  // Hold at end
+        }
+        progress = time / sweep->sweep_time;
+        if (sweep->bidirectional && time >= sweep->sweep_time / 2.0) {
+            progress = 1.0 - (time - sweep->sweep_time / 2.0) / (sweep->sweep_time / 2.0);
+        }
+    }
+
+    double result;
+    switch (sweep->mode) {
+        case SWEEP_LINEAR:
+            result = sweep->start_value + progress * (sweep->end_value - sweep->start_value);
+            break;
+
+        case SWEEP_LOG:
+            // Logarithmic sweep (useful for frequency)
+            if (sweep->start_value > 0 && sweep->end_value > 0) {
+                double log_start = log10(sweep->start_value);
+                double log_end = log10(sweep->end_value);
+                result = pow(10.0, log_start + progress * (log_end - log_start));
+            } else {
+                result = sweep->start_value + progress * (sweep->end_value - sweep->start_value);
+            }
+            break;
+
+        case SWEEP_STEP: {
+            // Stepped discrete values
+            int num_steps = (sweep->num_steps > 1) ? sweep->num_steps : 2;
+            int step_idx = (int)(progress * num_steps);
+            if (step_idx >= num_steps) step_idx = num_steps - 1;
+            double step_size = (sweep->end_value - sweep->start_value) / (num_steps - 1);
+            result = sweep->start_value + step_idx * step_size;
+            break;
+        }
+
+        default:
+            result = base_value;
+            break;
+    }
+
+    return result;
+}
+
 void component_stamp(Component *comp, Matrix *A, Vector *b,
                      int *node_map, int num_nodes,
                      double time, Vector *prev_solution, double dt) {
@@ -492,6 +563,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
 
         case COMP_DC_VOLTAGE: {
             double V = comp->props.dc_voltage.voltage;
+            // Apply voltage sweep if enabled
+            V = sweep_get_value(&comp->props.dc_voltage.voltage_sweep, V, time);
             int volt_idx = num_nodes + comp->voltage_var_idx;
 
             // Voltage source stamp
@@ -513,6 +586,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double phase = comp->props.ac_voltage.phase * M_PI / 180.0;
             double offset = comp->props.ac_voltage.offset;
 
+            // Apply amplitude and frequency sweeps if enabled
+            amp = sweep_get_value(&comp->props.ac_voltage.amplitude_sweep, amp, time);
+            freq = sweep_get_value(&comp->props.ac_voltage.frequency_sweep, freq, time);
+
             double V = amp * sin(2 * M_PI * freq * time + phase) + offset;
             int volt_idx = num_nodes + comp->voltage_var_idx;
 
@@ -530,6 +607,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
 
         case COMP_DC_CURRENT: {
             double I = comp->props.dc_current.current;
+            // Apply current sweep if enabled
+            I = sweep_get_value(&comp->props.dc_current.current_sweep, I, time);
             if (n[0] > 0) vector_add(b, n[0]-1, -I);
             if (n[1] > 0) vector_add(b, n[1]-1, I);
             break;
@@ -924,6 +1003,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double offset = comp->props.square_wave.offset;
             double duty = comp->props.square_wave.duty;
 
+            // Apply amplitude and frequency sweeps if enabled
+            amp = sweep_get_value(&comp->props.square_wave.amplitude_sweep, amp, time);
+            freq = sweep_get_value(&comp->props.square_wave.frequency_sweep, freq, time);
+
             // Calculate normalized position in period (0 to 1)
             double period = 1.0 / freq;
             double t_norm = fmod(time + phase / (2 * M_PI * freq), period) / period;
@@ -950,6 +1033,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double freq = comp->props.triangle_wave.frequency;
             double phase = comp->props.triangle_wave.phase * M_PI / 180.0;
             double offset = comp->props.triangle_wave.offset;
+
+            // Apply amplitude and frequency sweeps if enabled
+            amp = sweep_get_value(&comp->props.triangle_wave.amplitude_sweep, amp, time);
+            freq = sweep_get_value(&comp->props.triangle_wave.frequency_sweep, freq, time);
 
             // Calculate normalized position in period (0 to 1)
             double period = 1.0 / freq;
@@ -983,6 +1070,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double phase = comp->props.sawtooth_wave.phase * M_PI / 180.0;
             double offset = comp->props.sawtooth_wave.offset;
 
+            // Apply amplitude and frequency sweeps if enabled
+            amp = sweep_get_value(&comp->props.sawtooth_wave.amplitude_sweep, amp, time);
+            freq = sweep_get_value(&comp->props.sawtooth_wave.frequency_sweep, freq, time);
+
             // Calculate normalized position in period (0 to 1)
             double period = 1.0 / freq;
             double t_norm = fmod(time + phase / (2 * M_PI * freq), period) / period;
@@ -1006,6 +1097,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
 
         case COMP_NOISE_SOURCE: {
             double amp = comp->props.noise_source.amplitude;
+            // Apply amplitude sweep if enabled
+            amp = sweep_get_value(&comp->props.noise_source.amplitude_sweep, amp, time);
             // Simple pseudo-random noise using time-based seed
             // Uses a combination of sine functions at irrational ratios for pseudo-randomness
             double V = amp * (sin(time * 12345.6789) + sin(time * 9876.5432 + 1.234) +

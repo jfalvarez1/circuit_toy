@@ -1526,6 +1526,71 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             }
             break;
 
+        // Sweep value properties
+        case PROP_SWEEP_VOLTAGE_START:
+        case PROP_SWEEP_VOLTAGE_END:
+        case PROP_SWEEP_VOLTAGE_TIME:
+        case PROP_SWEEP_VOLTAGE_STEPS:
+        case PROP_SWEEP_AMP_START:
+        case PROP_SWEEP_AMP_END:
+        case PROP_SWEEP_AMP_TIME:
+        case PROP_SWEEP_AMP_STEPS:
+        case PROP_SWEEP_FREQ_START:
+        case PROP_SWEEP_FREQ_END:
+        case PROP_SWEEP_FREQ_TIME:
+        case PROP_SWEEP_FREQ_STEPS: {
+            SweepConfig *sweep = NULL;
+            int base_prop = 0;
+            PropertyType prop = input->editing_prop_type;
+
+            // Find the right sweep config based on property type and component
+            if (prop >= PROP_SWEEP_VOLTAGE_START && prop <= PROP_SWEEP_VOLTAGE_STEPS) {
+                base_prop = PROP_SWEEP_VOLTAGE_START;
+                if (comp->type == COMP_DC_VOLTAGE) sweep = &comp->props.dc_voltage.voltage_sweep;
+                else if (comp->type == COMP_DC_CURRENT) sweep = &comp->props.dc_current.current_sweep;
+            } else if (prop >= PROP_SWEEP_AMP_START && prop <= PROP_SWEEP_AMP_STEPS) {
+                base_prop = PROP_SWEEP_AMP_START;
+                if (comp->type == COMP_AC_VOLTAGE) sweep = &comp->props.ac_voltage.amplitude_sweep;
+                else if (comp->type == COMP_SQUARE_WAVE) sweep = &comp->props.square_wave.amplitude_sweep;
+                else if (comp->type == COMP_TRIANGLE_WAVE) sweep = &comp->props.triangle_wave.amplitude_sweep;
+                else if (comp->type == COMP_SAWTOOTH_WAVE) sweep = &comp->props.sawtooth_wave.amplitude_sweep;
+                else if (comp->type == COMP_NOISE_SOURCE) sweep = &comp->props.noise_source.amplitude_sweep;
+            } else if (prop >= PROP_SWEEP_FREQ_START && prop <= PROP_SWEEP_FREQ_STEPS) {
+                base_prop = PROP_SWEEP_FREQ_START;
+                if (comp->type == COMP_AC_VOLTAGE) sweep = &comp->props.ac_voltage.frequency_sweep;
+                else if (comp->type == COMP_SQUARE_WAVE) sweep = &comp->props.square_wave.frequency_sweep;
+                else if (comp->type == COMP_TRIANGLE_WAVE) sweep = &comp->props.triangle_wave.frequency_sweep;
+                else if (comp->type == COMP_SAWTOOTH_WAVE) sweep = &comp->props.sawtooth_wave.frequency_sweep;
+            }
+
+            if (sweep) {
+                int offset = prop - base_prop;
+                switch (offset) {
+                    case 0: // START
+                        sweep->start_value = value;
+                        applied = true;
+                        break;
+                    case 1: // END
+                        sweep->end_value = value;
+                        applied = true;
+                        break;
+                    case 2: // TIME
+                        if (value > 0) {
+                            sweep->sweep_time = value;
+                            applied = true;
+                        }
+                        break;
+                    case 3: // STEPS
+                        if (value >= 2 && value <= 1000) {
+                            sweep->num_steps = (int)value;
+                            applied = true;
+                        }
+                        break;
+                }
+            }
+            break;
+        }
+
         // Also handle Schottky Vf using LED_VF property type
         // (already handled in PROP_LED_VF - but we need schottky handling)
 
