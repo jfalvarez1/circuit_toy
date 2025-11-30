@@ -520,16 +520,21 @@ void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
 
     render_draw_line(ctx, start->x, start->y, end->x, end->y);
 
-    // Draw animated current flow (conventional current: high to low voltage)
+    // Draw animated current flow particles (tiny yellow dots flowing continuously)
     if (ctx->show_current && ctx->sim_running) {
-        double v_diff = start->voltage - end->voltage;
-        double abs_diff = v_diff < 0 ? -v_diff : v_diff;
+        // Use wire current if available, otherwise estimate from voltage difference
+        double current = wire->current;
+        if (current == 0) {
+            double v_diff = start->voltage - end->voltage;
+            current = v_diff / 1000.0;  // Rough estimate assuming 1k resistance
+        }
+        double abs_current = fabs(current);
 
-        // Only show if voltage difference is significant
-        if (abs_diff > 0.001) {
-            // Arrow direction: from higher voltage to lower voltage
+        // Show particles if any measurable current (threshold lowered significantly)
+        if (abs_current > 0.0001) {  // 0.1mA threshold
+            // Direction: positive current flows from start to end (or based on voltage)
             float from_x, from_y, to_x, to_y;
-            if (v_diff > 0) {
+            if (current > 0) {
                 from_x = start->x; from_y = start->y;
                 to_x = end->x; to_y = end->y;
             } else {
@@ -541,64 +546,60 @@ void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
             float dy = to_y - from_y;
             float len = sqrt(dx*dx + dy*dy);
 
-            if (len > 15) {  // Only draw on wires long enough
+            if (len > 10) {  // Draw on wires >= 10 pixels
                 // Normalize direction
                 dx /= len;
                 dy /= len;
 
-                // Estimate current from voltage difference (assume ~1k resistance)
-                // This is approximate - actual current depends on circuit
-                double estimated_current = abs_diff / 1000.0;  // rough estimate
-                if (wire->current != 0) {
-                    estimated_current = fabs(wire->current);
+                // Animation speed based on current magnitude:
+                // 0.1mA = very slow, 1mA = slow, 10mA = moderate, 100mA = fast, 1A+ = very fast
+                double speed_factor;
+                if (abs_current < 0.001) {
+                    speed_factor = 0.3;  // Very slow for < 1mA
+                } else if (abs_current < 0.01) {
+                    speed_factor = 0.5 + (abs_current - 0.001) * 50;  // 0.5-1.0 for 1-10mA
+                } else if (abs_current < 0.1) {
+                    speed_factor = 1.0 + (abs_current - 0.01) * 20;  // 1.0-2.8 for 10-100mA
+                } else if (abs_current < 1.0) {
+                    speed_factor = 3.0 + (abs_current - 0.1) * 5;  // 3.0-7.5 for 100mA-1A
+                } else {
+                    speed_factor = 8.0 + fmin(abs_current - 1.0, 10.0) * 2;  // 8-28 for 1A+
                 }
 
-                // Animation speed based on current:
-                // 10mA = slow (1x), 100mA = medium (3x), 1A = fast (10x), 10A = very fast (30x)
-                double speed_factor = 1.0;
-                if (estimated_current > 0) {
-                    speed_factor = 1.0 + log10(estimated_current / 0.001) * 3.0;
-                    if (speed_factor < 0.5) speed_factor = 0.5;
-                    if (speed_factor > 50.0) speed_factor = 50.0;
-                }
+                // Animation phase - use simulation time scaled for smooth continuous flow
+                // Lower multiplier for smoother, more visible motion
+                double anim_phase = fmod(ctx->sim_time * speed_factor * 2.0, 1.0);
 
-                // Animation phase based on simulation time
-                double anim_phase = fmod(ctx->sim_time * speed_factor * 100.0, 1.0);
+                // More particles for longer wires, spaced ~15 pixels apart
+                int num_particles = (int)(len / 15) + 2;
+                if (num_particles > 10) num_particles = 10;
+                if (num_particles < 2) num_particles = 2;
+                float particle_spacing = 1.0f / num_particles;
 
-                // Draw multiple moving dots along the wire
-                int num_dots = (int)(len / 30) + 1;
-                if (num_dots > 5) num_dots = 5;
-                float dot_spacing = 1.0f / num_dots;
+                // Bright yellow particles - intensity based on current
+                uint8_t intensity = (uint8_t)(200 + fmin(abs_current * 500, 55));
+                Color particle_color = {0xff, 0xff, 0x00, intensity};  // Pure bright yellow
 
-                // Dot color - orange/yellow, brighter with more current
-                uint8_t brightness = (uint8_t)(150 + fmin(estimated_current * 1000, 105));
-                render_set_color(ctx, (Color){0xff, brightness, 0x00, 0xff});
+                for (int i = 0; i < num_particles; i++) {
+                    // Position along wire (0 to 1), continuously animated
+                    float t = fmod(anim_phase + i * particle_spacing, 1.0f);
 
-                for (int i = 0; i < num_dots; i++) {
-                    // Position along wire (0 to 1), animated
-                    float t = fmod(anim_phase + i * dot_spacing, 1.0f);
+                    // Draw all particles, even near ends (for continuous flow appearance)
+                    float particle_x = from_x + dx * len * t;
+                    float particle_y = from_y + dy * len * t;
 
-                    // Skip dots too close to ends
-                    if (t < 0.1f || t > 0.9f) continue;
+                    // Draw tiny glowing particle
+                    // Outer glow (dimmer, larger)
+                    render_set_color(ctx, (Color){0xff, 0xff, 0x00, 0x40});
+                    render_fill_circle(ctx, particle_x, particle_y, 4);
 
-                    float dot_x = from_x + dx * len * t;
-                    float dot_y = from_y + dy * len * t;
+                    // Inner bright core
+                    render_set_color(ctx, particle_color);
+                    render_fill_circle(ctx, particle_x, particle_y, 2);
 
-                    // Draw dot
-                    render_fill_circle(ctx, dot_x, dot_y, 3);
-
-                    // Draw small arrow
-                    float arrow_size = 5;
-                    float tip_x = dot_x + dx * arrow_size;
-                    float tip_y = dot_y + dy * arrow_size;
-                    float px = -dy;
-                    float py = dx;
-                    float wing1_x = dot_x + px * 2;
-                    float wing1_y = dot_y + py * 2;
-                    float wing2_x = dot_x - px * 2;
-                    float wing2_y = dot_y - py * 2;
-                    render_draw_line(ctx, tip_x, tip_y, wing1_x, wing1_y);
-                    render_draw_line(ctx, tip_x, tip_y, wing2_x, wing2_y);
+                    // Bright center point
+                    render_set_color(ctx, (Color){0xff, 0xff, 0xff, 0xff});
+                    render_fill_circle(ctx, particle_x, particle_y, 1);
                 }
             }
         }
