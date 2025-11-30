@@ -458,49 +458,68 @@ void render_component(RenderContext *ctx, Component *comp) {
             show_warning = (overload_ratio > 1.0);
         }
     } else if (comp->type == COMP_LED) {
-        if (comp->props.led.max_current > 0) {
+        if (comp->props.led.max_current > 0 && comp->props.led.current > 0) {
             overload_ratio = comp->props.led.current / comp->props.led.max_current;
             show_warning = (overload_ratio > 1.0);
         }
     }
 
     if (show_warning) {
-        // Draw fire/flame warning icon at top-right of component
-        float icon_x = comp->x + 15;
-        float icon_y = comp->y - 20;
+        // Draw warning triangle with exclamation mark at top-right of component
+        float icon_x = comp->x + 18;
+        float icon_y = comp->y - 15;
 
-        // Flame color - more red/orange based on overload severity
+        // Warning color - more red based on overload severity
         uint8_t r_col = 255;
-        uint8_t g_col = (overload_ratio > 2.0) ? 50 : (overload_ratio > 1.5) ? 100 : 150;
+        uint8_t g_col = (overload_ratio > 2.0) ? 50 : (overload_ratio > 1.5) ? 100 : 180;
+        uint8_t b_col = 0;
 
-        // Animated flicker effect
-        double flicker = 1.0 + 0.2 * sin(ctx->sim_time * 20.0);
+        // Animated pulse effect
+        double pulse = 0.7 + 0.3 * sin(ctx->sim_time * 8.0);
+        r_col = (uint8_t)(r_col * pulse);
+        g_col = (uint8_t)(g_col * pulse);
 
-        // Draw flame shape (3 tongues of fire)
-        render_set_color(ctx, (Color){r_col, g_col, 0, 255});
+        render_set_color(ctx, (Color){r_col, g_col, b_col, 255});
 
-        // Center flame (tallest)
-        float h1 = 12 * flicker;
-        render_draw_line(ctx, icon_x, icon_y + 8, icon_x - 2, icon_y + 2);
-        render_draw_line(ctx, icon_x - 2, icon_y + 2, icon_x, icon_y + 8 - h1);
-        render_draw_line(ctx, icon_x, icon_y + 8 - h1, icon_x + 2, icon_y + 2);
-        render_draw_line(ctx, icon_x + 2, icon_y + 2, icon_x, icon_y + 8);
+        // Draw warning triangle
+        float tri_size = 10;
+        float tx1 = icon_x;                    // Top point
+        float ty1 = icon_y - tri_size;
+        float tx2 = icon_x - tri_size * 0.866; // Bottom left
+        float ty2 = icon_y + tri_size * 0.5;
+        float tx3 = icon_x + tri_size * 0.866; // Bottom right
+        float ty3 = icon_y + tri_size * 0.5;
 
-        // Left flame
-        float h2 = 8 * (1.0 + 0.15 * sin(ctx->sim_time * 25.0 + 1.0));
-        render_draw_line(ctx, icon_x - 4, icon_y + 8, icon_x - 5, icon_y + 8 - h2);
-        render_draw_line(ctx, icon_x - 5, icon_y + 8 - h2, icon_x - 2, icon_y + 4);
+        render_draw_line(ctx, tx1, ty1, tx2, ty2);
+        render_draw_line(ctx, tx2, ty2, tx3, ty3);
+        render_draw_line(ctx, tx3, ty3, tx1, ty1);
 
-        // Right flame
-        float h3 = 8 * (1.0 + 0.15 * sin(ctx->sim_time * 22.0 + 2.0));
-        render_draw_line(ctx, icon_x + 4, icon_y + 8, icon_x + 5, icon_y + 8 - h3);
-        render_draw_line(ctx, icon_x + 5, icon_y + 8 - h3, icon_x + 2, icon_y + 4);
+        // Draw inner triangle for fill effect
+        float inner = 0.7;
+        float ix1 = icon_x;
+        float iy1 = icon_y - tri_size * inner;
+        float ix2 = icon_x - tri_size * 0.866 * inner;
+        float iy2 = icon_y + tri_size * 0.5 * inner;
+        float ix3 = icon_x + tri_size * 0.866 * inner;
+        float iy3 = icon_y + tri_size * 0.5 * inner;
 
-        // Draw "!" warning if severely overloaded
+        render_draw_line(ctx, ix1, iy1, ix2, iy2);
+        render_draw_line(ctx, ix2, iy2, ix3, iy3);
+        render_draw_line(ctx, ix3, iy3, ix1, iy1);
+
+        // Draw exclamation mark in center (black for contrast)
+        render_set_color(ctx, (Color){0, 0, 0, 255});
+        render_draw_line(ctx, icon_x, icon_y - 5, icon_x, icon_y + 1);
+        render_fill_circle(ctx, icon_x, icon_y + 4, 1);
+
+        // If severely overloaded (>200%), add second warning indicator
         if (overload_ratio > 2.0) {
-            render_set_color(ctx, (Color){255, 255, 0, 255});
-            render_draw_line(ctx, icon_x + 12, icon_y - 5, icon_x + 12, icon_y + 2);
-            render_fill_circle(ctx, icon_x + 12, icon_y + 5, 1);
+            render_set_color(ctx, (Color){255, 0, 0, 255});
+            // Draw X mark
+            float xx = icon_x + 12;
+            float xy = icon_y;
+            render_draw_line(ctx, xx - 4, xy - 4, xx + 4, xy + 4);
+            render_draw_line(ctx, xx - 4, xy + 4, xx + 4, xy - 4);
         }
     }
 }
