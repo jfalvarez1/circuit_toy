@@ -334,7 +334,7 @@ void ui_init(UIState *ui) {
     };
 
     // Oscilloscope settings - larger default size for better visibility
-    ui->scope_rect = (Rect){WINDOW_WIDTH - ui->properties_width + 10, 280, 320, 260};
+    ui->scope_rect = (Rect){WINDOW_WIDTH - ui->properties_width + 10, 250, 330, 300};
     ui->scope_num_channels = 0;
     ui->scope_time_div = 0.001;   // 1ms per division
     ui->scope_volt_div = 1.0;     // 1V per division
@@ -348,42 +348,50 @@ void ui_init(UIState *ui) {
         ui->scope_channels[i] = (ScopeChannel){false, PROBE_COLORS[i], i, 0.0};
     }
 
-    // Oscilloscope control buttons (positioned below the scope)
+    // Oscilloscope control buttons - organized in rows for clarity
+    // Row 1: Scale controls (V/div, T/div) + Autoset
     int scope_btn_y = ui->scope_rect.y + ui->scope_rect.h + 5;
-    int scope_btn_w = 30, scope_btn_h = 20;
+    int scope_btn_w = 32, scope_btn_h = 22;
     int scope_btn_x = ui->scope_rect.x;
+    int row_spacing = scope_btn_h + 4;
 
     ui->btn_scope_volt_up = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "V+", "Increase V/div", false, false, true, false};
-    scope_btn_x += scope_btn_w + 5;
+    scope_btn_x += scope_btn_w + 3;
     ui->btn_scope_volt_down = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "V-", "Decrease V/div", false, false, true, false};
-    scope_btn_x += scope_btn_w + 15;
+    scope_btn_x += scope_btn_w + 10;
     ui->btn_scope_time_up = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "T+", "Increase time/div", false, false, true, false};
-    scope_btn_x += scope_btn_w + 5;
+    scope_btn_x += scope_btn_w + 3;
     ui->btn_scope_time_down = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "T-", "Decrease time/div", false, false, true, false};
+    scope_btn_x += scope_btn_w + 10;
+    ui->btn_scope_autoset = (Button){{scope_btn_x, scope_btn_y, 50, scope_btn_h}, "Autoset", "Auto-configure scope settings", false, false, true, false};
 
-    // Second row of scope buttons for trigger controls
-    scope_btn_y += scope_btn_h + 5;  // Move down for second row
+    // Row 2: Trigger controls
+    scope_btn_y += row_spacing;
     scope_btn_x = ui->scope_rect.x;
 
-    ui->btn_scope_trig_mode = (Button){{scope_btn_x, scope_btn_y, 40, scope_btn_h}, "AUTO", "Trigger mode (Auto/Normal/Single)", false, false, true, false};
-    scope_btn_x += 45;
-    ui->btn_scope_trig_edge = (Button){{scope_btn_x, scope_btn_y, 25, scope_btn_h}, "/\\", "Trigger edge (Rising/Falling/Both)", false, false, true, false};
-    scope_btn_x += 30;
-    ui->btn_scope_trig_ch = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "CH1", "Trigger channel", false, false, true, false};
-    scope_btn_x += 35;
-    ui->btn_scope_trig_up = (Button){{scope_btn_x, scope_btn_y, 20, scope_btn_h}, "L+", "Increase trigger level", false, false, true, false};
-    scope_btn_x += 22;
-    ui->btn_scope_trig_down = (Button){{scope_btn_x, scope_btn_y, 20, scope_btn_h}, "L-", "Decrease trigger level", false, false, true, false};
-    scope_btn_x += 25;
-    ui->btn_scope_mode = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "Y-T", "Display mode (Y-T/X-Y)", false, false, true, false};
-    scope_btn_x += 35;
-    ui->btn_scope_screenshot = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "CAP", "Capture screenshot (saves scope.bmp)", false, false, true, false};
-    scope_btn_x += 35;
-    ui->btn_scope_cursor = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "CUR", "Toggle measurement cursors", false, false, true, false};
-    scope_btn_x += 35;
-    ui->btn_scope_fft = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "FFT", "Toggle FFT spectrum view", false, false, true, false};
-    scope_btn_x += 35;
-    ui->btn_scope_autoset = (Button){{scope_btn_x, scope_btn_y, 40, scope_btn_h}, "AUTO", "Auto-configure scope settings", false, false, true, false};
+    ui->btn_scope_trig_mode = (Button){{scope_btn_x, scope_btn_y, 45, scope_btn_h}, "AUTO", "Trigger mode (Auto/Normal/Single)", false, false, true, false};
+    scope_btn_x += 48;
+    ui->btn_scope_trig_edge = (Button){{scope_btn_x, scope_btn_y, 28, scope_btn_h}, "/\\", "Trigger edge (Rising/Falling/Both)", false, false, true, false};
+    scope_btn_x += 31;
+    ui->btn_scope_trig_ch = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "CH1", "Trigger channel", false, false, true, false};
+    scope_btn_x += 38;
+    ui->btn_scope_trig_up = (Button){{scope_btn_x, scope_btn_y, 24, scope_btn_h}, "L+", "Increase trigger level", false, false, true, false};
+    scope_btn_x += 27;
+    ui->btn_scope_trig_down = (Button){{scope_btn_x, scope_btn_y, 24, scope_btn_h}, "L-", "Decrease trigger level", false, false, true, false};
+
+    // Row 3: Display modes and tools
+    scope_btn_y += row_spacing;
+    scope_btn_x = ui->scope_rect.x;
+
+    ui->btn_scope_mode = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "Y-T", "Display mode (Y-T/X-Y)", false, false, true, false};
+    scope_btn_x += 38;
+    ui->btn_scope_cursor = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "CUR", "Toggle measurement cursors", false, false, true, false};
+    scope_btn_x += 38;
+    ui->btn_scope_fft = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "FFT", "Toggle FFT spectrum view", false, false, true, false};
+    scope_btn_x += 38;
+    ui->btn_scope_screenshot = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "CAP", "Capture screenshot (saves scope.bmp)", false, false, true, false};
+    scope_btn_x += 38;
+    ui->btn_bode = (Button){{scope_btn_x, scope_btn_y, 40, scope_btn_h}, "Bode", "Frequency response plot", false, false, true, false};
 
     // Initialize cursor state
     ui->scope_cursor_mode = false;
@@ -409,7 +417,6 @@ void ui_init(UIState *ui) {
     // Initialize Bode plot settings
     ui->show_bode_plot = false;
     ui->bode_rect = (Rect){PALETTE_WIDTH + 50, TOOLBAR_HEIGHT + 50, 400, 300};
-    ui->btn_bode = (Button){{scope_btn_x + 35, scope_btn_y, 40, scope_btn_h}, "Bode", "Frequency response plot", false, false, true, false};
     ui->bode_freq_start = 10.0;     // 10 Hz
     ui->bode_freq_stop = 100000.0;  // 100 kHz
     ui->bode_num_points = 50;
@@ -2932,49 +2939,55 @@ void ui_update_layout(UIState *ui) {
 
     // Update oscilloscope position (anchored to right side, vertically positioned based on height)
     ui->scope_rect.x = ui->window_width - ui->properties_width + 10;
-    // Keep y position at 400 or adjust if window is too small
-    int max_scope_y = ui->window_height - STATUSBAR_HEIGHT - ui->scope_rect.h - 80;
-    if (ui->scope_rect.y > max_scope_y && max_scope_y > TOOLBAR_HEIGHT + 220) {
+    // Keep y position reasonable or adjust if window is too small
+    int max_scope_y = ui->window_height - STATUSBAR_HEIGHT - ui->scope_rect.h - 100;
+    if (ui->scope_rect.y > max_scope_y && max_scope_y > TOOLBAR_HEIGHT + 200) {
         ui->scope_rect.y = max_scope_y;
     }
 
-    // Update oscilloscope control buttons (first row: V+, V-, T+, T-)
+    // Update oscilloscope control buttons - 3 row layout
+    // Row 1: Scale controls (V/div, T/div) + Autoset
     int scope_btn_y = ui->scope_rect.y + ui->scope_rect.h + 5;
-    int scope_btn_w = 30, scope_btn_h = 20;
+    int scope_btn_w = 32, scope_btn_h = 22;
     int scope_btn_x = ui->scope_rect.x;
+    int row_spacing = scope_btn_h + 4;
 
     ui->btn_scope_volt_up.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
-    scope_btn_x += scope_btn_w + 5;
+    scope_btn_x += scope_btn_w + 3;
     ui->btn_scope_volt_down.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
-    scope_btn_x += scope_btn_w + 15;
+    scope_btn_x += scope_btn_w + 10;
     ui->btn_scope_time_up.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
-    scope_btn_x += scope_btn_w + 5;
+    scope_btn_x += scope_btn_w + 3;
     ui->btn_scope_time_down.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
+    scope_btn_x += scope_btn_w + 10;
+    ui->btn_scope_autoset.bounds = (Rect){scope_btn_x, scope_btn_y, 50, scope_btn_h};
 
-    // Second row of scope buttons for trigger controls
-    scope_btn_y += scope_btn_h + 5;
+    // Row 2: Trigger controls
+    scope_btn_y += row_spacing;
     scope_btn_x = ui->scope_rect.x;
 
-    ui->btn_scope_trig_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
-    scope_btn_x += 45;
-    ui->btn_scope_trig_edge.bounds = (Rect){scope_btn_x, scope_btn_y, 25, scope_btn_h};
-    scope_btn_x += 30;
-    ui->btn_scope_trig_ch.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
-    scope_btn_x += 35;
-    ui->btn_scope_trig_up.bounds = (Rect){scope_btn_x, scope_btn_y, 20, scope_btn_h};
-    scope_btn_x += 22;
-    ui->btn_scope_trig_down.bounds = (Rect){scope_btn_x, scope_btn_y, 20, scope_btn_h};
-    scope_btn_x += 25;
-    ui->btn_scope_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
-    scope_btn_x += 35;
-    ui->btn_scope_screenshot.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
-    scope_btn_x += 35;
-    ui->btn_scope_cursor.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
-    scope_btn_x += 35;
-    ui->btn_scope_fft.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
-    scope_btn_x += 35;
-    ui->btn_scope_autoset.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
-    scope_btn_x += 45;
+    ui->btn_scope_trig_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 45, scope_btn_h};
+    scope_btn_x += 48;
+    ui->btn_scope_trig_edge.bounds = (Rect){scope_btn_x, scope_btn_y, 28, scope_btn_h};
+    scope_btn_x += 31;
+    ui->btn_scope_trig_ch.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+    scope_btn_x += 38;
+    ui->btn_scope_trig_up.bounds = (Rect){scope_btn_x, scope_btn_y, 24, scope_btn_h};
+    scope_btn_x += 27;
+    ui->btn_scope_trig_down.bounds = (Rect){scope_btn_x, scope_btn_y, 24, scope_btn_h};
+
+    // Row 3: Display modes and tools
+    scope_btn_y += row_spacing;
+    scope_btn_x = ui->scope_rect.x;
+
+    ui->btn_scope_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+    scope_btn_x += 38;
+    ui->btn_scope_cursor.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+    scope_btn_x += 38;
+    ui->btn_scope_fft.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+    scope_btn_x += 38;
+    ui->btn_scope_screenshot.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+    scope_btn_x += 38;
     ui->btn_bode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
 }
 
