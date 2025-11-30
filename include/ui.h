@@ -160,6 +160,15 @@ typedef struct {
     bool triggered;                  // Has triggered (for single-shot)
     double trigger_holdoff;          // Time to wait after trigger before re-arming
 
+    // Triggered capture state (for stable display)
+    double scope_capture_times[MAX_HISTORY];     // Time values of captured data
+    double scope_capture_values[MAX_PROBES][MAX_HISTORY];  // Voltage values per channel
+    int scope_capture_count;                     // Number of captured samples
+    double scope_capture_time;                   // Simulation time when captured
+    bool scope_capture_valid;                    // Whether we have valid captured data
+    double scope_last_trigger_time;              // Time of last trigger for holdoff
+    int scope_trigger_sample_idx;                // Index of trigger point in capture buffer
+
     // Display mode
     ScopeDisplayMode display_mode;   // Y-T or X-Y
     int xy_channel_x;                // X channel for X-Y mode (0-based)

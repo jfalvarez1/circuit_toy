@@ -258,9 +258,11 @@ void app_handle_events(App *app) {
             case UI_ACTION_SCOPE_TRIG_MODE:
                 // Cycle through trigger modes: Auto -> Normal -> Single -> Auto
                 app->ui.trigger_mode = (app->ui.trigger_mode + 1) % 3;
+                // Reset trigger capture state when mode changes
+                app->ui.scope_capture_valid = false;
+                app->ui.triggered = false;
                 if (app->ui.trigger_mode == TRIG_SINGLE) {
                     app->ui.trigger_armed = true;
-                    app->ui.triggered = false;
                 }
                 break;
             case UI_ACTION_SCOPE_TRIG_EDGE:

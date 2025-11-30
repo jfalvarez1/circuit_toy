@@ -409,6 +409,13 @@ void ui_init(UIState *ui) {
     ui->triggered = false;
     ui->trigger_holdoff = 0.001;  // 1ms holdoff
 
+    // Initialize trigger capture state
+    ui->scope_capture_count = 0;
+    ui->scope_capture_time = 0;
+    ui->scope_capture_valid = false;
+    ui->scope_last_trigger_time = 0;
+    ui->scope_trigger_sample_idx = 0;
+
     // Initialize display mode
     ui->display_mode = SCOPE_MODE_YT;
     ui->xy_channel_x = 0;
@@ -1734,67 +1741,217 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             ui_draw_text(renderer, "FFT SPECTRUM", r->x + 3, r->y + r->h - 30);
 
         } else if (ui->display_mode == SCOPE_MODE_YT) {
-            // Y-T mode: standard time-domain display
+            // Y-T mode: standard time-domain display with proper triggering
             // Calculate time window (10 divisions on the scope)
             double time_window = 10.0 * ui->scope_time_div;
 
-            // Calculate how many samples we need based on time_step
-            int samples_needed = (int)(time_window / sim->time_step);
-            if (samples_needed < 2) samples_needed = 2;
-            if (samples_needed > MAX_HISTORY) samples_needed = MAX_HISTORY;
+            // Get more samples than needed to search for trigger points
+            // We want at least 2x the display window to find triggers
+            int samples_for_trigger = (int)(time_window * 3.0 / sim->time_step);
+            if (samples_for_trigger < 100) samples_for_trigger = 100;
+            if (samples_for_trigger > MAX_HISTORY) samples_for_trigger = MAX_HISTORY;
 
-            for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
-                if (!ui->scope_channels[ch].enabled) continue;
+            // Get trigger channel data for trigger detection
+            double trig_times[MAX_HISTORY];
+            double trig_values[MAX_HISTORY];
+            int trig_ch = ui->trigger_channel;
+            if (trig_ch >= ui->scope_num_channels) trig_ch = 0;
+            int trig_probe = ui->scope_channels[trig_ch].probe_idx;
+            int trig_count = simulation_get_history(sim, trig_probe, trig_times, trig_values, samples_for_trigger);
 
-                SDL_SetRenderDrawColor(renderer,
-                    ui->scope_channels[ch].color.r,
-                    ui->scope_channels[ch].color.g,
-                    ui->scope_channels[ch].color.b, 0xff);
+            // Search for trigger point in the data
+            int trigger_idx = -1;
+            bool need_new_trigger = true;
 
-                double times[MAX_HISTORY];
-                double values[MAX_HISTORY];
-                int probe_idx = ui->scope_channels[ch].probe_idx;
-                int count = simulation_get_history(sim, probe_idx, times, values, samples_needed);
-
-                if (count < 2) continue;
-
-                double offset = ui->scope_channels[ch].offset;
-
-                // Get time range of retrieved samples
-                double t_start = times[0];
-                double t_end = times[count - 1];
-                double t_span = t_end - t_start;
-
-                // If we have less data than the time window, scale to what we have
-                if (t_span < 1e-12) t_span = time_window;
-
-                for (int i = 1; i < count; i++) {
-                    // Scale x-coordinates based on actual time values
-                    double x_frac1 = (times[i-1] - t_start) / t_span;
-                    double x_frac2 = (times[i] - t_start) / t_span;
-                    int x1 = r->x + (int)(x_frac1 * r->w);
-                    int x2 = r->x + (int)(x_frac2 * r->w);
-                    int y1 = center_y - (int)((values[i-1] + offset) * scale);
-                    int y2 = center_y - (int)((values[i] + offset) * scale);
-                    x1 = CLAMP(x1, r->x, r->x + r->w);
-                    x2 = CLAMP(x2, r->x, r->x + r->w);
-                    y1 = CLAMP(y1, r->y, r->y + r->h);
-                    y2 = CLAMP(y2, r->y, r->y + r->h);
-                    SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
-                }
-
-                // Draw ground reference arrow on left side (channel color)
-                int gnd_y = center_y - (int)(offset * scale);
-                gnd_y = CLAMP(gnd_y, r->y + 8, r->y + r->h - 8);
-                // Arrow pointing right
-                SDL_RenderDrawLine(renderer, r->x + 2, gnd_y, r->x + 8, gnd_y);
-                SDL_RenderDrawLine(renderer, r->x + 5, gnd_y - 3, r->x + 8, gnd_y);
-                SDL_RenderDrawLine(renderer, r->x + 5, gnd_y + 3, r->x + 8, gnd_y);
+            // For SINGLE mode, don't look for new trigger if already triggered
+            if (ui->trigger_mode == TRIG_SINGLE && ui->triggered && ui->scope_capture_valid) {
+                need_new_trigger = false;
             }
 
-            // Draw trigger level line (dashed, in trigger channel color)
-            if (ui->trigger_mode != TRIG_AUTO && ui->scope_num_channels > 0) {
-                int trig_ch = ui->trigger_channel;
+            // Check holdoff - don't trigger too frequently
+            if (need_new_trigger && ui->scope_capture_valid && trig_count > 0) {
+                double current_time = trig_times[trig_count - 1];
+                if (current_time - ui->scope_last_trigger_time < ui->trigger_holdoff) {
+                    need_new_trigger = false;
+                }
+            }
+
+            if (need_new_trigger && trig_count > 10) {
+                double level = ui->trigger_level;
+
+                // Search for trigger crossing (look for edge in middle portion of data)
+                // Start from 1/3 into the buffer so we have pre-trigger data
+                int search_start = trig_count / 3;
+                int search_end = trig_count - 10;
+
+                for (int i = search_start; i < search_end; i++) {
+                    bool triggered_here = false;
+                    double v_prev = trig_values[i - 1];
+                    double v_curr = trig_values[i];
+
+                    switch (ui->trigger_edge) {
+                        case TRIG_EDGE_RISING:
+                            // Rising edge: previous below level, current at or above
+                            if (v_prev < level && v_curr >= level) {
+                                triggered_here = true;
+                            }
+                            break;
+                        case TRIG_EDGE_FALLING:
+                            // Falling edge: previous above level, current at or below
+                            if (v_prev > level && v_curr <= level) {
+                                triggered_here = true;
+                            }
+                            break;
+                        case TRIG_EDGE_BOTH:
+                            // Either edge
+                            if ((v_prev < level && v_curr >= level) ||
+                                (v_prev > level && v_curr <= level)) {
+                                triggered_here = true;
+                            }
+                            break;
+                    }
+
+                    if (triggered_here) {
+                        trigger_idx = i;
+                        break;  // Use first trigger found
+                    }
+                }
+            }
+
+            // Handle trigger modes
+            bool use_capture = false;
+
+            if (trigger_idx >= 0) {
+                // Found a trigger - capture the data
+                ui->scope_last_trigger_time = trig_times[trigger_idx];
+                ui->scope_trigger_sample_idx = trigger_idx;
+                ui->triggered = true;
+
+                // Calculate how many samples to display (for the time window)
+                int display_samples = (int)(time_window / sim->time_step);
+                if (display_samples < 2) display_samples = 2;
+                if (display_samples > MAX_HISTORY / 2) display_samples = MAX_HISTORY / 2;
+
+                // Capture data: start some samples before trigger for pre-trigger view
+                // Put trigger point at about 20% from left edge
+                int pre_trigger = display_samples / 5;
+                int capture_start = trigger_idx - pre_trigger;
+                if (capture_start < 0) capture_start = 0;
+                int capture_end = capture_start + display_samples;
+                if (capture_end > trig_count) capture_end = trig_count;
+
+                ui->scope_capture_count = capture_end - capture_start;
+
+                // Capture times (from trigger channel)
+                for (int i = 0; i < ui->scope_capture_count; i++) {
+                    ui->scope_capture_times[i] = trig_times[capture_start + i];
+                }
+
+                // Capture all channel values
+                for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
+                    double ch_times[MAX_HISTORY], ch_values[MAX_HISTORY];
+                    int ch_probe = ui->scope_channels[ch].probe_idx;
+                    int ch_count = simulation_get_history(sim, ch_probe, ch_times, ch_values, samples_for_trigger);
+
+                    // Match samples by index (assumes same time base)
+                    for (int i = 0; i < ui->scope_capture_count && (capture_start + i) < ch_count; i++) {
+                        ui->scope_capture_values[ch][i] = ch_values[capture_start + i];
+                    }
+                }
+
+                ui->scope_capture_time = sim->time;
+                ui->scope_capture_valid = true;
+                use_capture = true;
+            } else {
+                // No trigger found
+                if (ui->trigger_mode == TRIG_AUTO) {
+                    // AUTO mode: free-run, show latest data without triggering
+                    // Use the most recent samples
+                    int display_samples = (int)(time_window / sim->time_step);
+                    if (display_samples < 2) display_samples = 2;
+                    if (display_samples > trig_count) display_samples = trig_count;
+
+                    int capture_start = trig_count - display_samples;
+                    if (capture_start < 0) capture_start = 0;
+
+                    ui->scope_capture_count = trig_count - capture_start;
+
+                    for (int i = 0; i < ui->scope_capture_count; i++) {
+                        ui->scope_capture_times[i] = trig_times[capture_start + i];
+                    }
+
+                    for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
+                        double ch_times[MAX_HISTORY], ch_values[MAX_HISTORY];
+                        int ch_probe = ui->scope_channels[ch].probe_idx;
+                        int ch_count = simulation_get_history(sim, ch_probe, ch_times, ch_values, samples_for_trigger);
+
+                        for (int i = 0; i < ui->scope_capture_count && (capture_start + i) < ch_count; i++) {
+                            ui->scope_capture_values[ch][i] = ch_values[capture_start + i];
+                        }
+                    }
+
+                    ui->scope_capture_time = sim->time;
+                    ui->scope_capture_valid = true;
+                    use_capture = true;
+                } else if (ui->scope_capture_valid) {
+                    // NORMAL/SINGLE mode: use previous captured data
+                    use_capture = true;
+                }
+            }
+
+            // Render the captured/current waveform
+            if (use_capture && ui->scope_capture_count >= 2) {
+                double t_start = ui->scope_capture_times[0];
+                double t_end = ui->scope_capture_times[ui->scope_capture_count - 1];
+                double t_span = t_end - t_start;
+                if (t_span < 1e-12) t_span = time_window;
+
+                for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
+                    if (!ui->scope_channels[ch].enabled) continue;
+
+                    SDL_SetRenderDrawColor(renderer,
+                        ui->scope_channels[ch].color.r,
+                        ui->scope_channels[ch].color.g,
+                        ui->scope_channels[ch].color.b, 0xff);
+
+                    double offset = ui->scope_channels[ch].offset;
+
+                    for (int i = 1; i < ui->scope_capture_count; i++) {
+                        double x_frac1 = (ui->scope_capture_times[i-1] - t_start) / t_span;
+                        double x_frac2 = (ui->scope_capture_times[i] - t_start) / t_span;
+                        int x1 = r->x + (int)(x_frac1 * r->w);
+                        int x2 = r->x + (int)(x_frac2 * r->w);
+                        int y1 = center_y - (int)((ui->scope_capture_values[ch][i-1] + offset) * scale);
+                        int y2 = center_y - (int)((ui->scope_capture_values[ch][i] + offset) * scale);
+                        x1 = CLAMP(x1, r->x, r->x + r->w);
+                        x2 = CLAMP(x2, r->x, r->x + r->w);
+                        y1 = CLAMP(y1, r->y, r->y + r->h);
+                        y2 = CLAMP(y2, r->y, r->y + r->h);
+                        SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
+                    }
+
+                    // Draw ground reference arrow on left side (channel color)
+                    int gnd_y = center_y - (int)(offset * scale);
+                    gnd_y = CLAMP(gnd_y, r->y + 8, r->y + r->h - 8);
+                    SDL_RenderDrawLine(renderer, r->x + 2, gnd_y, r->x + 8, gnd_y);
+                    SDL_RenderDrawLine(renderer, r->x + 5, gnd_y - 3, r->x + 8, gnd_y);
+                    SDL_RenderDrawLine(renderer, r->x + 5, gnd_y + 3, r->x + 8, gnd_y);
+                }
+
+                // Draw trigger point marker (small T on the waveform)
+                if (trigger_idx >= 0 && ui->trigger_mode != TRIG_AUTO) {
+                    // Show trigger indicator at ~20% from left
+                    int trig_x = r->x + r->w / 5;
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);  // Orange
+                    // Small downward arrow at top
+                    SDL_RenderDrawLine(renderer, trig_x, r->y + 2, trig_x, r->y + 8);
+                    SDL_RenderDrawLine(renderer, trig_x - 3, r->y + 5, trig_x, r->y + 8);
+                    SDL_RenderDrawLine(renderer, trig_x + 3, r->y + 5, trig_x, r->y + 8);
+                }
+            }
+
+            // Draw trigger level line (dashed, in orange)
+            if (ui->scope_num_channels > 0) {
                 if (trig_ch < ui->scope_num_channels && ui->scope_channels[trig_ch].enabled) {
                     double trig_offset = ui->scope_channels[trig_ch].offset;
                     int trig_y = center_y - (int)((ui->trigger_level + trig_offset) * scale);
@@ -1805,11 +1962,28 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     for (int x = r->x; x < r->x + r->w; x += 8) {
                         SDL_RenderDrawLine(renderer, x, trig_y, MIN(x + 4, r->x + r->w), trig_y);
                     }
-                    // Draw trigger level indicator on right side
+                    // Draw trigger level indicator on right side (arrow)
                     SDL_RenderDrawLine(renderer, r->x + r->w - 8, trig_y, r->x + r->w - 2, trig_y);
                     SDL_RenderDrawLine(renderer, r->x + r->w - 5, trig_y - 3, r->x + r->w - 2, trig_y);
                     SDL_RenderDrawLine(renderer, r->x + r->w - 5, trig_y + 3, r->x + r->w - 2, trig_y);
                 }
+            }
+
+            // Show trigger status
+            const char *trig_status = NULL;
+            if (ui->trigger_mode == TRIG_SINGLE) {
+                if (ui->triggered) {
+                    trig_status = "TRIG'D";
+                } else {
+                    trig_status = "WAIT";
+                }
+            } else if (ui->trigger_mode == TRIG_NORMAL && !ui->scope_capture_valid) {
+                trig_status = "WAIT";
+            }
+
+            if (trig_status) {
+                SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);
+                ui_draw_text(renderer, trig_status, r->x + r->w - 50, r->y + 5);
             }
         } else {
             // X-Y mode: Lissajous display
