@@ -362,6 +362,12 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_MULTISTAGE_AMP, "2Stg", false, false
     };
 
+    // Calculate palette content height (from toolbar to last item + padding)
+    ui->palette_content_height = pal_y + pal_h + 10 - TOOLBAR_HEIGHT;
+    ui->palette_scroll_offset = 0;
+    ui->palette_visible_height = WINDOW_HEIGHT - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
+    ui->palette_scrolling = false;
+
     // Oscilloscope settings - larger default size for better visibility
     ui->scope_rect = (Rect){WINDOW_WIDTH - ui->properties_width + 10, 250, 330, 300};
     ui->scope_num_channels = 0;
@@ -463,6 +469,9 @@ void ui_init(UIState *ui) {
     ui->bode_drag_start_y = 0;
     ui->bode_rect_start_x = 0;
     ui->bode_rect_start_y = 0;
+
+    // Bode recalculate button (bounds updated in render function)
+    ui->btn_bode_recalc = (Button){{0, 0, 70, 20}, "Recalc", "Recalculate frequency sweep", false, false, true, false};
 
     // Initialize parametric sweep panel
     ui->show_sweep_panel = false;
@@ -664,6 +673,12 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
     SDL_Rect palette = {0, TOOLBAR_HEIGHT, PALETTE_WIDTH, ui->window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT};
     SDL_RenderFillRect(renderer, &palette);
 
+    // Set clipping rect for palette content (excluding scrollbar area)
+    SDL_Rect clip = {0, TOOLBAR_HEIGHT, PALETTE_WIDTH - 10, ui->window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT};
+    SDL_RenderSetClipRect(renderer, &clip);
+
+    int scroll_offset = ui->palette_scroll_offset;
+
     // Draw category headers based on known component indices
     // Tools: items 0-3, Sources: 4-7, Waveforms: 8-11, Passives: 12-15, Diodes: 16-19, Transistors: 20-24
     typedef struct { int start_idx; const char *label; } PaletteSection;
@@ -679,27 +694,80 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
 
     for (int s = 0; s < num_sections; s++) {
         if (sections[s].start_idx < ui->num_palette_items) {
-            int header_y = ui->palette_items[sections[s].start_idx].bounds.y - 14;
-            SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);  // Cyan for headers
-            ui_draw_text(renderer, sections[s].label, 10, header_y);
+            int header_y = ui->palette_items[sections[s].start_idx].bounds.y - 14 - scroll_offset;
+            if (header_y >= TOOLBAR_HEIGHT - 14 && header_y < ui->window_height - STATUSBAR_HEIGHT) {
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);  // Cyan for headers
+                ui_draw_text(renderer, sections[s].label, 10, header_y);
+            }
         }
     }
 
-    // Palette items
+    // Palette items - draw at adjusted position
     for (int i = 0; i < ui->num_palette_items; i++) {
-        draw_palette_item(renderer, &ui->palette_items[i]);
+        PaletteItem *item = &ui->palette_items[i];
+        int adjusted_y = item->bounds.y - scroll_offset;
+        // Skip if fully outside visible area
+        if (adjusted_y + item->bounds.h < TOOLBAR_HEIGHT || adjusted_y > ui->window_height - STATUSBAR_HEIGHT) {
+            continue;
+        }
+        // Temporarily adjust bounds for drawing
+        int orig_y = item->bounds.y;
+        item->bounds.y = adjusted_y;
+        draw_palette_item(renderer, item);
+        item->bounds.y = orig_y;  // Restore for hit testing
     }
 
     // Circuits section header
     if (ui->num_circuit_items > 0) {
-        int header_y = ui->circuit_items[0].bounds.y - 14;
-        SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
-        ui_draw_text(renderer, "Circuits", 10, header_y);
+        int header_y = ui->circuit_items[0].bounds.y - 14 - scroll_offset;
+        if (header_y >= TOOLBAR_HEIGHT - 14 && header_y < ui->window_height - STATUSBAR_HEIGHT) {
+            SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+            ui_draw_text(renderer, "Circuits", 10, header_y);
+        }
     }
 
-    // Circuit palette items
+    // Circuit palette items - draw at adjusted position
     for (int i = 0; i < ui->num_circuit_items; i++) {
-        draw_circuit_item(renderer, &ui->circuit_items[i]);
+        CircuitPaletteItem *item = &ui->circuit_items[i];
+        int adjusted_y = item->bounds.y - scroll_offset;
+        // Skip if fully outside visible area
+        if (adjusted_y + item->bounds.h < TOOLBAR_HEIGHT || adjusted_y > ui->window_height - STATUSBAR_HEIGHT) {
+            continue;
+        }
+        // Temporarily adjust bounds for drawing
+        int orig_y = item->bounds.y;
+        item->bounds.y = adjusted_y;
+        draw_circuit_item(renderer, item);
+        item->bounds.y = orig_y;  // Restore for hit testing
+    }
+
+    // Reset clipping
+    SDL_RenderSetClipRect(renderer, NULL);
+
+    // Draw scrollbar if content exceeds visible area
+    if (ui->palette_content_height > ui->palette_visible_height) {
+        int scrollbar_x = PALETTE_WIDTH - 8;
+        int scrollbar_track_y = TOOLBAR_HEIGHT + 2;
+        int scrollbar_track_h = ui->palette_visible_height - 4;
+
+        // Draw track (darker background)
+        SDL_SetRenderDrawColor(renderer, 0x0a, 0x14, 0x28, 0xff);
+        SDL_Rect track = {scrollbar_x, scrollbar_track_y, 6, scrollbar_track_h};
+        SDL_RenderFillRect(renderer, &track);
+
+        // Calculate thumb position and size
+        float visible_ratio = (float)ui->palette_visible_height / ui->palette_content_height;
+        int thumb_h = (int)(scrollbar_track_h * visible_ratio);
+        if (thumb_h < 20) thumb_h = 20;  // Minimum thumb size
+
+        int max_scroll = ui->palette_content_height - ui->palette_visible_height;
+        float scroll_ratio = (max_scroll > 0) ? (float)ui->palette_scroll_offset / max_scroll : 0;
+        int thumb_y = scrollbar_track_y + (int)((scrollbar_track_h - thumb_h) * scroll_ratio);
+
+        // Draw thumb
+        SDL_SetRenderDrawColor(renderer, 0x00, 0x80, 0xc0, 0xff);
+        SDL_Rect thumb = {scrollbar_x, thumb_y, 6, thumb_h};
+        SDL_RenderFillRect(renderer, &thumb);
     }
 
     // Border
@@ -2835,12 +2903,35 @@ void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
     snprintf(buf, sizeof(buf), "[%d]", ui->bode_num_points);
     ui_draw_text(renderer, buf, r->x + 320, settings_y);
 
-    // Store clickable bounds for Bode settings (using properties array)
-    // We'll handle this with separate tracking - for now just make settings_y visible
+    // Recalculate button (next row)
+    int recalc_y = settings_y + 18;
+    ui->btn_bode_recalc.bounds = (Rect){r->x, recalc_y, 70, 20};
+
+    // Draw recalculate button
+    SDL_Rect recalc_rect = {ui->btn_bode_recalc.bounds.x, ui->btn_bode_recalc.bounds.y,
+                            ui->btn_bode_recalc.bounds.w, ui->btn_bode_recalc.bounds.h};
+
+    // Button background (cyan when hovered, darker when pressed)
+    if (ui->btn_bode_recalc.pressed) {
+        SDL_SetRenderDrawColor(renderer, 0x00, 0x60, 0x80, 0xff);
+    } else if (ui->btn_bode_recalc.hovered) {
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xa0, 0xd0, 0xff);
+    } else {
+        SDL_SetRenderDrawColor(renderer, 0x00, 0x80, 0xb0, 0xff);
+    }
+    SDL_RenderFillRect(renderer, &recalc_rect);
+
+    // Button border
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    SDL_RenderDrawRect(renderer, &recalc_rect);
+
+    // Button text
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    ui_draw_text(renderer, "Recalc", r->x + 10, recalc_y + 4);
 
     // Close button hint
     SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-    ui_draw_text(renderer, "[ESC to close]", r->x + r->w - 100, settings_y + 15);
+    ui_draw_text(renderer, "[ESC to close]", r->x + r->w - 100, recalc_y);
 }
 
 void ui_render_sweep_panel(UIState *ui, SDL_Renderer *renderer, void *analysis_ptr) {
@@ -3277,6 +3368,12 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
                 else ui->bode_num_points = 50;
                 return UI_ACTION_NONE;
             }
+
+            // Recalculate button
+            if (point_in_rect(x, y, &ui->btn_bode_recalc.bounds) && ui->btn_bode_recalc.enabled) {
+                ui->btn_bode_recalc.pressed = true;
+                return UI_ACTION_BODE_RECALC;
+            }
         }
 
         // Handle cursor positioning when cursor mode is enabled
@@ -3407,9 +3504,15 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             }
         }
 
-        // Check palette items
+        // Check palette items (adjust y for scroll offset)
+        int adjusted_y = y + ui->palette_scroll_offset;
         for (int i = 0; i < ui->num_palette_items; i++) {
-            if (point_in_rect(x, y, &ui->palette_items[i].bounds)) {
+            if (point_in_rect(x, adjusted_y, &ui->palette_items[i].bounds)) {
+                // Verify item is visible (not clipped by scroll)
+                int item_screen_y = ui->palette_items[i].bounds.y - ui->palette_scroll_offset;
+                if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->palette_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                    continue;  // Item is scrolled out of view
+                }
                 // Deselect all palette and circuit items
                 for (int j = 0; j < ui->num_palette_items; j++) {
                     ui->palette_items[j].selected = false;
@@ -3430,9 +3533,14 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             }
         }
 
-        // Check circuit template items
+        // Check circuit template items (adjust y for scroll offset)
         for (int i = 0; i < ui->num_circuit_items; i++) {
-            if (point_in_rect(x, y, &ui->circuit_items[i].bounds)) {
+            if (point_in_rect(x, adjusted_y, &ui->circuit_items[i].bounds)) {
+                // Verify item is visible (not clipped by scroll)
+                int item_screen_y = ui->circuit_items[i].bounds.y - ui->palette_scroll_offset;
+                if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->circuit_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                    continue;  // Item is scrolled out of view
+                }
                 // Deselect all palette and circuit items
                 for (int j = 0; j < ui->num_palette_items; j++) {
                     ui->palette_items[j].selected = false;
@@ -3449,6 +3557,7 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
     } else {
         ui->btn_run.pressed = false;
+        ui->btn_bode_recalc.pressed = false;
     }
 
     return UI_ACTION_NONE;
@@ -3608,15 +3717,33 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_scope_fft.hovered = point_in_rect(x, y, &ui->btn_scope_fft.bounds);
     ui->btn_scope_autoset.hovered = point_in_rect(x, y, &ui->btn_scope_autoset.bounds);
     ui->btn_bode.hovered = point_in_rect(x, y, &ui->btn_bode.bounds);
+    ui->btn_bode_recalc.hovered = ui->show_bode_plot && point_in_rect(x, y, &ui->btn_bode_recalc.bounds);
 
-    // Update palette hover states
+    // Update palette hover states (adjust y for scroll offset)
+    int adjusted_y = y + ui->palette_scroll_offset;
     for (int i = 0; i < ui->num_palette_items; i++) {
-        ui->palette_items[i].hovered = point_in_rect(x, y, &ui->palette_items[i].bounds);
+        bool in_bounds = point_in_rect(x, adjusted_y, &ui->palette_items[i].bounds);
+        // Also check if item is visible on screen
+        if (in_bounds) {
+            int item_screen_y = ui->palette_items[i].bounds.y - ui->palette_scroll_offset;
+            if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->palette_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                in_bounds = false;  // Item is scrolled out of view
+            }
+        }
+        ui->palette_items[i].hovered = in_bounds;
     }
 
-    // Update circuit items hover states
+    // Update circuit items hover states (adjust y for scroll offset)
     for (int i = 0; i < ui->num_circuit_items; i++) {
-        ui->circuit_items[i].hovered = point_in_rect(x, y, &ui->circuit_items[i].bounds);
+        bool in_bounds = point_in_rect(x, adjusted_y, &ui->circuit_items[i].bounds);
+        // Also check if item is visible on screen
+        if (in_bounds) {
+            int item_screen_y = ui->circuit_items[i].bounds.y - ui->palette_scroll_offset;
+            if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->circuit_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                in_bounds = false;  // Item is scrolled out of view
+            }
+        }
+        ui->circuit_items[i].hovered = in_bounds;
     }
 
     return UI_ACTION_NONE;
@@ -3667,6 +3794,19 @@ void ui_update_scope_channels(UIState *ui, Circuit *circuit) {
 
 void ui_update_layout(UIState *ui) {
     if (!ui) return;
+
+    // Update palette visible height
+    ui->palette_visible_height = ui->window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
+
+    // Clamp scroll offset to valid range
+    int max_scroll = ui->palette_content_height - ui->palette_visible_height;
+    if (max_scroll < 0) max_scroll = 0;
+    if (ui->palette_scroll_offset > max_scroll) {
+        ui->palette_scroll_offset = max_scroll;
+    }
+    if (ui->palette_scroll_offset < 0) {
+        ui->palette_scroll_offset = 0;
+    }
 
     // Update oscilloscope position (anchored to right side, vertically positioned based on height)
     ui->scope_rect.x = ui->window_width - ui->properties_width + 10;
@@ -3860,4 +4000,34 @@ void ui_scope_autoset(UIState *ui, Simulation *sim) {
     // Set trigger to rising edge and auto mode for good display
     ui->trigger_edge = TRIG_EDGE_RISING;
     ui->trigger_mode = TRIG_AUTO;
+}
+
+// Handle palette scroll (mouse wheel)
+void ui_palette_scroll(UIState *ui, int delta) {
+    if (!ui) return;
+
+    // Only scroll if content exceeds visible area
+    if (ui->palette_content_height <= ui->palette_visible_height) {
+        return;
+    }
+
+    // Scroll amount per wheel notch (pixels)
+    int scroll_amount = 40;
+    ui->palette_scroll_offset -= delta * scroll_amount;
+
+    // Clamp to valid range
+    int max_scroll = ui->palette_content_height - ui->palette_visible_height;
+    if (ui->palette_scroll_offset < 0) {
+        ui->palette_scroll_offset = 0;
+    }
+    if (ui->palette_scroll_offset > max_scroll) {
+        ui->palette_scroll_offset = max_scroll;
+    }
+}
+
+// Check if point is in palette area
+bool ui_point_in_palette(UIState *ui, int x, int y) {
+    if (!ui) return false;
+    return (x >= 0 && x < PALETTE_WIDTH &&
+            y >= TOOLBAR_HEIGHT && y < ui->window_height - STATUSBAR_HEIGHT);
 }

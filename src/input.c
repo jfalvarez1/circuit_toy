@@ -585,6 +585,12 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             int x = input->mouse_x;
             int y = input->mouse_y;
 
+            // Check if mouse is in palette area (left sidebar) - scroll palette
+            if (ui_point_in_palette(ui, x, y)) {
+                ui_palette_scroll(ui, event->wheel.y);
+                return true;
+            }
+
             // Check if mouse is in properties panel (right side)
             // and there's a selected component - adjust value with wheel
             if (x >= render->canvas_rect.x + render->canvas_rect.w && input->selected_component) {

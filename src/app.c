@@ -398,6 +398,45 @@ void app_handle_events(App *app) {
                 }
                 break;
 
+            case UI_ACTION_BODE_RECALC:
+                // Recalculate Bode plot with current settings (don't toggle, just recalc)
+                if (app->ui.show_bode_plot) {
+                    // Cancel any running sweep first
+                    if (app->freq_sweep_thread_running && app->simulation) {
+                        simulation_cancel_freq_sweep(app->simulation);
+                        SDL_WaitThread(app->freq_sweep_thread, NULL);
+                        app->freq_sweep_thread = NULL;
+                        app->freq_sweep_thread_running = false;
+                    }
+
+                    // Find a probe node to use as output
+                    int probe_node = 0;
+                    if (app->circuit && app->circuit->num_probes > 0) {
+                        probe_node = app->circuit->probes[0].node_id;
+                    }
+
+                    // Start frequency sweep in background thread
+                    if (app->simulation) {
+                        g_sweep_data.sim = app->simulation;
+                        g_sweep_data.start_freq = app->ui.bode_freq_start;
+                        g_sweep_data.stop_freq = app->ui.bode_freq_stop;
+                        g_sweep_data.source_node = 0;
+                        g_sweep_data.probe_node = probe_node;
+                        g_sweep_data.num_points = app->ui.bode_num_points;
+                        g_sweep_data.success = false;
+
+                        app->freq_sweep_thread = SDL_CreateThread(
+                            freq_sweep_thread_func, "FreqSweep", &g_sweep_data);
+                        if (app->freq_sweep_thread) {
+                            app->freq_sweep_thread_running = true;
+                            ui_set_status(&app->ui, "Recalculating frequency sweep...");
+                        } else {
+                            ui_set_status(&app->ui, "Failed to start frequency sweep thread");
+                        }
+                    }
+                }
+                break;
+
             case UI_ACTION_CURSOR_TOGGLE:
                 // Toggle measurement cursors
                 app->ui.scope_cursor_mode = !app->ui.scope_cursor_mode;

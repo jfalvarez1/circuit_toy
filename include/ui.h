@@ -98,6 +98,12 @@ typedef struct {
     int num_palette_items;
     int selected_palette_idx;
 
+    // Palette scrolling
+    int palette_scroll_offset;      // Current scroll offset (pixels from top)
+    int palette_content_height;     // Total height of palette content
+    int palette_visible_height;     // Visible height of palette area
+    bool palette_scrolling;         // Currently dragging scrollbar
+
     // Circuit template palette
     CircuitPaletteItem circuit_items[16];
     int num_circuit_items;
@@ -193,6 +199,7 @@ typedef struct {
     // Bode plot / frequency response
     bool show_bode_plot;            // Show Bode plot panel
     Button btn_bode;                // Button to run/toggle Bode plot
+    Button btn_bode_recalc;         // Button to recalculate Bode plot
     Rect bode_rect;                 // Bode plot panel bounds
     double bode_freq_start;         // Start frequency (Hz)
     double bode_freq_stop;          // Stop frequency (Hz)
@@ -276,6 +283,7 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_SCOPE_SCREENSHOT 21
 #define UI_ACTION_SCOPE_AUTOSET    27
 #define UI_ACTION_BODE_PLOT     22
+#define UI_ACTION_BODE_RECALC   28   // Recalculate Bode plot with current settings
 #define UI_ACTION_CURSOR_TOGGLE 23   // Toggle cursor mode
 #define UI_ACTION_FFT_TOGGLE    24   // Toggle FFT view
 #define UI_ACTION_SWEEP_PANEL   25   // Toggle parametric sweep panel
@@ -300,5 +308,11 @@ void ui_scope_autoset(UIState *ui, Simulation *sim);
 
 // Update UI layout after window resize
 void ui_update_layout(UIState *ui);
+
+// Handle palette scroll (mouse wheel)
+void ui_palette_scroll(UIState *ui, int delta);
+
+// Check if point is in palette area
+bool ui_point_in_palette(UIState *ui, int x, int y);
 
 #endif // UI_H
