@@ -497,6 +497,10 @@ void app_render(App *app) {
     // Set render offset to canvas position
     app->render->canvas_rect = (Rect){CANVAS_X, CANVAS_Y, canvas_w, canvas_h};
 
+    // Update render context with simulation state for animations
+    app->render->sim_time = app->simulation ? app->simulation->time : 0.0;
+    app->render->sim_running = app->simulation && app->simulation->state == SIM_RUNNING;
+
     // Render grid
     if (app->render->show_grid) {
         render_grid(app->render);

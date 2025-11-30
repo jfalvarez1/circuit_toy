@@ -27,6 +27,10 @@ typedef struct {
     bool show_voltages;
     bool show_current;
     bool snap_to_grid;
+
+    // Animation timing (for current flow)
+    double sim_time;
+    bool sim_running;
 } RenderContext;
 
 // Initialize/cleanup

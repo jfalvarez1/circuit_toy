@@ -118,11 +118,13 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                 }
                                 comp->selected = true;
                                 input->selected_component = comp;
-                                // Only allow dragging when simulation is not running
-                                if (!input->sim_running) {
-                                    input->is_dragging = true;
-                                    input->dragging_component = comp;
+                                // Auto-pause simulation when starting to drag
+                                if (input->sim_running) {
+                                    input->pending_ui_action = UI_ACTION_PAUSE;
+                                    ui_set_status(ui, "Simulation paused - drag component to move");
                                 }
+                                input->is_dragging = true;
+                                input->dragging_component = comp;
                             } else {
                                 // Deselect
                                 if (input->selected_component) {
@@ -963,6 +965,39 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                     break;
                 case COMP_NOISE_SOURCE:
                     if (value > 0) { comp->props.noise_source.amplitude = value; applied = true; }
+                    break;
+                case COMP_LED:
+                    // Wavelength in nm (380-780 visible, 0 = white, >780 = IR)
+                    if (value >= 0 && value <= 1000) {
+                        comp->props.led.wavelength = value;
+                        // Update forward voltage based on color
+                        if (value >= 380 && value < 440) {
+                            comp->props.led.vf = 2.8;  // Violet
+                            comp->props.led.max_current = 0.020;
+                        } else if (value >= 440 && value < 510) {
+                            comp->props.led.vf = 3.2;  // Blue/Cyan
+                            comp->props.led.max_current = 0.020;
+                        } else if (value >= 510 && value < 580) {
+                            comp->props.led.vf = 2.2;  // Green
+                            comp->props.led.max_current = 0.020;
+                        } else if (value >= 580 && value < 600) {
+                            comp->props.led.vf = 2.1;  // Yellow
+                            comp->props.led.max_current = 0.020;
+                        } else if (value >= 600 && value < 640) {
+                            comp->props.led.vf = 2.0;  // Orange
+                            comp->props.led.max_current = 0.020;
+                        } else if (value >= 640 && value <= 780) {
+                            comp->props.led.vf = 1.8;  // Red
+                            comp->props.led.max_current = 0.020;
+                        } else if (value > 780) {
+                            comp->props.led.vf = 1.4;  // IR
+                            comp->props.led.max_current = 0.050;
+                        } else if (value == 0) {
+                            comp->props.led.vf = 3.2;  // White
+                            comp->props.led.max_current = 0.020;
+                        }
+                        applied = true;
+                    }
                     break;
                 default:
                     break;

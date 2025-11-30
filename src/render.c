@@ -447,6 +447,62 @@ void render_component(RenderContext *ctx, Component *comp) {
         component_get_terminal_pos(comp, i, &tx, &ty);
         render_fill_circle(ctx, tx, ty, 3);
     }
+
+    // Draw warning icon for overloaded components
+    bool show_warning = false;
+    double overload_ratio = 0.0;
+
+    if (comp->type == COMP_RESISTOR) {
+        if (comp->props.resistor.power_rating > 0) {
+            overload_ratio = comp->props.resistor.power_dissipated / comp->props.resistor.power_rating;
+            show_warning = (overload_ratio > 1.0);
+        }
+    } else if (comp->type == COMP_LED) {
+        if (comp->props.led.max_current > 0) {
+            overload_ratio = comp->props.led.current / comp->props.led.max_current;
+            show_warning = (overload_ratio > 1.0);
+        }
+    }
+
+    if (show_warning) {
+        // Draw fire/flame warning icon at top-right of component
+        float icon_x = comp->x + 15;
+        float icon_y = comp->y - 20;
+
+        // Flame color - more red/orange based on overload severity
+        uint8_t r_col = 255;
+        uint8_t g_col = (overload_ratio > 2.0) ? 50 : (overload_ratio > 1.5) ? 100 : 150;
+
+        // Animated flicker effect
+        double flicker = 1.0 + 0.2 * sin(ctx->sim_time * 20.0);
+
+        // Draw flame shape (3 tongues of fire)
+        render_set_color(ctx, (Color){r_col, g_col, 0, 255});
+
+        // Center flame (tallest)
+        float h1 = 12 * flicker;
+        render_draw_line(ctx, icon_x, icon_y + 8, icon_x - 2, icon_y + 2);
+        render_draw_line(ctx, icon_x - 2, icon_y + 2, icon_x, icon_y + 8 - h1);
+        render_draw_line(ctx, icon_x, icon_y + 8 - h1, icon_x + 2, icon_y + 2);
+        render_draw_line(ctx, icon_x + 2, icon_y + 2, icon_x, icon_y + 8);
+
+        // Left flame
+        float h2 = 8 * (1.0 + 0.15 * sin(ctx->sim_time * 25.0 + 1.0));
+        render_draw_line(ctx, icon_x - 4, icon_y + 8, icon_x - 5, icon_y + 8 - h2);
+        render_draw_line(ctx, icon_x - 5, icon_y + 8 - h2, icon_x - 2, icon_y + 4);
+
+        // Right flame
+        float h3 = 8 * (1.0 + 0.15 * sin(ctx->sim_time * 22.0 + 2.0));
+        render_draw_line(ctx, icon_x + 4, icon_y + 8, icon_x + 5, icon_y + 8 - h3);
+        render_draw_line(ctx, icon_x + 5, icon_y + 8 - h3, icon_x + 2, icon_y + 4);
+
+        // Draw "!" warning if severely overloaded
+        if (overload_ratio > 2.0) {
+            render_set_color(ctx, (Color){255, 255, 0, 255});
+            render_draw_line(ctx, icon_x + 12, icon_y - 5, icon_x + 12, icon_y + 2);
+            render_fill_circle(ctx, icon_x + 12, icon_y + 5, 1);
+        }
+    }
 }
 
 void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
@@ -464,12 +520,12 @@ void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
 
     render_draw_line(ctx, start->x, start->y, end->x, end->y);
 
-    // Draw current flow arrow (conventional current: high to low voltage)
-    if (ctx->show_current) {
+    // Draw animated current flow (conventional current: high to low voltage)
+    if (ctx->show_current && ctx->sim_running) {
         double v_diff = start->voltage - end->voltage;
         double abs_diff = v_diff < 0 ? -v_diff : v_diff;
 
-        // Only show arrow if voltage difference is significant
+        // Only show if voltage difference is significant
         if (abs_diff > 0.001) {
             // Arrow direction: from higher voltage to lower voltage
             float from_x, from_y, to_x, to_y;
@@ -481,42 +537,69 @@ void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
                 to_x = start->x; to_y = start->y;
             }
 
-            // Calculate midpoint and direction
-            float mid_x = (from_x + to_x) / 2;
-            float mid_y = (from_y + to_y) / 2;
             float dx = to_x - from_x;
             float dy = to_y - from_y;
             float len = sqrt(dx*dx + dy*dy);
 
-            if (len > 20) {  // Only draw on wires long enough
+            if (len > 15) {  // Only draw on wires long enough
                 // Normalize direction
                 dx /= len;
                 dy /= len;
 
-                // Arrow size scales with zoom
-                float arrow_size = 8 / ctx->zoom;
-                if (arrow_size < 3) arrow_size = 3;
-                if (arrow_size > 10) arrow_size = 10;
+                // Estimate current from voltage difference (assume ~1k resistance)
+                // This is approximate - actual current depends on circuit
+                double estimated_current = abs_diff / 1000.0;  // rough estimate
+                if (wire->current != 0) {
+                    estimated_current = fabs(wire->current);
+                }
 
-                // Calculate arrow points
-                // Arrow tip slightly ahead of midpoint
-                float tip_x = mid_x + dx * (arrow_size / 2);
-                float tip_y = mid_y + dy * (arrow_size / 2);
+                // Animation speed based on current:
+                // 10mA = slow (1x), 100mA = medium (3x), 1A = fast (10x), 10A = very fast (30x)
+                double speed_factor = 1.0;
+                if (estimated_current > 0) {
+                    speed_factor = 1.0 + log10(estimated_current / 0.001) * 3.0;
+                    if (speed_factor < 0.5) speed_factor = 0.5;
+                    if (speed_factor > 50.0) speed_factor = 50.0;
+                }
 
-                // Perpendicular direction for arrow wings
-                float px = -dy;
-                float py = dx;
+                // Animation phase based on simulation time
+                double anim_phase = fmod(ctx->sim_time * speed_factor * 100.0, 1.0);
 
-                // Arrow wing points
-                float wing1_x = tip_x - dx * arrow_size + px * (arrow_size * 0.5f);
-                float wing1_y = tip_y - dy * arrow_size + py * (arrow_size * 0.5f);
-                float wing2_x = tip_x - dx * arrow_size - px * (arrow_size * 0.5f);
-                float wing2_y = tip_y - dy * arrow_size - py * (arrow_size * 0.5f);
+                // Draw multiple moving dots along the wire
+                int num_dots = (int)(len / 30) + 1;
+                if (num_dots > 5) num_dots = 5;
+                float dot_spacing = 1.0f / num_dots;
 
-                // Draw arrow in orange/yellow color
-                render_set_color(ctx, (Color){0xff, 0xaa, 0x00, 0xff});
-                render_draw_line(ctx, tip_x, tip_y, wing1_x, wing1_y);
-                render_draw_line(ctx, tip_x, tip_y, wing2_x, wing2_y);
+                // Dot color - orange/yellow, brighter with more current
+                uint8_t brightness = (uint8_t)(150 + fmin(estimated_current * 1000, 105));
+                render_set_color(ctx, (Color){0xff, brightness, 0x00, 0xff});
+
+                for (int i = 0; i < num_dots; i++) {
+                    // Position along wire (0 to 1), animated
+                    float t = fmod(anim_phase + i * dot_spacing, 1.0f);
+
+                    // Skip dots too close to ends
+                    if (t < 0.1f || t > 0.9f) continue;
+
+                    float dot_x = from_x + dx * len * t;
+                    float dot_y = from_y + dy * len * t;
+
+                    // Draw dot
+                    render_fill_circle(ctx, dot_x, dot_y, 3);
+
+                    // Draw small arrow
+                    float arrow_size = 5;
+                    float tip_x = dot_x + dx * arrow_size;
+                    float tip_y = dot_y + dy * arrow_size;
+                    float px = -dy;
+                    float py = dx;
+                    float wing1_x = dot_x + px * 2;
+                    float wing1_y = dot_y + py * 2;
+                    float wing2_x = dot_x - px * 2;
+                    float wing2_y = dot_y - py * 2;
+                    render_draw_line(ctx, tip_x, tip_y, wing1_x, wing1_y);
+                    render_draw_line(ctx, tip_x, tip_y, wing2_x, wing2_y);
+                }
             }
         }
     }

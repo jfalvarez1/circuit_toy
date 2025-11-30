@@ -826,6 +826,68 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui->properties[ui->num_properties++].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 break;
 
+            case COMP_LED: {
+                // Wavelength / Color (editable)
+                snprintf(buf, sizeof(buf), "%.0f nm", selected->props.led.wavelength);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Wavelength:", buf,
+                                   editing_value, edit_buf, cursor);
+                ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+
+                // Color preview
+                prop_y += 18;
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Color:", x + 10, prop_y + 2);
+                // Map wavelength to color name
+                double wl = selected->props.led.wavelength;
+                const char *color_name = "Red";
+                if (wl >= 380 && wl < 440) color_name = "Violet";
+                else if (wl >= 440 && wl < 490) color_name = "Blue";
+                else if (wl >= 490 && wl < 510) color_name = "Cyan";
+                else if (wl >= 510 && wl < 580) color_name = "Green";
+                else if (wl >= 580 && wl < 600) color_name = "Yellow";
+                else if (wl >= 600 && wl < 640) color_name = "Orange";
+                else if (wl >= 640 && wl <= 780) color_name = "Red";
+                else if (wl > 780) color_name = "IR";
+                else if (wl == 0) color_name = "White";
+                SDL_SetRenderDrawColor(renderer, 0x80, 0xff, 0x80, 0xff);
+                ui_draw_text(renderer, color_name, x + 100, prop_y + 2);
+
+                // Forward voltage (read-only)
+                prop_y += 18;
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Fwd Voltage:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x80, 0xff, 0x80, 0xff);
+                snprintf(buf, sizeof(buf), "%.2f V", selected->props.led.vf);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+
+                // Max current (read-only)
+                prop_y += 18;
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Max Current:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x80, 0xff, 0x80, 0xff);
+                snprintf(buf, sizeof(buf), "%.0f mA", selected->props.led.max_current * 1000);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+
+                // Actual current (read-only, with warning if overcurrent)
+                prop_y += 18;
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Current:", x + 10, prop_y + 2);
+                double curr_ratio = selected->props.led.current / selected->props.led.max_current;
+                if (curr_ratio > 1.0) {
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0x40, 0x40, 0xff);  // Red - overcurrent!
+                } else if (curr_ratio > 0.8) {
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);  // Orange - warning
+                } else {
+                    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);  // Green - OK
+                }
+                snprintf(buf, sizeof(buf), "%.2f mA (%.0f%%)", selected->props.led.current * 1000,
+                         curr_ratio * 100);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+
+                ui->num_properties = 1;  // Only wavelength is editable
+                break;
+            }
+
             default:
                 break;
         }
