@@ -837,6 +837,33 @@ void input_handle_key(InputState *input, SDL_Keycode key,
             }
             break;
 
+        case SDLK_SPACE:
+            // Toggle switch state when a switch is selected
+            if (input->selected_component) {
+                Component *c = input->selected_component;
+                switch (c->type) {
+                    case COMP_SPST_SWITCH:
+                        c->props.switch_spst.closed = !c->props.switch_spst.closed;
+                        break;
+                    case COMP_SPDT_SWITCH:
+                        c->props.switch_spdt.position = (c->props.switch_spdt.position == 0) ? 1 : 0;
+                        break;
+                    case COMP_PUSH_BUTTON:
+                        c->props.push_button.pressed = !c->props.push_button.pressed;
+                        break;
+                    default:
+                        break;
+                }
+            }
+            break;
+
+        case SDLK_t:
+            // T: Add SPST switch (toggle switch)
+            if (!ctrl) {
+                input_start_placing(input, COMP_SPST_SWITCH);
+            }
+            break;
+
         case SDLK_PLUS:
         case SDLK_EQUALS:
             if (ctrl) {

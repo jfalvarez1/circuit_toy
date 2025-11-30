@@ -246,6 +246,31 @@ typedef union {
         int font_size;          // Font size (1=small, 2=normal, 3=large)
         uint32_t color;         // Text color (RGBA packed)
     } text;
+
+    // SPST Switch (Single-Pole Single-Throw)
+    struct {
+        bool closed;            // Switch state: true=closed (conducting), false=open
+        double r_on;            // On-state resistance (Ohm), default: 0.01
+        double r_off;           // Off-state resistance (Ohm), default: 1e9
+        bool momentary;         // If true, returns to default state when released
+        bool default_closed;    // Default state for momentary switches
+    } switch_spst;
+
+    // SPDT Switch (Single-Pole Double-Throw)
+    struct {
+        int position;           // 0=terminal A, 1=terminal B
+        double r_on;            // On-state resistance (Ohm)
+        double r_off;           // Off-state resistance (Ohm)
+        bool momentary;         // If true, returns to default position
+        int default_pos;        // Default position for momentary
+    } switch_spdt;
+
+    // Push Button (Momentary, normally open)
+    struct {
+        bool pressed;           // Currently pressed
+        double r_on;            // On-state resistance (Ohm)
+        double r_off;           // Off-state resistance (Ohm)
+    } push_button;
 } ComponentProps;
 
 // Component structure

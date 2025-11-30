@@ -1,5 +1,138 @@
 /**
  * Circuit Playground - Predefined Circuit Templates Implementation
+ *
+ * =============================================================================
+ * CIRCUIT BUILDING DOCUMENTATION
+ * =============================================================================
+ *
+ * This file contains predefined circuit templates. Follow these guidelines
+ * when creating new circuits to ensure clean, non-overlapping layouts.
+ *
+ * -----------------------------------------------------------------------------
+ * COMPONENT TERMINAL POSITIONS (relative to component center, before rotation)
+ * -----------------------------------------------------------------------------
+ *
+ * 2-Terminal Components (horizontal orientation):
+ *   - Resistor, Capacitor, Inductor, Diode: terminals at (-40, 0) and (40, 0)
+ *   - Voltage/Current Sources: terminals at (0, -40) [+] and (0, 40) [-]
+ *   - Ground: single terminal at (0, -20)
+ *
+ * 3-Terminal Components:
+ *   - BJT (NPN/PNP): Base at (-20, 0), Collector at (20, -20), Emitter at (20, 20)
+ *   - MOSFET (NMOS/PMOS): Gate at (-20, 0), Drain at (20, -20), Source at (20, 20)
+ *   - Op-Amp: Inverting(-) at (-40, -20), Non-inverting(+) at (-40, 20), Output at (40, 0)
+ *
+ * Rotation effects (90-degree increments):
+ *   - Rotation transforms terminal positions: (dx, dy) -> (dx*cos - dy*sin, dx*sin + dy*cos)
+ *   - rotation=0:   terminals at original positions
+ *   - rotation=90:  swap x/y and negate new x (rotate clockwise)
+ *   - rotation=180: negate both x and y
+ *   - rotation=270: swap x/y and negate new y
+ *
+ * Example: Resistor at rotation=90 has terminals at (0, -40) and (0, 40)
+ *
+ * -----------------------------------------------------------------------------
+ * WIRE ROUTING RULES (Non-overlapping)
+ * -----------------------------------------------------------------------------
+ *
+ * 1. ONLY use horizontal and vertical wires - never diagonal
+ *
+ * 2. For each connection between two points that aren't aligned:
+ *    - Create an L-shaped path using an intermediate corner node
+ *    - Use circuit_add_wire() for each straight segment
+ *    - Create corner nodes with circuit_find_or_create_node()
+ *
+ * 3. When multiple components connect to the same node:
+ *    - Each component gets its own wire path to the junction
+ *    - Don't share wire segments between different connections
+ *    - Route wires on separate horizontal/vertical tracks
+ *
+ * 4. Power bus pattern (for Vcc/Vdd):
+ *    - Create a horizontal bus at the top (y = vcc_y)
+ *    - Drop vertical wires down from the bus to each component
+ *    - Example:
+ *        Vcc+ --+----+----+----+
+ *               |    |    |    |
+ *              R1   R2   R3   R4
+ *
+ * 5. Ground connections:
+ *    - Use direct connect_terminals() for simple ground connections
+ *    - For complex circuits, use explicit wire routing
+ *
+ * -----------------------------------------------------------------------------
+ * CIRCUIT BUILDING PATTERN
+ * -----------------------------------------------------------------------------
+ *
+ * static int place_example_circuit(Circuit *circuit, float x, float y) {
+ *     // 1. CREATE COMPONENTS at grid-aligned positions
+ *     Component *vsrc = add_comp(circuit, COMP_DC_VOLTAGE, x, y + 40, 0);
+ *     Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 100, y, 0);
+ *     // ... etc
+ *
+ *     // 2. SET COMPONENT PROPERTIES
+ *     vsrc->props.dc_voltage.voltage = 12.0;
+ *     r1->props.resistor.resistance = 1000.0;
+ *
+ *     // 3. SIMPLE DIRECT CONNECTIONS (for aligned terminals)
+ *     connect_terminals(circuit, vsrc, 1, gnd, 0);
+ *
+ *     // 4. GET TERMINAL POSITIONS for complex routing
+ *     float tx, ty;
+ *     component_get_terminal_pos(r1, 0, &tx, &ty);
+ *
+ *     // 5. CREATE EXPLICIT WIRE PATHS for non-trivial routing
+ *     // Junction node where multiple components connect
+ *     int junction = circuit_find_or_create_node(circuit, jx, jy, 5.0f);
+ *
+ *     // Wire from component A to junction (horizontal)
+ *     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, ax, ay, 5.0f), junction);
+ *
+ *     // Wire from junction to component B (with L-shape)
+ *     // First horizontal segment to corner
+ *     int corner = circuit_find_or_create_node(circuit, bx, jy, 5.0f);
+ *     circuit_add_wire(circuit, junction, corner);
+ *     // Then vertical segment to destination
+ *     circuit_add_wire(circuit, corner, circuit_find_or_create_node(circuit, bx, by, 5.0f));
+ *
+ *     // 6. SET NODE IDs on components
+ *     r1->node_ids[0] = junction;
+ *
+ *     // 7. Return component count
+ *     return num_components;
+ * }
+ *
+ * -----------------------------------------------------------------------------
+ * HELPER FUNCTIONS
+ * -----------------------------------------------------------------------------
+ *
+ * add_comp(circuit, type, x, y, rotation)
+ *   - Creates and adds a component to the circuit
+ *   - Returns NULL on failure
+ *
+ * connect_terminals(circuit, comp1, terminal1, comp2, terminal2)
+ *   - Connects two terminals with automatic wire routing
+ *   - Best for simple, aligned connections
+ *
+ * create_node_at(circuit, comp, terminal_idx)
+ *   - Creates a node at a component's terminal position
+ *   - Returns the node ID
+ *
+ * wire_L_shape(circuit, x1, y1, x2, y2, horiz_first)
+ *   - Creates an L-shaped wire path (USE SPARINGLY - prefer explicit routing)
+ *   - horiz_first: if true, goes horizontal then vertical
+ *
+ * circuit_add_wire(circuit, node1_id, node2_id)
+ *   - Adds a single wire segment between two nodes
+ *   - PREFERRED for explicit routing control
+ *
+ * circuit_find_or_create_node(circuit, x, y, threshold)
+ *   - Finds existing node or creates new one at position
+ *   - Returns node ID
+ *
+ * component_get_terminal_pos(comp, terminal_idx, &x, &y)
+ *   - Gets world position of a terminal (accounts for rotation)
+ *
+ * =============================================================================
  */
 
 #include <stdio.h>
@@ -25,6 +158,16 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_COMMON_SOURCE] = {"Common Source", "CS", "MOSFET common-source amplifier"},
     [CIRCUIT_COMMON_DRAIN] = {"Source Follower", "SF", "MOSFET source follower (common-drain)"},
     [CIRCUIT_MULTISTAGE_AMP] = {"Two-Stage Amp", "2Stg", "Two-stage BJT amplifier"},
+    // Additional transistor circuits
+    [CIRCUIT_DIFFERENTIAL_PAIR] = {"Differential Pair", "Diff", "BJT differential amplifier"},
+    [CIRCUIT_CURRENT_MIRROR] = {"Current Mirror", "CMir", "BJT current mirror"},
+    [CIRCUIT_PUSH_PULL] = {"Push-Pull", "PP", "Complementary push-pull output stage"},
+    [CIRCUIT_CMOS_INVERTER] = {"CMOS Inverter", "CMOS", "CMOS logic inverter"},
+    // Additional op-amp circuits
+    [CIRCUIT_INTEGRATOR] = {"Integrator", "Int", "Op-amp integrator circuit"},
+    [CIRCUIT_DIFFERENTIATOR] = {"Differentiator", "Dif", "Op-amp differentiator circuit"},
+    [CIRCUIT_SUMMING_AMP] = {"Summing Amp", "Sum", "Inverting summing amplifier"},
+    [CIRCUIT_COMPARATOR] = {"Comparator", "Cmp", "Op-amp voltage comparator"},
 };
 
 const CircuitTemplateInfo *circuit_template_get_info(CircuitTemplateType type) {
@@ -1258,6 +1401,848 @@ static int place_multistage_amp(Circuit *circuit, float x, float y) {
     return 23;
 }
 
+// BJT Differential Pair:
+// Classic differential amplifier with tail current source
+//
+//        Vcc+
+//         |
+//    +----+----+
+//    |         |
+//   Rc1       Rc2
+//    |         |
+//    +--Vout1  +--Vout2
+//    |         |
+//   C1        C2
+//    |    |    |
+//  Q1-B   |   B-Q2
+//    E    |    E
+//     \   |   /
+//      \  |  /
+//       \ | /
+//        \|/
+//         Re (tail current)
+//         |
+//        GND
+//
+static int place_differential_pair(Circuit *circuit, float x, float y) {
+    // === POWER SUPPLY ===
+    Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x - 80, y - 100, 0);
+    if (!vcc) return 0;
+    vcc->props.dc_voltage.voltage = 12.0;
+    Component *gnd_vcc = add_comp(circuit, COMP_GROUND, x - 80, y - 20, 0);
+
+    // === INPUT SOURCES ===
+    Component *vin1 = add_comp(circuit, COMP_AC_VOLTAGE, x - 80, y + 60, 0);
+    vin1->props.ac_voltage.amplitude = 0.05;
+    vin1->props.ac_voltage.frequency = 1000.0;
+    Component *gnd_in1 = add_comp(circuit, COMP_GROUND, x - 80, y + 140, 0);
+
+    Component *vin2 = add_comp(circuit, COMP_AC_VOLTAGE, x + 200, y + 60, 0);
+    vin2->props.ac_voltage.amplitude = 0.05;
+    vin2->props.ac_voltage.frequency = 1000.0;
+    vin2->props.ac_voltage.phase = 180.0;  // 180 degrees out of phase
+    Component *gnd_in2 = add_comp(circuit, COMP_GROUND, x + 200, y + 140, 0);
+
+    // === INPUT COUPLING CAPACITORS ===
+    Component *cin1 = add_comp(circuit, COMP_CAPACITOR, x, y + 20, 0);
+    cin1->props.capacitor.capacitance = 10e-6;
+    Component *cin2 = add_comp(circuit, COMP_CAPACITOR, x + 120, y + 20, 0);
+    cin2->props.capacitor.capacitance = 10e-6;
+
+    // === TRANSISTORS ===
+    // BJT: B at (-20,0), C at (20,-20), E at (20,20)
+    Component *q1 = add_comp(circuit, COMP_NPN_BJT, x + 60, y + 20, 0);
+    q1->props.bjt.bf = 100;
+    Component *q2 = add_comp(circuit, COMP_NPN_BJT, x + 100, y + 20, 180);  // Mirrored
+    q2->props.bjt.bf = 100;
+
+    // === COLLECTOR RESISTORS ===
+    Component *rc1 = add_comp(circuit, COMP_RESISTOR, x + 80, y - 60, 90);
+    rc1->props.resistor.resistance = 4700.0;
+    Component *rc2 = add_comp(circuit, COMP_RESISTOR, x + 120, y - 60, 90);
+    rc2->props.resistor.resistance = 4700.0;
+
+    // === TAIL RESISTOR ===
+    Component *re = add_comp(circuit, COMP_RESISTOR, x + 100, y + 80, 90);
+    re->props.resistor.resistance = 10000.0;
+    Component *gnd_re = add_comp(circuit, COMP_GROUND, x + 100, y + 140, 0);
+
+    // Label
+    Component *label = add_comp(circuit, COMP_TEXT, x + 40, y - 120, 0);
+    strncpy(label->props.text.text, "Differential Pair", sizeof(label->props.text.text)-1);
+    label->props.text.font_size = 2;
+
+    // === CONNECTIONS ===
+    connect_terminals(circuit, vcc, 1, gnd_vcc, 0);
+    connect_terminals(circuit, vin1, 1, gnd_in1, 0);
+    connect_terminals(circuit, vin2, 1, gnd_in2, 0);
+    connect_terminals(circuit, re, 1, gnd_re, 0);
+    connect_terminals(circuit, vin1, 0, cin1, 0);
+    connect_terminals(circuit, vin2, 0, cin2, 0);
+
+    // Get terminal positions
+    float vcc_x, vcc_y;
+    component_get_terminal_pos(vcc, 0, &vcc_x, &vcc_y);
+    float cin1_out_x, cin1_out_y;
+    component_get_terminal_pos(cin1, 1, &cin1_out_x, &cin1_out_y);
+    float cin2_out_x, cin2_out_y;
+    component_get_terminal_pos(cin2, 1, &cin2_out_x, &cin2_out_y);
+    float rc1_top_x, rc1_top_y, rc1_bot_x, rc1_bot_y;
+    component_get_terminal_pos(rc1, 0, &rc1_top_x, &rc1_top_y);
+    component_get_terminal_pos(rc1, 1, &rc1_bot_x, &rc1_bot_y);
+    float rc2_top_x, rc2_top_y, rc2_bot_x, rc2_bot_y;
+    component_get_terminal_pos(rc2, 0, &rc2_top_x, &rc2_top_y);
+    component_get_terminal_pos(rc2, 1, &rc2_bot_x, &rc2_bot_y);
+    float re_top_x, re_top_y;
+    component_get_terminal_pos(re, 0, &re_top_x, &re_top_y);
+    float base1_x, base1_y, coll1_x, coll1_y, emit1_x, emit1_y;
+    component_get_terminal_pos(q1, 0, &base1_x, &base1_y);
+    component_get_terminal_pos(q1, 1, &coll1_x, &coll1_y);
+    component_get_terminal_pos(q1, 2, &emit1_x, &emit1_y);
+    float base2_x, base2_y, coll2_x, coll2_y, emit2_x, emit2_y;
+    component_get_terminal_pos(q2, 0, &base2_x, &base2_y);
+    component_get_terminal_pos(q2, 1, &coll2_x, &coll2_y);
+    component_get_terminal_pos(q2, 2, &emit2_x, &emit2_y);
+
+    // === VCC BUS ===
+    int vcc_node = circuit_find_or_create_node(circuit, vcc_x, vcc_y, 5.0f);
+    vcc->node_ids[0] = vcc_node;
+    circuit_add_wire(circuit, vcc_node, circuit_find_or_create_node(circuit, rc1_top_x, vcc_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rc1_top_x, vcc_y, 5.0f),
+                     circuit_find_or_create_node(circuit, rc1_top_x, rc1_top_y, 5.0f));
+    rc1->node_ids[0] = vcc_node;
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rc1_top_x, vcc_y, 5.0f),
+                     circuit_find_or_create_node(circuit, rc2_top_x, vcc_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rc2_top_x, vcc_y, 5.0f),
+                     circuit_find_or_create_node(circuit, rc2_top_x, rc2_top_y, 5.0f));
+    rc2->node_ids[0] = vcc_node;
+
+    // === BASE CONNECTIONS ===
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, cin1_out_x, cin1_out_y, 5.0f),
+                     circuit_find_or_create_node(circuit, base1_x, base1_y, 5.0f));
+    cin1->node_ids[1] = circuit_find_or_create_node(circuit, base1_x, base1_y, 5.0f);
+    q1->node_ids[0] = cin1->node_ids[1];
+
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, cin2_out_x, cin2_out_y, 5.0f),
+                     circuit_find_or_create_node(circuit, base2_x, base2_y, 5.0f));
+    cin2->node_ids[1] = circuit_find_or_create_node(circuit, base2_x, base2_y, 5.0f);
+    q2->node_ids[0] = cin2->node_ids[1];
+
+    // === COLLECTOR CONNECTIONS ===
+    int coll1_node = circuit_find_or_create_node(circuit, coll1_x, coll1_y, 5.0f);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rc1_bot_x, rc1_bot_y, 5.0f), coll1_node);
+    rc1->node_ids[1] = coll1_node;
+    q1->node_ids[1] = coll1_node;
+
+    int coll2_node = circuit_find_or_create_node(circuit, coll2_x, coll2_y, 5.0f);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rc2_bot_x, rc2_bot_y, 5.0f), coll2_node);
+    rc2->node_ids[1] = coll2_node;
+    q2->node_ids[1] = coll2_node;
+
+    // === EMITTER TAIL ===
+    int tail_node = circuit_find_or_create_node(circuit, re_top_x, re_top_y, 5.0f);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, emit1_x, emit1_y, 5.0f),
+                     circuit_find_or_create_node(circuit, emit1_x, re_top_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, emit1_x, re_top_y, 5.0f), tail_node);
+    q1->node_ids[2] = tail_node;
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, emit2_x, emit2_y, 5.0f),
+                     circuit_find_or_create_node(circuit, emit2_x, re_top_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, emit2_x, re_top_y, 5.0f), tail_node);
+    q2->node_ids[2] = tail_node;
+    re->node_ids[0] = tail_node;
+
+    return 15;
+}
+
+// BJT Current Mirror:
+// Reference current sets output current
+//
+//    Vcc+
+//     |
+//    Rref
+//     |
+//  +--+--+
+//  |     |
+// Q1    Q2 (output)
+//  |     |
+// GND   Load
+//
+static int place_current_mirror(Circuit *circuit, float x, float y) {
+    Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x, y - 80, 0);
+    if (!vcc) return 0;
+    vcc->props.dc_voltage.voltage = 12.0;
+    Component *gnd_vcc = add_comp(circuit, COMP_GROUND, x, y, 0);
+
+    // Reference resistor
+    Component *rref = add_comp(circuit, COMP_RESISTOR, x + 60, y - 60, 90);
+    rref->props.resistor.resistance = 10000.0;  // Sets ~1mA reference current
+
+    // Reference transistor Q1 (diode-connected)
+    Component *q1 = add_comp(circuit, COMP_NPN_BJT, x + 80, y, 0);
+    q1->props.bjt.bf = 100;
+    Component *gnd_q1 = add_comp(circuit, COMP_GROUND, x + 100, y + 40, 0);
+
+    // Output transistor Q2
+    Component *q2 = add_comp(circuit, COMP_NPN_BJT, x + 160, y, 0);
+    q2->props.bjt.bf = 100;
+
+    // Load resistor (to see the mirrored current)
+    Component *rload = add_comp(circuit, COMP_RESISTOR, x + 180, y - 60, 90);
+    rload->props.resistor.resistance = 1000.0;
+
+    Component *gnd_q2 = add_comp(circuit, COMP_GROUND, x + 180, y + 40, 0);
+
+    // Label
+    Component *label = add_comp(circuit, COMP_TEXT, x + 60, y - 120, 0);
+    strncpy(label->props.text.text, "Current Mirror", sizeof(label->props.text.text)-1);
+    label->props.text.font_size = 2;
+
+    // === CONNECTIONS ===
+    connect_terminals(circuit, vcc, 1, gnd_vcc, 0);
+    connect_terminals(circuit, q2, 2, gnd_q2, 0);
+
+    float vcc_x, vcc_y;
+    component_get_terminal_pos(vcc, 0, &vcc_x, &vcc_y);
+    float rref_top_x, rref_top_y, rref_bot_x, rref_bot_y;
+    component_get_terminal_pos(rref, 0, &rref_top_x, &rref_top_y);
+    component_get_terminal_pos(rref, 1, &rref_bot_x, &rref_bot_y);
+    float rload_top_x, rload_top_y, rload_bot_x, rload_bot_y;
+    component_get_terminal_pos(rload, 0, &rload_top_x, &rload_top_y);
+    component_get_terminal_pos(rload, 1, &rload_bot_x, &rload_bot_y);
+    float base1_x, base1_y, coll1_x, coll1_y, emit1_x, emit1_y;
+    component_get_terminal_pos(q1, 0, &base1_x, &base1_y);
+    component_get_terminal_pos(q1, 1, &coll1_x, &coll1_y);
+    component_get_terminal_pos(q1, 2, &emit1_x, &emit1_y);
+    float base2_x, base2_y, coll2_x, coll2_y;
+    component_get_terminal_pos(q2, 0, &base2_x, &base2_y);
+    component_get_terminal_pos(q2, 1, &coll2_x, &coll2_y);
+    float gnd_q1_x, gnd_q1_y;
+    component_get_terminal_pos(gnd_q1, 0, &gnd_q1_x, &gnd_q1_y);
+
+    // Vcc to Rref and Rload
+    int vcc_node = circuit_find_or_create_node(circuit, vcc_x, vcc_y, 5.0f);
+    vcc->node_ids[0] = vcc_node;
+    circuit_add_wire(circuit, vcc_node, circuit_find_or_create_node(circuit, rref_top_x, vcc_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rref_top_x, vcc_y, 5.0f),
+                     circuit_find_or_create_node(circuit, rref_top_x, rref_top_y, 5.0f));
+    rref->node_ids[0] = vcc_node;
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rref_top_x, vcc_y, 5.0f),
+                     circuit_find_or_create_node(circuit, rload_top_x, vcc_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rload_top_x, vcc_y, 5.0f),
+                     circuit_find_or_create_node(circuit, rload_top_x, rload_top_y, 5.0f));
+    rload->node_ids[0] = vcc_node;
+
+    // Diode-connect Q1 (base to collector)
+    int base_node = circuit_find_or_create_node(circuit, base1_x, base1_y, 5.0f);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rref_bot_x, rref_bot_y, 5.0f),
+                     circuit_find_or_create_node(circuit, coll1_x, coll1_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, coll1_x, coll1_y, 5.0f), base_node);
+    rref->node_ids[1] = base_node;
+    q1->node_ids[0] = base_node;
+    q1->node_ids[1] = base_node;
+
+    // Connect Q2 base to Q1 base
+    circuit_add_wire(circuit, base_node, circuit_find_or_create_node(circuit, base2_x, base2_y, 5.0f));
+    q2->node_ids[0] = base_node;
+
+    // Q1 emitter to ground
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, emit1_x, emit1_y, 5.0f),
+                     circuit_find_or_create_node(circuit, gnd_q1_x, gnd_q1_y, 5.0f));
+    q1->node_ids[2] = circuit_find_or_create_node(circuit, gnd_q1_x, gnd_q1_y, 5.0f);
+
+    // Rload to Q2 collector
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rload_bot_x, rload_bot_y, 5.0f),
+                     circuit_find_or_create_node(circuit, coll2_x, coll2_y, 5.0f));
+    rload->node_ids[1] = circuit_find_or_create_node(circuit, coll2_x, coll2_y, 5.0f);
+    q2->node_ids[1] = rload->node_ids[1];
+
+    return 9;
+}
+
+// Push-Pull Output Stage:
+// Complementary NPN/PNP for high current drive
+//
+//      Vcc+
+//       |
+//      Q1 (NPN)
+//    B--|  E
+//       |--|--Output
+//    B--|  E
+//      Q2 (PNP)
+//       |
+//      Vcc-
+//
+static int place_push_pull(Circuit *circuit, float x, float y) {
+    // Positive supply
+    Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x, y - 80, 0);
+    if (!vcc) return 0;
+    vcc->props.dc_voltage.voltage = 12.0;
+    Component *gnd_vcc = add_comp(circuit, COMP_GROUND, x, y, 0);
+
+    // Negative supply
+    Component *vee = add_comp(circuit, COMP_DC_VOLTAGE, x, y + 120, 0);
+    vee->props.dc_voltage.voltage = 12.0;
+    Component *gnd_vee = add_comp(circuit, COMP_GROUND, x, y + 200, 0);
+
+    // Input signal
+    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 80, y + 60, 0);
+    vin->props.ac_voltage.amplitude = 5.0;
+    vin->props.ac_voltage.frequency = 1000.0;
+    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 80, y + 140, 0);
+
+    // NPN transistor (top)
+    Component *q1 = add_comp(circuit, COMP_NPN_BJT, x + 80, y - 20, 0);
+    q1->props.bjt.bf = 100;
+
+    // PNP transistor (bottom)
+    Component *q2 = add_comp(circuit, COMP_PNP_BJT, x + 80, y + 60, 0);
+    q2->props.bjt.bf = 100;
+
+    // Load resistor
+    Component *rload = add_comp(circuit, COMP_RESISTOR, x + 160, y + 20, 90);
+    rload->props.resistor.resistance = 100.0;
+    Component *gnd_load = add_comp(circuit, COMP_GROUND, x + 160, y + 80, 0);
+
+    // Label
+    Component *label = add_comp(circuit, COMP_TEXT, x + 40, y - 120, 0);
+    strncpy(label->props.text.text, "Push-Pull Output", sizeof(label->props.text.text)-1);
+    label->props.text.font_size = 2;
+
+    // === CONNECTIONS ===
+    connect_terminals(circuit, vcc, 1, gnd_vcc, 0);
+    connect_terminals(circuit, vee, 1, gnd_vee, 0);
+    connect_terminals(circuit, vin, 1, gnd_in, 0);
+    connect_terminals(circuit, rload, 1, gnd_load, 0);
+
+    float vcc_x, vcc_y;
+    component_get_terminal_pos(vcc, 0, &vcc_x, &vcc_y);
+    float vee_x, vee_y;
+    component_get_terminal_pos(vee, 0, &vee_x, &vee_y);
+    float vin_x, vin_y;
+    component_get_terminal_pos(vin, 0, &vin_x, &vin_y);
+    float base1_x, base1_y, coll1_x, coll1_y, emit1_x, emit1_y;
+    component_get_terminal_pos(q1, 0, &base1_x, &base1_y);
+    component_get_terminal_pos(q1, 1, &coll1_x, &coll1_y);
+    component_get_terminal_pos(q1, 2, &emit1_x, &emit1_y);
+    float base2_x, base2_y, coll2_x, coll2_y, emit2_x, emit2_y;
+    component_get_terminal_pos(q2, 0, &base2_x, &base2_y);
+    component_get_terminal_pos(q2, 1, &coll2_x, &coll2_y);
+    component_get_terminal_pos(q2, 2, &emit2_x, &emit2_y);
+    float rload_top_x, rload_top_y;
+    component_get_terminal_pos(rload, 0, &rload_top_x, &rload_top_y);
+
+    // Vcc to Q1 collector
+    int vcc_node = circuit_find_or_create_node(circuit, vcc_x, vcc_y, 5.0f);
+    circuit_add_wire(circuit, vcc_node, circuit_find_or_create_node(circuit, coll1_x, vcc_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, coll1_x, vcc_y, 5.0f),
+                     circuit_find_or_create_node(circuit, coll1_x, coll1_y, 5.0f));
+    vcc->node_ids[0] = vcc_node;
+    q1->node_ids[1] = vcc_node;
+
+    // Vee to Q2 collector
+    int vee_node = circuit_find_or_create_node(circuit, vee_x, vee_y, 5.0f);
+    circuit_add_wire(circuit, vee_node, circuit_find_or_create_node(circuit, coll2_x, vee_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, coll2_x, vee_y, 5.0f),
+                     circuit_find_or_create_node(circuit, coll2_x, coll2_y, 5.0f));
+    vee->node_ids[0] = vee_node;
+    q2->node_ids[1] = vee_node;
+
+    // Input to both bases
+    int base_node = circuit_find_or_create_node(circuit, vin_x, vin_y, 5.0f);
+    circuit_add_wire(circuit, base_node, circuit_find_or_create_node(circuit, base1_x, vin_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, base1_x, vin_y, 5.0f),
+                     circuit_find_or_create_node(circuit, base1_x, base1_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, base1_x, vin_y, 5.0f),
+                     circuit_find_or_create_node(circuit, base2_x, base2_y, 5.0f));
+    vin->node_ids[0] = base_node;
+    q1->node_ids[0] = base_node;
+    q2->node_ids[0] = base_node;
+
+    // Emitters to output/load
+    int out_node = circuit_find_or_create_node(circuit, emit1_x, emit1_y, 5.0f);
+    circuit_add_wire(circuit, out_node, circuit_find_or_create_node(circuit, emit2_x, emit2_y, 5.0f));
+    circuit_add_wire(circuit, out_node, circuit_find_or_create_node(circuit, rload_top_x, emit1_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rload_top_x, emit1_y, 5.0f),
+                     circuit_find_or_create_node(circuit, rload_top_x, rload_top_y, 5.0f));
+    q1->node_ids[2] = out_node;
+    q2->node_ids[2] = out_node;
+    rload->node_ids[0] = out_node;
+
+    return 11;
+}
+
+// CMOS Inverter:
+// Basic digital logic gate
+//
+//    Vdd+
+//     |
+//    Q1 (PMOS)
+//  G--|  D
+//     |--|--Output
+//  G--|  D
+//    Q2 (NMOS)
+//     |
+//    GND
+//
+static int place_cmos_inverter(Circuit *circuit, float x, float y) {
+    Component *vdd = add_comp(circuit, COMP_DC_VOLTAGE, x, y - 60, 0);
+    if (!vdd) return 0;
+    vdd->props.dc_voltage.voltage = 5.0;
+    Component *gnd_vdd = add_comp(circuit, COMP_GROUND, x, y + 20, 0);
+
+    // Input (square wave for digital signal)
+    Component *vin = add_comp(circuit, COMP_SQUARE_WAVE, x - 80, y + 20, 0);
+    vin->props.square_wave.amplitude = 2.5;
+    vin->props.square_wave.offset = 2.5;  // 0V to 5V square wave
+    vin->props.square_wave.frequency = 1000.0;
+    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 80, y + 100, 0);
+
+    // PMOS (top) - G at (-20,0), D at (20,-20), S at (20,20)
+    Component *q1 = add_comp(circuit, COMP_PMOS, x + 80, y - 20, 0);
+    q1->props.mosfet.vth = -1.0;
+    q1->props.mosfet.kp = 50e-6;
+
+    // NMOS (bottom)
+    Component *q2 = add_comp(circuit, COMP_NMOS, x + 80, y + 40, 0);
+    q2->props.mosfet.vth = 1.0;
+    q2->props.mosfet.kp = 110e-6;
+
+    Component *gnd_q2 = add_comp(circuit, COMP_GROUND, x + 100, y + 80, 0);
+
+    // Load capacitor (to see the switching behavior)
+    Component *cload = add_comp(circuit, COMP_CAPACITOR, x + 160, y + 20, 90);
+    cload->props.capacitor.capacitance = 100e-12;  // 100pF
+    Component *gnd_cload = add_comp(circuit, COMP_GROUND, x + 160, y + 80, 0);
+
+    // Label
+    Component *label = add_comp(circuit, COMP_TEXT, x + 40, y - 100, 0);
+    strncpy(label->props.text.text, "CMOS Inverter", sizeof(label->props.text.text)-1);
+    label->props.text.font_size = 2;
+
+    // === CONNECTIONS ===
+    connect_terminals(circuit, vdd, 1, gnd_vdd, 0);
+    connect_terminals(circuit, vin, 1, gnd_in, 0);
+    connect_terminals(circuit, cload, 1, gnd_cload, 0);
+
+    float vdd_x, vdd_y;
+    component_get_terminal_pos(vdd, 0, &vdd_x, &vdd_y);
+    float vin_x, vin_y;
+    component_get_terminal_pos(vin, 0, &vin_x, &vin_y);
+    float gate1_x, gate1_y, drain1_x, drain1_y, source1_x, source1_y;
+    component_get_terminal_pos(q1, 0, &gate1_x, &gate1_y);
+    component_get_terminal_pos(q1, 1, &drain1_x, &drain1_y);
+    component_get_terminal_pos(q1, 2, &source1_x, &source1_y);
+    float gate2_x, gate2_y, drain2_x, drain2_y, source2_x, source2_y;
+    component_get_terminal_pos(q2, 0, &gate2_x, &gate2_y);
+    component_get_terminal_pos(q2, 1, &drain2_x, &drain2_y);
+    component_get_terminal_pos(q2, 2, &source2_x, &source2_y);
+    float cload_top_x, cload_top_y;
+    component_get_terminal_pos(cload, 0, &cload_top_x, &cload_top_y);
+    float gnd_q2_x, gnd_q2_y;
+    component_get_terminal_pos(gnd_q2, 0, &gnd_q2_x, &gnd_q2_y);
+
+    // Vdd to PMOS source
+    int vdd_node = circuit_find_or_create_node(circuit, vdd_x, vdd_y, 5.0f);
+    circuit_add_wire(circuit, vdd_node, circuit_find_or_create_node(circuit, source1_x, vdd_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, source1_x, vdd_y, 5.0f),
+                     circuit_find_or_create_node(circuit, source1_x, source1_y, 5.0f));
+    vdd->node_ids[0] = vdd_node;
+    q1->node_ids[2] = vdd_node;
+
+    // Input to both gates
+    int gate_node = circuit_find_or_create_node(circuit, vin_x, vin_y, 5.0f);
+    circuit_add_wire(circuit, gate_node, circuit_find_or_create_node(circuit, gate1_x, vin_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, gate1_x, vin_y, 5.0f),
+                     circuit_find_or_create_node(circuit, gate1_x, gate1_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, gate1_x, vin_y, 5.0f),
+                     circuit_find_or_create_node(circuit, gate2_x, gate2_y, 5.0f));
+    vin->node_ids[0] = gate_node;
+    q1->node_ids[0] = gate_node;
+    q2->node_ids[0] = gate_node;
+
+    // Output node (drains connected)
+    int out_node = circuit_find_or_create_node(circuit, drain1_x, drain1_y, 5.0f);
+    circuit_add_wire(circuit, out_node, circuit_find_or_create_node(circuit, drain2_x, drain2_y, 5.0f));
+    circuit_add_wire(circuit, out_node, circuit_find_or_create_node(circuit, cload_top_x, drain1_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, cload_top_x, drain1_y, 5.0f),
+                     circuit_find_or_create_node(circuit, cload_top_x, cload_top_y, 5.0f));
+    q1->node_ids[1] = out_node;
+    q2->node_ids[1] = out_node;
+    cload->node_ids[0] = out_node;
+
+    // NMOS source to ground
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, source2_x, source2_y, 5.0f),
+                     circuit_find_or_create_node(circuit, gnd_q2_x, gnd_q2_y, 5.0f));
+    q2->node_ids[2] = circuit_find_or_create_node(circuit, gnd_q2_x, gnd_q2_y, 5.0f);
+
+    return 10;
+}
+
+// Op-Amp Integrator:
+//              +---- C ----+
+//              |           |
+// Vin ---[R]---+--(-)\     |
+//                  (+)/----+--- Vout
+//                   |
+//                  GND
+//
+static int place_integrator(Circuit *circuit, float x, float y) {
+    // Input source
+    Component *vsrc = add_comp(circuit, COMP_SQUARE_WAVE, x, y + 40, 0);
+    if (!vsrc) return 0;
+    vsrc->props.square_wave.amplitude = 1.0;
+    vsrc->props.square_wave.frequency = 100.0;
+    vsrc->props.square_wave.offset = 0.0;
+    Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
+
+    // Input resistor
+    Component *ri = add_comp(circuit, COMP_RESISTOR, x + 80, y, 0);
+    ri->props.resistor.resistance = 10000.0;
+
+    // Op-amp
+    Component *opamp = add_comp(circuit, COMP_OPAMP, x + 200, y + 20, 0);
+
+    // Feedback capacitor
+    Component *cf = add_comp(circuit, COMP_CAPACITOR, x + 200, y - 40, 0);
+    cf->props.capacitor.capacitance = 100e-9;
+
+    // Ground for + input
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 160, y + 60, 0);
+
+    // Label
+    Component *label = add_comp(circuit, COMP_TEXT, x + 100, y - 80, 0);
+    strncpy(label->props.text.text, "Op-Amp Integrator", sizeof(label->props.text.text)-1);
+    label->props.text.font_size = 2;
+
+    // === CONNECTIONS ===
+    connect_terminals(circuit, vsrc, 1, gnd, 0);
+    connect_terminals(circuit, vsrc, 0, ri, 0);
+    connect_terminals(circuit, opamp, 1, gnd2, 0);
+
+    // Get positions
+    float inv_x, inv_y;
+    component_get_terminal_pos(opamp, 0, &inv_x, &inv_y);
+    float out_x, out_y;
+    component_get_terminal_pos(opamp, 2, &out_x, &out_y);
+    float cf_left_x, cf_left_y, cf_right_x, cf_right_y;
+    component_get_terminal_pos(cf, 0, &cf_left_x, &cf_left_y);
+    component_get_terminal_pos(cf, 1, &cf_right_x, &cf_right_y);
+    float ri_right_x, ri_right_y;
+    component_get_terminal_pos(ri, 1, &ri_right_x, &ri_right_y);
+
+    // Ri to - input
+    int inv_node = circuit_find_or_create_node(circuit, inv_x, inv_y, 5.0f);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, ri_right_x, ri_right_y, 5.0f), inv_node);
+    ri->node_ids[1] = inv_node;
+    opamp->node_ids[0] = inv_node;
+
+    // Feedback cap: - input to output via top path
+    circuit_add_wire(circuit, inv_node, circuit_find_or_create_node(circuit, inv_x, cf_left_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, inv_x, cf_left_y, 5.0f),
+                     circuit_find_or_create_node(circuit, cf_left_x, cf_left_y, 5.0f));
+    cf->node_ids[0] = inv_node;
+
+    int out_node = circuit_find_or_create_node(circuit, out_x, out_y, 5.0f);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, cf_right_x, cf_right_y, 5.0f),
+                     circuit_find_or_create_node(circuit, out_x, cf_right_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, out_x, cf_right_y, 5.0f), out_node);
+    cf->node_ids[1] = out_node;
+    opamp->node_ids[2] = out_node;
+
+    return 7;
+}
+
+// Op-Amp Differentiator:
+//              +---- R ----+
+//              |           |
+// Vin ---[C]---+--(-)\     |
+//                  (+)/----+--- Vout
+//                   |
+//                  GND
+//
+static int place_differentiator(Circuit *circuit, float x, float y) {
+    // Input source (triangle wave for smooth differentiation)
+    Component *vsrc = add_comp(circuit, COMP_TRIANGLE_WAVE, x, y + 40, 0);
+    if (!vsrc) return 0;
+    vsrc->props.triangle_wave.amplitude = 1.0;
+    vsrc->props.triangle_wave.frequency = 100.0;
+    Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
+
+    // Input capacitor
+    Component *ci = add_comp(circuit, COMP_CAPACITOR, x + 80, y, 0);
+    ci->props.capacitor.capacitance = 100e-9;
+
+    // Op-amp
+    Component *opamp = add_comp(circuit, COMP_OPAMP, x + 200, y + 20, 0);
+
+    // Feedback resistor
+    Component *rf = add_comp(circuit, COMP_RESISTOR, x + 200, y - 40, 0);
+    rf->props.resistor.resistance = 10000.0;
+
+    // Ground for + input
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 160, y + 60, 0);
+
+    // Label
+    Component *label = add_comp(circuit, COMP_TEXT, x + 80, y - 80, 0);
+    strncpy(label->props.text.text, "Op-Amp Differentiator", sizeof(label->props.text.text)-1);
+    label->props.text.font_size = 2;
+
+    // === CONNECTIONS ===
+    connect_terminals(circuit, vsrc, 1, gnd, 0);
+    connect_terminals(circuit, vsrc, 0, ci, 0);
+    connect_terminals(circuit, opamp, 1, gnd2, 0);
+
+    // Get positions
+    float inv_x, inv_y;
+    component_get_terminal_pos(opamp, 0, &inv_x, &inv_y);
+    float out_x, out_y;
+    component_get_terminal_pos(opamp, 2, &out_x, &out_y);
+    float rf_left_x, rf_left_y, rf_right_x, rf_right_y;
+    component_get_terminal_pos(rf, 0, &rf_left_x, &rf_left_y);
+    component_get_terminal_pos(rf, 1, &rf_right_x, &rf_right_y);
+    float ci_right_x, ci_right_y;
+    component_get_terminal_pos(ci, 1, &ci_right_x, &ci_right_y);
+
+    // Ci to - input
+    int inv_node = circuit_find_or_create_node(circuit, inv_x, inv_y, 5.0f);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, ci_right_x, ci_right_y, 5.0f), inv_node);
+    ci->node_ids[1] = inv_node;
+    opamp->node_ids[0] = inv_node;
+
+    // Feedback resistor: - input to output via top path
+    circuit_add_wire(circuit, inv_node, circuit_find_or_create_node(circuit, inv_x, rf_left_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, inv_x, rf_left_y, 5.0f),
+                     circuit_find_or_create_node(circuit, rf_left_x, rf_left_y, 5.0f));
+    rf->node_ids[0] = inv_node;
+
+    int out_node = circuit_find_or_create_node(circuit, out_x, out_y, 5.0f);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rf_right_x, rf_right_y, 5.0f),
+                     circuit_find_or_create_node(circuit, out_x, rf_right_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, out_x, rf_right_y, 5.0f), out_node);
+    rf->node_ids[1] = out_node;
+    opamp->node_ids[2] = out_node;
+
+    return 7;
+}
+
+// Summing Amplifier (3 inputs):
+//              +--------- Rf --------+
+//              |                     |
+// V1 ---[R1]---+                     |
+// V2 ---[R2]---+---(-)\              |
+// V3 ---[R3]---+   (+)/-----+--------+--- Vout
+//                   |
+//                  GND
+//
+static int place_summing_amp(Circuit *circuit, float x, float y) {
+    // Three input sources
+    Component *v1 = add_comp(circuit, COMP_DC_VOLTAGE, x - 80, y - 40, 0);
+    if (!v1) return 0;
+    v1->props.dc_voltage.voltage = 1.0;
+    Component *gnd1 = add_comp(circuit, COMP_GROUND, x - 80, y + 40, 0);
+
+    Component *v2 = add_comp(circuit, COMP_DC_VOLTAGE, x - 80, y + 80, 0);
+    v2->props.dc_voltage.voltage = 2.0;
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x - 80, y + 160, 0);
+
+    Component *v3 = add_comp(circuit, COMP_DC_VOLTAGE, x - 80, y + 200, 0);
+    v3->props.dc_voltage.voltage = 3.0;
+    Component *gnd3 = add_comp(circuit, COMP_GROUND, x - 80, y + 280, 0);
+
+    // Input resistors
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 20, y - 80, 0);
+    r1->props.resistor.resistance = 10000.0;
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 20, y + 40, 0);
+    r2->props.resistor.resistance = 10000.0;
+    Component *r3 = add_comp(circuit, COMP_RESISTOR, x + 20, y + 160, 0);
+    r3->props.resistor.resistance = 10000.0;
+
+    // Op-amp
+    Component *opamp = add_comp(circuit, COMP_OPAMP, x + 180, y + 60, 0);
+
+    // Feedback resistor
+    Component *rf = add_comp(circuit, COMP_RESISTOR, x + 180, y, 0);
+    rf->props.resistor.resistance = 10000.0;
+
+    // Ground for + input
+    Component *gnd_op = add_comp(circuit, COMP_GROUND, x + 140, y + 100, 0);
+
+    // Label
+    Component *label = add_comp(circuit, COMP_TEXT, x + 60, y - 120, 0);
+    strncpy(label->props.text.text, "Summing Amp (Vout = -(V1+V2+V3))", sizeof(label->props.text.text)-1);
+    label->props.text.font_size = 2;
+
+    // === CONNECTIONS ===
+    connect_terminals(circuit, v1, 1, gnd1, 0);
+    connect_terminals(circuit, v2, 1, gnd2, 0);
+    connect_terminals(circuit, v3, 1, gnd3, 0);
+    connect_terminals(circuit, v1, 0, r1, 0);
+    connect_terminals(circuit, v2, 0, r2, 0);
+    connect_terminals(circuit, v3, 0, r3, 0);
+    connect_terminals(circuit, opamp, 1, gnd_op, 0);
+
+    // Get positions
+    float inv_x, inv_y;
+    component_get_terminal_pos(opamp, 0, &inv_x, &inv_y);
+    float out_x, out_y;
+    component_get_terminal_pos(opamp, 2, &out_x, &out_y);
+    float rf_left_x, rf_left_y, rf_right_x, rf_right_y;
+    component_get_terminal_pos(rf, 0, &rf_left_x, &rf_left_y);
+    component_get_terminal_pos(rf, 1, &rf_right_x, &rf_right_y);
+    float r1_right_x, r1_right_y;
+    component_get_terminal_pos(r1, 1, &r1_right_x, &r1_right_y);
+    float r2_right_x, r2_right_y;
+    component_get_terminal_pos(r2, 1, &r2_right_x, &r2_right_y);
+    float r3_right_x, r3_right_y;
+    component_get_terminal_pos(r3, 1, &r3_right_x, &r3_right_y);
+
+    // Junction node at - input
+    int inv_node = circuit_find_or_create_node(circuit, inv_x, inv_y, 5.0f);
+    opamp->node_ids[0] = inv_node;
+
+    // Connect all input resistors to junction via vertical bus
+    float bus_x = inv_x - 20;  // Vertical bus position
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, r1_right_x, r1_right_y, 5.0f),
+                     circuit_find_or_create_node(circuit, bus_x, r1_right_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, bus_x, r1_right_y, 5.0f),
+                     circuit_find_or_create_node(circuit, bus_x, inv_y, 5.0f));
+    r1->node_ids[1] = inv_node;
+
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, r2_right_x, r2_right_y, 5.0f),
+                     circuit_find_or_create_node(circuit, bus_x, r2_right_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, bus_x, r2_right_y, 5.0f),
+                     circuit_find_or_create_node(circuit, bus_x, inv_y, 5.0f));
+    r2->node_ids[1] = inv_node;
+
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, r3_right_x, r3_right_y, 5.0f),
+                     circuit_find_or_create_node(circuit, bus_x, r3_right_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, bus_x, r3_right_y, 5.0f),
+                     circuit_find_or_create_node(circuit, bus_x, inv_y, 5.0f));
+    r3->node_ids[1] = inv_node;
+
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, bus_x, inv_y, 5.0f), inv_node);
+
+    // Feedback resistor
+    circuit_add_wire(circuit, inv_node, circuit_find_or_create_node(circuit, inv_x, rf_left_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, inv_x, rf_left_y, 5.0f),
+                     circuit_find_or_create_node(circuit, rf_left_x, rf_left_y, 5.0f));
+    rf->node_ids[0] = inv_node;
+
+    int out_node = circuit_find_or_create_node(circuit, out_x, out_y, 5.0f);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rf_right_x, rf_right_y, 5.0f),
+                     circuit_find_or_create_node(circuit, out_x, rf_right_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, out_x, rf_right_y, 5.0f), out_node);
+    rf->node_ids[1] = out_node;
+    opamp->node_ids[2] = out_node;
+
+    return 14;
+}
+
+// Comparator:
+// Compares two voltages and outputs high or low
+//
+// Vref ---+---(+)\
+//              (-)/-----+--- Vout
+// Vin ---+
+//
+static int place_comparator(Circuit *circuit, float x, float y) {
+    // Reference voltage (voltage divider)
+    Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x - 80, y - 60, 0);
+    if (!vcc) return 0;
+    vcc->props.dc_voltage.voltage = 10.0;
+    Component *gnd_vcc = add_comp(circuit, COMP_GROUND, x - 80, y + 20, 0);
+
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x, y - 40, 90);
+    r1->props.resistor.resistance = 10000.0;
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x, y + 40, 90);
+    r2->props.resistor.resistance = 10000.0;
+    Component *gnd_r2 = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
+
+    // Input signal (sine wave crossing the reference)
+    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 80, y + 140, 0);
+    vin->props.ac_voltage.amplitude = 6.0;
+    vin->props.ac_voltage.offset = 5.0;  // Oscillates around 5V reference
+    vin->props.ac_voltage.frequency = 100.0;
+    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 80, y + 220, 0);
+
+    // Op-amp as comparator
+    Component *opamp = add_comp(circuit, COMP_OPAMP, x + 120, y + 40, 0);
+
+    // Pull-up resistor for output (single supply operation)
+    Component *rpu = add_comp(circuit, COMP_RESISTOR, x + 200, y - 20, 90);
+    rpu->props.resistor.resistance = 10000.0;
+
+    // Label
+    Component *label = add_comp(circuit, COMP_TEXT, x + 40, y - 100, 0);
+    strncpy(label->props.text.text, "Voltage Comparator", sizeof(label->props.text.text)-1);
+    label->props.text.font_size = 2;
+
+    // === CONNECTIONS ===
+    connect_terminals(circuit, vcc, 1, gnd_vcc, 0);
+    connect_terminals(circuit, r2, 1, gnd_r2, 0);
+    connect_terminals(circuit, vin, 1, gnd_in, 0);
+
+    float vcc_x, vcc_y;
+    component_get_terminal_pos(vcc, 0, &vcc_x, &vcc_y);
+    float r1_top_x, r1_top_y, r1_bot_x, r1_bot_y;
+    component_get_terminal_pos(r1, 0, &r1_top_x, &r1_top_y);
+    component_get_terminal_pos(r1, 1, &r1_bot_x, &r1_bot_y);
+    float r2_top_x, r2_top_y;
+    component_get_terminal_pos(r2, 0, &r2_top_x, &r2_top_y);
+    float vin_x, vin_y;
+    component_get_terminal_pos(vin, 0, &vin_x, &vin_y);
+    float inv_x, inv_y, noninv_x, noninv_y, out_x, out_y;
+    component_get_terminal_pos(opamp, 0, &inv_x, &inv_y);
+    component_get_terminal_pos(opamp, 1, &noninv_x, &noninv_y);
+    component_get_terminal_pos(opamp, 2, &out_x, &out_y);
+    float rpu_top_x, rpu_top_y, rpu_bot_x, rpu_bot_y;
+    component_get_terminal_pos(rpu, 0, &rpu_top_x, &rpu_top_y);
+    component_get_terminal_pos(rpu, 1, &rpu_bot_x, &rpu_bot_y);
+
+    // Vcc to R1 and pull-up
+    int vcc_node = circuit_find_or_create_node(circuit, vcc_x, vcc_y, 5.0f);
+    circuit_add_wire(circuit, vcc_node, circuit_find_or_create_node(circuit, r1_top_x, vcc_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, r1_top_x, vcc_y, 5.0f),
+                     circuit_find_or_create_node(circuit, r1_top_x, r1_top_y, 5.0f));
+    vcc->node_ids[0] = vcc_node;
+    r1->node_ids[0] = vcc_node;
+
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, r1_top_x, vcc_y, 5.0f),
+                     circuit_find_or_create_node(circuit, rpu_top_x, vcc_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rpu_top_x, vcc_y, 5.0f),
+                     circuit_find_or_create_node(circuit, rpu_top_x, rpu_top_y, 5.0f));
+    rpu->node_ids[0] = vcc_node;
+
+    // Reference voltage junction (R1/R2 divider) to + input
+    int ref_node = circuit_find_or_create_node(circuit, r1_bot_x, r1_bot_y, 5.0f);
+    circuit_add_wire(circuit, ref_node, circuit_find_or_create_node(circuit, r2_top_x, r2_top_y, 5.0f));
+    r1->node_ids[1] = ref_node;
+    r2->node_ids[0] = ref_node;
+
+    circuit_add_wire(circuit, ref_node, circuit_find_or_create_node(circuit, noninv_x, r1_bot_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, noninv_x, r1_bot_y, 5.0f),
+                     circuit_find_or_create_node(circuit, noninv_x, noninv_y, 5.0f));
+    opamp->node_ids[1] = ref_node;
+
+    // Input signal to - input
+    int vin_node = circuit_find_or_create_node(circuit, vin_x, vin_y, 5.0f);
+    circuit_add_wire(circuit, vin_node, circuit_find_or_create_node(circuit, inv_x, vin_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, inv_x, vin_y, 5.0f),
+                     circuit_find_or_create_node(circuit, inv_x, inv_y, 5.0f));
+    vin->node_ids[0] = vin_node;
+    opamp->node_ids[0] = vin_node;
+
+    // Output with pull-up
+    int out_node = circuit_find_or_create_node(circuit, out_x, out_y, 5.0f);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, rpu_bot_x, rpu_bot_y, 5.0f),
+                     circuit_find_or_create_node(circuit, out_x, rpu_bot_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, out_x, rpu_bot_y, 5.0f), out_node);
+    rpu->node_ids[1] = out_node;
+    opamp->node_ids[2] = out_node;
+
+    return 12;
+}
+
 int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, float y) {
     if (!circuit) return 0;
 
@@ -1290,6 +2275,22 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
             return place_common_drain(circuit, x, y);
         case CIRCUIT_MULTISTAGE_AMP:
             return place_multistage_amp(circuit, x, y);
+        case CIRCUIT_DIFFERENTIAL_PAIR:
+            return place_differential_pair(circuit, x, y);
+        case CIRCUIT_CURRENT_MIRROR:
+            return place_current_mirror(circuit, x, y);
+        case CIRCUIT_PUSH_PULL:
+            return place_push_pull(circuit, x, y);
+        case CIRCUIT_CMOS_INVERTER:
+            return place_cmos_inverter(circuit, x, y);
+        case CIRCUIT_INTEGRATOR:
+            return place_integrator(circuit, x, y);
+        case CIRCUIT_DIFFERENTIATOR:
+            return place_differentiator(circuit, x, y);
+        case CIRCUIT_SUMMING_AMP:
+            return place_summing_amp(circuit, x, y);
+        case CIRCUIT_COMPARATOR:
+            return place_comparator(circuit, x, y);
         default:
             return 0;
     }

@@ -67,6 +67,10 @@ typedef enum {
     COMP_TRIANGLE_WAVE,
     COMP_SAWTOOTH_WAVE,
     COMP_NOISE_SOURCE,
+    // Switches
+    COMP_SPST_SWITCH,       // Single-pole single-throw switch
+    COMP_SPDT_SWITCH,       // Single-pole double-throw switch
+    COMP_PUSH_BUTTON,       // Momentary push button (normally open)
     // Annotation
     COMP_TEXT,
     COMP_TYPE_COUNT

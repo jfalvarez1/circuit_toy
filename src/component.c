@@ -338,6 +338,43 @@ static const ComponentTypeInfo component_info[] = {
             .color = 0xFFFFFFFF  // White
         }}
     },
+
+    [COMP_SPST_SWITCH] = {
+        "SPST Switch", "SW", 2,
+        {{ -40, 0, "1" }, { 40, 0, "2" }},
+        80, 30,
+        { .switch_spst = {
+            .closed = false,        // Default open
+            .r_on = 0.01,           // 10 mOhm on-resistance
+            .r_off = 1e9,           // 1 GOhm off-resistance
+            .momentary = false,
+            .default_closed = false
+        }}
+    },
+
+    [COMP_SPDT_SWITCH] = {
+        "SPDT Switch", "SW", 3,
+        {{ -40, 0, "C" }, { 40, -20, "A" }, { 40, 20, "B" }},  // Common, A, B
+        80, 50,
+        { .switch_spdt = {
+            .position = 0,          // Default to A
+            .r_on = 0.01,
+            .r_off = 1e9,
+            .momentary = false,
+            .default_pos = 0
+        }}
+    },
+
+    [COMP_PUSH_BUTTON] = {
+        "Push Button", "PB", 2,
+        {{ -40, 0, "1" }, { 40, 0, "2" }},
+        80, 30,
+        { .push_button = {
+            .pressed = false,
+            .r_on = 0.01,
+            .r_off = 1e9
+        }}
+    },
 };
 
 static int next_component_id = 1;
@@ -1125,6 +1162,47 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 matrix_add(A, n[1]-1, volt_idx, -1);
             }
             vector_add(b, volt_idx, V);
+            break;
+        }
+
+        case COMP_SPST_SWITCH: {
+            // SPST switch: simple variable resistance between terminals
+            // When closed: low resistance (r_on)
+            // When open: high resistance (r_off)
+            double R = comp->props.switch_spst.closed ?
+                       comp->props.switch_spst.r_on :
+                       comp->props.switch_spst.r_off;
+            double G = 1.0 / R;
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+            break;
+        }
+
+        case COMP_SPDT_SWITCH: {
+            // SPDT switch: Common terminal connects to either A or B
+            // Terminal 0 = Common, Terminal 1 = A, Terminal 2 = B
+            double r_on = comp->props.switch_spdt.r_on;
+            double r_off = comp->props.switch_spdt.r_off;
+            int pos = comp->props.switch_spdt.position;
+
+            // Common to A
+            double R_ca = (pos == 0) ? r_on : r_off;
+            double G_ca = 1.0 / R_ca;
+            STAMP_CONDUCTANCE(n[0], n[1], G_ca);
+
+            // Common to B
+            double R_cb = (pos == 1) ? r_on : r_off;
+            double G_cb = 1.0 / R_cb;
+            STAMP_CONDUCTANCE(n[0], n[2], G_cb);
+            break;
+        }
+
+        case COMP_PUSH_BUTTON: {
+            // Push button: momentary switch, normally open
+            double R = comp->props.push_button.pressed ?
+                       comp->props.push_button.r_on :
+                       comp->props.push_button.r_off;
+            double G = 1.0 / R;
+            STAMP_CONDUCTANCE(n[0], n[1], G);
             break;
         }
 
