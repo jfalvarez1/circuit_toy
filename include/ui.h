@@ -140,7 +140,7 @@ typedef struct {
     bool palette_scrolling;         // Currently dragging scrollbar
 
     // Circuit template palette
-    CircuitPaletteItem circuit_items[16];
+    CircuitPaletteItem circuit_items[24];
     int num_circuit_items;
     int selected_circuit_type;  // Currently selected circuit template (-1 = none)
     bool placing_circuit;       // True when placing a circuit template
