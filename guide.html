@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Circuit Playground - User Manual</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            line-height: 1.7;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 30px;
+            border-bottom: 2px solid #0f3460;
+        }
+        h1 {
+            color: #00d9ff;
+            font-size: 2.8em;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+        }
+        .subtitle {
+            color: #888;
+            font-size: 1.2em;
+            margin-bottom: 15px;
+        }
+        .version {
+            color: #e94560;
+            font-size: 0.95em;
+        }
+
+        /* Table of Contents */
+        .toc {
+            background: rgba(15, 52, 96, 0.4);
+            border-radius: 10px;
+            padding: 25px 30px;
+            margin-bottom: 40px;
+            border: 1px solid #0f3460;
+        }
+        .toc h2 {
+            color: #00d9ff;
+            margin-bottom: 20px;
+            font-size: 1.4em;
+            border-bottom: none;
+        }
+        .toc-columns {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 10px 40px;
+        }
+        .toc a {
+            color: #b0b0b0;
+            text-decoration: none;
+            display: block;
+            padding: 6px 0;
+            transition: color 0.2s, padding-left 0.2s;
+        }
+        .toc a:hover {
+            color: #00d9ff;
+            padding-left: 10px;
+        }
+        .toc-section {
+            font-weight: bold;
+            color: #e94560;
+            margin-top: 10px;
+        }
+        .toc-section:first-child {
+            margin-top: 0;
+        }
+
+        h2 {
+            color: #00d9ff;
+            margin: 50px 0 25px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #0f3460;
+            font-size: 1.8em;
+        }
+        h3 {
+            color: #e94560;
+            margin: 30px 0 15px;
+            font-size: 1.3em;
+        }
+        h4 {
+            color: #00ff88;
+            margin: 20px 0 10px;
+            font-size: 1.1em;
+        }
+        .section {
+            background: rgba(15, 52, 96, 0.3);
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid #0f3460;
+        }
+        .section p {
+            margin-bottom: 15px;
+        }
+
+        /* Component Grid */
+        .component-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .component-card {
+            background: rgba(22, 33, 62, 0.8);
+            border-radius: 8px;
+            padding: 18px;
+            border: 1px solid #2a2a4e;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .component-card:hover {
+            transform: translateY(-3px);
+            border-color: #00d9ff;
+        }
+        .component-card h4 {
+            color: #00d9ff;
+            margin-bottom: 10px;
+            margin-top: 0;
+        }
+        .component-card p {
+            font-size: 0.9em;
+            color: #b0b0b0;
+            margin-bottom: 0;
+        }
+        .component-card .shortcut {
+            margin-top: 8px;
+            font-size: 0.85em;
+            color: #666;
+        }
+
+        /* Tables */
+        .shortcut-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .shortcut-table th,
+        .shortcut-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #0f3460;
+        }
+        .shortcut-table th {
+            background: rgba(0, 217, 255, 0.1);
+            color: #00d9ff;
+            font-weight: 600;
+        }
+        .shortcut-table tr:hover {
+            background: rgba(0, 217, 255, 0.05);
+        }
+
+        /* Keyboard keys */
+        kbd {
+            background: #2a2a4e;
+            border: 1px solid #3a3a5e;
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            color: #00d9ff;
+            font-size: 0.9em;
+        }
+
+        /* Tips and Warnings */
+        .tip {
+            background: rgba(0, 255, 136, 0.1);
+            border-left: 4px solid #00ff88;
+            padding: 18px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .tip-title {
+            color: #00ff88;
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 1.05em;
+        }
+        .warning {
+            background: rgba(255, 170, 0, 0.1);
+            border-left: 4px solid #ffaa00;
+            padding: 18px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .warning-title {
+            color: #ffaa00;
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 1.05em;
+        }
+        .note {
+            background: rgba(0, 217, 255, 0.1);
+            border-left: 4px solid #00d9ff;
+            padding: 18px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .note-title {
+            color: #00d9ff;
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 1.05em;
+        }
+
+        /* Lists */
+        ul, ol {
+            margin-left: 25px;
+            margin-bottom: 15px;
+        }
+        li {
+            margin: 10px 0;
+        }
+        li ul, li ol {
+            margin-top: 8px;
+            margin-bottom: 8px;
+        }
+
+        /* Workflow Steps */
+        .workflow-step {
+            display: flex;
+            align-items: flex-start;
+            margin: 18px 0;
+        }
+        .step-number {
+            background: #e94560;
+            color: white;
+            min-width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 18px;
+            flex-shrink: 0;
+        }
+        .step-content {
+            flex: 1;
+        }
+        .step-content strong {
+            color: #00d9ff;
+        }
+
+        /* Code */
+        code {
+            background: #2a2a4e;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            color: #e94560;
+            font-size: 0.95em;
+        }
+        pre {
+            background: #1a1a2e;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 15px 0;
+            border: 1px solid #2a2a4e;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+            color: #e0e0e0;
+        }
+
+        /* Interface Diagram */
+        .interface-diagram {
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 0.85em;
+            line-height: 1.4;
+            overflow-x: auto;
+        }
+        .interface-diagram .label {
+            color: #00d9ff;
+        }
+        .interface-diagram .area {
+            color: #e94560;
+        }
+
+        /* Feature List */
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .feature-item {
+            background: rgba(22, 33, 62, 0.6);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #2a2a4e;
+        }
+        .feature-item h4 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .feature-item p {
+            margin-bottom: 0;
+            color: #b0b0b0;
+            font-size: 0.95em;
+        }
+
+        /* Color Swatches */
+        .color-swatch {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+            vertical-align: middle;
+            margin-right: 6px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            margin-top: 60px;
+            padding: 30px;
+            color: #666;
+            border-top: 1px solid #0f3460;
+        }
+        footer a {
+            color: #00d9ff;
+            text-decoration: none;
+        }
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1a1a2e;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #0f3460;
+            border-radius: 5px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00d9ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Circuit Playground</h1>
+            <p class="subtitle">Interactive Circuit Simulator - User Manual</p>
+            <p class="version">Version 2.0</p>
+        </header>
+
+        <!-- Table of Contents -->
+        <nav class="toc">
+            <h2>Table of Contents</h2>
+            <div class="toc-columns">
+                <div>
+                    <div class="toc-section">Getting Started</div>
+                    <a href="#introduction">1. Introduction</a>
+                    <a href="#interface">2. Interface Overview</a>
+                    <a href="#quick-start">3. Quick Start Tutorial</a>
+
+                    <div class="toc-section">Components</div>
+                    <a href="#sources">4. Voltage & Current Sources</a>
+                    <a href="#waveforms">5. Waveform Generators</a>
+                    <a href="#passive">6. Passive Components</a>
+                    <a href="#semiconductors">7. Semiconductors</a>
+                </div>
+                <div>
+                    <div class="toc-section">Using the Simulator</div>
+                    <a href="#tools">8. Tools</a>
+                    <a href="#properties">9. Editing Properties</a>
+                    <a href="#simulation">10. Running Simulations</a>
+                    <a href="#templates">11. Circuit Templates</a>
+
+                    <div class="toc-section">Analysis Tools</div>
+                    <a href="#oscilloscope">12. Oscilloscope</a>
+                    <a href="#measurements">13. Measurements</a>
+                    <a href="#advanced">14. Advanced Analysis</a>
+                </div>
+                <div>
+                    <div class="toc-section">Reference</div>
+                    <a href="#shortcuts">15. Keyboard Shortcuts</a>
+                    <a href="#tips">16. Tips & Best Practices</a>
+                    <a href="#troubleshooting">17. Troubleshooting</a>
+                    <a href="#building">18. Building from Source</a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- 1. Introduction -->
+        <section id="introduction" class="section">
+            <h2>1. Introduction</h2>
+            <p>Circuit Playground is an interactive electronic circuit simulator designed for learning, experimentation, and rapid prototyping. Inspired by creative sandbox games like The Powder Toy, it combines powerful SPICE-like simulation with an intuitive visual interface.</p>
+
+            <h3>Key Features</h3>
+            <div class="feature-list">
+                <div class="feature-item">
+                    <h4>Real-Time Simulation</h4>
+                    <p>Watch your circuits come alive with real-time voltage and current visualization. See electron flow animated through wires.</p>
+                </div>
+                <div class="feature-item">
+                    <h4>Accurate Analysis</h4>
+                    <p>Uses Modified Nodal Analysis (MNA) with Newton-Raphson iteration for nonlinear components like diodes and transistors.</p>
+                </div>
+                <div class="feature-item">
+                    <h4>Digital Oscilloscope</h4>
+                    <p>Built-in 4-channel oscilloscope with triggering, cursors, measurements, and FFT spectrum analysis.</p>
+                </div>
+                <div class="feature-item">
+                    <h4>Circuit Templates</h4>
+                    <p>Pre-built circuit templates for common configurations: voltage dividers, amplifiers, filters, and more.</p>
+                </div>
+                <div class="feature-item">
+                    <h4>Visual Feedback</h4>
+                    <p>Components glow based on power dissipation, LEDs light up with realistic colors, and warnings appear for dangerous conditions.</p>
+                </div>
+                <div class="feature-item">
+                    <h4>Advanced Analysis</h4>
+                    <p>Parametric sweep, Monte Carlo analysis, and waveform measurements for serious circuit design work.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. Interface Overview -->
+        <section id="interface" class="section">
+            <h2>2. Interface Overview</h2>
+            <p>The Circuit Playground interface is divided into several key areas:</p>
+
+            <div class="interface-diagram">
+<pre>
++-----------------------------------------------------------------------------------+
+|  <span class="label">[Run]</span> <span class="label">[Pause]</span> <span class="label">[Step]</span> <span class="label">[Reset]</span> <span class="label">[Clear]</span>         <span class="label">[Save]</span> <span class="label">[Load]</span>              <span class="area">TOOLBAR</span>  |
++-----------------------------------------------------------------------------------+
+|          |                                           |                            |
+| <span class="area">PALETTE</span>  |                                           | <span class="area">PROPERTIES PANEL</span>         |
+|          |                                           |                            |
+| Sources  |                                           | Component: Resistor        |
+|  GND     |                                           | Resistance: [1k Ohm]       |
+|  DC V    |              <span class="area">CANVAS AREA</span>                  | Tolerance: 5%              |
+|  AC V    |                                           | Power Rating: 0.25W        |
+|  DC I    |         (Build your circuits here)       | Power Used: 0.01W          |
+|          |                                           |                            |
+| Passive  |                                           | Click value to edit        |
+|  R       |                                           |--------------------------- |
+|  C       |                                           |                            |
+|  L       |                                           | <span class="area">MEASUREMENTS</span>              |
+|  D       |                                           | V: 5.00V                   |
+|          |                                           | I: 5.00mA                  |
+| Waves    |                                           |--------------------------- |
+|  SQR     |                                           |                            |
+|  TRI     |                                           | <span class="area">OSCILLOSCOPE</span>              |
+|  SAW     |                                           | ~~~~~~~~~~~~~~~~~~~~~~~~   |
+|          |                                           | ~~~~~~~~~~~~~~~~~~~~~~~~   |
+| Tools    |                                           | [V/div] [T/div] [Trig]     |
+|  Select  |                                           | [CUR] [FFT] [MODE]         |
+|  Wire    |                                           |                            |
+| Circuits |                                           |                            |
+|  Divider |                                           |                            |
+|  RC Filt |                                           |                            |
++-----------------------------------------------------------------------------------+
+| <span class="area">STATUS BAR</span>:  t=0.00ms  |  Components: 5  |  Nodes: 4  |  FPS: 60              |
++-----------------------------------------------------------------------------------+
+</pre>
+            </div>
+
+            <h3>Interface Areas</h3>
+            <ul>
+                <li><strong>Toolbar</strong> - Simulation controls (Run, Pause, Step, Reset) and file operations (Save, Load, Clear)</li>
+                <li><strong>Palette</strong> - Component selection on the left side, organized by category (Sources, Passive, Semiconductors, Waveforms, Tools, Circuit Templates)</li>
+                <li><strong>Canvas</strong> - Main working area where you build and visualize circuits</li>
+                <li><strong>Properties Panel</strong> - Shows details of the selected component and allows editing values</li>
+                <li><strong>Measurements Panel</strong> - Displays real-time voltage and current readings</li>
+                <li><strong>Oscilloscope</strong> - Waveform display with controls for time base, voltage scale, and triggering</li>
+                <li><strong>Status Bar</strong> - Shows simulation time, component/node counts, and system status</li>
+            </ul>
+
+            <div class="tip">
+                <div class="tip-title">Resizable Panels</div>
+                You can resize the oscilloscope by dragging its top or left edge. The properties panel can also be resized by dragging its left edge.
+            </div>
+        </section>
+
+        <!-- 3. Quick Start Tutorial -->
+        <section id="quick-start" class="section">
+            <h2>3. Quick Start Tutorial</h2>
+            <p>Let's build a simple LED circuit to learn the basics. This circuit will light up an LED using a battery and current-limiting resistor.</p>
+
+            <h3>Step-by-Step Instructions</h3>
+
+            <div class="workflow-step">
+                <span class="step-number">1</span>
+                <div class="step-content">
+                    <strong>Place a Ground Reference</strong><br>
+                    Click <kbd>GND</kbd> in the left palette, then click on the canvas to place the ground symbol. Every circuit needs exactly one ground to establish a 0V reference point.
+                </div>
+            </div>
+
+            <div class="workflow-step">
+                <span class="step-number">2</span>
+                <div class="step-content">
+                    <strong>Add a DC Voltage Source</strong><br>
+                    Click <kbd>DC V</kbd> in the palette, then click on the canvas above the ground. This represents your battery. By default it's set to 5V.
+                </div>
+            </div>
+
+            <div class="workflow-step">
+                <span class="step-number">3</span>
+                <div class="step-content">
+                    <strong>Add a Resistor</strong><br>
+                    Click <kbd>R</kbd> in the palette and place it to the right of the voltage source. Press <kbd>R</kbd> on your keyboard to rotate it if needed. The default 1kΩ value will work for our LED.
+                </div>
+            </div>
+
+            <div class="workflow-step">
+                <span class="step-number">4</span>
+                <div class="step-content">
+                    <strong>Add an LED</strong><br>
+                    Click <kbd>LED</kbd> in the palette (under Semiconductors) and place it to the right of the resistor. Make sure the arrow points toward ground (current flows from + to -).
+                </div>
+            </div>
+
+            <div class="workflow-step">
+                <span class="step-number">5</span>
+                <div class="step-content">
+                    <strong>Connect with Wires</strong><br>
+                    Click <kbd>Wire</kbd> in the Tools section. Click on a component terminal (the small circles) to start a wire, then click on another terminal to connect them. Connect:
+                    <ul>
+                        <li>Voltage source (+) to Resistor</li>
+                        <li>Resistor to LED anode (flat side)</li>
+                        <li>LED cathode to Ground</li>
+                        <li>Voltage source (-) to Ground</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="workflow-step">
+                <span class="step-number">6</span>
+                <div class="step-content">
+                    <strong>Run the Simulation</strong><br>
+                    Click the <kbd>Run</kbd> button in the toolbar or press <kbd>Space</kbd>. The LED should light up! You'll see yellow particles flowing through the wires representing current, and the LED will glow with its characteristic color.
+                </div>
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Change the LED Color</div>
+                Select the LED and look at the Properties panel. Click on the Wavelength value to edit it. Try 630 for red, 525 for green, or 470 for blue.
+            </div>
+
+            <div class="warning">
+                <div class="warning-title">Simulation Won't Start?</div>
+                Make sure you have exactly one Ground component in your circuit. The status bar will show an error if there's no ground reference or if components are not properly connected.
+            </div>
+        </section>
+
+        <!-- 4. Voltage & Current Sources -->
+        <section id="sources" class="section">
+            <h2>4. Voltage & Current Sources</h2>
+            <p>Sources provide electrical energy to your circuit. Circuit Playground includes several types:</p>
+
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>GND - Ground</h4>
+                    <p>The 0V reference point for your circuit. Required for every simulation. Place one ground in each circuit.</p>
+                    <div class="shortcut">Keyboard: <kbd>G</kbd> then place</div>
+                </div>
+                <div class="component-card">
+                    <h4>DC V - DC Voltage Source</h4>
+                    <p>Provides constant voltage (like a battery). Default: 5V. Range: -1000V to +1000V.</p>
+                    <div class="shortcut">Properties: Voltage</div>
+                </div>
+                <div class="component-card">
+                    <h4>AC V - AC Voltage Source</h4>
+                    <p>Provides sinusoidal alternating voltage. Configurable amplitude, frequency, phase, and DC offset.</p>
+                    <div class="shortcut">Properties: Amplitude, Frequency, Phase, Offset</div>
+                </div>
+                <div class="component-card">
+                    <h4>DC I - DC Current Source</h4>
+                    <p>Forces a constant current through the circuit. Useful for biasing and testing. Default: 1mA.</p>
+                    <div class="shortcut">Properties: Current</div>
+                </div>
+            </div>
+
+            <h3>AC Voltage Source Parameters</h3>
+            <table class="shortcut-table">
+                <thead>
+                    <tr>
+                        <th>Parameter</th>
+                        <th>Description</th>
+                        <th>Default</th>
+                        <th>Units</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Amplitude</td>
+                        <td>Peak voltage of the sine wave</td>
+                        <td>5.0</td>
+                        <td>Volts (V)</td>
+                    </tr>
+                    <tr>
+                        <td>Frequency</td>
+                        <td>Number of cycles per second</td>
+                        <td>1000</td>
+                        <td>Hertz (Hz)</td>
+                    </tr>
+                    <tr>
+                        <td>Phase</td>
+                        <td>Starting phase angle</td>
+                        <td>0</td>
+                        <td>Degrees (°)</td>
+                    </tr>
+                    <tr>
+                        <td>Offset</td>
+                        <td>DC offset added to the waveform</td>
+                        <td>0</td>
+                        <td>Volts (V)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- 5. Waveform Generators -->
+        <section id="waveforms" class="section">
+            <h2>5. Waveform Generators</h2>
+            <p>In addition to sine waves, Circuit Playground provides several other waveform generators for testing and signal generation:</p>
+
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>SQR - Square Wave</h4>
+                    <p>Generates a square wave signal. Adjustable amplitude, frequency, duty cycle, phase, and offset.</p>
+                    <div class="shortcut">Properties: Amplitude, Frequency, Duty (0-100%)</div>
+                </div>
+                <div class="component-card">
+                    <h4>TRI - Triangle Wave</h4>
+                    <p>Generates a triangle wave signal. Linear rise and fall between peak values.</p>
+                    <div class="shortcut">Properties: Amplitude, Frequency</div>
+                </div>
+                <div class="component-card">
+                    <h4>SAW - Sawtooth Wave</h4>
+                    <p>Generates a sawtooth wave signal. Linear rise followed by instant fall (or vice versa).</p>
+                    <div class="shortcut">Properties: Amplitude, Frequency</div>
+                </div>
+                <div class="component-card">
+                    <h4>Noise - Noise Source</h4>
+                    <p>Generates random noise signal. Useful for testing filter response and noise immunity.</p>
+                    <div class="shortcut">Properties: Amplitude</div>
+                </div>
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Duty Cycle</div>
+                The duty cycle controls what percentage of each period the square wave is "high". 50% gives a symmetric square wave, while other values create pulses. This is useful for PWM (Pulse Width Modulation) circuits.
+            </div>
+        </section>
+
+        <!-- 6. Passive Components -->
+        <section id="passive" class="section">
+            <h2>6. Passive Components</h2>
+            <p>Passive components don't require external power to operate. They form the foundation of most circuits.</p>
+
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>R - Resistor</h4>
+                    <p>Opposes current flow. Follows Ohm's Law: V = I × R. Shows power dissipation and overheating warnings.</p>
+                    <div class="shortcut">Properties: Resistance, Tolerance, Power Rating</div>
+                </div>
+                <div class="component-card">
+                    <h4>C - Capacitor</h4>
+                    <p>Stores energy in an electric field. Current leads voltage by 90°. I = C × dV/dt.</p>
+                    <div class="shortcut">Properties: Capacitance</div>
+                </div>
+                <div class="component-card">
+                    <h4>L - Inductor</h4>
+                    <p>Stores energy in a magnetic field. Voltage leads current by 90°. V = L × dI/dt.</p>
+                    <div class="shortcut">Properties: Inductance</div>
+                </div>
+                <div class="component-card">
+                    <h4>D - Diode</h4>
+                    <p>Allows current flow in one direction only. Uses Shockley diode equation for realistic behavior.</p>
+                    <div class="shortcut">Forward voltage: ~0.7V (silicon)</div>
+                </div>
+            </div>
+
+            <h3>Engineering Notation</h3>
+            <p>When entering component values, you can use engineering suffixes:</p>
+            <table class="shortcut-table">
+                <thead>
+                    <tr>
+                        <th>Suffix</th>
+                        <th>Name</th>
+                        <th>Multiplier</th>
+                        <th>Example</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>p</td><td>pico</td><td>10⁻¹²</td><td>100p = 100pF</td></tr>
+                    <tr><td>n</td><td>nano</td><td>10⁻⁹</td><td>10n = 10nF</td></tr>
+                    <tr><td>u or μ</td><td>micro</td><td>10⁻⁶</td><td>47u = 47μF</td></tr>
+                    <tr><td>m</td><td>milli</td><td>10⁻³</td><td>2.2m = 2.2mH</td></tr>
+                    <tr><td>k</td><td>kilo</td><td>10³</td><td>4.7k = 4.7kΩ</td></tr>
+                    <tr><td>M</td><td>mega</td><td>10⁶</td><td>1M = 1MΩ</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- 7. Semiconductors -->
+        <section id="semiconductors" class="section">
+            <h2>7. Semiconductors</h2>
+            <p>Active components that can amplify signals or switch current. These use nonlinear models solved with Newton-Raphson iteration.</p>
+
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>LED - Light Emitting Diode</h4>
+                    <p>A diode that emits light when forward biased. Color depends on wavelength setting. Shows realistic glow intensity based on current.</p>
+                    <div class="shortcut">Properties: Wavelength (nm)</div>
+                </div>
+                <div class="component-card">
+                    <h4>Zener - Zener Diode</h4>
+                    <p>Allows reverse current flow at a specific breakdown voltage. Used for voltage regulation.</p>
+                    <div class="shortcut">Breakdown voltage: 5.1V typical</div>
+                </div>
+                <div class="component-card">
+                    <h4>Schottky - Schottky Diode</h4>
+                    <p>Low forward voltage drop (~0.3V). Faster switching than regular diodes.</p>
+                </div>
+                <div class="component-card">
+                    <h4>NPN / PNP - BJT Transistors</h4>
+                    <p>Bipolar junction transistors for amplification and switching. Uses simplified Ebers-Moll model.</p>
+                    <div class="shortcut">Terminals: Base, Collector, Emitter</div>
+                </div>
+                <div class="component-card">
+                    <h4>NMOS / PMOS - MOSFETs</h4>
+                    <p>Field-effect transistors. Voltage-controlled current sources with high input impedance.</p>
+                    <div class="shortcut">Terminals: Gate, Drain, Source</div>
+                </div>
+                <div class="component-card">
+                    <h4>OpAmp - Operational Amplifier</h4>
+                    <p>High-gain differential amplifier. Ideal model with configurable gain and output rails.</p>
+                    <div class="shortcut">Terminals: +In, -In, Out (and power)</div>
+                </div>
+            </div>
+
+            <h3>LED Wavelength to Color</h3>
+            <table class="shortcut-table">
+                <thead>
+                    <tr>
+                        <th>Wavelength</th>
+                        <th>Color</th>
+                        <th>Forward Voltage</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>380-440nm</td><td><span class="color-swatch" style="background:#8000ff"></span>Violet</td><td>~2.8V</td></tr>
+                    <tr><td>440-490nm</td><td><span class="color-swatch" style="background:#0066ff"></span>Blue</td><td>~3.2V</td></tr>
+                    <tr><td>490-510nm</td><td><span class="color-swatch" style="background:#00ffff"></span>Cyan</td><td>~3.2V</td></tr>
+                    <tr><td>510-580nm</td><td><span class="color-swatch" style="background:#00ff00"></span>Green</td><td>~2.2V</td></tr>
+                    <tr><td>580-600nm</td><td><span class="color-swatch" style="background:#ffff00"></span>Yellow</td><td>~2.1V</td></tr>
+                    <tr><td>600-640nm</td><td><span class="color-swatch" style="background:#ff8800"></span>Orange</td><td>~2.0V</td></tr>
+                    <tr><td>640-780nm</td><td><span class="color-swatch" style="background:#ff0000"></span>Red</td><td>~1.8V</td></tr>
+                    <tr><td>&gt;780nm</td><td><span class="color-swatch" style="background:#880000"></span>Infrared</td><td>~1.4V</td></tr>
+                    <tr><td>0</td><td><span class="color-swatch" style="background:#ffffff"></span>White</td><td>~3.2V</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- 8. Tools -->
+        <section id="tools" class="section">
+            <h2>8. Tools</h2>
+            <p>Tools are used to interact with and modify your circuit.</p>
+
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>Select Tool</h4>
+                    <p>Default tool. Click to select components, drag to move them. Click empty space to deselect. Selected components can be rotated, deleted, or modified.</p>
+                    <div class="shortcut">Keyboard: <kbd>Escape</kbd> returns to Select</div>
+                </div>
+                <div class="component-card">
+                    <h4>Wire Tool</h4>
+                    <p>Draw connections between components. Click a terminal to start, click another to finish. Wires automatically route in straight lines.</p>
+                    <div class="shortcut">Keyboard: <kbd>W</kbd></div>
+                </div>
+                <div class="component-card">
+                    <h4>Delete Tool</h4>
+                    <p>Remove components and wires. Click on any element to delete it. Deleting a component also removes its connected wires.</p>
+                    <div class="shortcut">Keyboard: <kbd>Delete</kbd> or <kbd>Backspace</kbd></div>
+                </div>
+                <div class="component-card">
+                    <h4>Probe Tool</h4>
+                    <p>Place measurement probes on circuit nodes. Each probe connects to an oscilloscope channel (up to 4 probes). Drag probes to reposition.</p>
+                    <div class="shortcut">Keyboard: <kbd>P</kbd></div>
+                </div>
+            </div>
+
+            <h3>Mouse Controls</h3>
+            <table class="shortcut-table">
+                <thead>
+                    <tr>
+                        <th>Action</th>
+                        <th>Mouse Control</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>Select/Place component</td><td>Left click</td></tr>
+                    <tr><td>Drag component</td><td>Left click and drag</td></tr>
+                    <tr><td>Pan view</td><td>Middle mouse drag</td></tr>
+                    <tr><td>Zoom in/out</td><td>Scroll wheel</td></tr>
+                    <tr><td>Adjust selected value</td><td>Scroll wheel over properties panel</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- 9. Editing Properties -->
+        <section id="properties" class="section">
+            <h2>9. Editing Properties</h2>
+            <p>Every component has editable properties that control its behavior. There are several ways to modify these values:</p>
+
+            <h3>Method 1: Click to Edit (Recommended)</h3>
+            <div class="workflow-step">
+                <span class="step-number">1</span>
+                <div class="step-content">
+                    <strong>Select a Component</strong><br>
+                    Click on a component in the canvas to select it. Its properties will appear in the right panel.
+                </div>
+            </div>
+            <div class="workflow-step">
+                <span class="step-number">2</span>
+                <div class="step-content">
+                    <strong>Click on a Value</strong><br>
+                    In the properties panel, click directly on the value field (the highlighted box showing the current value, not the label).
+                </div>
+            </div>
+            <div class="workflow-step">
+                <span class="step-number">3</span>
+                <div class="step-content">
+                    <strong>Type the New Value</strong><br>
+                    Enter the new value using engineering notation if desired (e.g., <code>4.7k</code> for 4700, <code>100n</code> for 100nF). The field supports these suffixes: p, n, u, m, k, M.
+                </div>
+            </div>
+            <div class="workflow-step">
+                <span class="step-number">4</span>
+                <div class="step-content">
+                    <strong>Press Enter to Apply</strong><br>
+                    Press <kbd>Enter</kbd> to confirm the new value, or <kbd>Escape</kbd> to cancel.
+                </div>
+            </div>
+
+            <h3>Method 2: Scroll Wheel</h3>
+            <p>For quick adjustments, select a component and use the scroll wheel while hovering over the properties panel:</p>
+            <ul>
+                <li><strong>Scroll up</strong> - Increase value by 5%</li>
+                <li><strong>Shift + Scroll up</strong> - Increase value by 20%</li>
+                <li><strong>Scroll down</strong> - Decrease value by 5%</li>
+                <li><strong>Shift + Scroll down</strong> - Decrease value by 20%</li>
+            </ul>
+
+            <h3>Method 3: Keyboard Shortcuts</h3>
+            <p>With a component selected:</p>
+            <ul>
+                <li><kbd>+</kbd> or <kbd>=</kbd> - Increase primary value by 10%</li>
+                <li><kbd>-</kbd> - Decrease primary value by 10%</li>
+                <li><kbd>F</kbd> - Increase frequency (for AC sources)</li>
+                <li><kbd>Shift</kbd>+<kbd>F</kbd> - Decrease frequency</li>
+            </ul>
+
+            <div class="tip">
+                <div class="tip-title">Property Status Messages</div>
+                Watch the status bar at the bottom of the screen for feedback. It will show "Property updated" when a value is successfully changed, or helpful messages if something goes wrong.
+            </div>
+        </section>
+
+        <!-- 10. Running Simulations -->
+        <section id="simulation" class="section">
+            <h2>10. Running Simulations</h2>
+
+            <h3>Simulation Controls</h3>
+            <table class="shortcut-table">
+                <thead>
+                    <tr>
+                        <th>Button</th>
+                        <th>Shortcut</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Run</strong></td>
+                        <td><kbd>Space</kbd></td>
+                        <td>Start continuous simulation. The circuit will be analyzed in real-time.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Pause</strong></td>
+                        <td><kbd>Space</kbd></td>
+                        <td>Pause the simulation while preserving current state.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Step</strong></td>
+                        <td><kbd>.</kbd></td>
+                        <td>Advance simulation by one time step. Useful for debugging.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Reset</strong></td>
+                        <td><kbd>Ctrl</kbd>+<kbd>R</kbd></td>
+                        <td>Reset simulation time to zero and clear capacitor/inductor states.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Clear</strong></td>
+                        <td><kbd>Ctrl</kbd>+<kbd>N</kbd></td>
+                        <td>Clear the entire canvas and start a new circuit.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>How Simulation Works</h3>
+            <p>Circuit Playground uses <strong>Modified Nodal Analysis (MNA)</strong> combined with time-domain integration:</p>
+            <ol>
+                <li><strong>Matrix Construction</strong> - Each component "stamps" its conductance and current contributions into a system matrix</li>
+                <li><strong>Linear Solving</strong> - Gaussian elimination solves for node voltages and branch currents</li>
+                <li><strong>Nonlinear Iteration</strong> - For diodes and transistors, Newton-Raphson iteration refines the solution</li>
+                <li><strong>Time Integration</strong> - Capacitors and inductors use backward Euler for transient analysis</li>
+                <li><strong>Convergence Check</strong> - The solution is verified for numerical stability</li>
+            </ol>
+
+            <h3>Simulation Speed</h3>
+            <p>The simulation runs at approximately 1000 steps per second of real time. For faster signals (high frequencies), you may want to use the oscilloscope's time base controls to see more detail.</p>
+
+            <div class="warning">
+                <div class="warning-title">Convergence Issues</div>
+                If the simulation shows errors or unstable behavior, check for:
+                <ul>
+                    <li>Missing ground connection</li>
+                    <li>Floating nodes (unconnected terminals)</li>
+                    <li>Short circuits (voltage source directly to ground with no resistance)</li>
+                    <li>Unrealistic component values</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- 11. Circuit Templates -->
+        <section id="templates" class="section">
+            <h2>11. Circuit Templates</h2>
+            <p>Circuit Templates provide pre-built circuit configurations that you can place with a single click. They're great for learning and quick prototyping.</p>
+
+            <h3>Available Templates</h3>
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>Voltage Divider</h4>
+                    <p>Two resistors in series creating a voltage ratio. Classic reference circuit for understanding Ohm's law.</p>
+                </div>
+                <div class="component-card">
+                    <h4>RC Low-Pass Filter</h4>
+                    <p>Resistor-capacitor filter that passes low frequencies and attenuates high frequencies.</p>
+                </div>
+                <div class="component-card">
+                    <h4>RC High-Pass Filter</h4>
+                    <p>Resistor-capacitor filter that passes high frequencies and blocks DC and low frequencies.</p>
+                </div>
+                <div class="component-card">
+                    <h4>LED Circuit</h4>
+                    <p>Simple LED with current-limiting resistor. Properly biased for safe operation.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Half-Wave Rectifier</h4>
+                    <p>Single diode converting AC to pulsating DC. Foundation of power supply design.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Full-Wave Rectifier</h4>
+                    <p>Four-diode bridge converting AC to full-wave DC. More efficient than half-wave.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Inverting Amplifier</h4>
+                    <p>Op-amp circuit with negative gain. Output is inverted and scaled version of input.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Non-Inverting Amplifier</h4>
+                    <p>Op-amp circuit with positive gain. Output is in-phase with input.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Voltage Follower</h4>
+                    <p>Unity-gain buffer with high input impedance. Used for impedance matching.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Summing Amplifier</h4>
+                    <p>Op-amp circuit that adds multiple input signals together.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Differentiator</h4>
+                    <p>Op-amp circuit that outputs the derivative of the input signal.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Integrator</h4>
+                    <p>Op-amp circuit that outputs the integral of the input signal.</p>
+                </div>
+            </div>
+
+            <h3>Using Templates</h3>
+            <ol>
+                <li>Scroll down in the left palette to find the "Circuits" section</li>
+                <li>Click on a template name to select it</li>
+                <li>Click on the canvas where you want to place the circuit</li>
+                <li>The complete circuit will be placed with proper component values and wiring</li>
+            </ol>
+
+            <div class="tip">
+                <div class="tip-title">Modifying Templates</div>
+                After placing a template, you can modify any component's values or add additional components to customize the circuit for your needs.
+            </div>
+        </section>
+
+        <!-- 12. Oscilloscope -->
+        <section id="oscilloscope" class="section">
+            <h2>12. Oscilloscope</h2>
+            <p>The built-in digital oscilloscope displays voltage waveforms over time. It supports up to 4 channels with independent triggering and measurement capabilities.</p>
+
+            <h3>Setting Up Probes</h3>
+            <ol>
+                <li>Select the <strong>Probe</strong> tool from the palette (or press <kbd>P</kbd>)</li>
+                <li>Click on a node (wire junction) in your circuit</li>
+                <li>A colored probe marker will appear on the node</li>
+                <li>The corresponding channel will display in the oscilloscope</li>
+            </ol>
+
+            <h3>Oscilloscope Controls</h3>
+            <table class="shortcut-table">
+                <thead>
+                    <tr>
+                        <th>Control</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td><strong>V/div ▲▼</strong></td><td>Adjust vertical scale (volts per division). Uses 1-2-5 sequence.</td></tr>
+                    <tr><td><strong>T/div ▲▼</strong></td><td>Adjust horizontal scale (time per division). Uses 1-2-5 sequence.</td></tr>
+                    <tr><td><strong>Trig Mode</strong></td><td>Toggle trigger mode: Auto, Normal, or Single shot.</td></tr>
+                    <tr><td><strong>Trig Edge</strong></td><td>Select trigger edge: Rising, Falling, or Both.</td></tr>
+                    <tr><td><strong>Trig CH</strong></td><td>Select which channel to trigger on.</td></tr>
+                    <tr><td><strong>Trig ▲▼</strong></td><td>Adjust trigger level (shown as dashed line).</td></tr>
+                    <tr><td><strong>MODE</strong></td><td>Toggle between Y-T (normal) and X-Y (Lissajous) display modes.</td></tr>
+                    <tr><td><strong>CUR</strong></td><td>Toggle measurement cursors (two vertical lines for time measurement).</td></tr>
+                    <tr><td><strong>FFT</strong></td><td>Toggle FFT spectrum display (frequency domain view).</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Trigger Modes</h3>
+            <ul>
+                <li><strong>Auto</strong> - Free-running display, triggers automatically if signal is present</li>
+                <li><strong>Normal</strong> - Only updates display when trigger condition is met</li>
+                <li><strong>Single</strong> - Captures one triggered event then stops</li>
+            </ul>
+
+            <h3>X-Y Mode (Lissajous)</h3>
+            <p>In X-Y mode, Channel 1 controls the horizontal position and Channel 2 controls the vertical position. This creates Lissajous patterns useful for:</p>
+            <ul>
+                <li>Phase difference measurement between two signals</li>
+                <li>Frequency ratio visualization</li>
+                <li>Modulation analysis</li>
+            </ul>
+
+            <h3>FFT Spectrum View</h3>
+            <p>Click the <strong>FFT</strong> button to see the frequency spectrum of the selected channel. The display shows:</p>
+            <ul>
+                <li>Horizontal axis: Frequency (logarithmic scale)</li>
+                <li>Vertical axis: Magnitude (dB)</li>
+                <li>Peak detection with frequency readout</li>
+                <li>THD (Total Harmonic Distortion) measurement</li>
+            </ul>
+        </section>
+
+        <!-- 13. Measurements -->
+        <section id="measurements" class="section">
+            <h2>13. Measurements</h2>
+            <p>The measurement panel provides real-time readings and waveform statistics.</p>
+
+            <h3>Voltage & Current Display</h3>
+            <p>The upper measurement panel shows:</p>
+            <ul>
+                <li><strong>V</strong> - Instantaneous voltage at the first probe</li>
+                <li><strong>I</strong> - Current through the probed component (if applicable)</li>
+            </ul>
+
+            <h3>Waveform Measurements</h3>
+            <p>When the oscilloscope is running, automatic measurements are displayed:</p>
+            <table class="shortcut-table">
+                <thead>
+                    <tr>
+                        <th>Measurement</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>Vpp</td><td>Peak-to-peak voltage</td></tr>
+                    <tr><td>Vrms</td><td>Root-mean-square voltage</td></tr>
+                    <tr><td>Vavg</td><td>Average (DC) voltage</td></tr>
+                    <tr><td>Freq</td><td>Frequency (from zero-crossing detection)</td></tr>
+                    <tr><td>Period</td><td>Period (1/frequency)</td></tr>
+                    <tr><td>Duty</td><td>Duty cycle percentage</td></tr>
+                    <tr><td>Rise</td><td>Rise time (10% to 90%)</td></tr>
+                    <tr><td>Fall</td><td>Fall time (90% to 10%)</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Cursor Measurements</h3>
+            <p>Enable cursors with the <strong>CUR</strong> button to make precise time measurements:</p>
+            <ul>
+                <li>Click in the scope area to position cursors</li>
+                <li><span class="color-swatch" style="background:#00ffff"></span>Cyan cursor (C1) - First time marker</li>
+                <li><span class="color-swatch" style="background:#ff00ff"></span>Magenta cursor (C2) - Second time marker</li>
+                <li>Delta time (ΔT) and frequency (1/ΔT) are displayed</li>
+            </ul>
+        </section>
+
+        <!-- 14. Advanced Analysis -->
+        <section id="advanced" class="section">
+            <h2>14. Advanced Analysis</h2>
+            <p>Circuit Playground includes advanced analysis tools found in professional simulators like SPICE, TINA-TI, and OrCAD.</p>
+
+            <h3>Parametric Sweep</h3>
+            <p>Vary a component parameter across a range to see how it affects circuit behavior:</p>
+            <ol>
+                <li>Click the <strong>Sweep</strong> button in the analysis menu</li>
+                <li>Select the component to sweep</li>
+                <li>Set start value, end value, and number of steps</li>
+                <li>Choose linear or logarithmic sweep</li>
+                <li>Run the sweep to see family of curves</li>
+            </ol>
+            <p><em>Use cases:</em> Finding optimal resistor values, tuning filter frequencies, characterizing transistor behavior.</p>
+
+            <h3>Monte Carlo Analysis</h3>
+            <p>Simulate manufacturing tolerances by running multiple simulations with randomized component values:</p>
+            <ol>
+                <li>Click the <strong>Monte Carlo</strong> button</li>
+                <li>Set number of simulation runs (e.g., 100)</li>
+                <li>Component values will vary according to their tolerance settings</li>
+                <li>Results show distribution of output values</li>
+            </ol>
+            <p><em>Outputs:</em> Mean, standard deviation, min/max, and percentile statistics.</p>
+
+            <h3>Temperature Analysis</h3>
+            <p>Components include temperature coefficients that affect their behavior:</p>
+            <ul>
+                <li>Resistors: Typically +50 to +100 ppm/°C</li>
+                <li>Capacitors: Varies by type (-750 to +150 ppm/°C)</li>
+                <li>Semiconductors: Strong temperature dependence</li>
+            </ul>
+
+            <div class="note">
+                <div class="note-title">Pro Tip</div>
+                Use parametric sweep combined with temperature variation to find robust operating points that work across all conditions.
+            </div>
+        </section>
+
+        <!-- 15. Keyboard Shortcuts -->
+        <section id="shortcuts" class="section">
+            <h2>15. Keyboard Shortcuts</h2>
+            <p>Press <kbd>F1</kbd> at any time to see a quick reference of all shortcuts.</p>
+
+            <h3>File & Edit</h3>
+            <table class="shortcut-table">
+                <tbody>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save circuit</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Open/Load circuit</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>N</kbd></td><td>New circuit (clear all)</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo last action</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd></td><td>Copy selected component</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>X</kbd></td><td>Cut selected component</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Paste component</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Duplicate selected component</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>Select all components</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Simulation</h3>
+            <table class="shortcut-table">
+                <tbody>
+                    <tr><td><kbd>Space</kbd></td><td>Run / Pause simulation</td></tr>
+                    <tr><td><kbd>.</kbd></td><td>Single step simulation</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>R</kbd></td><td>Reset simulation</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Component Manipulation</h3>
+            <table class="shortcut-table">
+                <tbody>
+                    <tr><td><kbd>R</kbd></td><td>Rotate selected component 90°</td></tr>
+                    <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Delete selected component</td></tr>
+                    <tr><td><kbd>+</kbd> / <kbd>=</kbd></td><td>Increase component value by 10%</td></tr>
+                    <tr><td><kbd>-</kbd></td><td>Decrease component value by 10%</td></tr>
+                    <tr><td><kbd>F</kbd></td><td>Increase frequency (AC sources)</td></tr>
+                    <tr><td><kbd>Shift</kbd>+<kbd>F</kbd></td><td>Decrease frequency</td></tr>
+                </tbody>
+            </table>
+
+            <h3>View & Navigation</h3>
+            <table class="shortcut-table">
+                <tbody>
+                    <tr><td><kbd>Scroll Wheel</kbd></td><td>Zoom in/out</td></tr>
+                    <tr><td><kbd>Middle Mouse</kbd> drag</td><td>Pan view</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>Reset zoom to 100%</td></tr>
+                    <tr><td><kbd>G</kbd></td><td>Toggle grid visibility</td></tr>
+                    <tr><td><kbd>F1</kbd></td><td>Show/hide keyboard shortcuts dialog</td></tr>
+                    <tr><td><kbd>Escape</kbd></td><td>Cancel current action / Return to Select tool</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Tools</h3>
+            <table class="shortcut-table">
+                <tbody>
+                    <tr><td><kbd>W</kbd></td><td>Wire tool</td></tr>
+                    <tr><td><kbd>P</kbd></td><td>Probe tool</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- 16. Tips & Best Practices -->
+        <section id="tips" class="section">
+            <h2>16. Tips & Best Practices</h2>
+
+            <div class="tip">
+                <div class="tip-title">Always Start with Ground</div>
+                Every circuit needs a ground reference. Place the GND component first to establish your 0V reference point.
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Use Grid Snapping</div>
+                Components automatically snap to the grid for clean alignment. This makes connecting wires much easier.
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Check Component Orientation</div>
+                Polarized components (diodes, LEDs, electrolytic capacitors) must be oriented correctly. The arrow on diodes points in the direction of conventional current flow.
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Start Simple</div>
+                Begin with basic circuits and gradually add complexity. This makes debugging much easier when something doesn't work.
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Use Probes Early</div>
+                Place probes on key nodes before running the simulation. This lets you immediately see what's happening in your circuit.
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Watch the Status Bar</div>
+                The status bar provides helpful feedback about simulation state, errors, and hints about what to do next.
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Save Your Work</div>
+                Use <kbd>Ctrl</kbd>+<kbd>S</kbd> frequently to save your circuits. Circuit files are saved in JSON format and can be shared with others.
+            </div>
+        </section>
+
+        <!-- 17. Troubleshooting -->
+        <section id="troubleshooting" class="section">
+            <h2>17. Troubleshooting</h2>
+
+            <h3>Simulation Won't Start</h3>
+            <ul>
+                <li><strong>No ground</strong> - Add a GND component to your circuit</li>
+                <li><strong>Disconnected components</strong> - Make sure all terminals are connected with wires</li>
+                <li><strong>Floating nodes</strong> - Every node needs a DC path to ground</li>
+            </ul>
+
+            <h3>Unstable or Wrong Results</h3>
+            <ul>
+                <li><strong>Short circuit</strong> - Don't connect voltage sources directly to ground without resistance</li>
+                <li><strong>Extremely large/small values</strong> - Keep component values in realistic ranges</li>
+                <li><strong>Too many nonlinear devices</strong> - Convergence can be difficult with many diodes/transistors</li>
+            </ul>
+
+            <h3>Display Issues</h3>
+            <ul>
+                <li><strong>Can't see waveform</strong> - Adjust V/div and T/div on the oscilloscope</li>
+                <li><strong>Waveform jumping</strong> - Set trigger mode to Normal and adjust trigger level</li>
+                <li><strong>No scope display</strong> - Make sure you have placed at least one probe</li>
+            </ul>
+
+            <h3>Performance Issues</h3>
+            <ul>
+                <li><strong>Slow simulation</strong> - Reduce circuit complexity or simulation speed</li>
+                <li><strong>Memory usage</strong> - Clear and restart if working with many circuits</li>
+            </ul>
+
+            <div class="warning">
+                <div class="warning-title">Component Overheating</div>
+                When a resistor turns red, it's dissipating more power than its rating. This would cause damage in a real circuit. Increase resistance or reduce voltage/current.
+            </div>
+        </section>
+
+        <!-- 18. Building from Source -->
+        <section id="building" class="section">
+            <h2>18. Building from Source</h2>
+
+            <h3>Requirements</h3>
+            <ul>
+                <li>CMake 3.10+ or Meson build system</li>
+                <li>C11 compatible compiler (GCC, Clang, or MSVC)</li>
+                <li>SDL2 library (automatically fetched by build system)</li>
+            </ul>
+
+            <h3>Building with CMake (Recommended)</h3>
+            <pre><code># Clone or download the source code
+cd circuit_toy
+
+# Create build directory
+mkdir build
+cd build
+
+# Configure and build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build .
+
+# Run
+./bin/CircuitPlayground</code></pre>
+
+            <h3>Building with Meson</h3>
+            <pre><code># Setup SDL2 dependency
+mkdir subprojects
+meson wrap install sdl2
+
+# Configure and build
+meson setup build
+meson compile -C build
+
+# Run
+./build/circuit-playground</code></pre>
+
+            <h3>Windows Notes</h3>
+            <p>On Windows, you may need to copy SDL2.dll to the same directory as the executable:</p>
+            <pre><code>copy build\subprojects\SDL2-*\SDL2-*.dll build\</code></pre>
+
+            <h3>Project Structure</h3>
+            <pre><code>circuit_toy/
+├── include/          # Header files
+│   ├── app.h        # Application state
+│   ├── circuit.h    # Circuit data structures
+│   ├── component.h  # Component definitions
+│   ├── simulation.h # Simulation engine
+│   └── ui.h         # User interface
+├── src/             # Source files
+│   ├── main.c       # Entry point
+│   ├── app.c        # Application logic
+│   ├── circuit.c    # Circuit operations
+│   ├── component.c  # Component behavior
+│   ├── simulation.c # MNA solver
+│   ├── ui.c         # UI rendering
+│   └── analysis.c   # Advanced analysis
+├── CMakeLists.txt   # CMake build script
+├── meson.build      # Meson build script
+└── guide.html       # This user manual</code></pre>
+        </section>
+
+        <footer>
+            <p>Circuit Playground - Interactive Circuit Simulator</p>
+            <p style="margin-top: 10px;">Inspired by <a href="https://github.com/The-Powder-Toy/The-Powder-Toy" target="_blank">The Powder Toy</a> and professional SPICE simulators</p>
+            <p style="margin-top: 10px; color: #444;">Version 2.0 - User Manual</p>
+        </footer>
+    </div>
+</body>
+</html>
