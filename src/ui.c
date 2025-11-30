@@ -342,6 +342,25 @@ void ui_init(UIState *ui) {
     ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_LED_WITH_RESISTOR, "LED+R", false, false
     };
+    // Transistor amplifiers
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_COMMON_EMITTER, "CE", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_COMMON_SOURCE, "CS", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_COMMON_DRAIN, "SF", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_MULTISTAGE_AMP, "2Stg", false, false
+    };
 
     // Oscilloscope settings - larger default size for better visibility
     ui->scope_rect = (Rect){WINDOW_WIDTH - ui->properties_width + 10, 250, 330, 300};
@@ -861,7 +880,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
             "Resistor", "Capacitor", "Elec. Cap", "Inductor", "Diode",
             "Zener", "Schottky", "LED",
             "NPN BJT", "PNP BJT", "NMOS", "PMOS", "Op-Amp",
-            "Square Wave", "Triangle Wave", "Sawtooth", "Noise"
+            "Square Wave", "Triangle Wave", "Sawtooth", "Noise",
+            "Text"
         };
         if (selected->type < COMP_TYPE_COUNT) {
             SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
