@@ -394,8 +394,7 @@ void app_handle_events(App *app) {
                 // Apply text-edited property value
                 if (app->input.selected_component) {
                     if (input_apply_property_edit(&app->input, app->input.selected_component)) {
-                        circuit_update_component_nodes(app->circuit, app->input.selected_component);
-                        app->circuit->modified = true;
+                        app_on_property_changed(app, app->input.selected_component);
                         ui_set_status(&app->ui, "Property updated");
                     } else {
                         ui_set_status(&app->ui, "Invalid value");
@@ -687,6 +686,9 @@ void app_run_simulation(App *app) {
         return;
     }
 
+    // Auto-adjust time step based on circuit's highest frequency
+    simulation_auto_time_step(app->simulation);
+
     // Run DC analysis first
     if (!simulation_dc_analysis(app->simulation)) {
         ui_set_status(&app->ui, simulation_get_error(app->simulation));
@@ -734,4 +736,10 @@ void app_on_component_deselected(App *app) {
 void app_on_property_changed(App *app, Component *comp) {
     circuit_update_component_nodes(app->circuit, comp);
     app->circuit->modified = true;
+
+    // Re-adjust time step if a frequency-related component was changed
+    if (comp->type == COMP_AC_VOLTAGE || comp->type == COMP_SQUARE_WAVE ||
+        comp->type == COMP_TRIANGLE_WAVE || comp->type == COMP_SAWTOOTH_WAVE) {
+        simulation_auto_time_step(app->simulation);
+    }
 }

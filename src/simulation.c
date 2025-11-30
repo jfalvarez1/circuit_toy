@@ -315,6 +315,65 @@ void simulation_set_time_step(Simulation *sim, double dt) {
     }
 }
 
+double simulation_auto_time_step(Simulation *sim) {
+    if (!sim || !sim->circuit) return DEFAULT_TIME_STEP;
+
+    // Find the highest frequency signal in the circuit
+    double max_freq = 0;
+
+    for (int i = 0; i < sim->circuit->num_components; i++) {
+        Component *c = sim->circuit->components[i];
+        if (!c) continue;
+
+        double freq = 0;
+        switch (c->type) {
+            case COMP_AC_VOLTAGE:
+                freq = c->props.ac_voltage.frequency;
+                break;
+            case COMP_SQUARE_WAVE:
+                freq = c->props.square_wave.frequency;
+                break;
+            case COMP_TRIANGLE_WAVE:
+                freq = c->props.triangle_wave.frequency;
+                break;
+            case COMP_SAWTOOTH_WAVE:
+                freq = c->props.sawtooth_wave.frequency;
+                break;
+            default:
+                break;
+        }
+
+        if (freq > max_freq) {
+            max_freq = freq;
+        }
+    }
+
+    // Calculate time step to ensure at least 50 samples per cycle
+    // For good waveform visualization, we want more samples at higher frequencies
+    double dt;
+    if (max_freq > 0) {
+        double period = 1.0 / max_freq;
+        dt = period / 50.0;  // 50 samples per period minimum
+
+        // For very high frequencies, increase sample rate more
+        if (max_freq > 10000) {
+            dt = period / 100.0;  // 100 samples per period for >10kHz
+        }
+        if (max_freq > 100000) {
+            dt = period / 200.0;  // 200 samples per period for >100kHz
+        }
+    } else {
+        // No AC signals, use default time step
+        dt = DEFAULT_TIME_STEP;
+    }
+
+    // Clamp to valid range
+    dt = CLAMP(dt, MIN_TIME_STEP, MAX_TIME_STEP);
+    sim->time_step = dt;
+
+    return dt;
+}
+
 double simulation_get_node_voltage(Simulation *sim, int node_id) {
     if (!sim || !sim->circuit) return 0;
 

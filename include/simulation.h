@@ -91,6 +91,10 @@ bool simulation_step(Simulation *sim);
 void simulation_set_speed(Simulation *sim, double speed);
 void simulation_set_time_step(Simulation *sim, double dt);
 
+// Auto-adjust time step based on circuit's highest frequency signal
+// Returns the new time step that ensures adequate sampling (at least 50 samples/cycle)
+double simulation_auto_time_step(Simulation *sim);
+
 // Get results
 double simulation_get_node_voltage(Simulation *sim, int node_id);
 double simulation_get_probe_voltage(Simulation *sim, int probe_idx);

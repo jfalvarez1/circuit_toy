@@ -1156,44 +1156,8 @@ void input_handle_text_key(InputState *input, SDL_Keycode key) {
             break;
 
         default:
-            // Fallback for printable characters (if SDL_TEXTINPUT doesn't work)
-            // Handle numbers, letters, and common engineering notation characters
-            if (input->input_len < sizeof(input->input_buffer) - 1) {
-                char c = 0;
-                if (key >= SDLK_0 && key <= SDLK_9) {
-                    c = '0' + (key - SDLK_0);
-                } else if (key >= SDLK_a && key <= SDLK_z) {
-                    c = input->shift_down ? ('A' + (key - SDLK_a)) : ('a' + (key - SDLK_a));
-                } else if (key == SDLK_PERIOD) {
-                    c = '.';
-                } else if (key == SDLK_MINUS) {
-                    c = '-';
-                } else if (key == SDLK_PLUS || (key == SDLK_EQUALS && input->shift_down)) {
-                    c = '+';
-                } else if (key == SDLK_KP_0) c = '0';
-                else if (key == SDLK_KP_1) c = '1';
-                else if (key == SDLK_KP_2) c = '2';
-                else if (key == SDLK_KP_3) c = '3';
-                else if (key == SDLK_KP_4) c = '4';
-                else if (key == SDLK_KP_5) c = '5';
-                else if (key == SDLK_KP_6) c = '6';
-                else if (key == SDLK_KP_7) c = '7';
-                else if (key == SDLK_KP_8) c = '8';
-                else if (key == SDLK_KP_9) c = '9';
-                else if (key == SDLK_KP_PERIOD) c = '.';
-                else if (key == SDLK_KP_MINUS) c = '-';
-                else if (key == SDLK_KP_PLUS) c = '+';
-
-                if (c != 0) {
-                    // Insert character at cursor position
-                    memmove(input->input_buffer + input->input_cursor + 1,
-                            input->input_buffer + input->input_cursor,
-                            input->input_len - input->input_cursor + 1);
-                    input->input_buffer[input->input_cursor] = c;
-                    input->input_cursor++;
-                    input->input_len++;
-                }
-            }
+            // Character input is handled by SDL_TEXTINPUT event
+            // Only SDL_TEXTINPUT should add characters to avoid double-input
             break;
     }
 }
