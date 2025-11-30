@@ -7,6 +7,7 @@
 #include <time.h>
 #include "app.h"
 #include "file_io.h"
+#include "circuits.h"
 
 bool app_init(App *app) {
     memset(app, 0, sizeof(App));
@@ -360,8 +361,18 @@ void app_handle_events(App *app) {
                 break;
 
             default:
+                // Handle circuit template selection (UI_ACTION_SELECT_CIRCUIT + circuit_type)
+                if (app->input.pending_ui_action >= UI_ACTION_SELECT_CIRCUIT &&
+                    app->input.pending_ui_action < UI_ACTION_SELECT_CIRCUIT + 100) {
+                    int circuit_type = app->input.pending_ui_action - UI_ACTION_SELECT_CIRCUIT;
+                    const CircuitTemplateInfo *info = circuit_template_get_info(circuit_type);
+                    char msg[128];
+                    snprintf(msg, sizeof(msg), "Click on canvas to place %s circuit", info->name);
+                    ui_set_status(&app->ui, msg);
+                    // Note: actual placement happens in input.c when user clicks on canvas
+                }
                 // Handle property edit start actions (UI_ACTION_PROP_EDIT + prop_type)
-                if (app->input.pending_ui_action >= UI_ACTION_PROP_EDIT &&
+                else if (app->input.pending_ui_action >= UI_ACTION_PROP_EDIT &&
                     app->input.pending_ui_action < UI_ACTION_PROP_EDIT + 100) {
                     int prop_type = app->input.pending_ui_action - UI_ACTION_PROP_EDIT;
                     if (app->input.selected_component && !app->input.editing_property) {

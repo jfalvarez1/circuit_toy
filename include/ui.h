@@ -33,6 +33,15 @@ typedef struct {
     bool selected;
 } PaletteItem;
 
+// Circuit template palette item
+typedef struct {
+    Rect bounds;
+    int circuit_type;  // CircuitTemplateType
+    const char *label;
+    bool hovered;
+    bool selected;
+} CircuitPaletteItem;
+
 // Property field
 typedef struct {
     Rect bounds;
@@ -87,6 +96,12 @@ typedef struct {
     PaletteItem palette_items[32];
     int num_palette_items;
     int selected_palette_idx;
+
+    // Circuit template palette
+    CircuitPaletteItem circuit_items[16];
+    int num_circuit_items;
+    int selected_circuit_type;  // Currently selected circuit template (-1 = none)
+    bool placing_circuit;       // True when placing a circuit template
 
     // Properties panel
     PropertyField properties[16];
@@ -209,6 +224,7 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_BODE_PLOT     22
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type
+#define UI_ACTION_SELECT_CIRCUIT 300 // + circuit template type
 #define UI_ACTION_PROP_APPLY    1000 // Apply property text edit
 #define UI_ACTION_PROP_EDIT     1100 // + property type (PROP_VALUE, PROP_FREQUENCY, etc.)
 

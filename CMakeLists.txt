@@ -22,6 +22,7 @@ set(SOURCES
     src/main.c
     src/app.c
     src/circuit.c
+    src/circuits.c
     src/component.c
     src/simulation.c
     src/matrix.c
@@ -35,6 +36,7 @@ set(SOURCES
 set(HEADERS
     include/app.h
     include/circuit.h
+    include/circuits.h
     include/component.h
     include/simulation.h
     include/matrix.h

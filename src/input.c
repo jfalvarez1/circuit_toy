@@ -7,6 +7,7 @@
 #include <math.h>
 #include "input.h"
 #include "app.h"
+#include "circuits.h"
 
 void input_init(InputState *input) {
     memset(input, 0, sizeof(InputState));
@@ -32,8 +33,13 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 // Handle UI action
                 if (action >= UI_ACTION_SELECT_TOOL && action < UI_ACTION_SELECT_COMP) {
                     input_set_tool(input, action - UI_ACTION_SELECT_TOOL);
-                } else if (action >= UI_ACTION_SELECT_COMP) {
+                } else if (action >= UI_ACTION_SELECT_COMP && action < UI_ACTION_SELECT_CIRCUIT) {
                     input_start_placing(input, action - UI_ACTION_SELECT_COMP);
+                } else if (action >= UI_ACTION_SELECT_CIRCUIT && action < UI_ACTION_PROP_APPLY) {
+                    // Circuit template selected - store action for app to process
+                    // and set input to select tool for placement click
+                    input_set_tool(input, TOOL_SELECT);
+                    input->pending_ui_action = action;
                 } else {
                     // Store simulation/file actions for app to process
                     input->pending_ui_action = action;
@@ -55,6 +61,35 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 input->left.down = true;
                 input->left.start_x = x;
                 input->left.start_y = y;
+
+                // Check if placing a circuit template
+                if (ui->placing_circuit && ui->selected_circuit_type > 0) {
+                    if (!input->sim_running) {
+                        float snapped_x = snap_to_grid(wx);
+                        float snapped_y = snap_to_grid(wy);
+
+                        int count = circuit_place_template(circuit, ui->selected_circuit_type, snapped_x, snapped_y);
+                        if (count > 0) {
+                            const CircuitTemplateInfo *info = circuit_template_get_info(ui->selected_circuit_type);
+                            char msg[128];
+                            snprintf(msg, sizeof(msg), "Placed %s circuit (%d components)", info->name, count);
+                            ui_set_status(ui, msg);
+                            circuit->modified = true;
+                        } else {
+                            ui_set_status(ui, "Failed to place circuit");
+                        }
+
+                        // Deselect circuit template after placing
+                        ui->placing_circuit = false;
+                        ui->selected_circuit_type = -1;
+                        for (int i = 0; i < ui->num_circuit_items; i++) {
+                            ui->circuit_items[i].selected = false;
+                        }
+                    } else {
+                        ui_set_status(ui, "Stop simulation to place circuits");
+                    }
+                    return true;
+                }
 
                 switch (input->current_tool) {
                     case TOOL_SELECT: {

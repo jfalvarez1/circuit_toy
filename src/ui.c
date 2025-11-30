@@ -6,6 +6,7 @@
 #include <string.h>
 #include "ui.h"
 #include "input.h"
+#include "circuits.h"
 
 // Simple 8x8 bitmap font (same as render.c)
 static const unsigned char ui_font8x8[95][8] = {
@@ -288,6 +289,48 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_OPAMP, TOOL_COMPONENT, false, "OpAmp", false, false
     };
 
+    // Circuit templates section
+    pal_y += pal_h + 25;
+    col = 0;
+    ui->num_circuit_items = 0;
+    ui->selected_circuit_type = -1;
+    ui->placing_circuit = false;
+
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_RC_LOWPASS, "RC LP", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_RC_HIGHPASS, "RC HP", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_VOLTAGE_DIVIDER, "V Div", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_HALFWAVE_RECT, "HW Rec", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_INVERTING_AMP, "Inv", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_NONINVERTING_AMP, "NonI", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_VOLTAGE_FOLLOWER, "Follw", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_LED_WITH_RESISTOR, "LED+R", false, false
+    };
+
     // Oscilloscope settings - larger default size for better visibility
     ui->scope_rect = (Rect){WINDOW_WIDTH - ui->properties_width + 10, 300, 260, 280};
     ui->scope_num_channels = 0;
@@ -441,6 +484,42 @@ static void draw_palette_item(SDL_Renderer *r, PaletteItem *item) {
     }
 }
 
+static void draw_circuit_item(SDL_Renderer *r, CircuitPaletteItem *item) {
+    // Background - use a different color scheme for circuits (green tint)
+    if (item->selected) {
+        SDL_SetRenderDrawColor(r, 0x45, 0xe9, 0x60, 0x40);
+    } else if (item->hovered) {
+        SDL_SetRenderDrawColor(r, 0x00, 0xff, 0x88, 0x20);
+    } else {
+        SDL_SetRenderDrawColor(r, 0x0f, 0x34, 0x60, 0xff);
+    }
+    SDL_Rect rect = {item->bounds.x, item->bounds.y, item->bounds.w, item->bounds.h};
+    SDL_RenderFillRect(r, &rect);
+
+    // Border
+    if (item->selected) {
+        SDL_SetRenderDrawColor(r, 0x45, 0xe9, 0x60, 0xff);
+    } else if (item->hovered) {
+        SDL_SetRenderDrawColor(r, 0x00, 0xff, 0x88, 0xff);
+    } else {
+        SDL_SetRenderDrawColor(r, 0x2a, 0x4e, 0x2a, 0xff);
+    }
+    SDL_RenderDrawRect(r, &rect);
+
+    // Label text (centered)
+    if (item->label) {
+        int text_len = (int)strlen(item->label);
+        int text_x = item->bounds.x + (item->bounds.w - text_len * 8) / 2;
+        int text_y = item->bounds.y + (item->bounds.h - 8) / 2;
+        if (item->selected) {
+            SDL_SetRenderDrawColor(r, 0xff, 0xff, 0xff, 0xff);
+        } else {
+            SDL_SetRenderDrawColor(r, 0x88, 0xff, 0x88, 0xff);
+        }
+        ui_draw_text(r, item->label, text_x, text_y);
+    }
+}
+
 void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     // Toolbar background
     SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xff);
@@ -485,6 +564,18 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
     // Palette items
     for (int i = 0; i < ui->num_palette_items; i++) {
         draw_palette_item(renderer, &ui->palette_items[i]);
+    }
+
+    // Circuits section header
+    if (ui->num_circuit_items > 0) {
+        int header_y = ui->circuit_items[0].bounds.y - 18;
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+        ui_draw_text(renderer, "Circuits", 10, header_y);
+    }
+
+    // Circuit palette items
+    for (int i = 0; i < ui->num_circuit_items; i++) {
+        draw_circuit_item(renderer, &ui->circuit_items[i]);
     }
 
     // Border
@@ -1463,18 +1554,41 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         // Check palette items
         for (int i = 0; i < ui->num_palette_items; i++) {
             if (point_in_rect(x, y, &ui->palette_items[i].bounds)) {
-                // Deselect all
+                // Deselect all palette and circuit items
                 for (int j = 0; j < ui->num_palette_items; j++) {
                     ui->palette_items[j].selected = false;
                 }
+                for (int j = 0; j < ui->num_circuit_items; j++) {
+                    ui->circuit_items[j].selected = false;
+                }
                 ui->palette_items[i].selected = true;
                 ui->selected_palette_idx = i;
+                ui->placing_circuit = false;
+                ui->selected_circuit_type = -1;
 
                 if (ui->palette_items[i].is_tool) {
                     return UI_ACTION_SELECT_TOOL + ui->palette_items[i].tool_type;
                 } else {
                     return UI_ACTION_SELECT_COMP + ui->palette_items[i].comp_type;
                 }
+            }
+        }
+
+        // Check circuit template items
+        for (int i = 0; i < ui->num_circuit_items; i++) {
+            if (point_in_rect(x, y, &ui->circuit_items[i].bounds)) {
+                // Deselect all palette and circuit items
+                for (int j = 0; j < ui->num_palette_items; j++) {
+                    ui->palette_items[j].selected = false;
+                }
+                for (int j = 0; j < ui->num_circuit_items; j++) {
+                    ui->circuit_items[j].selected = false;
+                }
+                ui->circuit_items[i].selected = true;
+                ui->placing_circuit = true;
+                ui->selected_circuit_type = ui->circuit_items[i].circuit_type;
+
+                return UI_ACTION_SELECT_CIRCUIT + ui->circuit_items[i].circuit_type;
             }
         }
     } else {
@@ -1553,6 +1667,11 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     // Update palette hover states
     for (int i = 0; i < ui->num_palette_items; i++) {
         ui->palette_items[i].hovered = point_in_rect(x, y, &ui->palette_items[i].bounds);
+    }
+
+    // Update circuit items hover states
+    for (int i = 0; i < ui->num_circuit_items; i++) {
+        ui->circuit_items[i].hovered = point_in_rect(x, y, &ui->circuit_items[i].bounds);
     }
 
     return UI_ACTION_NONE;
