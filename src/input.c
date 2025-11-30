@@ -93,7 +93,42 @@ bool input_handle_event(InputState *input, SDL_Event *event,
 
                 switch (input->current_tool) {
                     case TOOL_SELECT: {
-                        // Check for probe click first (probes have visual priority)
+                        // If already drawing a wire (started from terminal click), complete it
+                        if (input->drawing_wire) {
+                            if (input->sim_running) {
+                                ui_set_status(ui, "Stop simulation to create wires");
+                                input->drawing_wire = false;
+                                break;
+                            }
+                            float snapped_x = snap_to_grid(wx);
+                            float snapped_y = snap_to_grid(wy);
+                            int end_node_id = circuit_find_or_create_node(circuit, snapped_x, snapped_y, 10);
+                            if (end_node_id != input->wire_start_node) {
+                                int wire_id = circuit_add_wire(circuit, input->wire_start_node, end_node_id);
+                                if (wire_id >= 0) {
+                                    circuit_push_undo(circuit, UNDO_ADD_WIRE, wire_id, NULL, input->wire_start_node, end_node_id);
+                                }
+                                ui_set_status(ui, "Wire connected (Ctrl+Z to undo)");
+                            }
+                            input->drawing_wire = false;
+                            break;
+                        }
+
+                        // Check if click is near a node/terminal to start a wire
+                        if (!input->sim_running) {
+                            Node *node = circuit_find_node_at(circuit, wx, wy, 12);
+                            if (node) {
+                                // Start drawing wire from this node
+                                input->wire_start_node = node->id;
+                                input->drawing_wire = true;
+                                input->wire_preview_x = node->x;
+                                input->wire_preview_y = node->y;
+                                ui_set_status(ui, "Click another terminal to connect wire");
+                                break;
+                            }
+                        }
+
+                        // Check for probe click (probes have visual priority)
                         bool found_probe = false;
                         for (int i = 0; i < circuit->num_probes; i++) {
                             Probe *probe = &circuit->probes[i];
