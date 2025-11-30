@@ -354,3 +354,164 @@ void simulation_clear_error(Simulation *sim) {
         sim->error_msg[0] = '\0';
     }
 }
+
+// Frequency response / Bode plot implementation
+bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
+                           int source_node, int probe_node, int num_points) {
+    if (!sim || !sim->circuit) {
+        simulation_set_error(sim, "No circuit");
+        return false;
+    }
+
+    if (num_points > MAX_FREQ_POINTS) {
+        num_points = MAX_FREQ_POINTS;
+    }
+
+    // Find an AC voltage source to use for excitation
+    Component *ac_source = NULL;
+    for (int i = 0; i < sim->circuit->num_components; i++) {
+        Component *comp = sim->circuit->components[i];
+        if (comp->type == COMP_AC_VOLTAGE) {
+            ac_source = comp;
+            break;
+        }
+    }
+
+    if (!ac_source) {
+        simulation_set_error(sim, "No AC voltage source found for frequency sweep");
+        return false;
+    }
+
+    // Save original frequency
+    double orig_freq = ac_source->props.ac_voltage.frequency;
+    double amplitude = ac_source->props.ac_voltage.amplitude;
+
+    sim->freq_start = start_freq;
+    sim->freq_stop = stop_freq;
+    sim->freq_source_node = source_node;
+    sim->freq_probe_node = probe_node;
+    sim->freq_sweep_running = true;
+    sim->freq_sweep_complete = false;
+    sim->freq_response_count = 0;
+
+    // Generate logarithmically spaced frequencies
+    double log_start = log10(start_freq);
+    double log_stop = log10(stop_freq);
+    double log_step = (log_stop - log_start) / (num_points - 1);
+
+    for (int i = 0; i < num_points; i++) {
+        double freq = pow(10.0, log_start + i * log_step);
+
+        // Set source frequency
+        ac_source->props.ac_voltage.frequency = freq;
+
+        // Calculate time step and simulation duration
+        double period = 1.0 / freq;
+        double dt = period / 100.0;  // 100 samples per period
+        if (dt < MIN_TIME_STEP) dt = MIN_TIME_STEP;
+        if (dt > MAX_TIME_STEP) dt = MAX_TIME_STEP;
+
+        // Simulate for several cycles to reach steady state
+        int num_cycles = 10;
+        double total_time = num_cycles * period;
+        int num_steps = (int)(total_time / dt);
+
+        // Track min/max values for last 2 cycles
+        double in_min = 1e30, in_max = -1e30;
+        double out_min = 1e30, out_max = -1e30;
+
+        // Track zero crossings for phase measurement
+        double in_zero_cross_time = 0;
+        double out_zero_cross_time = 0;
+        double prev_in = 0, prev_out = 0;
+        bool found_in_zero = false, found_out_zero = false;
+
+        // Reset simulation state
+        sim->time = 0;
+        if (sim->solution) {
+            for (int j = 0; j < sim->solution_size; j++) {
+                vector_set(sim->solution, j, 0);
+            }
+        }
+        if (sim->prev_solution) {
+            for (int j = 0; j < sim->solution_size; j++) {
+                vector_set(sim->prev_solution, j, 0);
+            }
+        }
+
+        // Run simulation
+        double measure_start = (num_cycles - 2) * period;
+        for (int step = 0; step < num_steps; step++) {
+            sim->time_step = dt;
+            simulation_step(sim);
+            sim->time += dt;
+
+            // Get input (AC source output) and output voltages
+            double t = sim->time;
+            double in_voltage = amplitude * sin(2 * M_PI * freq * t + ac_source->props.ac_voltage.phase);
+            double out_voltage = simulation_get_node_voltage(sim, probe_node);
+
+            // Only measure during last 2 cycles
+            if (t >= measure_start) {
+                if (in_voltage < in_min) in_min = in_voltage;
+                if (in_voltage > in_max) in_max = in_voltage;
+                if (out_voltage < out_min) out_min = out_voltage;
+                if (out_voltage > out_max) out_max = out_voltage;
+
+                // Detect rising zero crossings for phase measurement
+                if (!found_in_zero && prev_in <= 0 && in_voltage > 0) {
+                    in_zero_cross_time = t - dt * prev_in / (in_voltage - prev_in);
+                    found_in_zero = true;
+                }
+                if (!found_out_zero && prev_out <= 0 && out_voltage > 0) {
+                    out_zero_cross_time = t - dt * prev_out / (out_voltage - prev_out);
+                    found_out_zero = true;
+                }
+            }
+            prev_in = in_voltage;
+            prev_out = out_voltage;
+        }
+
+        // Calculate magnitude and phase
+        double in_pp = in_max - in_min;
+        double out_pp = out_max - out_min;
+
+        double magnitude_ratio = (in_pp > 1e-12) ? (out_pp / in_pp) : 0;
+        double magnitude_db = (magnitude_ratio > 1e-12) ? 20.0 * log10(magnitude_ratio) : -120.0;
+
+        // Phase in degrees
+        double phase_deg = 0;
+        if (found_in_zero && found_out_zero) {
+            double time_diff = out_zero_cross_time - in_zero_cross_time;
+            phase_deg = (time_diff / period) * 360.0;
+            // Normalize to -180 to +180
+            while (phase_deg > 180) phase_deg -= 360;
+            while (phase_deg < -180) phase_deg += 360;
+        }
+
+        // Store result
+        sim->freq_response[sim->freq_response_count].frequency = freq;
+        sim->freq_response[sim->freq_response_count].magnitude_db = magnitude_db;
+        sim->freq_response[sim->freq_response_count].phase_deg = phase_deg;
+        sim->freq_response_count++;
+    }
+
+    // Restore original frequency
+    ac_source->props.ac_voltage.frequency = orig_freq;
+
+    sim->freq_sweep_running = false;
+    sim->freq_sweep_complete = true;
+
+    return true;
+}
+
+int simulation_get_freq_response(Simulation *sim, FreqResponsePoint *points, int max_points) {
+    if (!sim || !points) return 0;
+
+    int count = MIN(sim->freq_response_count, max_points);
+    for (int i = 0; i < count; i++) {
+        points[i] = sim->freq_response[i];
+    }
+
+    return count;
+}

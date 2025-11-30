@@ -134,6 +134,10 @@ void ui_init(UIState *ui) {
     ui->window_width = WINDOW_WIDTH;
     ui->window_height = WINDOW_HEIGHT;
 
+    // Initialize properties panel width
+    ui->properties_width = PROPERTIES_WIDTH;
+    ui->props_resizing = false;
+
     // Initialize toolbar buttons
     int btn_x = 200;
     int btn_w = 60, btn_h = 30;
@@ -232,11 +236,31 @@ void ui_init(UIState *ui) {
     col = 0;
     pal_y += pal_h + 5;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_INDUCTOR, TOOL_COMPONENT, false, "L", false, false
+        {10 + col*70, pal_y, 60, pal_h}, COMP_CAPACITOR_ELEC, TOOL_COMPONENT, false, "Elec", false, false
     };
     col++;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_DIODE, TOOL_COMPONENT, false, "D", false, false
+        {10 + col*70, pal_y, 60, pal_h}, COMP_INDUCTOR, TOOL_COMPONENT, false, "L", false, false
+    };
+
+    // Diodes section
+    pal_y += pal_h + 5;
+    col = 0;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_DIODE, TOOL_COMPONENT, false, "Diode", false, false
+    };
+    col++;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_ZENER, TOOL_COMPONENT, false, "Zener", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_SCHOTTKY, TOOL_COMPONENT, false, "Schky", false, false
+    };
+    col++;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_LED, TOOL_COMPONENT, false, "LED", false, false
     };
 
     // Semiconductors section
@@ -265,7 +289,7 @@ void ui_init(UIState *ui) {
     };
 
     // Oscilloscope settings - larger default size for better visibility
-    ui->scope_rect = (Rect){WINDOW_WIDTH - PROPERTIES_WIDTH + 10, 300, 260, 280};
+    ui->scope_rect = (Rect){WINDOW_WIDTH - ui->properties_width + 10, 300, 260, 280};
     ui->scope_num_channels = 0;
     ui->scope_time_div = 0.001;   // 1ms per division
     ui->scope_volt_div = 1.0;     // 1V per division
@@ -319,6 +343,14 @@ void ui_init(UIState *ui) {
     ui->display_mode = SCOPE_MODE_YT;
     ui->xy_channel_x = 0;
     ui->xy_channel_y = 1;
+
+    // Initialize Bode plot settings
+    ui->show_bode_plot = false;
+    ui->bode_rect = (Rect){PALETTE_WIDTH + 50, TOOLBAR_HEIGHT + 50, 400, 300};
+    ui->btn_bode = (Button){{scope_btn_x + 35, scope_btn_y, 40, scope_btn_h}, "Bode", "Frequency response plot", false, false, true, false};
+    ui->bode_freq_start = 10.0;     // 10 Hz
+    ui->bode_freq_stop = 100000.0;  // 100 kHz
+    ui->bode_num_points = 50;
 
     strncpy(ui->status_message, "Ready", sizeof(ui->status_message));
 }
@@ -502,12 +534,17 @@ static void draw_property_field(SDL_Renderer *renderer, int x, int y, int w,
 }
 
 void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *selected, struct InputState *input) {
-    int x = ui->window_width - PROPERTIES_WIDTH;
+    int x = ui->window_width - ui->properties_width;
     int y = TOOLBAR_HEIGHT;
+
+    // Draw resize handle on left edge
+    SDL_SetRenderDrawColor(renderer, 0x40, 0x60, 0x80, 0xff);
+    SDL_Rect resize_handle = {x - 3, y, 6, 200};
+    SDL_RenderFillRect(renderer, &resize_handle);
 
     // Background
     SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xff);
-    SDL_Rect panel = {x, y, PROPERTIES_WIDTH, 200};
+    SDL_Rect panel = {x, y, ui->properties_width, 200};
     SDL_RenderFillRect(renderer, &panel);
 
     // Title
@@ -545,7 +582,7 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
 
         // Show component properties with clickable fields
         int prop_y = y + 55;
-        int prop_w = PROPERTIES_WIDTH - 20;
+        int prop_w = ui->properties_width - 20;
         char buf[64];
 
         switch (selected->type) {
@@ -719,12 +756,12 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
 }
 
 void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
-    int x = ui->window_width - PROPERTIES_WIDTH;
+    int x = ui->window_width - ui->properties_width;
     int y = TOOLBAR_HEIGHT + 210;
 
     // Background
     SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xff);
-    SDL_Rect panel = {x, y, PROPERTIES_WIDTH, 180};
+    SDL_Rect panel = {x, y, ui->properties_width, 180};
     SDL_RenderFillRect(renderer, &panel);
 
     // Title
@@ -1012,6 +1049,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     draw_button(renderer, &ui->btn_scope_trig_ch);
     draw_button(renderer, &ui->btn_scope_mode);
     draw_button(renderer, &ui->btn_scope_screenshot);
+    draw_button(renderer, &ui->btn_bode);
 
     // Show trigger level next to mode button
     if (ui->trigger_mode != TRIG_AUTO) {
@@ -1065,6 +1103,167 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         ui_draw_text(renderer, "Place probes to", r->x + 70, r->y + r->h/2 - 12);
         ui_draw_text(renderer, "see waveforms", r->x + 75, r->y + r->h/2 + 4);
     }
+}
+
+void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
+    if (!ui || !renderer || !ui->show_bode_plot) return;
+
+    Rect *r = &ui->bode_rect;
+    char buf[64];
+
+    // Semi-transparent background
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xe0);
+    SDL_Rect panel = {r->x - 10, r->y - 25, r->w + 20, r->h + 120};
+    SDL_RenderFillRect(renderer, &panel);
+
+    // Border
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    SDL_RenderDrawRect(renderer, &panel);
+
+    // Title
+    ui_draw_text(renderer, "Bode Plot - Frequency Response", r->x, r->y - 20);
+
+    // Plot background (black)
+    SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xff);
+    SDL_Rect plot_area = {r->x, r->y, r->w, r->h};
+    SDL_RenderFillRect(renderer, &plot_area);
+
+    // Grid
+    SDL_SetRenderDrawColor(renderer, 0x20, 0x40, 0x20, 0xff);
+
+    // Horizontal grid lines (magnitude)
+    int num_h_lines = 6;  // -60 to 0 dB in 10dB steps
+    for (int i = 0; i <= num_h_lines; i++) {
+        int y_pos = r->y + (i * r->h) / num_h_lines;
+        SDL_RenderDrawLine(renderer, r->x, y_pos, r->x + r->w, y_pos);
+    }
+
+    // Vertical grid lines (frequency decades)
+    double log_start = log10(ui->bode_freq_start);
+    double log_stop = log10(ui->bode_freq_stop);
+    int num_decades = (int)(log_stop - log_start);
+    for (int i = 0; i <= num_decades; i++) {
+        int x_pos = r->x + (i * r->w) / num_decades;
+        SDL_RenderDrawLine(renderer, x_pos, r->y, x_pos, r->y + r->h);
+    }
+
+    // 0 dB line (reference)
+    SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
+    int zero_db_y = r->y + r->h / 2;  // 0 dB at middle
+    SDL_RenderDrawLine(renderer, r->x, zero_db_y, r->x + r->w, zero_db_y);
+
+    // Plot frequency response data
+    if (sim && sim->freq_response_count > 1) {
+        // Magnitude plot (yellow)
+        SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0x00, 0xff);
+
+        double db_min = -60, db_max = 20;  // dB range
+        double db_range = db_max - db_min;
+
+        for (int i = 1; i < sim->freq_response_count; i++) {
+            FreqResponsePoint *p0 = &sim->freq_response[i - 1];
+            FreqResponsePoint *p1 = &sim->freq_response[i];
+
+            // Calculate x positions (log scale)
+            double x0_norm = (log10(p0->frequency) - log_start) / (log_stop - log_start);
+            double x1_norm = (log10(p1->frequency) - log_start) / (log_stop - log_start);
+            int x0 = r->x + (int)(x0_norm * r->w);
+            int x1 = r->x + (int)(x1_norm * r->w);
+
+            // Calculate y positions (linear dB scale, inverted)
+            double y0_norm = 1.0 - (p0->magnitude_db - db_min) / db_range;
+            double y1_norm = 1.0 - (p1->magnitude_db - db_min) / db_range;
+            y0_norm = fmax(0, fmin(1, y0_norm));
+            y1_norm = fmax(0, fmin(1, y1_norm));
+            int y0 = r->y + (int)(y0_norm * r->h);
+            int y1 = r->y + (int)(y1_norm * r->h);
+
+            SDL_RenderDrawLine(renderer, x0, y0, x1, y1);
+        }
+
+        // Phase plot (cyan)
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);
+
+        for (int i = 1; i < sim->freq_response_count; i++) {
+            FreqResponsePoint *p0 = &sim->freq_response[i - 1];
+            FreqResponsePoint *p1 = &sim->freq_response[i];
+
+            // Calculate x positions (log scale)
+            double x0_norm = (log10(p0->frequency) - log_start) / (log_stop - log_start);
+            double x1_norm = (log10(p1->frequency) - log_start) / (log_stop - log_start);
+            int x0 = r->x + (int)(x0_norm * r->w);
+            int x1 = r->x + (int)(x1_norm * r->w);
+
+            // Calculate y positions (phase: -180 to +180 deg)
+            double y0_norm = 0.5 - p0->phase_deg / 360.0;
+            double y1_norm = 0.5 - p1->phase_deg / 360.0;
+            y0_norm = fmax(0, fmin(1, y0_norm));
+            y1_norm = fmax(0, fmin(1, y1_norm));
+            int y0 = r->y + (int)(y0_norm * r->h);
+            int y1 = r->y + (int)(y1_norm * r->h);
+
+            SDL_RenderDrawLine(renderer, x0, y0, x1, y1);
+        }
+    }
+
+    // Labels
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+
+    // Y-axis labels (magnitude)
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0x00, 0xff);
+    ui_draw_text(renderer, "20dB", r->x - 35, r->y - 3);
+    ui_draw_text(renderer, "0dB", r->x - 28, r->y + r->h/2 - 3);
+    ui_draw_text(renderer, "-60dB", r->x - 40, r->y + r->h - 3);
+
+    // Y-axis labels (phase)
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);
+    ui_draw_text(renderer, "180", r->x + r->w + 5, r->y - 3);
+    ui_draw_text(renderer, "0", r->x + r->w + 5, r->y + r->h/2 - 3);
+    ui_draw_text(renderer, "-180", r->x + r->w + 5, r->y + r->h - 3);
+
+    // X-axis labels (frequency)
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    int label_y = r->y + r->h + 5;
+
+    snprintf(buf, sizeof(buf), "%.0fHz", ui->bode_freq_start);
+    ui_draw_text(renderer, buf, r->x - 10, label_y);
+
+    double mid_freq = sqrt(ui->bode_freq_start * ui->bode_freq_stop);
+    if (mid_freq >= 1000) {
+        snprintf(buf, sizeof(buf), "%.1fkHz", mid_freq / 1000);
+    } else {
+        snprintf(buf, sizeof(buf), "%.0fHz", mid_freq);
+    }
+    ui_draw_text(renderer, buf, r->x + r->w/2 - 20, label_y);
+
+    if (ui->bode_freq_stop >= 1000) {
+        snprintf(buf, sizeof(buf), "%.0fkHz", ui->bode_freq_stop / 1000);
+    } else {
+        snprintf(buf, sizeof(buf), "%.0fHz", ui->bode_freq_stop);
+    }
+    ui_draw_text(renderer, buf, r->x + r->w - 30, label_y);
+
+    // Legend
+    int legend_y = label_y + 15;
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0x00, 0xff);
+    ui_draw_text(renderer, "Magnitude (dB)", r->x, legend_y);
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);
+    ui_draw_text(renderer, "Phase (deg)", r->x + 120, legend_y);
+
+    // Status
+    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+    if (sim && sim->freq_sweep_running) {
+        ui_draw_text(renderer, "Running frequency sweep...", r->x, legend_y + 15);
+    } else if (sim && sim->freq_sweep_complete) {
+        snprintf(buf, sizeof(buf), "%d points measured", sim->freq_response_count);
+        ui_draw_text(renderer, buf, r->x, legend_y + 15);
+    } else {
+        ui_draw_text(renderer, "Click Bode to run sweep", r->x, legend_y + 15);
+    }
+
+    // Close button hint
+    ui_draw_text(renderer, "[ESC to close]", r->x + r->w - 100, legend_y + 15);
 }
 
 void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer) {
@@ -1174,12 +1373,23 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             ui->scope_resize_edge = 1;  // left edge
             return UI_ACTION_NONE;
         }
+        // Properties panel left edge drag zone (5 pixels)
+        int props_left_edge = ui->window_width - ui->properties_width;
+        if (x >= props_left_edge - 5 && x <= props_left_edge + 5 &&
+            y >= TOOLBAR_HEIGHT && y <= ui->window_height - STATUSBAR_HEIGHT) {
+            ui->props_resizing = true;
+            return UI_ACTION_NONE;
+        }
     } else {
         // Release resize
         if (ui->scope_resizing) {
             ui->scope_resizing = false;
             ui->scope_resize_edge = -1;
             ui_update_layout(ui);  // Update button positions
+        }
+        if (ui->props_resizing) {
+            ui->props_resizing = false;
+            ui_update_layout(ui);  // Update scope position within panel
         }
     }
 
@@ -1235,6 +1445,9 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
         if (point_in_rect(x, y, &ui->btn_scope_screenshot.bounds) && ui->btn_scope_screenshot.enabled) {
             return UI_ACTION_SCOPE_SCREENSHOT;
+        }
+        if (point_in_rect(x, y, &ui->btn_bode.bounds) && ui->btn_bode.enabled) {
+            return UI_ACTION_BODE_PLOT;
         }
 
         // Check property fields for click-to-edit
@@ -1293,10 +1506,24 @@ int ui_handle_motion(UIState *ui, int x, int y) {
             int new_width = right - new_x;
 
             // Minimum and maximum width constraints
-            if (new_width >= 150 && new_width <= 400 && new_x >= ui->window_width - PROPERTIES_WIDTH) {
+            if (new_width >= 150 && new_width <= 400 && new_x >= ui->window_width - ui->properties_width) {
                 ui->scope_rect.x = new_x;
                 ui->scope_rect.w = new_width;
             }
+        }
+        return UI_ACTION_NONE;
+    }
+
+    // Handle properties panel resizing
+    if (ui->props_resizing) {
+        int new_width = ui->window_width - x;
+
+        // Minimum and maximum width constraints
+        if (new_width >= 180 && new_width <= 450) {
+            ui->properties_width = new_width;
+            // Also update scope position to stay within panel
+            ui->scope_rect.x = ui->window_width - ui->properties_width + 10;
+            ui->scope_rect.w = ui->properties_width - 20;  // Fit scope width to panel
         }
         return UI_ACTION_NONE;
     }
@@ -1320,6 +1547,7 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_scope_trig_ch.hovered = point_in_rect(x, y, &ui->btn_scope_trig_ch.bounds);
     ui->btn_scope_mode.hovered = point_in_rect(x, y, &ui->btn_scope_mode.bounds);
     ui->btn_scope_screenshot.hovered = point_in_rect(x, y, &ui->btn_scope_screenshot.bounds);
+    ui->btn_bode.hovered = point_in_rect(x, y, &ui->btn_bode.bounds);
 
     // Update palette hover states
     for (int i = 0; i < ui->num_palette_items; i++) {
@@ -1376,7 +1604,7 @@ void ui_update_layout(UIState *ui) {
     if (!ui) return;
 
     // Update oscilloscope position (anchored to right side, vertically positioned based on height)
-    ui->scope_rect.x = ui->window_width - PROPERTIES_WIDTH + 10;
+    ui->scope_rect.x = ui->window_width - ui->properties_width + 10;
     // Keep y position at 400 or adjust if window is too small
     int max_scope_y = ui->window_height - STATUSBAR_HEIGHT - ui->scope_rect.h - 80;
     if (ui->scope_rect.y > max_scope_y && max_scope_y > TOOLBAR_HEIGHT + 220) {

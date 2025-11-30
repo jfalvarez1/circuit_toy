@@ -55,6 +55,13 @@ static const ComponentTypeInfo component_info[] = {
         { .capacitor = { 1e-6, 0.0 } }
     },
 
+    [COMP_CAPACITOR_ELEC] = {
+        "Electrolytic Cap", "Ce", 2,
+        {{ -40, 0, "+" }, { 40, 0, "-" }},
+        80, 30,
+        { .capacitor_elec = { 100e-6, 0.0, 25.0 } }  // 100uF, 25V max
+    },
+
     [COMP_INDUCTOR] = {
         "Inductor", "L", 2,
         {{ -40, 0, "1" }, { 40, 0, "2" }},
@@ -66,7 +73,28 @@ static const ComponentTypeInfo component_info[] = {
         "Diode", "D", 2,
         {{ -40, 0, "A" }, { 40, 0, "K" }},
         80, 20,
-        { .diode = { 1e-12, 0.026, 1.0 } }
+        { .diode = { 1e-12, 0.026, 1.0 } }  // Is=1pA, Vt=26mV, n=1
+    },
+
+    [COMP_ZENER] = {
+        "Zener Diode", "DZ", 2,
+        {{ -40, 0, "A" }, { 40, 0, "K" }},
+        80, 20,
+        { .zener = { 1e-12, 0.026, 1.0, 5.1 } }  // 5.1V Zener
+    },
+
+    [COMP_SCHOTTKY] = {
+        "Schottky Diode", "DS", 2,
+        {{ -40, 0, "A" }, { 40, 0, "K" }},
+        80, 20,
+        { .schottky = { 1e-8, 0.026, 1.05 } }  // Lower Vf (~0.3V)
+    },
+
+    [COMP_LED] = {
+        "LED", "LED", 2,
+        {{ -40, 0, "A" }, { 40, 0, "K" }},
+        80, 20,
+        { .led = { 1e-20, 0.026, 2.0, 620 } }  // Red LED (~2V Vf, 620nm)
     },
 
     [COMP_NPN_BJT] = {
@@ -346,11 +374,14 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             break;
         }
 
-        case COMP_CAPACITOR: {
+        case COMP_CAPACITOR:
+        case COMP_CAPACITOR_ELEC: {
             // Backward Euler companion model for capacitor:
             // i_C = C * dv/dt ≈ C * (v - v_prev) / dt = Geq * v - Ieq
             // where Geq = C/dt and Ieq = C * v_prev / dt
-            double C = comp->props.capacitor.capacitance;
+            double C = (comp->type == COMP_CAPACITOR) ?
+                       comp->props.capacitor.capacitance :
+                       comp->props.capacitor_elec.capacitance;
             double Geq = C / dt;
             double Ieq = 0;
 
@@ -408,6 +439,82 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double expTerm = exp(Vd / nVt);
             double Id = Is * (expTerm - 1);
             double Gd = (Is / nVt) * expTerm;
+            double Ieq = Id - Gd * Vd;
+
+            STAMP_CONDUCTANCE(n[0], n[1], Gd);
+            if (n[0] > 0) vector_add(b, n[0]-1, -Ieq);
+            if (n[1] > 0) vector_add(b, n[1]-1, Ieq);
+            break;
+        }
+
+        case COMP_ZENER: {
+            // Zener diode - bidirectional conduction
+            double Is = comp->props.zener.is;
+            double Vt = comp->props.zener.vt;
+            double nn = comp->props.zener.n;
+            double Vz = comp->props.zener.vz;
+            double nVt = nn * Vt;
+
+            double Vd = 0.6;
+            if (prev_solution) {
+                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+                Vd = v1 - v2;
+            }
+
+            double Gd, Ieq;
+            if (Vd >= 0) {
+                // Forward bias - normal diode behavior
+                Vd = CLAMP(Vd, 0, 40*nVt);
+                double expTerm = exp(Vd / nVt);
+                double Id = Is * (expTerm - 1);
+                Gd = (Is / nVt) * expTerm + 1e-12;
+                Ieq = Id - Gd * Vd;
+            } else {
+                // Reverse bias - breakdown at Vz
+                double Vrev = -Vd;
+                if (Vrev > Vz) {
+                    // In breakdown region
+                    Gd = 1.0;  // Low impedance
+                    Ieq = -(Vz * Gd - Gd * Vd);
+                } else {
+                    // Before breakdown
+                    Gd = 1e-12;  // Very high impedance
+                    Ieq = 0;
+                }
+            }
+
+            STAMP_CONDUCTANCE(n[0], n[1], Gd);
+            if (n[0] > 0) vector_add(b, n[0]-1, -Ieq);
+            if (n[1] > 0) vector_add(b, n[1]-1, Ieq);
+            break;
+        }
+
+        case COMP_SCHOTTKY:
+        case COMP_LED: {
+            // Similar to regular diode but with different parameters
+            double Is, Vt, nn;
+            if (comp->type == COMP_SCHOTTKY) {
+                Is = comp->props.schottky.is;
+                Vt = comp->props.schottky.vt;
+                nn = comp->props.schottky.n;
+            } else {
+                Is = comp->props.led.is;
+                Vt = comp->props.led.vt;
+                nn = comp->props.led.n;
+            }
+            double nVt = nn * Vt;
+
+            double Vd = 0.6;
+            if (prev_solution) {
+                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+                Vd = CLAMP(v1 - v2, -5*nVt, 40*nVt);
+            }
+
+            double expTerm = exp(Vd / nVt);
+            double Id = Is * (expTerm - 1);
+            double Gd = (Is / nVt) * expTerm + 1e-12;
             double Ieq = Id - Gd * Vd;
 
             STAMP_CONDUCTANCE(n[0], n[1], Gd);

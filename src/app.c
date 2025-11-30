@@ -136,7 +136,7 @@ void app_handle_events(App *app) {
                     app->ui.window_height = h;
 
                     // Update canvas area
-                    app->render->canvas_rect.w = w - PALETTE_WIDTH - PROPERTIES_WIDTH;
+                    app->render->canvas_rect.w = w - PALETTE_WIDTH - app->ui.properties_width;
                     app->render->canvas_rect.h = h - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
 
                     // Update UI layout (scope position, buttons, etc.)
@@ -313,6 +313,39 @@ void app_handle_events(App *app) {
                 }
                 break;
 
+            case UI_ACTION_BODE_PLOT:
+                // Toggle Bode plot display and run frequency sweep
+                if (app->ui.show_bode_plot) {
+                    // If already showing, hide it
+                    app->ui.show_bode_plot = false;
+                } else {
+                    // Show and run frequency sweep
+                    app->ui.show_bode_plot = true;
+
+                    // Find a probe node to use as output
+                    int probe_node = 0;
+                    if (app->circuit && app->circuit->num_probes > 0) {
+                        probe_node = app->circuit->probes[0].node_id;
+                    }
+
+                    // Run frequency sweep
+                    if (app->simulation) {
+                        ui_set_status(&app->ui, "Running frequency sweep...");
+                        bool success = simulation_freq_sweep(app->simulation,
+                            app->ui.bode_freq_start, app->ui.bode_freq_stop,
+                            0, probe_node, app->ui.bode_num_points);
+                        if (success) {
+                            char msg[64];
+                            snprintf(msg, sizeof(msg), "Frequency sweep complete: %d points",
+                                app->simulation->freq_response_count);
+                            ui_set_status(&app->ui, msg);
+                        } else {
+                            ui_set_status(&app->ui, simulation_get_error(app->simulation));
+                        }
+                    }
+                }
+                break;
+
             case UI_ACTION_PROP_APPLY:
                 // Apply text-edited property value
                 if (app->input.selected_component) {
@@ -440,7 +473,7 @@ void app_render(App *app) {
     SDL_RenderClear(r);
 
     // Calculate dynamic canvas dimensions
-    int canvas_w = app->ui.window_width - PALETTE_WIDTH - PROPERTIES_WIDTH;
+    int canvas_w = app->ui.window_width - PALETTE_WIDTH - app->ui.properties_width;
     int canvas_h = app->ui.window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
 
     // Render canvas area (circuit)
@@ -493,6 +526,9 @@ void app_render(App *app) {
     if (app->ui.show_shortcuts_dialog) {
         ui_render_shortcuts_dialog(&app->ui, r);
     }
+
+    // Render Bode plot overlay
+    ui_render_bode_plot(&app->ui, r, app->simulation);
 
     // Present
     SDL_RenderPresent(r);

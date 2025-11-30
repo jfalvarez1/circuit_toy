@@ -51,8 +51,12 @@ typedef enum {
     COMP_DC_CURRENT,
     COMP_RESISTOR,
     COMP_CAPACITOR,
+    COMP_CAPACITOR_ELEC,    // Electrolytic capacitor (polarized)
     COMP_INDUCTOR,
     COMP_DIODE,
+    COMP_ZENER,             // Zener diode
+    COMP_SCHOTTKY,          // Schottky diode
+    COMP_LED,               // Light-emitting diode
     COMP_NPN_BJT,
     COMP_PNP_BJT,
     COMP_NMOS,

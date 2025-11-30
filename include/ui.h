@@ -106,6 +106,10 @@ typedef struct {
     bool scope_resizing;            // Currently resizing scope panel
     int scope_resize_edge;          // Which edge is being dragged (0=top, 1=left)
 
+    // Properties panel resizing
+    int properties_width;           // Current width of properties panel
+    bool props_resizing;            // Currently resizing properties panel
+
     // Oscilloscope control buttons
     Button btn_scope_volt_up;
     Button btn_scope_volt_down;
@@ -144,6 +148,14 @@ typedef struct {
     // Modal dialogs
     bool show_shortcuts_dialog;
 
+    // Bode plot / frequency response
+    bool show_bode_plot;            // Show Bode plot panel
+    Button btn_bode;                // Button to run/toggle Bode plot
+    Rect bode_rect;                 // Bode plot panel bounds
+    double bode_freq_start;         // Start frequency (Hz)
+    double bode_freq_stop;          // Stop frequency (Hz)
+    int bode_num_points;            // Number of frequency points
+
     // Cursor info
     int cursor_x, cursor_y;
     float world_x, world_y;
@@ -164,6 +176,7 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer);
 void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *selected, struct InputState *input);
 void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
 void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
+void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
 void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer);
 void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer);
 
@@ -193,6 +206,7 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_SCOPE_TRIG_UP    19
 #define UI_ACTION_SCOPE_TRIG_DOWN  20
 #define UI_ACTION_SCOPE_SCREENSHOT 21
+#define UI_ACTION_BODE_PLOT     22
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type
 #define UI_ACTION_PROP_APPLY    1000 // Apply property text edit

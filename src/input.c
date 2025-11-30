@@ -425,6 +425,12 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 return true;
             }
 
+            // Close Bode plot on ESC if it's open
+            if (event->key.keysym.sym == SDLK_ESCAPE && ui && ui->show_bode_plot) {
+                ui->show_bode_plot = false;
+                return true;
+            }
+
             input_handle_key(input, event->key.keysym.sym, circuit, render);
             return true;
         }

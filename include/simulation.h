@@ -22,6 +22,16 @@ typedef struct {
     double values[MAX_PROBES];
 } HistoryPoint;
 
+// Frequency response data point
+typedef struct {
+    double frequency;           // Hz
+    double magnitude_db;        // dB (20*log10(Vout/Vin))
+    double phase_deg;           // degrees
+} FreqResponsePoint;
+
+// Maximum points in frequency sweep
+#define MAX_FREQ_POINTS 200
+
 // Simulation engine
 typedef struct {
     Circuit *circuit;
@@ -49,6 +59,16 @@ typedef struct {
     // Error message
     char error_msg[256];
     bool has_error;
+
+    // Frequency response data
+    FreqResponsePoint freq_response[MAX_FREQ_POINTS];
+    int freq_response_count;
+    double freq_start;              // Start frequency (Hz)
+    double freq_stop;               // Stop frequency (Hz)
+    int freq_source_node;           // Input voltage source node
+    int freq_probe_node;            // Output probe node
+    bool freq_sweep_running;        // Currently running sweep
+    bool freq_sweep_complete;       // Sweep complete
 } Simulation;
 
 // Create/destroy simulation
@@ -82,5 +102,14 @@ int simulation_get_history(Simulation *sim, int probe_idx,
 // Error handling
 const char *simulation_get_error(Simulation *sim);
 void simulation_clear_error(Simulation *sim);
+
+// Frequency response / Bode plot
+// Run frequency sweep from start_freq to stop_freq (in Hz)
+// Uses source_node as input reference, probe_node as output
+bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
+                           int source_node, int probe_node, int num_points);
+
+// Get frequency response data
+int simulation_get_freq_response(Simulation *sim, FreqResponsePoint *points, int max_points);
 
 #endif // SIMULATION_H

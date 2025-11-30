@@ -25,8 +25,12 @@ typedef union {
     struct { double current; } dc_current;
     struct { double resistance; double tolerance; double power_rating; double power_dissipated; } resistor;
     struct { double capacitance; double voltage; } capacitor;  // voltage = state
+    struct { double capacitance; double voltage; double max_voltage; } capacitor_elec;  // Electrolytic
     struct { double inductance; double current; } inductor;    // current = state
     struct { double is; double vt; double n; } diode;
+    struct { double is; double vt; double n; double vz; } zener;  // vz = breakdown voltage
+    struct { double is; double vt; double n; } schottky;       // Lower Vf than standard diode
+    struct { double is; double vt; double n; double wavelength; } led;  // wavelength in nm for color
     struct { double beta; double is; double va; } bjt;
     struct { double kn; double vth; double lambda; } mosfet;
     struct { double gain; double voffset; double vmax; double vmin; } opamp;

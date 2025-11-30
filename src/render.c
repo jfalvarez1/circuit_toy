@@ -333,11 +333,23 @@ void render_component(RenderContext *ctx, Component *comp) {
         case COMP_CAPACITOR:
             render_capacitor(ctx, comp->x, comp->y, comp->rotation);
             break;
+        case COMP_CAPACITOR_ELEC:
+            render_capacitor_elec(ctx, comp->x, comp->y, comp->rotation);
+            break;
         case COMP_INDUCTOR:
             render_inductor(ctx, comp->x, comp->y, comp->rotation);
             break;
         case COMP_DIODE:
             render_diode(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_ZENER:
+            render_zener(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_SCHOTTKY:
+            render_schottky(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_LED:
+            render_led(ctx, comp->x, comp->y, comp->rotation);
             break;
         case COMP_NPN_BJT:
             render_bjt(ctx, comp->x, comp->y, comp->rotation, false);
@@ -698,6 +710,74 @@ void render_diode(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_line_rotated(ctx, x, y, 10, 0, 40, 0, rotation);
 }
 
+void render_zener(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -10, 0, rotation);
+    // Triangle
+    render_draw_line_rotated(ctx, x, y, -10, -12, -10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -12, 10, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 12, 10, 0, rotation);
+    // Zener bar with bent ends (Z shape)
+    render_draw_line_rotated(ctx, x, y, 10, -12, 10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, -12, 6, -12, rotation);   // Top bend
+    render_draw_line_rotated(ctx, x, y, 10, 12, 14, 12, rotation);    // Bottom bend
+    render_draw_line_rotated(ctx, x, y, 10, 0, 40, 0, rotation);
+}
+
+void render_schottky(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -10, 0, rotation);
+    // Triangle
+    render_draw_line_rotated(ctx, x, y, -10, -12, -10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -12, 10, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 12, 10, 0, rotation);
+    // Schottky bar with S-shaped ends
+    render_draw_line_rotated(ctx, x, y, 10, -12, 10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, -12, 6, -12, rotation);   // Top horizontal
+    render_draw_line_rotated(ctx, x, y, 6, -12, 6, -8, rotation);     // Top vertical
+    render_draw_line_rotated(ctx, x, y, 10, 12, 14, 12, rotation);    // Bottom horizontal
+    render_draw_line_rotated(ctx, x, y, 14, 12, 14, 8, rotation);     // Bottom vertical
+    render_draw_line_rotated(ctx, x, y, 10, 0, 40, 0, rotation);
+}
+
+void render_led(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -10, 0, rotation);
+    // Triangle (filled appearance with multiple lines)
+    render_draw_line_rotated(ctx, x, y, -10, -12, -10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -12, 10, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 12, 10, 0, rotation);
+    // Bar
+    render_draw_line_rotated(ctx, x, y, 10, -12, 10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, 0, 40, 0, rotation);
+    // Light arrows (emission)
+    render_draw_line_rotated(ctx, x, y, 2, -16, 8, -22, rotation);
+    render_draw_line_rotated(ctx, x, y, 6, -16, 8, -22, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, -22, 5, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, -22, 8, -18, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, -12, 14, -18, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, -12, 14, -18, rotation);
+    render_draw_line_rotated(ctx, x, y, 14, -18, 11, -16, rotation);
+    render_draw_line_rotated(ctx, x, y, 14, -18, 14, -14, rotation);
+}
+
+void render_capacitor_elec(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    // Positive side (left) - straight line
+    render_draw_line_rotated(ctx, x, y, -40, 0, -5, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, -15, -5, 15, rotation);
+    // Negative side (right) - curved plate (shown as multiple lines)
+    render_draw_line_rotated(ctx, x, y, 5, -15, 5, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, -10, 7, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, 7, -5, 7, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, 7, 5, 5, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 10, 5, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 0, 40, 0, rotation);
+    // Plus sign near positive terminal
+    render_draw_line_rotated(ctx, x, y, -25, -8, -19, -8, rotation);  // horizontal
+    render_draw_line_rotated(ctx, x, y, -22, -11, -22, -5, rotation); // vertical
+}
+
 void render_bjt(RenderContext *ctx, float x, float y, int rotation, bool is_pnp) {
     // Terminals: B at (-20, 0), C at (20, -20), E at (20, 20)
     render_draw_circle(ctx, x, y, 18);
@@ -707,6 +787,19 @@ void render_bjt(RenderContext *ctx, float x, float y, int rotation, bool is_pnp)
     render_draw_line_rotated(ctx, x, y, 12, -15, 20, -20, rotation);
     render_draw_line_rotated(ctx, x, y, -5, 5, 12, 15, rotation);
     render_draw_line_rotated(ctx, x, y, 12, 15, 20, 20, rotation);
+
+    // Draw arrow on emitter to distinguish NPN/PNP
+    // Arrow is on the line from (-5, 5) to (12, 15)
+    // Arrow direction: NPN = outward (away from base), PNP = inward (toward base)
+    if (is_pnp) {
+        // PNP: Arrow pointing toward base (at emitter near base)
+        render_draw_line_rotated(ctx, x, y, 0, 7, -3, 10, rotation);
+        render_draw_line_rotated(ctx, x, y, 0, 7, 3, 11, rotation);
+    } else {
+        // NPN: Arrow pointing outward (at emitter away from base)
+        render_draw_line_rotated(ctx, x, y, 8, 12, 5, 8, rotation);
+        render_draw_line_rotated(ctx, x, y, 8, 12, 11, 9, rotation);
+    }
 }
 
 void render_mosfet(RenderContext *ctx, float x, float y, int rotation, bool is_pmos) {
@@ -714,6 +807,7 @@ void render_mosfet(RenderContext *ctx, float x, float y, int rotation, bool is_p
     render_draw_line_rotated(ctx, x, y, -20, 0, -8, 0, rotation);
     render_draw_line_rotated(ctx, x, y, -8, -10, -8, 10, rotation);
     render_draw_line_rotated(ctx, x, y, -3, -12, -3, -4, rotation);
+    render_draw_line_rotated(ctx, x, y, -3, -2, -3, 2, rotation);  // Center segment (body)
     render_draw_line_rotated(ctx, x, y, -3, 4, -3, 12, rotation);
     render_draw_line_rotated(ctx, x, y, -3, -8, 12, -8, rotation);
     render_draw_line_rotated(ctx, x, y, 12, -8, 12, -20, rotation);
@@ -721,6 +815,21 @@ void render_mosfet(RenderContext *ctx, float x, float y, int rotation, bool is_p
     render_draw_line_rotated(ctx, x, y, -3, 8, 12, 8, rotation);
     render_draw_line_rotated(ctx, x, y, 12, 8, 12, 20, rotation);
     render_draw_line_rotated(ctx, x, y, 12, 20, 20, 20, rotation);
+
+    // Body connection line
+    render_draw_line_rotated(ctx, x, y, -3, 0, 12, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, 0, 12, 8, rotation);
+
+    // Arrow on body to distinguish NMOS/PMOS
+    if (is_pmos) {
+        // PMOS: Arrow pointing outward (away from channel) - on the body line
+        render_draw_line_rotated(ctx, x, y, 3, 0, 0, -3, rotation);
+        render_draw_line_rotated(ctx, x, y, 3, 0, 0, 3, rotation);
+    } else {
+        // NMOS: Arrow pointing inward (toward channel) - on the body line
+        render_draw_line_rotated(ctx, x, y, 6, 0, 9, -3, rotation);
+        render_draw_line_rotated(ctx, x, y, 6, 0, 9, 3, rotation);
+    }
 }
 
 void render_opamp(RenderContext *ctx, float x, float y, int rotation) {
