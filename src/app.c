@@ -9,6 +9,28 @@
 #include "file_io.h"
 #include "circuits.h"
 
+// Thread data for frequency sweep
+typedef struct {
+    Simulation *sim;
+    double start_freq;
+    double stop_freq;
+    int source_node;
+    int probe_node;
+    int num_points;
+    bool success;
+} FreqSweepThreadData;
+
+// Thread function for frequency sweep
+static int freq_sweep_thread_func(void *data) {
+    FreqSweepThreadData *td = (FreqSweepThreadData *)data;
+    td->success = simulation_freq_sweep(td->sim, td->start_freq, td->stop_freq,
+                                        td->source_node, td->probe_node, td->num_points);
+    return 0;
+}
+
+// Static thread data (one sweep at a time)
+static FreqSweepThreadData g_sweep_data;
+
 bool app_init(App *app) {
     memset(app, 0, sizeof(App));
 
@@ -94,6 +116,14 @@ bool app_init(App *app) {
 }
 
 void app_shutdown(App *app) {
+    // Cancel and wait for frequency sweep thread if running
+    if (app->freq_sweep_thread_running && app->simulation) {
+        simulation_cancel_freq_sweep(app->simulation);
+        SDL_WaitThread(app->freq_sweep_thread, NULL);
+        app->freq_sweep_thread = NULL;
+        app->freq_sweep_thread_running = false;
+    }
+
     if (app->simulation) {
         simulation_free(app->simulation);
         app->simulation = NULL;
@@ -322,10 +352,22 @@ void app_handle_events(App *app) {
             case UI_ACTION_BODE_PLOT:
                 // Toggle Bode plot display and run frequency sweep
                 if (app->ui.show_bode_plot) {
-                    // If already showing, hide it
+                    // If already showing, hide it and cancel any running sweep
+                    if (app->freq_sweep_thread_running && app->simulation) {
+                        simulation_cancel_freq_sweep(app->simulation);
+                        SDL_WaitThread(app->freq_sweep_thread, NULL);
+                        app->freq_sweep_thread = NULL;
+                        app->freq_sweep_thread_running = false;
+                    }
                     app->ui.show_bode_plot = false;
                 } else {
-                    // Show and run frequency sweep
+                    // Don't start a new sweep if one is already running
+                    if (app->freq_sweep_thread_running) {
+                        ui_set_status(&app->ui, "Frequency sweep already in progress...");
+                        break;
+                    }
+
+                    // Show and run frequency sweep in background thread
                     app->ui.show_bode_plot = true;
 
                     // Find a probe node to use as output
@@ -334,19 +376,23 @@ void app_handle_events(App *app) {
                         probe_node = app->circuit->probes[0].node_id;
                     }
 
-                    // Run frequency sweep
+                    // Start frequency sweep in background thread
                     if (app->simulation) {
-                        ui_set_status(&app->ui, "Running frequency sweep...");
-                        bool success = simulation_freq_sweep(app->simulation,
-                            app->ui.bode_freq_start, app->ui.bode_freq_stop,
-                            0, probe_node, app->ui.bode_num_points);
-                        if (success) {
-                            char msg[64];
-                            snprintf(msg, sizeof(msg), "Frequency sweep complete: %d points",
-                                app->simulation->freq_response_count);
-                            ui_set_status(&app->ui, msg);
+                        g_sweep_data.sim = app->simulation;
+                        g_sweep_data.start_freq = app->ui.bode_freq_start;
+                        g_sweep_data.stop_freq = app->ui.bode_freq_stop;
+                        g_sweep_data.source_node = 0;
+                        g_sweep_data.probe_node = probe_node;
+                        g_sweep_data.num_points = app->ui.bode_num_points;
+                        g_sweep_data.success = false;
+
+                        app->freq_sweep_thread = SDL_CreateThread(
+                            freq_sweep_thread_func, "FreqSweep", &g_sweep_data);
+                        if (app->freq_sweep_thread) {
+                            app->freq_sweep_thread_running = true;
+                            ui_set_status(&app->ui, "Running frequency sweep...");
                         } else {
-                            ui_set_status(&app->ui, simulation_get_error(app->simulation));
+                            ui_set_status(&app->ui, "Failed to start frequency sweep thread");
                         }
                     }
                 }
@@ -908,6 +954,34 @@ void app_update(App *app) {
         app->fps = app->frame_count;
         app->frame_count = 0;
         fps_timer = current_time;
+    }
+
+    // Check for frequency sweep thread completion
+    if (app->freq_sweep_thread_running && app->simulation) {
+        if (!app->simulation->freq_sweep_running) {
+            // Thread has finished - wait for it to clean up
+            SDL_WaitThread(app->freq_sweep_thread, NULL);
+            app->freq_sweep_thread = NULL;
+            app->freq_sweep_thread_running = false;
+
+            if (g_sweep_data.success) {
+                char msg[64];
+                snprintf(msg, sizeof(msg), "Frequency sweep complete: %d points",
+                    app->simulation->freq_response_count);
+                ui_set_status(&app->ui, msg);
+            } else if (!app->simulation->freq_sweep_cancel) {
+                ui_set_status(&app->ui, simulation_get_error(app->simulation));
+            } else {
+                ui_set_status(&app->ui, "Frequency sweep cancelled");
+            }
+        } else {
+            // Update progress in status bar
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Frequency sweep: %d/%d points...",
+                app->simulation->freq_sweep_progress + 1,
+                app->simulation->freq_sweep_total);
+            ui_set_status(&app->ui, msg);
+        }
     }
 
     // Run simulation if active

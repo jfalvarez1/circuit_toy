@@ -468,7 +468,10 @@ bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
     sim->freq_probe_node = probe_node;
     sim->freq_sweep_running = true;
     sim->freq_sweep_complete = false;
+    sim->freq_sweep_cancel = false;
     sim->freq_response_count = 0;
+    sim->freq_sweep_progress = 0;
+    sim->freq_sweep_total = num_points;
 
     // Generate logarithmically spaced frequencies
     double log_start = log10(start_freq);
@@ -476,6 +479,17 @@ bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
     double log_step = (log_stop - log_start) / (num_points - 1);
 
     for (int i = 0; i < num_points; i++) {
+        // Check for cancellation request
+        if (sim->freq_sweep_cancel) {
+            ac_source->props.ac_voltage.frequency = orig_freq;
+            sim->freq_sweep_running = false;
+            sim->freq_sweep_complete = false;
+            return false;
+        }
+
+        // Update progress
+        sim->freq_sweep_progress = i;
+
         double freq = pow(10.0, log_start + i * log_step);
 
         // Set source frequency
@@ -590,4 +604,10 @@ int simulation_get_freq_response(Simulation *sim, FreqResponsePoint *points, int
     }
 
     return count;
+}
+
+void simulation_cancel_freq_sweep(Simulation *sim) {
+    if (sim) {
+        sim->freq_sweep_cancel = true;
+    }
 }

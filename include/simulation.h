@@ -30,7 +30,7 @@ typedef struct {
 } FreqResponsePoint;
 
 // Maximum points in frequency sweep
-#define MAX_FREQ_POINTS 200
+#define MAX_FREQ_POINTS 1000
 
 // Simulation engine
 typedef struct {
@@ -69,6 +69,11 @@ typedef struct {
     int freq_probe_node;            // Output probe node
     bool freq_sweep_running;        // Currently running sweep
     bool freq_sweep_complete;       // Sweep complete
+
+    // Threading support for frequency sweep
+    int freq_sweep_progress;        // Current point being processed (0 to num_points-1)
+    int freq_sweep_total;           // Total number of points
+    bool freq_sweep_cancel;         // Request to cancel sweep
 } Simulation;
 
 // Create/destroy simulation
@@ -112,6 +117,9 @@ void simulation_clear_error(Simulation *sim);
 // Uses source_node as input reference, probe_node as output
 bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
                            int source_node, int probe_node, int num_points);
+
+// Cancel running frequency sweep
+void simulation_cancel_freq_sweep(Simulation *sim);
 
 // Get frequency response data
 int simulation_get_freq_response(Simulation *sim, FreqResponsePoint *points, int max_points);
