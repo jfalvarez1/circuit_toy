@@ -565,10 +565,11 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
         SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
         ui_draw_text(renderer, "Component:", x + 10, y + 35);
 
-        // Component type name
+        // Component type name (must match ComponentType enum order)
         const char *type_names[] = {
             "None", "Ground", "DC Voltage", "AC Voltage", "DC Current",
-            "Resistor", "Capacitor", "Inductor", "Diode",
+            "Resistor", "Capacitor", "Elec. Cap", "Inductor", "Diode",
+            "Zener", "Schottky", "LED",
             "NPN BJT", "PNP BJT", "NMOS", "PMOS", "Op-Amp",
             "Square Wave", "Triangle Wave", "Sawtooth", "Noise"
         };

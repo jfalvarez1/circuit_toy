@@ -83,8 +83,11 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                 }
                                 comp->selected = true;
                                 input->selected_component = comp;
-                                input->is_dragging = true;
-                                input->dragging_component = comp;
+                                // Only allow dragging when simulation is not running
+                                if (!input->sim_running) {
+                                    input->is_dragging = true;
+                                    input->dragging_component = comp;
+                                }
                             } else {
                                 // Deselect
                                 if (input->selected_component) {
@@ -97,6 +100,8 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     }
 
                     case TOOL_COMPONENT: {
+                        // Don't allow placing components while simulation running
+                        if (input->sim_running) break;
                         if (input->placing_component != COMP_NONE) {
                             float snapped_x = snap_to_grid(wx);
                             float snapped_y = snap_to_grid(wy);
@@ -136,6 +141,8 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     }
 
                     case TOOL_WIRE: {
+                        // Don't allow drawing wires while simulation running
+                        if (input->sim_running) break;
                         float snapped_x = snap_to_grid(wx);
                         float snapped_y = snap_to_grid(wy);
 
@@ -168,6 +175,11 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     }
 
                     case TOOL_DELETE: {
+                        // Don't allow deletion while simulation running
+                        if (input->sim_running) {
+                            ui_set_status(ui, "Stop simulation to delete components");
+                            break;
+                        }
                         // Delete component
                         Component *comp = circuit_find_component_at(circuit, wx, wy);
                         if (comp) {

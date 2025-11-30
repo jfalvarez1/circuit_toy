@@ -141,6 +141,7 @@ RenderContext *render_create(SDL_Renderer *renderer) {
     ctx->snap_to_grid = true;
 
     ctx->canvas_rect = (Rect){CANVAS_X, CANVAS_Y, CANVAS_WIDTH, CANVAS_HEIGHT};
+    ctx->show_current = true;  // Show current flow by default
 
     return ctx;
 }
@@ -354,9 +355,60 @@ void render_component(RenderContext *ctx, Component *comp) {
         case COMP_SCHOTTKY:
             render_schottky(ctx, comp->x, comp->y, comp->rotation);
             break;
-        case COMP_LED:
+        case COMP_LED: {
+            // Get LED color from wavelength
+            double wl = comp->props.led.wavelength;
+            uint8_t r = 255, g = 0, b = 0;  // Default red
+            if (wl >= 380 && wl < 440) {        // Violet
+                r = 148; g = 0; b = 211;
+            } else if (wl >= 440 && wl < 490) { // Blue
+                r = 0; g = 0; b = 255;
+            } else if (wl >= 490 && wl < 510) { // Cyan
+                r = 0; g = 255; b = 255;
+            } else if (wl >= 510 && wl < 580) { // Green
+                r = 0; g = 255; b = 0;
+            } else if (wl >= 580 && wl < 600) { // Yellow
+                r = 255; g = 255; b = 0;
+            } else if (wl >= 600 && wl < 640) { // Orange
+                r = 255; g = 165; b = 0;
+            } else if (wl >= 640 && wl <= 780) { // Red
+                r = 255; g = 0; b = 0;
+            } else if (wl > 780) {              // Infrared (show as dark red)
+                r = 139; g = 0; b = 0;
+            }
+
+            // Draw glow if LED has current
+            double current = comp->props.led.current;
+            if (current > 1e-6) {  // Threshold for visible glow
+                // Calculate glow intensity based on current (max ~20mA)
+                double intensity = fmin(1.0, current / 0.015);  // Full brightness at 15mA
+                uint8_t alpha = (uint8_t)(intensity * 200);
+
+                // Draw glow circles (use SDL directly for filled circle approximation)
+                SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_ADD);
+                // Get screen coordinates for component center
+                int scr_x, scr_y;
+                render_world_to_screen(ctx, comp->x, comp->y, &scr_x, &scr_y);
+                for (int radius = 20; radius >= 5; radius -= 3) {
+                    uint8_t glow_alpha = (uint8_t)(alpha * (1.0 - (radius - 5) / 15.0));
+                    SDL_SetRenderDrawColor(ctx->renderer, r, g, b, glow_alpha);
+                    int screen_radius = (int)(radius * ctx->zoom);
+                    // Draw filled circle approximation
+                    for (int dy = -screen_radius; dy <= screen_radius; dy++) {
+                        int dx = (int)sqrt(screen_radius * screen_radius - dy * dy);
+                        SDL_RenderDrawLine(ctx->renderer, scr_x - dx, scr_y + dy, scr_x + dx, scr_y + dy);
+                    }
+                }
+                SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+            }
+
+            // Set LED symbol color based on wavelength
+            if (!comp->selected && !comp->highlighted) {
+                render_set_color(ctx, (Color){r, g, b, 0xff});
+            }
             render_led(ctx, comp->x, comp->y, comp->rotation);
             break;
+        }
         case COMP_NPN_BJT:
             render_bjt(ctx, comp->x, comp->y, comp->rotation, false);
             break;

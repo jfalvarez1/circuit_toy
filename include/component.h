@@ -30,7 +30,7 @@ typedef union {
     struct { double is; double vt; double n; } diode;
     struct { double is; double vt; double n; double vz; } zener;  // vz = breakdown voltage
     struct { double is; double vt; double n; } schottky;       // Lower Vf than standard diode
-    struct { double is; double vt; double n; double wavelength; } led;  // wavelength in nm for color
+    struct { double is; double vt; double n; double vf; double max_current; double wavelength; double current; } led;  // vf=forward voltage, wavelength in nm for color
     struct { double beta; double is; double va; } bjt;
     struct { double kn; double vth; double lambda; } mosfet;
     struct { double gain; double voffset; double vmax; double vmin; } opamp;

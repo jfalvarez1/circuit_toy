@@ -94,7 +94,7 @@ static const ComponentTypeInfo component_info[] = {
         "LED", "LED", 2,
         {{ -40, 0, "A" }, { 40, 0, "K" }},
         80, 20,
-        { .led = { 1e-20, 0.026, 2.0, 620 } }  // Red LED (~2V Vf, 620nm)
+        { .led = { 1e-20, 0.026, 2.0, 2.0, 0.020, 620, 0 } }  // Red LED: Vf=2.0V, Imax=20mA, 620nm
     },
 
     [COMP_NPN_BJT] = {
@@ -516,6 +516,11 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double Id = Is * (expTerm - 1);
             double Gd = (Is / nVt) * expTerm + 1e-12;
             double Ieq = Id - Gd * Vd;
+
+            // Store LED current for glow rendering
+            if (comp->type == COMP_LED) {
+                comp->props.led.current = Id > 0 ? Id : 0;
+            }
 
             STAMP_CONDUCTANCE(n[0], n[1], Gd);
             if (n[0] > 0) vector_add(b, n[0]-1, -Ieq);

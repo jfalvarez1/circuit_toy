@@ -73,6 +73,9 @@ typedef struct InputState {
 
     // Pending UI action (set by ui_handle_click, processed by app)
     int pending_ui_action;
+
+    // Simulation state (set by app to prevent editing during simulation)
+    bool sim_running;
 } InputState;
 
 // Initialize input state

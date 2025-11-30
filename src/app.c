@@ -453,6 +453,9 @@ void app_update(App *app) {
         }
     }
 
+    // Update input state with simulation running status
+    app->input.sim_running = (app->simulation->state == SIM_RUNNING);
+
     // Update UI state
     ui_update(&app->ui, app->circuit, app->simulation);
 
