@@ -412,6 +412,20 @@ void ui_init(UIState *ui) {
     ui->bode_freq_stop = 100000.0;  // 100 kHz
     ui->bode_num_points = 50;
 
+    // Initialize parametric sweep panel
+    ui->show_sweep_panel = false;
+    ui->sweep_component_idx = -1;
+    ui->sweep_param_type = 0;       // Value (resistance, capacitance, etc.)
+    ui->sweep_start = 100.0;
+    ui->sweep_end = 10000.0;
+    ui->sweep_num_points = 20;
+    ui->sweep_log_scale = true;
+
+    // Initialize Monte Carlo panel
+    ui->show_monte_carlo_panel = false;
+    ui->monte_carlo_runs = 100;
+    ui->monte_carlo_tolerance = 10.0;  // 10% tolerance
+
     strncpy(ui->status_message, "Ready", sizeof(ui->status_message));
 }
 
@@ -1690,6 +1704,247 @@ void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
 
     // Close button hint
     ui_draw_text(renderer, "[ESC to close]", r->x + r->w - 100, legend_y + 15);
+}
+
+void ui_render_sweep_panel(UIState *ui, SDL_Renderer *renderer, void *analysis_ptr) {
+    if (!ui || !renderer || !ui->show_sweep_panel) return;
+
+    AnalysisState *analysis = (AnalysisState *)analysis_ptr;
+    char buf[64];
+
+    // Panel dimensions
+    int panel_w = 350;
+    int panel_h = 280;
+    int panel_x = (ui->window_width - panel_w) / 2;
+    int panel_y = (ui->window_height - panel_h) / 2;
+
+    // Semi-transparent background
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xf0);
+    SDL_Rect panel = {panel_x, panel_y, panel_w, panel_h};
+    SDL_RenderFillRect(renderer, &panel);
+
+    // Border
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    SDL_RenderDrawRect(renderer, &panel);
+
+    // Title
+    ui_draw_text(renderer, "PARAMETRIC SWEEP ANALYSIS", panel_x + 10, panel_y + 10);
+
+    int y = panel_y + 35;
+    int label_x = panel_x + 15;
+    int value_x = panel_x + 150;
+
+    SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xff);
+
+    // Component selection
+    ui_draw_text(renderer, "Component:", label_x, y);
+    if (ui->sweep_component_idx >= 0) {
+        snprintf(buf, sizeof(buf), "#%d", ui->sweep_component_idx);
+    } else {
+        snprintf(buf, sizeof(buf), "[Select]");
+    }
+    ui_draw_text(renderer, buf, value_x, y);
+    y += 20;
+
+    // Parameter type
+    ui_draw_text(renderer, "Parameter:", label_x, y);
+    static const char *param_names[] = {"Value", "Frequency", "Phase", "Offset", "Duty"};
+    if (ui->sweep_param_type < 5) {
+        ui_draw_text(renderer, param_names[ui->sweep_param_type], value_x, y);
+    }
+    y += 20;
+
+    // Start value
+    ui_draw_text(renderer, "Start:", label_x, y);
+    snprintf(buf, sizeof(buf), "%.3g", ui->sweep_start);
+    ui_draw_text(renderer, buf, value_x, y);
+    y += 20;
+
+    // End value
+    ui_draw_text(renderer, "End:", label_x, y);
+    snprintf(buf, sizeof(buf), "%.3g", ui->sweep_end);
+    ui_draw_text(renderer, buf, value_x, y);
+    y += 20;
+
+    // Number of points
+    ui_draw_text(renderer, "Points:", label_x, y);
+    snprintf(buf, sizeof(buf), "%d", ui->sweep_num_points);
+    ui_draw_text(renderer, buf, value_x, y);
+    y += 20;
+
+    // Scale type
+    ui_draw_text(renderer, "Scale:", label_x, y);
+    ui_draw_text(renderer, ui->sweep_log_scale ? "Logarithmic" : "Linear", value_x, y);
+    y += 25;
+
+    // Sweep progress
+    if (analysis && analysis->sweep.active) {
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x00, 0xff);
+        snprintf(buf, sizeof(buf), "Progress: %d/%d",
+                 analysis->sweep.current_point, analysis->sweep.num_points);
+        ui_draw_text(renderer, buf, label_x, y);
+        y += 15;
+
+        // Progress bar
+        int bar_w = panel_w - 40;
+        double progress = (double)analysis->sweep.current_point / analysis->sweep.num_points;
+        SDL_Rect bar_bg = {label_x, y, bar_w, 10};
+        SDL_SetRenderDrawColor(renderer, 0x30, 0x30, 0x30, 0xff);
+        SDL_RenderFillRect(renderer, &bar_bg);
+        SDL_Rect bar_fill = {label_x, y, (int)(bar_w * progress), 10};
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x00, 0xff);
+        SDL_RenderFillRect(renderer, &bar_fill);
+    } else {
+        SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0x00, 0xff);
+        ui_draw_text(renderer, "[Select component to sweep]", label_x, y);
+    }
+
+    // Instructions
+    y = panel_y + panel_h - 25;
+    SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
+    ui_draw_text(renderer, "Click component, then ESC to close", label_x, y);
+}
+
+void ui_render_monte_carlo_panel(UIState *ui, SDL_Renderer *renderer, void *analysis_ptr) {
+    if (!ui || !renderer || !ui->show_monte_carlo_panel) return;
+
+    AnalysisState *analysis = (AnalysisState *)analysis_ptr;
+    char buf[64];
+
+    // Panel dimensions
+    int panel_w = 350;
+    int panel_h = 300;
+    int panel_x = (ui->window_width - panel_w) / 2;
+    int panel_y = (ui->window_height - panel_h) / 2;
+
+    // Semi-transparent background
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xf0);
+    SDL_Rect panel = {panel_x, panel_y, panel_w, panel_h};
+    SDL_RenderFillRect(renderer, &panel);
+
+    // Border
+    SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);  // Orange for MC
+    SDL_RenderDrawRect(renderer, &panel);
+
+    // Title
+    ui_draw_text(renderer, "MONTE CARLO ANALYSIS", panel_x + 10, panel_y + 10);
+
+    int y = panel_y + 35;
+    int label_x = panel_x + 15;
+    int value_x = panel_x + 150;
+
+    SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xff);
+
+    // Number of runs
+    ui_draw_text(renderer, "Runs:", label_x, y);
+    snprintf(buf, sizeof(buf), "%d", ui->monte_carlo_runs);
+    ui_draw_text(renderer, buf, value_x, y);
+    y += 20;
+
+    // Tolerance
+    ui_draw_text(renderer, "Tolerance:", label_x, y);
+    snprintf(buf, sizeof(buf), "%.1f%%", ui->monte_carlo_tolerance);
+    ui_draw_text(renderer, buf, value_x, y);
+    y += 25;
+
+    // Results
+    if (analysis && analysis->monte_carlo.complete) {
+        MonteCarloAnalysis *mc = &analysis->monte_carlo;
+
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x00, 0xff);
+        ui_draw_text(renderer, "RESULTS:", label_x, y);
+        y += 18;
+
+        SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+
+        snprintf(buf, sizeof(buf), "Mean: %.4g", mc->mean);
+        ui_draw_text(renderer, buf, label_x, y);
+        y += 14;
+
+        snprintf(buf, sizeof(buf), "Std Dev: %.4g", mc->std_dev);
+        ui_draw_text(renderer, buf, label_x, y);
+        y += 14;
+
+        snprintf(buf, sizeof(buf), "Min: %.4g", mc->min_val);
+        ui_draw_text(renderer, buf, label_x, y);
+        y += 14;
+
+        snprintf(buf, sizeof(buf), "Max: %.4g", mc->max_val);
+        ui_draw_text(renderer, buf, label_x, y);
+        y += 14;
+
+        snprintf(buf, sizeof(buf), "1%% Worst: %.4g", mc->percentile_1);
+        ui_draw_text(renderer, buf, label_x, y);
+        y += 14;
+
+        snprintf(buf, sizeof(buf), "99%% Worst: %.4g", mc->percentile_99);
+        ui_draw_text(renderer, buf, label_x, y);
+        y += 20;
+
+        // Draw histogram
+        SDL_SetRenderDrawColor(renderer, 0x40, 0x40, 0x60, 0xff);
+        int hist_x = label_x;
+        int hist_y = y;
+        int hist_w = panel_w - 40;
+        int hist_h = 50;
+        SDL_Rect hist_bg = {hist_x, hist_y, hist_w, hist_h};
+        SDL_RenderFillRect(renderer, &hist_bg);
+
+        // Simple histogram bins
+        int num_bins = 20;
+        int bin_counts[20] = {0};
+        double bin_width = (mc->max_val - mc->min_val) / num_bins;
+        if (bin_width > 0) {
+            for (int i = 0; i < mc->num_results; i++) {
+                int bin = (int)((mc->output_values[i] - mc->min_val) / bin_width);
+                if (bin >= num_bins) bin = num_bins - 1;
+                if (bin >= 0 && bin < num_bins) bin_counts[bin]++;
+            }
+
+            int max_count = 1;
+            for (int i = 0; i < num_bins; i++) {
+                if (bin_counts[i] > max_count) max_count = bin_counts[i];
+            }
+
+            SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+            for (int i = 0; i < num_bins; i++) {
+                int bar_h = (bin_counts[i] * (hist_h - 2)) / max_count;
+                int bar_x = hist_x + (i * hist_w) / num_bins;
+                int bar_w = hist_w / num_bins - 1;
+                SDL_Rect bar = {bar_x, hist_y + hist_h - bar_h, bar_w, bar_h};
+                SDL_RenderFillRect(renderer, &bar);
+            }
+        }
+
+    } else if (analysis && analysis->monte_carlo.active) {
+        // Show progress
+        MonteCarloAnalysis *mc = &analysis->monte_carlo;
+        SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0x00, 0xff);
+        snprintf(buf, sizeof(buf), "Running: %d/%d", mc->current_run, mc->num_runs);
+        ui_draw_text(renderer, buf, label_x, y);
+        y += 15;
+
+        // Progress bar
+        int bar_w = panel_w - 40;
+        double progress = (double)mc->current_run / mc->num_runs;
+        SDL_Rect bar_bg = {label_x, y, bar_w, 10};
+        SDL_SetRenderDrawColor(renderer, 0x30, 0x30, 0x30, 0xff);
+        SDL_RenderFillRect(renderer, &bar_bg);
+        SDL_Rect bar_fill = {label_x, y, (int)(bar_w * progress), 10};
+        SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);
+        SDL_RenderFillRect(renderer, &bar_fill);
+
+    } else {
+        SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
+        ui_draw_text(renderer, "Configure and run simulation", label_x, y);
+    }
+
+    // Instructions
+    y = panel_y + panel_h - 25;
+    SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
+    ui_draw_text(renderer, "ESC to close", label_x, y);
 }
 
 void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer) {

@@ -184,6 +184,20 @@ typedef struct {
     double bode_freq_stop;          // Stop frequency (Hz)
     int bode_num_points;            // Number of frequency points
 
+    // Parametric sweep panel
+    bool show_sweep_panel;          // Show sweep panel
+    int sweep_component_idx;        // Selected component for sweep
+    int sweep_param_type;           // Parameter to sweep (0=value, 1=freq, etc.)
+    double sweep_start;             // Start value
+    double sweep_end;               // End value
+    int sweep_num_points;           // Number of sweep points
+    bool sweep_log_scale;           // Use logarithmic scale
+
+    // Monte Carlo panel
+    bool show_monte_carlo_panel;    // Show Monte Carlo panel
+    int monte_carlo_runs;           // Number of Monte Carlo runs
+    double monte_carlo_tolerance;   // Tolerance percentage
+
     // Cursor info
     int cursor_x, cursor_y;
     float world_x, world_y;
@@ -208,6 +222,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
 void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
 void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim, void *analysis);
 void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
+void ui_render_sweep_panel(UIState *ui, SDL_Renderer *renderer, void *analysis);
+void ui_render_monte_carlo_panel(UIState *ui, SDL_Renderer *renderer, void *analysis);
 void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer);
 void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer);
 
@@ -240,6 +256,8 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_BODE_PLOT     22
 #define UI_ACTION_CURSOR_TOGGLE 23   // Toggle cursor mode
 #define UI_ACTION_FFT_TOGGLE    24   // Toggle FFT view
+#define UI_ACTION_SWEEP_PANEL   25   // Toggle parametric sweep panel
+#define UI_ACTION_MONTE_CARLO   26   // Toggle Monte Carlo panel
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type
 #define UI_ACTION_SELECT_CIRCUIT 300 // + circuit template type

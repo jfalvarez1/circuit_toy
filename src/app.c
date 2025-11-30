@@ -370,6 +370,26 @@ void app_handle_events(App *app) {
                 }
                 break;
 
+            case UI_ACTION_SWEEP_PANEL:
+                // Toggle parametric sweep panel
+                app->ui.show_sweep_panel = !app->ui.show_sweep_panel;
+                if (app->ui.show_sweep_panel) {
+                    ui_set_status(&app->ui, "Parametric Sweep: Select component to sweep");
+                } else {
+                    ui_set_status(&app->ui, "Sweep panel closed");
+                }
+                break;
+
+            case UI_ACTION_MONTE_CARLO:
+                // Toggle Monte Carlo panel
+                app->ui.show_monte_carlo_panel = !app->ui.show_monte_carlo_panel;
+                if (app->ui.show_monte_carlo_panel) {
+                    ui_set_status(&app->ui, "Monte Carlo Analysis Panel");
+                } else {
+                    ui_set_status(&app->ui, "Monte Carlo panel closed");
+                }
+                break;
+
             case UI_ACTION_PROP_APPLY:
                 // Apply text-edited property value
                 if (app->input.selected_component) {
@@ -593,8 +613,10 @@ void app_render(App *app) {
         ui_render_shortcuts_dialog(&app->ui, r);
     }
 
-    // Render Bode plot overlay
+    // Render overlay panels
     ui_render_bode_plot(&app->ui, r, app->simulation);
+    ui_render_sweep_panel(&app->ui, r, &app->analysis);
+    ui_render_monte_carlo_panel(&app->ui, r, &app->analysis);
 
     // Present
     SDL_RenderPresent(r);

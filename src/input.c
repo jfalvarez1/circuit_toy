@@ -474,10 +474,20 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 return true;
             }
 
-            // Close Bode plot on ESC if it's open
-            if (event->key.keysym.sym == SDLK_ESCAPE && ui && ui->show_bode_plot) {
-                ui->show_bode_plot = false;
-                return true;
+            // Close panels on ESC
+            if (event->key.keysym.sym == SDLK_ESCAPE && ui) {
+                if (ui->show_bode_plot) {
+                    ui->show_bode_plot = false;
+                    return true;
+                }
+                if (ui->show_sweep_panel) {
+                    ui->show_sweep_panel = false;
+                    return true;
+                }
+                if (ui->show_monte_carlo_panel) {
+                    ui->show_monte_carlo_panel = false;
+                    return true;
+                }
             }
 
             input_handle_key(input, event->key.keysym.sym, circuit, render);
