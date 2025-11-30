@@ -120,6 +120,14 @@ typedef struct InputState {
 
     // Selection
     Component *selected_component;
+    int selected_wire_idx;          // Index of selected wire (-1 = none)
+
+    // Multi-selection (box select)
+    bool box_selecting;             // Currently doing box selection
+    float box_start_x, box_start_y; // Box selection start in world coords
+    float box_end_x, box_end_y;     // Box selection end in world coords
+    Component *multi_selected[64];  // Array of multi-selected components
+    int multi_selected_count;       // Number of multi-selected components
 
     // Probe dragging
     int dragging_probe_idx;         // Index of probe being dragged (-1 = none)

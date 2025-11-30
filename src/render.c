@@ -1104,3 +1104,50 @@ void render_wire_preview(RenderContext *ctx, float x1, float y1, float x2, float
         draw = !draw;
     }
 }
+
+void render_selection_box(RenderContext *ctx, float x1, float y1, float x2, float y2) {
+    // Draw dashed rectangle for selection box
+    render_set_color(ctx, COLOR_ACCENT);
+
+    // Normalize coordinates
+    float min_x = fminf(x1, x2);
+    float max_x = fmaxf(x1, x2);
+    float min_y = fminf(y1, y2);
+    float max_y = fmaxf(y1, y2);
+
+    // Draw the four edges with dashed lines
+    float dash_len = 5.0f;
+
+    // Top edge
+    for (float x = min_x; x < max_x; x += dash_len * 2) {
+        float x_end = fminf(x + dash_len, max_x);
+        render_draw_line(ctx, x, min_y, x_end, min_y);
+    }
+    // Bottom edge
+    for (float x = min_x; x < max_x; x += dash_len * 2) {
+        float x_end = fminf(x + dash_len, max_x);
+        render_draw_line(ctx, x, max_y, x_end, max_y);
+    }
+    // Left edge
+    for (float y = min_y; y < max_y; y += dash_len * 2) {
+        float y_end = fminf(y + dash_len, max_y);
+        render_draw_line(ctx, min_x, y, min_x, y_end);
+    }
+    // Right edge
+    for (float y = min_y; y < max_y; y += dash_len * 2) {
+        float y_end = fminf(y + dash_len, max_y);
+        render_draw_line(ctx, max_x, y, max_x, y_end);
+    }
+
+    // Fill with semi-transparent color
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(ctx->renderer, 0, 217, 255, 40);  // Light cyan, very transparent
+
+    int sx1, sy1, sx2, sy2;
+    render_world_to_screen(ctx, min_x, min_y, &sx1, &sy1);
+    render_world_to_screen(ctx, max_x, max_y, &sx2, &sy2);
+
+    SDL_Rect rect = {sx1, sy1, sx2 - sx1, sy2 - sy1};
+    SDL_RenderFillRect(ctx->renderer, &rect);
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_NONE);
+}

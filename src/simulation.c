@@ -7,6 +7,11 @@
 #include <math.h>
 #include "simulation.h"
 
+// GMIN - minimum conductance added from each node to ground
+// This stabilizes floating nodes and prevents singular matrices
+// Equivalent to 1 TΩ resistance to ground
+#define GMIN 1e-12
+
 Simulation *simulation_create(Circuit *circuit) {
     Simulation *sim = calloc(1, sizeof(Simulation));
     if (!sim) return NULL;
@@ -173,6 +178,12 @@ bool simulation_dc_analysis(Simulation *sim) {
                            0, solution, dc_dt);
         }
 
+        // Add GMIN (minimum conductance) from each node to ground
+        // This stabilizes floating nodes and prevents singular matrices
+        for (int i = 0; i < num_nodes; i++) {
+            matrix_add(A, i, i, GMIN);
+        }
+
         // Solve
         Vector *new_solution = linear_solve(A, b);
         matrix_free(A);
@@ -251,6 +262,12 @@ bool simulation_step(Simulation *sim) {
             component_stamp(circuit->components[i], A, b,
                            circuit->node_map, num_nodes,
                            sim->time, sim->solution, sim->time_step);
+        }
+
+        // Add GMIN (minimum conductance) from each node to ground
+        // This stabilizes floating nodes and prevents singular matrices
+        for (int i = 0; i < num_nodes; i++) {
+            matrix_add(A, i, i, GMIN);
         }
 
         Vector *new_solution = linear_solve(A, b);

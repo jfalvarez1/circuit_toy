@@ -93,4 +93,7 @@ void render_ghost_component(RenderContext *ctx, Component *comp);
 // Wire preview
 void render_wire_preview(RenderContext *ctx, float x1, float y1, float x2, float y2);
 
+// Selection box (for multi-select drag)
+void render_selection_box(RenderContext *ctx, float x1, float y1, float x2, float y2);
+
 #endif // RENDER_H

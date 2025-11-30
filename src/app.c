@@ -370,6 +370,12 @@ void app_handle_events(App *app) {
                 }
                 break;
 
+            case UI_ACTION_SCOPE_AUTOSET:
+                // Auto-configure scope settings based on signal analysis
+                ui_scope_autoset(&app->ui, app->simulation);
+                ui_set_status(&app->ui, "Scope autoset complete");
+                break;
+
             case UI_ACTION_SWEEP_PANEL:
                 // Toggle parametric sweep panel
                 app->ui.show_sweep_panel = !app->ui.show_sweep_panel;
@@ -850,6 +856,13 @@ void app_render(App *app) {
                                app->input.wire_preview_x,
                                app->input.wire_preview_y);
         }
+    }
+
+    // Render selection box if doing box select
+    if (app->input.box_selecting) {
+        render_selection_box(app->render,
+                            app->input.box_start_x, app->input.box_start_y,
+                            app->input.box_end_x, app->input.box_end_y);
     }
 
     SDL_RenderSetClipRect(r, NULL);

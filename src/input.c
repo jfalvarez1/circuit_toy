@@ -15,6 +15,41 @@ void input_init(InputState *input) {
     input->placing_component = COMP_NONE;
     input->pending_ui_action = UI_ACTION_NONE;
     input->dragging_probe_idx = -1;
+    input->selected_wire_idx = -1;
+    input->multi_selected_count = 0;
+}
+
+// Helper to find wire near a point
+static int find_wire_at(Circuit *circuit, float wx, float wy, float threshold) {
+    if (!circuit) return -1;
+
+    for (int i = 0; i < circuit->num_wires; i++) {
+        Wire *wire = &circuit->wires[i];
+        Node *n1 = circuit_get_node(circuit, wire->start_node_id);
+        Node *n2 = circuit_get_node(circuit, wire->end_node_id);
+        if (!n1 || !n2) continue;
+
+        // Calculate distance from point to line segment
+        float dx = n2->x - n1->x;
+        float dy = n2->y - n1->y;
+        float len_sq = dx * dx + dy * dy;
+
+        if (len_sq < 1.0f) continue;  // Skip very short wires
+
+        // Parameter t for closest point on line
+        float t = ((wx - n1->x) * dx + (wy - n1->y) * dy) / len_sq;
+        t = fmaxf(0.0f, fminf(1.0f, t));
+
+        // Closest point on segment
+        float closest_x = n1->x + t * dx;
+        float closest_y = n1->y + t * dy;
+
+        float dist = sqrtf((wx - closest_x) * (wx - closest_x) + (wy - closest_y) * (wy - closest_y));
+        if (dist <= threshold) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 bool input_handle_event(InputState *input, SDL_Event *event,
@@ -147,10 +182,17 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             // Find component at click position
                             Component *comp = circuit_find_component_at(circuit, wx, wy);
                             if (comp) {
-                                // Deselect previous
+                                // Clear previous selections
                                 if (input->selected_component && input->selected_component != comp) {
                                     input->selected_component->selected = false;
                                 }
+                                // Clear wire selection
+                                if (input->selected_wire_idx >= 0 && input->selected_wire_idx < circuit->num_wires) {
+                                    circuit->wires[input->selected_wire_idx].selected = false;
+                                }
+                                input->selected_wire_idx = -1;
+                                input->multi_selected_count = 0;
+
                                 comp->selected = true;
                                 input->selected_component = comp;
                                 // Auto-pause simulation when starting to drag
@@ -161,10 +203,49 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                 input->is_dragging = true;
                                 input->dragging_component = comp;
                             } else {
-                                // Deselect
-                                if (input->selected_component) {
-                                    input->selected_component->selected = false;
-                                    input->selected_component = NULL;
+                                // Check for wire click
+                                int wire_idx = find_wire_at(circuit, wx, wy, 8.0f);
+                                if (wire_idx >= 0) {
+                                    // Clear previous selections
+                                    if (input->selected_component) {
+                                        input->selected_component->selected = false;
+                                        input->selected_component = NULL;
+                                    }
+                                    // Clear previous wire selection
+                                    if (input->selected_wire_idx >= 0 && input->selected_wire_idx < circuit->num_wires) {
+                                        circuit->wires[input->selected_wire_idx].selected = false;
+                                    }
+                                    input->multi_selected_count = 0;
+
+                                    input->selected_wire_idx = wire_idx;
+                                    circuit->wires[wire_idx].selected = true;
+                                    ui_set_status(ui, "Wire selected - press Delete to remove");
+                                } else {
+                                    // Empty space - start box selection or deselect
+                                    if (input->selected_component) {
+                                        input->selected_component->selected = false;
+                                        input->selected_component = NULL;
+                                    }
+                                    // Clear wire selection
+                                    if (input->selected_wire_idx >= 0 && input->selected_wire_idx < circuit->num_wires) {
+                                        circuit->wires[input->selected_wire_idx].selected = false;
+                                    }
+                                    input->selected_wire_idx = -1;
+
+                                    // Clear multi-selection
+                                    for (int i = 0; i < input->multi_selected_count; i++) {
+                                        if (input->multi_selected[i]) {
+                                            input->multi_selected[i]->selected = false;
+                                        }
+                                    }
+                                    input->multi_selected_count = 0;
+
+                                    // Start box selection
+                                    input->box_selecting = true;
+                                    input->box_start_x = wx;
+                                    input->box_start_y = wy;
+                                    input->box_end_x = wx;
+                                    input->box_end_y = wy;
                                 }
                             }
                         }
@@ -352,6 +433,39 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     input->dragging_probe_idx = -1;
                 }
 
+                // Complete box selection
+                if (input->box_selecting) {
+                    input->box_selecting = false;
+
+                    // Calculate box bounds (handle any drag direction)
+                    float min_x = fminf(input->box_start_x, input->box_end_x);
+                    float max_x = fmaxf(input->box_start_x, input->box_end_x);
+                    float min_y = fminf(input->box_start_y, input->box_end_y);
+                    float max_y = fmaxf(input->box_start_y, input->box_end_y);
+
+                    // Only select if box is at least 5 pixels in size
+                    if (max_x - min_x > 5 || max_y - min_y > 5) {
+                        input->multi_selected_count = 0;
+
+                        // Find components within box
+                        for (int i = 0; i < circuit->num_components && input->multi_selected_count < 64; i++) {
+                            Component *comp = circuit->components[i];
+                            // Check if component center is within box
+                            if (comp->x >= min_x && comp->x <= max_x &&
+                                comp->y >= min_y && comp->y <= max_y) {
+                                comp->selected = true;
+                                input->multi_selected[input->multi_selected_count++] = comp;
+                            }
+                        }
+
+                        if (input->multi_selected_count > 0) {
+                            char msg[64];
+                            snprintf(msg, sizeof(msg), "Selected %d components - press Delete to remove", input->multi_selected_count);
+                            ui_set_status(ui, msg);
+                        }
+                    }
+                }
+
                 input->left.down = false;
                 input->is_dragging = false;
                 input->dragging_component = NULL;
@@ -412,6 +526,13 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             if (input->drawing_wire) {
                 input->wire_preview_x = snap_to_grid(wx);
                 input->wire_preview_y = snap_to_grid(wy);
+                return true;
+            }
+
+            // Box selection
+            if (input->box_selecting) {
+                input->box_end_x = wx;
+                input->box_end_y = wy;
                 return true;
             }
 
@@ -838,14 +959,37 @@ void input_cancel_action(InputState *input) {
     input->drawing_wire = false;
     input->is_dragging = false;
     input->dragging_component = NULL;
+    input->box_selecting = false;
 }
 
 void input_delete_selected(InputState *input, Circuit *circuit) {
     if (!input || !circuit) return;
 
+    // Delete multi-selected components first
+    if (input->multi_selected_count > 0) {
+        for (int i = 0; i < input->multi_selected_count; i++) {
+            if (input->multi_selected[i]) {
+                circuit_remove_component(circuit, input->multi_selected[i]->id);
+            }
+        }
+        input->multi_selected_count = 0;
+        input->selected_component = NULL;
+        return;
+    }
+
+    // Delete single selected component
     if (input->selected_component) {
         circuit_remove_component(circuit, input->selected_component->id);
         input->selected_component = NULL;
+        return;
+    }
+
+    // Delete selected wire
+    if (input->selected_wire_idx >= 0 && input->selected_wire_idx < circuit->num_wires) {
+        circuit->wires[input->selected_wire_idx].selected = false;
+        int wire_id = circuit->wires[input->selected_wire_idx].id;
+        circuit_remove_wire(circuit, wire_id);
+        input->selected_wire_idx = -1;
     }
 }
 

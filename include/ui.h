@@ -140,6 +140,7 @@ typedef struct {
     Button btn_scope_screenshot;     // Capture scope display
     Button btn_scope_cursor;         // Toggle measurement cursors
     Button btn_scope_fft;            // Toggle FFT view
+    Button btn_scope_autoset;        // Auto-configure scope settings
 
     // Cursor state
     bool scope_cursor_mode;          // Cursor mode active
@@ -254,6 +255,7 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_SCOPE_TRIG_UP    19
 #define UI_ACTION_SCOPE_TRIG_DOWN  20
 #define UI_ACTION_SCOPE_SCREENSHOT 21
+#define UI_ACTION_SCOPE_AUTOSET    27
 #define UI_ACTION_BODE_PLOT     22
 #define UI_ACTION_CURSOR_TOGGLE 23   // Toggle cursor mode
 #define UI_ACTION_FFT_TOGGLE    24   // Toggle FFT view
@@ -273,6 +275,9 @@ void ui_update_measurements(UIState *ui, Simulation *sim, Circuit *circuit);
 
 // Update oscilloscope channels from circuit probes
 void ui_update_scope_channels(UIState *ui, Circuit *circuit);
+
+// Oscilloscope autoset - automatically configure scope based on signal
+void ui_scope_autoset(UIState *ui, Simulation *sim);
 
 // Update UI layout after window resize
 void ui_update_layout(UIState *ui);

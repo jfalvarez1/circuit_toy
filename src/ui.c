@@ -334,7 +334,7 @@ void ui_init(UIState *ui) {
     };
 
     // Oscilloscope settings - larger default size for better visibility
-    ui->scope_rect = (Rect){WINDOW_WIDTH - ui->properties_width + 10, 300, 260, 280};
+    ui->scope_rect = (Rect){WINDOW_WIDTH - ui->properties_width + 10, 280, 320, 260};
     ui->scope_num_channels = 0;
     ui->scope_time_div = 0.001;   // 1ms per division
     ui->scope_volt_div = 1.0;     // 1V per division
@@ -382,6 +382,8 @@ void ui_init(UIState *ui) {
     ui->btn_scope_cursor = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "CUR", "Toggle measurement cursors", false, false, true, false};
     scope_btn_x += 35;
     ui->btn_scope_fft = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "FFT", "Toggle FFT spectrum view", false, false, true, false};
+    scope_btn_x += 35;
+    ui->btn_scope_autoset = (Button){{scope_btn_x, scope_btn_y, 40, scope_btn_h}, "AUTO", "Auto-configure scope settings", false, false, true, false};
 
     // Initialize cursor state
     ui->scope_cursor_mode = false;
@@ -1935,6 +1937,9 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     ui->btn_scope_fft.toggled = ui->scope_fft_mode;
     draw_button(renderer, &ui->btn_scope_fft);
 
+    // Autoset button
+    draw_button(renderer, &ui->btn_scope_autoset);
+
     draw_button(renderer, &ui->btn_bode);
 
     // Show trigger level next to mode button
@@ -2719,6 +2724,9 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_scope_fft.bounds) && ui->btn_scope_fft.enabled) {
             return UI_ACTION_FFT_TOGGLE;
         }
+        if (point_in_rect(x, y, &ui->btn_scope_autoset.bounds) && ui->btn_scope_autoset.enabled) {
+            return UI_ACTION_SCOPE_AUTOSET;
+        }
         if (point_in_rect(x, y, &ui->btn_bode.bounds) && ui->btn_bode.enabled) {
             return UI_ACTION_BODE_PLOT;
         }
@@ -2860,6 +2868,7 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_scope_screenshot.hovered = point_in_rect(x, y, &ui->btn_scope_screenshot.bounds);
     ui->btn_scope_cursor.hovered = point_in_rect(x, y, &ui->btn_scope_cursor.bounds);
     ui->btn_scope_fft.hovered = point_in_rect(x, y, &ui->btn_scope_fft.bounds);
+    ui->btn_scope_autoset.hovered = point_in_rect(x, y, &ui->btn_scope_autoset.bounds);
     ui->btn_bode.hovered = point_in_rect(x, y, &ui->btn_bode.bounds);
 
     // Update palette hover states
@@ -2964,5 +2973,140 @@ void ui_update_layout(UIState *ui) {
     scope_btn_x += 35;
     ui->btn_scope_fft.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
     scope_btn_x += 35;
+    ui->btn_scope_autoset.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
+    scope_btn_x += 45;
     ui->btn_bode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
+}
+
+// Oscilloscope autoset - automatically configure scope based on signal analysis
+void ui_scope_autoset(UIState *ui, Simulation *sim) {
+    if (!ui || !sim || ui->scope_num_channels == 0) return;
+
+    // Standard volt/div and time/div values (1-2-5 sequence)
+    static const double volt_divs[] = {0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0};
+    static const int num_volt_divs = sizeof(volt_divs) / sizeof(volt_divs[0]);
+    static const double time_divs[] = {1e-9, 2e-9, 5e-9, 10e-9, 20e-9, 50e-9, 100e-9, 200e-9, 500e-9,
+                                       1e-6, 2e-6, 5e-6, 10e-6, 20e-6, 50e-6, 100e-6, 200e-6, 500e-6,
+                                       1e-3, 2e-3, 5e-3, 10e-3, 20e-3, 50e-3, 100e-3, 200e-3, 500e-3,
+                                       1.0, 2.0, 5.0};
+    static const int num_time_divs = sizeof(time_divs) / sizeof(time_divs[0]);
+
+    // Analyze all enabled channels to find signal characteristics
+    double global_min = 1e9, global_max = -1e9;
+    double estimated_period = 0;
+    int samples_with_signal = 0;
+
+    for (int ch = 0; ch < ui->scope_num_channels; ch++) {
+        if (!ui->scope_channels[ch].enabled) continue;
+
+        double times[MAX_HISTORY], values[MAX_HISTORY];
+        int probe_idx = ui->scope_channels[ch].probe_idx;
+        int count = simulation_get_history(sim, probe_idx, times, values, MAX_HISTORY);
+
+        if (count < 10) continue;  // Need enough samples
+
+        // Find min/max
+        double ch_min = values[0], ch_max = values[0];
+        for (int i = 1; i < count; i++) {
+            if (values[i] < ch_min) ch_min = values[i];
+            if (values[i] > ch_max) ch_max = values[i];
+        }
+
+        if (ch_min < global_min) global_min = ch_min;
+        if (ch_max > global_max) global_max = ch_max;
+
+        // Estimate period by finding zero crossings (or midpoint crossings)
+        double midpoint = (ch_min + ch_max) / 2.0;
+        double amplitude = ch_max - ch_min;
+
+        // Only estimate period if there's significant signal
+        if (amplitude > 0.01) {
+            samples_with_signal++;
+
+            // Find rising edge crossings
+            int crossing_count = 0;
+            double first_crossing = 0, last_crossing = 0;
+
+            for (int i = 1; i < count; i++) {
+                // Rising edge crossing
+                if (values[i-1] < midpoint && values[i] >= midpoint) {
+                    if (crossing_count == 0) {
+                        first_crossing = times[i];
+                    }
+                    last_crossing = times[i];
+                    crossing_count++;
+                }
+            }
+
+            // Estimate period from crossings
+            if (crossing_count >= 2) {
+                double total_time = last_crossing - first_crossing;
+                double period = total_time / (crossing_count - 1);
+                if (period > 0 && (estimated_period == 0 || period < estimated_period)) {
+                    estimated_period = period;  // Use shortest period found
+                }
+            }
+        }
+    }
+
+    // If no signal found, use default settings
+    if (global_max <= global_min || samples_with_signal == 0) {
+        ui->scope_volt_div = 1.0;
+        ui->scope_time_div = 0.001;  // 1ms/div
+        ui->trigger_level = 0;
+        return;
+    }
+
+    // Calculate appropriate volt/div
+    // Want signal to fill about 60-80% of the vertical range (8 divisions)
+    double signal_range = global_max - global_min;
+    double target_range = signal_range * 1.4;  // Add some margin
+    double ideal_volt_div = target_range / 8.0;
+
+    // Find nearest standard value (round up)
+    int volt_idx = 0;
+    for (int i = 0; i < num_volt_divs; i++) {
+        if (volt_divs[i] >= ideal_volt_div) {
+            volt_idx = i;
+            break;
+        }
+        volt_idx = i;  // Use largest if nothing fits
+    }
+    ui->scope_volt_div = volt_divs[volt_idx];
+
+    // Calculate appropriate time/div
+    if (estimated_period > 0) {
+        // Show about 2-3 complete cycles (10 divisions total)
+        double target_time = estimated_period * 2.5;
+        double ideal_time_div = target_time / 10.0;
+
+        // Find nearest standard value
+        int time_idx = 0;
+        for (int i = 0; i < num_time_divs; i++) {
+            if (time_divs[i] >= ideal_time_div) {
+                time_idx = i;
+                break;
+            }
+            time_idx = i;
+        }
+        ui->scope_time_div = time_divs[time_idx];
+    } else {
+        // DC or very low frequency - use a reasonable default
+        ui->scope_time_div = 0.01;  // 10ms/div
+    }
+
+    // Set trigger level to midpoint of signal
+    ui->trigger_level = (global_min + global_max) / 2.0;
+
+    // Reset channel offsets to center the signal
+    double signal_center = (global_min + global_max) / 2.0;
+    for (int ch = 0; ch < ui->scope_num_channels; ch++) {
+        if (ui->scope_channels[ch].enabled) {
+            ui->scope_channels[ch].offset = -signal_center;
+        }
+    }
+
+    // Set trigger to rising edge and auto mode for good display
+    ui->trigger_edge = TRIG_EDGE_RISING;
+    ui->trigger_mode = TRIG_AUTO;
 }
