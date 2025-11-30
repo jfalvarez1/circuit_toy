@@ -663,24 +663,26 @@ static int place_common_emitter(Circuit *circuit, float x, float y) {
     // Ground for R2
     Component *gnd_r2 = add_comp(circuit, COMP_GROUND, x + 100, y + 160, 0);
 
-    // NPN transistor - base at left, collector at top, emitter at bottom
-    // With rotation 0: B at (-20,0), C at (0,-30), E at (0,30)
-    Component *npn = add_comp(circuit, COMP_NPN_BJT, x + 180, y + 60, 0);
+    // NPN transistor - base at left, collector at top-right, emitter at bottom-right
+    // With rotation 0: B at (-20,0), C at (20,-20), E at (20,20)
+    Component *npn = add_comp(circuit, COMP_NPN_BJT, x + 160, y + 60, 0);
     npn->props.bjt.bf = 100;  // Beta = 100
 
     // Collector resistor (Rc) - from Vcc to collector
-    Component *rc = add_comp(circuit, COMP_RESISTOR, x + 180, y - 20, 90);
+    // Position so bottom terminal aligns with collector at (npn_x+20, npn_y-20)
+    Component *rc = add_comp(circuit, COMP_RESISTOR, x + 180, y, 90);
     rc->props.resistor.resistance = 2200.0;  // 2.2k
 
     // Emitter resistor (Re) - from emitter to ground
-    Component *re = add_comp(circuit, COMP_RESISTOR, x + 180, y + 130, 90);
+    // Position so top terminal aligns with emitter at (npn_x+20, npn_y+20)
+    Component *re = add_comp(circuit, COMP_RESISTOR, x + 180, y + 120, 90);
     re->props.resistor.resistance = 1000.0;  // 1k
 
     // Ground for Re
-    Component *gnd_re = add_comp(circuit, COMP_GROUND, x + 180, y + 190, 0);
+    Component *gnd_re = add_comp(circuit, COMP_GROUND, x + 180, y + 180, 0);
 
-    // Output coupling capacitor
-    Component *cout = add_comp(circuit, COMP_CAPACITOR, x + 260, y + 60, 0);
+    // Output coupling capacitor - connects to collector node
+    Component *cout = add_comp(circuit, COMP_CAPACITOR, x + 260, y + 40, 0);
     cout->props.capacitor.capacitance = 10e-6;
 
     // Text label for circuit
@@ -815,25 +817,25 @@ static int place_common_source(Circuit *circuit, float x, float y) {
     // Ground for Rg
     Component *gnd_rg = add_comp(circuit, COMP_GROUND, x + 100, y + 160, 0);
 
-    // NMOS transistor - gate at left, drain at top, source at bottom
-    // With rotation 0: G at (-20,0), D at (0,-30), S at (0,30)
-    Component *nmos = add_comp(circuit, COMP_NMOS, x + 180, y + 60, 0);
+    // NMOS transistor - gate at left, drain at top-right, source at bottom-right
+    // With rotation 0: G at (-20,0), D at (20,-20), S at (20,20)
+    Component *nmos = add_comp(circuit, COMP_NMOS, x + 160, y + 60, 0);
     nmos->props.mosfet.vth = 1.5;
     nmos->props.mosfet.kp = 0.01;
 
-    // Drain resistor (Rd)
-    Component *rd = add_comp(circuit, COMP_RESISTOR, x + 180, y - 20, 90);
+    // Drain resistor (Rd) - position so bottom terminal aligns with drain
+    Component *rd = add_comp(circuit, COMP_RESISTOR, x + 180, y, 90);
     rd->props.resistor.resistance = 2200.0;
 
-    // Source resistor (Rs) with bypass cap
-    Component *rs = add_comp(circuit, COMP_RESISTOR, x + 180, y + 130, 90);
+    // Source resistor (Rs) - position so top terminal aligns with source
+    Component *rs = add_comp(circuit, COMP_RESISTOR, x + 180, y + 120, 90);
     rs->props.resistor.resistance = 470.0;
 
     // Ground for Rs
-    Component *gnd_rs = add_comp(circuit, COMP_GROUND, x + 180, y + 190, 0);
+    Component *gnd_rs = add_comp(circuit, COMP_GROUND, x + 180, y + 180, 0);
 
-    // Output coupling capacitor
-    Component *cout = add_comp(circuit, COMP_CAPACITOR, x + 260, y + 60, 0);
+    // Output coupling capacitor - connects to drain node
+    Component *cout = add_comp(circuit, COMP_CAPACITOR, x + 260, y + 40, 0);
     cout->props.capacitor.capacitance = 10e-6;
 
     // Text label
@@ -939,19 +941,20 @@ static int place_common_drain(Circuit *circuit, float x, float y) {
     cin->props.capacitor.capacitance = 10e-6;
 
     // NMOS transistor - drain connected directly to Vdd
+    // With rotation 0: G at (-20,0), D at (20,-20), S at (20,20)
     Component *nmos = add_comp(circuit, COMP_NMOS, x + 160, y + 60, 0);
     nmos->props.mosfet.vth = 1.5;
     nmos->props.mosfet.kp = 0.02;
 
-    // Source resistor (Rs) - load resistor
-    Component *rs = add_comp(circuit, COMP_RESISTOR, x + 160, y + 130, 90);
+    // Source resistor (Rs) - load resistor, top terminal aligns with source at (nmos_x+20, nmos_y+20)
+    Component *rs = add_comp(circuit, COMP_RESISTOR, x + 180, y + 120, 90);
     rs->props.resistor.resistance = 1000.0;
 
     // Ground for Rs
-    Component *gnd_rs = add_comp(circuit, COMP_GROUND, x + 160, y + 190, 0);
+    Component *gnd_rs = add_comp(circuit, COMP_GROUND, x + 180, y + 180, 0);
 
-    // Output coupling capacitor (from source)
-    Component *cout = add_comp(circuit, COMP_CAPACITOR, x + 240, y + 90, 0);
+    // Output coupling capacitor (from source at y+80)
+    Component *cout = add_comp(circuit, COMP_CAPACITOR, x + 260, y + 80, 0);
     cout->props.capacitor.capacitance = 10e-6;
 
     // Text label
@@ -1039,46 +1042,49 @@ static int place_multistage_amp(Circuit *circuit, float x, float y) {
 
     Component *gnd_r2a = add_comp(circuit, COMP_GROUND, x + 80, y + 160, 0);
 
-    // First transistor
+    // First transistor - B at (-20,0), C at (20,-20), E at (20,20)
     Component *q1 = add_comp(circuit, COMP_NPN_BJT, x + 160, y + 60, 0);
     q1->props.bjt.bf = 100;
 
-    // Collector resistor
-    Component *rc1 = add_comp(circuit, COMP_RESISTOR, x + 160, y - 20, 90);
+    // Collector resistor - bottom terminal aligns with C at (q1_x+20, q1_y-20)
+    Component *rc1 = add_comp(circuit, COMP_RESISTOR, x + 180, y, 90);
     rc1->props.resistor.resistance = 4700.0;
 
-    // Emitter resistor
-    Component *re1 = add_comp(circuit, COMP_RESISTOR, x + 160, y + 130, 90);
+    // Emitter resistor - top terminal aligns with E at (q1_x+20, q1_y+20)
+    Component *re1 = add_comp(circuit, COMP_RESISTOR, x + 180, y + 120, 90);
     re1->props.resistor.resistance = 1000.0;
 
-    Component *gnd_re1 = add_comp(circuit, COMP_GROUND, x + 160, y + 190, 0);
+    Component *gnd_re1 = add_comp(circuit, COMP_GROUND, x + 180, y + 180, 0);
 
-    // Interstage coupling cap
-    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 240, y + 60, 0);
+    // Interstage coupling cap - connects to collector
+    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 260, y + 40, 0);
     c2->props.capacitor.capacitance = 10e-6;
 
     // === STAGE 2 ===
-    Component *r1b = add_comp(circuit, COMP_RESISTOR, x + 320, y - 20, 90);
+    Component *r1b = add_comp(circuit, COMP_RESISTOR, x + 340, y - 20, 90);
     r1b->props.resistor.resistance = 47000.0;
 
-    Component *r2b = add_comp(circuit, COMP_RESISTOR, x + 320, y + 100, 90);
+    Component *r2b = add_comp(circuit, COMP_RESISTOR, x + 340, y + 100, 90);
     r2b->props.resistor.resistance = 10000.0;
 
-    Component *gnd_r2b = add_comp(circuit, COMP_GROUND, x + 320, y + 160, 0);
+    Component *gnd_r2b = add_comp(circuit, COMP_GROUND, x + 340, y + 160, 0);
 
-    Component *q2 = add_comp(circuit, COMP_NPN_BJT, x + 400, y + 60, 0);
+    // Second transistor
+    Component *q2 = add_comp(circuit, COMP_NPN_BJT, x + 420, y + 60, 0);
     q2->props.bjt.bf = 100;
 
-    Component *rc2 = add_comp(circuit, COMP_RESISTOR, x + 400, y - 20, 90);
+    // Collector resistor - bottom terminal aligns with C
+    Component *rc2 = add_comp(circuit, COMP_RESISTOR, x + 440, y, 90);
     rc2->props.resistor.resistance = 4700.0;
 
-    Component *re2 = add_comp(circuit, COMP_RESISTOR, x + 400, y + 130, 90);
+    // Emitter resistor - top terminal aligns with E
+    Component *re2 = add_comp(circuit, COMP_RESISTOR, x + 440, y + 120, 90);
     re2->props.resistor.resistance = 1000.0;
 
-    Component *gnd_re2 = add_comp(circuit, COMP_GROUND, x + 400, y + 190, 0);
+    Component *gnd_re2 = add_comp(circuit, COMP_GROUND, x + 440, y + 180, 0);
 
-    // Output coupling cap
-    Component *c3 = add_comp(circuit, COMP_CAPACITOR, x + 480, y + 60, 0);
+    // Output coupling cap - connects to collector
+    Component *c3 = add_comp(circuit, COMP_CAPACITOR, x + 520, y + 40, 0);
     c3->props.capacitor.capacitance = 10e-6;
 
     // Text label
