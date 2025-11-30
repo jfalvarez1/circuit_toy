@@ -631,60 +631,60 @@ static int place_led_with_resistor(Circuit *circuit, float x, float y) {
 //       GND          GND
 //
 static int place_common_emitter(Circuit *circuit, float x, float y) {
-    // Vcc supply
-    Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x + 160, y - 60, 0);
+    // Vcc supply - placed to the left, away from main circuit
+    Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x - 80, y - 60, 0);
     if (!vcc) return 0;
     vcc->props.dc_voltage.voltage = 12.0;
 
-    // Ground for Vcc (at bottom of source)
-    Component *gnd_vcc = add_comp(circuit, COMP_GROUND, x + 160, y + 20, 0);
+    // Ground for Vcc (below the source)
+    Component *gnd_vcc = add_comp(circuit, COMP_GROUND, x - 80, y + 20, 0);
 
     // AC input source
-    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 40, y + 40, 0);
+    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 80, y + 100, 0);
     vin->props.ac_voltage.amplitude = 0.1;  // 100mV input
     vin->props.ac_voltage.frequency = 1000.0;
 
     // Ground for input source
-    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 40, y + 100, 0);
+    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 80, y + 180, 0);
 
     // Input coupling capacitor (horizontal)
-    Component *cin = add_comp(circuit, COMP_CAPACITOR, x + 40, y, 0);
+    Component *cin = add_comp(circuit, COMP_CAPACITOR, x + 20, y + 60, 0);
     cin->props.capacitor.capacitance = 10e-6;  // 10uF
 
     // Bias resistors (R1 and R2 form voltage divider)
     // R1 from Vcc to base junction
-    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 120, y - 80, 90);
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 100, y - 20, 90);
     r1->props.resistor.resistance = 47000.0;  // 47k
 
     // R2 from base junction to ground
-    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 120, y + 40, 90);
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 100, y + 100, 90);
     r2->props.resistor.resistance = 10000.0;  // 10k
 
     // Ground for R2
-    Component *gnd_r2 = add_comp(circuit, COMP_GROUND, x + 120, y + 100, 0);
+    Component *gnd_r2 = add_comp(circuit, COMP_GROUND, x + 100, y + 160, 0);
 
     // NPN transistor - base at left, collector at top, emitter at bottom
     // With rotation 0: B at (-20,0), C at (0,-30), E at (0,30)
-    Component *npn = add_comp(circuit, COMP_NPN_BJT, x + 180, y, 0);
+    Component *npn = add_comp(circuit, COMP_NPN_BJT, x + 180, y + 60, 0);
     npn->props.bjt.bf = 100;  // Beta = 100
 
     // Collector resistor (Rc) - from Vcc to collector
-    Component *rc = add_comp(circuit, COMP_RESISTOR, x + 180, y - 80, 90);
+    Component *rc = add_comp(circuit, COMP_RESISTOR, x + 180, y - 20, 90);
     rc->props.resistor.resistance = 2200.0;  // 2.2k
 
     // Emitter resistor (Re) - from emitter to ground
-    Component *re = add_comp(circuit, COMP_RESISTOR, x + 180, y + 70, 90);
+    Component *re = add_comp(circuit, COMP_RESISTOR, x + 180, y + 130, 90);
     re->props.resistor.resistance = 1000.0;  // 1k
 
     // Ground for Re
-    Component *gnd_re = add_comp(circuit, COMP_GROUND, x + 180, y + 130, 0);
+    Component *gnd_re = add_comp(circuit, COMP_GROUND, x + 180, y + 190, 0);
 
     // Output coupling capacitor
-    Component *cout = add_comp(circuit, COMP_CAPACITOR, x + 260, y, 0);
+    Component *cout = add_comp(circuit, COMP_CAPACITOR, x + 260, y + 60, 0);
     cout->props.capacitor.capacitance = 10e-6;
 
     // Text label for circuit
-    Component *label = add_comp(circuit, COMP_TEXT, x + 80, y - 120, 0);
+    Component *label = add_comp(circuit, COMP_TEXT, x + 80, y - 80, 0);
     strncpy(label->props.text.text, "Common Emitter Amp", sizeof(label->props.text.text)-1);
     label->props.text.font_size = 2;
 
@@ -787,57 +787,57 @@ static int place_common_emitter(Circuit *circuit, float x, float y) {
 //                   GND
 //
 static int place_common_source(Circuit *circuit, float x, float y) {
-    // Vdd supply
-    Component *vdd = add_comp(circuit, COMP_DC_VOLTAGE, x + 160, y - 60, 0);
+    // Vdd supply - placed to the left, away from main circuit
+    Component *vdd = add_comp(circuit, COMP_DC_VOLTAGE, x - 80, y - 60, 0);
     if (!vdd) return 0;
     vdd->props.dc_voltage.voltage = 12.0;
 
-    // Ground for Vdd
-    Component *gnd_vdd = add_comp(circuit, COMP_GROUND, x + 160, y + 20, 0);
+    // Ground for Vdd (below the source)
+    Component *gnd_vdd = add_comp(circuit, COMP_GROUND, x - 80, y + 20, 0);
 
     // AC input source with DC bias
-    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 40, y + 40, 0);
+    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 80, y + 100, 0);
     vin->props.ac_voltage.amplitude = 0.1;
     vin->props.ac_voltage.frequency = 1000.0;
     vin->props.ac_voltage.offset = 2.0;  // DC bias for gate
 
     // Ground for input source
-    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 40, y + 100, 0);
+    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 80, y + 180, 0);
 
     // Input coupling capacitor
-    Component *cin = add_comp(circuit, COMP_CAPACITOR, x + 40, y, 0);
+    Component *cin = add_comp(circuit, COMP_CAPACITOR, x + 20, y + 60, 0);
     cin->props.capacitor.capacitance = 10e-6;
 
     // Gate bias resistor to ground (provides DC return path)
-    Component *rg = add_comp(circuit, COMP_RESISTOR, x + 100, y + 40, 90);
+    Component *rg = add_comp(circuit, COMP_RESISTOR, x + 100, y + 100, 90);
     rg->props.resistor.resistance = 1000000.0;  // 1M
 
     // Ground for Rg
-    Component *gnd_rg = add_comp(circuit, COMP_GROUND, x + 100, y + 100, 0);
+    Component *gnd_rg = add_comp(circuit, COMP_GROUND, x + 100, y + 160, 0);
 
     // NMOS transistor - gate at left, drain at top, source at bottom
     // With rotation 0: G at (-20,0), D at (0,-30), S at (0,30)
-    Component *nmos = add_comp(circuit, COMP_NMOS, x + 160, y, 0);
+    Component *nmos = add_comp(circuit, COMP_NMOS, x + 180, y + 60, 0);
     nmos->props.mosfet.vth = 1.5;
     nmos->props.mosfet.kp = 0.01;
 
     // Drain resistor (Rd)
-    Component *rd = add_comp(circuit, COMP_RESISTOR, x + 160, y - 80, 90);
+    Component *rd = add_comp(circuit, COMP_RESISTOR, x + 180, y - 20, 90);
     rd->props.resistor.resistance = 2200.0;
 
     // Source resistor (Rs) with bypass cap
-    Component *rs = add_comp(circuit, COMP_RESISTOR, x + 160, y + 70, 90);
+    Component *rs = add_comp(circuit, COMP_RESISTOR, x + 180, y + 130, 90);
     rs->props.resistor.resistance = 470.0;
 
     // Ground for Rs
-    Component *gnd_rs = add_comp(circuit, COMP_GROUND, x + 160, y + 130, 0);
+    Component *gnd_rs = add_comp(circuit, COMP_GROUND, x + 180, y + 190, 0);
 
     // Output coupling capacitor
-    Component *cout = add_comp(circuit, COMP_CAPACITOR, x + 240, y, 0);
+    Component *cout = add_comp(circuit, COMP_CAPACITOR, x + 260, y + 60, 0);
     cout->props.capacitor.capacitance = 10e-6;
 
     // Text label
-    Component *label = add_comp(circuit, COMP_TEXT, x + 80, y - 120, 0);
+    Component *label = add_comp(circuit, COMP_TEXT, x + 80, y - 80, 0);
     strncpy(label->props.text.text, "Common Source Amp", sizeof(label->props.text.text)-1);
     label->props.text.font_size = 2;
 
@@ -917,45 +917,45 @@ static int place_common_source(Circuit *circuit, float x, float y) {
 //           GND
 //
 static int place_common_drain(Circuit *circuit, float x, float y) {
-    // Vdd supply
-    Component *vdd = add_comp(circuit, COMP_DC_VOLTAGE, x + 160, y - 100, 0);
+    // Vdd supply - placed to the left, away from main circuit
+    Component *vdd = add_comp(circuit, COMP_DC_VOLTAGE, x - 80, y - 60, 0);
     if (!vdd) return 0;
     vdd->props.dc_voltage.voltage = 12.0;
 
-    // Ground for Vdd
-    Component *gnd_vdd = add_comp(circuit, COMP_GROUND, x + 160, y - 20, 0);
+    // Ground for Vdd (below the source)
+    Component *gnd_vdd = add_comp(circuit, COMP_GROUND, x - 80, y + 20, 0);
 
     // AC input source with DC bias
-    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 40, y + 40, 0);
+    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 80, y + 100, 0);
     vin->props.ac_voltage.amplitude = 1.0;
     vin->props.ac_voltage.frequency = 1000.0;
     vin->props.ac_voltage.offset = 6.0;  // DC bias
 
     // Ground for input source
-    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 40, y + 100, 0);
+    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 80, y + 180, 0);
 
     // Input coupling capacitor
-    Component *cin = add_comp(circuit, COMP_CAPACITOR, x + 40, y, 0);
+    Component *cin = add_comp(circuit, COMP_CAPACITOR, x + 20, y + 60, 0);
     cin->props.capacitor.capacitance = 10e-6;
 
     // NMOS transistor - drain connected directly to Vdd
-    Component *nmos = add_comp(circuit, COMP_NMOS, x + 160, y, 0);
+    Component *nmos = add_comp(circuit, COMP_NMOS, x + 160, y + 60, 0);
     nmos->props.mosfet.vth = 1.5;
     nmos->props.mosfet.kp = 0.02;
 
     // Source resistor (Rs) - load resistor
-    Component *rs = add_comp(circuit, COMP_RESISTOR, x + 160, y + 70, 90);
+    Component *rs = add_comp(circuit, COMP_RESISTOR, x + 160, y + 130, 90);
     rs->props.resistor.resistance = 1000.0;
 
     // Ground for Rs
-    Component *gnd_rs = add_comp(circuit, COMP_GROUND, x + 160, y + 130, 0);
+    Component *gnd_rs = add_comp(circuit, COMP_GROUND, x + 160, y + 190, 0);
 
     // Output coupling capacitor (from source)
-    Component *cout = add_comp(circuit, COMP_CAPACITOR, x + 240, y + 30, 0);
+    Component *cout = add_comp(circuit, COMP_CAPACITOR, x + 240, y + 90, 0);
     cout->props.capacitor.capacitance = 10e-6;
 
     // Text label
-    Component *label = add_comp(circuit, COMP_TEXT, x + 60, y - 120, 0);
+    Component *label = add_comp(circuit, COMP_TEXT, x + 40, y - 80, 0);
     strncpy(label->props.text.text, "Source Follower (Gain~1)", sizeof(label->props.text.text)-1);
     label->props.text.font_size = 2;
 
@@ -1009,80 +1009,80 @@ static int place_common_drain(Circuit *circuit, float x, float y) {
 // Two-Stage BJT Amplifier (CE-CE cascade):
 // Two common-emitter stages cascaded for higher gain
 static int place_multistage_amp(Circuit *circuit, float x, float y) {
-    // Vcc supply
-    Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x + 200, y - 80, 0);
+    // Vcc supply - placed to the left, away from main circuit
+    Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x - 100, y - 60, 0);
     if (!vcc) return 0;
     vcc->props.dc_voltage.voltage = 12.0;
 
-    // Ground for Vcc
-    Component *gnd_vcc = add_comp(circuit, COMP_GROUND, x + 200, y, 0);
+    // Ground for Vcc (below the source)
+    Component *gnd_vcc = add_comp(circuit, COMP_GROUND, x - 100, y + 20, 0);
 
     // AC input source
-    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 60, y + 40, 0);
+    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 100, y + 100, 0);
     vin->props.ac_voltage.amplitude = 0.01;  // 10mV - small input due to high gain
     vin->props.ac_voltage.frequency = 1000.0;
 
     // Ground for input source
-    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 60, y + 100, 0);
+    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 100, y + 180, 0);
 
     // Input coupling cap
-    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 20, y, 0);
+    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x, y + 60, 0);
     c1->props.capacitor.capacitance = 10e-6;
 
     // === STAGE 1 ===
     // Bias resistors
-    Component *r1a = add_comp(circuit, COMP_RESISTOR, x + 80, y - 80, 90);
+    Component *r1a = add_comp(circuit, COMP_RESISTOR, x + 80, y - 20, 90);
     r1a->props.resistor.resistance = 47000.0;
 
-    Component *r2a = add_comp(circuit, COMP_RESISTOR, x + 80, y + 40, 90);
+    Component *r2a = add_comp(circuit, COMP_RESISTOR, x + 80, y + 100, 90);
     r2a->props.resistor.resistance = 10000.0;
 
-    Component *gnd_r2a = add_comp(circuit, COMP_GROUND, x + 80, y + 100, 0);
+    Component *gnd_r2a = add_comp(circuit, COMP_GROUND, x + 80, y + 160, 0);
 
     // First transistor
-    Component *q1 = add_comp(circuit, COMP_NPN_BJT, x + 140, y, 0);
+    Component *q1 = add_comp(circuit, COMP_NPN_BJT, x + 160, y + 60, 0);
     q1->props.bjt.bf = 100;
 
     // Collector resistor
-    Component *rc1 = add_comp(circuit, COMP_RESISTOR, x + 140, y - 80, 90);
+    Component *rc1 = add_comp(circuit, COMP_RESISTOR, x + 160, y - 20, 90);
     rc1->props.resistor.resistance = 4700.0;
 
     // Emitter resistor
-    Component *re1 = add_comp(circuit, COMP_RESISTOR, x + 140, y + 70, 90);
+    Component *re1 = add_comp(circuit, COMP_RESISTOR, x + 160, y + 130, 90);
     re1->props.resistor.resistance = 1000.0;
 
-    Component *gnd_re1 = add_comp(circuit, COMP_GROUND, x + 140, y + 130, 0);
+    Component *gnd_re1 = add_comp(circuit, COMP_GROUND, x + 160, y + 190, 0);
 
     // Interstage coupling cap
-    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 220, y, 0);
+    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 240, y + 60, 0);
     c2->props.capacitor.capacitance = 10e-6;
 
     // === STAGE 2 ===
-    Component *r1b = add_comp(circuit, COMP_RESISTOR, x + 280, y - 80, 90);
+    Component *r1b = add_comp(circuit, COMP_RESISTOR, x + 320, y - 20, 90);
     r1b->props.resistor.resistance = 47000.0;
 
-    Component *r2b = add_comp(circuit, COMP_RESISTOR, x + 280, y + 40, 90);
+    Component *r2b = add_comp(circuit, COMP_RESISTOR, x + 320, y + 100, 90);
     r2b->props.resistor.resistance = 10000.0;
 
-    Component *gnd_r2b = add_comp(circuit, COMP_GROUND, x + 280, y + 100, 0);
+    Component *gnd_r2b = add_comp(circuit, COMP_GROUND, x + 320, y + 160, 0);
 
-    Component *q2 = add_comp(circuit, COMP_NPN_BJT, x + 340, y, 0);
+    Component *q2 = add_comp(circuit, COMP_NPN_BJT, x + 400, y + 60, 0);
     q2->props.bjt.bf = 100;
 
-    Component *rc2 = add_comp(circuit, COMP_RESISTOR, x + 340, y - 80, 90);
+    Component *rc2 = add_comp(circuit, COMP_RESISTOR, x + 400, y - 20, 90);
     rc2->props.resistor.resistance = 4700.0;
 
-    Component *re2 = add_comp(circuit, COMP_RESISTOR, x + 340, y + 70, 90);
+    Component *re2 = add_comp(circuit, COMP_RESISTOR, x + 400, y + 130, 90);
     re2->props.resistor.resistance = 1000.0;
 
-    Component *gnd_re2 = add_comp(circuit, COMP_GROUND, x + 340, y + 130, 0);
+    Component *gnd_re2 = add_comp(circuit, COMP_GROUND, x + 400, y + 190, 0);
 
     // Output coupling cap
-    Component *c3 = add_comp(circuit, COMP_CAPACITOR, x + 420, y, 0);
+    Component *c3 = add_comp(circuit, COMP_CAPACITOR, x + 480, y + 60, 0);
     c3->props.capacitor.capacitance = 10e-6;
 
     // Text label
-    Component *label = add_comp(circuit, COMP_TEXT, x + 140, y - 140, 0);
+    Component *label = add_comp(circuit, COMP_TEXT, x + 160, y - 80, 0);
     strncpy(label->props.text.text, "Two-Stage CE Amplifier", sizeof(label->props.text.text)-1);
     label->props.text.font_size = 2;
 
