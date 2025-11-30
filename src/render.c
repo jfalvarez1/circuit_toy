@@ -436,6 +436,25 @@ void render_component(RenderContext *ctx, Component *comp) {
         case COMP_NOISE_SOURCE:
             render_noise_source(ctx, comp->x, comp->y, comp->rotation);
             break;
+        case COMP_TEXT: {
+            // Render text annotation
+            int sx, sy;
+            render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            // Extract color from packed RGBA
+            uint32_t c = comp->props.text.color;
+            Color text_color = {
+                (c >> 24) & 0xFF,
+                (c >> 16) & 0xFF,
+                (c >> 8) & 0xFF,
+                c & 0xFF
+            };
+            // Use selection color if selected
+            if (comp->selected) {
+                text_color = COLOR_ACCENT2;
+            }
+            render_draw_text(ctx, comp->props.text.text, sx, sy, text_color);
+            break;
+        }
         default:
             break;
     }
@@ -647,6 +666,21 @@ void render_probe(RenderContext *ctx, Probe *probe, int index) {
     // Probe extends diagonally up-left from tip
     float handle_dx = -25;  // Handle offset X
     float handle_dy = -35;  // Handle offset Y
+
+    // Draw selection highlight if selected
+    if (probe->selected) {
+        render_set_color(ctx, COLOR_ACCENT2);  // Bright highlight
+        // Draw glowing outline around the probe area
+        float grip_x = tip_x + handle_dx * 0.6f;
+        float grip_y = tip_y + handle_dy * 0.6f;
+        render_draw_circle(ctx, grip_x, grip_y, 12);
+        render_draw_circle(ctx, tip_x, tip_y, 8);
+        // Draw highlight line along handle
+        for (int i = -4; i <= 4; i++) {
+            render_draw_line(ctx, tip_x + 6 + i*0.3f, tip_y + 6 + i*0.3f,
+                            tip_x + handle_dx + i*1.5f, tip_y + handle_dy + i*1.5f);
+        }
+    }
 
     // Draw probe cable (wire going off to the side)
     render_set_color(ctx, (Color){0x40, 0x40, 0x40, 0xff});

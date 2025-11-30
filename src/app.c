@@ -9,6 +9,28 @@
 #include "file_io.h"
 #include "circuits.h"
 
+// Thread data for frequency sweep
+typedef struct {
+    Simulation *sim;
+    double start_freq;
+    double stop_freq;
+    int source_node;
+    int probe_node;
+    int num_points;
+    bool success;
+} FreqSweepThreadData;
+
+// Thread function for frequency sweep
+static int freq_sweep_thread_func(void *data) {
+    FreqSweepThreadData *td = (FreqSweepThreadData *)data;
+    td->success = simulation_freq_sweep(td->sim, td->start_freq, td->stop_freq,
+                                        td->source_node, td->probe_node, td->num_points);
+    return 0;
+}
+
+// Static thread data (one sweep at a time)
+static FreqSweepThreadData g_sweep_data;
+
 bool app_init(App *app) {
     memset(app, 0, sizeof(App));
 
@@ -94,6 +116,14 @@ bool app_init(App *app) {
 }
 
 void app_shutdown(App *app) {
+    // Cancel and wait for frequency sweep thread if running
+    if (app->freq_sweep_thread_running && app->simulation) {
+        simulation_cancel_freq_sweep(app->simulation);
+        SDL_WaitThread(app->freq_sweep_thread, NULL);
+        app->freq_sweep_thread = NULL;
+        app->freq_sweep_thread_running = false;
+    }
+
     if (app->simulation) {
         simulation_free(app->simulation);
         app->simulation = NULL;
@@ -322,10 +352,22 @@ void app_handle_events(App *app) {
             case UI_ACTION_BODE_PLOT:
                 // Toggle Bode plot display and run frequency sweep
                 if (app->ui.show_bode_plot) {
-                    // If already showing, hide it
+                    // If already showing, hide it and cancel any running sweep
+                    if (app->freq_sweep_thread_running && app->simulation) {
+                        simulation_cancel_freq_sweep(app->simulation);
+                        SDL_WaitThread(app->freq_sweep_thread, NULL);
+                        app->freq_sweep_thread = NULL;
+                        app->freq_sweep_thread_running = false;
+                    }
                     app->ui.show_bode_plot = false;
                 } else {
-                    // Show and run frequency sweep
+                    // Don't start a new sweep if one is already running
+                    if (app->freq_sweep_thread_running) {
+                        ui_set_status(&app->ui, "Frequency sweep already in progress...");
+                        break;
+                    }
+
+                    // Show and run frequency sweep in background thread
                     app->ui.show_bode_plot = true;
 
                     // Find a probe node to use as output
@@ -334,19 +376,62 @@ void app_handle_events(App *app) {
                         probe_node = app->circuit->probes[0].node_id;
                     }
 
-                    // Run frequency sweep
+                    // Start frequency sweep in background thread
                     if (app->simulation) {
-                        ui_set_status(&app->ui, "Running frequency sweep...");
-                        bool success = simulation_freq_sweep(app->simulation,
-                            app->ui.bode_freq_start, app->ui.bode_freq_stop,
-                            0, probe_node, app->ui.bode_num_points);
-                        if (success) {
-                            char msg[64];
-                            snprintf(msg, sizeof(msg), "Frequency sweep complete: %d points",
-                                app->simulation->freq_response_count);
-                            ui_set_status(&app->ui, msg);
+                        g_sweep_data.sim = app->simulation;
+                        g_sweep_data.start_freq = app->ui.bode_freq_start;
+                        g_sweep_data.stop_freq = app->ui.bode_freq_stop;
+                        g_sweep_data.source_node = 0;
+                        g_sweep_data.probe_node = probe_node;
+                        g_sweep_data.num_points = app->ui.bode_num_points;
+                        g_sweep_data.success = false;
+
+                        app->freq_sweep_thread = SDL_CreateThread(
+                            freq_sweep_thread_func, "FreqSweep", &g_sweep_data);
+                        if (app->freq_sweep_thread) {
+                            app->freq_sweep_thread_running = true;
+                            ui_set_status(&app->ui, "Running frequency sweep...");
                         } else {
-                            ui_set_status(&app->ui, simulation_get_error(app->simulation));
+                            ui_set_status(&app->ui, "Failed to start frequency sweep thread");
+                        }
+                    }
+                }
+                break;
+
+            case UI_ACTION_BODE_RECALC:
+                // Recalculate Bode plot with current settings (don't toggle, just recalc)
+                if (app->ui.show_bode_plot) {
+                    // Cancel any running sweep first
+                    if (app->freq_sweep_thread_running && app->simulation) {
+                        simulation_cancel_freq_sweep(app->simulation);
+                        SDL_WaitThread(app->freq_sweep_thread, NULL);
+                        app->freq_sweep_thread = NULL;
+                        app->freq_sweep_thread_running = false;
+                    }
+
+                    // Find a probe node to use as output
+                    int probe_node = 0;
+                    if (app->circuit && app->circuit->num_probes > 0) {
+                        probe_node = app->circuit->probes[0].node_id;
+                    }
+
+                    // Start frequency sweep in background thread
+                    if (app->simulation) {
+                        g_sweep_data.sim = app->simulation;
+                        g_sweep_data.start_freq = app->ui.bode_freq_start;
+                        g_sweep_data.stop_freq = app->ui.bode_freq_stop;
+                        g_sweep_data.source_node = 0;
+                        g_sweep_data.probe_node = probe_node;
+                        g_sweep_data.num_points = app->ui.bode_num_points;
+                        g_sweep_data.success = false;
+
+                        app->freq_sweep_thread = SDL_CreateThread(
+                            freq_sweep_thread_func, "FreqSweep", &g_sweep_data);
+                        if (app->freq_sweep_thread) {
+                            app->freq_sweep_thread_running = true;
+                            ui_set_status(&app->ui, "Recalculating frequency sweep...");
+                        } else {
+                            ui_set_status(&app->ui, "Failed to start frequency sweep thread");
                         }
                     }
                 }
@@ -723,6 +808,162 @@ void app_handle_events(App *app) {
                             app->input.pending_ui_action = UI_ACTION_NONE;
                             break;
                         }
+                        // Sweep enable toggles
+                        else if (prop_type == PROP_SWEEP_VOLTAGE_ENABLE) {
+                            SweepConfig *sweep = NULL;
+                            if (c->type == COMP_DC_VOLTAGE) sweep = &c->props.dc_voltage.voltage_sweep;
+                            else if (c->type == COMP_DC_CURRENT) sweep = &c->props.dc_current.current_sweep;
+                            if (sweep) {
+                                sweep->enabled = !sweep->enabled;
+                                if (sweep->enabled && sweep->sweep_time <= 0) {
+                                    sweep->sweep_time = 1.0;  // Default 1 second
+                                    sweep->mode = SWEEP_LINEAR;
+                                    sweep->num_steps = 10;
+                                }
+                                ui_set_status(&app->ui, sweep->enabled ? "Voltage/Current sweep enabled" : "Voltage/Current sweep disabled");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
+                        else if (prop_type == PROP_SWEEP_AMP_ENABLE) {
+                            SweepConfig *sweep = NULL;
+                            if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.amplitude_sweep;
+                            else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.amplitude_sweep;
+                            else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.amplitude_sweep;
+                            else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.amplitude_sweep;
+                            else if (c->type == COMP_NOISE_SOURCE) sweep = &c->props.noise_source.amplitude_sweep;
+                            if (sweep) {
+                                sweep->enabled = !sweep->enabled;
+                                if (sweep->enabled && sweep->sweep_time <= 0) {
+                                    sweep->sweep_time = 1.0;
+                                    sweep->mode = SWEEP_LINEAR;
+                                    sweep->num_steps = 10;
+                                }
+                                ui_set_status(&app->ui, sweep->enabled ? "Amplitude sweep enabled" : "Amplitude sweep disabled");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
+                        else if (prop_type == PROP_SWEEP_FREQ_ENABLE) {
+                            SweepConfig *sweep = NULL;
+                            if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.frequency_sweep;
+                            else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.frequency_sweep;
+                            else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.frequency_sweep;
+                            else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.frequency_sweep;
+                            if (sweep) {
+                                sweep->enabled = !sweep->enabled;
+                                if (sweep->enabled && sweep->sweep_time <= 0) {
+                                    sweep->sweep_time = 1.0;
+                                    sweep->mode = SWEEP_LOG;  // Log is better for frequency
+                                    sweep->num_steps = 10;
+                                }
+                                ui_set_status(&app->ui, sweep->enabled ? "Frequency sweep enabled" : "Frequency sweep disabled");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
+                        // Sweep mode cycling
+                        else if (prop_type == PROP_SWEEP_VOLTAGE_MODE || prop_type == PROP_SWEEP_AMP_MODE || prop_type == PROP_SWEEP_FREQ_MODE) {
+                            SweepConfig *sweep = NULL;
+                            if (prop_type == PROP_SWEEP_VOLTAGE_MODE) {
+                                if (c->type == COMP_DC_VOLTAGE) sweep = &c->props.dc_voltage.voltage_sweep;
+                                else if (c->type == COMP_DC_CURRENT) sweep = &c->props.dc_current.current_sweep;
+                            } else if (prop_type == PROP_SWEEP_AMP_MODE) {
+                                if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.amplitude_sweep;
+                                else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.amplitude_sweep;
+                                else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.amplitude_sweep;
+                                else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.amplitude_sweep;
+                                else if (c->type == COMP_NOISE_SOURCE) sweep = &c->props.noise_source.amplitude_sweep;
+                            } else {
+                                if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.frequency_sweep;
+                                else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.frequency_sweep;
+                                else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.frequency_sweep;
+                                else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.frequency_sweep;
+                            }
+                            if (sweep) {
+                                sweep->mode = (sweep->mode + 1) % 4;
+                                if (sweep->mode == SWEEP_NONE) sweep->mode = SWEEP_LINEAR;
+                                const char *mode_names[] = {"None", "Linear", "Log", "Step"};
+                                char msg[64];
+                                snprintf(msg, sizeof(msg), "Sweep mode: %s", mode_names[sweep->mode]);
+                                ui_set_status(&app->ui, msg);
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
+                        // Sweep repeat toggle
+                        else if (prop_type == PROP_SWEEP_VOLTAGE_REPEAT || prop_type == PROP_SWEEP_AMP_REPEAT || prop_type == PROP_SWEEP_FREQ_REPEAT) {
+                            SweepConfig *sweep = NULL;
+                            if (prop_type == PROP_SWEEP_VOLTAGE_REPEAT) {
+                                if (c->type == COMP_DC_VOLTAGE) sweep = &c->props.dc_voltage.voltage_sweep;
+                                else if (c->type == COMP_DC_CURRENT) sweep = &c->props.dc_current.current_sweep;
+                            } else if (prop_type == PROP_SWEEP_AMP_REPEAT) {
+                                if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.amplitude_sweep;
+                                else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.amplitude_sweep;
+                                else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.amplitude_sweep;
+                                else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.amplitude_sweep;
+                                else if (c->type == COMP_NOISE_SOURCE) sweep = &c->props.noise_source.amplitude_sweep;
+                            } else {
+                                if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.frequency_sweep;
+                                else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.frequency_sweep;
+                                else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.frequency_sweep;
+                                else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.frequency_sweep;
+                            }
+                            if (sweep) {
+                                sweep->repeat = !sweep->repeat;
+                                ui_set_status(&app->ui, sweep->repeat ? "Sweep repeat: ON" : "Sweep repeat: OFF");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
+                        // Sweep value edits (start, end, time, steps)
+                        else if (prop_type >= PROP_SWEEP_VOLTAGE_START && prop_type <= PROP_SWEEP_FREQ_REPEAT) {
+                            SweepConfig *sweep = NULL;
+                            int base_prop = 0;
+                            if (prop_type >= PROP_SWEEP_VOLTAGE_START && prop_type <= PROP_SWEEP_VOLTAGE_REPEAT) {
+                                base_prop = PROP_SWEEP_VOLTAGE_START;
+                                if (c->type == COMP_DC_VOLTAGE) sweep = &c->props.dc_voltage.voltage_sweep;
+                                else if (c->type == COMP_DC_CURRENT) sweep = &c->props.dc_current.current_sweep;
+                            } else if (prop_type >= PROP_SWEEP_AMP_START && prop_type <= PROP_SWEEP_AMP_REPEAT) {
+                                base_prop = PROP_SWEEP_AMP_START;
+                                if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.amplitude_sweep;
+                                else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.amplitude_sweep;
+                                else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.amplitude_sweep;
+                                else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.amplitude_sweep;
+                                else if (c->type == COMP_NOISE_SOURCE) sweep = &c->props.noise_source.amplitude_sweep;
+                            } else if (prop_type >= PROP_SWEEP_FREQ_START && prop_type <= PROP_SWEEP_FREQ_REPEAT) {
+                                base_prop = PROP_SWEEP_FREQ_START;
+                                if (c->type == COMP_AC_VOLTAGE) sweep = &c->props.ac_voltage.frequency_sweep;
+                                else if (c->type == COMP_SQUARE_WAVE) sweep = &c->props.square_wave.frequency_sweep;
+                                else if (c->type == COMP_TRIANGLE_WAVE) sweep = &c->props.triangle_wave.frequency_sweep;
+                                else if (c->type == COMP_SAWTOOTH_WAVE) sweep = &c->props.sawtooth_wave.frequency_sweep;
+                            }
+                            if (sweep) {
+                                int offset = prop_type - base_prop;
+                                if (offset == 0) snprintf(current_value, sizeof(current_value), "%.6g", sweep->start_value);
+                                else if (offset == 1) snprintf(current_value, sizeof(current_value), "%.6g", sweep->end_value);
+                                else if (offset == 2) snprintf(current_value, sizeof(current_value), "%.6g", sweep->sweep_time);
+                                else if (offset == 3) snprintf(current_value, sizeof(current_value), "%d", sweep->num_steps);
+                            }
+                        }
+                        // Text annotation properties
+                        else if (prop_type == PROP_TEXT_CONTENT) {
+                            if (c->type == COMP_TEXT) {
+                                snprintf(current_value, sizeof(current_value), "%s", c->props.text.text);
+                            }
+                        }
+                        else if (prop_type == PROP_TEXT_SIZE) {
+                            // Toggle immediately, don't open text editor
+                            if (c->type == COMP_TEXT) {
+                                c->props.text.font_size = (c->props.text.font_size % 3) + 1;  // Cycle 1->2->3->1
+                                const char *sizes[] = {"Small", "Normal", "Large"};
+                                char msg[64];
+                                snprintf(msg, sizeof(msg), "Text size: %s", sizes[c->props.text.font_size - 1]);
+                                ui_set_status(&app->ui, msg);
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
                         input_start_property_edit(&app->input, prop_type, current_value);
                         ui_set_status(&app->ui, "Type value (use k,M,m,u,n,p suffix), Enter to apply");
                     } else if (!app->input.selected_component) {
@@ -752,6 +993,34 @@ void app_update(App *app) {
         app->fps = app->frame_count;
         app->frame_count = 0;
         fps_timer = current_time;
+    }
+
+    // Check for frequency sweep thread completion
+    if (app->freq_sweep_thread_running && app->simulation) {
+        if (!app->simulation->freq_sweep_running) {
+            // Thread has finished - wait for it to clean up
+            SDL_WaitThread(app->freq_sweep_thread, NULL);
+            app->freq_sweep_thread = NULL;
+            app->freq_sweep_thread_running = false;
+
+            if (g_sweep_data.success) {
+                char msg[64];
+                snprintf(msg, sizeof(msg), "Frequency sweep complete: %d points",
+                    app->simulation->freq_response_count);
+                ui_set_status(&app->ui, msg);
+            } else if (!app->simulation->freq_sweep_cancel) {
+                ui_set_status(&app->ui, simulation_get_error(app->simulation));
+            } else {
+                ui_set_status(&app->ui, "Frequency sweep cancelled");
+            }
+        } else {
+            // Update progress in status bar
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Frequency sweep: %d/%d points...",
+                app->simulation->freq_sweep_progress + 1,
+                app->simulation->freq_sweep_total);
+            ui_set_status(&app->ui, msg);
+        }
     }
 
     // Run simulation if active

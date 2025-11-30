@@ -25,6 +25,7 @@ typedef union {
         double voltage;         // Output voltage (V)
         double r_series;        // Internal series resistance (Ohm), default: 0.001
         bool ideal;             // Ideal mode (zero internal resistance)
+        SweepConfig voltage_sweep;  // Voltage sweep (stepped or ramped)
     } dc_voltage;
 
     // AC Voltage Source
@@ -35,6 +36,8 @@ typedef union {
         double offset;          // DC offset (V)
         double r_series;        // Internal series resistance (Ohm), default: 0.001
         bool ideal;             // Ideal mode (zero internal resistance)
+        SweepConfig amplitude_sweep;   // Amplitude sweep
+        SweepConfig frequency_sweep;   // Frequency sweep
     } ac_voltage;
 
     // DC Current Source
@@ -42,6 +45,7 @@ typedef union {
         double current;         // Output current (A)
         double r_parallel;      // Internal parallel resistance (Ohm), default: 1e9
         bool ideal;             // Ideal mode (infinite internal resistance)
+        SweepConfig current_sweep;  // Current sweep (stepped or ramped)
     } dc_current;
 
     // Resistor
@@ -201,6 +205,8 @@ typedef union {
         double fall_time;       // Fall time (s), default: 1e-9
         double r_series;        // Output resistance (Ohm)
         bool ideal;             // Ideal mode (zero rise/fall, zero output R)
+        SweepConfig amplitude_sweep;   // Amplitude sweep
+        SweepConfig frequency_sweep;   // Frequency sweep
     } square_wave;
 
     struct {
@@ -210,6 +216,8 @@ typedef union {
         double offset;          // DC offset (V)
         double r_series;        // Output resistance (Ohm)
         bool ideal;             // Ideal mode
+        SweepConfig amplitude_sweep;   // Amplitude sweep
+        SweepConfig frequency_sweep;   // Frequency sweep
     } triangle_wave;
 
     struct {
@@ -219,6 +227,8 @@ typedef union {
         double offset;          // DC offset (V)
         double r_series;        // Output resistance (Ohm)
         bool ideal;             // Ideal mode
+        SweepConfig amplitude_sweep;   // Amplitude sweep
+        SweepConfig frequency_sweep;   // Frequency sweep
     } sawtooth_wave;
 
     struct {
@@ -227,7 +237,15 @@ typedef union {
         double bandwidth;       // Noise bandwidth (Hz), default: 1e6
         double r_series;        // Output resistance (Ohm)
         bool ideal;             // Ideal mode
+        SweepConfig amplitude_sweep;   // Amplitude sweep
     } noise_source;
+
+    // Text annotation
+    struct {
+        char text[128];         // Text content
+        int font_size;          // Font size (1=small, 2=normal, 3=large)
+        uint32_t color;         // Text color (RGBA packed)
+    } text;
 } ComponentProps;
 
 // Component structure
@@ -297,5 +315,9 @@ void component_get_value_string(Component *comp, char *buf, size_t buf_size);
 
 // Format engineering notation
 void format_engineering(double value, const char *unit, char *buf, size_t buf_size);
+
+// Calculate current sweep value based on time
+// Returns the base_value if sweep is disabled, otherwise the swept value
+double sweep_get_value(const SweepConfig *sweep, double base_value, double time);
 
 #endif // COMPONENT_H

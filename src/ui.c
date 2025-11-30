@@ -140,6 +140,7 @@ void ui_init(UIState *ui) {
     // Initialize properties panel width
     ui->properties_width = PROPERTIES_WIDTH;
     ui->props_resizing = false;
+    ui->properties_content_height = 200;  // Default height, updated dynamically
 
     // Initialize toolbar buttons
     int btn_x = 200;
@@ -164,11 +165,15 @@ void ui_init(UIState *ui) {
     ui->speed_value = 1.0f;
 
     // Initialize palette items
-    int pal_y = TOOLBAR_HEIGHT + 30;
-    int pal_h = 40;
+    int pal_y = TOOLBAR_HEIGHT + 18;
+    int pal_h = 35;
     int col = 0;
 
-    // Tools section
+    // === TOOLS SECTION ===
+    // Header drawn at pal_y - 14
+    int tools_header_y = pal_y - 14;
+    (void)tools_header_y;  // Will use in render
+    pal_y += 4;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, TOOL_SELECT, true, "Select", false, true
     };
@@ -177,7 +182,7 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, TOOL_WIRE, true, "Wire", false, false
     };
     col = 0;
-    pal_y += pal_h + 10;
+    pal_y += pal_h + 5;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, TOOL_DELETE, true, "Delete", false, false
     };
@@ -185,9 +190,14 @@ void ui_init(UIState *ui) {
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, TOOL_PROBE, true, "Probe", false, false
     };
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_TEXT, TOOL_COMPONENT, false, "Text", false, false
+    };
 
-    // Sources section
-    pal_y += pal_h + 20;
+    // === SOURCES SECTION ===
+    pal_y += pal_h + 18;
     col = 0;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_GROUND, TOOL_COMPONENT, false, "GND", false, false
@@ -197,7 +207,7 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_DC_VOLTAGE, TOOL_COMPONENT, false, "DC V", false, false
     };
     col = 0;
-    pal_y += pal_h + 5;
+    pal_y += pal_h + 3;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_AC_VOLTAGE, TOOL_COMPONENT, false, "AC V", false, false
     };
@@ -206,9 +216,9 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_DC_CURRENT, TOOL_COMPONENT, false, "DC I", false, false
     };
 
-    // Waveform generators section
+    // === WAVEFORMS SECTION ===
     col = 0;
-    pal_y += pal_h + 5;
+    pal_y += pal_h + 18;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_SQUARE_WAVE, TOOL_COMPONENT, false, "Square", false, false
     };
@@ -226,8 +236,8 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_NOISE_SOURCE, TOOL_COMPONENT, false, "Noise", false, false
     };
 
-    // Passives section
-    pal_y += pal_h + 20;
+    // === PASSIVES SECTION ===
+    pal_y += pal_h + 18;
     col = 0;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_RESISTOR, TOOL_COMPONENT, false, "R", false, false
@@ -237,7 +247,7 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_CAPACITOR, TOOL_COMPONENT, false, "C", false, false
     };
     col = 0;
-    pal_y += pal_h + 5;
+    pal_y += pal_h + 3;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_CAPACITOR_ELEC, TOOL_COMPONENT, false, "Elec", false, false
     };
@@ -246,8 +256,8 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_INDUCTOR, TOOL_COMPONENT, false, "L", false, false
     };
 
-    // Diodes section
-    pal_y += pal_h + 5;
+    // === DIODES SECTION ===
+    pal_y += pal_h + 18;
     col = 0;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_DIODE, TOOL_COMPONENT, false, "Diode", false, false
@@ -257,7 +267,7 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_ZENER, TOOL_COMPONENT, false, "Zener", false, false
     };
     col = 0;
-    pal_y += pal_h + 5;
+    pal_y += pal_h + 3;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_SCHOTTKY, TOOL_COMPONENT, false, "Schky", false, false
     };
@@ -266,8 +276,8 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_LED, TOOL_COMPONENT, false, "LED", false, false
     };
 
-    // Semiconductors section
-    pal_y += pal_h + 20;
+    // === TRANSISTORS SECTION ===
+    pal_y += pal_h + 18;
     col = 0;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_NPN_BJT, TOOL_COMPONENT, false, "NPN", false, false
@@ -277,7 +287,7 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_PNP_BJT, TOOL_COMPONENT, false, "PNP", false, false
     };
     col = 0;
-    pal_y += pal_h + 5;
+    pal_y += pal_h + 3;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_NMOS, TOOL_COMPONENT, false, "NMOS", false, false
     };
@@ -286,13 +296,13 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_PMOS, TOOL_COMPONENT, false, "PMOS", false, false
     };
     col = 0;
-    pal_y += pal_h + 5;
+    pal_y += pal_h + 3;
     ui->palette_items[ui->num_palette_items++] = (PaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, COMP_OPAMP, TOOL_COMPONENT, false, "OpAmp", false, false
     };
 
-    // Circuit templates section
-    pal_y += pal_h + 25;
+    // === CIRCUITS SECTION ===
+    pal_y += pal_h + 18;
     col = 0;
     ui->num_circuit_items = 0;
     ui->selected_circuit_type = -1;
@@ -332,6 +342,31 @@ void ui_init(UIState *ui) {
     ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_LED_WITH_RESISTOR, "LED+R", false, false
     };
+    // Transistor amplifiers
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_COMMON_EMITTER, "CE", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_COMMON_SOURCE, "CS", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_COMMON_DRAIN, "SF", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_MULTISTAGE_AMP, "2Stg", false, false
+    };
+
+    // Calculate palette content height (from toolbar to last item + padding)
+    ui->palette_content_height = pal_y + pal_h + 10 - TOOLBAR_HEIGHT;
+    ui->palette_scroll_offset = 0;
+    ui->palette_visible_height = WINDOW_HEIGHT - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
+    ui->palette_scrolling = false;
 
     // Oscilloscope settings - larger default size for better visibility
     ui->scope_rect = (Rect){WINDOW_WIDTH - ui->properties_width + 10, 250, 330, 300};
@@ -427,6 +462,16 @@ void ui_init(UIState *ui) {
     ui->bode_freq_start = 10.0;     // 10 Hz
     ui->bode_freq_stop = 100000.0;  // 100 kHz
     ui->bode_num_points = 50;
+    ui->bode_resizing = false;
+    ui->bode_resize_edge = -1;
+    ui->bode_dragging = false;
+    ui->bode_drag_start_x = 0;
+    ui->bode_drag_start_y = 0;
+    ui->bode_rect_start_x = 0;
+    ui->bode_rect_start_y = 0;
+
+    // Bode recalculate button (bounds updated in render function)
+    ui->btn_bode_recalc = (Button){{0, 0, 70, 20}, "Recalc", "Recalculate frequency sweep", false, false, true, false};
 
     // Initialize parametric sweep panel
     ui->show_sweep_panel = false;
@@ -628,21 +673,101 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
     SDL_Rect palette = {0, TOOLBAR_HEIGHT, PALETTE_WIDTH, ui->window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT};
     SDL_RenderFillRect(renderer, &palette);
 
-    // Palette items
+    // Set clipping rect for palette content (excluding scrollbar area)
+    SDL_Rect clip = {0, TOOLBAR_HEIGHT, PALETTE_WIDTH - 10, ui->window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT};
+    SDL_RenderSetClipRect(renderer, &clip);
+
+    int scroll_offset = ui->palette_scroll_offset;
+
+    // Draw category headers based on known component indices
+    // Tools: items 0-3, Sources: 4-7, Waveforms: 8-11, Passives: 12-15, Diodes: 16-19, Transistors: 20-24
+    typedef struct { int start_idx; const char *label; } PaletteSection;
+    PaletteSection sections[] = {
+        {0, "Tools"},
+        {5, "Sources"},
+        {9, "Waveforms"},
+        {13, "Passives"},
+        {17, "Diodes"},
+        {21, "Transistors"}
+    };
+    int num_sections = sizeof(sections) / sizeof(sections[0]);
+
+    for (int s = 0; s < num_sections; s++) {
+        if (sections[s].start_idx < ui->num_palette_items) {
+            int header_y = ui->palette_items[sections[s].start_idx].bounds.y - 14 - scroll_offset;
+            if (header_y >= TOOLBAR_HEIGHT - 14 && header_y < ui->window_height - STATUSBAR_HEIGHT) {
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);  // Cyan for headers
+                ui_draw_text(renderer, sections[s].label, 10, header_y);
+            }
+        }
+    }
+
+    // Palette items - draw at adjusted position
     for (int i = 0; i < ui->num_palette_items; i++) {
-        draw_palette_item(renderer, &ui->palette_items[i]);
+        PaletteItem *item = &ui->palette_items[i];
+        int adjusted_y = item->bounds.y - scroll_offset;
+        // Skip if fully outside visible area
+        if (adjusted_y + item->bounds.h < TOOLBAR_HEIGHT || adjusted_y > ui->window_height - STATUSBAR_HEIGHT) {
+            continue;
+        }
+        // Temporarily adjust bounds for drawing
+        int orig_y = item->bounds.y;
+        item->bounds.y = adjusted_y;
+        draw_palette_item(renderer, item);
+        item->bounds.y = orig_y;  // Restore for hit testing
     }
 
     // Circuits section header
     if (ui->num_circuit_items > 0) {
-        int header_y = ui->circuit_items[0].bounds.y - 18;
-        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-        ui_draw_text(renderer, "Circuits", 10, header_y);
+        int header_y = ui->circuit_items[0].bounds.y - 14 - scroll_offset;
+        if (header_y >= TOOLBAR_HEIGHT - 14 && header_y < ui->window_height - STATUSBAR_HEIGHT) {
+            SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+            ui_draw_text(renderer, "Circuits", 10, header_y);
+        }
     }
 
-    // Circuit palette items
+    // Circuit palette items - draw at adjusted position
     for (int i = 0; i < ui->num_circuit_items; i++) {
-        draw_circuit_item(renderer, &ui->circuit_items[i]);
+        CircuitPaletteItem *item = &ui->circuit_items[i];
+        int adjusted_y = item->bounds.y - scroll_offset;
+        // Skip if fully outside visible area
+        if (adjusted_y + item->bounds.h < TOOLBAR_HEIGHT || adjusted_y > ui->window_height - STATUSBAR_HEIGHT) {
+            continue;
+        }
+        // Temporarily adjust bounds for drawing
+        int orig_y = item->bounds.y;
+        item->bounds.y = adjusted_y;
+        draw_circuit_item(renderer, item);
+        item->bounds.y = orig_y;  // Restore for hit testing
+    }
+
+    // Reset clipping
+    SDL_RenderSetClipRect(renderer, NULL);
+
+    // Draw scrollbar if content exceeds visible area
+    if (ui->palette_content_height > ui->palette_visible_height) {
+        int scrollbar_x = PALETTE_WIDTH - 8;
+        int scrollbar_track_y = TOOLBAR_HEIGHT + 2;
+        int scrollbar_track_h = ui->palette_visible_height - 4;
+
+        // Draw track (darker background)
+        SDL_SetRenderDrawColor(renderer, 0x0a, 0x14, 0x28, 0xff);
+        SDL_Rect track = {scrollbar_x, scrollbar_track_y, 6, scrollbar_track_h};
+        SDL_RenderFillRect(renderer, &track);
+
+        // Calculate thumb position and size
+        float visible_ratio = (float)ui->palette_visible_height / ui->palette_content_height;
+        int thumb_h = (int)(scrollbar_track_h * visible_ratio);
+        if (thumb_h < 20) thumb_h = 20;  // Minimum thumb size
+
+        int max_scroll = ui->palette_content_height - ui->palette_visible_height;
+        float scroll_ratio = (max_scroll > 0) ? (float)ui->palette_scroll_offset / max_scroll : 0;
+        int thumb_y = scrollbar_track_y + (int)((scrollbar_track_h - thumb_h) * scroll_ratio);
+
+        // Draw thumb
+        SDL_SetRenderDrawColor(renderer, 0x00, 0x80, 0xc0, 0xff);
+        SDL_Rect thumb = {scrollbar_x, thumb_y, 6, thumb_h};
+        SDL_RenderFillRect(renderer, &thumb);
     }
 
     // Border
@@ -691,19 +816,117 @@ static void draw_property_field(SDL_Renderer *renderer, int x, int y, int w,
     }
 }
 
+// Helper to draw sweep configuration section
+// Returns the new prop_y position after drawing
+static int draw_sweep_config(SDL_Renderer *renderer, UIState *ui, int x, int prop_y, int prop_w,
+                             const char *label, SweepConfig *sweep,
+                             int enable_prop, int mode_prop, int start_prop, int end_prop,
+                             int time_prop, int steps_prop, int repeat_prop,
+                             struct InputState *input, const char *unit) {
+    char buf[64];
+
+    // Sweep enable toggle
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);  // Orange for sweep section
+    ui_draw_text(renderer, label, x + 10, prop_y + 2);
+    SDL_SetRenderDrawColor(renderer, sweep->enabled ? 0x00, 0xff, 0x88, 0xff : 0x80, 0x80, 0x80, 0xff);
+    ui_draw_text(renderer, sweep->enabled ? "[ON]" : "[OFF]", x + 100, prop_y + 2);
+    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 40, 14};
+    ui->properties[ui->num_properties].prop_type = enable_prop;
+    ui->num_properties++;
+    prop_y += 16;
+
+    if (sweep->enabled) {
+        // Mode selection
+        const char *mode_names[] = {"Linear", "Log", "Step"};
+        int mode_idx = (sweep->mode >= SWEEP_LINEAR && sweep->mode <= SWEEP_STEP) ? sweep->mode - 1 : 0;
+        if (mode_idx < 0) mode_idx = 0;
+        SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+        ui_draw_text(renderer, "  Mode:", x + 10, prop_y + 2);
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+        snprintf(buf, sizeof(buf), "[%s]", mode_names[mode_idx]);
+        ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 60, 14};
+        ui->properties[ui->num_properties].prop_type = mode_prop;
+        ui->num_properties++;
+        prop_y += 16;
+
+        // Start value
+        bool edit_start = input && input->editing_property && input->editing_prop_type == start_prop;
+        snprintf(buf, sizeof(buf), "%.3g %s", sweep->start_value, unit);
+        draw_property_field(renderer, x + 10, prop_y, prop_w, "  Start:", buf,
+                           edit_start, input ? input->input_buffer : "", input ? input->input_cursor : 0);
+        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+        ui->properties[ui->num_properties].prop_type = start_prop;
+        ui->num_properties++;
+        prop_y += 16;
+
+        // End value
+        bool edit_end = input && input->editing_property && input->editing_prop_type == end_prop;
+        snprintf(buf, sizeof(buf), "%.3g %s", sweep->end_value, unit);
+        draw_property_field(renderer, x + 10, prop_y, prop_w, "  End:", buf,
+                           edit_end, input ? input->input_buffer : "", input ? input->input_cursor : 0);
+        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+        ui->properties[ui->num_properties].prop_type = end_prop;
+        ui->num_properties++;
+        prop_y += 16;
+
+        // Sweep time
+        bool edit_time = input && input->editing_property && input->editing_prop_type == time_prop;
+        snprintf(buf, sizeof(buf), "%.3g s", sweep->sweep_time);
+        draw_property_field(renderer, x + 10, prop_y, prop_w, "  Time:", buf,
+                           edit_time, input ? input->input_buffer : "", input ? input->input_cursor : 0);
+        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+        ui->properties[ui->num_properties].prop_type = time_prop;
+        ui->num_properties++;
+        prop_y += 16;
+
+        // Steps (only for step mode)
+        if (sweep->mode == SWEEP_STEP) {
+            bool edit_steps = input && input->editing_property && input->editing_prop_type == steps_prop;
+            snprintf(buf, sizeof(buf), "%d", sweep->num_steps);
+            draw_property_field(renderer, x + 10, prop_y, prop_w, "  Steps:", buf,
+                               edit_steps, input ? input->input_buffer : "", input ? input->input_cursor : 0);
+            ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+            ui->properties[ui->num_properties].prop_type = steps_prop;
+            ui->num_properties++;
+            prop_y += 16;
+        }
+
+        // Repeat toggle
+        SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+        ui_draw_text(renderer, "  Repeat:", x + 10, prop_y + 2);
+        SDL_SetRenderDrawColor(renderer, sweep->repeat ? 0x00, 0xff, 0x88, 0xff : 0x80, 0x80, 0x80, 0xff);
+        ui_draw_text(renderer, sweep->repeat ? "[Yes]" : "[No]", x + 100, prop_y + 2);
+        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 40, 14};
+        ui->properties[ui->num_properties].prop_type = repeat_prop;
+        ui->num_properties++;
+        prop_y += 16;
+    }
+
+    return prop_y;
+}
+
 void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *selected, struct InputState *input) {
     int x = ui->window_width - ui->properties_width;
     int y = TOOLBAR_HEIGHT;
 
+    // Calculate panel height based on scope position (fill space between toolbar and scope)
+    int panel_height = ui->scope_rect.y - y - 25;  // Leave gap before scope
+    if (panel_height < 200) panel_height = 200;    // Minimum height
+
     // Draw resize handle on left edge
     SDL_SetRenderDrawColor(renderer, 0x40, 0x60, 0x80, 0xff);
-    SDL_Rect resize_handle = {x - 3, y, 6, 200};
+    SDL_Rect resize_handle = {x - 3, y, 6, panel_height};
     SDL_RenderFillRect(renderer, &resize_handle);
 
     // Background
     SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xff);
-    SDL_Rect panel = {x, y, ui->properties_width, 200};
+    SDL_Rect panel = {x, y, ui->properties_width, panel_height};
     SDL_RenderFillRect(renderer, &panel);
+
+    // Set clipping rect to prevent content from overflowing into scope area
+    SDL_Rect clip_rect = {x, y, ui->properties_width, panel_height};
+    SDL_RenderSetClipRect(renderer, &clip_rect);
 
     // Title
     SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
@@ -729,7 +952,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
             "Resistor", "Capacitor", "Elec. Cap", "Inductor", "Diode",
             "Zener", "Schottky", "LED",
             "NPN BJT", "PNP BJT", "NMOS", "PMOS", "Op-Amp",
-            "Square Wave", "Triangle Wave", "Sawtooth", "Noise"
+            "Square Wave", "Triangle Wave", "Sawtooth", "Noise",
+            "Text"
         };
         if (selected->type < COMP_TYPE_COUNT) {
             SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
@@ -772,7 +996,17 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                     ui->properties[ui->num_properties].prop_type = PROP_R_SERIES;
                     ui->num_properties++;
+                    prop_y += 18;
                 }
+
+                // Voltage sweep configuration
+                prop_y += 4;  // Add spacing before sweep section
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "V Sweep:", &selected->props.dc_voltage.voltage_sweep,
+                    PROP_SWEEP_VOLTAGE_ENABLE, PROP_SWEEP_VOLTAGE_MODE,
+                    PROP_SWEEP_VOLTAGE_START, PROP_SWEEP_VOLTAGE_END,
+                    PROP_SWEEP_VOLTAGE_TIME, PROP_SWEEP_VOLTAGE_STEPS,
+                    PROP_SWEEP_VOLTAGE_REPEAT, input, "V");
                 break;
             }
 
@@ -827,7 +1061,26 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                     ui->properties[ui->num_properties].prop_type = PROP_R_SERIES;
                     ui->num_properties++;
+                    prop_y += 18;
                 }
+
+                // Amplitude sweep configuration
+                prop_y += 4;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Amp Sweep:", &selected->props.ac_voltage.amplitude_sweep,
+                    PROP_SWEEP_AMP_ENABLE, PROP_SWEEP_AMP_MODE,
+                    PROP_SWEEP_AMP_START, PROP_SWEEP_AMP_END,
+                    PROP_SWEEP_AMP_TIME, PROP_SWEEP_AMP_STEPS,
+                    PROP_SWEEP_AMP_REPEAT, input, "V");
+
+                // Frequency sweep configuration
+                prop_y += 4;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Freq Sweep:", &selected->props.ac_voltage.frequency_sweep,
+                    PROP_SWEEP_FREQ_ENABLE, PROP_SWEEP_FREQ_MODE,
+                    PROP_SWEEP_FREQ_START, PROP_SWEEP_FREQ_END,
+                    PROP_SWEEP_FREQ_TIME, PROP_SWEEP_FREQ_STEPS,
+                    PROP_SWEEP_FREQ_REPEAT, input, "Hz");
                 break;
             }
 
@@ -858,7 +1111,17 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                     ui->properties[ui->num_properties].prop_type = PROP_R_PARALLEL;
                     ui->num_properties++;
+                    prop_y += 18;
                 }
+
+                // Current sweep configuration (reuse voltage sweep props)
+                prop_y += 4;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "I Sweep:", &selected->props.dc_current.current_sweep,
+                    PROP_SWEEP_VOLTAGE_ENABLE, PROP_SWEEP_VOLTAGE_MODE,
+                    PROP_SWEEP_VOLTAGE_START, PROP_SWEEP_VOLTAGE_END,
+                    PROP_SWEEP_VOLTAGE_TIME, PROP_SWEEP_VOLTAGE_STEPS,
+                    PROP_SWEEP_VOLTAGE_REPEAT, input, "A");
                 break;
             }
 
@@ -990,55 +1253,113 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.square_wave.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[0].prop_type = PROP_VALUE;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.square_wave.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
-                ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[1].prop_type = PROP_FREQUENCY;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.0f %%", selected->props.square_wave.duty * 100);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Duty:", buf,
                                    editing_duty, edit_buf, cursor);
-                ui->properties[2].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[2].prop_type = PROP_DUTY;
-                ui->num_properties = 3;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_DUTY;
+                ui->num_properties++;
+
+                // Amplitude sweep
+                prop_y += 22;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Amp Sweep:", &selected->props.square_wave.amplitude_sweep,
+                    PROP_SWEEP_AMP_ENABLE, PROP_SWEEP_AMP_MODE,
+                    PROP_SWEEP_AMP_START, PROP_SWEEP_AMP_END,
+                    PROP_SWEEP_AMP_TIME, PROP_SWEEP_AMP_STEPS,
+                    PROP_SWEEP_AMP_REPEAT, input, "V");
+
+                // Frequency sweep
+                prop_y += 4;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Freq Sweep:", &selected->props.square_wave.frequency_sweep,
+                    PROP_SWEEP_FREQ_ENABLE, PROP_SWEEP_FREQ_MODE,
+                    PROP_SWEEP_FREQ_START, PROP_SWEEP_FREQ_END,
+                    PROP_SWEEP_FREQ_TIME, PROP_SWEEP_FREQ_STEPS,
+                    PROP_SWEEP_FREQ_REPEAT, input, "Hz");
                 break;
 
             case COMP_TRIANGLE_WAVE:
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.triangle_wave.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[0].prop_type = PROP_VALUE;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.triangle_wave.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
-                ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[1].prop_type = PROP_FREQUENCY;
-                ui->num_properties = 2;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                ui->num_properties++;
+
+                // Amplitude sweep
+                prop_y += 22;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Amp Sweep:", &selected->props.triangle_wave.amplitude_sweep,
+                    PROP_SWEEP_AMP_ENABLE, PROP_SWEEP_AMP_MODE,
+                    PROP_SWEEP_AMP_START, PROP_SWEEP_AMP_END,
+                    PROP_SWEEP_AMP_TIME, PROP_SWEEP_AMP_STEPS,
+                    PROP_SWEEP_AMP_REPEAT, input, "V");
+
+                // Frequency sweep
+                prop_y += 4;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Freq Sweep:", &selected->props.triangle_wave.frequency_sweep,
+                    PROP_SWEEP_FREQ_ENABLE, PROP_SWEEP_FREQ_MODE,
+                    PROP_SWEEP_FREQ_START, PROP_SWEEP_FREQ_END,
+                    PROP_SWEEP_FREQ_TIME, PROP_SWEEP_FREQ_STEPS,
+                    PROP_SWEEP_FREQ_REPEAT, input, "Hz");
                 break;
 
             case COMP_SAWTOOTH_WAVE:
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.sawtooth_wave.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[0].prop_type = PROP_VALUE;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.sawtooth_wave.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
-                ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[1].prop_type = PROP_FREQUENCY;
-                ui->num_properties = 2;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                ui->num_properties++;
+
+                // Amplitude sweep
+                prop_y += 22;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Amp Sweep:", &selected->props.sawtooth_wave.amplitude_sweep,
+                    PROP_SWEEP_AMP_ENABLE, PROP_SWEEP_AMP_MODE,
+                    PROP_SWEEP_AMP_START, PROP_SWEEP_AMP_END,
+                    PROP_SWEEP_AMP_TIME, PROP_SWEEP_AMP_STEPS,
+                    PROP_SWEEP_AMP_REPEAT, input, "V");
+
+                // Frequency sweep
+                prop_y += 4;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Freq Sweep:", &selected->props.sawtooth_wave.frequency_sweep,
+                    PROP_SWEEP_FREQ_ENABLE, PROP_SWEEP_FREQ_MODE,
+                    PROP_SWEEP_FREQ_START, PROP_SWEEP_FREQ_END,
+                    PROP_SWEEP_FREQ_TIME, PROP_SWEEP_FREQ_STEPS,
+                    PROP_SWEEP_FREQ_REPEAT, input, "Hz");
                 break;
 
             case COMP_NOISE_SOURCE:
@@ -1048,6 +1369,15 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 ui->properties[ui->num_properties].prop_type = PROP_VALUE;
                 ui->num_properties++;
+
+                // Amplitude sweep
+                prop_y += 22;
+                prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
+                    "Amp Sweep:", &selected->props.noise_source.amplitude_sweep,
+                    PROP_SWEEP_AMP_ENABLE, PROP_SWEEP_AMP_MODE,
+                    PROP_SWEEP_AMP_START, PROP_SWEEP_AMP_END,
+                    PROP_SWEEP_AMP_TIME, PROP_SWEEP_AMP_STEPS,
+                    PROP_SWEEP_AMP_REPEAT, input, "V");
                 break;
 
             case COMP_DIODE: {
@@ -1484,6 +1814,32 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 break;
             }
 
+            case COMP_TEXT: {
+                // Text content (editable)
+                bool edit_text = input && input->editing_property && input->editing_prop_type == PROP_TEXT_CONTENT;
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Text:", selected->props.text.text,
+                                   edit_text, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_TEXT_CONTENT;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Font size selector
+                const char *size_names[] = {"Small", "Normal", "Large"};
+                int size_idx = selected->props.text.font_size - 1;
+                if (size_idx < 0) size_idx = 0;
+                if (size_idx > 2) size_idx = 2;
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Size:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                snprintf(buf, sizeof(buf), "[%s]", size_names[size_idx]);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 60, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_TEXT_SIZE;
+                ui->num_properties++;
+                break;
+            }
+
             default:
                 break;
         }
@@ -1493,6 +1849,9 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
         SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
         ui_draw_text(renderer, "Click value to edit", x + 10, prop_y);
         ui_draw_text(renderer, "Use k,M,m,u,n,p suffix", x + 10, prop_y + 12);
+
+        // Track content height for oscilloscope positioning
+        ui->properties_content_height = prop_y + 30 - y;  // Include help text
     } else {
         // Reset num_properties when nothing is selected to avoid stale bounds
         ui->num_properties = 0;
@@ -1501,7 +1860,13 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
         ui_draw_text(renderer, "No selection", x + 10, y + 35);
         ui_draw_text(renderer, "Click component", x + 10, y + 55);
         ui_draw_text(renderer, "to edit properties", x + 10, y + 70);
+
+        // Minimal content height when nothing selected
+        ui->properties_content_height = 100;
     }
+
+    // Reset clipping before drawing border
+    SDL_RenderSetClipRect(renderer, NULL);
 
     // Border
     SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
@@ -2286,7 +2651,7 @@ void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
     // Semi-transparent background
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xe0);
-    SDL_Rect panel = {r->x - 10, r->y - 25, r->w + 20, r->h + 120};
+    SDL_Rect panel = {r->x - 10, r->y - 25, r->w + 20, r->h + 145};
     SDL_RenderFillRect(renderer, &panel);
 
     // Border
@@ -2511,8 +2876,69 @@ void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
         ui_draw_text(renderer, "Click Bode to run sweep", r->x, legend_y + 15);
     }
 
+    // Settings controls
+    int settings_y = legend_y + 35;
+
+    // Start frequency
+    SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+    ui_draw_text(renderer, "Start:", r->x, settings_y);
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    if (ui->bode_freq_start >= 1000) {
+        snprintf(buf, sizeof(buf), "[%.1fkHz]", ui->bode_freq_start / 1000);
+    } else {
+        snprintf(buf, sizeof(buf), "[%.0fHz]", ui->bode_freq_start);
+    }
+    ui_draw_text(renderer, buf, r->x + 50, settings_y);
+
+    // Stop frequency
+    SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+    ui_draw_text(renderer, "Stop:", r->x + 130, settings_y);
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    if (ui->bode_freq_stop >= 1000000) {
+        snprintf(buf, sizeof(buf), "[%.1fMHz]", ui->bode_freq_stop / 1000000);
+    } else if (ui->bode_freq_stop >= 1000) {
+        snprintf(buf, sizeof(buf), "[%.0fkHz]", ui->bode_freq_stop / 1000);
+    } else {
+        snprintf(buf, sizeof(buf), "[%.0fHz]", ui->bode_freq_stop);
+    }
+    ui_draw_text(renderer, buf, r->x + 175, settings_y);
+
+    // Number of points
+    SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+    ui_draw_text(renderer, "Points:", r->x + 270, settings_y);
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    snprintf(buf, sizeof(buf), "[%d]", ui->bode_num_points);
+    ui_draw_text(renderer, buf, r->x + 320, settings_y);
+
+    // Recalculate button (next row)
+    int recalc_y = settings_y + 18;
+    ui->btn_bode_recalc.bounds = (Rect){r->x, recalc_y, 70, 20};
+
+    // Draw recalculate button
+    SDL_Rect recalc_rect = {ui->btn_bode_recalc.bounds.x, ui->btn_bode_recalc.bounds.y,
+                            ui->btn_bode_recalc.bounds.w, ui->btn_bode_recalc.bounds.h};
+
+    // Button background (cyan when hovered, darker when pressed)
+    if (ui->btn_bode_recalc.pressed) {
+        SDL_SetRenderDrawColor(renderer, 0x00, 0x60, 0x80, 0xff);
+    } else if (ui->btn_bode_recalc.hovered) {
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xa0, 0xd0, 0xff);
+    } else {
+        SDL_SetRenderDrawColor(renderer, 0x00, 0x80, 0xb0, 0xff);
+    }
+    SDL_RenderFillRect(renderer, &recalc_rect);
+
+    // Button border
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    SDL_RenderDrawRect(renderer, &recalc_rect);
+
+    // Button text
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    ui_draw_text(renderer, "Recalc", r->x + 10, recalc_y + 4);
+
     // Close button hint
-    ui_draw_text(renderer, "[ESC to close]", r->x + r->w - 100, legend_y + 15);
+    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+    ui_draw_text(renderer, "[ESC to close]", r->x + r->w - 100, recalc_y);
 }
 
 void ui_render_sweep_panel(UIState *ui, SDL_Renderer *renderer, void *analysis_ptr) {
@@ -2871,6 +3297,92 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             return UI_ACTION_NONE;
         }
 
+        // Bode plot resizing and dragging
+        if (ui->show_bode_plot) {
+            Rect *br = &ui->bode_rect;
+            int panel_x = br->x - 10;
+            int panel_y = br->y - 25;
+            int panel_w = br->w + 20;
+            int panel_h = br->h + 145;
+
+            // Check if clicking on edges for resizing (5 pixel zones)
+            bool on_left = (x >= panel_x - 5 && x <= panel_x + 5 && y >= panel_y && y <= panel_y + panel_h);
+            bool on_right = (x >= panel_x + panel_w - 5 && x <= panel_x + panel_w + 5 && y >= panel_y && y <= panel_y + panel_h);
+            bool on_top = (y >= panel_y - 5 && y <= panel_y + 5 && x >= panel_x && x <= panel_x + panel_w);
+            bool on_bottom = (y >= panel_y + panel_h - 5 && y <= panel_y + panel_h + 5 && x >= panel_x && x <= panel_x + panel_w);
+
+            if (on_left) {
+                ui->bode_resizing = true;
+                ui->bode_resize_edge = 1;  // left
+                return UI_ACTION_NONE;
+            } else if (on_right) {
+                ui->bode_resizing = true;
+                ui->bode_resize_edge = 3;  // right
+                return UI_ACTION_NONE;
+            } else if (on_top) {
+                ui->bode_resizing = true;
+                ui->bode_resize_edge = 0;  // top
+                return UI_ACTION_NONE;
+            } else if (on_bottom) {
+                ui->bode_resizing = true;
+                ui->bode_resize_edge = 2;  // bottom
+                return UI_ACTION_NONE;
+            }
+
+            // Check if clicking on title bar for dragging (top 25 pixels of panel)
+            if (x >= panel_x && x <= panel_x + panel_w &&
+                y >= panel_y && y <= panel_y + 20) {
+                ui->bode_dragging = true;
+                ui->bode_drag_start_x = x;
+                ui->bode_drag_start_y = y;
+                ui->bode_rect_start_x = br->x;
+                ui->bode_rect_start_y = br->y;
+                return UI_ACTION_NONE;
+            }
+
+            // Check if clicking on Bode plot settings
+            int settings_y = br->y + br->h + 55;  // legend_y + 35
+
+            // Start frequency control (x: br->x + 50 to br->x + 120)
+            if (x >= br->x + 50 && x <= br->x + 120 &&
+                y >= settings_y && y <= settings_y + 14) {
+                // Cycle through start frequencies: 1, 10, 100, 1000 Hz
+                if (ui->bode_freq_start <= 1.0) ui->bode_freq_start = 10.0;
+                else if (ui->bode_freq_start <= 10.0) ui->bode_freq_start = 100.0;
+                else if (ui->bode_freq_start <= 100.0) ui->bode_freq_start = 1000.0;
+                else ui->bode_freq_start = 1.0;
+                return UI_ACTION_NONE;
+            }
+
+            // Stop frequency control (x: br->x + 175 to br->x + 260)
+            if (x >= br->x + 175 && x <= br->x + 260 &&
+                y >= settings_y && y <= settings_y + 14) {
+                // Cycle through stop frequencies: 10k, 100k, 1M, 10M Hz
+                if (ui->bode_freq_stop <= 10000.0) ui->bode_freq_stop = 100000.0;
+                else if (ui->bode_freq_stop <= 100000.0) ui->bode_freq_stop = 1000000.0;
+                else if (ui->bode_freq_stop <= 1000000.0) ui->bode_freq_stop = 10000000.0;
+                else ui->bode_freq_stop = 10000.0;
+                return UI_ACTION_NONE;
+            }
+
+            // Points control (x: br->x + 320 to br->x + 370)
+            if (x >= br->x + 320 && x <= br->x + 370 &&
+                y >= settings_y && y <= settings_y + 14) {
+                // Cycle through number of points: 50, 100, 200, 500
+                if (ui->bode_num_points <= 50) ui->bode_num_points = 100;
+                else if (ui->bode_num_points <= 100) ui->bode_num_points = 200;
+                else if (ui->bode_num_points <= 200) ui->bode_num_points = 500;
+                else ui->bode_num_points = 50;
+                return UI_ACTION_NONE;
+            }
+
+            // Recalculate button
+            if (point_in_rect(x, y, &ui->btn_bode_recalc.bounds) && ui->btn_bode_recalc.enabled) {
+                ui->btn_bode_recalc.pressed = true;
+                return UI_ACTION_BODE_RECALC;
+            }
+        }
+
         // Handle cursor positioning when cursor mode is enabled
         if (ui->scope_cursor_mode && ui->display_mode == SCOPE_MODE_YT) {
             Rect *sr = &ui->scope_rect;
@@ -2904,6 +3416,14 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (ui->props_resizing) {
             ui->props_resizing = false;
             ui_update_layout(ui);  // Update scope position within panel
+        }
+        // Release Bode plot resize/drag
+        if (ui->bode_resizing) {
+            ui->bode_resizing = false;
+            ui->bode_resize_edge = -1;
+        }
+        if (ui->bode_dragging) {
+            ui->bode_dragging = false;
         }
         // Release cursor drag
         if (ui->scope_cursor_drag != 0) {
@@ -2991,9 +3511,15 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             }
         }
 
-        // Check palette items
+        // Check palette items (adjust y for scroll offset)
+        int adjusted_y = y + ui->palette_scroll_offset;
         for (int i = 0; i < ui->num_palette_items; i++) {
-            if (point_in_rect(x, y, &ui->palette_items[i].bounds)) {
+            if (point_in_rect(x, adjusted_y, &ui->palette_items[i].bounds)) {
+                // Verify item is visible (not clipped by scroll)
+                int item_screen_y = ui->palette_items[i].bounds.y - ui->palette_scroll_offset;
+                if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->palette_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                    continue;  // Item is scrolled out of view
+                }
                 // Deselect all palette and circuit items
                 for (int j = 0; j < ui->num_palette_items; j++) {
                     ui->palette_items[j].selected = false;
@@ -3014,9 +3540,14 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             }
         }
 
-        // Check circuit template items
+        // Check circuit template items (adjust y for scroll offset)
         for (int i = 0; i < ui->num_circuit_items; i++) {
-            if (point_in_rect(x, y, &ui->circuit_items[i].bounds)) {
+            if (point_in_rect(x, adjusted_y, &ui->circuit_items[i].bounds)) {
+                // Verify item is visible (not clipped by scroll)
+                int item_screen_y = ui->circuit_items[i].bounds.y - ui->palette_scroll_offset;
+                if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->circuit_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                    continue;  // Item is scrolled out of view
+                }
                 // Deselect all palette and circuit items
                 for (int j = 0; j < ui->num_palette_items; j++) {
                     ui->palette_items[j].selected = false;
@@ -3033,6 +3564,7 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
     } else {
         ui->btn_run.pressed = false;
+        ui->btn_bode_recalc.pressed = false;
     }
 
     return UI_ACTION_NONE;
@@ -3066,6 +3598,76 @@ int ui_handle_motion(UIState *ui, int x, int y) {
                 ui->scope_rect.w = new_width;
             }
         }
+        return UI_ACTION_NONE;
+    }
+
+    // Handle Bode plot resizing
+    if (ui->bode_resizing) {
+        Rect *br = &ui->bode_rect;
+
+        if (ui->bode_resize_edge == 0) {
+            // Top edge - changes height and y position
+            int new_y = y + 25;  // Account for title bar
+            int bottom = br->y + br->h;
+            int new_height = bottom - new_y;
+
+            if (new_height >= 100 && new_height <= 400 && new_y >= TOOLBAR_HEIGHT + 50) {
+                br->y = new_y;
+                br->h = new_height;
+            }
+        } else if (ui->bode_resize_edge == 1) {
+            // Left edge - changes width and x position
+            int new_x = x + 10;  // Account for panel padding
+            int right = br->x + br->w;
+            int new_width = right - new_x;
+
+            if (new_width >= 200 && new_width <= 600 && new_x >= 200) {
+                br->x = new_x;
+                br->w = new_width;
+            }
+        } else if (ui->bode_resize_edge == 2) {
+            // Bottom edge - changes height only
+            int new_height = y - br->y - 95;  // Account for controls below plot
+
+            if (new_height >= 100 && new_height <= 400) {
+                br->h = new_height;
+            }
+        } else if (ui->bode_resize_edge == 3) {
+            // Right edge - changes width only
+            int new_width = x - br->x - 10;  // Account for panel padding
+
+            if (new_width >= 200 && new_width <= 600) {
+                br->w = new_width;
+            }
+        }
+        return UI_ACTION_NONE;
+    }
+
+    // Handle Bode plot dragging (move window)
+    if (ui->bode_dragging) {
+        int dx = x - ui->bode_drag_start_x;
+        int dy = y - ui->bode_drag_start_y;
+
+        // Calculate new position based on start position + delta
+        int new_x = ui->bode_rect_start_x + dx;
+        int new_y = ui->bode_rect_start_y + dy;
+
+        // Keep within window bounds
+        int panel_w = ui->bode_rect.w + 20;
+        int panel_h = ui->bode_rect.h + 145;
+        int panel_x = new_x - 10;
+        int panel_y = new_y - 25;
+
+        if (panel_x < 0) new_x = 10;
+        if (panel_y < TOOLBAR_HEIGHT) new_y = TOOLBAR_HEIGHT + 25;
+        if (panel_x + panel_w > ui->window_width)
+            new_x = ui->window_width - panel_w + 10;
+        if (panel_y + panel_h > ui->window_height)
+            new_y = ui->window_height - panel_h + 25;
+
+        ui->bode_rect.x = new_x;
+        ui->bode_rect.y = new_y;
+
         return UI_ACTION_NONE;
     }
 
@@ -3122,15 +3724,33 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_scope_fft.hovered = point_in_rect(x, y, &ui->btn_scope_fft.bounds);
     ui->btn_scope_autoset.hovered = point_in_rect(x, y, &ui->btn_scope_autoset.bounds);
     ui->btn_bode.hovered = point_in_rect(x, y, &ui->btn_bode.bounds);
+    ui->btn_bode_recalc.hovered = ui->show_bode_plot && point_in_rect(x, y, &ui->btn_bode_recalc.bounds);
 
-    // Update palette hover states
+    // Update palette hover states (adjust y for scroll offset)
+    int adjusted_y = y + ui->palette_scroll_offset;
     for (int i = 0; i < ui->num_palette_items; i++) {
-        ui->palette_items[i].hovered = point_in_rect(x, y, &ui->palette_items[i].bounds);
+        bool in_bounds = point_in_rect(x, adjusted_y, &ui->palette_items[i].bounds);
+        // Also check if item is visible on screen
+        if (in_bounds) {
+            int item_screen_y = ui->palette_items[i].bounds.y - ui->palette_scroll_offset;
+            if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->palette_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                in_bounds = false;  // Item is scrolled out of view
+            }
+        }
+        ui->palette_items[i].hovered = in_bounds;
     }
 
-    // Update circuit items hover states
+    // Update circuit items hover states (adjust y for scroll offset)
     for (int i = 0; i < ui->num_circuit_items; i++) {
-        ui->circuit_items[i].hovered = point_in_rect(x, y, &ui->circuit_items[i].bounds);
+        bool in_bounds = point_in_rect(x, adjusted_y, &ui->circuit_items[i].bounds);
+        // Also check if item is visible on screen
+        if (in_bounds) {
+            int item_screen_y = ui->circuit_items[i].bounds.y - ui->palette_scroll_offset;
+            if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->circuit_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                in_bounds = false;  // Item is scrolled out of view
+            }
+        }
+        ui->circuit_items[i].hovered = in_bounds;
     }
 
     return UI_ACTION_NONE;
@@ -3182,11 +3802,31 @@ void ui_update_scope_channels(UIState *ui, Circuit *circuit) {
 void ui_update_layout(UIState *ui) {
     if (!ui) return;
 
+    // Update palette visible height
+    ui->palette_visible_height = ui->window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
+
+    // Clamp scroll offset to valid range
+    int max_scroll = ui->palette_content_height - ui->palette_visible_height;
+    if (max_scroll < 0) max_scroll = 0;
+    if (ui->palette_scroll_offset > max_scroll) {
+        ui->palette_scroll_offset = max_scroll;
+    }
+    if (ui->palette_scroll_offset < 0) {
+        ui->palette_scroll_offset = 0;
+    }
+
     // Update oscilloscope position (anchored to right side, vertically positioned based on height)
     ui->scope_rect.x = ui->window_width - ui->properties_width + 10;
+
+    // Ensure scope is positioned below properties content
+    int min_scope_y = TOOLBAR_HEIGHT + ui->properties_content_height + 25;
+    if (ui->scope_rect.y < min_scope_y) {
+        ui->scope_rect.y = min_scope_y;
+    }
+
     // Keep y position reasonable or adjust if window is too small
     int max_scope_y = ui->window_height - STATUSBAR_HEIGHT - ui->scope_rect.h - 100;
-    if (ui->scope_rect.y > max_scope_y && max_scope_y > TOOLBAR_HEIGHT + 200) {
+    if (ui->scope_rect.y > max_scope_y && max_scope_y > min_scope_y) {
         ui->scope_rect.y = max_scope_y;
     }
 
@@ -3367,4 +4007,34 @@ void ui_scope_autoset(UIState *ui, Simulation *sim) {
     // Set trigger to rising edge and auto mode for good display
     ui->trigger_edge = TRIG_EDGE_RISING;
     ui->trigger_mode = TRIG_AUTO;
+}
+
+// Handle palette scroll (mouse wheel)
+void ui_palette_scroll(UIState *ui, int delta) {
+    if (!ui) return;
+
+    // Only scroll if content exceeds visible area
+    if (ui->palette_content_height <= ui->palette_visible_height) {
+        return;
+    }
+
+    // Scroll amount per wheel notch (pixels)
+    int scroll_amount = 40;
+    ui->palette_scroll_offset -= delta * scroll_amount;
+
+    // Clamp to valid range
+    int max_scroll = ui->palette_content_height - ui->palette_visible_height;
+    if (ui->palette_scroll_offset < 0) {
+        ui->palette_scroll_offset = 0;
+    }
+    if (ui->palette_scroll_offset > max_scroll) {
+        ui->palette_scroll_offset = max_scroll;
+    }
+}
+
+// Check if point is in palette area
+bool ui_point_in_palette(UIState *ui, int x, int y) {
+    if (!ui) return false;
+    return (x >= 0 && x < PALETTE_WIDTH &&
+            y >= TOOLBAR_HEIGHT && y < ui->window_height - STATUSBAR_HEIGHT);
 }

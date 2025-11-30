@@ -41,6 +41,10 @@ typedef struct {
     uint32_t last_frame_time;
     uint32_t frame_count;
     float fps;
+
+    // Background thread for frequency sweep
+    SDL_Thread *freq_sweep_thread;
+    bool freq_sweep_thread_running;
 } App;
 
 // Initialize application

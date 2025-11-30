@@ -67,6 +67,8 @@ typedef enum {
     COMP_TRIANGLE_WAVE,
     COMP_SAWTOOTH_WAVE,
     COMP_NOISE_SOURCE,
+    // Annotation
+    COMP_TEXT,
     COMP_TYPE_COUNT
 } ComponentType;
 
@@ -89,6 +91,26 @@ typedef enum {
     SCOPE_MODE_YT = 0,  // Normal time-domain
     SCOPE_MODE_XY       // X-Y mode (Lissajous)
 } ScopeDisplayMode;
+
+// Source sweep modes
+typedef enum {
+    SWEEP_NONE = 0,     // No sweep - constant value
+    SWEEP_LINEAR,       // Linear sweep from start to end
+    SWEEP_LOG,          // Logarithmic sweep (for frequency)
+    SWEEP_STEP          // Step through discrete values
+} SweepMode;
+
+// Sweep configuration for a source parameter
+typedef struct {
+    bool enabled;           // Sweep is active
+    SweepMode mode;         // Type of sweep
+    double start_value;     // Starting value
+    double end_value;       // Ending value
+    double sweep_time;      // Time to complete one sweep (seconds)
+    int num_steps;          // For stepped mode: number of discrete steps
+    bool repeat;            // Repeat sweep when complete (otherwise hold at end)
+    bool bidirectional;     // Sweep back and forth (triangle pattern)
+} SweepConfig;
 
 // Tool types
 typedef enum {

@@ -86,7 +86,39 @@ typedef enum {
 
     // Waveform parameters
     PROP_RISE_TIME,     // Rise time
-    PROP_FALL_TIME      // Fall time
+    PROP_FALL_TIME,     // Fall time
+
+    // Sweep parameters
+    PROP_SWEEP_VOLTAGE_ENABLE,    // Toggle voltage sweep
+    PROP_SWEEP_VOLTAGE_MODE,      // Sweep mode (linear/log/step)
+    PROP_SWEEP_VOLTAGE_START,     // Start value
+    PROP_SWEEP_VOLTAGE_END,       // End value
+    PROP_SWEEP_VOLTAGE_TIME,      // Sweep time
+    PROP_SWEEP_VOLTAGE_STEPS,     // Number of steps (for stepped mode)
+    PROP_SWEEP_VOLTAGE_REPEAT,    // Repeat sweep
+    PROP_SWEEP_AMP_ENABLE,        // Toggle amplitude sweep
+    PROP_SWEEP_AMP_MODE,          // Sweep mode
+    PROP_SWEEP_AMP_START,         // Start value
+    PROP_SWEEP_AMP_END,           // End value
+    PROP_SWEEP_AMP_TIME,          // Sweep time
+    PROP_SWEEP_AMP_STEPS,         // Number of steps
+    PROP_SWEEP_AMP_REPEAT,        // Repeat sweep
+    PROP_SWEEP_FREQ_ENABLE,       // Toggle frequency sweep
+    PROP_SWEEP_FREQ_MODE,         // Sweep mode
+    PROP_SWEEP_FREQ_START,        // Start frequency
+    PROP_SWEEP_FREQ_END,          // End frequency
+    PROP_SWEEP_FREQ_TIME,         // Sweep time
+    PROP_SWEEP_FREQ_STEPS,        // Number of steps
+    PROP_SWEEP_FREQ_REPEAT,       // Repeat sweep
+
+    // Text annotation parameters
+    PROP_TEXT_CONTENT,            // Text content string
+    PROP_TEXT_SIZE,               // Font size (1=small, 2=normal, 3=large)
+
+    // Bode plot parameters
+    PROP_BODE_FREQ_START,         // Start frequency
+    PROP_BODE_FREQ_STOP,          // Stop frequency
+    PROP_BODE_NUM_POINTS          // Number of frequency points
 } PropertyType;
 
 // Input state
@@ -129,8 +161,9 @@ typedef struct InputState {
     Component *multi_selected[64];  // Array of multi-selected components
     int multi_selected_count;       // Number of multi-selected components
 
-    // Probe dragging
+    // Probe selection and dragging
     int dragging_probe_idx;         // Index of probe being dragged (-1 = none)
+    int selected_probe_idx;         // Index of selected probe (-1 = none)
 
     // Text input for property editing
     bool editing_property;

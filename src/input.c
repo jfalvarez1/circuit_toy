@@ -15,6 +15,7 @@ void input_init(InputState *input) {
     input->placing_component = COMP_NONE;
     input->pending_ui_action = UI_ACTION_NONE;
     input->dragging_probe_idx = -1;
+    input->selected_probe_idx = -1;
     input->selected_wire_idx = -1;
     input->multi_selected_count = 0;
 }
@@ -171,9 +172,27 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             float dy = probe->y - wy;
                             // Check if click is near probe tip (within 15 units)
                             if (sqrt(dx*dx + dy*dy) < 15) {
+                                // Clear previous selections
+                                if (input->selected_component) {
+                                    input->selected_component->selected = false;
+                                    input->selected_component = NULL;
+                                }
+                                if (input->selected_wire_idx >= 0 && input->selected_wire_idx < circuit->num_wires) {
+                                    circuit->wires[input->selected_wire_idx].selected = false;
+                                }
+                                input->selected_wire_idx = -1;
+                                // Clear previous probe selection
+                                if (input->selected_probe_idx >= 0 && input->selected_probe_idx < circuit->num_probes) {
+                                    circuit->probes[input->selected_probe_idx].selected = false;
+                                }
+                                input->multi_selected_count = 0;
+
+                                // Select this probe
+                                input->selected_probe_idx = i;
+                                probe->selected = true;
                                 input->dragging_probe_idx = i;
                                 found_probe = true;
-                                ui_set_status(ui, "Drag probe to move, release on node to connect");
+                                ui_set_status(ui, "Probe selected - drag to move, Delete to remove");
                                 break;
                             }
                         }
@@ -191,6 +210,11 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                     circuit->wires[input->selected_wire_idx].selected = false;
                                 }
                                 input->selected_wire_idx = -1;
+                                // Clear probe selection
+                                if (input->selected_probe_idx >= 0 && input->selected_probe_idx < circuit->num_probes) {
+                                    circuit->probes[input->selected_probe_idx].selected = false;
+                                }
+                                input->selected_probe_idx = -1;
                                 input->multi_selected_count = 0;
 
                                 comp->selected = true;
@@ -215,6 +239,11 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                     if (input->selected_wire_idx >= 0 && input->selected_wire_idx < circuit->num_wires) {
                                         circuit->wires[input->selected_wire_idx].selected = false;
                                     }
+                                    // Clear probe selection
+                                    if (input->selected_probe_idx >= 0 && input->selected_probe_idx < circuit->num_probes) {
+                                        circuit->probes[input->selected_probe_idx].selected = false;
+                                    }
+                                    input->selected_probe_idx = -1;
                                     input->multi_selected_count = 0;
 
                                     input->selected_wire_idx = wire_idx;
@@ -231,6 +260,11 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                         circuit->wires[input->selected_wire_idx].selected = false;
                                     }
                                     input->selected_wire_idx = -1;
+                                    // Clear probe selection
+                                    if (input->selected_probe_idx >= 0 && input->selected_probe_idx < circuit->num_probes) {
+                                        circuit->probes[input->selected_probe_idx].selected = false;
+                                    }
+                                    input->selected_probe_idx = -1;
 
                                     // Clear multi-selection
                                     for (int i = 0; i < input->multi_selected_count; i++) {
@@ -550,6 +584,12 @@ bool input_handle_event(InputState *input, SDL_Event *event,
         case SDL_MOUSEWHEEL: {
             int x = input->mouse_x;
             int y = input->mouse_y;
+
+            // Check if mouse is in palette area (left sidebar) - scroll palette
+            if (ui_point_in_palette(ui, x, y)) {
+                ui_palette_scroll(ui, event->wheel.y);
+                return true;
+            }
 
             // Check if mouse is in properties panel (right side)
             // and there's a selected component - adjust value with wheel
@@ -990,6 +1030,15 @@ void input_delete_selected(InputState *input, Circuit *circuit) {
         int wire_id = circuit->wires[input->selected_wire_idx].id;
         circuit_remove_wire(circuit, wire_id);
         input->selected_wire_idx = -1;
+        return;
+    }
+
+    // Delete selected probe
+    if (input->selected_probe_idx >= 0 && input->selected_probe_idx < circuit->num_probes) {
+        circuit->probes[input->selected_probe_idx].selected = false;
+        int probe_id = circuit->probes[input->selected_probe_idx].id;
+        circuit_remove_probe(circuit, probe_id);
+        input->selected_probe_idx = -1;
     }
 }
 
@@ -1526,8 +1575,82 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             }
             break;
 
+        // Sweep value properties
+        case PROP_SWEEP_VOLTAGE_START:
+        case PROP_SWEEP_VOLTAGE_END:
+        case PROP_SWEEP_VOLTAGE_TIME:
+        case PROP_SWEEP_VOLTAGE_STEPS:
+        case PROP_SWEEP_AMP_START:
+        case PROP_SWEEP_AMP_END:
+        case PROP_SWEEP_AMP_TIME:
+        case PROP_SWEEP_AMP_STEPS:
+        case PROP_SWEEP_FREQ_START:
+        case PROP_SWEEP_FREQ_END:
+        case PROP_SWEEP_FREQ_TIME:
+        case PROP_SWEEP_FREQ_STEPS: {
+            SweepConfig *sweep = NULL;
+            int base_prop = 0;
+            PropertyType prop = input->editing_prop_type;
+
+            // Find the right sweep config based on property type and component
+            if (prop >= PROP_SWEEP_VOLTAGE_START && prop <= PROP_SWEEP_VOLTAGE_STEPS) {
+                base_prop = PROP_SWEEP_VOLTAGE_START;
+                if (comp->type == COMP_DC_VOLTAGE) sweep = &comp->props.dc_voltage.voltage_sweep;
+                else if (comp->type == COMP_DC_CURRENT) sweep = &comp->props.dc_current.current_sweep;
+            } else if (prop >= PROP_SWEEP_AMP_START && prop <= PROP_SWEEP_AMP_STEPS) {
+                base_prop = PROP_SWEEP_AMP_START;
+                if (comp->type == COMP_AC_VOLTAGE) sweep = &comp->props.ac_voltage.amplitude_sweep;
+                else if (comp->type == COMP_SQUARE_WAVE) sweep = &comp->props.square_wave.amplitude_sweep;
+                else if (comp->type == COMP_TRIANGLE_WAVE) sweep = &comp->props.triangle_wave.amplitude_sweep;
+                else if (comp->type == COMP_SAWTOOTH_WAVE) sweep = &comp->props.sawtooth_wave.amplitude_sweep;
+                else if (comp->type == COMP_NOISE_SOURCE) sweep = &comp->props.noise_source.amplitude_sweep;
+            } else if (prop >= PROP_SWEEP_FREQ_START && prop <= PROP_SWEEP_FREQ_STEPS) {
+                base_prop = PROP_SWEEP_FREQ_START;
+                if (comp->type == COMP_AC_VOLTAGE) sweep = &comp->props.ac_voltage.frequency_sweep;
+                else if (comp->type == COMP_SQUARE_WAVE) sweep = &comp->props.square_wave.frequency_sweep;
+                else if (comp->type == COMP_TRIANGLE_WAVE) sweep = &comp->props.triangle_wave.frequency_sweep;
+                else if (comp->type == COMP_SAWTOOTH_WAVE) sweep = &comp->props.sawtooth_wave.frequency_sweep;
+            }
+
+            if (sweep) {
+                int offset = prop - base_prop;
+                switch (offset) {
+                    case 0: // START
+                        sweep->start_value = value;
+                        applied = true;
+                        break;
+                    case 1: // END
+                        sweep->end_value = value;
+                        applied = true;
+                        break;
+                    case 2: // TIME
+                        if (value > 0) {
+                            sweep->sweep_time = value;
+                            applied = true;
+                        }
+                        break;
+                    case 3: // STEPS
+                        if (value >= 2 && value <= 1000) {
+                            sweep->num_steps = (int)value;
+                            applied = true;
+                        }
+                        break;
+                }
+            }
+            break;
+        }
+
         // Also handle Schottky Vf using LED_VF property type
         // (already handled in PROP_LED_VF - but we need schottky handling)
+
+        case PROP_TEXT_CONTENT:
+            if (comp->type == COMP_TEXT) {
+                // Copy text content (no numeric parsing needed)
+                strncpy(comp->props.text.text, input->input_buffer, sizeof(comp->props.text.text) - 1);
+                comp->props.text.text[sizeof(comp->props.text.text) - 1] = '\0';
+                applied = true;
+            }
+            break;
 
         default:
             // Handle special cases for reused property types
