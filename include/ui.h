@@ -137,6 +137,17 @@ typedef struct {
     Button btn_scope_trig_down;      // Decrease trigger level
     Button btn_scope_mode;           // Toggle Y-T / X-Y mode
     Button btn_scope_screenshot;     // Capture scope display
+    Button btn_scope_cursor;         // Toggle measurement cursors
+    Button btn_scope_fft;            // Toggle FFT view
+
+    // Cursor state
+    bool scope_cursor_mode;          // Cursor mode active
+    int scope_cursor_drag;           // Which cursor is being dragged (0=none, 1=cursor1, 2=cursor2)
+    double cursor1_time;             // Cursor 1 time position (0-1 normalized)
+    double cursor2_time;             // Cursor 2 time position (0-1 normalized)
+
+    // FFT display state
+    bool scope_fft_mode;             // FFT display active
 
     // Trigger settings
     TriggerMode trigger_mode;        // Auto, Normal, Single
@@ -187,12 +198,15 @@ void ui_update(UIState *ui, Circuit *circuit, Simulation *sim);
 // Forward declaration for InputState (defined in input.h)
 struct InputState;
 
+// Forward declaration for AnalysisState (defined in analysis.h)
+typedef struct AnalysisState AnalysisState_fwd;
+
 // Render UI elements
 void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer);
 void ui_render_palette(UIState *ui, SDL_Renderer *renderer);
 void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *selected, struct InputState *input);
 void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
-void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
+void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim, void *analysis);
 void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
 void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer);
 void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer);
@@ -224,6 +238,8 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_SCOPE_TRIG_DOWN  20
 #define UI_ACTION_SCOPE_SCREENSHOT 21
 #define UI_ACTION_BODE_PLOT     22
+#define UI_ACTION_CURSOR_TOGGLE 23   // Toggle cursor mode
+#define UI_ACTION_FFT_TOGGLE    24   // Toggle FFT view
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type
 #define UI_ACTION_SELECT_CIRCUIT 300 // + circuit template type

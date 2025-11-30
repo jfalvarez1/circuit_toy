@@ -30,6 +30,7 @@ set(SOURCES
     src/ui.c
     src/input.c
     src/file_io.c
+    src/analysis.c
 )
 
 # Header files
@@ -45,6 +46,7 @@ set(HEADERS
     include/input.h
     include/file_io.h
     include/types.h
+    include/analysis.h
 )
 
 # Create executable

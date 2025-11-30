@@ -4,9 +4,11 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include "ui.h"
 #include "input.h"
 #include "circuits.h"
+#include "analysis.h"
 
 // Simple 8x8 bitmap font (same as render.c)
 static const unsigned char ui_font8x8[95][8] = {
@@ -376,6 +378,17 @@ void ui_init(UIState *ui) {
     ui->btn_scope_mode = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "Y-T", "Display mode (Y-T/X-Y)", false, false, true, false};
     scope_btn_x += 35;
     ui->btn_scope_screenshot = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "CAP", "Capture screenshot (saves scope.bmp)", false, false, true, false};
+    scope_btn_x += 35;
+    ui->btn_scope_cursor = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "CUR", "Toggle measurement cursors", false, false, true, false};
+    scope_btn_x += 35;
+    ui->btn_scope_fft = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "FFT", "Toggle FFT spectrum view", false, false, true, false};
+
+    // Initialize cursor state
+    ui->scope_cursor_mode = false;
+    ui->scope_cursor_drag = 0;
+    ui->cursor1_time = 0.25;
+    ui->cursor2_time = 0.75;
+    ui->scope_fft_mode = false;
 
     // Initialize trigger settings
     ui->trigger_mode = TRIG_AUTO;
@@ -968,7 +981,8 @@ static void format_volt_value(char *buf, size_t size, double val) {
     }
 }
 
-void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
+void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim, void *analysis_ptr) {
+    AnalysisState *analysis = (AnalysisState *)analysis_ptr;
     Rect *r = &ui->scope_rect;
     char buf[64];
 
@@ -1071,7 +1085,80 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     if (sim && sim->history_count > 1 && !ui->scope_paused) {
         double scale = (r->h / 8.0) / ui->scope_volt_div;
 
-        if (ui->display_mode == SCOPE_MODE_YT) {
+        // Check if FFT mode is enabled
+        if (ui->scope_fft_mode && ui->display_mode == SCOPE_MODE_YT && analysis) {
+            // FFT spectrum display
+            // Draw frequency grid labels
+            int num_decades = 4;  // 10Hz to 100kHz
+            double freq_min = 10.0;
+            double freq_max = 100000.0;
+
+            SDL_SetRenderDrawColor(renderer, 0x40, 0x60, 0x40, 0xff);
+            for (int d = 0; d <= num_decades; d++) {
+                double freq = freq_min * pow(10, d);
+                double x_frac = log10(freq / freq_min) / log10(freq_max / freq_min);
+                int grid_x = r->x + (int)(x_frac * r->w);
+                for (int y = r->y; y < r->y + r->h; y += 4) {
+                    SDL_RenderDrawPoint(renderer, grid_x, y);
+                }
+            }
+
+            // Draw dB scale labels (-60dB to 0dB)
+            SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
+            ui_draw_text(renderer, "0dB", r->x + 3, r->y + 5);
+            ui_draw_text(renderer, "-60dB", r->x + 3, r->y + r->h - 15);
+
+            for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
+                if (!ui->scope_channels[ch].enabled) continue;
+
+                FFTResult *fft = &analysis->fft_results[ch];
+                if (fft->num_bins < 2) continue;
+
+                SDL_SetRenderDrawColor(renderer,
+                    ui->scope_channels[ch].color.r,
+                    ui->scope_channels[ch].color.g,
+                    ui->scope_channels[ch].color.b, 0xff);
+
+                int prev_x = -1, prev_y = -1;
+
+                for (int k = 1; k < fft->num_bins; k++) {
+                    double freq = fft->frequency[k];
+                    if (freq < freq_min || freq > freq_max) continue;
+
+                    // X: logarithmic frequency scale
+                    double x_frac = log10(freq / freq_min) / log10(freq_max / freq_min);
+                    int px = r->x + (int)(x_frac * r->w);
+
+                    // Y: linear dB scale (-60dB to 0dB)
+                    double db = fft->magnitude[k];
+                    db = CLAMP(db, -60.0, 0.0);
+                    double y_frac = (db + 60.0) / 60.0;  // 0 = -60dB (bottom), 1 = 0dB (top)
+                    int py = r->y + r->h - (int)(y_frac * r->h);
+
+                    if (prev_x >= 0) {
+                        SDL_RenderDrawLine(renderer, prev_x, prev_y, px, py);
+                    }
+                    prev_x = px;
+                    prev_y = py;
+                }
+
+                // Show THD and SNR info
+                if (ch == 0 && fft->thd > 0) {
+                    snprintf(buf, sizeof(buf), "THD:%.1f%%", fft->thd);
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0x00, 0xff);
+                    ui_draw_text(renderer, buf, r->x + r->w - 70, r->y + 5);
+                    snprintf(buf, sizeof(buf), "SNR:%.0fdB", fft->snr);
+                    ui_draw_text(renderer, buf, r->x + r->w - 70, r->y + 17);
+                    snprintf(buf, sizeof(buf), "F0:%.1fHz", fft->fundamental_freq);
+                    ui_draw_text(renderer, buf, r->x + r->w - 70, r->y + 29);
+                }
+            }
+
+            // Show FFT mode label
+            SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);
+            ui_draw_text(renderer, "FFT SPECTRUM", r->x + 3, r->y + r->h - 30);
+
+        } else if (ui->display_mode == SCOPE_MODE_YT) {
             // Y-T mode: standard time-domain display
             // Calculate time window (10 divisions on the scope)
             double time_window = 10.0 * ui->scope_time_div;
@@ -1189,6 +1276,70 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         }
     }
 
+    // Draw measurement cursors if enabled (Y-T mode only)
+    if (ui->scope_cursor_mode && ui->display_mode == SCOPE_MODE_YT) {
+        // Cursor 1 (cyan dashed line)
+        int cursor1_x = r->x + (int)(ui->cursor1_time * r->w);
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);
+        for (int y = r->y; y < r->y + r->h; y += 4) {
+            SDL_RenderDrawLine(renderer, cursor1_x, y, cursor1_x, MIN(y + 2, r->y + r->h));
+        }
+        // Label
+        ui_draw_text(renderer, "C1", cursor1_x - 6, r->y + 2);
+
+        // Cursor 2 (magenta dashed line)
+        int cursor2_x = r->x + (int)(ui->cursor2_time * r->w);
+        SDL_SetRenderDrawColor(renderer, 0xff, 0x00, 0xff, 0xff);
+        for (int y = r->y; y < r->y + r->h; y += 4) {
+            SDL_RenderDrawLine(renderer, cursor2_x, y, cursor2_x, MIN(y + 2, r->y + r->h));
+        }
+        // Label
+        ui_draw_text(renderer, "C2", cursor2_x - 6, r->y + 2);
+
+        // Show delta time and frequency between cursors
+        if (sim && sim->time_step > 0) {
+            double time_window = 10.0 * ui->scope_time_div;
+            double t1 = ui->cursor1_time * time_window;
+            double t2 = ui->cursor2_time * time_window;
+            double dt = fabs(t2 - t1);
+            double freq = dt > 0 ? 1.0 / dt : 0;
+
+            // Display cursor measurements in a box at top-right
+            int meas_x = r->x + r->w - 90;
+            int meas_y = r->y + 5;
+
+            SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xc0);
+            SDL_Rect meas_bg = {meas_x - 5, meas_y - 2, 90, 45};
+            SDL_RenderFillRect(renderer, &meas_bg);
+            SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
+            SDL_RenderDrawRect(renderer, &meas_bg);
+
+            SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+            if (dt < 0.001) {
+                snprintf(buf, sizeof(buf), "dt:%.1fus", dt * 1e6);
+            } else if (dt < 1.0) {
+                snprintf(buf, sizeof(buf), "dt:%.2fms", dt * 1000);
+            } else {
+                snprintf(buf, sizeof(buf), "dt:%.3fs", dt);
+            }
+            ui_draw_text(renderer, buf, meas_x, meas_y);
+            meas_y += 12;
+
+            if (freq > 0) {
+                if (freq >= 1000) {
+                    snprintf(buf, sizeof(buf), "f:%.2fkHz", freq / 1000);
+                } else {
+                    snprintf(buf, sizeof(buf), "f:%.1fHz", freq);
+                }
+                ui_draw_text(renderer, buf, meas_x, meas_y);
+                meas_y += 12;
+            }
+
+            snprintf(buf, sizeof(buf), "1/dt");
+            ui_draw_text(renderer, buf, meas_x, meas_y);
+        }
+    }
+
     // Border (scope bezel)
     SDL_SetRenderDrawColor(renderer, 0x40, 0x40, 0x40, 0xff);
     SDL_RenderDrawRect(renderer, &bg);
@@ -1209,6 +1360,15 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     draw_button(renderer, &ui->btn_scope_trig_down);
     draw_button(renderer, &ui->btn_scope_mode);
     draw_button(renderer, &ui->btn_scope_screenshot);
+
+    // Cursor button with toggle state indicator
+    ui->btn_scope_cursor.toggled = ui->scope_cursor_mode;
+    draw_button(renderer, &ui->btn_scope_cursor);
+
+    // FFT button with toggle state indicator
+    ui->btn_scope_fft.toggled = ui->scope_fft_mode;
+    draw_button(renderer, &ui->btn_scope_fft);
+
     draw_button(renderer, &ui->btn_bode);
 
     // Show trigger level next to mode button
@@ -1262,6 +1422,112 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         SDL_SetRenderDrawColor(renderer, 0x40, 0x60, 0x40, 0xff);
         ui_draw_text(renderer, "Place probes to", r->x + 70, r->y + r->h/2 - 12);
         ui_draw_text(renderer, "see waveforms", r->x + 75, r->y + r->h/2 + 4);
+    }
+
+    // Display waveform measurements panel (right side of scope)
+    if (analysis && ui->scope_num_channels > 0) {
+        int meas_x = r->x + r->w + 15;
+        int meas_y = r->y;
+
+        // Measurements header
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+        ui_draw_text(renderer, "MEASUREMENTS", meas_x, meas_y);
+        meas_y += 18;
+
+        for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
+            if (!ui->scope_channels[ch].enabled) continue;
+            if (!analysis->measurements[ch].valid) continue;
+
+            WaveformMeasurements *m = &analysis->measurements[ch];
+
+            // Channel header with color
+            SDL_SetRenderDrawColor(renderer,
+                ui->scope_channels[ch].color.r,
+                ui->scope_channels[ch].color.g,
+                ui->scope_channels[ch].color.b, 0xff);
+            snprintf(buf, sizeof(buf), "CH%d:", ch + 1);
+            ui_draw_text(renderer, buf, meas_x, meas_y);
+            meas_y += 14;
+
+            // Measurements in gray
+            SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xff);
+
+            // Vpp
+            if (m->v_pp < 1.0) {
+                snprintf(buf, sizeof(buf), "Vpp: %.1fmV", m->v_pp * 1000);
+            } else {
+                snprintf(buf, sizeof(buf), "Vpp: %.2fV", m->v_pp);
+            }
+            ui_draw_text(renderer, buf, meas_x + 8, meas_y);
+            meas_y += 12;
+
+            // Vrms
+            if (m->v_rms < 1.0) {
+                snprintf(buf, sizeof(buf), "Vrms:%.1fmV", m->v_rms * 1000);
+            } else {
+                snprintf(buf, sizeof(buf), "Vrms:%.2fV", m->v_rms);
+            }
+            ui_draw_text(renderer, buf, meas_x + 8, meas_y);
+            meas_y += 12;
+
+            // Vavg (DC offset)
+            if (fabs(m->v_avg) < 1.0) {
+                snprintf(buf, sizeof(buf), "Vavg:%.1fmV", m->v_avg * 1000);
+            } else {
+                snprintf(buf, sizeof(buf), "Vavg:%.2fV", m->v_avg);
+            }
+            ui_draw_text(renderer, buf, meas_x + 8, meas_y);
+            meas_y += 12;
+
+            // Frequency
+            if (m->frequency > 0) {
+                if (m->frequency >= 1000) {
+                    snprintf(buf, sizeof(buf), "Freq:%.2fkHz", m->frequency / 1000);
+                } else {
+                    snprintf(buf, sizeof(buf), "Freq:%.1fHz", m->frequency);
+                }
+                ui_draw_text(renderer, buf, meas_x + 8, meas_y);
+                meas_y += 12;
+
+                // Period
+                if (m->period < 0.001) {
+                    snprintf(buf, sizeof(buf), "T: %.1fus", m->period * 1e6);
+                } else if (m->period < 1.0) {
+                    snprintf(buf, sizeof(buf), "T: %.2fms", m->period * 1000);
+                } else {
+                    snprintf(buf, sizeof(buf), "T: %.2fs", m->period);
+                }
+                ui_draw_text(renderer, buf, meas_x + 8, meas_y);
+                meas_y += 12;
+
+                // Duty cycle
+                snprintf(buf, sizeof(buf), "Duty:%.1f%%", m->duty_cycle);
+                ui_draw_text(renderer, buf, meas_x + 8, meas_y);
+                meas_y += 12;
+            }
+
+            // Rise/fall time if measured
+            if (m->rise_time > 0) {
+                if (m->rise_time < 0.001) {
+                    snprintf(buf, sizeof(buf), "Rise:%.1fus", m->rise_time * 1e6);
+                } else {
+                    snprintf(buf, sizeof(buf), "Rise:%.2fms", m->rise_time * 1000);
+                }
+                ui_draw_text(renderer, buf, meas_x + 8, meas_y);
+                meas_y += 12;
+            }
+            if (m->fall_time > 0) {
+                if (m->fall_time < 0.001) {
+                    snprintf(buf, sizeof(buf), "Fall:%.1fus", m->fall_time * 1e6);
+                } else {
+                    snprintf(buf, sizeof(buf), "Fall:%.2fms", m->fall_time * 1000);
+                }
+                ui_draw_text(renderer, buf, meas_x + 8, meas_y);
+                meas_y += 12;
+            }
+
+            meas_y += 6;  // Space between channels
+        }
     }
 }
 
@@ -1540,6 +1806,30 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             ui->props_resizing = true;
             return UI_ACTION_NONE;
         }
+
+        // Handle cursor positioning when cursor mode is enabled
+        if (ui->scope_cursor_mode && ui->display_mode == SCOPE_MODE_YT) {
+            Rect *sr = &ui->scope_rect;
+            if (x >= sr->x && x <= sr->x + sr->w &&
+                y >= sr->y && y <= sr->y + sr->h) {
+                // Clicked inside scope area - position cursor
+                double normalized_x = (double)(x - sr->x) / sr->w;
+                normalized_x = CLAMP(normalized_x, 0.0, 1.0);
+
+                // Determine which cursor to move (closest one, or alternate)
+                double dist1 = fabs(normalized_x - ui->cursor1_time);
+                double dist2 = fabs(normalized_x - ui->cursor2_time);
+
+                if (dist1 <= dist2) {
+                    ui->cursor1_time = normalized_x;
+                    ui->scope_cursor_drag = 1;
+                } else {
+                    ui->cursor2_time = normalized_x;
+                    ui->scope_cursor_drag = 2;
+                }
+                return UI_ACTION_NONE;
+            }
+        }
     } else {
         // Release resize
         if (ui->scope_resizing) {
@@ -1550,6 +1840,10 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (ui->props_resizing) {
             ui->props_resizing = false;
             ui_update_layout(ui);  // Update scope position within panel
+        }
+        // Release cursor drag
+        if (ui->scope_cursor_drag != 0) {
+            ui->scope_cursor_drag = 0;
         }
     }
 
@@ -1611,6 +1905,12 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
         if (point_in_rect(x, y, &ui->btn_scope_screenshot.bounds) && ui->btn_scope_screenshot.enabled) {
             return UI_ACTION_SCOPE_SCREENSHOT;
+        }
+        if (point_in_rect(x, y, &ui->btn_scope_cursor.bounds) && ui->btn_scope_cursor.enabled) {
+            return UI_ACTION_CURSOR_TOGGLE;
+        }
+        if (point_in_rect(x, y, &ui->btn_scope_fft.bounds) && ui->btn_scope_fft.enabled) {
+            return UI_ACTION_FFT_TOGGLE;
         }
         if (point_in_rect(x, y, &ui->btn_bode.bounds) && ui->btn_bode.enabled) {
             return UI_ACTION_BODE_PLOT;
@@ -1703,6 +2003,20 @@ int ui_handle_motion(UIState *ui, int x, int y) {
         return UI_ACTION_NONE;
     }
 
+    // Handle cursor dragging
+    if (ui->scope_cursor_drag != 0) {
+        Rect *sr = &ui->scope_rect;
+        double normalized_x = (double)(x - sr->x) / sr->w;
+        normalized_x = CLAMP(normalized_x, 0.0, 1.0);
+
+        if (ui->scope_cursor_drag == 1) {
+            ui->cursor1_time = normalized_x;
+        } else {
+            ui->cursor2_time = normalized_x;
+        }
+        return UI_ACTION_NONE;
+    }
+
     // Handle properties panel resizing
     if (ui->props_resizing) {
         int new_width = ui->window_width - x;
@@ -1738,6 +2052,8 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_scope_trig_down.hovered = point_in_rect(x, y, &ui->btn_scope_trig_down.bounds);
     ui->btn_scope_mode.hovered = point_in_rect(x, y, &ui->btn_scope_mode.bounds);
     ui->btn_scope_screenshot.hovered = point_in_rect(x, y, &ui->btn_scope_screenshot.bounds);
+    ui->btn_scope_cursor.hovered = point_in_rect(x, y, &ui->btn_scope_cursor.bounds);
+    ui->btn_scope_fft.hovered = point_in_rect(x, y, &ui->btn_scope_fft.bounds);
     ui->btn_bode.hovered = point_in_rect(x, y, &ui->btn_bode.bounds);
 
     // Update palette hover states
@@ -1837,6 +2153,10 @@ void ui_update_layout(UIState *ui) {
     ui->btn_scope_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
     scope_btn_x += 35;
     ui->btn_scope_screenshot.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
+    scope_btn_x += 35;
+    ui->btn_scope_cursor.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
+    scope_btn_x += 35;
+    ui->btn_scope_fft.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
     scope_btn_x += 35;
     ui->btn_bode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
 }

@@ -76,6 +76,9 @@ bool app_init(App *app) {
     // Initialize input
     input_init(&app->input);
 
+    // Initialize analysis
+    analysis_init(&app->analysis);
+
     // Set initial state
     app->running = true;
     app->show_voltages = false;
@@ -347,6 +350,26 @@ void app_handle_events(App *app) {
                 }
                 break;
 
+            case UI_ACTION_CURSOR_TOGGLE:
+                // Toggle measurement cursors
+                app->ui.scope_cursor_mode = !app->ui.scope_cursor_mode;
+                if (app->ui.scope_cursor_mode) {
+                    ui_set_status(&app->ui, "Cursors ON - Click in scope to position");
+                } else {
+                    ui_set_status(&app->ui, "Cursors OFF");
+                }
+                break;
+
+            case UI_ACTION_FFT_TOGGLE:
+                // Toggle FFT spectrum view
+                app->ui.scope_fft_mode = !app->ui.scope_fft_mode;
+                if (app->ui.scope_fft_mode) {
+                    ui_set_status(&app->ui, "FFT spectrum view enabled");
+                } else {
+                    ui_set_status(&app->ui, "FFT view disabled");
+                }
+                break;
+
             case UI_ACTION_PROP_APPLY:
                 // Apply text-edited property value
                 if (app->input.selected_component) {
@@ -470,6 +493,31 @@ void app_update(App *app) {
     // Update UI state
     ui_update(&app->ui, app->circuit, app->simulation);
 
+    // Update waveform measurements if enabled
+    if (app->analysis.auto_measure && app->simulation->state == SIM_RUNNING) {
+        for (int i = 0; i < app->circuit->num_probes && i < MAX_PROBES; i++) {
+            double times[MAX_HISTORY], values[MAX_HISTORY];
+            int count = simulation_get_history(app->simulation, i, times, values, MAX_HISTORY);
+            if (count > 10) {
+                analysis_measure_waveform(&app->analysis.measurements[i],
+                                          times, values, count);
+            }
+        }
+    }
+
+    // Update FFT if enabled
+    if (app->ui.scope_fft_mode && app->simulation->state == SIM_RUNNING) {
+        for (int i = 0; i < app->circuit->num_probes && i < MAX_PROBES; i++) {
+            double times[MAX_HISTORY], values[MAX_HISTORY];
+            int count = simulation_get_history(app->simulation, i, times, values, MAX_HISTORY);
+            if (count >= 64) {
+                double sample_rate = count > 1 ? 1.0 / (times[1] - times[0]) : 1000.0;
+                int fft_samples = count < FFT_SIZE ? count : FFT_SIZE;
+                analysis_fft_compute(&app->analysis, values, fft_samples, sample_rate, i);
+            }
+        }
+    }
+
     // Update cursor position display
     app->ui.cursor_x = app->input.mouse_x;
     app->ui.cursor_y = app->input.mouse_y;
@@ -537,7 +585,7 @@ void app_render(App *app) {
     ui_render_palette(&app->ui, r);
     ui_render_properties(&app->ui, r, app->input.selected_component, &app->input);
     ui_render_measurements(&app->ui, r, app->simulation);
-    ui_render_oscilloscope(&app->ui, r, app->simulation);
+    ui_render_oscilloscope(&app->ui, r, app->simulation, &app->analysis);
     ui_render_statusbar(&app->ui, r);
 
     // Render dialogs

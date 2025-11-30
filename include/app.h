@@ -12,6 +12,7 @@
 #include "render.h"
 #include "ui.h"
 #include "input.h"
+#include "analysis.h"
 
 // Application state
 typedef struct {
@@ -25,6 +26,7 @@ typedef struct {
     RenderContext *render;
     UIState ui;
     InputState input;
+    AnalysisState analysis;
 
     // Application state
     bool running;
