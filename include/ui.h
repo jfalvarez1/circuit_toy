@@ -11,6 +11,34 @@
 #include "simulation.h"
 #include "render.h"
 
+// ============================================
+// SYNTHWAVE COLOR THEME
+// ============================================
+// Background colors
+#define SYNTH_BG_DARK       0x0d, 0x02, 0x21  // Deep purple-black
+#define SYNTH_BG_MID        0x1a, 0x0a, 0x2e  // Dark purple
+#define SYNTH_BG_LIGHT      0x2d, 0x13, 0x4a  // Purple
+
+// Accent colors
+#define SYNTH_PINK          0xff, 0x29, 0x75  // Hot pink
+#define SYNTH_PINK_DIM      0xc0, 0x20, 0x58  // Dimmed pink
+#define SYNTH_CYAN          0x00, 0xff, 0xff  // Neon cyan
+#define SYNTH_CYAN_DIM      0x00, 0xb0, 0xb0  // Dimmed cyan
+#define SYNTH_PURPLE        0xbd, 0x00, 0xff  // Bright purple
+#define SYNTH_PURPLE_DIM    0x8a, 0x00, 0xb8  // Dimmed purple
+#define SYNTH_YELLOW        0xff, 0xf0, 0x00  // Neon yellow
+#define SYNTH_ORANGE        0xff, 0x61, 0x00  // Neon orange
+#define SYNTH_GREEN         0x00, 0xff, 0x9f  // Neon green
+
+// Text colors
+#define SYNTH_TEXT          0xff, 0xff, 0xff  // White
+#define SYNTH_TEXT_DIM      0xc0, 0xb0, 0xd0  // Light purple-gray
+#define SYNTH_TEXT_DARK     0x80, 0x70, 0x90  // Dark purple-gray
+
+// Border colors
+#define SYNTH_BORDER        0x4a, 0x1a, 0x6a  // Purple border
+#define SYNTH_BORDER_LIGHT  0x7a, 0x2a, 0x9a  // Light purple border
+
 // Button state
 typedef struct {
     Rect bounds;
@@ -93,6 +121,13 @@ typedef struct {
     float speed_value;
     bool dragging_speed;
 
+    // Time step controls
+    Button btn_timestep_up;
+    Button btn_timestep_down;
+    Button btn_timestep_auto;
+    int timestep_display_x;     // X position for time step display
+    double display_time_step;   // Current time step for display (updated from simulation)
+
     // Component palette
     PaletteItem palette_items[32];
     int num_palette_items;
@@ -105,7 +140,7 @@ typedef struct {
     bool palette_scrolling;         // Currently dragging scrollbar
 
     // Circuit template palette
-    CircuitPaletteItem circuit_items[16];
+    CircuitPaletteItem circuit_items[24];
     int num_circuit_items;
     int selected_circuit_type;  // Currently selected circuit template (-1 = none)
     bool placing_circuit;       // True when placing a circuit template
@@ -128,10 +163,13 @@ typedef struct {
     bool scope_resizing;            // Currently resizing scope panel
     int scope_resize_edge;          // Which edge is being dragged (0=top, 1=left)
 
-    // Properties panel resizing
+    // Properties panel resizing and scrolling
     int properties_width;           // Current width of properties panel
     bool props_resizing;            // Currently resizing properties panel
     int properties_content_height;  // Height of properties content (for dynamic sizing)
+    int properties_scroll_offset;   // Current scroll offset for properties panel
+    int properties_visible_height;  // Visible height of properties area
+    bool properties_scrolling;      // Currently dragging properties scrollbar
 
     // Oscilloscope control buttons
     Button btn_scope_volt_up;
@@ -288,6 +326,9 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_FFT_TOGGLE    24   // Toggle FFT view
 #define UI_ACTION_SWEEP_PANEL   25   // Toggle parametric sweep panel
 #define UI_ACTION_MONTE_CARLO   26   // Toggle Monte Carlo panel
+#define UI_ACTION_TIMESTEP_UP   29   // Increase time step
+#define UI_ACTION_TIMESTEP_DOWN 30   // Decrease time step
+#define UI_ACTION_TIMESTEP_AUTO 31   // Auto-adjust time step
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type
 #define UI_ACTION_SELECT_CIRCUIT 300 // + circuit template type
@@ -312,7 +353,13 @@ void ui_update_layout(UIState *ui);
 // Handle palette scroll (mouse wheel)
 void ui_palette_scroll(UIState *ui, int delta);
 
+// Handle properties scroll (mouse wheel)
+void ui_properties_scroll(UIState *ui, int delta);
+
 // Check if point is in palette area
 bool ui_point_in_palette(UIState *ui, int x, int y);
+
+// Check if point is in properties area
+bool ui_point_in_properties(UIState *ui, int x, int y);
 
 #endif // UI_H

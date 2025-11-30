@@ -591,7 +591,13 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 return true;
             }
 
-            // Check if mouse is in properties panel (right side)
+            // Check if mouse is in properties panel area - scroll properties
+            if (ui_point_in_properties(ui, x, y)) {
+                ui_properties_scroll(ui, event->wheel.y);
+                return true;
+            }
+
+            // Check if mouse is in properties panel (right side, below scroll area)
             // and there's a selected component - adjust value with wheel
             if (x >= render->canvas_rect.x + render->canvas_rect.w && input->selected_component) {
                 Component *c = input->selected_component;
@@ -828,6 +834,33 @@ void input_handle_key(InputState *input, SDL_Keycode key,
         case SDLK_0:
             if (ctrl) {
                 render_reset_view(render);
+            }
+            break;
+
+        case SDLK_SPACE:
+            // Toggle switch state when a switch is selected
+            if (input->selected_component) {
+                Component *c = input->selected_component;
+                switch (c->type) {
+                    case COMP_SPST_SWITCH:
+                        c->props.switch_spst.closed = !c->props.switch_spst.closed;
+                        break;
+                    case COMP_SPDT_SWITCH:
+                        c->props.switch_spdt.position = (c->props.switch_spdt.position == 0) ? 1 : 0;
+                        break;
+                    case COMP_PUSH_BUTTON:
+                        c->props.push_button.pressed = !c->props.push_button.pressed;
+                        break;
+                    default:
+                        break;
+                }
+            }
+            break;
+
+        case SDLK_t:
+            // T: Add SPST switch (toggle switch)
+            if (!ctrl) {
+                input_start_placing(input, COMP_SPST_SWITCH);
             }
             break;
 

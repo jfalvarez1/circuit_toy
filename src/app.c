@@ -483,6 +483,84 @@ void app_handle_events(App *app) {
                 }
                 break;
 
+            case UI_ACTION_TIMESTEP_UP:
+                // Increase time step using 1-2-5 sequence
+                {
+                    static const double dt_steps[] = {
+                        1e-9, 2e-9, 5e-9, 10e-9, 20e-9, 50e-9,
+                        100e-9, 200e-9, 500e-9,
+                        1e-6, 2e-6, 5e-6, 10e-6, 20e-6, 50e-6,
+                        100e-6, 200e-6, 500e-6,
+                        1e-3, 2e-3, 5e-3, 10e-3
+                    };
+                    int n = sizeof(dt_steps) / sizeof(dt_steps[0]);
+                    double current_dt = app->simulation->time_step;
+                    for (int i = 0; i < n - 1; i++) {
+                        if (current_dt <= dt_steps[i] * 1.01) {
+                            simulation_set_time_step(app->simulation, dt_steps[i + 1]);
+                            break;
+                        }
+                    }
+                    char msg[64];
+                    double dt = app->simulation->time_step;
+                    if (dt >= 1e-3) {
+                        snprintf(msg, sizeof(msg), "Time step: %.1f ms", dt * 1e3);
+                    } else if (dt >= 1e-6) {
+                        snprintf(msg, sizeof(msg), "Time step: %.1f us", dt * 1e6);
+                    } else {
+                        snprintf(msg, sizeof(msg), "Time step: %.0f ns", dt * 1e9);
+                    }
+                    ui_set_status(&app->ui, msg);
+                }
+                break;
+
+            case UI_ACTION_TIMESTEP_DOWN:
+                // Decrease time step using 1-2-5 sequence
+                {
+                    static const double dt_steps[] = {
+                        1e-9, 2e-9, 5e-9, 10e-9, 20e-9, 50e-9,
+                        100e-9, 200e-9, 500e-9,
+                        1e-6, 2e-6, 5e-6, 10e-6, 20e-6, 50e-6,
+                        100e-6, 200e-6, 500e-6,
+                        1e-3, 2e-3, 5e-3, 10e-3
+                    };
+                    int n = sizeof(dt_steps) / sizeof(dt_steps[0]);
+                    double current_dt = app->simulation->time_step;
+                    for (int i = n - 1; i > 0; i--) {
+                        if (current_dt >= dt_steps[i] * 0.99) {
+                            simulation_set_time_step(app->simulation, dt_steps[i - 1]);
+                            break;
+                        }
+                    }
+                    char msg[64];
+                    double dt = app->simulation->time_step;
+                    if (dt >= 1e-3) {
+                        snprintf(msg, sizeof(msg), "Time step: %.1f ms", dt * 1e3);
+                    } else if (dt >= 1e-6) {
+                        snprintf(msg, sizeof(msg), "Time step: %.1f us", dt * 1e6);
+                    } else {
+                        snprintf(msg, sizeof(msg), "Time step: %.0f ns", dt * 1e9);
+                    }
+                    ui_set_status(&app->ui, msg);
+                }
+                break;
+
+            case UI_ACTION_TIMESTEP_AUTO:
+                // Auto-adjust time step based on circuit's highest frequency
+                {
+                    double dt = simulation_auto_time_step(app->simulation);
+                    char msg[64];
+                    if (dt >= 1e-3) {
+                        snprintf(msg, sizeof(msg), "Auto time step: %.1f ms", dt * 1e3);
+                    } else if (dt >= 1e-6) {
+                        snprintf(msg, sizeof(msg), "Auto time step: %.1f us", dt * 1e6);
+                    } else {
+                        snprintf(msg, sizeof(msg), "Auto time step: %.0f ns", dt * 1e9);
+                    }
+                    ui_set_status(&app->ui, msg);
+                }
+                break;
+
             case UI_ACTION_PROP_APPLY:
                 // Apply text-edited property value
                 if (app->input.selected_component) {

@@ -164,6 +164,14 @@ void ui_init(UIState *ui) {
     ui->speed_slider = (Rect){btn_x + btn_w + 30, 15, 100, 20};
     ui->speed_value = 1.0f;
 
+    // Time step controls - positioned after speed slider text
+    int ts_x = ui->speed_slider.x + 50 + ui->speed_slider.w + 60;  // After speed slider + text
+    ui->timestep_display_x = ts_x;
+    ui->btn_timestep_down = (Button){{ts_x + 55, 12, 20, 20}, "-", "Decrease time step", false, false, true, false};
+    ui->btn_timestep_up = (Button){{ts_x + 77, 12, 20, 20}, "+", "Increase time step", false, false, true, false};
+    ui->btn_timestep_auto = (Button){{ts_x + 100, 10, 40, 24}, "Auto", "Auto time step", false, false, true, false};
+    ui->display_time_step = 1e-7;  // Default 100 nanoseconds (will be updated from simulation)
+
     // Initialize palette items
     int pal_y = TOOLBAR_HEIGHT + 18;
     int pal_h = 35;
@@ -301,6 +309,22 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_OPAMP, TOOL_COMPONENT, false, "OpAmp", false, false
     };
 
+    // === SWITCHES SECTION ===
+    pal_y += pal_h + 18;
+    col = 0;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_SPST_SWITCH, TOOL_COMPONENT, false, "SPST", false, false
+    };
+    col++;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_SPDT_SWITCH, TOOL_COMPONENT, false, "SPDT", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 3;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_PUSH_BUTTON, TOOL_COMPONENT, false, "PushB", false, false
+    };
+
     // === CIRCUITS SECTION ===
     pal_y += pal_h + 18;
     col = 0;
@@ -360,6 +384,44 @@ void ui_init(UIState *ui) {
     col++;
     ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_MULTISTAGE_AMP, "2Stg", false, false
+    };
+    // Additional transistor circuits
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_DIFFERENTIAL_PAIR, "Diff", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_CURRENT_MIRROR, "CMir", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_PUSH_PULL, "PP", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_CMOS_INVERTER, "CMOS", false, false
+    };
+    // Additional op-amp circuits
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_INTEGRATOR, "Intg", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_DIFFERENTIATOR, "Difr", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_SUMMING_AMP, "Sum", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_COMPARATOR, "Cmp", false, false
     };
 
     // Calculate palette content height (from toolbar to last item + padding)
@@ -498,6 +560,9 @@ void ui_update(UIState *ui, Circuit *circuit, Simulation *sim) {
         ui->btn_run.enabled = (sim->state != SIM_RUNNING);
         ui->btn_pause.enabled = (sim->state == SIM_RUNNING);
         ui->sim_time = sim->time;
+        ui->display_time_step = sim->time_step;
+        // Sync speed slider value to simulation speed
+        sim->speed = (double)ui->speed_value;
     }
 
     if (circuit) {
@@ -507,22 +572,22 @@ void ui_update(UIState *ui, Circuit *circuit, Simulation *sim) {
 }
 
 static void draw_button(SDL_Renderer *r, Button *btn) {
-    // Background
+    // Background - synthwave colors
     if (btn->pressed) {
-        SDL_SetRenderDrawColor(r, 0x00, 0xd9, 0xff, 0xff);
+        SDL_SetRenderDrawColor(r, SYNTH_PINK, 0xff);
     } else if (btn->hovered && btn->enabled) {
-        SDL_SetRenderDrawColor(r, 0x0f, 0x34, 0x60, 0xff);
+        SDL_SetRenderDrawColor(r, SYNTH_BG_LIGHT, 0xff);
     } else {
-        SDL_SetRenderDrawColor(r, 0x16, 0x21, 0x3e, 0xff);
+        SDL_SetRenderDrawColor(r, SYNTH_BG_MID, 0xff);
     }
     SDL_Rect rect = {btn->bounds.x, btn->bounds.y, btn->bounds.w, btn->bounds.h};
     SDL_RenderFillRect(r, &rect);
 
-    // Border
+    // Border - synthwave cyan/pink
     if (btn->enabled) {
-        SDL_SetRenderDrawColor(r, 0x00, 0xd9, 0xff, 0xff);
+        SDL_SetRenderDrawColor(r, SYNTH_CYAN, 0xff);
     } else {
-        SDL_SetRenderDrawColor(r, 0x50, 0x50, 0x50, 0xff);
+        SDL_SetRenderDrawColor(r, SYNTH_TEXT_DARK, 0xff);
     }
     SDL_RenderDrawRect(r, &rect);
 
@@ -532,33 +597,33 @@ static void draw_button(SDL_Renderer *r, Button *btn) {
         int text_x = btn->bounds.x + (btn->bounds.w - text_len * 8) / 2;
         int text_y = btn->bounds.y + (btn->bounds.h - 8) / 2;
         if (btn->enabled) {
-            SDL_SetRenderDrawColor(r, 0xff, 0xff, 0xff, 0xff);
+            SDL_SetRenderDrawColor(r, SYNTH_TEXT, 0xff);
         } else {
-            SDL_SetRenderDrawColor(r, 0x80, 0x80, 0x80, 0xff);
+            SDL_SetRenderDrawColor(r, SYNTH_TEXT_DARK, 0xff);
         }
         ui_draw_text(r, btn->label, text_x, text_y);
     }
 }
 
 static void draw_palette_item(SDL_Renderer *r, PaletteItem *item) {
-    // Background
+    // Background - synthwave colors
     if (item->selected) {
-        SDL_SetRenderDrawColor(r, 0xe9, 0x45, 0x60, 0x40);
+        SDL_SetRenderDrawColor(r, SYNTH_PINK, 0x60);
     } else if (item->hovered) {
-        SDL_SetRenderDrawColor(r, 0x00, 0xd9, 0xff, 0x20);
+        SDL_SetRenderDrawColor(r, SYNTH_PURPLE, 0x40);
     } else {
-        SDL_SetRenderDrawColor(r, 0x0f, 0x34, 0x60, 0xff);
+        SDL_SetRenderDrawColor(r, SYNTH_BG_MID, 0xff);
     }
     SDL_Rect rect = {item->bounds.x, item->bounds.y, item->bounds.w, item->bounds.h};
     SDL_RenderFillRect(r, &rect);
 
-    // Border
+    // Border - synthwave colors
     if (item->selected) {
-        SDL_SetRenderDrawColor(r, 0xe9, 0x45, 0x60, 0xff);
+        SDL_SetRenderDrawColor(r, SYNTH_PINK, 0xff);
     } else if (item->hovered) {
-        SDL_SetRenderDrawColor(r, 0x00, 0xd9, 0xff, 0xff);
+        SDL_SetRenderDrawColor(r, SYNTH_CYAN, 0xff);
     } else {
-        SDL_SetRenderDrawColor(r, 0x2a, 0x2a, 0x4e, 0xff);
+        SDL_SetRenderDrawColor(r, SYNTH_BORDER, 0xff);
     }
     SDL_RenderDrawRect(r, &rect);
 
@@ -568,33 +633,33 @@ static void draw_palette_item(SDL_Renderer *r, PaletteItem *item) {
         int text_x = item->bounds.x + (item->bounds.w - text_len * 8) / 2;
         int text_y = item->bounds.y + (item->bounds.h - 8) / 2;
         if (item->selected) {
-            SDL_SetRenderDrawColor(r, 0xff, 0xff, 0xff, 0xff);
+            SDL_SetRenderDrawColor(r, SYNTH_TEXT, 0xff);
         } else {
-            SDL_SetRenderDrawColor(r, 0xc0, 0xc0, 0xc0, 0xff);
+            SDL_SetRenderDrawColor(r, SYNTH_TEXT_DIM, 0xff);
         }
         ui_draw_text(r, item->label, text_x, text_y);
     }
 }
 
 static void draw_circuit_item(SDL_Renderer *r, CircuitPaletteItem *item) {
-    // Background - use a different color scheme for circuits (green tint)
+    // Background - synthwave green tint for circuit templates
     if (item->selected) {
-        SDL_SetRenderDrawColor(r, 0x45, 0xe9, 0x60, 0x40);
+        SDL_SetRenderDrawColor(r, SYNTH_GREEN, 0x40);
     } else if (item->hovered) {
-        SDL_SetRenderDrawColor(r, 0x00, 0xff, 0x88, 0x20);
+        SDL_SetRenderDrawColor(r, SYNTH_GREEN, 0x20);
     } else {
-        SDL_SetRenderDrawColor(r, 0x0f, 0x34, 0x60, 0xff);
+        SDL_SetRenderDrawColor(r, SYNTH_BG_MID, 0xff);
     }
     SDL_Rect rect = {item->bounds.x, item->bounds.y, item->bounds.w, item->bounds.h};
     SDL_RenderFillRect(r, &rect);
 
     // Border
     if (item->selected) {
-        SDL_SetRenderDrawColor(r, 0x45, 0xe9, 0x60, 0xff);
+        SDL_SetRenderDrawColor(r, SYNTH_GREEN, 0xff);
     } else if (item->hovered) {
-        SDL_SetRenderDrawColor(r, 0x00, 0xff, 0x88, 0xff);
+        SDL_SetRenderDrawColor(r, SYNTH_GREEN, 0xff);
     } else {
-        SDL_SetRenderDrawColor(r, 0x2a, 0x4e, 0x2a, 0xff);
+        SDL_SetRenderDrawColor(r, SYNTH_BORDER, 0xff);
     }
     SDL_RenderDrawRect(r, &rect);
 
@@ -604,22 +669,22 @@ static void draw_circuit_item(SDL_Renderer *r, CircuitPaletteItem *item) {
         int text_x = item->bounds.x + (item->bounds.w - text_len * 8) / 2;
         int text_y = item->bounds.y + (item->bounds.h - 8) / 2;
         if (item->selected) {
-            SDL_SetRenderDrawColor(r, 0xff, 0xff, 0xff, 0xff);
+            SDL_SetRenderDrawColor(r, SYNTH_TEXT, 0xff);
         } else {
-            SDL_SetRenderDrawColor(r, 0x88, 0xff, 0x88, 0xff);
+            SDL_SetRenderDrawColor(r, SYNTH_GREEN, 0xff);
         }
         ui_draw_text(r, item->label, text_x, text_y);
     }
 }
 
 void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
-    // Toolbar background
-    SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xff);
+    // Toolbar background - synthwave dark purple
+    SDL_SetRenderDrawColor(renderer, SYNTH_BG_MID, 0xff);
     SDL_Rect toolbar = {0, 0, ui->window_width, TOOLBAR_HEIGHT};
     SDL_RenderFillRect(renderer, &toolbar);
 
-    // Title
-    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    // Title - hot pink
+    SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
     ui_draw_text(renderer, "Circuit Playground", 10, 20);
 
     // Buttons
@@ -632,15 +697,15 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     draw_button(renderer, &ui->btn_load);
 
     // Speed slider label
-    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
     ui_draw_text(renderer, "Speed:", ui->speed_slider.x, ui->speed_slider.y - 2);
 
     // Speed slider background
     int slider_x = ui->speed_slider.x + 50;
-    SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
     SDL_Rect slider_bg = {slider_x, ui->speed_slider.y, ui->speed_slider.w, ui->speed_slider.h};
     SDL_RenderFillRect(renderer, &slider_bg);
-    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0x80);
+    SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0x80);
     SDL_RenderDrawRect(renderer, &slider_bg);
 
     // Speed slider fill (logarithmic scale: 1x to 100x)
@@ -648,7 +713,7 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     float log_pos = (log10f(ui->speed_value) / 2.0f);  // log10(100) = 2
     int fill_w = (int)(ui->speed_slider.w * log_pos);
     fill_w = CLAMP(fill_w, 0, ui->speed_slider.w);
-    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
     SDL_Rect slider_fill = {slider_x, ui->speed_slider.y, fill_w, ui->speed_slider.h};
     SDL_RenderFillRect(renderer, &slider_fill);
 
@@ -659,17 +724,39 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     } else {
         snprintf(speed_text, sizeof(speed_text), "%.1fx", ui->speed_value);
     }
-    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);
     ui_draw_text(renderer, speed_text, slider_x + ui->speed_slider.w + 5, ui->speed_slider.y - 2);
 
+    // Time step label and value
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
+    ui_draw_text(renderer, "dt:", ui->timestep_display_x, 17);
+
+    // Format time step with appropriate units
+    char dt_text[24];
+    double dt = ui->display_time_step;
+    if (dt >= 1e-3) {
+        snprintf(dt_text, sizeof(dt_text), "%.1fms", dt * 1e3);
+    } else if (dt >= 1e-6) {
+        snprintf(dt_text, sizeof(dt_text), "%.1fus", dt * 1e6);
+    } else {
+        snprintf(dt_text, sizeof(dt_text), "%.0fns", dt * 1e9);
+    }
+    SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+    ui_draw_text(renderer, dt_text, ui->timestep_display_x + 24, 17);
+
+    // Time step buttons
+    draw_button(renderer, &ui->btn_timestep_down);
+    draw_button(renderer, &ui->btn_timestep_up);
+    draw_button(renderer, &ui->btn_timestep_auto);
+
     // Toolbar border
-    SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_BORDER, 0xff);
     SDL_RenderDrawLine(renderer, 0, TOOLBAR_HEIGHT - 1, ui->window_width, TOOLBAR_HEIGHT - 1);
 }
 
 void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
-    // Palette background
-    SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xff);
+    // Palette background - synthwave dark
+    SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
     SDL_Rect palette = {0, TOOLBAR_HEIGHT, PALETTE_WIDTH, ui->window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT};
     SDL_RenderFillRect(renderer, &palette);
 
@@ -696,7 +783,7 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
         if (sections[s].start_idx < ui->num_palette_items) {
             int header_y = ui->palette_items[sections[s].start_idx].bounds.y - 14 - scroll_offset;
             if (header_y >= TOOLBAR_HEIGHT - 14 && header_y < ui->window_height - STATUSBAR_HEIGHT) {
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);  // Cyan for headers
+                SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);  // Pink for headers
                 ui_draw_text(renderer, sections[s].label, 10, header_y);
             }
         }
@@ -721,7 +808,7 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
     if (ui->num_circuit_items > 0) {
         int header_y = ui->circuit_items[0].bounds.y - 14 - scroll_offset;
         if (header_y >= TOOLBAR_HEIGHT - 14 && header_y < ui->window_height - STATUSBAR_HEIGHT) {
-            SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+            SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);  // Pink header
             ui_draw_text(renderer, "Circuits", 10, header_y);
         }
     }
@@ -750,8 +837,8 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
         int scrollbar_track_y = TOOLBAR_HEIGHT + 2;
         int scrollbar_track_h = ui->palette_visible_height - 4;
 
-        // Draw track (darker background)
-        SDL_SetRenderDrawColor(renderer, 0x0a, 0x14, 0x28, 0xff);
+        // Draw track (darker background) - synthwave dark
+        SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
         SDL_Rect track = {scrollbar_x, scrollbar_track_y, 6, scrollbar_track_h};
         SDL_RenderFillRect(renderer, &track);
 
@@ -764,14 +851,14 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
         float scroll_ratio = (max_scroll > 0) ? (float)ui->palette_scroll_offset / max_scroll : 0;
         int thumb_y = scrollbar_track_y + (int)((scrollbar_track_h - thumb_h) * scroll_ratio);
 
-        // Draw thumb
-        SDL_SetRenderDrawColor(renderer, 0x00, 0x80, 0xc0, 0xff);
+        // Draw thumb - synthwave purple
+        SDL_SetRenderDrawColor(renderer, SYNTH_PURPLE, 0xff);
         SDL_Rect thumb = {scrollbar_x, thumb_y, 6, thumb_h};
         SDL_RenderFillRect(renderer, &thumb);
     }
 
-    // Border
-    SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
+    // Border - synthwave border
+    SDL_SetRenderDrawColor(renderer, SYNTH_BORDER, 0xff);
     SDL_RenderDrawLine(renderer, PALETTE_WIDTH - 1, TOOLBAR_HEIGHT, PALETTE_WIDTH - 1, ui->window_height - STATUSBAR_HEIGHT);
 }
 
@@ -779,8 +866,8 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
 static void draw_property_field(SDL_Renderer *renderer, int x, int y, int w,
                                 const char *label, const char *value,
                                 bool is_editing, const char *edit_buffer, int cursor_pos) {
-    // Label
-    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    // Label - synthwave text
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
     ui_draw_text(renderer, label, x, y + 2);
 
     // Value box
@@ -789,29 +876,29 @@ static void draw_property_field(SDL_Renderer *renderer, int x, int y, int w,
     SDL_Rect box = {value_x, y, box_w, 14};
 
     if (is_editing) {
-        // Editing - dark background with cyan border
-        SDL_SetRenderDrawColor(renderer, 0x10, 0x20, 0x30, 0xff);
+        // Editing - dark background with pink border
+        SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
         SDL_RenderFillRect(renderer, &box);
-        SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+        SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
         SDL_RenderDrawRect(renderer, &box);
 
         // Draw input text
-        SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
         ui_draw_text(renderer, edit_buffer, value_x + 2, y + 3);
 
         // Draw cursor
         int cursor_x = value_x + 2 + cursor_pos * 8;
-        SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+        SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
         SDL_RenderDrawLine(renderer, cursor_x, y + 2, cursor_x, y + 12);
     } else {
         // Not editing - clickable field
-        SDL_SetRenderDrawColor(renderer, 0x20, 0x30, 0x40, 0xff);
+        SDL_SetRenderDrawColor(renderer, SYNTH_BG_MID, 0xff);
         SDL_RenderFillRect(renderer, &box);
-        SDL_SetRenderDrawColor(renderer, 0x40, 0x50, 0x60, 0xff);
+        SDL_SetRenderDrawColor(renderer, SYNTH_BORDER, 0xff);
         SDL_RenderDrawRect(renderer, &box);
 
-        // Draw value
-        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+        // Draw value - synthwave green
+        SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);
         ui_draw_text(renderer, value, value_x + 2, y + 3);
     }
 }
@@ -825,10 +912,14 @@ static int draw_sweep_config(SDL_Renderer *renderer, UIState *ui, int x, int pro
                              struct InputState *input, const char *unit) {
     char buf[64];
 
-    // Sweep enable toggle
-    SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);  // Orange for sweep section
+    // Sweep enable toggle - synthwave orange
+    SDL_SetRenderDrawColor(renderer, SYNTH_ORANGE, 0xff);
     ui_draw_text(renderer, label, x + 10, prop_y + 2);
-    SDL_SetRenderDrawColor(renderer, sweep->enabled ? 0x00, 0xff, 0x88, 0xff : 0x80, 0x80, 0x80, 0xff);
+    if (sweep->enabled) {
+        SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);
+    } else {
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
+    }
     ui_draw_text(renderer, sweep->enabled ? "[ON]" : "[OFF]", x + 100, prop_y + 2);
     ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 40, 14};
     ui->properties[ui->num_properties].prop_type = enable_prop;
@@ -840,9 +931,9 @@ static int draw_sweep_config(SDL_Renderer *renderer, UIState *ui, int x, int pro
         const char *mode_names[] = {"Linear", "Log", "Step"};
         int mode_idx = (sweep->mode >= SWEEP_LINEAR && sweep->mode <= SWEEP_STEP) ? sweep->mode - 1 : 0;
         if (mode_idx < 0) mode_idx = 0;
-        SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
         ui_draw_text(renderer, "  Mode:", x + 10, prop_y + 2);
-        SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+        SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
         snprintf(buf, sizeof(buf), "[%s]", mode_names[mode_idx]);
         ui_draw_text(renderer, buf, x + 100, prop_y + 2);
         ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 60, 14};
@@ -893,9 +984,13 @@ static int draw_sweep_config(SDL_Renderer *renderer, UIState *ui, int x, int pro
         }
 
         // Repeat toggle
-        SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
         ui_draw_text(renderer, "  Repeat:", x + 10, prop_y + 2);
-        SDL_SetRenderDrawColor(renderer, sweep->repeat ? 0x00, 0xff, 0x88, 0xff : 0x80, 0x80, 0x80, 0xff);
+        if (sweep->repeat) {
+            SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);
+        } else {
+            SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
+        }
         ui_draw_text(renderer, sweep->repeat ? "[Yes]" : "[No]", x + 100, prop_y + 2);
         ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 40, 14};
         ui->properties[ui->num_properties].prop_type = repeat_prop;
@@ -911,26 +1006,35 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
     int y = TOOLBAR_HEIGHT;
 
     // Calculate panel height based on scope position (fill space between toolbar and scope)
-    int panel_height = ui->scope_rect.y - y - 25;  // Leave gap before scope
-    if (panel_height < 200) panel_height = 200;    // Minimum height
+    // The scope label is drawn 18px above scope_rect, so leave 50px gap to avoid overlap
+    int available_height = ui->scope_rect.y - y - 50;
+    int panel_height = available_height > 100 ? available_height : 100;  // Minimum 100 but don't exceed available
 
-    // Draw resize handle on left edge
-    SDL_SetRenderDrawColor(renderer, 0x40, 0x60, 0x80, 0xff);
+    // Store visible height for scrollbar calculations
+    ui->properties_visible_height = panel_height;
+
+    // Draw resize handle on left edge - synthwave purple
+    SDL_SetRenderDrawColor(renderer, SYNTH_PURPLE_DIM, 0xff);
     SDL_Rect resize_handle = {x - 3, y, 6, panel_height};
     SDL_RenderFillRect(renderer, &resize_handle);
 
-    // Background
-    SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xff);
+    // Background - synthwave dark
+    SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
     SDL_Rect panel = {x, y, ui->properties_width, panel_height};
     SDL_RenderFillRect(renderer, &panel);
 
     // Set clipping rect to prevent content from overflowing into scope area
-    SDL_Rect clip_rect = {x, y, ui->properties_width, panel_height};
+    // Leave room for scrollbar on right side
+    SDL_Rect clip_rect = {x, y, ui->properties_width - 10, panel_height};
     SDL_RenderSetClipRect(renderer, &clip_rect);
 
-    // Title
-    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
-    ui_draw_text(renderer, "Properties", x + 10, y + 10);
+    // Apply scroll offset to content
+    int scroll_y = ui->properties_scroll_offset;
+    int content_y = y - scroll_y;
+
+    // Title - synthwave pink
+    SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
+    ui_draw_text(renderer, "Properties", x + 10, content_y + 10);
 
     // Get editing state from input
     bool editing_value = input && input->editing_property && input->editing_prop_type == 1;  // PROP_VALUE
@@ -944,7 +1048,7 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
     // Show selected component info
     if (selected) {
         SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-        ui_draw_text(renderer, "Component:", x + 10, y + 35);
+        ui_draw_text(renderer, "Component:", x + 10, content_y + 35);
 
         // Component type name (must match ComponentType enum order)
         const char *type_names[] = {
@@ -957,14 +1061,14 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
         };
         if (selected->type < COMP_TYPE_COUNT) {
             SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
-            ui_draw_text(renderer, type_names[selected->type], x + 100, y + 35);
+            ui_draw_text(renderer, type_names[selected->type], x + 100, content_y + 35);
         }
 
         // Store property bounds for later reference
         ui->num_properties = 0;
 
         // Show component properties with clickable fields
-        int prop_y = y + 55;
+        int prop_y = content_y + 55;
         int prop_w = ui->properties_width - 20;
         char buf[64];
 
@@ -1844,32 +1948,58 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 break;
         }
 
-        // Help text
+        // Help text - synthwave dim text
         prop_y += 25;
-        SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
         ui_draw_text(renderer, "Click value to edit", x + 10, prop_y);
         ui_draw_text(renderer, "Use k,M,m,u,n,p suffix", x + 10, prop_y + 12);
 
-        // Track content height for oscilloscope positioning
-        ui->properties_content_height = prop_y + 30 - y;  // Include help text
+        // Track content height for scrollbar calculations (relative to panel start)
+        ui->properties_content_height = prop_y + 30 - content_y;  // Include help text
     } else {
         // Reset num_properties when nothing is selected to avoid stale bounds
         ui->num_properties = 0;
 
-        SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-        ui_draw_text(renderer, "No selection", x + 10, y + 35);
-        ui_draw_text(renderer, "Click component", x + 10, y + 55);
-        ui_draw_text(renderer, "to edit properties", x + 10, y + 70);
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
+        ui_draw_text(renderer, "No selection", x + 10, content_y + 35);
+        ui_draw_text(renderer, "Click component", x + 10, content_y + 55);
+        ui_draw_text(renderer, "to edit properties", x + 10, content_y + 70);
 
         // Minimal content height when nothing selected
         ui->properties_content_height = 100;
     }
 
-    // Reset clipping before drawing border
+    // Reset clipping before drawing scrollbar and border
     SDL_RenderSetClipRect(renderer, NULL);
 
-    // Border
-    SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
+    // Draw scrollbar if content exceeds visible area
+    if (ui->properties_content_height > ui->properties_visible_height) {
+        int scrollbar_x = ui->window_width - 8;
+        int scrollbar_track_y = y + 2;
+        int scrollbar_track_h = panel_height - 4;
+
+        // Draw track (darker background) - synthwave dark
+        SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
+        SDL_Rect track = {scrollbar_x, scrollbar_track_y, 6, scrollbar_track_h};
+        SDL_RenderFillRect(renderer, &track);
+
+        // Calculate thumb position and size
+        float visible_ratio = (float)ui->properties_visible_height / ui->properties_content_height;
+        int thumb_h = (int)(scrollbar_track_h * visible_ratio);
+        if (thumb_h < 20) thumb_h = 20;  // Minimum thumb size
+
+        int max_scroll = ui->properties_content_height - ui->properties_visible_height;
+        float scroll_ratio = (max_scroll > 0) ? (float)ui->properties_scroll_offset / max_scroll : 0;
+        int thumb_y = scrollbar_track_y + (int)((scrollbar_track_h - thumb_h) * scroll_ratio);
+
+        // Draw thumb - synthwave purple
+        SDL_SetRenderDrawColor(renderer, SYNTH_PURPLE, 0xff);
+        SDL_Rect thumb = {scrollbar_x, thumb_y, 6, thumb_h};
+        SDL_RenderFillRect(renderer, &thumb);
+    }
+
+    // Border - synthwave border
+    SDL_SetRenderDrawColor(renderer, SYNTH_BORDER, 0xff);
     SDL_RenderDrawLine(renderer, x, y, x, ui->window_height - STATUSBAR_HEIGHT);
 }
 
@@ -1877,29 +2007,29 @@ void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     int x = ui->window_width - ui->properties_width;
     int y = TOOLBAR_HEIGHT + 210;
 
-    // Background
-    SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xff);
+    // Background - synthwave dark
+    SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
     SDL_Rect panel = {x, y, ui->properties_width, 180};
     SDL_RenderFillRect(renderer, &panel);
 
-    // Title
-    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    // Title - synthwave pink
+    SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
     ui_draw_text(renderer, "Measurements", x + 10, y + 10);
 
     // Voltmeter
-    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
     ui_draw_text(renderer, "Voltmeter:", x + 10, y + 35);
     char volt_str[32];
     snprintf(volt_str, sizeof(volt_str), "%.3f V", ui->voltmeter_value);
-    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);
     ui_draw_text(renderer, volt_str, x + 100, y + 35);
 
     // Ammeter
-    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
     ui_draw_text(renderer, "Ammeter:", x + 10, y + 55);
     char amp_str[32];
     snprintf(amp_str, sizeof(amp_str), "%.3f mA", ui->ammeter_value * 1000.0);
-    SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_ORANGE, 0xff);
     ui_draw_text(renderer, amp_str, x + 100, y + 55);
 }
 
@@ -3185,29 +3315,29 @@ void ui_render_monte_carlo_panel(UIState *ui, SDL_Renderer *renderer, void *anal
 void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer) {
     int y = ui->window_height - STATUSBAR_HEIGHT;
 
-    // Background
-    SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
+    // Background - synthwave dark purple
+    SDL_SetRenderDrawColor(renderer, SYNTH_BG_MID, 0xff);
     SDL_Rect bar = {0, y, ui->window_width, STATUSBAR_HEIGHT};
     SDL_RenderFillRect(renderer, &bar);
 
     // Status message
-    SDL_SetRenderDrawColor(renderer, 0xb0, 0xb0, 0xb0, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
     if (ui->status_message[0]) {
         ui_draw_text(renderer, ui->status_message, 10, y + 8);
     } else {
         ui_draw_text(renderer, "Ready - Press F1 for help", 10, y + 8);
     }
 
-    // Time display
+    // Time display - synthwave cyan
     char time_str[32];
     snprintf(time_str, sizeof(time_str), "t=%.3fs", ui->sim_time);
-    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
     ui_draw_text(renderer, time_str, ui->window_width - 250, y + 8);
 
     // Component/Node counts
     char count_str[32];
     snprintf(count_str, sizeof(count_str), "C:%d N:%d", ui->component_count, ui->node_count);
-    SDL_SetRenderDrawColor(renderer, 0xb0, 0xb0, 0xb0, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
     ui_draw_text(renderer, count_str, ui->window_width - 120, y + 8);
 }
 
@@ -3220,23 +3350,23 @@ void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer) {
     SDL_Rect overlay = {0, 0, ui->window_width, ui->window_height};
     SDL_RenderFillRect(renderer, &overlay);
 
-    // Dialog box
+    // Dialog box - synthwave dark with pink border
     int dw = 350, dh = 320;
     int dx = (ui->window_width - dw) / 2;
     int dy = (ui->window_height - dh) / 2;
 
-    SDL_SetRenderDrawColor(renderer, 0x16, 0x21, 0x3e, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_BG_MID, 0xff);
     SDL_Rect dialog = {dx, dy, dw, dh};
     SDL_RenderFillRect(renderer, &dialog);
 
-    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
     SDL_RenderDrawRect(renderer, &dialog);
 
-    // Title
+    // Title - pink
     ui_draw_text(renderer, "Keyboard Shortcuts", dx + 20, dy + 15);
 
     // Shortcuts list
-    SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
     int line_y = dy + 45;
     int line_h = 18;
 
@@ -3254,7 +3384,7 @@ void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer) {
     ui_draw_text(renderer, "Scroll    - Zoom in/out", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Mid-drag  - Pan view", dx + 20, line_y); line_y += line_h;
 
-    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
     line_y += 10;
     ui_draw_text(renderer, "Press Escape or F1 to close", dx + 20, line_y);
 
@@ -3429,6 +3559,10 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (ui->scope_cursor_drag != 0) {
             ui->scope_cursor_drag = 0;
         }
+        // Release speed slider drag
+        if (ui->dragging_speed) {
+            ui->dragging_speed = false;
+        }
     }
 
     // Check toolbar buttons
@@ -3454,6 +3588,32 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
         if (point_in_rect(x, y, &ui->btn_load.bounds) && ui->btn_load.enabled) {
             return UI_ACTION_LOAD;
+        }
+
+        // Check time step control buttons
+        if (point_in_rect(x, y, &ui->btn_timestep_up.bounds) && ui->btn_timestep_up.enabled) {
+            return UI_ACTION_TIMESTEP_UP;
+        }
+        if (point_in_rect(x, y, &ui->btn_timestep_down.bounds) && ui->btn_timestep_down.enabled) {
+            return UI_ACTION_TIMESTEP_DOWN;
+        }
+        if (point_in_rect(x, y, &ui->btn_timestep_auto.bounds) && ui->btn_timestep_auto.enabled) {
+            return UI_ACTION_TIMESTEP_AUTO;
+        }
+
+        // Check speed slider click
+        int slider_x = ui->speed_slider.x + 50;
+        Rect slider_bounds = {slider_x, ui->speed_slider.y, ui->speed_slider.w, ui->speed_slider.h};
+        if (point_in_rect(x, y, &slider_bounds)) {
+            // Map click position to speed value (logarithmic: 1x to 100x)
+            float normalized = (float)(x - slider_x) / ui->speed_slider.w;
+            normalized = CLAMP(normalized, 0.0f, 1.0f);
+            // Convert from linear position to logarithmic scale
+            // position 0 = 1x, position 1 = 100x (log scale)
+            ui->speed_value = powf(10.0f, normalized * 2.0f);
+            ui->speed_value = CLAMP(ui->speed_value, 1.0f, 100.0f);
+            ui->dragging_speed = true;
+            return UI_ACTION_NONE;  // Handled internally
         }
 
         // Check oscilloscope control buttons
@@ -3685,6 +3845,17 @@ int ui_handle_motion(UIState *ui, int x, int y) {
         return UI_ACTION_NONE;
     }
 
+    // Handle speed slider dragging
+    if (ui->dragging_speed) {
+        int slider_x = ui->speed_slider.x + 50;
+        float normalized = (float)(x - slider_x) / ui->speed_slider.w;
+        normalized = CLAMP(normalized, 0.0f, 1.0f);
+        // Convert from linear position to logarithmic scale (1x to 100x)
+        ui->speed_value = powf(10.0f, normalized * 2.0f);
+        ui->speed_value = CLAMP(ui->speed_value, 1.0f, 100.0f);
+        return UI_ACTION_NONE;
+    }
+
     // Handle properties panel resizing
     if (ui->props_resizing) {
         int new_width = ui->window_width - x;
@@ -3707,6 +3878,9 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_clear.hovered = point_in_rect(x, y, &ui->btn_clear.bounds);
     ui->btn_save.hovered = point_in_rect(x, y, &ui->btn_save.bounds);
     ui->btn_load.hovered = point_in_rect(x, y, &ui->btn_load.bounds);
+    ui->btn_timestep_up.hovered = point_in_rect(x, y, &ui->btn_timestep_up.bounds);
+    ui->btn_timestep_down.hovered = point_in_rect(x, y, &ui->btn_timestep_down.bounds);
+    ui->btn_timestep_auto.hovered = point_in_rect(x, y, &ui->btn_timestep_auto.bounds);
 
     // Update oscilloscope button hover states
     ui->btn_scope_volt_up.hovered = point_in_rect(x, y, &ui->btn_scope_volt_up.bounds);
@@ -4037,4 +4211,36 @@ bool ui_point_in_palette(UIState *ui, int x, int y) {
     if (!ui) return false;
     return (x >= 0 && x < PALETTE_WIDTH &&
             y >= TOOLBAR_HEIGHT && y < ui->window_height - STATUSBAR_HEIGHT);
+}
+
+// Handle properties scroll (mouse wheel)
+void ui_properties_scroll(UIState *ui, int delta) {
+    if (!ui) return;
+
+    // Only scroll if content exceeds visible area
+    if (ui->properties_content_height <= ui->properties_visible_height) {
+        return;
+    }
+
+    // Scroll amount per wheel notch (pixels)
+    int scroll_amount = 40;
+    ui->properties_scroll_offset -= delta * scroll_amount;
+
+    // Clamp to valid range
+    int max_scroll = ui->properties_content_height - ui->properties_visible_height;
+    if (ui->properties_scroll_offset < 0) {
+        ui->properties_scroll_offset = 0;
+    }
+    if (ui->properties_scroll_offset > max_scroll) {
+        ui->properties_scroll_offset = max_scroll;
+    }
+}
+
+// Check if point is in properties area
+bool ui_point_in_properties(UIState *ui, int x, int y) {
+    if (!ui) return false;
+    int props_x = ui->window_width - ui->properties_width;
+    int props_y_end = ui->scope_rect.y - 50;  // Match the gap in ui_render_properties
+    return (x >= props_x && x < ui->window_width &&
+            y >= TOOLBAR_HEIGHT && y < props_y_end);
 }

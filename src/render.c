@@ -112,6 +112,9 @@ void render_zener(RenderContext *ctx, float x, float y, int rotation);
 void render_schottky(RenderContext *ctx, float x, float y, int rotation);
 void render_led(RenderContext *ctx, float x, float y, int rotation);
 void render_capacitor_elec(RenderContext *ctx, float x, float y, int rotation);
+void render_spst_switch(RenderContext *ctx, float x, float y, int rotation, bool closed);
+void render_spdt_switch(RenderContext *ctx, float x, float y, int rotation, int position);
+void render_push_button(RenderContext *ctx, float x, float y, int rotation, bool pressed);
 
 // Draw a single character using bitmap font
 static void draw_char(SDL_Renderer *renderer, char c, int x, int y) {
@@ -435,6 +438,18 @@ void render_component(RenderContext *ctx, Component *comp) {
             break;
         case COMP_NOISE_SOURCE:
             render_noise_source(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_SPST_SWITCH:
+            render_spst_switch(ctx, comp->x, comp->y, comp->rotation,
+                              comp->props.switch_spst.closed);
+            break;
+        case COMP_SPDT_SWITCH:
+            render_spdt_switch(ctx, comp->x, comp->y, comp->rotation,
+                              comp->props.switch_spdt.position);
+            break;
+        case COMP_PUSH_BUTTON:
+            render_push_button(ctx, comp->x, comp->y, comp->rotation,
+                              comp->props.push_button.pressed);
             break;
         case COMP_TEXT: {
             // Render text annotation
@@ -1107,6 +1122,79 @@ void render_noise_source(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_line_rotated(ctx, x, y, 4, -4, 6, 5, rotation);
     render_draw_line_rotated(ctx, x, y, 6, 5, 8, -3, rotation);
     render_draw_line_rotated(ctx, x, y, 8, -3, 10, 1, rotation);
+}
+
+void render_spst_switch(RenderContext *ctx, float x, float y, int rotation, bool closed) {
+    // Terminals at (-40, 0) and (40, 0)
+    // Draw terminal leads
+    render_draw_line_rotated(ctx, x, y, -40, 0, -15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 0, 40, 0, rotation);
+
+    // Draw switch contacts (small circles at pivot points)
+    render_draw_circle_rotated(ctx, x, y, -15, 0, 3, rotation);
+    render_draw_circle_rotated(ctx, x, y, 15, 0, 3, rotation);
+
+    // Draw the actuator (switch blade)
+    if (closed) {
+        // Closed: horizontal blade connecting the contacts
+        render_draw_line_rotated(ctx, x, y, -15, 0, 15, 0, rotation);
+    } else {
+        // Open: blade tilted up at 30 degrees
+        render_draw_line_rotated(ctx, x, y, -15, 0, 12, -12, rotation);
+    }
+}
+
+void render_spdt_switch(RenderContext *ctx, float x, float y, int rotation, int position) {
+    // Terminals: Common at (-40, 0), A at (40, -20), B at (40, 20)
+    // Draw terminal leads
+    render_draw_line_rotated(ctx, x, y, -40, 0, -15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, -20, 40, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 20, 40, 20, rotation);
+
+    // Draw switch contacts
+    render_draw_circle_rotated(ctx, x, y, -15, 0, 3, rotation);
+    render_draw_circle_rotated(ctx, x, y, 15, -20, 3, rotation);
+    render_draw_circle_rotated(ctx, x, y, 15, 20, 3, rotation);
+
+    // Draw the actuator pointing to selected terminal
+    if (position == 0) {
+        // Position A (up)
+        render_draw_line_rotated(ctx, x, y, -15, 0, 12, -18, rotation);
+    } else {
+        // Position B (down)
+        render_draw_line_rotated(ctx, x, y, -15, 0, 12, 18, rotation);
+    }
+}
+
+void render_push_button(RenderContext *ctx, float x, float y, int rotation, bool pressed) {
+    // Terminals at (-40, 0) and (40, 0)
+    // Draw terminal leads
+    render_draw_line_rotated(ctx, x, y, -40, 0, -15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 0, 40, 0, rotation);
+
+    // Draw the button outline (rectangle)
+    render_draw_line_rotated(ctx, x, y, -15, -8, 15, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, 8, 15, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, -8, -15, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, -8, 15, 8, rotation);
+
+    // Draw the actuator inside
+    if (pressed) {
+        // Pressed: horizontal line (contacts closed)
+        render_draw_line_rotated(ctx, x, y, -12, 0, 12, 0, rotation);
+        // Draw button pushed down
+        render_draw_line_rotated(ctx, x, y, -8, -8, -8, -3, rotation);
+        render_draw_line_rotated(ctx, x, y, 8, -8, 8, -3, rotation);
+        render_draw_line_rotated(ctx, x, y, -8, -3, 8, -3, rotation);
+    } else {
+        // Not pressed: gap in middle
+        render_draw_line_rotated(ctx, x, y, -12, 0, -3, 0, rotation);
+        render_draw_line_rotated(ctx, x, y, 3, 0, 12, 0, rotation);
+        // Draw button in normal position
+        render_draw_line_rotated(ctx, x, y, -8, -8, -8, -6, rotation);
+        render_draw_line_rotated(ctx, x, y, 8, -8, 8, -6, rotation);
+        render_draw_line_rotated(ctx, x, y, -8, -6, 8, -6, rotation);
+    }
 }
 
 void render_ghost_component(RenderContext *ctx, Component *comp) {
