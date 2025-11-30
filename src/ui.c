@@ -1637,4 +1637,6 @@ void ui_update_layout(UIState *ui) {
     ui->btn_scope_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
     scope_btn_x += 35;
     ui->btn_scope_screenshot.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
+    scope_btn_x += 35;
+    ui->btn_bode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
 }
