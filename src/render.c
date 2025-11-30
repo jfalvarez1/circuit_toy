@@ -467,36 +467,75 @@ void render_node(RenderContext *ctx, Node *node, bool show_voltage) {
 void render_probe(RenderContext *ctx, Probe *probe, int index) {
     if (!probe) return;
 
-    // Draw probe body with channel color
+    // Probe dimensions (in world coordinates)
+    float tip_x = probe->x;
+    float tip_y = probe->y;
+
+    // Probe extends diagonally up-left from tip
+    float handle_dx = -25;  // Handle offset X
+    float handle_dy = -35;  // Handle offset Y
+
+    // Draw probe cable (wire going off to the side)
+    render_set_color(ctx, (Color){0x40, 0x40, 0x40, 0xff});
+    render_draw_line(ctx, tip_x + handle_dx - 5, tip_y + handle_dy - 5,
+                     tip_x + handle_dx - 25, tip_y + handle_dy - 15);
+    render_draw_line(ctx, tip_x + handle_dx - 25, tip_y + handle_dy - 15,
+                     tip_x + handle_dx - 35, tip_y + handle_dy - 10);
+
+    // Draw probe body/handle (elongated shape)
     render_set_color(ctx, probe->color);
-    render_fill_circle(ctx, probe->x, probe->y, 10);
 
-    // Draw white border
-    render_set_color(ctx, COLOR_TEXT);
-    render_draw_circle(ctx, probe->x, probe->y, 10);
-
-    // Draw probe tip (arrow pointing down)
-    render_set_color(ctx, probe->color);
-    render_draw_line(ctx, probe->x, probe->y + 10, probe->x, probe->y + 18);
-    render_draw_line(ctx, probe->x - 3, probe->y + 15, probe->x, probe->y + 18);
-    render_draw_line(ctx, probe->x + 3, probe->y + 15, probe->x, probe->y + 18);
-
-    // Draw channel label above the probe
-    int sx, sy;
-    render_world_to_screen(ctx, probe->x, probe->y - 20, &sx, &sy);
-    if (probe->label[0]) {
-        render_draw_text(ctx, probe->label, sx - 12, sy, probe->color);
-    } else {
-        char buf[16];
-        snprintf(buf, sizeof(buf), "P%d", index + 1);
-        render_draw_text(ctx, buf, sx - 8, sy, probe->color);
+    // Main handle body - thick line from tip toward handle
+    for (int i = -2; i <= 2; i++) {
+        render_draw_line(ctx, tip_x + 4 + i*0.5f, tip_y + 4 + i*0.5f,
+                        tip_x + handle_dx + i, tip_y + handle_dy + i);
     }
 
-    // Draw voltage reading below the probe
+    // Handle grip area (wider section)
+    float grip_x = tip_x + handle_dx * 0.6f;
+    float grip_y = tip_y + handle_dy * 0.6f;
+    render_fill_circle(ctx, grip_x, grip_y, 6);
+    render_fill_circle(ctx, tip_x + handle_dx * 0.4f, tip_y + handle_dy * 0.4f, 5);
+    render_fill_circle(ctx, tip_x + handle_dx * 0.8f, tip_y + handle_dy * 0.8f, 5);
+
+    // Handle end cap
+    render_fill_circle(ctx, tip_x + handle_dx, tip_y + handle_dy, 4);
+
+    // Draw metallic probe tip (pointed)
+    render_set_color(ctx, (Color){0xcc, 0xcc, 0xcc, 0xff});  // Silver/metallic
+    // Tip triangle
+    render_draw_line(ctx, tip_x, tip_y, tip_x + 3, tip_y + 5);
+    render_draw_line(ctx, tip_x, tip_y, tip_x - 3, tip_y + 5);
+    render_draw_line(ctx, tip_x - 3, tip_y + 5, tip_x + 3, tip_y + 5);
+    // Tip shaft
+    render_draw_line(ctx, tip_x - 2, tip_y + 5, tip_x + 2, tip_y + 5);
+    render_draw_line(ctx, tip_x - 2, tip_y + 5, tip_x - 1, tip_y + 8);
+    render_draw_line(ctx, tip_x + 2, tip_y + 5, tip_x + 1, tip_y + 8);
+
+    // Contact point indicator (small bright dot at tip)
+    render_set_color(ctx, (Color){0xff, 0xff, 0x00, 0xff});  // Yellow contact point
+    render_fill_circle(ctx, tip_x, tip_y, 2);
+
+    // Draw outline around handle for visibility
+    render_set_color(ctx, COLOR_TEXT);
+    render_draw_circle(ctx, grip_x, grip_y, 7);
+
+    // Draw channel label near handle
+    int sx, sy;
+    render_world_to_screen(ctx, tip_x + handle_dx - 10, tip_y + handle_dy + 5, &sx, &sy);
+    if (probe->label[0]) {
+        render_draw_text(ctx, probe->label, sx - 8, sy, probe->color);
+    } else {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "CH%d", index + 1);
+        render_draw_text(ctx, buf, sx - 12, sy, probe->color);
+    }
+
+    // Draw voltage reading near the tip
     char volt_str[16];
     snprintf(volt_str, sizeof(volt_str), "%.2fV", probe->voltage);
-    render_world_to_screen(ctx, probe->x, probe->y + 25, &sx, &sy);
-    render_draw_text(ctx, volt_str, sx - 16, sy, COLOR_TEXT);
+    render_world_to_screen(ctx, tip_x + 10, tip_y + 10, &sx, &sy);
+    render_draw_text(ctx, volt_str, sx, sy, probe->color);
 }
 
 void render_circuit(RenderContext *ctx, Circuit *circuit) {
