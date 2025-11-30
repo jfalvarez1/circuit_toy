@@ -1670,8 +1670,14 @@ static int place_current_mirror(Circuit *circuit, float x, float y) {
     q1->node_ids[0] = base_node;
     q1->node_ids[1] = base_node;
 
-    // Q2 base to Q1 base
-    circuit_add_wire(circuit, base_node, circuit_find_or_create_node(circuit, base2_x, base2_y, 5.0f));
+    // Q2 base to Q1 base - route BELOW transistors to avoid crossing bodies
+    // Go down from base1, across below emitters, then up to base2
+    float base_bus_y = emit1_y + 30;  // Route below emitter level
+    circuit_add_wire(circuit, base_node, circuit_find_or_create_node(circuit, base1_x, base_bus_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, base1_x, base_bus_y, 5.0f),
+                     circuit_find_or_create_node(circuit, base2_x, base_bus_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, base2_x, base_bus_y, 5.0f),
+                     circuit_find_or_create_node(circuit, base2_x, base2_y, 5.0f));
     q2->node_ids[0] = base_node;
 
     // Q1 emitter to ground
