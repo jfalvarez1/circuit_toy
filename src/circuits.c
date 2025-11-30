@@ -65,6 +65,38 @@ static int create_node_at(Circuit *circuit, Component *comp, int terminal_idx) {
     return node_id;
 }
 
+// Helper to create an L-shaped wire connection via an intermediate point
+// This avoids diagonal wires by going horizontal then vertical (or vice versa)
+static void wire_L_shape(Circuit *circuit, float x1, float y1, float x2, float y2, bool horiz_first) {
+    int node1 = circuit_find_or_create_node(circuit, x1, y1, 5.0f);
+    int node2 = circuit_find_or_create_node(circuit, x2, y2, 5.0f);
+
+    if (x1 == x2 || y1 == y2) {
+        // Already aligned, just add direct wire
+        if (node1 != node2) {
+            circuit_add_wire(circuit, node1, node2);
+        }
+    } else {
+        // Create intermediate node for L-shape
+        float mid_x, mid_y;
+        if (horiz_first) {
+            mid_x = x2;
+            mid_y = y1;
+        } else {
+            mid_x = x1;
+            mid_y = y2;
+        }
+        int mid_node = circuit_find_or_create_node(circuit, mid_x, mid_y, 5.0f);
+
+        if (node1 != mid_node) {
+            circuit_add_wire(circuit, node1, mid_node);
+        }
+        if (mid_node != node2) {
+            circuit_add_wire(circuit, mid_node, node2);
+        }
+    }
+}
+
 // RC Low Pass Filter: Vin --[R]--+--[C]-- GND
 //                                |
 //                               Vout
@@ -247,16 +279,23 @@ static int place_voltage_divider(Circuit *circuit, float x, float y) {
 }
 
 // Inverting Amplifier:
-//          Rf
-//     +---/\/\/---+
-//     |           |
-// Vin-+--[Ri]--(-)\
-//              (+)/---Vout
-//               |
-//              GND
+//              +-------- Rf --------+
+//              |                    |
+// Vin ---[Ri]--+--(-)\              |
+//                 (+)/--------+-----+--- Vout
+//                  |          |
+//                 GND       (output)
+//
+// Clean orthogonal layout with no diagonal wires
 static int place_inverting_amp(Circuit *circuit, float x, float y) {
-    // AC voltage source
-    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y, 0);
+    // Layout plan (all wires horizontal or vertical):
+    // - Source + at y, connects horizontally to Ri
+    // - Ri output at junction node, connects to op-amp - input
+    // - Rf above, connects junction to output via vertical wires
+    // - + input connects down to ground
+
+    // AC voltage source (offset so + terminal is at y)
+    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 40, 0);
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 0.5;
     vsrc->props.ac_voltage.frequency = 1000.0;
@@ -264,60 +303,92 @@ static int place_inverting_amp(Circuit *circuit, float x, float y) {
     // Ground for source
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
 
-    // Input resistor Ri (1k)
-    Component *ri = add_comp(circuit, COMP_RESISTOR, x + 100, y, 0);
+    // Input resistor Ri horizontal at y
+    Component *ri = add_comp(circuit, COMP_RESISTOR, x + 80, y, 0);
     ri->props.resistor.resistance = 1000.0;
+    // Ri terminals: (x+40, y) and (x+120, y)
 
-    // Op-amp
-    Component *opamp = add_comp(circuit, COMP_OPAMP, x + 250, y + 30, 0);
+    // Op-amp positioned so - input aligns horizontally with Ri output
+    // Op-amp - input at (opamp_x - 40, opamp_y - 20)
+    // Want - input at (x+160, y), so opamp at (x+200, y+20)
+    Component *opamp = add_comp(circuit, COMP_OPAMP, x + 200, y + 20, 0);
+    // Op-amp terminals: - at (x+160, y), + at (x+160, y+40), out at (x+240, y+20)
 
-    // Feedback resistor Rf (10k for gain = -10)
-    Component *rf = add_comp(circuit, COMP_RESISTOR, x + 250, y - 50, 0);
+    // Feedback resistor Rf horizontal, above the signal path
+    // Place at y-40 so it's above the op-amp
+    Component *rf = add_comp(circuit, COMP_RESISTOR, x + 200, y - 40, 0);
     rf->props.resistor.resistance = 10000.0;
+    // Rf terminals: (x+160, y-40) and (x+240, y-40)
 
-    // Ground for non-inverting input
-    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 200, y + 100, 0);
+    // Ground for + input
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 160, y + 60, 0);
+    // Ground terminal at (x+160, y+40)
 
     // Connect source negative to ground
     connect_terminals(circuit, vsrc, 1, gnd, 0);
 
-    // Connect source positive to Ri
+    // Connect source positive to Ri (horizontal at y)
     connect_terminals(circuit, vsrc, 0, ri, 0);
 
-    // Connect Ri to inverting input (and Rf left side)
-    connect_terminals(circuit, ri, 1, opamp, 0);  // Inverting input
+    // Connect Ri output to op-amp - input (horizontal at y)
+    // Both at y level, so just connect directly
+    connect_terminals(circuit, ri, 1, opamp, 0);
 
-    // Connect Rf left to inverting input
-    float ri_out_x, ri_out_y;
-    component_get_terminal_pos(ri, 1, &ri_out_x, &ri_out_y);
-    float rf_in_x, rf_in_y;
-    component_get_terminal_pos(rf, 0, &rf_in_x, &rf_in_y);
-    int node_inv = circuit_find_or_create_node(circuit, ri_out_x, ri_out_y, 5.0f);
-    int node_rf_in = circuit_find_or_create_node(circuit, rf_in_x, rf_in_y, 5.0f);
-    if (node_inv != node_rf_in) {
-        circuit_add_wire(circuit, node_inv, node_rf_in);
-    }
-    rf->node_ids[0] = node_inv;
+    // The junction node at - input needs to connect to Rf
+    // Rf left terminal is at (x+160, y-40), - input is at (x+160, y)
+    // This is a vertical connection - perfect!
+    float inv_x, inv_y;
+    component_get_terminal_pos(opamp, 0, &inv_x, &inv_y);
+    float rf_left_x, rf_left_y;
+    component_get_terminal_pos(rf, 0, &rf_left_x, &rf_left_y);
 
-    // Connect non-inverting input to ground
+    // Create vertical wire from - input up to Rf left
+    wire_L_shape(circuit, inv_x, inv_y, rf_left_x, rf_left_y, false);
+
+    // Set Rf node connection
+    int inv_node = circuit_find_or_create_node(circuit, inv_x, inv_y, 5.0f);
+    rf->node_ids[0] = inv_node;
+
+    // Connect Rf right to output via vertical wire
+    // Rf right at (x+240, y-40), output at (x+240, y+20)
+    float rf_right_x, rf_right_y;
+    component_get_terminal_pos(rf, 1, &rf_right_x, &rf_right_y);
+    float out_x, out_y;
+    component_get_terminal_pos(opamp, 2, &out_x, &out_y);
+
+    // Vertical wire from Rf right down to output
+    wire_L_shape(circuit, rf_right_x, rf_right_y, out_x, out_y, false);
+
+    // Set Rf and opamp output node connection
+    int out_node = circuit_find_or_create_node(circuit, out_x, out_y, 5.0f);
+    rf->node_ids[1] = out_node;
+    opamp->node_ids[2] = out_node;
+
+    // Connect + input to ground (vertical)
     connect_terminals(circuit, opamp, 1, gnd2, 0);
-
-    // Connect Rf right to output
-    connect_terminals(circuit, rf, 1, opamp, 2);  // Output
 
     return 6;
 }
 
 // Non-Inverting Amplifier:
-// Vin ---(+)\
-//        (-)/---+---Vout
-//          |    |
-//         Ri    Rf
-//          |    |
-//         GND  GND
+//                +-------- Rf --------+
+//                |                    |
+// Vin -----(+)\  |                    |
+//          (-)/--+--------------------+--- Vout
+//           |
+//          Ri
+//           |
+//          GND
+//
+// Clean orthogonal layout with no diagonal wires
 static int place_noninverting_amp(Circuit *circuit, float x, float y) {
-    // AC voltage source
-    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y, 0);
+    // Layout plan:
+    // - Source + connects horizontally to op-amp + input
+    // - Op-amp - input connects to junction
+    // - From junction: Ri goes down to ground, Rf goes up then right to output
+
+    // AC voltage source (offset so + terminal is at y)
+    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 40, 0);
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 0.5;
     vsrc->props.ac_voltage.frequency = 1000.0;
@@ -325,58 +396,89 @@ static int place_noninverting_amp(Circuit *circuit, float x, float y) {
     // Ground for source
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
 
-    // Op-amp
-    Component *opamp = add_comp(circuit, COMP_OPAMP, x + 150, y, 0);
+    // Op-amp positioned so + input aligns with source + terminal
+    // Op-amp + input at (opamp_x - 40, opamp_y + 20)
+    // Want + input at y level, so opamp_y + 20 = y, opamp_y = y - 20
+    Component *opamp = add_comp(circuit, COMP_OPAMP, x + 160, y - 20, 0);
+    // Op-amp terminals: - at (x+120, y-40), + at (x+120, y), out at (x+200, y-20)
 
-    // Ri (feedback to ground) - 1k
-    Component *ri = add_comp(circuit, COMP_RESISTOR, x + 100, y + 70, 90);
+    // Ri vertical, from - input down to ground
+    // - input is at (x+120, y-40)
+    // Place Ri so its top terminal connects to - input
+    // With rotation 90, terminal 0 is at (ri_x, ri_y - 40)
+    // Want (ri_x, ri_y - 40) = (x+120, y-40), so ri_y = y
+    Component *ri = add_comp(circuit, COMP_RESISTOR, x + 120, y, 90);
     ri->props.resistor.resistance = 1000.0;
+    // Ri terminals: top at (x+120, y-40), bottom at (x+120, y+40)
 
-    // Rf (feedback resistor) - 10k for gain = 11
-    Component *rf = add_comp(circuit, COMP_RESISTOR, x + 150, y - 60, 0);
+    // Ground for Ri bottom
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 120, y + 60, 0);
+    // Ground terminal at (x+120, y+40)
+
+    // Rf horizontal, above the op-amp connecting - input to output
+    // - input is at (x+120, y-40), output is at (x+200, y-20)
+    // Place Rf at y-60 level (above - input)
+    Component *rf = add_comp(circuit, COMP_RESISTOR, x + 160, y - 60, 0);
     rf->props.resistor.resistance = 10000.0;
-
-    // Ground for Ri
-    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 100, y + 130, 0);
+    // Rf terminals: left at (x+120, y-60), right at (x+200, y-60)
 
     // Connect source negative to ground
     connect_terminals(circuit, vsrc, 1, gnd, 0);
 
-    // Connect source positive to non-inverting input
+    // Connect source positive to + input (horizontal at y)
     connect_terminals(circuit, vsrc, 0, opamp, 1);
 
-    // Connect Ri top to inverting input
-    connect_terminals(circuit, ri, 0, opamp, 0);
+    // Connect Ri top to - input (should be same point or close)
+    float inv_x, inv_y;
+    component_get_terminal_pos(opamp, 0, &inv_x, &inv_y);
+    float ri_top_x, ri_top_y;
+    component_get_terminal_pos(ri, 0, &ri_top_x, &ri_top_y);
+
+    int inv_node = circuit_find_or_create_node(circuit, inv_x, inv_y, 5.0f);
+    ri->node_ids[0] = inv_node;
+    opamp->node_ids[0] = inv_node;
+
+    // If Ri top and - input aren't at same position, add wire
+    if (fabs(ri_top_x - inv_x) > 1 || fabs(ri_top_y - inv_y) > 1) {
+        wire_L_shape(circuit, ri_top_x, ri_top_y, inv_x, inv_y, false);
+    }
 
     // Connect Ri bottom to ground
     connect_terminals(circuit, ri, 1, gnd2, 0);
 
-    // Connect Rf left to inverting input (same node as Ri top)
-    float ri_top_x, ri_top_y;
-    component_get_terminal_pos(ri, 0, &ri_top_x, &ri_top_y);
-    float rf_in_x, rf_in_y;
-    component_get_terminal_pos(rf, 0, &rf_in_x, &rf_in_y);
-    int node_inv = circuit_find_or_create_node(circuit, ri_top_x, ri_top_y, 5.0f);
-    int node_rf_in = circuit_find_or_create_node(circuit, rf_in_x, rf_in_y, 5.0f);
-    if (node_inv != node_rf_in) {
-        circuit_add_wire(circuit, node_inv, node_rf_in);
-    }
-    rf->node_ids[0] = node_inv;
+    // Connect Rf left to - input junction (vertical wire from y-40 to y-60)
+    float rf_left_x, rf_left_y;
+    component_get_terminal_pos(rf, 0, &rf_left_x, &rf_left_y);
+    wire_L_shape(circuit, inv_x, inv_y, rf_left_x, rf_left_y, false);
+    rf->node_ids[0] = inv_node;
 
-    // Connect Rf right to output
-    connect_terminals(circuit, rf, 1, opamp, 2);
+    // Connect Rf right to output (vertical wire from y-60 to y-20)
+    float rf_right_x, rf_right_y;
+    component_get_terminal_pos(rf, 1, &rf_right_x, &rf_right_y);
+    float out_x, out_y;
+    component_get_terminal_pos(opamp, 2, &out_x, &out_y);
+
+    wire_L_shape(circuit, rf_right_x, rf_right_y, out_x, out_y, false);
+
+    int out_node = circuit_find_or_create_node(circuit, out_x, out_y, 5.0f);
+    rf->node_ids[1] = out_node;
+    opamp->node_ids[2] = out_node;
 
     return 6;
 }
 
 // Voltage Follower (Unity Gain Buffer):
-// Vin ---(+)\
-//        (-)/---Vout
-//          |
-//          +----+ (feedback)
+//                  +-------+
+//                  |       |
+// Vin --------(+)\ |       |
+//             (-)/--+------+--- Vout
+//              |
+//             GND (source)
+//
+// Clean orthogonal layout - feedback goes up, over, and down
 static int place_voltage_follower(Circuit *circuit, float x, float y) {
-    // AC voltage source
-    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y, 0);
+    // AC voltage source (offset so + terminal is at y)
+    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 40, 0);
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 1.0;
     vsrc->props.ac_voltage.frequency = 1000.0;
@@ -384,17 +486,45 @@ static int place_voltage_follower(Circuit *circuit, float x, float y) {
     // Ground for source
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
 
-    // Op-amp
-    Component *opamp = add_comp(circuit, COMP_OPAMP, x + 150, y, 0);
+    // Op-amp positioned so + input aligns with source + terminal
+    // Op-amp + input at (opamp_x - 40, opamp_y + 20)
+    // Want + input at y, so opamp_y + 20 = y, opamp_y = y - 20
+    Component *opamp = add_comp(circuit, COMP_OPAMP, x + 160, y - 20, 0);
+    // Op-amp terminals: - at (x+120, y-40), + at (x+120, y), out at (x+200, y-20)
 
     // Connect source negative to ground
     connect_terminals(circuit, vsrc, 1, gnd, 0);
 
-    // Connect source positive to non-inverting input
+    // Connect source positive to + input (horizontal at y)
     connect_terminals(circuit, vsrc, 0, opamp, 1);
 
-    // Connect output to inverting input (unity feedback)
-    connect_terminals(circuit, opamp, 2, opamp, 0);
+    // Connect output to - input via L-shaped feedback wire
+    // - input at (x+120, y-40), output at (x+200, y-20)
+    // Route: output -> up to y-60 -> left to x+120 -> down to - input
+    float inv_x, inv_y;
+    component_get_terminal_pos(opamp, 0, &inv_x, &inv_y);
+    float out_x, out_y;
+    component_get_terminal_pos(opamp, 2, &out_x, &out_y);
+
+    // Create feedback path with intermediate nodes (goes above the op-amp)
+    float fb_y = y - 60;  // Feedback wire level (above op-amp)
+
+    // Create nodes
+    int inv_node = circuit_find_or_create_node(circuit, inv_x, inv_y, 5.0f);
+    int out_node = circuit_find_or_create_node(circuit, out_x, out_y, 5.0f);
+    int fb_left = circuit_find_or_create_node(circuit, inv_x, fb_y, 5.0f);
+    int fb_right = circuit_find_or_create_node(circuit, out_x, fb_y, 5.0f);
+
+    // Wire: - input up to feedback level
+    circuit_add_wire(circuit, inv_node, fb_left);
+    // Wire: horizontal along feedback level
+    circuit_add_wire(circuit, fb_left, fb_right);
+    // Wire: feedback level down to output
+    circuit_add_wire(circuit, fb_right, out_node);
+
+    // Set node connections
+    opamp->node_ids[0] = inv_node;
+    opamp->node_ids[2] = out_node;
 
     return 3;
 }
