@@ -570,16 +570,36 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     draw_button(renderer, &ui->btn_save);
     draw_button(renderer, &ui->btn_load);
 
-    // Speed slider background
-    SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
-    SDL_Rect slider_bg = {ui->speed_slider.x, ui->speed_slider.y, ui->speed_slider.w, ui->speed_slider.h};
-    SDL_RenderFillRect(renderer, &slider_bg);
+    // Speed slider label
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    ui_draw_text(renderer, "Speed:", ui->speed_slider.x, ui->speed_slider.y - 2);
 
-    // Speed slider fill
-    int fill_w = (int)(ui->speed_slider.w * (ui->speed_value / 100.0f));
+    // Speed slider background
+    int slider_x = ui->speed_slider.x + 50;
+    SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
+    SDL_Rect slider_bg = {slider_x, ui->speed_slider.y, ui->speed_slider.w, ui->speed_slider.h};
+    SDL_RenderFillRect(renderer, &slider_bg);
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0x80);
+    SDL_RenderDrawRect(renderer, &slider_bg);
+
+    // Speed slider fill (logarithmic scale: 1x to 100x)
+    // Map speed_value (1-100) to slider position
+    float log_pos = (log10f(ui->speed_value) / 2.0f);  // log10(100) = 2
+    int fill_w = (int)(ui->speed_slider.w * log_pos);
+    fill_w = CLAMP(fill_w, 0, ui->speed_slider.w);
     SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
-    SDL_Rect slider_fill = {ui->speed_slider.x, ui->speed_slider.y, fill_w, ui->speed_slider.h};
+    SDL_Rect slider_fill = {slider_x, ui->speed_slider.y, fill_w, ui->speed_slider.h};
     SDL_RenderFillRect(renderer, &slider_fill);
+
+    // Speed value text
+    char speed_text[16];
+    if (ui->speed_value >= 10.0f) {
+        snprintf(speed_text, sizeof(speed_text), "%.0fx", ui->speed_value);
+    } else {
+        snprintf(speed_text, sizeof(speed_text), "%.1fx", ui->speed_value);
+    }
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+    ui_draw_text(renderer, speed_text, slider_x + ui->speed_slider.w + 5, ui->speed_slider.y - 2);
 
     // Toolbar border
     SDL_SetRenderDrawColor(renderer, 0x0f, 0x34, 0x60, 0xff);
