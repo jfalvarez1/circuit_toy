@@ -2126,15 +2126,6 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
     draw_button(renderer, &ui->btn_bode);
 
-    // Show trigger level next to mode button
-    if (ui->trigger_mode != TRIG_AUTO) {
-        int trig_info_x = ui->btn_scope_mode.bounds.x + ui->btn_scope_mode.bounds.w + 10;
-        int trig_info_y = ui->btn_scope_mode.bounds.y + 6;
-        SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);  // Orange
-        snprintf(buf, sizeof(buf), "T:%.1fV", ui->trigger_level);
-        ui_draw_text(renderer, buf, trig_info_x, trig_info_y);
-    }
-
     // Display settings panel below buttons (3 rows of buttons = ~79px, so start at +85)
     int info_y = r->y + r->h + 85;
 
