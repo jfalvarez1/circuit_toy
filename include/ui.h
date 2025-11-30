@@ -133,6 +133,8 @@ typedef struct {
     Button btn_scope_trig_mode;      // Cycle through trigger modes
     Button btn_scope_trig_edge;      // Toggle trigger edge
     Button btn_scope_trig_ch;        // Cycle through trigger channel
+    Button btn_scope_trig_up;        // Increase trigger level
+    Button btn_scope_trig_down;      // Decrease trigger level
     Button btn_scope_mode;           // Toggle Y-T / X-Y mode
     Button btn_scope_screenshot;     // Capture scope display
 

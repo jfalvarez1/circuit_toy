@@ -369,6 +369,10 @@ void ui_init(UIState *ui) {
     scope_btn_x += 30;
     ui->btn_scope_trig_ch = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "CH1", "Trigger channel", false, false, true, false};
     scope_btn_x += 35;
+    ui->btn_scope_trig_up = (Button){{scope_btn_x, scope_btn_y, 20, scope_btn_h}, "L+", "Increase trigger level", false, false, true, false};
+    scope_btn_x += 22;
+    ui->btn_scope_trig_down = (Button){{scope_btn_x, scope_btn_y, 20, scope_btn_h}, "L-", "Decrease trigger level", false, false, true, false};
+    scope_btn_x += 25;
     ui->btn_scope_mode = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "Y-T", "Display mode (Y-T/X-Y)", false, false, true, false};
     scope_btn_x += 35;
     ui->btn_scope_screenshot = (Button){{scope_btn_x, scope_btn_y, 30, scope_btn_h}, "CAP", "Capture screenshot (saves scope.bmp)", false, false, true, false};
@@ -1201,6 +1205,8 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     draw_button(renderer, &ui->btn_scope_trig_mode);
     draw_button(renderer, &ui->btn_scope_trig_edge);
     draw_button(renderer, &ui->btn_scope_trig_ch);
+    draw_button(renderer, &ui->btn_scope_trig_up);
+    draw_button(renderer, &ui->btn_scope_trig_down);
     draw_button(renderer, &ui->btn_scope_mode);
     draw_button(renderer, &ui->btn_scope_screenshot);
     draw_button(renderer, &ui->btn_bode);
@@ -1594,6 +1600,12 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_scope_trig_ch.bounds) && ui->btn_scope_trig_ch.enabled) {
             return UI_ACTION_SCOPE_TRIG_CH;
         }
+        if (point_in_rect(x, y, &ui->btn_scope_trig_up.bounds) && ui->btn_scope_trig_up.enabled) {
+            return UI_ACTION_SCOPE_TRIG_UP;
+        }
+        if (point_in_rect(x, y, &ui->btn_scope_trig_down.bounds) && ui->btn_scope_trig_down.enabled) {
+            return UI_ACTION_SCOPE_TRIG_DOWN;
+        }
         if (point_in_rect(x, y, &ui->btn_scope_mode.bounds) && ui->btn_scope_mode.enabled) {
             return UI_ACTION_SCOPE_MODE;
         }
@@ -1722,6 +1734,8 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_scope_trig_mode.hovered = point_in_rect(x, y, &ui->btn_scope_trig_mode.bounds);
     ui->btn_scope_trig_edge.hovered = point_in_rect(x, y, &ui->btn_scope_trig_edge.bounds);
     ui->btn_scope_trig_ch.hovered = point_in_rect(x, y, &ui->btn_scope_trig_ch.bounds);
+    ui->btn_scope_trig_up.hovered = point_in_rect(x, y, &ui->btn_scope_trig_up.bounds);
+    ui->btn_scope_trig_down.hovered = point_in_rect(x, y, &ui->btn_scope_trig_down.bounds);
     ui->btn_scope_mode.hovered = point_in_rect(x, y, &ui->btn_scope_mode.bounds);
     ui->btn_scope_screenshot.hovered = point_in_rect(x, y, &ui->btn_scope_screenshot.bounds);
     ui->btn_bode.hovered = point_in_rect(x, y, &ui->btn_bode.bounds);
@@ -1816,6 +1830,10 @@ void ui_update_layout(UIState *ui) {
     scope_btn_x += 30;
     ui->btn_scope_trig_ch.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
     scope_btn_x += 35;
+    ui->btn_scope_trig_up.bounds = (Rect){scope_btn_x, scope_btn_y, 20, scope_btn_h};
+    scope_btn_x += 22;
+    ui->btn_scope_trig_down.bounds = (Rect){scope_btn_x, scope_btn_y, 20, scope_btn_h};
+    scope_btn_x += 25;
     ui->btn_scope_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};
     scope_btn_x += 35;
     ui->btn_scope_screenshot.bounds = (Rect){scope_btn_x, scope_btn_y, 30, scope_btn_h};

@@ -69,30 +69,34 @@ static int create_node_at(Circuit *circuit, Component *comp, int terminal_idx) {
 //                                |
 //                               Vout
 static int place_rc_lowpass(Circuit *circuit, float x, float y) {
-    // AC voltage source
-    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y, 0);
+    // Layout: horizontal wire at y, source offset so + terminal aligns
+    // Source + terminal is at dy=-40, so place source at y+40 to put + at y
+
+    // AC voltage source (offset down so + terminal is at y)
+    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 40, 0);
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 1.0;
     vsrc->props.ac_voltage.frequency = 1000.0;
 
-    // Ground
+    // Ground for source (- terminal at y+80, ground terminal at y+100-20=y+80)
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
 
-    // Resistor (1k for fc ~= 1.6kHz with 100nF)
+    // Resistor horizontal at y (terminals at x+60 and x+140)
     Component *res = add_comp(circuit, COMP_RESISTOR, x + 100, y, 0);
     res->props.resistor.resistance = 1000.0;
 
-    // Capacitor (100nF)
-    Component *cap = add_comp(circuit, COMP_CAPACITOR, x + 200, y + 50, 90);
+    // Capacitor vertical (rotation 90) - top terminal at y, bottom at y+80
+    // With rotation 90, terminals move from (±40, 0) to (0, ±40)
+    Component *cap = add_comp(circuit, COMP_CAPACITOR, x + 180, y + 40, 90);
     cap->props.capacitor.capacitance = 100e-9;
 
-    // Ground for capacitor
-    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 200, y + 100, 0);
+    // Ground for capacitor (terminal at y+100-20=y+80, matches cap bottom)
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 180, y + 100, 0);
 
     // Connect source negative to ground
     connect_terminals(circuit, vsrc, 1, gnd, 0);
 
-    // Connect source positive to resistor
+    // Connect source positive to resistor (both at y)
     connect_terminals(circuit, vsrc, 0, res, 0);
 
     // Connect resistor to capacitor (output node)
@@ -108,30 +112,32 @@ static int place_rc_lowpass(Circuit *circuit, float x, float y) {
 //                                 |
 //                                Vout
 static int place_rc_highpass(Circuit *circuit, float x, float y) {
-    // AC voltage source
-    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y, 0);
+    // Layout: horizontal wire at y, source offset so + terminal aligns
+
+    // AC voltage source (offset down so + terminal is at y)
+    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 40, 0);
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 1.0;
     vsrc->props.ac_voltage.frequency = 1000.0;
 
-    // Ground
+    // Ground for source
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
 
-    // Capacitor (100nF)
+    // Capacitor horizontal at y
     Component *cap = add_comp(circuit, COMP_CAPACITOR, x + 100, y, 0);
     cap->props.capacitor.capacitance = 100e-9;
 
-    // Resistor (1k)
-    Component *res = add_comp(circuit, COMP_RESISTOR, x + 200, y + 50, 90);
+    // Resistor vertical (rotation 90) - top terminal at y
+    Component *res = add_comp(circuit, COMP_RESISTOR, x + 180, y + 40, 90);
     res->props.resistor.resistance = 1000.0;
 
     // Ground for resistor
-    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 200, y + 100, 0);
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 180, y + 100, 0);
 
     // Connect source negative to ground
     connect_terminals(circuit, vsrc, 1, gnd, 0);
 
-    // Connect source positive to capacitor
+    // Connect source positive to capacitor (both at y)
     connect_terminals(circuit, vsrc, 0, cap, 0);
 
     // Connect capacitor to resistor (output node)
@@ -145,25 +151,27 @@ static int place_rc_highpass(Circuit *circuit, float x, float y) {
 
 // RL Low Pass Filter
 static int place_rl_lowpass(Circuit *circuit, float x, float y) {
-    // AC voltage source
-    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y, 0);
+    // Layout: horizontal wire at y, source offset so + terminal aligns
+
+    // AC voltage source (offset down so + terminal is at y)
+    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 40, 0);
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 1.0;
     vsrc->props.ac_voltage.frequency = 1000.0;
 
-    // Ground
+    // Ground for source
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
 
-    // Inductor (10mH)
+    // Inductor horizontal at y
     Component *ind = add_comp(circuit, COMP_INDUCTOR, x + 100, y, 0);
     ind->props.inductor.inductance = 10e-3;
 
-    // Resistor (100 ohm)
-    Component *res = add_comp(circuit, COMP_RESISTOR, x + 200, y + 50, 90);
+    // Resistor vertical (rotation 90) - top terminal at y
+    Component *res = add_comp(circuit, COMP_RESISTOR, x + 180, y + 40, 90);
     res->props.resistor.resistance = 100.0;
 
-    // Ground
-    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 200, y + 100, 0);
+    // Ground for resistor
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 180, y + 100, 0);
 
     connect_terminals(circuit, vsrc, 1, gnd, 0);
     connect_terminals(circuit, vsrc, 0, ind, 0);
@@ -175,25 +183,27 @@ static int place_rl_lowpass(Circuit *circuit, float x, float y) {
 
 // RL High Pass Filter
 static int place_rl_highpass(Circuit *circuit, float x, float y) {
-    // AC voltage source
-    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y, 0);
+    // Layout: horizontal wire at y, source offset so + terminal aligns
+
+    // AC voltage source (offset down so + terminal is at y)
+    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 40, 0);
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 1.0;
     vsrc->props.ac_voltage.frequency = 1000.0;
 
-    // Ground
+    // Ground for source
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
 
-    // Resistor (100 ohm)
+    // Resistor horizontal at y
     Component *res = add_comp(circuit, COMP_RESISTOR, x + 100, y, 0);
     res->props.resistor.resistance = 100.0;
 
-    // Inductor (10mH)
-    Component *ind = add_comp(circuit, COMP_INDUCTOR, x + 200, y + 50, 90);
+    // Inductor vertical (rotation 90) - top terminal at y
+    Component *ind = add_comp(circuit, COMP_INDUCTOR, x + 180, y + 40, 90);
     ind->props.inductor.inductance = 10e-3;
 
-    // Ground
-    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 200, y + 100, 0);
+    // Ground for inductor
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 180, y + 100, 0);
 
     connect_terminals(circuit, vsrc, 1, gnd, 0);
     connect_terminals(circuit, vsrc, 0, res, 0);
@@ -207,24 +217,26 @@ static int place_rl_highpass(Circuit *circuit, float x, float y) {
 //                              |
 //                             Vout
 static int place_voltage_divider(Circuit *circuit, float x, float y) {
-    // DC voltage source
-    Component *vsrc = add_comp(circuit, COMP_DC_VOLTAGE, x, y, 0);
+    // Layout: horizontal wire at y, source offset so + terminal aligns
+
+    // DC voltage source (offset down so + terminal is at y)
+    Component *vsrc = add_comp(circuit, COMP_DC_VOLTAGE, x, y + 40, 0);
     if (!vsrc) return 0;
     vsrc->props.dc_voltage.voltage = 10.0;
 
     // Ground for source
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
 
-    // R1 (top resistor)
+    // R1 horizontal at y
     Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 100, y, 0);
     r1->props.resistor.resistance = 10000.0;
 
-    // R2 (bottom resistor)
-    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 200, y + 50, 90);
+    // R2 vertical (rotation 90) - top terminal at y
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 180, y + 40, 90);
     r2->props.resistor.resistance = 10000.0;
 
     // Ground for R2
-    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 200, y + 100, 0);
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 180, y + 100, 0);
 
     connect_terminals(circuit, vsrc, 1, gnd, 0);
     connect_terminals(circuit, vsrc, 0, r1, 0);
@@ -392,8 +404,10 @@ static int place_voltage_follower(Circuit *circuit, float x, float y) {
 //              |
 //             Vout
 static int place_halfwave_rectifier(Circuit *circuit, float x, float y) {
-    // AC voltage source
-    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y, 0);
+    // Layout: horizontal wire at y, source offset so + terminal aligns
+
+    // AC voltage source (offset down so + terminal is at y)
+    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 40, 0);
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 5.0;
     vsrc->props.ac_voltage.frequency = 60.0;
@@ -401,20 +415,20 @@ static int place_halfwave_rectifier(Circuit *circuit, float x, float y) {
     // Ground for source
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
 
-    // Diode
+    // Diode horizontal at y
     Component *diode = add_comp(circuit, COMP_DIODE, x + 100, y, 0);
 
-    // Load resistor
-    Component *rload = add_comp(circuit, COMP_RESISTOR, x + 200, y + 50, 90);
+    // Load resistor vertical (rotation 90) - top terminal at y
+    Component *rload = add_comp(circuit, COMP_RESISTOR, x + 180, y + 40, 90);
     rload->props.resistor.resistance = 1000.0;
 
     // Ground for load
-    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 200, y + 100, 0);
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 180, y + 100, 0);
 
     // Connect source negative to ground
     connect_terminals(circuit, vsrc, 1, gnd, 0);
 
-    // Connect source positive to diode anode
+    // Connect source positive to diode anode (both at y)
     connect_terminals(circuit, vsrc, 0, diode, 0);
 
     // Connect diode cathode to load
@@ -429,28 +443,34 @@ static int place_halfwave_rectifier(Circuit *circuit, float x, float y) {
 // LED with Current Limiting Resistor:
 // Vcc ---[R]---[LED]--- GND
 static int place_led_with_resistor(Circuit *circuit, float x, float y) {
-    // DC voltage source (5V)
-    Component *vsrc = add_comp(circuit, COMP_DC_VOLTAGE, x, y, 0);
+    // Layout: horizontal wire at y, source offset so + terminal aligns
+
+    // DC voltage source (5V, offset down so + terminal is at y)
+    Component *vsrc = add_comp(circuit, COMP_DC_VOLTAGE, x, y + 40, 0);
     if (!vsrc) return 0;
     vsrc->props.dc_voltage.voltage = 5.0;
 
     // Ground for source
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
 
-    // Current limiting resistor (for ~10mA: (5-2)/0.01 = 300 ohm)
+    // Current limiting resistor horizontal at y (for ~10mA: (5-2)/0.01 = 300 ohm)
     Component *res = add_comp(circuit, COMP_RESISTOR, x + 100, y, 0);
     res->props.resistor.resistance = 330.0;
 
-    // LED
+    // LED horizontal at y
     Component *led = add_comp(circuit, COMP_LED, x + 200, y, 0);
 
-    // Ground for LED
-    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 250, y + 80, 0);
+    // Ground for LED - place it below LED cathode
+    // LED cathode is at x+240, y, so we need ground there
+    // But ground terminal is at dy=-20, so place ground at (x+240, y+20)
+    // to connect via short wire, or better: use vertical segment
+    // Actually for a clean layout, bend the LED output down to ground
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 240, y + 40, 0);
 
     // Connect source negative to ground
     connect_terminals(circuit, vsrc, 1, gnd, 0);
 
-    // Connect source positive to resistor
+    // Connect source positive to resistor (both at y)
     connect_terminals(circuit, vsrc, 0, res, 0);
 
     // Connect resistor to LED anode
