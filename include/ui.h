@@ -121,6 +121,13 @@ typedef struct {
     float speed_value;
     bool dragging_speed;
 
+    // Time step controls
+    Button btn_timestep_up;
+    Button btn_timestep_down;
+    Button btn_timestep_auto;
+    int timestep_display_x;     // X position for time step display
+    double display_time_step;   // Current time step for display (updated from simulation)
+
     // Component palette
     PaletteItem palette_items[32];
     int num_palette_items;
@@ -319,6 +326,9 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_FFT_TOGGLE    24   // Toggle FFT view
 #define UI_ACTION_SWEEP_PANEL   25   // Toggle parametric sweep panel
 #define UI_ACTION_MONTE_CARLO   26   // Toggle Monte Carlo panel
+#define UI_ACTION_TIMESTEP_UP   29   // Increase time step
+#define UI_ACTION_TIMESTEP_DOWN 30   // Decrease time step
+#define UI_ACTION_TIMESTEP_AUTO 31   // Auto-adjust time step
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type
 #define UI_ACTION_SELECT_CIRCUIT 300 // + circuit template type

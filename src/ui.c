@@ -164,6 +164,14 @@ void ui_init(UIState *ui) {
     ui->speed_slider = (Rect){btn_x + btn_w + 30, 15, 100, 20};
     ui->speed_value = 1.0f;
 
+    // Time step controls - positioned after speed slider text
+    int ts_x = ui->speed_slider.x + 50 + ui->speed_slider.w + 60;  // After speed slider + text
+    ui->timestep_display_x = ts_x;
+    ui->btn_timestep_down = (Button){{ts_x + 55, 12, 20, 20}, "-", "Decrease time step", false, false, true, false};
+    ui->btn_timestep_up = (Button){{ts_x + 77, 12, 20, 20}, "+", "Increase time step", false, false, true, false};
+    ui->btn_timestep_auto = (Button){{ts_x + 100, 10, 40, 24}, "Auto", "Auto time step", false, false, true, false};
+    ui->display_time_step = 1e-7;  // Default 100 nanoseconds (will be updated from simulation)
+
     // Initialize palette items
     int pal_y = TOOLBAR_HEIGHT + 18;
     int pal_h = 35;
@@ -498,6 +506,7 @@ void ui_update(UIState *ui, Circuit *circuit, Simulation *sim) {
         ui->btn_run.enabled = (sim->state != SIM_RUNNING);
         ui->btn_pause.enabled = (sim->state == SIM_RUNNING);
         ui->sim_time = sim->time;
+        ui->display_time_step = sim->time_step;
     }
 
     if (circuit) {
@@ -661,6 +670,28 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     }
     SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);
     ui_draw_text(renderer, speed_text, slider_x + ui->speed_slider.w + 5, ui->speed_slider.y - 2);
+
+    // Time step label and value
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
+    ui_draw_text(renderer, "dt:", ui->timestep_display_x, 17);
+
+    // Format time step with appropriate units
+    char dt_text[24];
+    double dt = ui->display_time_step;
+    if (dt >= 1e-3) {
+        snprintf(dt_text, sizeof(dt_text), "%.1fms", dt * 1e3);
+    } else if (dt >= 1e-6) {
+        snprintf(dt_text, sizeof(dt_text), "%.1fus", dt * 1e6);
+    } else {
+        snprintf(dt_text, sizeof(dt_text), "%.0fns", dt * 1e9);
+    }
+    SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+    ui_draw_text(renderer, dt_text, ui->timestep_display_x + 24, 17);
+
+    // Time step buttons
+    draw_button(renderer, &ui->btn_timestep_down);
+    draw_button(renderer, &ui->btn_timestep_up);
+    draw_button(renderer, &ui->btn_timestep_auto);
 
     // Toolbar border
     SDL_SetRenderDrawColor(renderer, SYNTH_BORDER, 0xff);
@@ -3499,6 +3530,17 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             return UI_ACTION_LOAD;
         }
 
+        // Check time step control buttons
+        if (point_in_rect(x, y, &ui->btn_timestep_up.bounds) && ui->btn_timestep_up.enabled) {
+            return UI_ACTION_TIMESTEP_UP;
+        }
+        if (point_in_rect(x, y, &ui->btn_timestep_down.bounds) && ui->btn_timestep_down.enabled) {
+            return UI_ACTION_TIMESTEP_DOWN;
+        }
+        if (point_in_rect(x, y, &ui->btn_timestep_auto.bounds) && ui->btn_timestep_auto.enabled) {
+            return UI_ACTION_TIMESTEP_AUTO;
+        }
+
         // Check oscilloscope control buttons
         if (point_in_rect(x, y, &ui->btn_scope_volt_up.bounds) && ui->btn_scope_volt_up.enabled) {
             return UI_ACTION_SCOPE_VOLT_UP;
@@ -3750,6 +3792,9 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_clear.hovered = point_in_rect(x, y, &ui->btn_clear.bounds);
     ui->btn_save.hovered = point_in_rect(x, y, &ui->btn_save.bounds);
     ui->btn_load.hovered = point_in_rect(x, y, &ui->btn_load.bounds);
+    ui->btn_timestep_up.hovered = point_in_rect(x, y, &ui->btn_timestep_up.bounds);
+    ui->btn_timestep_down.hovered = point_in_rect(x, y, &ui->btn_timestep_down.bounds);
+    ui->btn_timestep_auto.hovered = point_in_rect(x, y, &ui->btn_timestep_auto.bounds);
 
     // Update oscilloscope button hover states
     ui->btn_scope_volt_up.hovered = point_in_rect(x, y, &ui->btn_scope_volt_up.bounds);

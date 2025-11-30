@@ -10,9 +10,9 @@
 #include "matrix.h"
 
 // Simulation configuration
-#define DEFAULT_TIME_STEP 1e-6
-#define MIN_TIME_STEP 1e-9
-#define MAX_TIME_STEP 0.01
+#define DEFAULT_TIME_STEP 1e-7    // 100 nanoseconds - good for observing transients
+#define MIN_TIME_STEP 1e-9        // 1 nanosecond minimum
+#define MAX_TIME_STEP 0.01        // 10 milliseconds maximum
 #define MAX_ITERATIONS 50
 #define CONVERGENCE_TOL 1e-9
 
