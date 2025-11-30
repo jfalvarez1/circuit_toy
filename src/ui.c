@@ -2354,6 +2354,83 @@ void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
             SDL_RenderDrawLine(renderer, x0, y0, x1, y1);
         }
 
+        // Find and draw -3dB point
+        // First, find the DC/low frequency gain (reference level)
+        double dc_gain_db = sim->freq_response[0].magnitude_db;
+        double target_db = dc_gain_db - 3.0;  // -3dB from DC gain
+        double cutoff_freq = 0;
+        bool found_cutoff = false;
+
+        // Search for the -3dB crossover point
+        for (int i = 1; i < sim->freq_response_count; i++) {
+            FreqResponsePoint *p0 = &sim->freq_response[i - 1];
+            FreqResponsePoint *p1 = &sim->freq_response[i];
+
+            // Check if the -3dB level is crossed between these points
+            if ((p0->magnitude_db >= target_db && p1->magnitude_db < target_db) ||
+                (p0->magnitude_db <= target_db && p1->magnitude_db > target_db)) {
+                // Linear interpolation to find exact crossing frequency
+                double t = (target_db - p0->magnitude_db) / (p1->magnitude_db - p0->magnitude_db);
+                // Log interpolation for frequency
+                double log_f0 = log10(p0->frequency);
+                double log_f1 = log10(p1->frequency);
+                cutoff_freq = pow(10, log_f0 + t * (log_f1 - log_f0));
+                found_cutoff = true;
+                break;
+            }
+        }
+
+        // Draw -3dB indicator if found
+        if (found_cutoff && cutoff_freq > 0) {
+            // Calculate positions
+            double x_norm = (log10(cutoff_freq) - log_start) / (log_stop - log_start);
+            int cutoff_x = r->x + (int)(x_norm * r->w);
+
+            double y_norm = 1.0 - (target_db - db_min) / db_range;
+            y_norm = fmax(0, fmin(1, y_norm));
+            int cutoff_y = r->y + (int)(y_norm * r->h);
+
+            // Draw horizontal dashed line at -3dB level (orange)
+            SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);
+            for (int x = r->x; x < cutoff_x; x += 6) {
+                int x_end = x + 3;
+                if (x_end > cutoff_x) x_end = cutoff_x;
+                SDL_RenderDrawLine(renderer, x, cutoff_y, x_end, cutoff_y);
+            }
+
+            // Draw vertical dashed line at cutoff frequency
+            for (int y = cutoff_y; y < r->y + r->h; y += 6) {
+                int y_end = y + 3;
+                if (y_end > r->y + r->h) y_end = r->y + r->h;
+                SDL_RenderDrawLine(renderer, cutoff_x, y, cutoff_x, y_end);
+            }
+
+            // Draw a marker dot at the -3dB point
+            SDL_Rect marker = {cutoff_x - 3, cutoff_y - 3, 6, 6};
+            SDL_RenderFillRect(renderer, &marker);
+
+            // Label the cutoff frequency
+            char fc_buf[32];
+            if (cutoff_freq >= 1000000) {
+                snprintf(fc_buf, sizeof(fc_buf), "fc=%.2fMHz", cutoff_freq / 1000000);
+            } else if (cutoff_freq >= 1000) {
+                snprintf(fc_buf, sizeof(fc_buf), "fc=%.2fkHz", cutoff_freq / 1000);
+            } else {
+                snprintf(fc_buf, sizeof(fc_buf), "fc=%.1fHz", cutoff_freq);
+            }
+
+            // Position label near the marker
+            int label_x = cutoff_x + 5;
+            int label_y = cutoff_y - 10;
+            if (label_x + 80 > r->x + r->w) label_x = cutoff_x - 75;
+            if (label_y < r->y) label_y = cutoff_y + 5;
+
+            ui_draw_text(renderer, fc_buf, label_x, label_y);
+
+            // Also show -3dB label
+            ui_draw_text(renderer, "-3dB", r->x + 5, cutoff_y - 10);
+        }
+
         // Phase plot (cyan)
         SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);
 
