@@ -709,112 +709,246 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
         char buf[64];
 
         switch (selected->type) {
-            case COMP_DC_VOLTAGE:
+            case COMP_DC_VOLTAGE: {
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.dc_voltage.voltage);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Voltage:", buf,
                                    editing_value, edit_buf, cursor);
                 ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 ui->properties[ui->num_properties].prop_type = PROP_VALUE;
                 ui->num_properties++;
-                break;
+                prop_y += 18;
 
-            case COMP_AC_VOLTAGE:
+                // Model mode toggle
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.dc_voltage.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Non-ideal parameters (internal resistance)
+                if (!selected->props.dc_voltage.ideal) {
+                    bool edit_rs = input && input->editing_property && input->editing_prop_type == PROP_R_SERIES;
+                    format_engineering(selected->props.dc_voltage.r_series, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R_series:", buf, edit_rs, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_R_SERIES;
+                    ui->num_properties++;
+                }
+                break;
+            }
+
+            case COMP_AC_VOLTAGE: {
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.ac_voltage.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[0].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[0].prop_type = PROP_VALUE;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.ac_voltage.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
-                ui->properties[1].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[1].prop_type = PROP_FREQUENCY;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.1f deg", selected->props.ac_voltage.phase);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Phase:", buf,
                                    editing_phase, edit_buf, cursor);
-                ui->properties[2].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[2].prop_type = PROP_PHASE;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_PHASE;
+                ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.ac_voltage.offset);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Offset:", buf,
                                    editing_offset, edit_buf, cursor);
-                ui->properties[3].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[3].prop_type = PROP_OFFSET;
-                ui->num_properties = 4;
-                break;
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_OFFSET;
+                ui->num_properties++;
+                prop_y += 18;
 
-            case COMP_DC_CURRENT:
+                // Model mode toggle
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.ac_voltage.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Non-ideal parameters (internal resistance)
+                if (!selected->props.ac_voltage.ideal) {
+                    bool edit_rs = input && input->editing_property && input->editing_prop_type == PROP_R_SERIES;
+                    format_engineering(selected->props.ac_voltage.r_series, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R_series:", buf, edit_rs, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_R_SERIES;
+                    ui->num_properties++;
+                }
+                break;
+            }
+
+            case COMP_DC_CURRENT: {
                 snprintf(buf, sizeof(buf), "%.3g A", selected->props.dc_current.current);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Current:", buf,
                                    editing_value, edit_buf, cursor);
                 ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 ui->properties[ui->num_properties].prop_type = PROP_VALUE;
                 ui->num_properties++;
-                break;
+                prop_y += 18;
 
-            case COMP_RESISTOR:
+                // Model mode toggle
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.dc_current.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Non-ideal parameters (internal parallel resistance)
+                if (!selected->props.dc_current.ideal) {
+                    bool edit_rp = input && input->editing_property && input->editing_prop_type == PROP_R_PARALLEL;
+                    format_engineering(selected->props.dc_current.r_parallel, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R_parallel:", buf, edit_rp, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_R_PARALLEL;
+                    ui->num_properties++;
+                }
+                break;
+            }
+
+            case COMP_RESISTOR: {
                 snprintf(buf, sizeof(buf), "%.3g Ohm", selected->props.resistor.resistance);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Resistance:", buf,
                                    editing_value, edit_buf, cursor);
                 ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 ui->properties[ui->num_properties].prop_type = PROP_VALUE;
                 ui->num_properties++;
-
-                // Tolerance (read-only display for now)
                 prop_y += 18;
+
+                // Model mode toggle
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.resistor.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Non-ideal parameters (temperature effects)
+                if (!selected->props.resistor.ideal) {
+                    bool edit_tc = input && input->editing_property && input->editing_prop_type == PROP_TEMP_COEFF;
+                    snprintf(buf, sizeof(buf), "%.0f ppm/C", selected->props.resistor.temp_coeff);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Temp Coef:", buf, edit_tc, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_TEMP_COEFF;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+
+                // Tolerance
                 SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
                 ui_draw_text(renderer, "Tolerance:", x + 10, prop_y + 2);
-                SDL_SetRenderDrawColor(renderer, 0x80, 0xff, 0x80, 0xff);
+                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
                 snprintf(buf, sizeof(buf), "%.1f%%", selected->props.resistor.tolerance);
                 ui_draw_text(renderer, buf, x + 100, prop_y + 2);
-
-                // Power rating
                 prop_y += 18;
-                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Pwr Rating:", x + 10, prop_y + 2);
-                SDL_SetRenderDrawColor(renderer, 0x80, 0xff, 0x80, 0xff);
-                snprintf(buf, sizeof(buf), "%.2fW", selected->props.resistor.power_rating);
-                ui_draw_text(renderer, buf, x + 100, prop_y + 2);
 
-                // Power dissipated (calculated)
-                prop_y += 18;
+                // Power dissipated
                 SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Pwr Used:", x + 10, prop_y + 2);
+                ui_draw_text(renderer, "Power:", x + 10, prop_y + 2);
                 double pwr_ratio = selected->props.resistor.power_dissipated / selected->props.resistor.power_rating;
-                if (pwr_ratio > 1.0) {
-                    SDL_SetRenderDrawColor(renderer, 0xff, 0x40, 0x40, 0xff);  // Red - overheating
-                } else if (pwr_ratio > 0.8) {
-                    SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);  // Orange - warning
-                } else {
-                    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);  // Green - OK
-                }
-                snprintf(buf, sizeof(buf), "%.3fW (%.0f%%)", selected->props.resistor.power_dissipated,
-                         pwr_ratio * 100);
+                if (pwr_ratio > 1.0) SDL_SetRenderDrawColor(renderer, 0xff, 0x40, 0x40, 0xff);
+                else if (pwr_ratio > 0.8) SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);
+                else SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                snprintf(buf, sizeof(buf), "%.2fW/%.2fW", selected->props.resistor.power_dissipated, selected->props.resistor.power_rating);
                 ui_draw_text(renderer, buf, x + 100, prop_y + 2);
                 break;
+            }
 
-            case COMP_CAPACITOR:
+            case COMP_CAPACITOR: {
                 snprintf(buf, sizeof(buf), "%.3g F", selected->props.capacitor.capacitance);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Capacitance:", buf,
                                    editing_value, edit_buf, cursor);
                 ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 ui->properties[ui->num_properties].prop_type = PROP_VALUE;
                 ui->num_properties++;
-                break;
+                prop_y += 18;
 
-            case COMP_INDUCTOR:
+                // Model mode toggle
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.capacitor.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Non-ideal parameters (ESR, leakage)
+                if (!selected->props.capacitor.ideal) {
+                    bool edit_esr = input && input->editing_property && input->editing_prop_type == PROP_ESR;
+                    format_engineering(selected->props.capacitor.esr, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "ESR:", buf, edit_esr, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_ESR;
+                    ui->num_properties++;
+                    prop_y += 18;
+
+                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                    format_engineering(selected->props.capacitor.leakage, "Ohm", buf, sizeof(buf));
+                    ui_draw_text(renderer, "Leakage:", x + 10, prop_y + 2);
+                    ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                }
+                break;
+            }
+
+            case COMP_INDUCTOR: {
                 snprintf(buf, sizeof(buf), "%.3g H", selected->props.inductor.inductance);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Inductance:", buf,
                                    editing_value, edit_buf, cursor);
                 ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 ui->properties[ui->num_properties].prop_type = PROP_VALUE;
                 ui->num_properties++;
+                prop_y += 18;
+
+                // Model mode toggle
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.inductor.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Non-ideal parameters (DCR)
+                if (!selected->props.inductor.ideal) {
+                    bool edit_dcr = input && input->editing_property && input->editing_prop_type == PROP_DCR;
+                    format_engineering(selected->props.inductor.dcr, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "DCR:", buf, edit_dcr, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_DCR;
+                    ui->num_properties++;
+                    prop_y += 18;
+
+                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                    snprintf(buf, sizeof(buf), "%.2f A", selected->props.inductor.i_sat);
+                    ui_draw_text(renderer, "I_sat:", x + 10, prop_y + 2);
+                    ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                }
                 break;
+            }
 
             case COMP_SQUARE_WAVE:
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.square_wave.amplitude);
@@ -880,6 +1014,234 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui->num_properties++;
                 break;
 
+            case COMP_DIODE: {
+                // Model mode toggle
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.diode.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                if (!selected->props.diode.ideal) {
+                    // Saturation current
+                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                    format_engineering(selected->props.diode.is, "A", buf, sizeof(buf));
+                    ui_draw_text(renderer, "Is:", x + 10, prop_y + 2);
+                    ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                    prop_y += 14;
+
+                    // Ideality factor
+                    snprintf(buf, sizeof(buf), "n=%.2f", selected->props.diode.n);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                    prop_y += 14;
+
+                    // Breakdown voltage (editable)
+                    bool edit_bv = input && input->editing_property && input->editing_prop_type == PROP_BV;
+                    snprintf(buf, sizeof(buf), "%.1f V", selected->props.diode.bv);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "BV:", buf, edit_bv, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_BV;
+                    ui->num_properties++;
+                }
+                break;
+            }
+
+            case COMP_ZENER: {
+                // Zener voltage (editable)
+                bool edit_vz = input && input->editing_property && input->editing_prop_type == PROP_VZ;
+                snprintf(buf, sizeof(buf), "%.2f V", selected->props.zener.vz);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Vz:", buf, edit_vz, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VZ;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Model mode toggle
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.zener.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                if (!selected->props.zener.ideal) {
+                    // Zener impedance (editable)
+                    bool edit_rz = input && input->editing_property && input->editing_prop_type == PROP_RZ;
+                    format_engineering(selected->props.zener.rz, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Rz:", buf, edit_rz, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_RZ;
+                    ui->num_properties++;
+                    prop_y += 18;
+
+                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                    format_engineering(selected->props.zener.is, "A", buf, sizeof(buf));
+                    ui_draw_text(renderer, "Is:", x + 10, prop_y + 2);
+                    ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                }
+                break;
+            }
+
+            case COMP_SCHOTTKY: {
+                // Forward voltage (editable)
+                bool edit_vf = input && input->editing_property && input->editing_prop_type == PROP_LED_VF;
+                snprintf(buf, sizeof(buf), "%.2f V", selected->props.schottky.vf);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Vf:", buf, edit_vf, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_LED_VF;  // Reuse LED_VF for forward voltage
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Model mode toggle
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.schottky.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                if (!selected->props.schottky.ideal) {
+                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                    format_engineering(selected->props.schottky.is, "A", buf, sizeof(buf));
+                    ui_draw_text(renderer, "Is:", x + 10, prop_y + 2);
+                    ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                    prop_y += 14;
+                    snprintf(buf, sizeof(buf), "n=%.2f", selected->props.schottky.n);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                }
+                break;
+            }
+
+            case COMP_CAPACITOR_ELEC: {
+                snprintf(buf, sizeof(buf), "%.3g F", selected->props.capacitor_elec.capacitance);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Capacitance:", buf,
+                                   editing_value, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Max voltage (editable)
+                bool edit_vmax = input && input->editing_property && input->editing_prop_type == PROP_MAX_VOLTAGE;
+                snprintf(buf, sizeof(buf), "%.1f V", selected->props.capacitor_elec.max_voltage);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Max Voltage:", buf, edit_vmax, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_MAX_VOLTAGE;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Model mode toggle
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.capacitor_elec.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                if (!selected->props.capacitor_elec.ideal) {
+                    bool edit_esr = input && input->editing_property && input->editing_prop_type == PROP_ESR;
+                    format_engineering(selected->props.capacitor_elec.esr, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "ESR:", buf, edit_esr, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_ESR;
+                    ui->num_properties++;
+                }
+                break;
+            }
+
+            case COMP_OPAMP: {
+                // Open-loop gain (editable)
+                bool edit_gain = input && input->editing_property && input->editing_prop_type == PROP_OPAMP_GAIN;
+                format_engineering(selected->props.opamp.gain, "", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "A_OL:", buf, edit_gain, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_OPAMP_GAIN;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Model mode toggle
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.opamp.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_OPAMP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Rail voltages (editable)
+                bool edit_vmax = input && input->editing_property && input->editing_prop_type == PROP_OPAMP_VMAX;
+                snprintf(buf, sizeof(buf), "%.1f V", selected->props.opamp.vmax);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "V+:", buf, edit_vmax, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_OPAMP_VMAX;
+                ui->num_properties++;
+                prop_y += 18;
+
+                bool edit_vmin = input && input->editing_property && input->editing_prop_type == PROP_OPAMP_VMIN;
+                snprintf(buf, sizeof(buf), "%.1f V", selected->props.opamp.vmin);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "V-:", buf, edit_vmin, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_OPAMP_VMIN;
+                ui->num_properties++;
+                prop_y += 18;
+
+                if (!selected->props.opamp.ideal) {
+                    // GBW (editable)
+                    bool edit_gbw = input && input->editing_property && input->editing_prop_type == PROP_OPAMP_GBW;
+                    format_engineering(selected->props.opamp.gbw, "Hz", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "GBW:", buf, edit_gbw, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_OPAMP_GBW;
+                    ui->num_properties++;
+                    prop_y += 18;
+
+                    // Slew rate (editable)
+                    bool edit_slew = input && input->editing_property && input->editing_prop_type == PROP_OPAMP_SLEW;
+                    snprintf(buf, sizeof(buf), "%.2f V/us", selected->props.opamp.slew_rate);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Slew:", buf, edit_slew, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_OPAMP_SLEW;
+                    ui->num_properties++;
+                    prop_y += 18;
+
+                    // Input/output impedance (read-only display)
+                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                    format_engineering(selected->props.opamp.r_in, "Ohm", buf, sizeof(buf));
+                    ui_draw_text(renderer, "Rin:", x + 10, prop_y + 2);
+                    ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                    prop_y += 14;
+
+                    format_engineering(selected->props.opamp.r_out, "Ohm", buf, sizeof(buf));
+                    ui_draw_text(renderer, "Rout:", x + 10, prop_y + 2);
+                    ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                    prop_y += 14;
+
+                    snprintf(buf, sizeof(buf), "CMRR: %.0f dB", selected->props.opamp.cmrr);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                }
+
+                // Rail-to-rail toggle
+                prop_y += 18;
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "R2R:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.opamp.rail_to_rail ? "[Yes]" : "[No]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_OPAMP_R2R;
+                ui->num_properties++;
+                break;
+            }
+
             case COMP_LED: {
                 // Color selector (click to cycle through presets)
                 double wl = selected->props.led.wavelength;
@@ -909,6 +1271,16 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
                 snprintf(buf, sizeof(buf), "(%.0f nm)", wl);
                 ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                prop_y += 18;
+
+                // Model mode toggle
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.led.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
                 prop_y += 18;
 
                 // Forward voltage (editable)

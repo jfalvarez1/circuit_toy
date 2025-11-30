@@ -24,77 +24,153 @@ static const ComponentTypeInfo component_info[] = {
         "DC Voltage", "V", 2,
         {{ 0, -40, "+" }, { 0, 40, "-" }},
         40, 80,
-        { .dc_voltage = { 5.0 } }
+        { .dc_voltage = {
+            .voltage = 5.0,
+            .r_series = 0.001,
+            .ideal = true
+        }}
     },
 
     [COMP_AC_VOLTAGE] = {
         "AC Voltage", "~V", 2,
         {{ 0, -40, "+" }, { 0, 40, "-" }},
         40, 80,
-        { .ac_voltage = { 5.0, 60.0, 0.0, 0.0 } }
+        { .ac_voltage = {
+            .amplitude = 5.0,
+            .frequency = 60.0,
+            .phase = 0.0,
+            .offset = 0.0,
+            .r_series = 0.001,
+            .ideal = true
+        }}
     },
 
     [COMP_DC_CURRENT] = {
         "DC Current", "I", 2,
         {{ 0, -40, "+" }, { 0, 40, "-" }},
         40, 80,
-        { .dc_current = { 0.001 } }
+        { .dc_current = {
+            .current = 0.001,
+            .r_parallel = 1e9,
+            .ideal = true
+        }}
     },
 
     [COMP_RESISTOR] = {
         "Resistor", "R", 2,
         {{ -40, 0, "1" }, { 40, 0, "2" }},
         80, 20,
-        { .resistor = { 1000.0, 5.0, 0.25, 0.0 } }  // 1k, 5% tolerance, 1/4W rating, 0W dissipated
+        { .resistor = {
+            .resistance = 1000.0,
+            .tolerance = 5.0,
+            .power_rating = 0.25,
+            .power_dissipated = 0.0,
+            .temp_coeff = 100.0,    // 100 ppm/°C (typical for carbon film)
+            .temp = 25.0,           // Room temperature
+            .ideal = true
+        }}
     },
 
     [COMP_CAPACITOR] = {
         "Capacitor", "C", 2,
         {{ -40, 0, "1" }, { 40, 0, "2" }},
         80, 30,
-        { .capacitor = { 1e-6, 0.0 } }
+        { .capacitor = {
+            .capacitance = 1e-6,
+            .voltage = 0.0,
+            .esr = 0.01,            // 10 mOhm ESR
+            .esl = 1e-9,            // 1 nH ESL
+            .leakage = 1e9,         // 1 GOhm leakage
+            .ideal = true
+        }}
     },
 
     [COMP_CAPACITOR_ELEC] = {
         "Electrolytic Cap", "Ce", 2,
         {{ -40, 0, "+" }, { 40, 0, "-" }},
         80, 30,
-        { .capacitor_elec = { 100e-6, 0.0, 25.0 } }  // 100uF, 25V max
+        { .capacitor_elec = {
+            .capacitance = 100e-6,
+            .voltage = 0.0,
+            .max_voltage = 25.0,
+            .esr = 0.1,             // Higher ESR for electrolytics
+            .leakage = 1e6,         // Lower leakage resistance
+            .ideal = true
+        }}
     },
 
     [COMP_INDUCTOR] = {
         "Inductor", "L", 2,
         {{ -40, 0, "1" }, { 40, 0, "2" }},
         80, 20,
-        { .inductor = { 1e-3, 0.0 } }
+        { .inductor = {
+            .inductance = 1e-3,
+            .current = 0.0,
+            .dcr = 0.1,             // 100 mOhm DC resistance
+            .r_parallel = 1e6,      // Core loss resistance
+            .i_sat = 1.0,           // 1A saturation current
+            .ideal = true
+        }}
     },
 
     [COMP_DIODE] = {
         "Diode", "D", 2,
         {{ -40, 0, "A" }, { 40, 0, "K" }},
         80, 20,
-        { .diode = { 1e-12, 0.026, 1.0 } }  // Is=1pA, Vt=26mV, n=1
+        { .diode = {
+            .is = 1e-12,            // 1 pA saturation current
+            .vt = 0.026,            // 26 mV thermal voltage
+            .n = 1.0,               // Ideality factor
+            .bv = 100.0,            // 100V reverse breakdown
+            .ibv = 1e-10,           // Breakdown current
+            .cjo = 1e-12,           // 1 pF junction capacitance
+            .ideal = true
+        }}
     },
 
     [COMP_ZENER] = {
         "Zener Diode", "DZ", 2,
         {{ -40, 0, "A" }, { 40, 0, "K" }},
         80, 20,
-        { .zener = { 1e-12, 0.026, 1.0, 5.1 } }  // 5.1V Zener
+        { .zener = {
+            .is = 1e-12,
+            .vt = 0.026,
+            .n = 1.0,
+            .vz = 5.1,              // 5.1V Zener voltage
+            .rz = 5.0,              // 5 Ohm Zener impedance
+            .iz_test = 5e-3,        // 5 mA test current
+            .ideal = true
+        }}
     },
 
     [COMP_SCHOTTKY] = {
         "Schottky Diode", "DS", 2,
         {{ -40, 0, "A" }, { 40, 0, "K" }},
         80, 20,
-        { .schottky = { 1e-8, 0.026, 1.05 } }  // Lower Vf (~0.3V)
+        { .schottky = {
+            .is = 1e-8,             // Higher saturation current
+            .vt = 0.026,
+            .n = 1.05,              // Slightly higher ideality
+            .vf = 0.3,              // 0.3V typical forward voltage
+            .cjo = 5e-12,           // 5 pF junction capacitance
+            .ideal = true
+        }}
     },
 
     [COMP_LED] = {
         "LED", "LED", 2,
         {{ -40, 0, "A" }, { 40, 0, "K" }},
         80, 20,
-        { .led = { 1e-20, 0.026, 2.0, 2.0, 0.020, 620, 0 } }  // Red LED: Vf=2.0V, Imax=20mA, 620nm
+        { .led = {
+            .is = 1e-20,
+            .vt = 0.026,
+            .n = 2.0,               // Higher ideality for LED
+            .vf = 2.0,              // 2.0V forward voltage (red)
+            .max_current = 0.020,   // 20 mA max
+            .wavelength = 620,      // Red (620 nm)
+            .current = 0.0,
+            .ideal = true
+        }}
     },
 
     [COMP_NPN_BJT] = {
@@ -177,7 +253,20 @@ static const ComponentTypeInfo component_info[] = {
         "Op-Amp", "U", 3,
         {{ -40, -20, "-" }, { -40, 20, "+" }, { 40, 0, "OUT" }},
         80, 60,
-        { .opamp = { 100000.0, 0.0, 15.0, -15.0 } }
+        { .opamp = {
+            .gain = 100000.0,       // 100 dB open-loop gain
+            .voffset = 0.0,         // No input offset
+            .vmax = 15.0,           // +15V rail
+            .vmin = -15.0,          // -15V rail
+            .gbw = 1e6,             // 1 MHz gain-bandwidth product
+            .slew_rate = 0.5,       // 0.5 V/us slew rate
+            .r_in = 1e12,           // 1 TOhm input impedance
+            .r_out = 75.0,          // 75 Ohm output impedance
+            .i_bias = 1e-12,        // 1 pA input bias current
+            .cmrr = 90.0,           // 90 dB CMRR
+            .rail_to_rail = false,  // Not rail-to-rail
+            .ideal = true           // Ideal mode by default
+        }}
     },
 
     // Waveform generators
@@ -185,28 +274,58 @@ static const ComponentTypeInfo component_info[] = {
         "Square Wave", "SQ", 2,
         {{ 0, -40, "+" }, { 0, 40, "-" }},
         40, 80,
-        { .square_wave = { 5.0, 1000.0, 0.0, 0.0, 0.5 } }  // 5V, 1kHz, 50% duty
+        { .square_wave = {
+            .amplitude = 5.0,
+            .frequency = 1000.0,
+            .phase = 0.0,
+            .offset = 0.0,
+            .duty = 0.5,
+            .rise_time = 1e-9,
+            .fall_time = 1e-9,
+            .r_series = 0.001,
+            .ideal = true
+        }}
     },
 
     [COMP_TRIANGLE_WAVE] = {
         "Triangle Wave", "TRI", 2,
         {{ 0, -40, "+" }, { 0, 40, "-" }},
         40, 80,
-        { .triangle_wave = { 5.0, 1000.0, 0.0, 0.0 } }  // 5V, 1kHz
+        { .triangle_wave = {
+            .amplitude = 5.0,
+            .frequency = 1000.0,
+            .phase = 0.0,
+            .offset = 0.0,
+            .r_series = 0.001,
+            .ideal = true
+        }}
     },
 
     [COMP_SAWTOOTH_WAVE] = {
         "Sawtooth Wave", "SAW", 2,
         {{ 0, -40, "+" }, { 0, 40, "-" }},
         40, 80,
-        { .sawtooth_wave = { 5.0, 1000.0, 0.0, 0.0 } }  // 5V, 1kHz
+        { .sawtooth_wave = {
+            .amplitude = 5.0,
+            .frequency = 1000.0,
+            .phase = 0.0,
+            .offset = 0.0,
+            .r_series = 0.001,
+            .ideal = true
+        }}
     },
 
     [COMP_NOISE_SOURCE] = {
         "Noise Source", "N", 2,
         {{ 0, -40, "+" }, { 0, 40, "-" }},
         40, 80,
-        { .noise_source = { 1.0, 12345 } }  // 1V amplitude, seed
+        { .noise_source = {
+            .amplitude = 1.0,
+            .seed = 12345,
+            .bandwidth = 1e6,
+            .r_series = 0.001,
+            .ideal = true
+        }}
     },
 };
 

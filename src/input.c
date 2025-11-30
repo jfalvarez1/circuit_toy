@@ -961,6 +961,9 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                 case COMP_CAPACITOR:
                     if (value > 0) { comp->props.capacitor.capacitance = value; applied = true; }
                     break;
+                case COMP_CAPACITOR_ELEC:
+                    if (value > 0) { comp->props.capacitor_elec.capacitance = value; applied = true; }
+                    break;
                 case COMP_INDUCTOR:
                     if (value > 0) { comp->props.inductor.inductance = value; applied = true; }
                     break;
@@ -1228,7 +1231,133 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             }
             break;
 
+        // Source internal resistance
+        case PROP_R_SERIES:
+            if (value >= 0 && value <= 1e9) {
+                if (comp->type == COMP_DC_VOLTAGE) {
+                    comp->props.dc_voltage.r_series = value;
+                    applied = true;
+                } else if (comp->type == COMP_AC_VOLTAGE) {
+                    comp->props.ac_voltage.r_series = value;
+                    applied = true;
+                }
+            }
+            break;
+
+        case PROP_R_PARALLEL:
+            if (comp->type == COMP_DC_CURRENT && value > 0 && value <= 1e12) {
+                comp->props.dc_current.r_parallel = value;
+                applied = true;
+            }
+            break;
+
+        // Resistor temperature coefficient
+        case PROP_TEMP_COEFF:
+            if (comp->type == COMP_RESISTOR && value >= -10000 && value <= 100000) {
+                comp->props.resistor.temp_coeff = value;
+                applied = true;
+            }
+            break;
+
+        // Capacitor ESR
+        case PROP_ESR:
+            if (value >= 0 && value <= 1e6) {
+                if (comp->type == COMP_CAPACITOR) {
+                    comp->props.capacitor.esr = value;
+                    applied = true;
+                } else if (comp->type == COMP_CAPACITOR_ELEC) {
+                    comp->props.capacitor_elec.esr = value;
+                    applied = true;
+                }
+            }
+            break;
+
+        // Inductor DCR
+        case PROP_DCR:
+            if (comp->type == COMP_INDUCTOR && value >= 0 && value <= 1e6) {
+                comp->props.inductor.dcr = value;
+                applied = true;
+            }
+            break;
+
+        // Diode breakdown voltage
+        case PROP_BV:
+            if (comp->type == COMP_DIODE && value > 0 && value <= 10000) {
+                comp->props.diode.bv = value;
+                applied = true;
+            }
+            break;
+
+        // Zener parameters
+        case PROP_VZ:
+            if (comp->type == COMP_ZENER && value > 0 && value <= 1000) {
+                comp->props.zener.vz = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_RZ:
+            if (comp->type == COMP_ZENER && value >= 0 && value <= 1e6) {
+                comp->props.zener.rz = value;
+                applied = true;
+            }
+            break;
+
+        // Electrolytic capacitor max voltage
+        case PROP_MAX_VOLTAGE:
+            if (comp->type == COMP_CAPACITOR_ELEC && value > 0 && value <= 10000) {
+                comp->props.capacitor_elec.max_voltage = value;
+                applied = true;
+            }
+            break;
+
+        // Op-Amp parameters
+        case PROP_OPAMP_GAIN:
+            if (comp->type == COMP_OPAMP && value > 0 && value <= 1e12) {
+                comp->props.opamp.gain = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_OPAMP_GBW:
+            if (comp->type == COMP_OPAMP && value > 0 && value <= 1e12) {
+                comp->props.opamp.gbw = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_OPAMP_SLEW:
+            if (comp->type == COMP_OPAMP && value > 0 && value <= 1e6) {
+                comp->props.opamp.slew_rate = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_OPAMP_VMAX:
+            if (comp->type == COMP_OPAMP && value >= -1000 && value <= 1000) {
+                comp->props.opamp.vmax = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_OPAMP_VMIN:
+            if (comp->type == COMP_OPAMP && value >= -1000 && value <= 1000) {
+                comp->props.opamp.vmin = value;
+                applied = true;
+            }
+            break;
+
+        // Also handle Schottky Vf using LED_VF property type
+        // (already handled in PROP_LED_VF - but we need schottky handling)
+
         default:
+            // Handle special cases for reused property types
+            if (input->editing_prop_type == PROP_LED_VF && comp->type == COMP_SCHOTTKY) {
+                if (value > 0 && value <= 10) {
+                    comp->props.schottky.vf = value;
+                    applied = true;
+                }
+            }
             break;
     }
 

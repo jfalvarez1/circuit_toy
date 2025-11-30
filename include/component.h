@@ -20,17 +20,114 @@ typedef struct {
 
 // Component properties union
 typedef union {
-    struct { double voltage; } dc_voltage;
-    struct { double amplitude; double frequency; double phase; double offset; } ac_voltage;
-    struct { double current; } dc_current;
-    struct { double resistance; double tolerance; double power_rating; double power_dissipated; } resistor;
-    struct { double capacitance; double voltage; } capacitor;  // voltage = state
-    struct { double capacitance; double voltage; double max_voltage; } capacitor_elec;  // Electrolytic
-    struct { double inductance; double current; } inductor;    // current = state
-    struct { double is; double vt; double n; } diode;
-    struct { double is; double vt; double n; double vz; } zener;  // vz = breakdown voltage
-    struct { double is; double vt; double n; } schottky;       // Lower Vf than standard diode
-    struct { double is; double vt; double n; double vf; double max_current; double wavelength; double current; } led;  // vf=forward voltage, wavelength in nm for color
+    // DC Voltage Source
+    struct {
+        double voltage;         // Output voltage (V)
+        double r_series;        // Internal series resistance (Ohm), default: 0.001
+        bool ideal;             // Ideal mode (zero internal resistance)
+    } dc_voltage;
+
+    // AC Voltage Source
+    struct {
+        double amplitude;       // Peak amplitude (V)
+        double frequency;       // Frequency (Hz)
+        double phase;           // Phase (degrees)
+        double offset;          // DC offset (V)
+        double r_series;        // Internal series resistance (Ohm), default: 0.001
+        bool ideal;             // Ideal mode (zero internal resistance)
+    } ac_voltage;
+
+    // DC Current Source
+    struct {
+        double current;         // Output current (A)
+        double r_parallel;      // Internal parallel resistance (Ohm), default: 1e9
+        bool ideal;             // Ideal mode (infinite internal resistance)
+    } dc_current;
+
+    // Resistor
+    struct {
+        double resistance;      // Resistance (Ohm)
+        double tolerance;       // Tolerance (%)
+        double power_rating;    // Max power dissipation (W)
+        double power_dissipated; // Current power dissipation (W)
+        double temp_coeff;      // Temperature coefficient (ppm/°C), default: 100
+        double temp;            // Operating temperature (°C), default: 25
+        bool ideal;             // Ideal mode (no temperature effects)
+    } resistor;
+
+    // Capacitor
+    struct {
+        double capacitance;     // Capacitance (F)
+        double voltage;         // Current voltage (state variable)
+        double esr;             // Equivalent Series Resistance (Ohm), default: 0.01
+        double esl;             // Equivalent Series Inductance (H), default: 1e-9
+        double leakage;         // Leakage resistance (Ohm), default: 1e9
+        bool ideal;             // Ideal mode (no parasitics)
+    } capacitor;
+
+    // Electrolytic Capacitor
+    struct {
+        double capacitance;     // Capacitance (F)
+        double voltage;         // Current voltage (state variable)
+        double max_voltage;     // Voltage rating (V)
+        double esr;             // ESR (Ohm), typically higher than film caps
+        double leakage;         // Leakage resistance (Ohm)
+        bool ideal;             // Ideal mode
+    } capacitor_elec;
+
+    // Inductor
+    struct {
+        double inductance;      // Inductance (H)
+        double current;         // Current (state variable)
+        double dcr;             // DC resistance (Ohm), default: 0.1
+        double r_parallel;      // Parallel resistance for core losses (Ohm), default: 1e6
+        double i_sat;           // Saturation current (A), default: 1.0
+        bool ideal;             // Ideal mode (no DCR, no saturation)
+    } inductor;
+
+    // Standard Diode
+    struct {
+        double is;              // Saturation current (A)
+        double vt;              // Thermal voltage (V), ~0.026 at room temp
+        double n;               // Ideality factor
+        double bv;              // Reverse breakdown voltage (V), default: 100
+        double ibv;             // Current at breakdown (A), default: 1e-10
+        double cjo;             // Zero-bias junction capacitance (F), default: 1e-12
+        bool ideal;             // Ideal mode (simple Vf drop)
+    } diode;
+
+    // Zener Diode
+    struct {
+        double is;              // Saturation current (A)
+        double vt;              // Thermal voltage (V)
+        double n;               // Ideality factor
+        double vz;              // Zener breakdown voltage (V)
+        double rz;              // Zener impedance (Ohm), default: 5
+        double iz_test;         // Test current for Vz (A), default: 5e-3
+        bool ideal;             // Ideal mode (perfect clamping at Vz)
+    } zener;
+
+    // Schottky Diode
+    struct {
+        double is;              // Saturation current (A) - typically higher than Si
+        double vt;              // Thermal voltage (V)
+        double n;               // Ideality factor - typically 1.0-1.1
+        double vf;              // Typical forward voltage (V), default: 0.3
+        double cjo;             // Junction capacitance (F)
+        bool ideal;             // Ideal mode
+    } schottky;
+
+    // LED
+    struct {
+        double is;              // Saturation current (A)
+        double vt;              // Thermal voltage (V)
+        double n;               // Ideality factor
+        double vf;              // Forward voltage (V)
+        double max_current;     // Maximum forward current (A)
+        double wavelength;      // Wavelength (nm) for color
+        double current;         // Actual current (calculated)
+        bool ideal;             // Ideal mode (fixed Vf drop)
+    } led;
     // BJT transistor (NPN/PNP) - Gummel-Poon model parameters
     struct {
         // Basic DC parameters
@@ -78,12 +175,59 @@ typedef union {
         // Mode
         bool ideal;        // Use ideal (simplified) model, default: true
     } mosfet;
-    struct { double gain; double voffset; double vmax; double vmin; } opamp;
+    // Op-Amp
+    struct {
+        double gain;            // Open-loop DC gain, default: 100000 (100dB)
+        double voffset;         // Input offset voltage (V), default: 0
+        double vmax;            // Positive rail voltage (V), default: 15
+        double vmin;            // Negative rail voltage (V), default: -15
+        double gbw;             // Gain-bandwidth product (Hz), default: 1e6
+        double slew_rate;       // Slew rate (V/us), default: 0.5
+        double r_in;            // Input impedance (Ohm), default: 1e12
+        double r_out;           // Output impedance (Ohm), default: 75
+        double i_bias;          // Input bias current (A), default: 1e-12
+        double cmrr;            // Common-mode rejection ratio (dB), default: 90
+        bool rail_to_rail;      // Rail-to-rail output capability
+        bool ideal;             // Ideal mode (infinite gain, bandwidth, etc.)
+    } opamp;
     // Waveform generators
-    struct { double amplitude; double frequency; double phase; double offset; double duty; } square_wave;
-    struct { double amplitude; double frequency; double phase; double offset; } triangle_wave;
-    struct { double amplitude; double frequency; double phase; double offset; } sawtooth_wave;
-    struct { double amplitude; double seed; } noise_source;
+    struct {
+        double amplitude;       // Peak amplitude (V)
+        double frequency;       // Frequency (Hz)
+        double phase;           // Phase (degrees)
+        double offset;          // DC offset (V)
+        double duty;            // Duty cycle (0-1)
+        double rise_time;       // Rise time (s), default: 1e-9
+        double fall_time;       // Fall time (s), default: 1e-9
+        double r_series;        // Output resistance (Ohm)
+        bool ideal;             // Ideal mode (zero rise/fall, zero output R)
+    } square_wave;
+
+    struct {
+        double amplitude;       // Peak amplitude (V)
+        double frequency;       // Frequency (Hz)
+        double phase;           // Phase (degrees)
+        double offset;          // DC offset (V)
+        double r_series;        // Output resistance (Ohm)
+        bool ideal;             // Ideal mode
+    } triangle_wave;
+
+    struct {
+        double amplitude;       // Peak amplitude (V)
+        double frequency;       // Frequency (Hz)
+        double phase;           // Phase (degrees)
+        double offset;          // DC offset (V)
+        double r_series;        // Output resistance (Ohm)
+        bool ideal;             // Ideal mode
+    } sawtooth_wave;
+
+    struct {
+        double amplitude;       // RMS amplitude (V)
+        double seed;            // Random seed
+        double bandwidth;       // Noise bandwidth (Hz), default: 1e6
+        double r_series;        // Output resistance (Ohm)
+        bool ideal;             // Ideal mode
+    } noise_source;
 } ComponentProps;
 
 // Component structure

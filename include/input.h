@@ -27,12 +27,39 @@ typedef enum {
     PROP_OFFSET,
     PROP_DUTY,
     PROP_AMPLITUDE,
+    PROP_IDEAL,         // Generic ideal mode toggle
+
+    // Source parameters
+    PROP_R_SERIES,      // Internal series resistance
+    PROP_R_PARALLEL,    // Internal parallel resistance
+
+    // Resistor parameters
+    PROP_TEMP_COEFF,    // Temperature coefficient
+    PROP_TEMP,          // Operating temperature
+
+    // Capacitor parameters
+    PROP_ESR,           // Equivalent Series Resistance
+    PROP_ESL,           // Equivalent Series Inductance
+    PROP_LEAKAGE,       // Leakage resistance
+    PROP_MAX_VOLTAGE,   // Voltage rating
+
+    // Inductor parameters
+    PROP_DCR,           // DC resistance
+    PROP_I_SAT,         // Saturation current
+
+    // Diode parameters
+    PROP_BV,            // Reverse breakdown voltage
+    PROP_CJO,           // Junction capacitance
+    PROP_VZ,            // Zener voltage
+    PROP_RZ,            // Zener impedance
+
     // BJT parameters
     PROP_BJT_BETA,      // Forward current gain (BF)
     PROP_BJT_IS,        // Saturation current
     PROP_BJT_VAF,       // Early voltage
     PROP_BJT_NF,        // Forward emission coefficient
     PROP_BJT_IDEAL,     // Ideal mode toggle
+
     // MOSFET parameters
     PROP_MOS_VTH,       // Threshold voltage
     PROP_MOS_KP,        // Transconductance parameter
@@ -40,10 +67,26 @@ typedef enum {
     PROP_MOS_W,         // Channel width
     PROP_MOS_L,         // Channel length
     PROP_MOS_IDEAL,     // Ideal mode toggle
+
     // LED parameters
     PROP_LED_COLOR,     // Color selector (cycle through presets)
     PROP_LED_VF,        // Forward voltage
-    PROP_LED_IMAX       // Max current
+    PROP_LED_IMAX,      // Max current
+
+    // Op-Amp parameters
+    PROP_OPAMP_GAIN,    // Open-loop gain
+    PROP_OPAMP_GBW,     // Gain-bandwidth product
+    PROP_OPAMP_SLEW,    // Slew rate
+    PROP_OPAMP_RIN,     // Input impedance
+    PROP_OPAMP_ROUT,    // Output impedance
+    PROP_OPAMP_VMAX,    // Positive rail
+    PROP_OPAMP_VMIN,    // Negative rail
+    PROP_OPAMP_R2R,     // Rail-to-rail toggle
+    PROP_OPAMP_IDEAL,   // Ideal mode toggle
+
+    // Waveform parameters
+    PROP_RISE_TIME,     // Rise time
+    PROP_FALL_TIME      // Fall time
 } PropertyType;
 
 // Input state

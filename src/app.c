@@ -428,6 +428,7 @@ void app_handle_events(App *app) {
                                 case COMP_DC_CURRENT: snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_current.current); break;
                                 case COMP_RESISTOR: snprintf(current_value, sizeof(current_value), "%.6g", c->props.resistor.resistance); break;
                                 case COMP_CAPACITOR: snprintf(current_value, sizeof(current_value), "%.6g", c->props.capacitor.capacitance); break;
+                                case COMP_CAPACITOR_ELEC: snprintf(current_value, sizeof(current_value), "%.6g", c->props.capacitor_elec.capacitance); break;
                                 case COMP_INDUCTOR: snprintf(current_value, sizeof(current_value), "%.6g", c->props.inductor.inductance); break;
                                 case COMP_SQUARE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.square_wave.amplitude); break;
                                 case COMP_TRIANGLE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.triangle_wave.amplitude); break;
@@ -551,12 +552,168 @@ void app_handle_events(App *app) {
                         } else if (prop_type == PROP_LED_VF) {
                             if (c->type == COMP_LED) {
                                 snprintf(current_value, sizeof(current_value), "%.2f", c->props.led.vf);
+                            } else if (c->type == COMP_SCHOTTKY) {
+                                snprintf(current_value, sizeof(current_value), "%.2f", c->props.schottky.vf);
                             }
                         } else if (prop_type == PROP_LED_IMAX) {
                             if (c->type == COMP_LED) {
                                 // Display in mA
                                 snprintf(current_value, sizeof(current_value), "%.0f", c->props.led.max_current * 1000);
                             }
+                        }
+                        // Generic ideal mode toggle for all components
+                        else if (prop_type == PROP_IDEAL) {
+                            const char *model_name = "Real";
+                            switch (c->type) {
+                                case COMP_DC_VOLTAGE:
+                                    c->props.dc_voltage.ideal = !c->props.dc_voltage.ideal;
+                                    model_name = c->props.dc_voltage.ideal ? "Ideal" : "Real (series R)";
+                                    break;
+                                case COMP_AC_VOLTAGE:
+                                    c->props.ac_voltage.ideal = !c->props.ac_voltage.ideal;
+                                    model_name = c->props.ac_voltage.ideal ? "Ideal" : "Real (series R)";
+                                    break;
+                                case COMP_DC_CURRENT:
+                                    c->props.dc_current.ideal = !c->props.dc_current.ideal;
+                                    model_name = c->props.dc_current.ideal ? "Ideal" : "Real (parallel R)";
+                                    break;
+                                case COMP_RESISTOR:
+                                    c->props.resistor.ideal = !c->props.resistor.ideal;
+                                    model_name = c->props.resistor.ideal ? "Ideal" : "Real (temp coeff)";
+                                    break;
+                                case COMP_CAPACITOR:
+                                    c->props.capacitor.ideal = !c->props.capacitor.ideal;
+                                    model_name = c->props.capacitor.ideal ? "Ideal" : "Real (ESR, leakage)";
+                                    break;
+                                case COMP_CAPACITOR_ELEC:
+                                    c->props.capacitor_elec.ideal = !c->props.capacitor_elec.ideal;
+                                    model_name = c->props.capacitor_elec.ideal ? "Ideal" : "Real (ESR)";
+                                    break;
+                                case COMP_INDUCTOR:
+                                    c->props.inductor.ideal = !c->props.inductor.ideal;
+                                    model_name = c->props.inductor.ideal ? "Ideal" : "Real (DCR)";
+                                    break;
+                                case COMP_DIODE:
+                                    c->props.diode.ideal = !c->props.diode.ideal;
+                                    model_name = c->props.diode.ideal ? "Ideal (0.7V drop)" : "Real (Shockley)";
+                                    break;
+                                case COMP_ZENER:
+                                    c->props.zener.ideal = !c->props.zener.ideal;
+                                    model_name = c->props.zener.ideal ? "Ideal" : "Real (Zener R)";
+                                    break;
+                                case COMP_SCHOTTKY:
+                                    c->props.schottky.ideal = !c->props.schottky.ideal;
+                                    model_name = c->props.schottky.ideal ? "Ideal (0.3V drop)" : "Real (Shockley)";
+                                    break;
+                                case COMP_LED:
+                                    c->props.led.ideal = !c->props.led.ideal;
+                                    model_name = c->props.led.ideal ? "Ideal (fixed Vf)" : "Real (Shockley)";
+                                    break;
+                                default: break;
+                            }
+                            char msg[64];
+                            snprintf(msg, sizeof(msg), "Model: %s", model_name);
+                            ui_set_status(&app->ui, msg);
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;  // Don't start text edit for toggle
+                        }
+                        // Source internal resistance
+                        else if (prop_type == PROP_R_SERIES) {
+                            if (c->type == COMP_DC_VOLTAGE) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_voltage.r_series);
+                            } else if (c->type == COMP_AC_VOLTAGE) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.ac_voltage.r_series);
+                            }
+                        }
+                        else if (prop_type == PROP_R_PARALLEL) {
+                            if (c->type == COMP_DC_CURRENT) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_current.r_parallel);
+                            }
+                        }
+                        // Resistor temp coefficient
+                        else if (prop_type == PROP_TEMP_COEFF) {
+                            if (c->type == COMP_RESISTOR) {
+                                snprintf(current_value, sizeof(current_value), "%.0f", c->props.resistor.temp_coeff);
+                            }
+                        }
+                        // Capacitor ESR
+                        else if (prop_type == PROP_ESR) {
+                            if (c->type == COMP_CAPACITOR) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.capacitor.esr);
+                            } else if (c->type == COMP_CAPACITOR_ELEC) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.capacitor_elec.esr);
+                            }
+                        }
+                        // Inductor DCR
+                        else if (prop_type == PROP_DCR) {
+                            if (c->type == COMP_INDUCTOR) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.inductor.dcr);
+                            }
+                        }
+                        // Diode breakdown voltage
+                        else if (prop_type == PROP_BV) {
+                            if (c->type == COMP_DIODE) {
+                                snprintf(current_value, sizeof(current_value), "%.1f", c->props.diode.bv);
+                            }
+                        }
+                        // Zener voltage and impedance
+                        else if (prop_type == PROP_VZ) {
+                            if (c->type == COMP_ZENER) {
+                                snprintf(current_value, sizeof(current_value), "%.2f", c->props.zener.vz);
+                            }
+                        }
+                        else if (prop_type == PROP_RZ) {
+                            if (c->type == COMP_ZENER) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.zener.rz);
+                            }
+                        }
+                        // Electrolytic cap max voltage
+                        else if (prop_type == PROP_MAX_VOLTAGE) {
+                            if (c->type == COMP_CAPACITOR_ELEC) {
+                                snprintf(current_value, sizeof(current_value), "%.1f", c->props.capacitor_elec.max_voltage);
+                            }
+                        }
+                        // Op-Amp parameters
+                        else if (prop_type == PROP_OPAMP_GAIN) {
+                            if (c->type == COMP_OPAMP) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.opamp.gain);
+                            }
+                        }
+                        else if (prop_type == PROP_OPAMP_GBW) {
+                            if (c->type == COMP_OPAMP) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.opamp.gbw);
+                            }
+                        }
+                        else if (prop_type == PROP_OPAMP_SLEW) {
+                            if (c->type == COMP_OPAMP) {
+                                snprintf(current_value, sizeof(current_value), "%.2f", c->props.opamp.slew_rate);
+                            }
+                        }
+                        else if (prop_type == PROP_OPAMP_VMAX) {
+                            if (c->type == COMP_OPAMP) {
+                                snprintf(current_value, sizeof(current_value), "%.1f", c->props.opamp.vmax);
+                            }
+                        }
+                        else if (prop_type == PROP_OPAMP_VMIN) {
+                            if (c->type == COMP_OPAMP) {
+                                snprintf(current_value, sizeof(current_value), "%.1f", c->props.opamp.vmin);
+                            }
+                        }
+                        else if (prop_type == PROP_OPAMP_IDEAL) {
+                            if (c->type == COMP_OPAMP) {
+                                c->props.opamp.ideal = !c->props.opamp.ideal;
+                                ui_set_status(&app->ui, c->props.opamp.ideal ? "Op-Amp: Ideal model" : "Op-Amp: Real model (GBW, slew rate)");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
+                        else if (prop_type == PROP_OPAMP_R2R) {
+                            if (c->type == COMP_OPAMP) {
+                                c->props.opamp.rail_to_rail = !c->props.opamp.rail_to_rail;
+                                ui_set_status(&app->ui, c->props.opamp.rail_to_rail ? "Op-Amp: Rail-to-Rail enabled" : "Op-Amp: Rail-to-Rail disabled");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
                         }
                         input_start_property_edit(&app->input, prop_type, current_value);
                         ui_set_status(&app->ui, "Type value (use k,M,m,u,n,p suffix), Enter to apply");
