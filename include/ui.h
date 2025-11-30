@@ -196,6 +196,13 @@ typedef struct {
     double bode_freq_start;         // Start frequency (Hz)
     double bode_freq_stop;          // Stop frequency (Hz)
     int bode_num_points;            // Number of frequency points
+    bool bode_resizing;             // Currently resizing Bode plot
+    int bode_resize_edge;           // Which edge is being dragged (0=top, 1=left, 2=bottom, 3=right)
+    bool bode_dragging;             // Dragging the Bode plot window
+    int bode_drag_start_x;          // Mouse X when drag started
+    int bode_drag_start_y;          // Mouse Y when drag started
+    int bode_rect_start_x;          // Rect X when drag started
+    int bode_rect_start_y;          // Rect Y when drag started
 
     // Parametric sweep panel
     bool show_sweep_panel;          // Show sweep panel

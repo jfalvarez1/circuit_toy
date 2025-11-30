@@ -427,6 +427,13 @@ void ui_init(UIState *ui) {
     ui->bode_freq_start = 10.0;     // 10 Hz
     ui->bode_freq_stop = 100000.0;  // 100 kHz
     ui->bode_num_points = 50;
+    ui->bode_resizing = false;
+    ui->bode_resize_edge = -1;
+    ui->bode_dragging = false;
+    ui->bode_drag_start_x = 0;
+    ui->bode_drag_start_y = 0;
+    ui->bode_rect_start_x = 0;
+    ui->bode_rect_start_y = 0;
 
     // Initialize parametric sweep panel
     ui->show_sweep_panel = false;
@@ -2871,6 +2878,50 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             return UI_ACTION_NONE;
         }
 
+        // Bode plot resizing and dragging
+        if (ui->show_bode_plot) {
+            Rect *br = &ui->bode_rect;
+            int panel_x = br->x - 10;
+            int panel_y = br->y - 25;
+            int panel_w = br->w + 20;
+            int panel_h = br->h + 120;
+
+            // Check if clicking on edges for resizing (5 pixel zones)
+            bool on_left = (x >= panel_x - 5 && x <= panel_x + 5 && y >= panel_y && y <= panel_y + panel_h);
+            bool on_right = (x >= panel_x + panel_w - 5 && x <= panel_x + panel_w + 5 && y >= panel_y && y <= panel_y + panel_h);
+            bool on_top = (y >= panel_y - 5 && y <= panel_y + 5 && x >= panel_x && x <= panel_x + panel_w);
+            bool on_bottom = (y >= panel_y + panel_h - 5 && y <= panel_y + panel_h + 5 && x >= panel_x && x <= panel_x + panel_w);
+
+            if (on_left) {
+                ui->bode_resizing = true;
+                ui->bode_resize_edge = 1;  // left
+                return UI_ACTION_NONE;
+            } else if (on_right) {
+                ui->bode_resizing = true;
+                ui->bode_resize_edge = 3;  // right
+                return UI_ACTION_NONE;
+            } else if (on_top) {
+                ui->bode_resizing = true;
+                ui->bode_resize_edge = 0;  // top
+                return UI_ACTION_NONE;
+            } else if (on_bottom) {
+                ui->bode_resizing = true;
+                ui->bode_resize_edge = 2;  // bottom
+                return UI_ACTION_NONE;
+            }
+
+            // Check if clicking on title bar for dragging (top 25 pixels of panel)
+            if (x >= panel_x && x <= panel_x + panel_w &&
+                y >= panel_y && y <= panel_y + 20) {
+                ui->bode_dragging = true;
+                ui->bode_drag_start_x = x;
+                ui->bode_drag_start_y = y;
+                ui->bode_rect_start_x = br->x;
+                ui->bode_rect_start_y = br->y;
+                return UI_ACTION_NONE;
+            }
+        }
+
         // Handle cursor positioning when cursor mode is enabled
         if (ui->scope_cursor_mode && ui->display_mode == SCOPE_MODE_YT) {
             Rect *sr = &ui->scope_rect;
@@ -2904,6 +2955,14 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (ui->props_resizing) {
             ui->props_resizing = false;
             ui_update_layout(ui);  // Update scope position within panel
+        }
+        // Release Bode plot resize/drag
+        if (ui->bode_resizing) {
+            ui->bode_resizing = false;
+            ui->bode_resize_edge = -1;
+        }
+        if (ui->bode_dragging) {
+            ui->bode_dragging = false;
         }
         // Release cursor drag
         if (ui->scope_cursor_drag != 0) {
@@ -3066,6 +3125,76 @@ int ui_handle_motion(UIState *ui, int x, int y) {
                 ui->scope_rect.w = new_width;
             }
         }
+        return UI_ACTION_NONE;
+    }
+
+    // Handle Bode plot resizing
+    if (ui->bode_resizing) {
+        Rect *br = &ui->bode_rect;
+
+        if (ui->bode_resize_edge == 0) {
+            // Top edge - changes height and y position
+            int new_y = y + 25;  // Account for title bar
+            int bottom = br->y + br->h;
+            int new_height = bottom - new_y;
+
+            if (new_height >= 100 && new_height <= 400 && new_y >= TOOLBAR_HEIGHT + 50) {
+                br->y = new_y;
+                br->h = new_height;
+            }
+        } else if (ui->bode_resize_edge == 1) {
+            // Left edge - changes width and x position
+            int new_x = x + 10;  // Account for panel padding
+            int right = br->x + br->w;
+            int new_width = right - new_x;
+
+            if (new_width >= 200 && new_width <= 600 && new_x >= 200) {
+                br->x = new_x;
+                br->w = new_width;
+            }
+        } else if (ui->bode_resize_edge == 2) {
+            // Bottom edge - changes height only
+            int new_height = y - br->y - 95;  // Account for controls below plot
+
+            if (new_height >= 100 && new_height <= 400) {
+                br->h = new_height;
+            }
+        } else if (ui->bode_resize_edge == 3) {
+            // Right edge - changes width only
+            int new_width = x - br->x - 10;  // Account for panel padding
+
+            if (new_width >= 200 && new_width <= 600) {
+                br->w = new_width;
+            }
+        }
+        return UI_ACTION_NONE;
+    }
+
+    // Handle Bode plot dragging (move window)
+    if (ui->bode_dragging) {
+        int dx = x - ui->bode_drag_start_x;
+        int dy = y - ui->bode_drag_start_y;
+
+        // Calculate new position based on start position + delta
+        int new_x = ui->bode_rect_start_x + dx;
+        int new_y = ui->bode_rect_start_y + dy;
+
+        // Keep within window bounds
+        int panel_w = ui->bode_rect.w + 20;
+        int panel_h = ui->bode_rect.h + 120;
+        int panel_x = new_x - 10;
+        int panel_y = new_y - 25;
+
+        if (panel_x < 0) new_x = 10;
+        if (panel_y < TOOLBAR_HEIGHT) new_y = TOOLBAR_HEIGHT + 25;
+        if (panel_x + panel_w > ui->window_width)
+            new_x = ui->window_width - panel_w + 10;
+        if (panel_y + panel_h > ui->window_height)
+            new_y = ui->window_height - panel_h + 25;
+
+        ui->bode_rect.x = new_x;
+        ui->bode_rect.y = new_y;
+
         return UI_ACTION_NONE;
     }
 
