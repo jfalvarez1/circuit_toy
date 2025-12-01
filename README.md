@@ -192,5 +192,5 @@ MIT License - See LICENSE file for details.
 
 ## Acknowledgments
 
-Inspired by [The Powder Toy](https://github.com/jfalvarez1/powder_toy) particle simulation game.
+Inspired by [The Powder Toy](https://github.com/The-Powder-Toy/The-Powder-Toy) particle simulation game.
 Architecture follows the same C/SDL2 pattern used by The Powder Toy.
