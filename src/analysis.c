@@ -7,6 +7,7 @@
 #include <string.h>
 #include <math.h>
 #include <float.h>
+#include <stdio.h>
 
 // Simple random number generator for Monte Carlo
 static unsigned int rand_seed = 12345;
@@ -38,6 +39,17 @@ void analysis_init(AnalysisState *state) {
 
     state->fft_enabled = false;
     state->fft_window_type = 1;  // Hanning window default
+
+    // Initialize math channels
+    for (int i = 0; i < MAX_PROBES; i++) {
+        analysis_math_init(&state->math_channels[i]);
+        state->math_values[i] = 0.0;
+    }
+
+    // Initialize persistence mode
+    state->persistence_enabled = false;
+    state->persistence_frames = 8;     // Default 8 frames
+    state->persistence_alpha = 0.85;   // Decay factor
 
     state->auto_measure = true;
     state->cursors_enabled = false;
@@ -268,7 +280,101 @@ void analysis_fft_window(double *samples, int num_samples, int window_type) {
     }
 }
 
-// Simple DFT (not FFT for simplicity, but works for our purposes)
+// ============================================================================
+// COOLEY-TUKEY RADIX-2 FFT - O(n log n) implementation
+// ~100x faster than DFT for N=1024 (10,240 vs 1,048,576 operations)
+// ============================================================================
+
+// Pre-computed twiddle factors for FFT (computed once, reused)
+static double fft_cos_table[FFT_SIZE];
+static double fft_sin_table[FFT_SIZE];
+static int fft_tables_initialized = 0;
+
+// Bit-reversal permutation lookup table
+static int fft_bit_rev[FFT_SIZE];
+
+// Initialize FFT lookup tables (called once)
+static void fft_init_tables(void) {
+    if (fft_tables_initialized) return;
+
+    int N = FFT_SIZE;
+
+    // Pre-compute twiddle factors: W_N^k = e^(-2*pi*i*k/N) = cos - i*sin
+    for (int k = 0; k < N; k++) {
+        double angle = -2.0 * M_PI * k / N;
+        fft_cos_table[k] = cos(angle);
+        fft_sin_table[k] = sin(angle);
+    }
+
+    // Pre-compute bit-reversal indices
+    int log2N = 0;
+    for (int temp = N; temp > 1; temp >>= 1) log2N++;
+
+    for (int i = 0; i < N; i++) {
+        int rev = 0;
+        int x = i;
+        for (int j = 0; j < log2N; j++) {
+            rev = (rev << 1) | (x & 1);
+            x >>= 1;
+        }
+        fft_bit_rev[i] = rev;
+    }
+
+    fft_tables_initialized = 1;
+}
+
+// In-place Cooley-Tukey radix-2 decimation-in-time FFT
+// real[] and imag[] must be arrays of size N (power of 2)
+static void fft_transform(double *real, double *imag, int N) {
+    // Ensure lookup tables are ready
+    fft_init_tables();
+
+    // Bit-reversal permutation
+    for (int i = 0; i < N; i++) {
+        int j = fft_bit_rev[i];
+        if (i < j) {
+            // Swap real[i] and real[j]
+            double temp = real[i];
+            real[i] = real[j];
+            real[j] = temp;
+            // Swap imag[i] and imag[j]
+            temp = imag[i];
+            imag[i] = imag[j];
+            imag[j] = temp;
+        }
+    }
+
+    // Cooley-Tukey iterative FFT
+    for (int size = 2; size <= N; size *= 2) {
+        int halfsize = size / 2;
+        int step = N / size;  // Twiddle factor step
+
+        for (int i = 0; i < N; i += size) {
+            int k = 0;  // Twiddle index
+            for (int j = i; j < i + halfsize; j++) {
+                // Butterfly operation
+                double cos_w = fft_cos_table[k];
+                double sin_w = fft_sin_table[k];
+
+                // t = W * x[j + halfsize]
+                double t_re = cos_w * real[j + halfsize] - sin_w * imag[j + halfsize];
+                double t_im = cos_w * imag[j + halfsize] + sin_w * real[j + halfsize];
+
+                // x[j + halfsize] = x[j] - t
+                real[j + halfsize] = real[j] - t_re;
+                imag[j + halfsize] = imag[j] - t_im;
+
+                // x[j] = x[j] + t
+                real[j] += t_re;
+                imag[j] += t_im;
+
+                k += step;
+            }
+        }
+    }
+}
+
+// Optimized FFT computation using Cooley-Tukey algorithm
 void analysis_fft_compute(AnalysisState *state, double *samples,
                           int num_samples, double sample_rate, int channel) {
     if (channel < 0 || channel >= MAX_PROBES) return;
@@ -276,7 +382,7 @@ void analysis_fft_compute(AnalysisState *state, double *samples,
 
     FFTResult *fft = &state->fft_results[channel];
 
-    // Apply window function
+    // Apply window function to windowed copy
     double windowed[FFT_SIZE];
     memcpy(windowed, samples, num_samples * sizeof(double));
     analysis_fft_window(windowed, num_samples, state->fft_window_type);
@@ -286,28 +392,30 @@ void analysis_fft_compute(AnalysisState *state, double *samples,
         windowed[i] = 0;
     }
 
-    // Compute DFT
+    // Prepare real and imaginary arrays for FFT
+    static double fft_real[FFT_SIZE];
+    static double fft_imag[FFT_SIZE];
+
+    memcpy(fft_real, windowed, FFT_SIZE * sizeof(double));
+    memset(fft_imag, 0, FFT_SIZE * sizeof(double));  // Input is real-only
+
+    // Perform FFT transform - O(n log n)
+    fft_transform(fft_real, fft_imag, FFT_SIZE);
+
+    // Extract magnitude and phase from complex output
     int N = FFT_SIZE;
     fft->num_bins = N / 2;
 
     for (int k = 0; k < N / 2; k++) {
-        double real = 0, imag = 0;
-
-        for (int n = 0; n < N; n++) {
-            double angle = 2.0 * M_PI * k * n / N;
-            real += windowed[n] * cos(angle);
-            imag -= windowed[n] * sin(angle);
-        }
-
-        double mag = sqrt(real * real + imag * imag) / N;
-        double phase_rad = atan2(imag, real);
+        double mag = sqrt(fft_real[k] * fft_real[k] + fft_imag[k] * fft_imag[k]) / N;
+        double phase_rad = atan2(fft_imag[k], fft_real[k]);
 
         fft->frequency[k] = (double)k * sample_rate / N;
         fft->magnitude[k] = (mag > 1e-10) ? 20.0 * log10(mag) : -200.0;
         fft->phase[k] = phase_rad * 180.0 / M_PI;
     }
 
-    // Find fundamental frequency (largest bin above DC)
+    // Find fundamental frequency (largest bin above DC, skip bin 0)
     double max_mag = -1000;
     int max_bin = 1;
     for (int k = 1; k < N / 2; k++) {
@@ -318,7 +426,7 @@ void analysis_fft_compute(AnalysisState *state, double *samples,
     }
     fft->fundamental_freq = fft->frequency[max_bin];
 
-    // Calculate THD
+    // Calculate THD and SNR
     fft->thd = analysis_calculate_thd(fft);
     fft->snr = analysis_calculate_snr(fft);
 }
@@ -629,4 +737,184 @@ double analysis_calculate_snr_from_signal(double *signal, double *noise, int cou
 
     if (noise_power < 1e-20) return 100.0;
     return 10.0 * log10(signal_power / noise_power);
+}
+
+// ============================================
+// MATH CHANNEL OPERATIONS
+// ============================================
+
+void analysis_math_init(MathChannel *math) {
+    math->enabled = false;
+    math->operation = MATH_NONE;
+    math->source_a = 0;
+    math->source_b = 1;
+    math->scale = 1.0;
+    math->offset = 0.0;
+    math->integral_value = 0.0;
+}
+
+double analysis_math_compute(MathChannel *math, double val_a, double val_b,
+                             double prev_val_a, double dt) {
+    if (!math->enabled) return 0.0;
+
+    double result = 0.0;
+
+    switch (math->operation) {
+        case MATH_NONE:
+            result = val_a;
+            break;
+
+        case MATH_ADD:
+            result = val_a + val_b;
+            break;
+
+        case MATH_SUBTRACT:
+            result = val_a - val_b;
+            break;
+
+        case MATH_MULTIPLY:
+            result = val_a * val_b;
+            break;
+
+        case MATH_DIVIDE:
+            result = (fabs(val_b) > 1e-12) ? val_a / val_b : 0.0;
+            break;
+
+        case MATH_DERIVATIVE:
+            // dA/dt - numerical derivative
+            result = (dt > 1e-15) ? (val_a - prev_val_a) / dt : 0.0;
+            break;
+
+        case MATH_INTEGRAL:
+            // Trapezoidal integration
+            math->integral_value += 0.5 * (val_a + prev_val_a) * dt;
+            result = math->integral_value;
+            break;
+
+        case MATH_ABS:
+            result = fabs(val_a);
+            break;
+
+        case MATH_INVERT:
+            result = -val_a;
+            break;
+
+        case MATH_LOG:
+            result = (fabs(val_a) > 1e-12) ? log10(fabs(val_a)) : -12.0;
+            break;
+
+        case MATH_SQRT:
+            result = (val_a >= 0) ? sqrt(val_a) : -sqrt(-val_a);
+            break;
+
+        default:
+            result = val_a;
+            break;
+    }
+
+    return result * math->scale + math->offset;
+}
+
+void analysis_math_update_all(AnalysisState *state, double *channel_values,
+                              double *prev_values, double dt) {
+    for (int i = 0; i < MAX_PROBES; i++) {
+        MathChannel *math = &state->math_channels[i];
+        if (!math->enabled) {
+            state->math_values[i] = 0.0;
+            continue;
+        }
+
+        int src_a = math->source_a;
+        int src_b = math->source_b;
+
+        // Bounds check
+        if (src_a < 0 || src_a >= MAX_PROBES) src_a = 0;
+        if (src_b < 0 || src_b >= MAX_PROBES) src_b = 0;
+
+        double val_a = channel_values[src_a];
+        double val_b = channel_values[src_b];
+        double prev_a = prev_values ? prev_values[src_a] : val_a;
+
+        state->math_values[i] = analysis_math_compute(math, val_a, val_b, prev_a, dt);
+    }
+}
+
+// ============================================
+// ENHANCED CURSOR MEASUREMENTS
+// ============================================
+
+double analysis_cursor_slew_rate(AnalysisState *state) {
+    // Slew rate = dV/dt between cursors (V/s)
+    double dt = analysis_cursor_delta_time(state);
+    double dv = analysis_cursor_delta_value(state);
+
+    if (fabs(dt) < 1e-15) return 0.0;
+    return dv / dt;
+}
+
+// ============================================
+// CSV EXPORT FUNCTIONS
+// ============================================
+
+bool analysis_export_csv(const char *filename, double *times,
+                         double values[][1024], int num_channels, int num_points) {
+    if (!filename || !times || num_channels <= 0 || num_points <= 0) {
+        return false;
+    }
+
+    FILE *fp = fopen(filename, "w");
+    if (!fp) return false;
+
+    // Write header
+    fprintf(fp, "Time(s)");
+    for (int ch = 0; ch < num_channels; ch++) {
+        fprintf(fp, ",CH%d(V)", ch + 1);
+    }
+    fprintf(fp, "\n");
+
+    // Write data rows
+    for (int i = 0; i < num_points; i++) {
+        fprintf(fp, "%.9e", times[i]);
+        for (int ch = 0; ch < num_channels; ch++) {
+            fprintf(fp, ",%.9e", values[ch][i]);
+        }
+        fprintf(fp, "\n");
+    }
+
+    fclose(fp);
+    return true;
+}
+
+bool analysis_export_measurements_csv(const char *filename,
+                                      WaveformMeasurements *meas, int num_channels) {
+    if (!filename || !meas || num_channels <= 0) {
+        return false;
+    }
+
+    FILE *fp = fopen(filename, "w");
+    if (!fp) return false;
+
+    // Write header
+    fprintf(fp, "Channel,Vmin(V),Vmax(V),Vpp(V),Vavg(V),Vrms(V),Freq(Hz),Period(s),RiseTime(s),FallTime(s),DutyCycle(%%)\n");
+
+    // Write measurements for each channel
+    for (int ch = 0; ch < num_channels; ch++) {
+        if (!meas[ch].valid) continue;
+
+        fprintf(fp, "CH%d,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.6e,%.2f\n",
+                ch + 1,
+                meas[ch].v_min,
+                meas[ch].v_max,
+                meas[ch].v_pp,
+                meas[ch].v_avg,
+                meas[ch].v_rms,
+                meas[ch].frequency,
+                meas[ch].period,
+                meas[ch].rise_time,
+                meas[ch].fall_time,
+                meas[ch].duty_cycle);
+    }
+
+    fclose(fp);
+    return true;
 }

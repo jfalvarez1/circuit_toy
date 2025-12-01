@@ -21,6 +21,34 @@
 #define MAX_SWEEP_POINTS 100
 #define MAX_MONTE_CARLO_RUNS 1000
 #define FFT_SIZE 1024
+#define MAX_PERSISTENCE_FRAMES 32
+
+// Math channel operations
+typedef enum {
+    MATH_NONE = 0,
+    MATH_ADD,           // A + B
+    MATH_SUBTRACT,      // A - B
+    MATH_MULTIPLY,      // A * B
+    MATH_DIVIDE,        // A / B
+    MATH_DERIVATIVE,    // dA/dt
+    MATH_INTEGRAL,      // ∫A dt
+    MATH_ABS,           // |A|
+    MATH_INVERT,        // -A
+    MATH_LOG,           // log10(|A|)
+    MATH_SQRT,          // sqrt(|A|)
+    MATH_OP_COUNT
+} MathOperation;
+
+// Math channel configuration
+typedef struct {
+    bool enabled;
+    MathOperation operation;
+    int source_a;           // Source channel A (0-7)
+    int source_b;           // Source channel B (for binary ops)
+    double scale;           // Output scaling factor
+    double offset;          // Output offset
+    double integral_value;  // Running integral accumulator
+} MathChannel;
 
 // Temperature coefficients (ppm/°C typical values)
 #define TEMPCO_RESISTOR_CARBON   1500    // Carbon film: 1500 ppm/°C
@@ -160,6 +188,15 @@ typedef struct {
     bool fft_enabled;
     int fft_window_type;      // 0=rectangular, 1=Hanning, 2=Hamming, 3=Blackman
 
+    // Math channels (computed from probe channels)
+    MathChannel math_channels[MAX_PROBES];
+    double math_values[MAX_PROBES];  // Current computed math channel values
+
+    // Persistence mode (phosphor-like decay)
+    bool persistence_enabled;
+    int persistence_frames;          // Number of frames to persist (1-32)
+    double persistence_alpha;        // Decay factor per frame (0.0-1.0)
+
     // Measurements
     WaveformMeasurements measurements[MAX_PROBES];
     bool auto_measure;        // Continuously update measurements
@@ -225,5 +262,21 @@ double analysis_cursor_frequency(AnalysisState *state);
 // Noise analysis
 double analysis_estimate_noise_floor(double *values, int count);
 double analysis_calculate_snr_from_signal(double *signal, double *noise, int count);
+
+// Math channel operations
+void analysis_math_init(MathChannel *math);
+double analysis_math_compute(MathChannel *math, double val_a, double val_b,
+                             double prev_val_a, double dt);
+void analysis_math_update_all(AnalysisState *state, double *channel_values,
+                              double *prev_values, double dt);
+
+// Enhanced cursor measurements
+double analysis_cursor_slew_rate(AnalysisState *state);  // V/s between cursors
+
+// CSV export
+bool analysis_export_csv(const char *filename, double *times,
+                         double values[][1024], int num_channels, int num_points);
+bool analysis_export_measurements_csv(const char *filename,
+                                      WaveformMeasurements *meas, int num_channels);
 
 #endif // ANALYSIS_H

@@ -371,7 +371,7 @@
         <header>
             <h1>Circuit Playground</h1>
             <p class="subtitle">Interactive Circuit Simulator - User Manual</p>
-            <p class="version">Version 2.0</p>
+            <p class="version">Version 2.1 - Extended Components & Analysis</p>
         </header>
 
         <!-- Table of Contents -->
@@ -389,25 +389,38 @@
                     <a href="#waveforms">5. Waveform Generators</a>
                     <a href="#passive">6. Passive Components</a>
                     <a href="#semiconductors">7. Semiconductors</a>
+                    <a href="#thyristors">7b. Thyristors & Power Devices</a>
+                    <a href="#switches">7c. Switches & Relays</a>
                 </div>
                 <div>
-                    <div class="toc-section">Using the Simulator</div>
-                    <a href="#tools">8. Tools</a>
-                    <a href="#properties">9. Editing Properties</a>
-                    <a href="#simulation">10. Running Simulations</a>
-                    <a href="#templates">11. Circuit Templates</a>
+                    <div class="toc-section">Advanced Components</div>
+                    <a href="#controlled-sources">7d. Controlled Sources</a>
+                    <a href="#logic">7e. Logic Gates & Digital</a>
+                    <a href="#ics">7f. Integrated Circuits</a>
+                    <a href="#measurement-tools">7g. Measurement Tools</a>
 
-                    <div class="toc-section">Analysis Tools</div>
-                    <a href="#oscilloscope">12. Oscilloscope</a>
-                    <a href="#measurements">13. Measurements</a>
-                    <a href="#advanced">14. Advanced Analysis</a>
+                    <div class="toc-section">Theory & Concepts</div>
+                    <a href="#theory">8. Circuit Theory Fundamentals</a>
+
+                    <div class="toc-section">Using the Simulator</div>
+                    <a href="#tools">9. Tools</a>
+                    <a href="#properties">10. Editing Properties</a>
+                    <a href="#simulation">11. Running Simulations</a>
+                    <a href="#templates">12. Circuit Templates</a>
                 </div>
                 <div>
+                    <div class="toc-section">Analysis Tools</div>
+                    <a href="#oscilloscope">13. Oscilloscope</a>
+                    <a href="#math-channels">13b. Math Channels</a>
+                    <a href="#measurements">14. Measurements</a>
+                    <a href="#advanced">15. Advanced Analysis</a>
+                    <a href="#data-export">15b. Data Export</a>
+
                     <div class="toc-section">Reference</div>
-                    <a href="#shortcuts">15. Keyboard Shortcuts</a>
-                    <a href="#tips">16. Tips & Best Practices</a>
-                    <a href="#troubleshooting">17. Troubleshooting</a>
-                    <a href="#building">18. Building from Source</a>
+                    <a href="#shortcuts">16. Keyboard Shortcuts</a>
+                    <a href="#tips">17. Tips & Best Practices</a>
+                    <a href="#troubleshooting">18. Troubleshooting</a>
+                    <a href="#building">19. Building from Source</a>
                 </div>
             </div>
         </nav>
@@ -704,6 +717,16 @@
                     <p>Allows current flow in one direction only. Uses Shockley diode equation for realistic behavior.</p>
                     <div class="shortcut">Forward voltage: ~0.7V (silicon)</div>
                 </div>
+                <div class="component-card">
+                    <h4>Trans - Transformer</h4>
+                    <p>Transfers AC power between circuits through magnetic coupling. Two-winding transformer with adjustable turns ratio.</p>
+                    <div class="shortcut">Properties: Turns Ratio, Primary Inductance</div>
+                </div>
+                <div class="component-card">
+                    <h4>TranCT - Center-Tap Transformer</h4>
+                    <p>Transformer with center-tapped secondary winding. Used in full-wave rectifiers and split supply circuits.</p>
+                    <div class="shortcut">Properties: Turns Ratio, Primary Inductance</div>
+                </div>
             </div>
 
             <h3>Engineering Notation</h3>
@@ -788,9 +811,355 @@
             </table>
         </section>
 
-        <!-- 8. Tools -->
+        <!-- 7b. Thyristors & Power Devices -->
+        <section id="thyristors" class="section">
+            <h2>7b. Thyristors & Power Devices</h2>
+            <p>Thyristors are semiconductor devices that act as bistable switches, conducting when triggered and remaining on until current falls below a holding threshold.</p>
+
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>SCR - Silicon Controlled Rectifier</h4>
+                    <p>A four-layer PNPN device with three terminals: Anode, Cathode, Gate. Once triggered by gate current, it latches on until anode current drops below holding current (Ih).</p>
+                    <div class="shortcut">Properties: Vgt (gate trigger ~0.7V), Igt, Ih</div>
+                </div>
+                <div class="component-card">
+                    <h4>TRIAC</h4>
+                    <p>Bidirectional thyristor - conducts in both directions when triggered. Used for AC power control, light dimmers, and motor speed control.</p>
+                    <div class="shortcut">Properties: Vgt, Igt, Ih</div>
+                </div>
+                <div class="component-card">
+                    <h4>DIAC</h4>
+                    <p>Bidirectional trigger diode. Conducts when voltage exceeds breakover voltage (Vbo) in either direction. Often used to trigger TRIACs.</p>
+                    <div class="shortcut">Properties: Vbo (~30V typical)</div>
+                </div>
+                <div class="component-card">
+                    <h4>JFET - Junction FET</h4>
+                    <p>Voltage-controlled transistor with N-channel or P-channel. Normally-on device that pinches off when gate-source voltage exceeds Vp.</p>
+                    <div class="shortcut">Properties: Idss, Vp (pinch-off voltage)</div>
+                </div>
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">SCR Latching Behavior</div>
+                Once an SCR turns on, removing the gate signal won't turn it off. You must reduce the anode current below Ih (holding current), typically by reversing the voltage or opening the circuit.
+            </div>
+        </section>
+
+        <!-- 7c. Switches & Relays -->
+        <section id="switches" class="section">
+            <h2>7c. Switches & Relays</h2>
+            <p>Switches provide manual or automatic control of circuit connections. Click on a switch during simulation to toggle its state.</p>
+
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>SPST - Single-Pole Single-Throw</h4>
+                    <p>Simple on/off switch with two terminals. Click to toggle between open and closed states.</p>
+                    <div class="shortcut">Properties: r_on (0.01Ω), r_off (1GΩ)</div>
+                </div>
+                <div class="component-card">
+                    <h4>SPDT - Single-Pole Double-Throw</h4>
+                    <p>Three-terminal switch that connects common to either A or B. Used for signal routing and changeover circuits.</p>
+                    <div class="shortcut">Click to toggle position</div>
+                </div>
+                <div class="component-card">
+                    <h4>Push Button</h4>
+                    <p>Momentary switch - closes only while pressed. Returns to open state when released. Useful for triggering events.</p>
+                    <div class="shortcut">Hold click to activate</div>
+                </div>
+                <div class="component-card">
+                    <h4>Relay</h4>
+                    <p>Electromagnetic switch with coil and contacts. When coil current exceeds pickup threshold, contacts close. Features hysteresis (different pickup/dropout levels).</p>
+                    <div class="shortcut">Properties: V_coil, R_coil, I_pickup</div>
+                </div>
+                <div class="component-card">
+                    <h4>Analog Switch</h4>
+                    <p>Voltage-controlled switch. When control voltage exceeds threshold, switch closes. Used in multiplexers and sample-and-hold circuits.</p>
+                    <div class="shortcut">Properties: V_on, V_off, R_on</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7d. Controlled Sources -->
+        <section id="controlled-sources" class="section">
+            <h2>7d. Controlled Sources</h2>
+            <p>Controlled sources produce an output proportional to a sensed input elsewhere in the circuit. They're essential for modeling amplifiers and dependent sources.</p>
+
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>VCVS - Voltage-Controlled Voltage Source</h4>
+                    <p>Output voltage = Gain × Input voltage. Models ideal voltage amplifiers. <code>Vout = A × Vin</code></p>
+                    <div class="shortcut">Properties: Gain (V/V)</div>
+                </div>
+                <div class="component-card">
+                    <h4>VCCS - Voltage-Controlled Current Source</h4>
+                    <p>Output current = Transconductance × Input voltage. Models FETs and transconductance amplifiers. <code>Iout = gm × Vin</code></p>
+                    <div class="shortcut">Properties: Gain (A/V, transconductance)</div>
+                </div>
+                <div class="component-card">
+                    <h4>CCVS - Current-Controlled Voltage Source</h4>
+                    <p>Output voltage = Transresistance × Input current. Models transimpedance amplifiers. <code>Vout = Rm × Iin</code></p>
+                    <div class="shortcut">Properties: Gain (V/A, transresistance)</div>
+                </div>
+                <div class="component-card">
+                    <h4>CCCS - Current-Controlled Current Source</h4>
+                    <p>Output current = Gain × Input current. Models current mirrors and BJT behavior. <code>Iout = β × Iin</code></p>
+                    <div class="shortcut">Properties: Gain (A/A, current gain)</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7e. Logic Gates & Digital -->
+        <section id="logic" class="section">
+            <h2>7e. Logic Gates & Digital</h2>
+            <p>Digital logic components operate with discrete voltage levels representing 0 and 1. Default levels are 0V (low) and 5V (high) with 2.5V threshold.</p>
+
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>NOT Gate (Inverter)</h4>
+                    <p>Single-input gate that outputs the complement of its input. <code>Y = !A</code></p>
+                </div>
+                <div class="component-card">
+                    <h4>AND Gate</h4>
+                    <p>Outputs high only when all inputs are high. <code>Y = A · B</code></p>
+                    <div class="shortcut">Properties: num_inputs (2-4)</div>
+                </div>
+                <div class="component-card">
+                    <h4>OR Gate</h4>
+                    <p>Outputs high when any input is high. <code>Y = A + B</code></p>
+                    <div class="shortcut">Properties: num_inputs (2-4)</div>
+                </div>
+                <div class="component-card">
+                    <h4>NAND Gate</h4>
+                    <p>AND followed by NOT. Universal gate - any logic function can be built from NANDs. <code>Y = !(A · B)</code></p>
+                </div>
+                <div class="component-card">
+                    <h4>NOR Gate</h4>
+                    <p>OR followed by NOT. Another universal gate. <code>Y = !(A + B)</code></p>
+                </div>
+                <div class="component-card">
+                    <h4>XOR Gate</h4>
+                    <p>Exclusive OR - outputs high when inputs differ. <code>Y = A ⊕ B</code></p>
+                </div>
+                <div class="component-card">
+                    <h4>XNOR Gate</h4>
+                    <p>Exclusive NOR - outputs high when inputs are equal. <code>Y = !(A ⊕ B)</code></p>
+                </div>
+                <div class="component-card">
+                    <h4>Buffer</h4>
+                    <p>Non-inverting buffer for signal conditioning and fan-out. <code>Y = A</code></p>
+                </div>
+                <div class="component-card">
+                    <h4>Logic Input</h4>
+                    <p>Manual toggle switch for digital signals. Click to toggle between high and low states.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Logic Output</h4>
+                    <p>LED indicator showing logic state. Lights up when input exceeds threshold voltage.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7f. Integrated Circuits -->
+        <section id="ics" class="section">
+            <h2>7f. Integrated Circuits</h2>
+            <p>Pre-built functional blocks that implement common circuit functions.</p>
+
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>555 Timer</h4>
+                    <p>Versatile timer IC that can operate in astable (oscillator) or monostable (one-shot) mode. Generates square waves with adjustable frequency and duty cycle.</p>
+                    <div class="shortcut">Properties: R1, R2, C, mode</div>
+                </div>
+                <div class="component-card">
+                    <h4>7-Segment Display</h4>
+                    <p>Seven LED segments arranged to display digits 0-9 and some letters. Available in common-cathode or common-anode configurations.</p>
+                    <div class="shortcut">Properties: Vf, common_cathode</div>
+                </div>
+                <div class="component-card">
+                    <h4>BCD to 7-Segment Decoder</h4>
+                    <p>Converts 4-bit binary coded decimal input to 7-segment display output. Like the 7447 IC with active-low outputs.</p>
+                    <div class="shortcut">Properties: active_low, blanking</div>
+                </div>
+            </div>
+
+            <h3>555 Timer Modes</h3>
+            <table class="shortcut-table">
+                <thead>
+                    <tr>
+                        <th>Mode</th>
+                        <th>Description</th>
+                        <th>Frequency Formula</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Astable</td>
+                        <td>Free-running oscillator</td>
+                        <td><code>f = 1.44 / ((R1 + 2×R2) × C)</code></td>
+                    </tr>
+                    <tr>
+                        <td>Monostable</td>
+                        <td>One-shot pulse generator</td>
+                        <td><code>t = 1.1 × R × C</code></td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- 7g. Measurement Tools -->
+        <section id="measurement-tools" class="section">
+            <h2>7g. Measurement Tools</h2>
+            <p>Place these components in your circuit to measure voltage, current, and power at specific points.</p>
+
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>Voltmeter</h4>
+                    <p>Measures voltage between two points. Very high input impedance (10MΩ default) to minimize circuit loading. Reading displayed on component.</p>
+                    <div class="shortcut">Properties: R_in (input resistance)</div>
+                </div>
+                <div class="component-card">
+                    <h4>Ammeter</h4>
+                    <p>Measures current through the circuit. Very low resistance (0.01Ω default) for minimal voltage drop. Must be placed in series.</p>
+                    <div class="shortcut">Properties: R_shunt</div>
+                </div>
+                <div class="component-card">
+                    <h4>Wattmeter</h4>
+                    <p>Measures power consumption. Displays instantaneous power (P = V × I) at the measurement point.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Test Point</h4>
+                    <p>Passive measurement point for connecting oscilloscope probes. Zero impedance, doesn't affect circuit.</p>
+                </div>
+            </div>
+
+            <h3>Additional Components</h3>
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>Potentiometer</h4>
+                    <p>Variable resistor with three terminals. Wiper position (0-100%) sets the ratio between terminals.</p>
+                    <div class="shortcut">Properties: resistance, wiper_pos, taper</div>
+                </div>
+                <div class="component-card">
+                    <h4>Photoresistor (LDR)</h4>
+                    <p>Light-dependent resistor. Resistance varies with light level - high in darkness, low in bright light.</p>
+                    <div class="shortcut">Properties: R_dark, R_light, light_level</div>
+                </div>
+                <div class="component-card">
+                    <h4>Thermistor</h4>
+                    <p>Temperature-dependent resistor. NTC (negative temp coefficient) decreases resistance when heated; PTC increases.</p>
+                    <div class="shortcut">Properties: R_25, beta, temp, type</div>
+                </div>
+                <div class="component-card">
+                    <h4>Fuse</h4>
+                    <p>Overcurrent protection device. Opens (blows) when current exceeds rating. Reset by replacing.</p>
+                    <div class="shortcut">Properties: rating (A)</div>
+                </div>
+                <div class="component-card">
+                    <h4>Lamp</h4>
+                    <p>Incandescent lamp with realistic warm-up behavior. Cold resistance is lower than hot resistance; brightness shows intensity.</p>
+                    <div class="shortcut">Properties: power_rating, voltage_rating</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Circuit Theory -->
+        <section id="theory" class="section">
+            <h2>8. Circuit Theory Fundamentals</h2>
+            <p>Understanding these fundamental concepts will help you design and troubleshoot circuits effectively.</p>
+
+            <h3>Ohm's Law</h3>
+            <p>The foundation of all circuit analysis. Voltage, current, and resistance are related by:</p>
+            <div class="tip">
+                <div class="tip-title">V = I × R</div>
+                <ul>
+                    <li><strong>V</strong> (Voltage) - Electrical pressure, measured in Volts (V)</li>
+                    <li><strong>I</strong> (Current) - Flow of charge, measured in Amperes (A)</li>
+                    <li><strong>R</strong> (Resistance) - Opposition to current flow, measured in Ohms (Ω)</li>
+                </ul>
+                <p>Rearranging: <code>I = V/R</code> and <code>R = V/I</code></p>
+            </div>
+
+            <h3>Kirchhoff's Laws</h3>
+            <h4>Kirchhoff's Current Law (KCL)</h4>
+            <p>The sum of currents entering a node equals the sum leaving. Current is conserved - what goes in must come out. This is why the simulator uses "nodal analysis."</p>
+
+            <h4>Kirchhoff's Voltage Law (KVL)</h4>
+            <p>The sum of voltages around any closed loop equals zero. Voltage rises (sources) equal voltage drops (components). Essential for analyzing series circuits.</p>
+
+            <h3>Power</h3>
+            <p>Electrical power is the rate of energy transfer:</p>
+            <div class="note">
+                <div class="note-title">P = V × I = I²R = V²/R</div>
+                <p>Measured in Watts (W). When resistors glow red in the simulator, they're dissipating too much power!</p>
+            </div>
+
+            <h3>Capacitors and Inductors</h3>
+            <h4>Capacitors</h4>
+            <p>Store energy in an electric field. Current leads voltage by 90°.</p>
+            <ul>
+                <li><strong>Impedance:</strong> <code>Xc = 1/(2πfC)</code> - decreases with frequency</li>
+                <li><strong>Time constant:</strong> <code>τ = RC</code> - time to charge to 63%</li>
+                <li>Blocks DC, passes AC</li>
+                <li>In series: <code>1/Ctotal = 1/C1 + 1/C2</code></li>
+                <li>In parallel: <code>Ctotal = C1 + C2</code></li>
+            </ul>
+
+            <h4>Inductors</h4>
+            <p>Store energy in a magnetic field. Voltage leads current by 90°.</p>
+            <ul>
+                <li><strong>Impedance:</strong> <code>XL = 2πfL</code> - increases with frequency</li>
+                <li><strong>Time constant:</strong> <code>τ = L/R</code></li>
+                <li>Passes DC, blocks AC (opposes changes in current)</li>
+                <li>In series: <code>Ltotal = L1 + L2</code></li>
+                <li>In parallel: <code>1/Ltotal = 1/L1 + 1/L2</code></li>
+            </ul>
+
+            <h3>Transistor Basics</h3>
+            <h4>BJT (Bipolar Junction Transistor)</h4>
+            <p>Current-controlled device. A small base current controls a larger collector current.</p>
+            <ul>
+                <li><strong>NPN:</strong> Current flows from C to E when B is positive relative to E</li>
+                <li><strong>PNP:</strong> Current flows from E to C when B is negative relative to E</li>
+                <li><strong>β (hFE):</strong> Current gain, typically 50-300. <code>Ic = β × Ib</code></li>
+                <li><strong>Vbe:</strong> Base-emitter voltage ≈ 0.7V (silicon)</li>
+            </ul>
+
+            <h4>MOSFET (Metal-Oxide-Semiconductor FET)</h4>
+            <p>Voltage-controlled device. Gate voltage controls drain current.</p>
+            <ul>
+                <li><strong>NMOS:</strong> Conducts when Vgs > Vth (enhancement mode)</li>
+                <li><strong>PMOS:</strong> Conducts when Vgs < Vth (source more positive than gate)</li>
+                <li><strong>Vth:</strong> Threshold voltage, typically 1-3V</li>
+                <li>Extremely high input impedance (essentially infinite)</li>
+            </ul>
+
+            <h3>Op-Amp Golden Rules</h3>
+            <p>For an ideal op-amp with negative feedback:</p>
+            <ol>
+                <li><strong>Rule 1:</strong> The inputs draw no current (infinite input impedance)</li>
+                <li><strong>Rule 2:</strong> The op-amp adjusts its output to make V+ = V- (virtual short)</li>
+            </ol>
+            <p>These two rules let you analyze any op-amp circuit quickly!</p>
+
+            <h3>Frequency Response</h3>
+            <p>How circuits respond to different frequencies:</p>
+            <ul>
+                <li><strong>Cutoff frequency (fc):</strong> Where gain drops to -3dB (70.7%)</li>
+                <li><strong>Bandwidth:</strong> Range of frequencies the circuit passes</li>
+                <li><strong>Roll-off:</strong> How quickly gain decreases outside the passband (dB/decade)</li>
+                <li><strong>Phase shift:</strong> Capacitors/inductors shift phase between voltage and current</li>
+            </ul>
+
+            <div class="tip">
+                <div class="tip-title">Decibels (dB)</div>
+                <p>Voltage gain in dB: <code>20 × log10(Vout/Vin)</code></p>
+                <p>-3dB = 0.707× (half power), -6dB = 0.5×, -20dB = 0.1×</p>
+            </div>
+        </section>
+
+        <!-- 9. Tools -->
         <section id="tools" class="section">
-            <h2>8. Tools</h2>
+            <h2>9. Tools</h2>
             <p>Tools are used to interact with and modify your circuit.</p>
 
             <div class="component-grid">
@@ -834,9 +1203,9 @@
             </table>
         </section>
 
-        <!-- 9. Editing Properties -->
+        <!-- 10. Editing Properties -->
         <section id="properties" class="section">
-            <h2>9. Editing Properties</h2>
+            <h2>10. Editing Properties</h2>
             <p>Every component has editable properties that control its behavior. There are several ways to modify these values:</p>
 
             <h3>Method 1: Click to Edit (Recommended)</h3>
@@ -893,9 +1262,9 @@
             </div>
         </section>
 
-        <!-- 10. Running Simulations -->
+        <!-- 11. Running Simulations -->
         <section id="simulation" class="section">
-            <h2>10. Running Simulations</h2>
+            <h2>11. Running Simulations</h2>
 
             <h3>Simulation Controls</h3>
             <table class="shortcut-table">
@@ -960,62 +1329,10 @@
             </div>
         </section>
 
-        <!-- 11. Circuit Templates -->
+        <!-- 12. Circuit Templates -->
         <section id="templates" class="section">
-            <h2>11. Circuit Templates</h2>
-            <p>Circuit Templates provide pre-built circuit configurations that you can place with a single click. They're great for learning and quick prototyping.</p>
-
-            <h3>Available Templates</h3>
-            <div class="component-grid">
-                <div class="component-card">
-                    <h4>Voltage Divider</h4>
-                    <p>Two resistors in series creating a voltage ratio. Classic reference circuit for understanding Ohm's law.</p>
-                </div>
-                <div class="component-card">
-                    <h4>RC Low-Pass Filter</h4>
-                    <p>Resistor-capacitor filter that passes low frequencies and attenuates high frequencies.</p>
-                </div>
-                <div class="component-card">
-                    <h4>RC High-Pass Filter</h4>
-                    <p>Resistor-capacitor filter that passes high frequencies and blocks DC and low frequencies.</p>
-                </div>
-                <div class="component-card">
-                    <h4>LED Circuit</h4>
-                    <p>Simple LED with current-limiting resistor. Properly biased for safe operation.</p>
-                </div>
-                <div class="component-card">
-                    <h4>Half-Wave Rectifier</h4>
-                    <p>Single diode converting AC to pulsating DC. Foundation of power supply design.</p>
-                </div>
-                <div class="component-card">
-                    <h4>Full-Wave Rectifier</h4>
-                    <p>Four-diode bridge converting AC to full-wave DC. More efficient than half-wave.</p>
-                </div>
-                <div class="component-card">
-                    <h4>Inverting Amplifier</h4>
-                    <p>Op-amp circuit with negative gain. Output is inverted and scaled version of input.</p>
-                </div>
-                <div class="component-card">
-                    <h4>Non-Inverting Amplifier</h4>
-                    <p>Op-amp circuit with positive gain. Output is in-phase with input.</p>
-                </div>
-                <div class="component-card">
-                    <h4>Voltage Follower</h4>
-                    <p>Unity-gain buffer with high input impedance. Used for impedance matching.</p>
-                </div>
-                <div class="component-card">
-                    <h4>Summing Amplifier</h4>
-                    <p>Op-amp circuit that adds multiple input signals together.</p>
-                </div>
-                <div class="component-card">
-                    <h4>Differentiator</h4>
-                    <p>Op-amp circuit that outputs the derivative of the input signal.</p>
-                </div>
-                <div class="component-card">
-                    <h4>Integrator</h4>
-                    <p>Op-amp circuit that outputs the integral of the input signal.</p>
-                </div>
-            </div>
+            <h2>12. Circuit Templates</h2>
+            <p>Circuit Templates provide pre-built circuit configurations that you can place with a single click. They're organized by category and include basic circuits, filters, op-amp circuits, transistor amplifiers, and digital building blocks.</p>
 
             <h3>Using Templates</h3>
             <ol>
@@ -1025,15 +1342,159 @@
                 <li>The complete circuit will be placed with proper component values and wiring</li>
             </ol>
 
+            <!-- Basic Circuits -->
+            <h3>Basic Circuits</h3>
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>Voltage Divider</h4>
+                    <p>Two resistors in series create an output voltage that's a fraction of the input. <code>Vout = Vin × R2/(R1+R2)</code>. Fundamental for biasing and level shifting.</p>
+                </div>
+                <div class="component-card">
+                    <h4>LED + Resistor</h4>
+                    <p>Simple LED with current-limiting resistor. The resistor value sets the current: <code>R = (Vs - Vf)/I</code> where Vf is the LED forward voltage (~2V). Essential for safe LED operation.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Half-Wave Rectifier</h4>
+                    <p>Single diode converting AC to pulsating DC. Conducts only during positive half-cycles. Output frequency equals input frequency. Efficiency ~40%.</p>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <h3>Passive Filters</h3>
+            <p>Filters pass certain frequencies while attenuating others. The cutoff frequency is where the output is -3dB (≈70.7%) of the input.</p>
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>RC Low-Pass Filter</h4>
+                    <p>Passes low frequencies, attenuates high frequencies. Cutoff: <code>fc = 1/(2πRC)</code>. Rolls off at 20dB/decade above fc. The capacitor "shorts" high frequencies to ground.</p>
+                </div>
+                <div class="component-card">
+                    <h4>RC High-Pass Filter</h4>
+                    <p>Passes high frequencies, blocks DC and low frequencies. Same cutoff formula. The capacitor blocks DC and low frequencies while passing AC signals.</p>
+                </div>
+                <div class="component-card">
+                    <h4>RL Low-Pass Filter</h4>
+                    <p>Inductor-based low-pass filter. Cutoff: <code>fc = R/(2πL)</code>. The inductor opposes changes in current, blocking high-frequency signals.</p>
+                </div>
+                <div class="component-card">
+                    <h4>RL High-Pass Filter</h4>
+                    <p>Inductor-based high-pass filter. At low frequencies, the inductor acts as a short circuit; at high frequencies, it presents high impedance.</p>
+                </div>
+            </div>
+
+            <!-- Op-Amp Circuits -->
+            <h3>Op-Amp Circuits</h3>
+            <p>Op-amps (operational amplifiers) are high-gain differential amplifiers. With negative feedback, they form the basis of analog signal processing. Key concept: the op-amp tries to make both inputs equal (virtual short).</p>
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>Inverting Amplifier</h4>
+                    <p>Input connects through Ri to the - input, with Rf as feedback. Gain: <code>Av = -Rf/Ri</code>. Inverts the signal (180° phase shift). The - input is a "virtual ground."</p>
+                </div>
+                <div class="component-card">
+                    <h4>Non-Inverting Amplifier</h4>
+                    <p>Input connects to + input, resistors form voltage divider on - input. Gain: <code>Av = 1 + Rf/Ri</code>. Output is in-phase with input. High input impedance.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Voltage Follower</h4>
+                    <p>Unity-gain buffer (gain = 1). Output directly connected to - input. Very high input impedance, very low output impedance. Perfect for impedance matching.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Summing Amplifier</h4>
+                    <p>Adds multiple input signals: <code>Vout = -Rf(V1/R1 + V2/R2 + ...)</code>. Used in audio mixers and DACs. Each input is weighted by its resistor ratio.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Integrator</h4>
+                    <p>Output is the integral of input: <code>Vout = -1/(RC)∫Vin dt</code>. A square wave in produces a triangle wave out. Capacitor provides frequency-dependent feedback.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Differentiator</h4>
+                    <p>Output is the derivative of input: <code>Vout = -RC(dVin/dt)</code>. A triangle wave in produces a square wave out. Sensitive to noise at high frequencies.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Comparator</h4>
+                    <p>Compares two voltages and outputs high or low. No negative feedback, so it runs open-loop. Output swings to rail voltages. Used for threshold detection.</p>
+                </div>
+            </div>
+
+            <!-- Transistor Amplifiers -->
+            <h3>Transistor Amplifiers (BJT)</h3>
+            <p>Bipolar Junction Transistors amplify current. The collector current is β (hFE) times the base current: <code>Ic = β × Ib</code>. Proper biasing is crucial for linear operation.</p>
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>Common Emitter</h4>
+                    <p>Most common BJT configuration. High voltage gain (<code>Av ≈ -Rc/Re</code>), inverts signal. Voltage divider bias (R1, R2) sets the operating point for stability.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Two-Stage Amplifier</h4>
+                    <p>Cascaded common-emitter stages for higher gain. Coupling capacitors block DC between stages. Total gain is product of individual stage gains.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Differential Pair</h4>
+                    <p>Two matched transistors with shared emitter resistor. Amplifies the difference between two inputs while rejecting common-mode signals. Foundation of op-amps.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Current Mirror</h4>
+                    <p>Copies a reference current to another branch. One transistor is diode-connected (B-C shorted), setting Vbe for the mirror transistor. <code>Iout = Iref × (Area ratio)</code>.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Push-Pull Output</h4>
+                    <p>Complementary NPN/PNP pair for efficient power output. NPN conducts positive half-cycles, PNP conducts negative. Class AB bias eliminates crossover distortion.</p>
+                </div>
+            </div>
+
+            <!-- MOSFET Circuits -->
+            <h3>MOSFET Circuits</h3>
+            <p>MOSFETs are voltage-controlled devices with extremely high input impedance. Drain current depends on gate-source voltage: <code>Id = k(Vgs - Vth)²</code> in saturation.</p>
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>Common Source</h4>
+                    <p>MOSFET equivalent of common-emitter. High voltage gain, high input impedance. Biased by resistive divider or self-bias. Gain: <code>Av = -gm × Rd</code>.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Source Follower</h4>
+                    <p>MOSFET equivalent of emitter follower (common-drain). Unity voltage gain but high current gain. Output at source follows gate input minus Vgs.</p>
+                </div>
+                <div class="component-card">
+                    <h4>CMOS Inverter</h4>
+                    <p>Complementary NMOS/PMOS pair forms digital inverter. One transistor is always off, so static power is nearly zero. Foundation of all digital CMOS logic.</p>
+                </div>
+            </div>
+
+            <!-- Power Supply Circuits -->
+            <h3>Power Supply & Rectifier Circuits</h3>
+            <p>Rectifiers convert AC to DC. Filter capacitors smooth the pulsating DC output. Transformers step voltage up or down and provide isolation.</p>
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>Full-Wave Bridge Rectifier</h4>
+                    <p>Four diodes in a bridge configuration. Both half-cycles of AC are rectified. Output frequency is twice the input. More efficient than half-wave (~81%). Filter cap smooths ripple.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Center-Tap Rectifier</h4>
+                    <p>Uses center-tapped transformer with two diodes. Each diode conducts during alternate half-cycles. Simpler than bridge but requires center-tap transformer. Output referenced to center tap.</p>
+                </div>
+                <div class="component-card">
+                    <h4>AC to DC Supply</h4>
+                    <p>Complete power supply with transformer, bridge rectifier, and filter capacitor. Transformer provides isolation and voltage step-down. Produces smooth DC output from AC mains.</p>
+                </div>
+                <div class="component-card">
+                    <h4>120V American AC-DC</h4>
+                    <p>Typical American power supply: 120V 60Hz input, 10:1 step-down transformer (to 12V), full-wave bridge rectifier, large filter capacitor. Produces ~12V DC for common electronics.</p>
+                </div>
+            </div>
+
             <div class="tip">
                 <div class="tip-title">Modifying Templates</div>
-                After placing a template, you can modify any component's values or add additional components to customize the circuit for your needs.
+                After placing a template, you can modify any component's values. Try changing resistor values in a voltage divider to see how the output changes, or adjust filter component values to change the cutoff frequency.
+            </div>
+
+            <div class="note">
+                <div class="note-title">Learning Path</div>
+                <p>Start with simple circuits (voltage divider, LED) to understand Ohm's law. Move to filters to learn about frequency response. Then explore op-amp circuits before tackling transistor amplifiers. Each builds on concepts from the previous.</p>
             </div>
         </section>
 
-        <!-- 12. Oscilloscope -->
+        <!-- 13. Oscilloscope -->
         <section id="oscilloscope" class="section">
-            <h2>12. Oscilloscope</h2>
+            <h2>13. Oscilloscope</h2>
             <p>The built-in digital oscilloscope displays voltage waveforms over time. It supports up to 4 channels with independent triggering and measurement capabilities.</p>
 
             <h3>Setting Up Probes</h3>
@@ -1090,9 +1551,9 @@
             </ul>
         </section>
 
-        <!-- 13. Measurements -->
+        <!-- 14. Measurements -->
         <section id="measurements" class="section">
-            <h2>13. Measurements</h2>
+            <h2>14. Measurements</h2>
             <p>The measurement panel provides real-time readings and waveform statistics.</p>
 
             <h3>Voltage & Current Display</h3>
@@ -1133,9 +1594,62 @@
             </ul>
         </section>
 
-        <!-- 14. Advanced Analysis -->
+        <!-- 13b. Math Channels -->
+        <section id="math-channels" class="section">
+            <h2>13b. Math Channels</h2>
+            <p>Math channels perform real-time computations on oscilloscope probe signals, enabling derived measurements without additional probes.</p>
+
+            <h3>Available Operations</h3>
+            <table class="shortcut-table">
+                <thead>
+                    <tr><th>Operation</th><th>Formula</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><strong>Add</strong></td><td>A + B</td><td>Sum of two channels</td></tr>
+                    <tr><td><strong>Subtract</strong></td><td>A - B</td><td>Difference between channels (useful for differential measurements)</td></tr>
+                    <tr><td><strong>Multiply</strong></td><td>A × B</td><td>Product of two channels (power calculation with V×I)</td></tr>
+                    <tr><td><strong>Divide</strong></td><td>A ÷ B</td><td>Ratio of two channels (gain measurements)</td></tr>
+                    <tr><td><strong>Derivative</strong></td><td>dA/dt</td><td>Rate of change (slew rate, dV/dt for noise detection)</td></tr>
+                    <tr><td><strong>Integral</strong></td><td>∫A dt</td><td>Running integral (charge accumulation, flux linkage)</td></tr>
+                    <tr><td><strong>Absolute</strong></td><td>|A|</td><td>Magnitude of signal (rectified output)</td></tr>
+                    <tr><td><strong>Invert</strong></td><td>-A</td><td>Inverted signal</td></tr>
+                    <tr><td><strong>Log</strong></td><td>log₁₀(|A|)</td><td>Logarithmic scale (dB conversion)</td></tr>
+                    <tr><td><strong>Square Root</strong></td><td>√|A|</td><td>Square root (RMS from power)</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Math Channel Configuration</h3>
+            <ul>
+                <li><strong>Source A/B:</strong> Select probe channels (CH1-CH8) as inputs</li>
+                <li><strong>Scale:</strong> Multiply output by scaling factor</li>
+                <li><strong>Offset:</strong> Add DC offset to output</li>
+            </ul>
+
+            <h3>Practical Applications</h3>
+            <div class="tip">
+                <div class="tip-title">Power Measurement</div>
+                Use <strong>Multiply</strong> with voltage probe (A) and current sense voltage (B) to calculate instantaneous power P = V × I.
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Differential Signals</div>
+                Use <strong>Subtract</strong> to measure differential signals like RS-485, or to cancel common-mode noise.
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Slew Rate Analysis</div>
+                Use <strong>Derivative</strong> to see the rate of change of a signal - essential for analyzing op-amp slew limiting or switching transients.
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Charge Measurement</div>
+                Use <strong>Integral</strong> of current to measure charge (Q = ∫I dt), useful for capacitor and battery analysis.
+            </div>
+        </section>
+
+        <!-- 15. Advanced Analysis -->
         <section id="advanced" class="section">
-            <h2>14. Advanced Analysis</h2>
+            <h2>15. Advanced Analysis</h2>
             <p>Circuit Playground includes advanced analysis tools found in professional simulators like SPICE, TINA-TI, and OrCAD.</p>
 
             <h3>Parametric Sweep</h3>
@@ -1173,9 +1687,61 @@
             </div>
         </section>
 
-        <!-- 15. Keyboard Shortcuts -->
+        <!-- 15b. Data Export -->
+        <section id="data-export" class="section">
+            <h2>15b. Data Export</h2>
+            <p>Export oscilloscope waveforms and measurement data to CSV files for further analysis in external tools like Excel, MATLAB, Python, or other data processing applications.</p>
+
+            <h3>Waveform Export</h3>
+            <p>Export time-series data from oscilloscope channels:</p>
+            <ul>
+                <li><strong>Format:</strong> CSV (comma-separated values)</li>
+                <li><strong>Columns:</strong> Time, CH1, CH2, CH3, ... (enabled channels)</li>
+                <li><strong>Resolution:</strong> Up to 1024 data points per channel</li>
+                <li><strong>Units:</strong> Time in seconds, Voltage in volts</li>
+            </ul>
+
+            <h3>Measurement Export</h3>
+            <p>Export calculated waveform measurements to CSV:</p>
+            <table class="shortcut-table">
+                <thead>
+                    <tr><th>Measurement</th><th>Description</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>V_min, V_max</td><td>Minimum and maximum voltage</td></tr>
+                    <tr><td>V_pp</td><td>Peak-to-peak voltage</td></tr>
+                    <tr><td>V_avg</td><td>Average (DC) voltage</td></tr>
+                    <tr><td>V_rms</td><td>RMS voltage</td></tr>
+                    <tr><td>Frequency</td><td>Measured frequency (Hz)</td></tr>
+                    <tr><td>Period</td><td>Signal period (seconds)</td></tr>
+                    <tr><td>Rise_time</td><td>10% to 90% rise time</td></tr>
+                    <tr><td>Fall_time</td><td>90% to 10% fall time</td></tr>
+                    <tr><td>Duty_cycle</td><td>Duty cycle percentage</td></tr>
+                </tbody>
+            </table>
+
+            <h3>CSV File Format Example</h3>
+            <pre class="code-block">
+Time,CH1,CH2,CH3
+0.000000,0.000000,0.000000,5.000000
+0.000001,0.314159,0.000628,5.000000
+0.000002,0.628319,0.001257,5.000000
+...</pre>
+
+            <div class="tip">
+                <div class="tip-title">Data Analysis in Python</div>
+                Import exported CSV files using pandas: <code>df = pd.read_csv('waveform.csv')</code>, then use matplotlib for plotting or numpy for signal processing.
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Excel Analysis</div>
+                Open CSV directly in Excel to create charts, calculate statistics, or perform FFT analysis with built-in functions.
+            </div>
+        </section>
+
+        <!-- 16. Keyboard Shortcuts -->
         <section id="shortcuts" class="section">
-            <h2>15. Keyboard Shortcuts</h2>
+            <h2>16. Keyboard Shortcuts</h2>
             <p>Press <kbd>F1</kbd> at any time to see a quick reference of all shortcuts.</p>
 
             <h3>File & Edit</h3>
@@ -1235,9 +1801,9 @@
             </table>
         </section>
 
-        <!-- 16. Tips & Best Practices -->
+        <!-- 17. Tips & Best Practices -->
         <section id="tips" class="section">
-            <h2>16. Tips & Best Practices</h2>
+            <h2>17. Tips & Best Practices</h2>
 
             <div class="tip">
                 <div class="tip-title">Always Start with Ground</div>
@@ -1275,9 +1841,9 @@
             </div>
         </section>
 
-        <!-- 17. Troubleshooting -->
+        <!-- 18. Troubleshooting -->
         <section id="troubleshooting" class="section">
-            <h2>17. Troubleshooting</h2>
+            <h2>18. Troubleshooting</h2>
 
             <h3>Simulation Won't Start</h3>
             <ul>
@@ -1312,9 +1878,9 @@
             </div>
         </section>
 
-        <!-- 18. Building from Source -->
+        <!-- 19. Building from Source -->
         <section id="building" class="section">
-            <h2>18. Building from Source</h2>
+            <h2>19. Building from Source</h2>
 
             <h3>Requirements</h3>
             <ul>

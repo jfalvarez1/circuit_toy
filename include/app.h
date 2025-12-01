@@ -13,6 +13,7 @@
 #include "ui.h"
 #include "input.h"
 #include "analysis.h"
+#include "threadpool.h"
 
 // Application state
 typedef struct {
@@ -45,6 +46,10 @@ typedef struct {
     // Background thread for frequency sweep
     SDL_Thread *freq_sweep_thread;
     bool freq_sweep_thread_running;
+
+    // Thread pool for parallel processing
+    ThreadPool thread_pool;
+    int num_threads;
 } App;
 
 // Initialize application

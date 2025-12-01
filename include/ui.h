@@ -50,6 +50,36 @@ typedef struct {
     bool toggled;
 } Button;
 
+// Palette category IDs
+typedef enum {
+    PCAT_TOOLS = 0,
+    PCAT_SOURCES,
+    PCAT_WAVEFORMS,
+    PCAT_PASSIVES,
+    PCAT_DIODES,
+    PCAT_TRANSISTORS,
+    PCAT_THYRISTORS,
+    PCAT_OPAMPS,
+    PCAT_CONTROLLED,
+    PCAT_SWITCHES,
+    PCAT_TRANSFORMERS,
+    PCAT_LOGIC,
+    PCAT_DIGITAL,
+    PCAT_MIXED,
+    PCAT_REGULATORS,
+    PCAT_DISPLAY,
+    PCAT_MEASUREMENT,
+    PCAT_CIRCUITS,
+    PCAT_COUNT
+} PaletteCategoryID;
+
+// Palette category (collapsible)
+typedef struct {
+    const char *name;
+    bool collapsed;
+    int header_y;       // Y position of header (for click detection)
+} PaletteCategory;
+
 // Palette item
 typedef struct {
     Rect bounds;
@@ -59,6 +89,7 @@ typedef struct {
     const char *label;
     bool hovered;
     bool selected;
+    PaletteCategoryID category;  // Which category this item belongs to
 } PaletteItem;
 
 // Circuit template palette item
@@ -129,9 +160,12 @@ typedef struct {
     double display_time_step;   // Current time step for display (updated from simulation)
 
     // Component palette
-    PaletteItem palette_items[32];
+    PaletteItem palette_items[128];  // Increased for many new components
     int num_palette_items;
     int selected_palette_idx;
+
+    // Palette categories (collapsible)
+    PaletteCategory categories[PCAT_COUNT];
 
     // Palette scrolling
     int palette_scroll_offset;      // Current scroll offset (pixels from top)
@@ -140,7 +174,7 @@ typedef struct {
     bool palette_scrolling;         // Currently dragging scrollbar
 
     // Circuit template palette
-    CircuitPaletteItem circuit_items[24];
+    CircuitPaletteItem circuit_items[48];
     int num_circuit_items;
     int selected_circuit_type;  // Currently selected circuit template (-1 = none)
     bool placing_circuit;       // True when placing a circuit template
@@ -189,9 +223,11 @@ typedef struct {
 
     // Cursor state
     bool scope_cursor_mode;          // Cursor mode active
-    int scope_cursor_drag;           // Which cursor is being dragged (0=none, 1=cursor1, 2=cursor2)
+    int scope_cursor_drag;           // Which cursor is being dragged (0=none, 1=time1, 2=time2, 3=volt1, 4=volt2, 5=trigger)
     double cursor1_time;             // Cursor 1 time position (0-1 normalized)
     double cursor2_time;             // Cursor 2 time position (0-1 normalized)
+    double cursor1_volt;             // Cursor 1 voltage position (0-1 normalized, 0.5 = center)
+    double cursor2_volt;             // Cursor 2 voltage position (0-1 normalized, 0.5 = center)
 
     // FFT display state
     bool scope_fft_mode;             // FFT display active
@@ -292,6 +328,7 @@ void ui_render_sweep_panel(UIState *ui, SDL_Renderer *renderer, void *analysis);
 void ui_render_monte_carlo_panel(UIState *ui, SDL_Renderer *renderer, void *analysis);
 void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer);
 void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer);
+void ui_render_neon_trim(UIState *ui, SDL_Renderer *renderer);
 
 // Handle UI events
 // Returns: -1 = not handled, 0+ = action ID
@@ -330,8 +367,8 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_TIMESTEP_DOWN 30   // Decrease time step
 #define UI_ACTION_TIMESTEP_AUTO 31   // Auto-adjust time step
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
-#define UI_ACTION_SELECT_COMP   200  // + component type
-#define UI_ACTION_SELECT_CIRCUIT 300 // + circuit template type
+#define UI_ACTION_SELECT_COMP   200  // + component type (supports up to 300 component types)
+#define UI_ACTION_SELECT_CIRCUIT 500 // + circuit template type
 #define UI_ACTION_PROP_APPLY    1000 // Apply property text edit
 #define UI_ACTION_PROP_EDIT     1100 // + property type (PROP_VALUE, PROP_FREQUENCY, etc.)
 

@@ -20,7 +20,7 @@
 #define WINDOW_HEIGHT 720
 #define TOOLBAR_HEIGHT 50
 #define PALETTE_WIDTH 160
-#define PROPERTIES_WIDTH 350
+#define PROPERTIES_WIDTH 420
 #define STATUSBAR_HEIGHT 24
 
 // Canvas area
@@ -45,34 +45,152 @@
 // Component types
 typedef enum {
     COMP_NONE = 0,
+
+    // === PASSIVE COMPONENTS ===
     COMP_GROUND,
-    COMP_DC_VOLTAGE,
-    COMP_AC_VOLTAGE,
-    COMP_DC_CURRENT,
     COMP_RESISTOR,
     COMP_CAPACITOR,
     COMP_CAPACITOR_ELEC,    // Electrolytic capacitor (polarized)
     COMP_INDUCTOR,
-    COMP_DIODE,
-    COMP_ZENER,             // Zener diode
-    COMP_SCHOTTKY,          // Schottky diode
-    COMP_LED,               // Light-emitting diode
-    COMP_NPN_BJT,
-    COMP_PNP_BJT,
-    COMP_NMOS,
-    COMP_PMOS,
-    COMP_OPAMP,
-    // Waveform generators
+    COMP_POTENTIOMETER,     // Variable resistor (3 terminals)
+    COMP_PHOTORESISTOR,     // Light-dependent resistor (LDR)
+    COMP_THERMISTOR,        // Temperature-dependent resistor (NTC/PTC)
+    COMP_MEMRISTOR,         // Memory resistor
+    COMP_FUSE,              // Overcurrent protection
+    COMP_CRYSTAL,           // Quartz crystal oscillator
+    COMP_SPARK_GAP,         // Overvoltage protection
+
+    // === VOLTAGE/CURRENT SOURCES ===
+    COMP_DC_VOLTAGE,
+    COMP_AC_VOLTAGE,
+    COMP_DC_CURRENT,
+    COMP_AC_CURRENT,        // AC current source
+    COMP_CLOCK,             // Digital clock source
+    COMP_VADC_SOURCE,       // Variable amplitude DC source
+    COMP_AM_SOURCE,         // Amplitude modulated source
+    COMP_FM_SOURCE,         // Frequency modulated source
+
+    // === WAVEFORM GENERATORS ===
     COMP_SQUARE_WAVE,
     COMP_TRIANGLE_WAVE,
     COMP_SAWTOOTH_WAVE,
     COMP_NOISE_SOURCE,
-    // Switches
+    COMP_PULSE_SOURCE,      // Pulse generator with configurable width
+    COMP_PWM_SOURCE,        // PWM signal generator
+
+    // === DIODES ===
+    COMP_DIODE,
+    COMP_ZENER,             // Zener diode
+    COMP_SCHOTTKY,          // Schottky diode
+    COMP_LED,               // Light-emitting diode
+    COMP_VARACTOR,          // Variable capacitance diode
+    COMP_TUNNEL_DIODE,      // Negative resistance diode
+    COMP_PHOTODIODE,        // Light-sensitive diode
+
+    // === TRANSISTORS - BJT ===
+    COMP_NPN_BJT,
+    COMP_PNP_BJT,
+    COMP_NPN_DARLINGTON,    // NPN Darlington pair
+    COMP_PNP_DARLINGTON,    // PNP Darlington pair
+
+    // === TRANSISTORS - FET ===
+    COMP_NMOS,
+    COMP_PMOS,
+    COMP_NJFET,             // N-channel JFET
+    COMP_PJFET,             // P-channel JFET
+
+    // === THYRISTORS ===
+    COMP_SCR,               // Silicon controlled rectifier
+    COMP_DIAC,              // Diode for alternating current
+    COMP_TRIAC,             // Triode for alternating current
+    COMP_UJT,               // Unijunction transistor
+
+    // === OP-AMPS & AMPLIFIERS ===
+    COMP_OPAMP,
+    COMP_OPAMP_FLIPPED,     // Op-amp with + and - inputs swapped (+ on top, - on bottom)
+    COMP_OPAMP_REAL,        // Op-amp with finite gain, bandwidth, input/output impedance
+    COMP_OTA,               // Operational transconductance amplifier
+    COMP_CCII_PLUS,         // Current conveyor II+
+    COMP_CCII_MINUS,        // Current conveyor II-
+
+    // === CONTROLLED SOURCES ===
+    COMP_VCVS,              // Voltage-controlled voltage source
+    COMP_VCCS,              // Voltage-controlled current source
+    COMP_CCVS,              // Current-controlled voltage source
+    COMP_CCCS,              // Current-controlled current source
+
+    // === SWITCHES ===
     COMP_SPST_SWITCH,       // Single-pole single-throw switch
     COMP_SPDT_SWITCH,       // Single-pole double-throw switch
+    COMP_DPDT_SWITCH,       // Double-pole double-throw switch
     COMP_PUSH_BUTTON,       // Momentary push button (normally open)
-    // Annotation
+    COMP_RELAY,             // Electromechanical relay
+    COMP_ANALOG_SWITCH,     // Voltage-controlled analog switch
+
+    // === TRANSFORMERS ===
+    COMP_TRANSFORMER,       // Two-winding transformer
+    COMP_TRANSFORMER_CT,    // Center-tapped transformer (3 secondary terminals)
+
+    // === LOGIC GATES ===
+    COMP_LOGIC_INPUT,       // Logic high/low input
+    COMP_LOGIC_OUTPUT,      // Logic output indicator
+    COMP_NOT_GATE,          // Inverter
+    COMP_AND_GATE,
+    COMP_OR_GATE,
+    COMP_NAND_GATE,
+    COMP_NOR_GATE,
+    COMP_XOR_GATE,
+    COMP_XNOR_GATE,
+    COMP_BUFFER,            // Non-inverting buffer
+    COMP_TRISTATE_BUF,      // Tri-state buffer
+    COMP_SCHMITT_INV,       // Schmitt trigger inverter
+    COMP_SCHMITT_BUF,       // Schmitt trigger buffer
+
+    // === DIGITAL ICS ===
+    COMP_D_FLIPFLOP,        // D flip-flop
+    COMP_JK_FLIPFLOP,       // JK flip-flop
+    COMP_T_FLIPFLOP,        // T (toggle) flip-flop
+    COMP_SR_LATCH,          // SR latch
+    COMP_COUNTER,           // Binary counter
+    COMP_SHIFT_REG,         // Shift register
+    COMP_MUX_2TO1,          // 2-to-1 multiplexer
+    COMP_DEMUX_1TO2,        // 1-to-2 demultiplexer
+    COMP_DECODER,           // Binary decoder
+    COMP_BCD_DECODER,       // BCD to 7-segment decoder (7447/74LS47)
+    COMP_HALF_ADDER,        // Half adder
+    COMP_FULL_ADDER,        // Full adder
+
+    // === MIXED SIGNAL ===
+    COMP_555_TIMER,         // 555 timer IC
+    COMP_DAC,               // Digital-to-analog converter
+    COMP_ADC,               // Analog-to-digital converter
+    COMP_VCO,               // Voltage-controlled oscillator
+    COMP_PLL,               // Phase-locked loop (simplified)
+    COMP_MONOSTABLE,        // Monostable multivibrator (one-shot)
+    COMP_OPTOCOUPLER,       // Optical isolator
+
+    // === VOLTAGE REGULATORS ===
+    COMP_LM317,             // Adjustable voltage regulator
+    COMP_7805,              // 5V fixed regulator
+    COMP_TL431,             // Programmable shunt regulator
+
+    // === DISPLAY/OUTPUT ===
+    COMP_LAMP,              // Indicator lamp
+    COMP_7SEG_DISPLAY,      // 7-segment LED display
+    COMP_LED_ARRAY,         // LED bar graph
+    COMP_DC_MOTOR,          // DC motor
+    COMP_SPEAKER,           // Audio output
+
+    // === MEASUREMENT ===
+    COMP_VOLTMETER,         // Voltage measurement point
+    COMP_AMMETER,           // Current measurement point
+    COMP_WATTMETER,         // Power measurement
+    COMP_TEST_POINT,        // Test point marker
+
+    // === ANNOTATION ===
     COMP_TEXT,
+    COMP_LABEL,             // Named node label
+
     COMP_TYPE_COUNT
 } ComponentType;
 

@@ -111,6 +111,10 @@ typedef enum {
     PROP_SWEEP_FREQ_STEPS,        // Number of steps
     PROP_SWEEP_FREQ_REPEAT,       // Repeat sweep
 
+    // Transformer parameters
+    PROP_TRANS_R_PRIMARY,         // Primary winding resistance
+    PROP_TRANS_R_SECONDARY,       // Secondary winding resistance
+
     // Text annotation parameters
     PROP_TEXT_CONTENT,            // Text content string
     PROP_TEXT_SIZE,               // Font size (1=small, 2=normal, 3=large)
@@ -118,7 +122,58 @@ typedef enum {
     // Bode plot parameters
     PROP_BODE_FREQ_START,         // Start frequency
     PROP_BODE_FREQ_STOP,          // Stop frequency
-    PROP_BODE_NUM_POINTS          // Number of frequency points
+    PROP_BODE_NUM_POINTS,         // Number of frequency points
+
+    // Potentiometer
+    PROP_WIPER_POS,               // Wiper position (0-1)
+
+    // Photoresistor
+    PROP_R_DARK,                  // Resistance in darkness
+    PROP_R_LIGHT,                 // Resistance in light
+    PROP_LIGHT_LEVEL,             // Current light level (0-1)
+
+    // Thermistor
+    PROP_R_25,                    // Resistance at 25°C
+    PROP_BETA,                    // Beta value
+
+    // Fuse
+    PROP_RATING,                  // Current rating
+
+    // JFET
+    PROP_IDSS,                    // Drain saturation current
+    PROP_VP,                      // Pinch-off voltage
+
+    // Controlled sources
+    PROP_GAIN,                    // Gain factor
+
+    // Thyristors
+    PROP_VGT,                     // Gate trigger voltage
+    PROP_IGT,                     // Gate trigger current
+    PROP_IH,                      // Holding current
+    PROP_VBO,                     // Breakover voltage
+
+    // Logic
+    PROP_V_LOW,                   // Logic low voltage
+    PROP_V_HIGH,                  // Logic high voltage
+    PROP_V_THRESHOLD,             // Logic threshold voltage
+    PROP_STATE,                   // Logic state (toggle)
+
+    // 555 Timer
+    PROP_R1,                      // Timing resistor 1
+    PROP_R2,                      // Timing resistor 2
+
+    // Relay
+    PROP_V_COIL,                  // Coil voltage
+    PROP_R_COIL,                  // Coil resistance
+
+    // Switch
+    PROP_R_ON,                    // On-state resistance
+    PROP_R_OFF,                   // Off-state resistance
+    PROP_SWITCH_STATE,            // Switch state (toggle)
+
+    // Lamp
+    PROP_POWER_RATING,            // Power rating
+    PROP_VOLTAGE_RATING           // Voltage rating
 } PropertyType;
 
 // Input state

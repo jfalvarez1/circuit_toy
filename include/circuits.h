@@ -36,6 +36,28 @@ typedef enum {
     CIRCUIT_DIFFERENTIATOR,
     CIRCUIT_SUMMING_AMP,
     CIRCUIT_COMPARATOR,
+    // Power supply / rectifier circuits
+    CIRCUIT_FULLWAVE_BRIDGE,    // Full-wave bridge rectifier
+    CIRCUIT_CENTERTAP_RECT,     // Center-tap rectifier with transformer
+    CIRCUIT_AC_DC_SUPPLY,       // AC to DC power supply with transformer
+    CIRCUIT_AC_DC_AMERICAN,     // American 120V/60Hz to 12V DC
+    // TI Analog Circuits - Amplifiers
+    CIRCUIT_DIFFERENCE_AMP,     // Difference amplifier (subtractor)
+    CIRCUIT_TRANSIMPEDANCE,     // Transimpedance amplifier (I to V)
+    CIRCUIT_INSTR_AMP,          // Instrumentation amplifier (3 op-amp)
+    // TI Analog Circuits - Filters
+    CIRCUIT_SALLEN_KEY_LP,      // Sallen-Key low pass (2nd order)
+    CIRCUIT_BANDPASS_ACTIVE,    // Active band pass filter
+    CIRCUIT_NOTCH_FILTER,       // Twin-T notch filter
+    // TI Analog Circuits - Signal Sources
+    CIRCUIT_WIEN_OSCILLATOR,    // Wien bridge sine oscillator
+    CIRCUIT_CURRENT_SOURCE,     // Constant current source (BJT)
+    // TI Analog Circuits - Comparators/Detection
+    CIRCUIT_WINDOW_COMP,        // Window comparator
+    CIRCUIT_HYSTERESIS_COMP,    // Schmitt trigger (comparator with hysteresis)
+    // TI Analog Circuits - Power/Voltage
+    CIRCUIT_ZENER_REF,          // Zener voltage reference
+    CIRCUIT_PRECISION_RECT,     // Precision full-wave rectifier
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 

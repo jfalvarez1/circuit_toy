@@ -25,7 +25,8 @@ src_files = files(
   'src/ui.c',
   'src/input.c',
   'src/file_io.c',
-  'src/analysis.c'
+  'src/analysis.c',
+  'src/threadpool.c'
 )
 
 # Include directories

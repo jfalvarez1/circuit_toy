@@ -8,6 +8,64 @@
 #include <math.h>
 #include "render.h"
 
+// Forward declarations for new component symbols
+void render_fuse(RenderContext *ctx, float x, float y, int rotation);
+void render_crystal(RenderContext *ctx, float x, float y, int rotation);
+void render_spark_gap(RenderContext *ctx, float x, float y, int rotation);
+void render_potentiometer(RenderContext *ctx, float x, float y, int rotation);
+void render_photoresistor(RenderContext *ctx, float x, float y, int rotation);
+void render_thermistor(RenderContext *ctx, float x, float y, int rotation);
+void render_memristor(RenderContext *ctx, float x, float y, int rotation);
+void render_varactor(RenderContext *ctx, float x, float y, int rotation);
+void render_tunnel_diode(RenderContext *ctx, float x, float y, int rotation);
+void render_photodiode(RenderContext *ctx, float x, float y, int rotation);
+void render_scr(RenderContext *ctx, float x, float y, int rotation);
+void render_diac(RenderContext *ctx, float x, float y, int rotation);
+void render_triac(RenderContext *ctx, float x, float y, int rotation);
+void render_ujt(RenderContext *ctx, float x, float y, int rotation);
+void render_njfet(RenderContext *ctx, float x, float y, int rotation);
+void render_pjfet(RenderContext *ctx, float x, float y, int rotation);
+void render_darlington_npn(RenderContext *ctx, float x, float y, int rotation);
+void render_darlington_pnp(RenderContext *ctx, float x, float y, int rotation);
+void render_opamp_real(RenderContext *ctx, float x, float y, int rotation);
+void render_ota(RenderContext *ctx, float x, float y, int rotation);
+void render_ccii(RenderContext *ctx, float x, float y, int rotation, bool is_plus);
+void render_vcvs(RenderContext *ctx, float x, float y, int rotation);
+void render_vccs(RenderContext *ctx, float x, float y, int rotation);
+void render_ccvs(RenderContext *ctx, float x, float y, int rotation);
+void render_cccs(RenderContext *ctx, float x, float y, int rotation);
+void render_dpdt_switch(RenderContext *ctx, float x, float y, int rotation, int position);
+void render_relay(RenderContext *ctx, float x, float y, int rotation, bool energized);
+void render_analog_switch(RenderContext *ctx, float x, float y, int rotation, bool closed);
+void render_lamp(RenderContext *ctx, float x, float y, int rotation);
+void render_speaker(RenderContext *ctx, float x, float y, int rotation);
+void render_dc_motor(RenderContext *ctx, float x, float y, int rotation);
+void render_voltmeter(RenderContext *ctx, float x, float y, int rotation);
+void render_ammeter(RenderContext *ctx, float x, float y, int rotation);
+void render_wattmeter(RenderContext *ctx, float x, float y, int rotation);
+void render_ac_current_source(RenderContext *ctx, float x, float y, int rotation);
+void render_clock_source(RenderContext *ctx, float x, float y, int rotation);
+void render_pulse_source(RenderContext *ctx, float x, float y, int rotation);
+void render_pwm_source(RenderContext *ctx, float x, float y, int rotation);
+void render_not_gate(RenderContext *ctx, float x, float y, int rotation);
+void render_and_gate(RenderContext *ctx, float x, float y, int rotation);
+void render_or_gate(RenderContext *ctx, float x, float y, int rotation);
+void render_nand_gate(RenderContext *ctx, float x, float y, int rotation);
+void render_nor_gate(RenderContext *ctx, float x, float y, int rotation);
+void render_xor_gate(RenderContext *ctx, float x, float y, int rotation);
+void render_xnor_gate(RenderContext *ctx, float x, float y, int rotation);
+void render_buffer(RenderContext *ctx, float x, float y, int rotation);
+void render_555_timer(RenderContext *ctx, float x, float y, int rotation);
+void render_logic_input(RenderContext *ctx, float x, float y, int rotation, bool high);
+void render_logic_output(RenderContext *ctx, float x, float y, int rotation, bool high);
+void render_d_flipflop(RenderContext *ctx, float x, float y, int rotation);
+void render_vco(RenderContext *ctx, float x, float y, int rotation);
+void render_optocoupler(RenderContext *ctx, float x, float y, int rotation);
+void render_test_point(RenderContext *ctx, float x, float y, int rotation);
+void render_7seg_display(RenderContext *ctx, float x, float y, int rotation);
+void render_led_array(RenderContext *ctx, float x, float y, int rotation);
+void render_bcd_decoder(RenderContext *ctx, float x, float y, int rotation);
+
 // Simple 8x8 bitmap font (ASCII 32-126)
 static const unsigned char font8x8[95][8] = {
     {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, // ' '
@@ -115,6 +173,8 @@ void render_capacitor_elec(RenderContext *ctx, float x, float y, int rotation);
 void render_spst_switch(RenderContext *ctx, float x, float y, int rotation, bool closed);
 void render_spdt_switch(RenderContext *ctx, float x, float y, int rotation, int position);
 void render_push_button(RenderContext *ctx, float x, float y, int rotation, bool pressed);
+void render_transformer(RenderContext *ctx, float x, float y, int rotation);
+void render_transformer_ct(RenderContext *ctx, float x, float y, int rotation);
 
 // Draw a single character using bitmap font
 static void draw_char(SDL_Renderer *renderer, char c, int x, int y) {
@@ -413,19 +473,22 @@ void render_component(RenderContext *ctx, Component *comp) {
             break;
         }
         case COMP_NPN_BJT:
-            render_bjt(ctx, comp->x, comp->y, comp->rotation, false);
+            render_bjt(ctx, comp->x, comp->y, comp->rotation, false, "NPN");
             break;
         case COMP_PNP_BJT:
-            render_bjt(ctx, comp->x, comp->y, comp->rotation, true);
+            render_bjt(ctx, comp->x, comp->y, comp->rotation, true, "PNP");
             break;
         case COMP_NMOS:
-            render_mosfet(ctx, comp->x, comp->y, comp->rotation, false);
+            render_mosfet(ctx, comp->x, comp->y, comp->rotation, false, "NMOS");
             break;
         case COMP_PMOS:
-            render_mosfet(ctx, comp->x, comp->y, comp->rotation, true);
+            render_mosfet(ctx, comp->x, comp->y, comp->rotation, true, "PMOS");
             break;
         case COMP_OPAMP:
             render_opamp(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_OPAMP_FLIPPED:
+            render_opamp_flipped(ctx, comp->x, comp->y, comp->rotation);
             break;
         case COMP_SQUARE_WAVE:
             render_square_wave(ctx, comp->x, comp->y, comp->rotation);
@@ -451,6 +514,12 @@ void render_component(RenderContext *ctx, Component *comp) {
             render_push_button(ctx, comp->x, comp->y, comp->rotation,
                               comp->props.push_button.pressed);
             break;
+        case COMP_TRANSFORMER:
+            render_transformer(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_TRANSFORMER_CT:
+            render_transformer_ct(ctx, comp->x, comp->y, comp->rotation);
+            break;
         case COMP_TEXT: {
             // Render text annotation
             int sx, sy;
@@ -470,6 +539,319 @@ void render_component(RenderContext *ctx, Component *comp) {
             render_draw_text(ctx, comp->props.text.text, sx, sy, text_color);
             break;
         }
+        // === NEW COMPONENT SYMBOLS ===
+        case COMP_FUSE:
+            render_fuse(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_CRYSTAL:
+            render_crystal(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_SPARK_GAP:
+            render_spark_gap(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_POTENTIOMETER:
+            render_potentiometer(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_PHOTORESISTOR:
+            render_photoresistor(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_THERMISTOR:
+            render_thermistor(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_MEMRISTOR:
+            render_memristor(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_VARACTOR:
+            render_varactor(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_TUNNEL_DIODE:
+            render_tunnel_diode(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_PHOTODIODE:
+            render_photodiode(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_SCR:
+            render_scr(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_DIAC:
+            render_diac(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_TRIAC:
+            render_triac(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_UJT:
+            render_ujt(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_NJFET:
+            render_njfet(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_PJFET:
+            render_pjfet(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_NPN_DARLINGTON:
+            render_darlington_npn(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_PNP_DARLINGTON:
+            render_darlington_pnp(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_OPAMP_REAL:
+            render_opamp_real(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_OTA:
+            render_ota(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_CCII_PLUS:
+            render_ccii(ctx, comp->x, comp->y, comp->rotation, true);
+            break;
+        case COMP_CCII_MINUS:
+            render_ccii(ctx, comp->x, comp->y, comp->rotation, false);
+            break;
+        case COMP_VCVS:
+            render_vcvs(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_VCCS:
+            render_vccs(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_CCVS:
+            render_ccvs(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_CCCS:
+            render_cccs(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_DPDT_SWITCH:
+            render_dpdt_switch(ctx, comp->x, comp->y, comp->rotation, 0);
+            break;
+        case COMP_RELAY:
+            render_relay(ctx, comp->x, comp->y, comp->rotation, false);
+            break;
+        case COMP_ANALOG_SWITCH:
+            render_analog_switch(ctx, comp->x, comp->y, comp->rotation, false);
+            break;
+        case COMP_LAMP:
+            render_lamp(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_SPEAKER:
+            render_speaker(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_DC_MOTOR:
+            render_dc_motor(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_VOLTMETER:
+            render_voltmeter(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_AMMETER:
+            render_ammeter(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_WATTMETER:
+            render_wattmeter(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_AC_CURRENT:
+            render_ac_current_source(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_CLOCK:
+            render_clock_source(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_PULSE_SOURCE:
+            render_pulse_source(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_PWM_SOURCE:
+            render_pwm_source(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_NOT_GATE:
+            render_not_gate(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_AND_GATE:
+            render_and_gate(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_OR_GATE:
+            render_or_gate(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_NAND_GATE:
+            render_nand_gate(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_NOR_GATE:
+            render_nor_gate(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_XOR_GATE:
+            render_xor_gate(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_XNOR_GATE:
+            render_xnor_gate(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_BUFFER:
+            render_buffer(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_555_TIMER:
+            render_555_timer(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_LOGIC_INPUT:
+            render_logic_input(ctx, comp->x, comp->y, comp->rotation,
+                              comp->props.logic_input.state);
+            break;
+        case COMP_LOGIC_OUTPUT:
+            render_logic_output(ctx, comp->x, comp->y, comp->rotation, false);
+            break;
+        case COMP_D_FLIPFLOP: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "D", sx - 4, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_VCO: {
+            render_vco(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "VCO", sx - 10, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_OPTOCOUPLER: {
+            render_optocoupler(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "OC", sx - 8, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_TEST_POINT:
+            render_test_point(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_7SEG_DISPLAY:
+            render_7seg_display(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_LED_ARRAY:
+            render_led_array(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_BCD_DECODER:
+            render_bcd_decoder(ctx, comp->x, comp->y, comp->rotation);
+            break;
+
+        // Tristate and Schmitt - use buffer with indicator
+        case COMP_TRISTATE_BUF:
+            render_buffer(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_SCHMITT_INV:
+        case COMP_SCHMITT_BUF:
+            render_buffer(ctx, comp->x, comp->y, comp->rotation);
+            break;
+
+        // Digital ICs - use D flip-flop style box with label
+        case COMP_JK_FLIPFLOP: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "JK", sx - 8, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_T_FLIPFLOP: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "T", sx - 4, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_SR_LATCH: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "SR", sx - 8, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_COUNTER: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "CNT", sx - 10, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_SHIFT_REG: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "SR", sx - 8, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_MUX_2TO1: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "MUX", sx - 10, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_DEMUX_1TO2: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "DMX", sx - 10, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_DECODER: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "DEC", sx - 10, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_HALF_ADDER: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "HA", sx - 8, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_FULL_ADDER: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "FA", sx - 8, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_DAC: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "DAC", sx - 10, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_ADC: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "ADC", sx - 10, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_PLL: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "PLL", sx - 10, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_MONOSTABLE: {
+            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "MONO", sx - 14, sy - 4, COLOR_TEXT);
+            break;
+        }
+
+        // Voltage regulators - use 555-style box with label
+        case COMP_LM317: {
+            render_555_timer(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "317", sx - 10, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_7805: {
+            render_555_timer(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "7805", sx - 14, sy - 4, COLOR_TEXT);
+            break;
+        }
+        case COMP_TL431: {
+            render_555_timer(ctx, comp->x, comp->y, comp->rotation);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            render_draw_text_small(ctx, "431", sx - 10, sy - 4, COLOR_TEXT);
+            break;
+        }
+
+        // Variable/modulated voltage sources
+        case COMP_VADC_SOURCE:
+        case COMP_AM_SOURCE:
+        case COMP_FM_SOURCE:
+            render_voltage_source(ctx, comp->x, comp->y, comp->rotation, false);
+            break;
+
+        // Label - display text
+        case COMP_LABEL: {
+            const char *text = comp->props.text.text;
+            render_set_color(ctx, COLOR_ACCENT);
+            render_draw_text(ctx, text, (int)comp->x - 15, (int)comp->y - 8, COLOR_ACCENT);
+            break;
+        }
+
         default:
             break;
     }
@@ -988,7 +1370,7 @@ void render_capacitor_elec(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_line_rotated(ctx, x, y, -22, -11, -22, -5, rotation); // vertical
 }
 
-void render_bjt(RenderContext *ctx, float x, float y, int rotation, bool is_pnp) {
+void render_bjt(RenderContext *ctx, float x, float y, int rotation, bool is_pnp, const char *label) {
     // Terminals: B at (-20, 0), C at (20, -20), E at (20, 20)
     render_draw_circle(ctx, x, y, 18);
     render_draw_line_rotated(ctx, x, y, -20, 0, -5, 0, rotation);
@@ -1010,9 +1392,17 @@ void render_bjt(RenderContext *ctx, float x, float y, int rotation, bool is_pnp)
         render_draw_line_rotated(ctx, x, y, 8, 12, 5, 8, rotation);
         render_draw_line_rotated(ctx, x, y, 8, 12, 11, 9, rotation);
     }
+
+    // Draw type label
+    if (label) {
+        int sx, sy;
+        render_world_to_screen(ctx, x, y - 28, &sx, &sy);
+        Color label_color = {0x00, 0xff, 0xff, 0xff};  // Cyan
+        render_draw_text(ctx, label, sx - 10, sy, label_color);
+    }
 }
 
-void render_mosfet(RenderContext *ctx, float x, float y, int rotation, bool is_pmos) {
+void render_mosfet(RenderContext *ctx, float x, float y, int rotation, bool is_pmos, const char *label) {
     // Terminals: G at (-20, 0), D at (20, -20), S at (20, 20)
     render_draw_line_rotated(ctx, x, y, -20, 0, -8, 0, rotation);
     render_draw_line_rotated(ctx, x, y, -8, -10, -8, 10, rotation);
@@ -1040,6 +1430,14 @@ void render_mosfet(RenderContext *ctx, float x, float y, int rotation, bool is_p
         render_draw_line_rotated(ctx, x, y, 6, 0, 9, -3, rotation);
         render_draw_line_rotated(ctx, x, y, 6, 0, 9, 3, rotation);
     }
+
+    // Draw type label
+    if (label) {
+        int sx, sy;
+        render_world_to_screen(ctx, x, y - 28, &sx, &sy);
+        Color label_color = {0x00, 0xff, 0xff, 0xff};  // Cyan
+        render_draw_text(ctx, label, sx - 15, sy, label_color);
+    }
 }
 
 void render_opamp(RenderContext *ctx, float x, float y, int rotation) {
@@ -1060,6 +1458,26 @@ void render_opamp(RenderContext *ctx, float x, float y, int rotation) {
     // Draw + symbol for non-inverting input (bottom input at y=+20)
     render_draw_line_rotated(ctx, x, y, -20, 20, -12, 20, rotation);  // horizontal
     render_draw_line_rotated(ctx, x, y, -16, 16, -16, 24, rotation);  // vertical
+}
+
+void render_opamp_flipped(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals: + at (-40, -20), - at (-40, 20), OUT at (40, 0)
+    // Triangle (same as regular opamp)
+    render_draw_line_rotated(ctx, x, y, -25, -30, -25, 30, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, -30, 30, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, 30, 30, 0, rotation);
+    // Inputs
+    render_draw_line_rotated(ctx, x, y, -40, -20, -25, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 20, -25, 20, rotation);
+    // Output
+    render_draw_line_rotated(ctx, x, y, 30, 0, 40, 0, rotation);
+
+    // Draw + symbol for non-inverting input (TOP input at y=-20)
+    render_draw_line_rotated(ctx, x, y, -20, -20, -12, -20, rotation);  // horizontal
+    render_draw_line_rotated(ctx, x, y, -16, -24, -16, -16, rotation);  // vertical
+
+    // Draw - symbol for inverting input (BOTTOM input at y=+20)
+    render_draw_line_rotated(ctx, x, y, -20, 20, -12, 20, rotation);
 }
 
 void render_square_wave(RenderContext *ctx, float x, float y, int rotation) {
@@ -1197,6 +1615,111 @@ void render_push_button(RenderContext *ctx, float x, float y, int rotation, bool
     }
 }
 
+void render_transformer(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals: P1 at (-50, -20), P2 at (-50, 20), S1 at (50, -20), S2 at (50, 20)
+
+    // Primary winding leads
+    render_draw_line_rotated(ctx, x, y, -50, -20, -30, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -50, 20, -30, 20, rotation);
+
+    // Primary coil (4 half-circles on left side)
+    for (int i = 0; i < 4; i++) {
+        float coil_cy = -15 + i * 10;
+        for (int a = 90; a <= 270; a += 15) {
+            float r1 = a * M_PI / 180;
+            float r2 = (a + 15) * M_PI / 180;
+            float dx1 = -20 + 5 * cos(r1);
+            float dy1 = coil_cy + 5 * sin(r1);
+            float dx2 = -20 + 5 * cos(r2);
+            float dy2 = coil_cy + 5 * sin(r2);
+            render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
+        }
+    }
+
+    // Core lines (two vertical lines in the middle)
+    render_draw_line_rotated(ctx, x, y, -8, -25, -8, 25, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, -25, 8, 25, rotation);
+
+    // Secondary coil (4 half-circles on right side)
+    for (int i = 0; i < 4; i++) {
+        float coil_cy = -15 + i * 10;
+        for (int a = -90; a <= 90; a += 15) {
+            float r1 = a * M_PI / 180;
+            float r2 = (a + 15) * M_PI / 180;
+            float dx1 = 20 + 5 * cos(r1);
+            float dy1 = coil_cy + 5 * sin(r1);
+            float dx2 = 20 + 5 * cos(r2);
+            float dy2 = coil_cy + 5 * sin(r2);
+            render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
+        }
+    }
+
+    // Secondary winding leads
+    render_draw_line_rotated(ctx, x, y, 30, -20, 50, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 30, 20, 50, 20, rotation);
+}
+
+void render_transformer_ct(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals: P1 at (-50, -20), P2 at (-50, 20), S1 at (50, -30), CT at (50, 0), S2 at (50, 30)
+
+    // Primary winding leads
+    render_draw_line_rotated(ctx, x, y, -50, -20, -30, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -50, 20, -30, 20, rotation);
+
+    // Primary coil (4 half-circles on left side)
+    for (int i = 0; i < 4; i++) {
+        float coil_cy = -15 + i * 10;
+        for (int a = 90; a <= 270; a += 15) {
+            float r1 = a * M_PI / 180;
+            float r2 = (a + 15) * M_PI / 180;
+            float dx1 = -20 + 5 * cos(r1);
+            float dy1 = coil_cy + 5 * sin(r1);
+            float dx2 = -20 + 5 * cos(r2);
+            float dy2 = coil_cy + 5 * sin(r2);
+            render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
+        }
+    }
+
+    // Core lines (two vertical lines in the middle)
+    render_draw_line_rotated(ctx, x, y, -8, -35, -8, 35, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, -35, 8, 35, rotation);
+
+    // Secondary coil - top half (2 half-circles)
+    for (int i = 0; i < 2; i++) {
+        float coil_cy = -25 + i * 10;
+        for (int a = -90; a <= 90; a += 15) {
+            float r1 = a * M_PI / 180;
+            float r2 = (a + 15) * M_PI / 180;
+            float dx1 = 20 + 5 * cos(r1);
+            float dy1 = coil_cy + 5 * sin(r1);
+            float dx2 = 20 + 5 * cos(r2);
+            float dy2 = coil_cy + 5 * sin(r2);
+            render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
+        }
+    }
+
+    // Center tap connection
+    render_draw_line_rotated(ctx, x, y, 25, 0, 50, 0, rotation);
+
+    // Secondary coil - bottom half (2 half-circles)
+    for (int i = 0; i < 2; i++) {
+        float coil_cy = 15 + i * 10;
+        for (int a = -90; a <= 90; a += 15) {
+            float r1 = a * M_PI / 180;
+            float r2 = (a + 15) * M_PI / 180;
+            float dx1 = 20 + 5 * cos(r1);
+            float dy1 = coil_cy + 5 * sin(r1);
+            float dx2 = 20 + 5 * cos(r2);
+            float dy2 = coil_cy + 5 * sin(r2);
+            render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
+        }
+    }
+
+    // Secondary winding leads
+    render_draw_line_rotated(ctx, x, y, 25, -30, 50, -30, rotation);
+    render_draw_line_rotated(ctx, x, y, 25, 30, 50, 30, rotation);
+}
+
 void render_ghost_component(RenderContext *ctx, Component *comp) {
     SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
     render_set_color(ctx, (Color){0xff, 0xff, 0xff, 0x80});
@@ -1272,4 +1795,1170 @@ void render_selection_box(RenderContext *ctx, float x1, float y1, float x2, floa
     SDL_Rect rect = {sx1, sy1, sx2 - sx1, sy2 - sy1};
     SDL_RenderFillRect(ctx->renderer, &rect);
     SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_NONE);
+}
+
+// ============================================================================
+// NEW COMPONENT SYMBOLS
+// ============================================================================
+
+// Fuse - rectangle with S-curve inside
+void render_fuse(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, 0, 40, 0, rotation);
+    // Rectangle body
+    render_draw_line_rotated(ctx, x, y, -20, -8, 20, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, 8, 20, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, -8, -20, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, -8, 20, 8, rotation);
+    // S-curve fuse element inside
+    render_draw_line_rotated(ctx, x, y, -15, 0, -10, -4, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -4, -5, 4, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, 4, 0, -4, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -4, 5, 4, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 4, 10, -4, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, -4, 15, 0, rotation);
+}
+
+// Crystal oscillator - rectangle between two capacitor plates
+void render_crystal(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 0, 40, 0, rotation);
+    // Left plate (vertical line)
+    render_draw_line_rotated(ctx, x, y, -15, -12, -15, 12, rotation);
+    // Crystal body (rectangle)
+    render_draw_line_rotated(ctx, x, y, -10, -8, 10, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 8, 10, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -8, -10, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, -8, 10, 8, rotation);
+    // Right plate (vertical line)
+    render_draw_line_rotated(ctx, x, y, 15, -12, 15, 12, rotation);
+}
+
+// Spark gap - two angled electrodes with gap
+void render_spark_gap(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 0, 40, 0, rotation);
+    // Left electrode (angled)
+    render_draw_line_rotated(ctx, x, y, -15, 0, -8, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, 0, -8, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, -8, -10, -5, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -8, 10, -5, 0, rotation);
+    // Right electrode (angled)
+    render_draw_line_rotated(ctx, x, y, 15, 0, 8, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 0, 8, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, -10, 5, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, 10, 5, 0, rotation);
+}
+
+// Potentiometer - resistor with arrow (wiper)
+void render_potentiometer(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0), (40, 0), and (0, -20) for wiper
+    // Draw resistor body
+    render_draw_line_rotated(ctx, x, y, -40, 0, -28, 0, rotation);
+    int points[][2] = {{-28,0},{-21,-8},{-7,8},{7,-8},{21,8},{28,0}};
+    for (int i = 0; i < 5; i++) {
+        render_draw_line_rotated(ctx, x, y, points[i][0], points[i][1],
+                                 points[i+1][0], points[i+1][1], rotation);
+    }
+    render_draw_line_rotated(ctx, x, y, 28, 0, 40, 0, rotation);
+    // Wiper arrow pointing down at resistor
+    render_draw_line_rotated(ctx, x, y, 0, -20, 0, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, -4, -10, 0, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, 4, -10, 0, -5, rotation);
+}
+
+// Photoresistor (LDR) - resistor with light arrows
+void render_photoresistor(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    // Draw resistor body
+    render_draw_line_rotated(ctx, x, y, -40, 0, -28, 0, rotation);
+    int points[][2] = {{-28,0},{-21,-8},{-7,8},{7,-8},{21,8},{28,0}};
+    for (int i = 0; i < 5; i++) {
+        render_draw_line_rotated(ctx, x, y, points[i][0], points[i][1],
+                                 points[i+1][0], points[i+1][1], rotation);
+    }
+    render_draw_line_rotated(ctx, x, y, 28, 0, 40, 0, rotation);
+    // Light arrows pointing at resistor (from top-left)
+    render_draw_line_rotated(ctx, x, y, -20, -20, -10, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -10, -13, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -10, -8, -13, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -20, 0, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -10, -3, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -10, 2, -13, rotation);
+}
+
+// Thermistor - resistor with T symbol
+void render_thermistor(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    // Draw resistor body
+    render_draw_line_rotated(ctx, x, y, -40, 0, -28, 0, rotation);
+    int points[][2] = {{-28,0},{-21,-8},{-7,8},{7,-8},{21,8},{28,0}};
+    for (int i = 0; i < 5; i++) {
+        render_draw_line_rotated(ctx, x, y, points[i][0], points[i][1],
+                                 points[i+1][0], points[i+1][1], rotation);
+    }
+    render_draw_line_rotated(ctx, x, y, 28, 0, 40, 0, rotation);
+    // Diagonal line through (temperature coefficient indicator)
+    render_draw_line_rotated(ctx, x, y, -25, 15, 25, -15, rotation);
+    // Small "t" or temperature mark
+    render_draw_line_rotated(ctx, x, y, 20, -12, 20, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, 17, -9, 23, -9, rotation);
+}
+
+// Memristor - rectangle with thick black band on one side
+void render_memristor(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, 0, 40, 0, rotation);
+    // Rectangle body
+    render_draw_line_rotated(ctx, x, y, -20, -10, 20, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, 10, 20, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, -10, -20, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, -10, 20, 10, rotation);
+    // Filled band on left side (multiple lines to simulate fill)
+    for (int i = -9; i <= 9; i++) {
+        render_draw_line_rotated(ctx, x, y, -20, i, -10, i, rotation);
+    }
+}
+
+// Varactor - diode with capacitor symbol
+void render_varactor(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -10, 0, rotation);
+    // Diode triangle
+    render_draw_line_rotated(ctx, x, y, -10, -12, -10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -12, 10, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 12, 10, 0, rotation);
+    // Cathode bar
+    render_draw_line_rotated(ctx, x, y, 10, -12, 10, 12, rotation);
+    // Extra line for capacitor effect
+    render_draw_line_rotated(ctx, x, y, 15, -12, 15, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 0, 40, 0, rotation);
+}
+
+// Tunnel diode - diode with cathode bends
+void render_tunnel_diode(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -10, 0, rotation);
+    // Triangle
+    render_draw_line_rotated(ctx, x, y, -10, -12, -10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -12, 10, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 12, 10, 0, rotation);
+    // Cathode bar with bends on both ends (inward)
+    render_draw_line_rotated(ctx, x, y, 10, -12, 10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, -12, 14, -12, rotation);
+    render_draw_line_rotated(ctx, x, y, 14, -12, 14, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, 12, 14, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, 14, 12, 14, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, 0, 40, 0, rotation);
+}
+
+// Photodiode - diode with light arrows pointing at it
+void render_photodiode(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -10, 0, rotation);
+    // Triangle
+    render_draw_line_rotated(ctx, x, y, -10, -12, -10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -12, 10, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 12, 10, 0, rotation);
+    // Bar
+    render_draw_line_rotated(ctx, x, y, 10, -12, 10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, 0, 40, 0, rotation);
+    // Light arrows pointing at diode (incoming light)
+    render_draw_line_rotated(ctx, x, y, -20, -22, -8, -14, rotation);
+    render_draw_line_rotated(ctx, x, y, -8, -14, -12, -14, rotation);
+    render_draw_line_rotated(ctx, x, y, -8, -14, -8, -18, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -22, 2, -14, rotation);
+    render_draw_line_rotated(ctx, x, y, 2, -14, -2, -14, rotation);
+    render_draw_line_rotated(ctx, x, y, 2, -14, 2, -18, rotation);
+}
+
+// SCR (Silicon Controlled Rectifier) - diode with gate
+void render_scr(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals: Anode at (-40, 0), Cathode at (40, 0), Gate at (0, 20)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -10, 0, rotation);
+    // Triangle (pointing right)
+    render_draw_line_rotated(ctx, x, y, -10, -12, -10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -12, 10, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 12, 10, 0, rotation);
+    // Bar
+    render_draw_line_rotated(ctx, x, y, 10, -12, 10, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, 0, 40, 0, rotation);
+    // Gate connection from cathode
+    render_draw_line_rotated(ctx, x, y, 0, 6, 0, 20, rotation);
+}
+
+// DIAC - two back-to-back diodes
+void render_diac(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 0, 40, 0, rotation);
+    // First diode (pointing right)
+    render_draw_line_rotated(ctx, x, y, -15, -10, -15, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, -10, 0, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, 10, 0, 0, rotation);
+    // Second diode (pointing left)
+    render_draw_line_rotated(ctx, x, y, 15, -10, 15, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, -10, 0, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 10, 0, 0, rotation);
+    // Center bar
+    render_draw_line_rotated(ctx, x, y, 0, -10, 0, 10, rotation);
+}
+
+// TRIAC - bidirectional thyristor with gate
+void render_triac(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals: MT1 at (-40, 0), MT2 at (40, 0), Gate at (0, 20)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 0, 40, 0, rotation);
+    // First triangle (pointing right)
+    render_draw_line_rotated(ctx, x, y, -15, -10, -15, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, -10, 0, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, 10, 0, 0, rotation);
+    // Second triangle (pointing left)
+    render_draw_line_rotated(ctx, x, y, 15, -10, 15, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, -10, 0, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 10, 0, 0, rotation);
+    // Center bar
+    render_draw_line_rotated(ctx, x, y, 0, -10, 0, 10, rotation);
+    // Gate terminal
+    render_draw_line_rotated(ctx, x, y, -8, 5, 0, 20, rotation);
+}
+
+// UJT (Unijunction Transistor)
+void render_ujt(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals: E at (-20, 0), B1 at (20, 20), B2 at (20, -20)
+    // Vertical bar (base region)
+    render_draw_line_rotated(ctx, x, y, 0, -15, 0, 15, rotation);
+    // Connections to B1 and B2
+    render_draw_line_rotated(ctx, x, y, 0, -15, 20, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 15, 20, 20, rotation);
+    // Emitter with arrow
+    render_draw_line_rotated(ctx, x, y, -20, 0, -5, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, 0, 0, 5, rotation);
+    // Arrow on emitter
+    render_draw_line_rotated(ctx, x, y, -3, 3, 0, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, 0, -3, 3, rotation);
+}
+
+// N-channel JFET
+void render_njfet(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals: G at (-20, 0), D at (20, -20), S at (20, 20)
+    // Channel (vertical bar)
+    render_draw_line_rotated(ctx, x, y, 0, -15, 0, 15, rotation);
+    // Drain and Source connections
+    render_draw_line_rotated(ctx, x, y, 0, -15, 0, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -20, 20, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 15, 0, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 20, 20, 20, rotation);
+    // Gate with arrow pointing inward (N-channel)
+    render_draw_line_rotated(ctx, x, y, -20, 0, -5, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, 0, 0, 0, rotation);
+    // Arrow pointing toward channel
+    render_draw_line_rotated(ctx, x, y, -8, -3, -5, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -8, 3, -5, 0, rotation);
+    // Type label
+    int sx, sy;
+    render_world_to_screen(ctx, x, y - 28, &sx, &sy);
+    Color label_color = {0x00, 0xff, 0xff, 0xff};
+    render_draw_text(ctx, "NJFET", sx - 15, sy, label_color);
+}
+
+// P-channel JFET
+void render_pjfet(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals: G at (-20, 0), D at (20, -20), S at (20, 20)
+    // Channel (vertical bar)
+    render_draw_line_rotated(ctx, x, y, 0, -15, 0, 15, rotation);
+    // Drain and Source connections
+    render_draw_line_rotated(ctx, x, y, 0, -15, 0, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -20, 20, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 15, 0, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 20, 20, 20, rotation);
+    // Gate with arrow pointing outward (P-channel)
+    render_draw_line_rotated(ctx, x, y, -20, 0, 0, 0, rotation);
+    // Arrow pointing away from channel
+    render_draw_line_rotated(ctx, x, y, -12, -3, -8, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -12, 3, -8, 0, rotation);
+    // Type label
+    int sx, sy;
+    render_world_to_screen(ctx, x, y - 28, &sx, &sy);
+    Color label_color = {0x00, 0xff, 0xff, 0xff};
+    render_draw_text(ctx, "PJFET", sx - 15, sy, label_color);
+}
+
+// Darlington transistor (NPN)
+void render_darlington_npn(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals: B at (-20, 0), C at (20, -20), E at (20, 20)
+    render_draw_circle(ctx, x, y, 22);
+    // First BJT (smaller, left)
+    render_draw_line_rotated(ctx, x, y, -20, 0, -10, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -6, -10, 6, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -3, -2, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 3, -2, 8, rotation);
+    // Second BJT (connected to first)
+    render_draw_line_rotated(ctx, x, y, -2, 8, 5, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 2, 5, 14, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 5, 12, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 11, 12, 16, rotation);
+    // Collector connection (from first BJT)
+    render_draw_line_rotated(ctx, x, y, -2, -8, 12, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, -8, 12, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, 0, 20, -20, rotation);
+    // Emitter connection (from second BJT)
+    render_draw_line_rotated(ctx, x, y, 12, 16, 20, 20, rotation);
+    // Arrow on final emitter
+    render_draw_line_rotated(ctx, x, y, 10, 14, 8, 11, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, 14, 13, 12, rotation);
+    // Type label
+    int sx, sy;
+    render_world_to_screen(ctx, x, y - 32, &sx, &sy);
+    Color label_color = {0x00, 0xff, 0xff, 0xff};
+    render_draw_text(ctx, "NPN-D", sx - 15, sy, label_color);
+}
+
+// Darlington transistor (PNP)
+void render_darlington_pnp(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals: B at (-20, 0), C at (20, -20), E at (20, 20)
+    render_draw_circle(ctx, x, y, 22);
+    // First BJT (smaller, left)
+    render_draw_line_rotated(ctx, x, y, -20, 0, -10, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -6, -10, 6, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -3, -2, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 3, -2, 8, rotation);
+    // Second BJT (connected to first)
+    render_draw_line_rotated(ctx, x, y, -2, 8, 5, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 2, 5, 14, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 5, 12, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 11, 12, 16, rotation);
+    // Collector connection (from first BJT)
+    render_draw_line_rotated(ctx, x, y, -2, -8, 12, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, -8, 12, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, 0, 20, -20, rotation);
+    // Emitter connection (from second BJT)
+    render_draw_line_rotated(ctx, x, y, 12, 16, 20, 20, rotation);
+    // Arrow on emitter pointing inward (PNP)
+    render_draw_line_rotated(ctx, x, y, 7, 10, 9, 7, rotation);
+    render_draw_line_rotated(ctx, x, y, 7, 10, 4, 8, rotation);
+    // Type label
+    int sx, sy;
+    render_world_to_screen(ctx, x, y - 32, &sx, &sy);
+    Color label_color = {0x00, 0xff, 0xff, 0xff};
+    render_draw_text(ctx, "PNP-D", sx - 15, sy, label_color);
+}
+
+// Real op-amp (with finite gain indicator)
+void render_opamp_real(RenderContext *ctx, float x, float y, int rotation) {
+    // Same as regular op-amp but with "A" inside
+    render_draw_line_rotated(ctx, x, y, -25, -30, -25, 30, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, -30, 30, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, 30, 30, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, -20, -25, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 20, -25, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, 30, 0, 40, 0, rotation);
+    // - and + symbols
+    render_draw_line_rotated(ctx, x, y, -20, -20, -12, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, 20, -12, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, -16, 16, -16, 24, rotation);
+    // "A" symbol inside to indicate finite gain
+    render_draw_line_rotated(ctx, x, y, -5, 8, 0, -2, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -2, 5, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, -2, 4, 2, 4, rotation);
+}
+
+// OTA (Operational Transconductance Amplifier)
+void render_ota(RenderContext *ctx, float x, float y, int rotation) {
+    // Same as op-amp but with "gm" or diamond inside
+    render_draw_line_rotated(ctx, x, y, -25, -30, -25, 30, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, -30, 30, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, 30, 30, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, -20, -25, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 20, -25, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, 30, 0, 40, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, -20, -12, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, 20, -12, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, -16, 16, -16, 24, rotation);
+    // Small diamond inside
+    render_draw_line_rotated(ctx, x, y, 0, -6, 6, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 6, 0, 0, 6, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 6, -6, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -6, 0, 0, -6, rotation);
+}
+
+// CCII (Current Conveyor) - generic symbol
+void render_ccii(RenderContext *ctx, float x, float y, int rotation, bool is_plus) {
+    // Box with terminals
+    render_draw_line_rotated(ctx, x, y, -25, -25, 25, -25, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, 25, 25, 25, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, -25, -25, 25, rotation);
+    render_draw_line_rotated(ctx, x, y, 25, -25, 25, 25, rotation);
+    // Terminals: X at (-40, 0), Y at (0, -40), Z at (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -25, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -40, 0, -25, rotation);
+    render_draw_line_rotated(ctx, x, y, 25, 0, 40, 0, rotation);
+    // Labels inside (simplified)
+    // X label position
+    render_draw_line_rotated(ctx, x, y, -20, -3, -17, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -17, 0, -20, 3, rotation);
+    render_draw_line_rotated(ctx, x, y, -17, 0, -14, -3, rotation);
+    render_draw_line_rotated(ctx, x, y, -17, 0, -14, 3, rotation);
+    // + or - for polarity
+    if (is_plus) {
+        render_draw_line_rotated(ctx, x, y, 15, -3, 15, 3, rotation);
+    }
+    render_draw_line_rotated(ctx, x, y, 12, 0, 18, 0, rotation);
+}
+
+// VCVS (Voltage-Controlled Voltage Source) - diamond
+void render_vcvs(RenderContext *ctx, float x, float y, int rotation) {
+    // Diamond shape with + - inside
+    render_draw_line_rotated(ctx, x, y, 0, -20, 20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, 0, 0, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 20, -20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, 0, 0, -20, rotation);
+    // Terminals at corners
+    render_draw_line_rotated(ctx, x, y, 0, -20, 0, -40, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 20, 0, 40, rotation);
+    // + and - inside
+    render_draw_line_rotated(ctx, x, y, -3, -8, 3, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -11, 0, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, -3, 8, 3, 8, rotation);
+}
+
+// VCCS (Voltage-Controlled Current Source) - diamond with arrow
+void render_vccs(RenderContext *ctx, float x, float y, int rotation) {
+    // Diamond shape
+    render_draw_line_rotated(ctx, x, y, 0, -20, 20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, 0, 0, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 20, -20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, 0, 0, -20, rotation);
+    // Terminals
+    render_draw_line_rotated(ctx, x, y, 0, -20, 0, -40, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 20, 0, 40, rotation);
+    // Current arrow inside
+    render_draw_line_rotated(ctx, x, y, 0, 10, 0, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, -4, -5, 0, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, 4, -5, 0, -10, rotation);
+}
+
+// CCVS (Current-Controlled Voltage Source) - diamond
+void render_ccvs(RenderContext *ctx, float x, float y, int rotation) {
+    // Diamond with + - and "r" indicator
+    render_draw_line_rotated(ctx, x, y, 0, -20, 20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, 0, 0, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 20, -20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, 0, 0, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -20, 0, -40, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 20, 0, 40, rotation);
+    // + and -
+    render_draw_line_rotated(ctx, x, y, -3, -8, 3, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -11, 0, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, -3, 8, 3, 8, rotation);
+    // Small "r" mark
+    render_draw_line_rotated(ctx, x, y, 8, -2, 8, 2, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, -2, 10, -2, rotation);
+}
+
+// CCCS (Current-Controlled Current Source) - diamond with arrow
+void render_cccs(RenderContext *ctx, float x, float y, int rotation) {
+    // Diamond shape
+    render_draw_line_rotated(ctx, x, y, 0, -20, 20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, 0, 0, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 20, -20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, 0, 0, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -20, 0, -40, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 20, 0, 40, rotation);
+    // Arrow
+    render_draw_line_rotated(ctx, x, y, 0, 10, 0, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, -4, -5, 0, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, 4, -5, 0, -10, rotation);
+    // Beta mark
+    render_draw_line_rotated(ctx, x, y, 8, -2, 8, 4, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, 0, 11, -2, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, 2, 11, 4, rotation);
+}
+
+// DPDT Switch
+void render_dpdt_switch(RenderContext *ctx, float x, float y, int rotation, int position) {
+    // 6 terminals: two poles, each with common and two throws
+    // Draw two SPDT switches side by side
+    // Left pole
+    render_draw_line_rotated(ctx, x, y, -50, -20, -30, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -50, 20, -30, 20, rotation);
+    render_draw_circle_rotated(ctx, x, y, -30, -20, 3, rotation);
+    render_draw_circle_rotated(ctx, x, y, -30, 20, 3, rotation);
+    render_draw_circle_rotated(ctx, x, y, -10, 0, 3, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 0, -30, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -30, 0, -50, 0, rotation);
+    // Left switch blade
+    if (position == 0) {
+        render_draw_line_rotated(ctx, x, y, -10, 0, -28, -18, rotation);
+    } else {
+        render_draw_line_rotated(ctx, x, y, -10, 0, -28, 18, rotation);
+    }
+    // Right pole
+    render_draw_line_rotated(ctx, x, y, 50, -20, 30, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 50, 20, 30, 20, rotation);
+    render_draw_circle_rotated(ctx, x, y, 30, -20, 3, rotation);
+    render_draw_circle_rotated(ctx, x, y, 30, 20, 3, rotation);
+    render_draw_circle_rotated(ctx, x, y, 10, 0, 3, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, 0, 30, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 30, 0, 50, 0, rotation);
+    // Right switch blade
+    if (position == 0) {
+        render_draw_line_rotated(ctx, x, y, 10, 0, 28, -18, rotation);
+    } else {
+        render_draw_line_rotated(ctx, x, y, 10, 0, 28, 18, rotation);
+    }
+    // Mechanical linkage (dashed line between poles)
+    render_draw_line_rotated(ctx, x, y, -10, -8, 10, -8, rotation);
+}
+
+// Relay - coil with switch
+void render_relay(RenderContext *ctx, float x, float y, int rotation, bool energized) {
+    // Coil on left side
+    render_draw_line_rotated(ctx, x, y, -50, -20, -30, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -50, 20, -30, 20, rotation);
+    // Coil rectangle
+    render_draw_line_rotated(ctx, x, y, -30, -15, -10, -15, rotation);
+    render_draw_line_rotated(ctx, x, y, -30, 15, -10, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, -30, -15, -30, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -15, -10, 15, rotation);
+    // Coil windings inside
+    for (int i = -12; i <= 12; i += 6) {
+        render_draw_line_rotated(ctx, x, y, -28, i, -12, i, rotation);
+    }
+    // Switch on right side
+    render_draw_line_rotated(ctx, x, y, 50, -20, 30, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 50, 20, 30, 20, rotation);
+    render_draw_circle_rotated(ctx, x, y, 30, -20, 3, rotation);
+    render_draw_circle_rotated(ctx, x, y, 30, 20, 3, rotation);
+    render_draw_circle_rotated(ctx, x, y, 10, 0, 3, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, 0, -5, 0, rotation);
+    // Switch blade
+    if (energized) {
+        render_draw_line_rotated(ctx, x, y, 10, 0, 28, 18, rotation);  // NO contact closed
+    } else {
+        render_draw_line_rotated(ctx, x, y, 10, 0, 28, -18, rotation);  // NC contact closed
+    }
+    // Dashed line showing magnetic coupling
+    render_draw_line_rotated(ctx, x, y, -5, -10, -5, 10, rotation);
+}
+
+// Analog Switch
+void render_analog_switch(RenderContext *ctx, float x, float y, int rotation, bool closed) {
+    // Terminals at (-40, 0) and (40, 0), control at (0, -20)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 0, 40, 0, rotation);
+    // Switch contacts
+    render_draw_circle_rotated(ctx, x, y, -15, 0, 3, rotation);
+    render_draw_circle_rotated(ctx, x, y, 15, 0, 3, rotation);
+    // Switch blade
+    if (closed) {
+        render_draw_line_rotated(ctx, x, y, -15, 0, 15, 0, rotation);
+    } else {
+        render_draw_line_rotated(ctx, x, y, -15, 0, 10, -10, rotation);
+    }
+    // Control input (arrow pointing at switch)
+    render_draw_line_rotated(ctx, x, y, 0, -20, 0, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -3, -12, 0, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, 3, -12, 0, -8, rotation);
+}
+
+// Lamp - circle with X inside
+void render_lamp(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 0, 40, 0, rotation);
+    // Circle
+    render_draw_circle(ctx, x, y, 15);
+    // X inside
+    render_draw_line_rotated(ctx, x, y, -10, -10, 10, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 10, 10, -10, rotation);
+}
+
+// Speaker - rectangle with cone
+void render_speaker(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, -10) and (-40, 10)
+    render_draw_line_rotated(ctx, x, y, -40, -10, -20, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 10, -20, 10, rotation);
+    // Voice coil box
+    render_draw_line_rotated(ctx, x, y, -20, -10, -10, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, 10, -10, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, -10, -20, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -10, -10, 10, rotation);
+    // Cone (trapezoid)
+    render_draw_line_rotated(ctx, x, y, -10, -10, 20, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 10, 20, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, -20, 20, 20, rotation);
+}
+
+// DC Motor - circle with M
+void render_dc_motor(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -18, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 18, 0, 40, 0, rotation);
+    // Circle
+    render_draw_circle(ctx, x, y, 18);
+    // M inside (stylized)
+    render_draw_line_rotated(ctx, x, y, -8, 8, -8, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -8, -8, 0, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 0, 8, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, -8, 8, 8, rotation);
+}
+
+// Voltmeter - circle with V
+void render_voltmeter(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -18, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 18, 0, 40, 0, rotation);
+    // Circle
+    render_draw_circle(ctx, x, y, 18);
+    // V inside
+    render_draw_line_rotated(ctx, x, y, -8, -10, 0, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 10, 8, -10, rotation);
+}
+
+// Ammeter - circle with A
+void render_ammeter(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -18, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 18, 0, 40, 0, rotation);
+    // Circle
+    render_draw_circle(ctx, x, y, 18);
+    // A inside
+    render_draw_line_rotated(ctx, x, y, -8, 10, 0, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -10, 8, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, 3, 5, 3, rotation);
+}
+
+// Wattmeter - circle with W
+void render_wattmeter(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -18, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 18, 0, 40, 0, rotation);
+    render_draw_circle(ctx, x, y, 18);
+    // W inside
+    render_draw_line_rotated(ctx, x, y, -10, -8, -5, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, 8, 0, -2, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -2, 5, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 8, 10, -8, rotation);
+}
+
+// AC Current Source
+void render_ac_current_source(RenderContext *ctx, float x, float y, int rotation) {
+    // Circle with sine wave and arrow
+    render_draw_circle(ctx, x, y, 18);
+    render_draw_line_rotated(ctx, x, y, 0, -18, 0, -40, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 18, 0, 40, rotation);
+    // Sine wave
+    for (int i = 0; i < 16; i++) {
+        float dx1 = -8 + i;
+        float dx2 = -8 + i + 1;
+        float dy1 = 5 * sin((i / 16.0) * 2 * M_PI);
+        float dy2 = 5 * sin(((i + 1) / 16.0) * 2 * M_PI);
+        render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
+    }
+}
+
+// Clock source
+void render_clock_source(RenderContext *ctx, float x, float y, int rotation) {
+    render_draw_circle(ctx, x, y, 18);
+    render_draw_line_rotated(ctx, x, y, 0, -18, 0, -40, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 18, 0, 40, rotation);
+    // Clock wave (digital square with edges)
+    render_draw_line_rotated(ctx, x, y, -10, 5, -10, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -5, -5, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, -5, -5, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, 5, 0, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 5, 0, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -5, 5, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, -5, 5, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 5, 10, 5, rotation);
+}
+
+// Pulse source
+void render_pulse_source(RenderContext *ctx, float x, float y, int rotation) {
+    render_draw_circle(ctx, x, y, 18);
+    render_draw_line_rotated(ctx, x, y, 0, -18, 0, -40, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 18, 0, 40, rotation);
+    // Single pulse
+    render_draw_line_rotated(ctx, x, y, -10, 5, -5, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, 5, -5, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, -5, 5, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, -5, 5, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 5, 10, 5, rotation);
+}
+
+// PWM source
+void render_pwm_source(RenderContext *ctx, float x, float y, int rotation) {
+    render_draw_circle(ctx, x, y, 18);
+    render_draw_line_rotated(ctx, x, y, 0, -18, 0, -40, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 18, 0, 40, rotation);
+    // PWM pattern (varying duty cycle)
+    render_draw_line_rotated(ctx, x, y, -12, 5, -10, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, 5, -10, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -5, -6, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, -6, -5, -6, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, -6, 5, -4, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, -4, 5, -4, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, -4, -5, 2, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, 2, -5, 2, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, 2, 5, 4, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, 4, 5, 4, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, 4, -5, 12, -5, rotation);
+}
+
+// Logic gate helper - draw gate body outline
+static void render_gate_body(RenderContext *ctx, float x, float y, int rotation) {
+    // Left side (straight)
+    render_draw_line_rotated(ctx, x, y, -15, -15, -15, 15, rotation);
+    // Top
+    render_draw_line_rotated(ctx, x, y, -15, -15, 10, -15, rotation);
+    // Bottom
+    render_draw_line_rotated(ctx, x, y, -15, 15, 10, 15, rotation);
+}
+
+// NOT gate (inverter)
+void render_not_gate(RenderContext *ctx, float x, float y, int rotation) {
+    // Triangle
+    render_draw_line_rotated(ctx, x, y, -20, -15, -20, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, -15, 10, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, 15, 10, 0, rotation);
+    // Inversion bubble
+    render_draw_circle_rotated(ctx, x, y, 15, 0, 5, rotation);
+    // Input/output leads
+    render_draw_line_rotated(ctx, x, y, -40, 0, -20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, 0, 40, 0, rotation);
+}
+
+// AND gate
+void render_and_gate(RenderContext *ctx, float x, float y, int rotation) {
+    // Left side
+    render_draw_line_rotated(ctx, x, y, -15, -15, -15, 15, rotation);
+    // Top
+    render_draw_line_rotated(ctx, x, y, -15, -15, 5, -15, rotation);
+    // Bottom
+    render_draw_line_rotated(ctx, x, y, -15, 15, 5, 15, rotation);
+    // Curved right side (arc)
+    for (int a = -90; a <= 90; a += 10) {
+        float r1 = a * M_PI / 180;
+        float r2 = (a + 10) * M_PI / 180;
+        float dx1 = 5 + 15 * cos(r1);
+        float dy1 = 15 * sin(r1);
+        float dx2 = 5 + 15 * cos(r2);
+        float dy2 = 15 * sin(r2);
+        render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
+    }
+    // Inputs
+    render_draw_line_rotated(ctx, x, y, -40, -8, -15, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 8, -15, 8, rotation);
+    // Output
+    render_draw_line_rotated(ctx, x, y, 20, 0, 40, 0, rotation);
+}
+
+// OR gate
+void render_or_gate(RenderContext *ctx, float x, float y, int rotation) {
+    // Curved left side
+    for (int a = -30; a <= 30; a += 10) {
+        float r1 = a * M_PI / 180;
+        float r2 = (a + 10) * M_PI / 180;
+        float dx1 = -25 + 20 * cos(r1);
+        float dy1 = 20 * sin(r1);
+        float dx2 = -25 + 20 * cos(r2);
+        float dy2 = 20 * sin(r2);
+        render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
+    }
+    // Top curve
+    for (int a = 180; a <= 240; a += 10) {
+        float r1 = a * M_PI / 180;
+        float r2 = (a + 10) * M_PI / 180;
+        float dx1 = 20 + 25 * cos(r1);
+        float dy1 = -30 + 25 * sin(r1);
+        float dx2 = 20 + 25 * cos(r2);
+        float dy2 = -30 + 25 * sin(r2);
+        render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
+    }
+    // Bottom curve
+    for (int a = 120; a <= 180; a += 10) {
+        float r1 = a * M_PI / 180;
+        float r2 = (a + 10) * M_PI / 180;
+        float dx1 = 20 + 25 * cos(r1);
+        float dy1 = 30 + 25 * sin(r1);
+        float dx2 = 20 + 25 * cos(r2);
+        float dy2 = 30 + 25 * sin(r2);
+        render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
+    }
+    // Point
+    render_draw_line_rotated(ctx, x, y, 7, -9, 20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 7, 9, 20, 0, rotation);
+    // Inputs
+    render_draw_line_rotated(ctx, x, y, -40, -8, -10, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 8, -10, 8, rotation);
+    // Output
+    render_draw_line_rotated(ctx, x, y, 20, 0, 40, 0, rotation);
+}
+
+// NAND gate
+void render_nand_gate(RenderContext *ctx, float x, float y, int rotation) {
+    // AND gate body
+    render_draw_line_rotated(ctx, x, y, -15, -15, -15, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, -15, 5, -15, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, 15, 5, 15, rotation);
+    for (int a = -90; a <= 90; a += 10) {
+        float r1 = a * M_PI / 180;
+        float r2 = (a + 10) * M_PI / 180;
+        float dx1 = 5 + 15 * cos(r1);
+        float dy1 = 15 * sin(r1);
+        float dx2 = 5 + 15 * cos(r2);
+        float dy2 = 15 * sin(r2);
+        render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
+    }
+    // Inversion bubble
+    render_draw_circle_rotated(ctx, x, y, 25, 0, 5, rotation);
+    // Inputs/output
+    render_draw_line_rotated(ctx, x, y, -40, -8, -15, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 8, -15, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, 30, 0, 40, 0, rotation);
+}
+
+// NOR gate
+void render_nor_gate(RenderContext *ctx, float x, float y, int rotation) {
+    // OR gate body (simplified)
+    render_draw_line_rotated(ctx, x, y, -15, -15, 5, -15, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, 15, 5, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, -15, -15, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, -15, 15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 15, 15, 0, rotation);
+    // Inversion bubble
+    render_draw_circle_rotated(ctx, x, y, 20, 0, 5, rotation);
+    // Inputs/output
+    render_draw_line_rotated(ctx, x, y, -40, -8, -15, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 8, -15, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, 25, 0, 40, 0, rotation);
+}
+
+// XOR gate
+void render_xor_gate(RenderContext *ctx, float x, float y, int rotation) {
+    // OR shape with extra curve
+    render_draw_line_rotated(ctx, x, y, -18, -15, -18, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, -15, -15, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, -15, 5, -15, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, 15, 5, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, -15, 20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 15, 20, 0, rotation);
+    // Inputs/output
+    render_draw_line_rotated(ctx, x, y, -40, -8, -15, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 8, -15, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, 0, 40, 0, rotation);
+}
+
+// XNOR gate
+void render_xnor_gate(RenderContext *ctx, float x, float y, int rotation) {
+    // XOR body
+    render_draw_line_rotated(ctx, x, y, -18, -15, -18, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, -15, -15, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, -15, 5, -15, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, 15, 5, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, -15, 15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 5, 15, 15, 0, rotation);
+    // Inversion bubble
+    render_draw_circle_rotated(ctx, x, y, 20, 0, 5, rotation);
+    // Inputs/output
+    render_draw_line_rotated(ctx, x, y, -40, -8, -15, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 8, -15, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, 25, 0, 40, 0, rotation);
+}
+
+// Buffer
+void render_buffer(RenderContext *ctx, float x, float y, int rotation) {
+    // Triangle (no bubble)
+    render_draw_line_rotated(ctx, x, y, -20, -15, -20, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, -15, 15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, 15, 15, 0, rotation);
+    // Leads
+    render_draw_line_rotated(ctx, x, y, -40, 0, -20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 0, 40, 0, rotation);
+}
+
+// 555 Timer IC
+void render_555_timer(RenderContext *ctx, float x, float y, int rotation) {
+    // IC package (rectangle)
+    render_draw_line_rotated(ctx, x, y, -30, -30, 30, -30, rotation);
+    render_draw_line_rotated(ctx, x, y, -30, 30, 30, 30, rotation);
+    render_draw_line_rotated(ctx, x, y, -30, -30, -30, 30, rotation);
+    render_draw_line_rotated(ctx, x, y, 30, -30, 30, 30, rotation);
+    // Pin 1 notch
+    render_draw_circle_rotated(ctx, x, y, -25, -25, 3, rotation);
+    // Terminals (8-pin DIP style)
+    render_draw_line_rotated(ctx, x, y, -40, -20, -30, -20, rotation);  // Pin 1 GND
+    render_draw_line_rotated(ctx, x, y, -40, -7, -30, -7, rotation);    // Pin 2 TRIG
+    render_draw_line_rotated(ctx, x, y, -40, 7, -30, 7, rotation);      // Pin 3 OUT
+    render_draw_line_rotated(ctx, x, y, -40, 20, -30, 20, rotation);    // Pin 4 RESET
+    render_draw_line_rotated(ctx, x, y, 30, -20, 40, -20, rotation);    // Pin 8 VCC
+    render_draw_line_rotated(ctx, x, y, 30, -7, 40, -7, rotation);      // Pin 7 DIS
+    render_draw_line_rotated(ctx, x, y, 30, 7, 40, 7, rotation);        // Pin 6 THR
+    render_draw_line_rotated(ctx, x, y, 30, 20, 40, 20, rotation);      // Pin 5 CV
+    // "555" label inside
+    int sx, sy;
+    render_world_to_screen(ctx, x, y, &sx, &sy);
+    render_draw_text_small(ctx, "555", sx - 10, sy - 4, COLOR_TEXT);
+}
+
+// Logic input (switch/level)
+void render_logic_input(RenderContext *ctx, float x, float y, int rotation, bool high) {
+    // Box
+    render_draw_line_rotated(ctx, x, y, -15, -15, 15, -15, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, 15, 15, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, -15, -15, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, -15, 15, 15, rotation);
+    // Output lead
+    render_draw_line_rotated(ctx, x, y, 15, 0, 40, 0, rotation);
+    // H or L inside
+    if (high) {
+        render_draw_line_rotated(ctx, x, y, -8, -8, -8, 8, rotation);
+        render_draw_line_rotated(ctx, x, y, 8, -8, 8, 8, rotation);
+        render_draw_line_rotated(ctx, x, y, -8, 0, 8, 0, rotation);
+    } else {
+        render_draw_line_rotated(ctx, x, y, -5, -8, -5, 8, rotation);
+        render_draw_line_rotated(ctx, x, y, -5, 8, 5, 8, rotation);
+    }
+}
+
+// Logic output (LED indicator)
+void render_logic_output(RenderContext *ctx, float x, float y, int rotation, bool high) {
+    // Circle
+    render_draw_circle(ctx, x, y, 12);
+    // Input lead
+    render_draw_line_rotated(ctx, x, y, -40, 0, -12, 0, rotation);
+    // Fill if high (draw concentric circles to simulate fill)
+    if (high) {
+        for (int r = 10; r > 0; r -= 2) {
+            render_draw_circle(ctx, x, y, r);
+        }
+    }
+}
+
+// D Flip-Flop
+void render_d_flipflop(RenderContext *ctx, float x, float y, int rotation) {
+    // Rectangle
+    render_draw_line_rotated(ctx, x, y, -25, -25, 25, -25, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, 25, 25, 25, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, -25, -25, 25, rotation);
+    render_draw_line_rotated(ctx, x, y, 25, -25, 25, 25, rotation);
+    // Inputs: D, CLK
+    render_draw_line_rotated(ctx, x, y, -40, -15, -25, -15, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 15, -25, 15, rotation);
+    // Clock symbol (triangle)
+    render_draw_line_rotated(ctx, x, y, -25, 12, -20, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, 18, -20, 15, rotation);
+    // Outputs: Q, Q'
+    render_draw_line_rotated(ctx, x, y, 25, -15, 40, -15, rotation);
+    render_draw_line_rotated(ctx, x, y, 25, 15, 40, 15, rotation);
+    // Q' inversion bubble
+    render_draw_circle_rotated(ctx, x, y, 28, 15, 3, rotation);
+}
+
+// VCO (Voltage-Controlled Oscillator)
+void render_vco(RenderContext *ctx, float x, float y, int rotation) {
+    // Circle
+    render_draw_circle(ctx, x, y, 18);
+    render_draw_line_rotated(ctx, x, y, -18, 0, -40, 0, rotation);  // Control input
+    render_draw_line_rotated(ctx, x, y, 18, 0, 40, 0, rotation);   // Output
+    // Sine wave with arrow
+    for (int i = 0; i < 12; i++) {
+        float dx1 = -6 + i;
+        float dx2 = -6 + i + 1;
+        float dy1 = 5 * sin((i / 12.0) * 2 * M_PI);
+        float dy2 = 5 * sin(((i + 1) / 12.0) * 2 * M_PI);
+        render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
+    }
+    // Arrow indicating variable
+    render_draw_line_rotated(ctx, x, y, -10, -12, 5, -12, rotation);
+    render_draw_line_rotated(ctx, x, y, 2, -15, 5, -12, rotation);
+    render_draw_line_rotated(ctx, x, y, 2, -9, 5, -12, rotation);
+}
+
+// Optocoupler
+void render_optocoupler(RenderContext *ctx, float x, float y, int rotation) {
+    // Box outline
+    render_draw_line_rotated(ctx, x, y, -30, -25, 30, -25, rotation);
+    render_draw_line_rotated(ctx, x, y, -30, 25, 30, 25, rotation);
+    render_draw_line_rotated(ctx, x, y, -30, -25, -30, 25, rotation);
+    render_draw_line_rotated(ctx, x, y, 30, -25, 30, 25, rotation);
+    // LED on left (simplified diode)
+    render_draw_line_rotated(ctx, x, y, -40, -15, -20, -15, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 15, -20, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, -10, -20, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, -10, -10, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, 10, -10, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -10, -10, -10, 10, rotation);
+    // Light arrows
+    render_draw_line_rotated(ctx, x, y, -5, -5, 5, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, 2, -8, 5, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, 2, -2, 5, -5, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, 5, 5, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, 2, 2, 5, 5, rotation);
+    render_draw_line_rotated(ctx, x, y, 2, 8, 5, 8, rotation);
+    // Phototransistor on right (simplified)
+    render_draw_line_rotated(ctx, x, y, 10, 0, 10, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, 0, 10, 10, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, -5, 20, -15, rotation);
+    render_draw_line_rotated(ctx, x, y, 10, 5, 20, 15, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, -15, 40, -15, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, 15, 40, 15, rotation);
+}
+
+// Test point marker
+void render_test_point(RenderContext *ctx, float x, float y, int rotation) {
+    // Small circle with cross
+    render_draw_circle(ctx, x, y, 8);
+    render_draw_line_rotated(ctx, x, y, -5, 0, 5, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, -5, 0, 5, rotation);
+    // Lead
+    render_draw_line_rotated(ctx, x, y, 0, 8, 0, 20, rotation);
+}
+
+// 7-segment display
+// Component size: 80x100, terminals: a,b,c,d,COM on left (-40), e,f,g,DP on right (40)
+void render_7seg_display(RenderContext *ctx, float x, float y, int rotation) {
+    // DIP-style IC package
+    // Outer rectangle
+    render_draw_line_rotated(ctx, x, y, -30, -45, 30, -45, rotation);  // Top
+    render_draw_line_rotated(ctx, x, y, 30, -45, 30, 45, rotation);    // Right
+    render_draw_line_rotated(ctx, x, y, 30, 45, -30, 45, rotation);    // Bottom
+    render_draw_line_rotated(ctx, x, y, -30, 45, -30, -45, rotation);  // Left
+
+    // Notch at top (DIP-style)
+    render_draw_circle(ctx, x, y - 45, 5);
+
+    // Left side lead lines to terminals at x=-40 (a, b, c, d, COM)
+    render_draw_line_rotated(ctx, x, y, -30, -40, -40, -40, rotation);  // a
+    render_draw_line_rotated(ctx, x, y, -30, -20, -40, -20, rotation);  // b
+    render_draw_line_rotated(ctx, x, y, -30, 0, -40, 0, rotation);      // c
+    render_draw_line_rotated(ctx, x, y, -30, 20, -40, 20, rotation);    // d
+    render_draw_line_rotated(ctx, x, y, -30, 40, -40, 40, rotation);    // COM
+
+    // Right side lead lines to terminals at x=40 (e, f, g, DP)
+    render_draw_line_rotated(ctx, x, y, 30, -40, 40, -40, rotation);    // e
+    render_draw_line_rotated(ctx, x, y, 30, -20, 40, -20, rotation);    // f
+    render_draw_line_rotated(ctx, x, y, 30, 0, 40, 0, rotation);        // g
+    render_draw_line_rotated(ctx, x, y, 30, 20, 40, 20, rotation);      // DP
+
+    // 7-segment pattern inside (digit "8" outline)
+    // Top horizontal (segment a)
+    render_draw_line_rotated(ctx, x, y, -15, -35, 15, -35, rotation);
+    // Top-left vertical (segment f)
+    render_draw_line_rotated(ctx, x, y, -15, -35, -15, -5, rotation);
+    // Top-right vertical (segment b)
+    render_draw_line_rotated(ctx, x, y, 15, -35, 15, -5, rotation);
+    // Middle horizontal (segment g)
+    render_draw_line_rotated(ctx, x, y, -15, -5, 15, -5, rotation);
+    // Bottom-left vertical (segment e)
+    render_draw_line_rotated(ctx, x, y, -15, -5, -15, 25, rotation);
+    // Bottom-right vertical (segment c)
+    render_draw_line_rotated(ctx, x, y, 15, -5, 15, 25, rotation);
+    // Bottom horizontal (segment d)
+    render_draw_line_rotated(ctx, x, y, -15, 25, 15, 25, rotation);
+    // Decimal point (segment DP)
+    render_fill_circle(ctx, x + 20, y + 25, 3);
+
+    // Label
+    int sx, sy;
+    render_world_to_screen(ctx, x, y, &sx, &sy);
+    Color label_color = {0x00, 0xff, 0xff, 0xff};
+    render_draw_text_small(ctx, "7SEG", sx - 10, sy - 5, label_color);
+}
+
+// LED array (bar graph)
+// Component size: 80x30, terminals at (-40, 0) and (40, 0)
+void render_led_array(RenderContext *ctx, float x, float y, int rotation) {
+    // Lead lines to terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -30, 0, rotation);  // Left lead
+    render_draw_line_rotated(ctx, x, y, 30, 0, 40, 0, rotation);    // Right lead
+
+    // Outer rectangle (sized to fit within component bounds)
+    render_draw_line_rotated(ctx, x, y, -30, -12, 30, -12, rotation);  // Top
+    render_draw_line_rotated(ctx, x, y, 30, -12, 30, 12, rotation);    // Right
+    render_draw_line_rotated(ctx, x, y, 30, 12, -30, 12, rotation);    // Bottom
+    render_draw_line_rotated(ctx, x, y, -30, 12, -30, -12, rotation);  // Left
+
+    // LED segments (8 bars)
+    for (int i = 0; i < 8; i++) {
+        float bx = -26 + i * 7;
+        render_draw_line_rotated(ctx, x, y, bx, -8, bx + 5, -8, rotation);
+        render_draw_line_rotated(ctx, x, y, bx + 5, -8, bx + 5, 8, rotation);
+        render_draw_line_rotated(ctx, x, y, bx + 5, 8, bx, 8, rotation);
+        render_draw_line_rotated(ctx, x, y, bx, 8, bx, -8, rotation);
+    }
+    // Label
+    int sx, sy;
+    render_world_to_screen(ctx, x, y - 22, &sx, &sy);
+    Color label_color = {0x00, 0xff, 0xff, 0xff};
+    render_draw_text(ctx, "LED ARR", sx - 20, sy, label_color);
+}
+
+// BCD to 7-segment decoder (7447/74LS47 style)
+// Component size: 80x140, terminals: A,B,C,D inputs on left, a-g outputs on right
+void render_bcd_decoder(RenderContext *ctx, float x, float y, int rotation) {
+    // DIP-style IC package
+    // Outer rectangle
+    render_draw_line_rotated(ctx, x, y, -30, -65, 30, -65, rotation);  // Top
+    render_draw_line_rotated(ctx, x, y, 30, -65, 30, 65, rotation);    // Right
+    render_draw_line_rotated(ctx, x, y, 30, 65, -30, 65, rotation);    // Bottom
+    render_draw_line_rotated(ctx, x, y, -30, 65, -30, -65, rotation);  // Left
+
+    // Notch at top (DIP-style)
+    render_draw_circle(ctx, x, y - 65, 5);
+
+    // Left side lead lines to terminals (inputs: A, B, C, D)
+    render_draw_line_rotated(ctx, x, y, -30, -60, -40, -60, rotation);  // A
+    render_draw_line_rotated(ctx, x, y, -30, -20, -40, -20, rotation);  // B
+    render_draw_line_rotated(ctx, x, y, -30, 20, -40, 20, rotation);    // C
+    render_draw_line_rotated(ctx, x, y, -30, 60, -40, 60, rotation);    // D
+
+    // Right side lead lines to terminals (outputs: a, b, c, d, e, f, g)
+    render_draw_line_rotated(ctx, x, y, 30, -60, 40, -60, rotation);    // a
+    render_draw_line_rotated(ctx, x, y, 30, -40, 40, -40, rotation);    // b
+    render_draw_line_rotated(ctx, x, y, 30, -20, 40, -20, rotation);    // c
+    render_draw_line_rotated(ctx, x, y, 30, 0, 40, 0, rotation);        // d
+    render_draw_line_rotated(ctx, x, y, 30, 20, 40, 20, rotation);      // e
+    render_draw_line_rotated(ctx, x, y, 30, 40, 40, 40, rotation);      // f
+    render_draw_line_rotated(ctx, x, y, 30, 60, 40, 60, rotation);      // g
+
+    // Draw input labels on left side
+    int sx, sy;
+    Color label_color = {0x00, 0xff, 0xff, 0xff};
+
+    render_world_to_screen(ctx, x - 25, y - 60, &sx, &sy);
+    render_draw_text_small(ctx, "A", sx, sy - 3, label_color);
+    render_world_to_screen(ctx, x - 25, y - 20, &sx, &sy);
+    render_draw_text_small(ctx, "B", sx, sy - 3, label_color);
+    render_world_to_screen(ctx, x - 25, y + 20, &sx, &sy);
+    render_draw_text_small(ctx, "C", sx, sy - 3, label_color);
+    render_world_to_screen(ctx, x - 25, y + 60, &sx, &sy);
+    render_draw_text_small(ctx, "D", sx, sy - 3, label_color);
+
+    // Draw output labels on right side
+    render_world_to_screen(ctx, x + 18, y - 60, &sx, &sy);
+    render_draw_text_small(ctx, "a", sx, sy - 3, label_color);
+    render_world_to_screen(ctx, x + 18, y - 40, &sx, &sy);
+    render_draw_text_small(ctx, "b", sx, sy - 3, label_color);
+    render_world_to_screen(ctx, x + 18, y - 20, &sx, &sy);
+    render_draw_text_small(ctx, "c", sx, sy - 3, label_color);
+    render_world_to_screen(ctx, x + 18, y, &sx, &sy);
+    render_draw_text_small(ctx, "d", sx, sy - 3, label_color);
+    render_world_to_screen(ctx, x + 18, y + 20, &sx, &sy);
+    render_draw_text_small(ctx, "e", sx, sy - 3, label_color);
+    render_world_to_screen(ctx, x + 18, y + 40, &sx, &sy);
+    render_draw_text_small(ctx, "f", sx, sy - 3, label_color);
+    render_world_to_screen(ctx, x + 18, y + 60, &sx, &sy);
+    render_draw_text_small(ctx, "g", sx, sy - 3, label_color);
+
+    // IC label in center
+    render_world_to_screen(ctx, x, y - 5, &sx, &sy);
+    render_draw_text_small(ctx, "7447", sx - 10, sy, label_color);
+    render_world_to_screen(ctx, x, y + 10, &sx, &sy);
+    render_draw_text_small(ctx, "BCD", sx - 8, sy, label_color);
 }

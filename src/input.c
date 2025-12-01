@@ -186,6 +186,8 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                     circuit->probes[input->selected_probe_idx].selected = false;
                                 }
                                 input->multi_selected_count = 0;
+                                // Clear any property editing mode
+                                input->editing_property = false;
 
                                 // Select this probe
                                 input->selected_probe_idx = i;
@@ -1273,6 +1275,13 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                         applied = true;
                     }
                     break;
+                case COMP_TRANSFORMER:
+                case COMP_TRANSFORMER_CT:
+                    if (value > 0 && value <= 1000) {
+                        comp->props.transformer.turns_ratio = value;
+                        applied = true;
+                    }
+                    break;
                 default:
                     break;
             }
@@ -1541,6 +1550,21 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             }
             break;
 
+        // Transformer winding resistances
+        case PROP_TRANS_R_PRIMARY:
+            if ((comp->type == COMP_TRANSFORMER || comp->type == COMP_TRANSFORMER_CT) && value >= 0 && value <= 1e6) {
+                comp->props.transformer.r_primary = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_TRANS_R_SECONDARY:
+            if ((comp->type == COMP_TRANSFORMER || comp->type == COMP_TRANSFORMER_CT) && value >= 0 && value <= 1e6) {
+                comp->props.transformer.r_secondary = value;
+                applied = true;
+            }
+            break;
+
         // Diode breakdown voltage
         case PROP_BV:
             if (comp->type == COMP_DIODE && value > 0 && value <= 10000) {
@@ -1574,35 +1598,35 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
 
         // Op-Amp parameters
         case PROP_OPAMP_GAIN:
-            if (comp->type == COMP_OPAMP && value > 0 && value <= 1e12) {
+            if ((comp->type == COMP_OPAMP || comp->type == COMP_OPAMP_FLIPPED) && value > 0 && value <= 1e12) {
                 comp->props.opamp.gain = value;
                 applied = true;
             }
             break;
 
         case PROP_OPAMP_GBW:
-            if (comp->type == COMP_OPAMP && value > 0 && value <= 1e12) {
+            if ((comp->type == COMP_OPAMP || comp->type == COMP_OPAMP_FLIPPED) && value > 0 && value <= 1e12) {
                 comp->props.opamp.gbw = value;
                 applied = true;
             }
             break;
 
         case PROP_OPAMP_SLEW:
-            if (comp->type == COMP_OPAMP && value > 0 && value <= 1e6) {
+            if ((comp->type == COMP_OPAMP || comp->type == COMP_OPAMP_FLIPPED) && value > 0 && value <= 1e6) {
                 comp->props.opamp.slew_rate = value;
                 applied = true;
             }
             break;
 
         case PROP_OPAMP_VMAX:
-            if (comp->type == COMP_OPAMP && value >= -1000 && value <= 1000) {
+            if ((comp->type == COMP_OPAMP || comp->type == COMP_OPAMP_FLIPPED) && value >= -1000 && value <= 1000) {
                 comp->props.opamp.vmax = value;
                 applied = true;
             }
             break;
 
         case PROP_OPAMP_VMIN:
-            if (comp->type == COMP_OPAMP && value >= -1000 && value <= 1000) {
+            if ((comp->type == COMP_OPAMP || comp->type == COMP_OPAMP_FLIPPED) && value >= -1000 && value <= 1000) {
                 comp->props.opamp.vmin = value;
                 applied = true;
             }

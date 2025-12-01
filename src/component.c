@@ -10,7 +10,8 @@
 
 // Component type information table
 // NOTE: Terminal positions must be multiples of GRID_SIZE (20) for proper grid alignment
-static const ComponentTypeInfo component_info[] = {
+// Array is sized to COMP_TYPE_COUNT to ensure all component types have entries
+static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
     [COMP_NONE] = { "None", "?", 0, {}, 0, 0, {} },
 
     [COMP_GROUND] = {
@@ -269,6 +270,26 @@ static const ComponentTypeInfo component_info[] = {
         }}
     },
 
+    [COMP_OPAMP_FLIPPED] = {
+        "OpAmp(flipped)", "U", 3,
+        {{ -40, -20, "+" }, { -40, 20, "-" }, { 40, 0, "OUT" }},  // + on top, - on bottom
+        80, 60,
+        { .opamp = {
+            .gain = 100000.0,       // 100 dB open-loop gain
+            .voffset = 0.0,         // No input offset
+            .vmax = 15.0,           // +15V rail
+            .vmin = -15.0,          // -15V rail
+            .gbw = 1e6,             // 1 MHz gain-bandwidth product
+            .slew_rate = 0.5,       // 0.5 V/us slew rate
+            .r_in = 1e12,           // 1 TOhm input impedance
+            .r_out = 75.0,          // 75 Ohm output impedance
+            .i_bias = 1e-12,        // 1 pA input bias current
+            .cmrr = 90.0,           // 90 dB CMRR
+            .rail_to_rail = false,  // Not rail-to-rail
+            .ideal = true           // Ideal mode by default
+        }}
+    },
+
     // Waveform generators
     [COMP_SQUARE_WAVE] = {
         "Square Wave", "SQ", 2,
@@ -375,6 +396,1132 @@ static const ComponentTypeInfo component_info[] = {
             .r_off = 1e9
         }}
     },
+
+    [COMP_TRANSFORMER] = {
+        "Transformer", "T", 4,
+        {{ -50, -20, "P1" }, { -50, 20, "P2" }, { 50, -20, "S1" }, { 50, 20, "S2" }},
+        100, 60,
+        { .transformer = {
+            .l_primary = 10e-3,         // 10mH primary
+            .turns_ratio = 1.0,         // 1:1 ratio
+            .coupling = 0.99,           // 99% coupling
+            .r_primary = 0.1,           // 100 mOhm DCR
+            .r_secondary = 0.1,         // 100 mOhm DCR
+            .n_primary = 100,           // 100 turns primary
+            .n_secondary = 100,         // 100 turns secondary
+            .ideal = true,              // Ideal model
+            .center_tap = false
+        }}
+    },
+
+    [COMP_TRANSFORMER_CT] = {
+        "Transformer CT", "T", 5,
+        {{ -50, -20, "P1" }, { -50, 20, "P2" }, { 50, -30, "S1" }, { 50, 0, "CT" }, { 50, 30, "S2" }},
+        100, 80,
+        { .transformer = {
+            .l_primary = 10e-3,         // 10mH primary
+            .turns_ratio = 1.0,         // 1:1 ratio (full secondary)
+            .coupling = 0.99,           // 99% coupling
+            .r_primary = 0.1,           // 100 mOhm DCR
+            .r_secondary = 0.1,         // 100 mOhm DCR
+            .n_primary = 100,           // 100 turns primary
+            .n_secondary = 100,         // 100 turns secondary (50+50)
+            .ideal = true,              // Ideal model
+            .center_tap = true
+        }}
+    },
+
+    // === ADDITIONAL PASSIVE COMPONENTS ===
+
+    [COMP_POTENTIOMETER] = {
+        "Potentiometer", "POT", 3,
+        {{ -40, 0, "1" }, { 40, 0, "2" }, { 0, -20, "W" }},
+        80, 40,
+        { .potentiometer = {
+            .resistance = 10000.0,      // 10k total resistance
+            .wiper_pos = 0.5,           // Center position
+            .tolerance = 20.0,
+            .taper = 0,                 // Linear
+            .ideal = true
+        }}
+    },
+
+    [COMP_PHOTORESISTOR] = {
+        "Photoresistor", "LDR", 2,
+        {{ -40, 0, "1" }, { 40, 0, "2" }},
+        80, 30,
+        { .photoresistor = {
+            .r_dark = 1e6,              // 1 MOhm in darkness
+            .r_light = 100.0,           // 100 Ohm in bright light
+            .light_level = 0.5,         // Medium light
+            .gamma = 0.7,
+            .ideal = true
+        }}
+    },
+
+    [COMP_THERMISTOR] = {
+        "Thermistor", "TH", 2,
+        {{ -40, 0, "1" }, { 40, 0, "2" }},
+        80, 30,
+        { .thermistor = {
+            .r_25 = 10000.0,            // 10k at 25°C
+            .beta = 3950.0,             // Typical NTC beta
+            .temp = 25.0,               // Room temperature
+            .type = 0,                  // NTC
+            .ideal = true
+        }}
+    },
+
+    [COMP_MEMRISTOR] = {
+        "Memristor", "MR", 2,
+        {{ -40, 0, "1" }, { 40, 0, "2" }},
+        80, 20,
+        { .resistor = {
+            .resistance = 1000.0,
+            .tolerance = 10.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_FUSE] = {
+        "Fuse", "F", 2,
+        {{ -40, 0, "1" }, { 40, 0, "2" }},
+        80, 20,
+        { .fuse = {
+            .rating = 1.0,              // 1A rating
+            .resistance = 0.01,         // 10 mOhm cold resistance
+            .i2t = 1.0,
+            .blown = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_CRYSTAL] = {
+        "Crystal", "Y", 2,
+        {{ -40, 0, "1" }, { 40, 0, "2" }},
+        80, 30,
+        { .capacitor = {
+            .capacitance = 20e-12,      // Equivalent series capacitance
+            .ideal = true
+        }}
+    },
+
+    [COMP_SPARK_GAP] = {
+        "Spark Gap", "SG", 2,
+        {{ -40, 0, "1" }, { 40, 0, "2" }},
+        80, 30,
+        { .zener = {
+            .vz = 90.0,                 // Breakdown voltage
+            .rz = 1.0,
+            .ideal = true
+        }}
+    },
+
+    // === ADDITIONAL SOURCES ===
+
+    [COMP_AC_CURRENT] = {
+        "AC Current", "~I", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .ac_current = {
+            .amplitude = 0.001,         // 1mA peak
+            .frequency = 60.0,
+            .phase = 0.0,
+            .offset = 0.0,
+            .r_parallel = 1e9,
+            .ideal = true
+        }}
+    },
+
+    [COMP_CLOCK] = {
+        "Clock", "CLK", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .clock = {
+            .frequency = 1000.0,        // 1 kHz
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .duty = 0.5,
+            .ideal = true
+        }}
+    },
+
+    [COMP_VADC_SOURCE] = {
+        "Variable DC", "VDC", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .dc_voltage = {
+            .voltage = 5.0,
+            .r_series = 0.001,
+            .ideal = true
+        }}
+    },
+
+    [COMP_AM_SOURCE] = {
+        "AM Source", "AM", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .ac_voltage = {
+            .amplitude = 5.0,
+            .frequency = 1000.0,
+            .phase = 0.0,
+            .offset = 0.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_FM_SOURCE] = {
+        "FM Source", "FM", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .ac_voltage = {
+            .amplitude = 5.0,
+            .frequency = 1000.0,
+            .phase = 0.0,
+            .offset = 0.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_PULSE_SOURCE] = {
+        "Pulse Source", "PLS", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .pulse_source = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .delay = 0.0,
+            .rise_time = 1e-9,
+            .fall_time = 1e-9,
+            .pulse_width = 0.0005,      // 500us
+            .period = 0.001,            // 1ms
+            .r_series = 0.001,
+            .ideal = true
+        }}
+    },
+
+    [COMP_PWM_SOURCE] = {
+        "PWM Source", "PWM", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .pwm_source = {
+            .amplitude = 5.0,
+            .frequency = 1000.0,        // 1 kHz PWM
+            .duty = 0.5,
+            .offset = 0.0,
+            .r_series = 0.001,
+            .ideal = true
+        }}
+    },
+
+    // === ADDITIONAL DIODES ===
+
+    [COMP_VARACTOR] = {
+        "Varactor", "DV", 2,
+        {{ -40, 0, "A" }, { 40, 0, "K" }},
+        80, 20,
+        { .diode = {
+            .is = 1e-14,
+            .vt = 0.026,
+            .n = 1.0,
+            .cjo = 50e-12,              // 50pF zero-bias capacitance
+            .ideal = true
+        }}
+    },
+
+    [COMP_TUNNEL_DIODE] = {
+        "Tunnel Diode", "DT", 2,
+        {{ -40, 0, "A" }, { 40, 0, "K" }},
+        80, 20,
+        { .diode = {
+            .is = 1e-6,                 // Higher saturation current
+            .vt = 0.026,
+            .n = 1.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_PHOTODIODE] = {
+        "Photodiode", "PD", 2,
+        {{ -40, 0, "A" }, { 40, 0, "K" }},
+        80, 20,
+        { .diode = {
+            .is = 1e-9,                 // Photocurrent at full illumination
+            .vt = 0.026,
+            .n = 1.0,
+            .ideal = true
+        }}
+    },
+
+    // === ADDITIONAL TRANSISTORS ===
+
+    [COMP_NPN_DARLINGTON] = {
+        "NPN Darlington", "QD", 3,
+        {{ -20, 0, "B" }, { 20, -20, "C" }, { 20, 20, "E" }},
+        60, 60,
+        { .bjt = {
+            .bf = 10000.0,              // Very high beta (100 x 100)
+            .is = 1e-14,
+            .vaf = 100.0,
+            .nf = 1.0,
+            .br = 1.0,
+            .var = 100.0,
+            .nr = 1.0,
+            .temp = 300.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_PNP_DARLINGTON] = {
+        "PNP Darlington", "QD", 3,
+        {{ -20, 0, "B" }, { 20, -20, "C" }, { 20, 20, "E" }},
+        60, 60,
+        { .bjt = {
+            .bf = 10000.0,
+            .is = 1e-14,
+            .vaf = 100.0,
+            .nf = 1.0,
+            .br = 1.0,
+            .var = 100.0,
+            .nr = 1.0,
+            .temp = 300.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_NJFET] = {
+        "N-JFET", "J", 3,
+        {{ -20, 0, "G" }, { 20, -20, "D" }, { 20, 20, "S" }},
+        60, 60,
+        { .jfet = {
+            .idss = 10e-3,              // 10mA IDSS
+            .vp = -2.0,                 // -2V pinch-off
+            .lambda = 0.01,
+            .beta = 2.5e-3,             // IDSS / Vp^2
+            .temp = 300.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_PJFET] = {
+        "P-JFET", "J", 3,
+        {{ -20, 0, "G" }, { 20, -20, "D" }, { 20, 20, "S" }},
+        60, 60,
+        { .jfet = {
+            .idss = 10e-3,
+            .vp = 2.0,                  // +2V pinch-off for P-channel
+            .lambda = 0.01,
+            .beta = 2.5e-3,
+            .temp = 300.0,
+            .ideal = true
+        }}
+    },
+
+    // === THYRISTORS ===
+
+    [COMP_SCR] = {
+        "SCR", "SCR", 3,
+        {{ -20, 0, "G" }, { 20, -20, "A" }, { 20, 20, "K" }},
+        60, 60,
+        { .scr = {
+            .vgt = 0.7,
+            .igt = 10e-3,
+            .ih = 10e-3,
+            .vf = 1.5,
+            .on = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_DIAC] = {
+        "DIAC", "DC", 2,
+        {{ -40, 0, "1" }, { 40, 0, "2" }},
+        80, 20,
+        { .diac = {
+            .vbo = 30.0,                // 30V breakover
+            .vf = 2.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_TRIAC] = {
+        "TRIAC", "TR", 3,
+        {{ -20, 0, "G" }, { 20, -20, "MT1" }, { 20, 20, "MT2" }},
+        60, 60,
+        { .triac = {
+            .vgt = 1.0,
+            .igt = 25e-3,
+            .ih = 25e-3,
+            .vf = 1.5,
+            .on = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_UJT] = {
+        "UJT", "UJT", 3,
+        {{ -20, 0, "E" }, { 20, -20, "B2" }, { 20, 20, "B1" }},
+        60, 60,
+        { .bjt = {
+            .bf = 50.0,
+            .is = 1e-12,
+            .ideal = true
+        }}
+    },
+
+    // === OP-AMPS & AMPLIFIERS ===
+
+    [COMP_OPAMP_REAL] = {
+        "Real Op-Amp", "U", 3,
+        {{ -40, -20, "-" }, { -40, 20, "+" }, { 40, 0, "OUT" }},
+        80, 60,
+        { .opamp = {
+            .gain = 100000.0,
+            .voffset = 1e-3,            // 1mV offset
+            .vmax = 15.0,
+            .vmin = -15.0,
+            .gbw = 1e6,
+            .slew_rate = 0.5,
+            .r_in = 1e6,                // 1 MOhm (finite)
+            .r_out = 75.0,
+            .i_bias = 100e-9,           // 100nA bias current
+            .cmrr = 80.0,
+            .rail_to_rail = false,
+            .ideal = false
+        }}
+    },
+
+    [COMP_OTA] = {
+        "OTA", "OTA", 4,
+        {{ -40, -20, "-" }, { -40, 20, "+" }, { 40, 0, "OUT" }, { 0, 30, "Iabc" }},
+        80, 70,
+        { .opamp = {
+            .gain = 1000.0,             // Transconductance based
+            .vmax = 15.0,
+            .vmin = -15.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_CCII_PLUS] = {
+        "CCII+", "CCII", 3,
+        {{ -40, 0, "X" }, { 0, -30, "Y" }, { 40, 0, "Z" }},
+        80, 60,
+        { .controlled_source = {
+            .gain = 1.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_CCII_MINUS] = {
+        "CCII-", "CCII", 3,
+        {{ -40, 0, "X" }, { 0, -30, "Y" }, { 40, 0, "Z" }},
+        80, 60,
+        { .controlled_source = {
+            .gain = -1.0,
+            .ideal = true
+        }}
+    },
+
+    // === CONTROLLED SOURCES ===
+
+    [COMP_VCVS] = {
+        "VCVS", "E", 4,
+        {{ -40, -20, "+" }, { -40, 20, "-" }, { 40, -20, "+" }, { 40, 20, "-" }},
+        80, 60,
+        { .controlled_source = {
+            .gain = 1.0,                // V/V
+            .ideal = true
+        }}
+    },
+
+    [COMP_VCCS] = {
+        "VCCS", "G", 4,
+        {{ -40, -20, "+" }, { -40, 20, "-" }, { 40, -20, "+" }, { 40, 20, "-" }},
+        80, 60,
+        { .controlled_source = {
+            .gain = 0.001,              // A/V (1 mS)
+            .ideal = true
+        }}
+    },
+
+    [COMP_CCVS] = {
+        "CCVS", "H", 4,
+        {{ -40, -20, "+" }, { -40, 20, "-" }, { 40, -20, "+" }, { 40, 20, "-" }},
+        80, 60,
+        { .controlled_source = {
+            .gain = 1000.0,             // V/A (1k transresistance)
+            .r_in = 0.001,              // Sensing resistance
+            .ideal = true
+        }}
+    },
+
+    [COMP_CCCS] = {
+        "CCCS", "F", 4,
+        {{ -40, -20, "+" }, { -40, 20, "-" }, { 40, -20, "+" }, { 40, 20, "-" }},
+        80, 60,
+        { .controlled_source = {
+            .gain = 1.0,                // A/A
+            .r_in = 0.001,
+            .ideal = true
+        }}
+    },
+
+    // === ADDITIONAL SWITCHES ===
+
+    [COMP_DPDT_SWITCH] = {
+        "DPDT Switch", "SW", 4,
+        {{ -40, -20, "C1" }, { -40, 20, "C2" }, { 40, -20, "A" }, { 40, 20, "B" }},
+        80, 60,
+        { .switch_spdt = {
+            .position = 0,
+            .r_on = 0.01,
+            .r_off = 1e9,
+            .momentary = false,
+            .default_pos = 0
+        }}
+    },
+
+    [COMP_RELAY] = {
+        "Relay", "K", 4,
+        {{ -40, -20, "C+" }, { -40, 20, "C-" }, { 40, -20, "NO" }, { 40, 20, "COM" }},
+        80, 60,
+        { .relay = {
+            .v_coil = 12.0,
+            .r_coil = 200.0,
+            .i_pickup = 0.05,           // 50mA pickup
+            .i_dropout = 0.01,          // 10mA dropout
+            .r_contact_on = 0.1,
+            .r_contact_off = 1e9,
+            .energized = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_ANALOG_SWITCH] = {
+        "Analog Switch", "ASW", 3,
+        {{ -40, 0, "IN" }, { 40, 0, "OUT" }, { 0, 20, "CTL" }},
+        80, 40,
+        { .analog_switch = {
+            .v_on = 2.5,
+            .v_off = 0.8,
+            .r_on = 100.0,
+            .r_off = 1e9,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    // === LOGIC GATES ===
+
+    [COMP_LOGIC_INPUT] = {
+        "Logic Input", "IN", 1,
+        {{ 20, 0, "OUT" }},
+        40, 30,
+        { .logic_input = {
+            .state = false,
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .r_out = 100.0
+        }}
+    },
+
+    [COMP_LOGIC_OUTPUT] = {
+        "Logic Output", "OUT", 1,
+        {{ -20, 0, "IN" }},
+        40, 30,
+        { .logic_output = {
+            .v_threshold = 2.5,
+            .state = false
+        }}
+    },
+
+    [COMP_NOT_GATE] = {
+        "NOT Gate", "NOT", 2,
+        {{ -40, 0, "IN" }, { 40, 0, "OUT" }},
+        80, 40,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .prop_delay = 10e-9,
+            .num_inputs = 1,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_AND_GATE] = {
+        "AND Gate", "AND", 3,
+        {{ -40, -15, "A" }, { -40, 15, "B" }, { 40, 0, "OUT" }},
+        80, 50,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .prop_delay = 10e-9,
+            .num_inputs = 2,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_OR_GATE] = {
+        "OR Gate", "OR", 3,
+        {{ -40, -15, "A" }, { -40, 15, "B" }, { 40, 0, "OUT" }},
+        80, 50,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .prop_delay = 10e-9,
+            .num_inputs = 2,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_NAND_GATE] = {
+        "NAND Gate", "NAND", 3,
+        {{ -40, -15, "A" }, { -40, 15, "B" }, { 40, 0, "OUT" }},
+        80, 50,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .prop_delay = 10e-9,
+            .num_inputs = 2,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_NOR_GATE] = {
+        "NOR Gate", "NOR", 3,
+        {{ -40, -15, "A" }, { -40, 15, "B" }, { 40, 0, "OUT" }},
+        80, 50,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .prop_delay = 10e-9,
+            .num_inputs = 2,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_XOR_GATE] = {
+        "XOR Gate", "XOR", 3,
+        {{ -40, -15, "A" }, { -40, 15, "B" }, { 40, 0, "OUT" }},
+        80, 50,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .prop_delay = 10e-9,
+            .num_inputs = 2,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_XNOR_GATE] = {
+        "XNOR Gate", "XNOR", 3,
+        {{ -40, -15, "A" }, { -40, 15, "B" }, { 40, 0, "OUT" }},
+        80, 50,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .prop_delay = 10e-9,
+            .num_inputs = 2,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_BUFFER] = {
+        "Buffer", "BUF", 2,
+        {{ -40, 0, "IN" }, { 40, 0, "OUT" }},
+        80, 40,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .prop_delay = 5e-9,
+            .num_inputs = 1,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_TRISTATE_BUF] = {
+        "Tri-State Buf", "TRI", 3,
+        {{ -40, 0, "IN" }, { 40, 0, "OUT" }, { 0, 20, "EN" }},
+        80, 50,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .prop_delay = 10e-9,
+            .num_inputs = 2,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_SCHMITT_INV] = {
+        "Schmitt Inv", "SINV", 2,
+        {{ -40, 0, "IN" }, { 40, 0, "OUT" }},
+        80, 40,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,         // Will use hysteresis in simulation
+            .r_out = 100.0,
+            .prop_delay = 15e-9,
+            .num_inputs = 1,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_SCHMITT_BUF] = {
+        "Schmitt Buf", "SBUF", 2,
+        {{ -40, 0, "IN" }, { 40, 0, "OUT" }},
+        80, 40,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .prop_delay = 15e-9,
+            .num_inputs = 1,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    // === DIGITAL ICs ===
+
+    [COMP_D_FLIPFLOP] = {
+        "D Flip-Flop", "DFF", 4,
+        {{ -40, -20, "D" }, { -40, 20, "CLK" }, { 40, -20, "Q" }, { 40, 20, "Qn" }},
+        80, 60,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_JK_FLIPFLOP] = {
+        "JK Flip-Flop", "JKFF", 5,
+        {{ -40, -20, "J" }, { -40, 0, "CLK" }, { -40, 20, "K" }, { 40, -20, "Q" }, { 40, 20, "Qn" }},
+        80, 70,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_T_FLIPFLOP] = {
+        "T Flip-Flop", "TFF", 3,
+        {{ -40, 0, "T" }, { 40, -20, "Q" }, { 40, 20, "Qn" }},
+        80, 50,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_SR_LATCH] = {
+        "SR Latch", "SR", 4,
+        {{ -40, -20, "S" }, { -40, 20, "R" }, { 40, -20, "Q" }, { 40, 20, "Qn" }},
+        80, 60,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_COUNTER] = {
+        "Counter", "CNT", 3,
+        {{ -40, 0, "CLK" }, { 40, -20, "Q0" }, { 40, 20, "Q1" }},
+        80, 60,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_SHIFT_REG] = {
+        "Shift Register", "SR", 4,
+        {{ -40, -20, "DIN" }, { -40, 20, "CLK" }, { 40, -20, "Q0" }, { 40, 20, "Q1" }},
+        80, 60,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_MUX_2TO1] = {
+        "2:1 Mux", "MUX", 4,
+        {{ -40, -20, "A" }, { -40, 20, "B" }, { 0, 30, "SEL" }, { 40, 0, "Y" }},
+        80, 70,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_DEMUX_1TO2] = {
+        "1:2 Demux", "DEMUX", 4,
+        {{ -40, 0, "IN" }, { 0, 30, "SEL" }, { 40, -20, "Y0" }, { 40, 20, "Y1" }},
+        80, 70,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_DECODER] = {
+        "Decoder", "DEC", 4,
+        {{ -40, 0, "IN" }, { 40, -20, "Y0" }, { 40, 0, "Y1" }, { 40, 20, "Y2" }},
+        80, 70,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_BCD_DECODER] = {
+        "BCD Decoder", "7447", 11,
+        {{ -40, -60, "A" }, { -40, -20, "B" }, { -40, 20, "C" }, { -40, 60, "D" },
+         { 40, -60, "a" }, { 40, -40, "b" }, { 40, -20, "c" }, { 40, 0, "d" },
+         { 40, 20, "e" }, { 40, 40, "f" }, { 40, 60, "g" }},
+        80, 140,
+        { .bcd_decoder = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .active_low = true,
+            .blanking = false,
+            .lamp_test = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_HALF_ADDER] = {
+        "Half Adder", "HA", 4,
+        {{ -40, -20, "A" }, { -40, 20, "B" }, { 40, -20, "S" }, { 40, 20, "C" }},
+        80, 60,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    [COMP_FULL_ADDER] = {
+        "Full Adder", "FA", 5,
+        {{ -40, -20, "A" }, { -40, 0, "B" }, { -40, 20, "Cin" }, { 40, -20, "S" }, { 40, 20, "Cout" }},
+        80, 70,
+        { .logic_gate = {
+            .v_low = 0.0,
+            .v_high = 5.0,
+            .v_threshold = 2.5,
+            .r_out = 100.0,
+            .state = false,
+            .ideal = true
+        }}
+    },
+
+    // === MIXED SIGNAL ===
+
+    [COMP_555_TIMER] = {
+        "555 Timer", "555", 5,
+        {{ -40, -20, "VCC" }, { -40, 20, "GND" }, { 0, -30, "TRG" }, { 0, 30, "THR" }, { 40, 0, "OUT" }},
+        80, 80,
+        { .timer_555 = {
+            .r1 = 10000.0,
+            .r2 = 10000.0,
+            .c = 10e-6,
+            .mode = 0,                  // Astable
+            .vcc = 5.0,
+            .output = false,
+            .cap_voltage = 0.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_DAC] = {
+        "DAC", "DAC", 4,
+        {{ -40, -20, "D0" }, { -40, 20, "D1" }, { 40, 0, "OUT" }, { 0, 30, "REF" }},
+        80, 70,
+        { .controlled_source = {
+            .gain = 1.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_ADC] = {
+        "ADC", "ADC", 4,
+        {{ -40, 0, "IN" }, { 0, 30, "REF" }, { 40, -20, "D0" }, { 40, 20, "D1" }},
+        80, 70,
+        { .controlled_source = {
+            .gain = 1.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_VCO] = {
+        "VCO", "VCO", 3,
+        {{ -40, 0, "VIN" }, { 40, 0, "OUT" }, { 0, 30, "GND" }},
+        80, 60,
+        { .ac_voltage = {
+            .amplitude = 5.0,
+            .frequency = 1000.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_PLL] = {
+        "PLL", "PLL", 4,
+        {{ -40, -20, "IN" }, { -40, 20, "REF" }, { 40, -20, "OUT" }, { 40, 20, "LOCK" }},
+        80, 70,
+        { .controlled_source = {
+            .gain = 1.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_MONOSTABLE] = {
+        "Monostable", "MONO", 3,
+        {{ -40, 0, "TRG" }, { 40, 0, "Q" }, { 0, 30, "Qn" }},
+        80, 60,
+        { .timer_555 = {
+            .r1 = 10000.0,
+            .c = 1e-6,
+            .mode = 1,                  // Monostable
+            .vcc = 5.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_OPTOCOUPLER] = {
+        "Optocoupler", "OC", 4,
+        {{ -40, -20, "A" }, { -40, 20, "K" }, { 40, -20, "C" }, { 40, 20, "E" }},
+        80, 60,
+        { .bjt = {
+            .bf = 100.0,
+            .is = 1e-14,
+            .ideal = true
+        }}
+    },
+
+    // === VOLTAGE REGULATORS ===
+
+    [COMP_LM317] = {
+        "LM317", "LM317", 3,
+        {{ -40, 0, "IN" }, { 40, 0, "OUT" }, { 0, 30, "ADJ" }},
+        80, 60,
+        { .dc_voltage = {
+            .voltage = 1.25,            // Reference voltage
+            .r_series = 0.1,
+            .ideal = true
+        }}
+    },
+
+    [COMP_7805] = {
+        "7805", "7805", 3,
+        {{ -40, 0, "IN" }, { 40, 0, "OUT" }, { 0, 30, "GND" }},
+        80, 60,
+        { .dc_voltage = {
+            .voltage = 5.0,             // Fixed 5V output
+            .r_series = 0.1,
+            .ideal = true
+        }}
+    },
+
+    [COMP_TL431] = {
+        "TL431", "TL431", 3,
+        {{ -40, 0, "K" }, { 40, 0, "A" }, { 0, 30, "REF" }},
+        80, 60,
+        { .zener = {
+            .vz = 2.5,                  // 2.5V reference
+            .rz = 0.2,
+            .ideal = true
+        }}
+    },
+
+    // === DISPLAY/OUTPUT ===
+
+    [COMP_LAMP] = {
+        "Lamp", "LP", 2,
+        {{ -40, 0, "+" }, { 40, 0, "-" }},
+        80, 30,
+        { .lamp = {
+            .power_rating = 5.0,        // 5W lamp
+            .voltage_rating = 12.0,
+            .r_cold = 10.0,
+            .r_hot = 29.0,              // Hot resistance = V²/P
+            .brightness = 0.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_7SEG_DISPLAY] = {
+        "7-Seg Display", "7SEG", 9,
+        {{ -40, -40, "a" }, { -40, -20, "b" }, { -40, 0, "c" }, { -40, 20, "d" }, { -40, 40, "COM" },
+         { 40, -40, "e" }, { 40, -20, "f" }, { 40, 0, "g" }, { 40, 20, "DP" }},
+        80, 100,
+        { .seven_seg = {
+            .vf = 2.0,
+            .max_current = 0.02,
+            .common_cathode = true,
+            .segments = 0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_LED_ARRAY] = {
+        "LED Array", "BAR", 2,
+        {{ -40, 0, "+" }, { 40, 0, "-" }},
+        80, 30,
+        { .led = {
+            .vf = 2.0,
+            .max_current = 0.02,
+            .ideal = true
+        }}
+    },
+
+    [COMP_DC_MOTOR] = {
+        "DC Motor", "M", 2,
+        {{ -40, 0, "+" }, { 40, 0, "-" }},
+        80, 50,
+        { .inductor = {
+            .inductance = 1e-3,
+            .dcr = 10.0,                // Motor resistance
+            .ideal = true
+        }}
+    },
+
+    [COMP_SPEAKER] = {
+        "Speaker", "SPK", 2,
+        {{ -40, -10, "+" }, { -40, 10, "-" }},
+        80, 50,
+        { .inductor = {
+            .inductance = 1e-3,
+            .dcr = 8.0,                 // 8 ohm speaker
+            .ideal = true
+        }}
+    },
+
+    // === MEASUREMENT ===
+
+    [COMP_VOLTMETER] = {
+        "Voltmeter", "VM", 2,
+        {{ -40, 0, "+" }, { 40, 0, "-" }},
+        80, 40,
+        { .voltmeter = {
+            .r_in = 10e6,               // 10 MOhm input resistance
+            .reading = 0.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_AMMETER] = {
+        "Ammeter", "AM", 2,
+        {{ -40, 0, "+" }, { 40, 0, "-" }},
+        80, 40,
+        { .ammeter = {
+            .r_shunt = 0.01,            // 10 mOhm shunt
+            .reading = 0.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_WATTMETER] = {
+        "Wattmeter", "WM", 4,
+        {{ -40, -20, "V+" }, { -40, 20, "V-" }, { 40, -20, "I+" }, { 40, 20, "I-" }},
+        80, 60,
+        { .voltmeter = {
+            .r_in = 10e6,
+            .reading = 0.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_TEST_POINT] = {
+        "Test Point", "TP", 1,
+        {{ 0, 0, "TP" }},
+        20, 20,
+        { .voltmeter = {
+            .r_in = 1e12,
+            .reading = 0.0,
+            .ideal = true
+        }}
+    },
+
+    [COMP_LABEL] = {
+        "Label", "LBL", 1,
+        {{ 0, 0, "N" }},
+        40, 20,
+        { .text = {
+            .text = "Node",
+            .font_size = 2,
+            .color = 0xFFFFFFFF
+        }}
+    },
 };
 
 static int next_component_id = 1;
@@ -412,10 +1559,19 @@ Component *component_create(ComponentType type, float x, float y) {
                                type == COMP_AC_VOLTAGE ||
                                type == COMP_INDUCTOR ||
                                type == COMP_OPAMP ||
+                               type == COMP_OPAMP_FLIPPED ||
+                               type == COMP_OPAMP_REAL ||
+                               type == COMP_OTA ||
                                type == COMP_SQUARE_WAVE ||
                                type == COMP_TRIANGLE_WAVE ||
                                type == COMP_SAWTOOTH_WAVE ||
-                               type == COMP_NOISE_SOURCE);
+                               type == COMP_NOISE_SOURCE ||
+                               type == COMP_CLOCK ||
+                               type == COMP_VADC_SOURCE ||
+                               type == COMP_AM_SOURCE ||
+                               type == COMP_FM_SOURCE ||
+                               type == COMP_PULSE_SOURCE ||
+                               type == COMP_PWM_SOURCE);
 
     return comp;
 }
@@ -1035,12 +2191,28 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             int volt_idx = num_nodes + comp->voltage_var_idx;
 
             // VCVS model: Vout = A * (V+ - V-)
+            // For COMP_OPAMP: n[0]="-", n[1]="+", n[2]="OUT"
             if (n[2] > 0) {
                 matrix_add(A, volt_idx, n[2]-1, 1);
                 matrix_add(A, n[2]-1, volt_idx, 1);
             }
             if (n[1] > 0) matrix_add(A, volt_idx, n[1]-1, -A_gain);
             if (n[0] > 0) matrix_add(A, volt_idx, n[0]-1, A_gain);
+            break;
+        }
+
+        case COMP_OPAMP_FLIPPED: {
+            double A_gain = comp->props.opamp.gain;
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+
+            // VCVS model: Vout = A * (V+ - V-)
+            // For COMP_OPAMP_FLIPPED: n[0]="+", n[1]="-", n[2]="OUT"
+            if (n[2] > 0) {
+                matrix_add(A, volt_idx, n[2]-1, 1);
+                matrix_add(A, n[2]-1, volt_idx, 1);
+            }
+            if (n[0] > 0) matrix_add(A, volt_idx, n[0]-1, -A_gain);  // + input
+            if (n[1] > 0) matrix_add(A, volt_idx, n[1]-1, A_gain);   // - input
             break;
         }
 
@@ -1203,6 +2375,1287 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                        comp->props.push_button.r_off;
             double G = 1.0 / R;
             STAMP_CONDUCTANCE(n[0], n[1], G);
+            break;
+        }
+
+        case COMP_TRANSFORMER: {
+            // Transformer model using VCVS (voltage-controlled voltage source) approach
+            // Terminals: P1 (n[0]), P2 (n[1]), S1 (n[2]), S2 (n[3])
+            // Relationship: V_secondary = N * V_primary
+            // where N = turns_ratio = N_secondary / N_primary
+            double N = comp->props.transformer.turns_ratio;
+
+            if (comp->props.transformer.ideal) {
+                // Ideal transformer using VCVS with series resistance
+                // V_s = N * V_p, modeled as current source that enforces voltage relationship
+                // I = G_src * (V_s1 - V_s2 - N * (V_p1 - V_p2))
+                double R_src = 1.0;  // 1 ohm series resistance for numerical stability
+                double G_src = 1.0 / R_src;
+
+                // Primary magnetizing resistance (high value for low magnetizing current)
+                double R_mag = 10000.0;
+                double G_mag = 1.0 / R_mag;
+                STAMP_CONDUCTANCE(n[0], n[1], G_mag);
+
+                // Secondary: VCVS that makes V_s = N * V_p
+                // Stamp conductance between S1-S2
+                STAMP_CONDUCTANCE(n[2], n[3], G_src);
+
+                // Add VCCS terms: secondary voltage follows primary voltage
+                if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -G_src * N);
+                if (n[2] > 0 && n[1] > 0) matrix_add(A, n[2]-1, n[1]-1, G_src * N);
+                if (n[3] > 0 && n[0] > 0) matrix_add(A, n[3]-1, n[0]-1, G_src * N);
+                if (n[3] > 0 && n[1] > 0) matrix_add(A, n[3]-1, n[1]-1, -G_src * N);
+            } else {
+                // Non-ideal transformer with winding resistances
+                double R_p = comp->props.transformer.r_primary;
+                double R_s = comp->props.transformer.r_secondary;
+                double R_src = 1.0;  // Additional source resistance
+                double G_src = 1.0 / R_src;
+
+                // Primary winding resistance
+                double G_p = 1.0 / R_p;
+                STAMP_CONDUCTANCE(n[0], n[1], G_p);
+
+                // Secondary: winding resistance + VCVS
+                double G_s = 1.0 / R_s;
+                STAMP_CONDUCTANCE(n[2], n[3], G_s);
+                STAMP_CONDUCTANCE(n[2], n[3], G_src);
+
+                // VCCS terms for voltage coupling
+                if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -G_src * N);
+                if (n[2] > 0 && n[1] > 0) matrix_add(A, n[2]-1, n[1]-1, G_src * N);
+                if (n[3] > 0 && n[0] > 0) matrix_add(A, n[3]-1, n[0]-1, G_src * N);
+                if (n[3] > 0 && n[1] > 0) matrix_add(A, n[3]-1, n[1]-1, -G_src * N);
+            }
+            break;
+        }
+
+        case COMP_TRANSFORMER_CT: {
+            // Center-tapped transformer
+            // Terminals: P1 (n[0]), P2 (n[1]), S1 (n[2]), CT (n[3]), S2 (n[4])
+            //
+            // For turns ratio N (e.g., 0.1 means 10:1 step-down):
+            // V(S1-CT) = N/2 * V(P1-P2)  (upper half secondary)
+            // V(CT-S2) = N/2 * V(P1-P2)  (lower half secondary)
+            // V(S1-S2) = N * V(P1-P2)    (full secondary)
+            //
+            // Use voltage-controlled voltage source model with source resistance:
+            // V_s = N * V_p, with small series resistance for stability
+            double N = comp->props.transformer.turns_ratio;
+            double N_half = N / 2.0;
+
+            // Source resistance for secondary windings (provides numerical stability)
+            double R_src = 1.0;  // 1 ohm series resistance
+            double G_src = 1.0 / R_src;
+
+            // Primary magnetizing inductance modeled as resistance for DC stability
+            double R_mag = 10000.0;  // High resistance (low magnetizing current)
+            double G_mag = 1.0 / R_mag;
+            STAMP_CONDUCTANCE(n[0], n[1], G_mag);
+
+            // Upper secondary (S1-CT): VCVS with series resistance
+            // V_s1_ct = N_half * V_primary
+            // Modeled as: I = G_src * (V_s1 - V_ct - N_half * (V_p1 - V_p2))
+            // Expanding: I = G_src * V_s1 - G_src * V_ct - G_src * N_half * V_p1 + G_src * N_half * V_p2
+            STAMP_CONDUCTANCE(n[2], n[3], G_src);
+            // Add VCCS terms to make secondary follow primary
+            if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -G_src * N_half);
+            if (n[2] > 0 && n[1] > 0) matrix_add(A, n[2]-1, n[1]-1, G_src * N_half);
+            if (n[3] > 0 && n[0] > 0) matrix_add(A, n[3]-1, n[0]-1, G_src * N_half);
+            if (n[3] > 0 && n[1] > 0) matrix_add(A, n[3]-1, n[1]-1, -G_src * N_half);
+
+            // Lower secondary (CT-S2): VCVS with series resistance
+            // V_ct_s2 = N_half * V_primary
+            STAMP_CONDUCTANCE(n[3], n[4], G_src);
+            if (n[3] > 0 && n[0] > 0) matrix_add(A, n[3]-1, n[0]-1, -G_src * N_half);
+            if (n[3] > 0 && n[1] > 0) matrix_add(A, n[3]-1, n[1]-1, G_src * N_half);
+            if (n[4] > 0 && n[0] > 0) matrix_add(A, n[4]-1, n[0]-1, G_src * N_half);
+            if (n[4] > 0 && n[1] > 0) matrix_add(A, n[4]-1, n[1]-1, -G_src * N_half);
+
+            break;
+        }
+
+        // === ADDITIONAL PASSIVE COMPONENTS ===
+
+        case COMP_POTENTIOMETER: {
+            // Potentiometer: 3-terminal variable resistor
+            // Terminal 0 and 1 are the ends, terminal 2 is the wiper
+            double R_total = comp->props.potentiometer.resistance;
+            double pos = comp->props.potentiometer.wiper_pos;
+            pos = CLAMP(pos, 0.001, 0.999);  // Avoid zero resistance
+
+            double R_low = R_total * pos;           // Resistance from terminal 0 to wiper
+            double R_high = R_total * (1.0 - pos);  // Resistance from wiper to terminal 1
+
+            double G_low = 1.0 / R_low;
+            double G_high = 1.0 / R_high;
+
+            STAMP_CONDUCTANCE(n[0], n[2], G_low);   // Terminal 0 to wiper
+            STAMP_CONDUCTANCE(n[2], n[1], G_high);  // Wiper to terminal 1
+            break;
+        }
+
+        case COMP_PHOTORESISTOR: {
+            // Photoresistor: resistance varies with light level
+            double R_dark = comp->props.photoresistor.r_dark;
+            double R_light = comp->props.photoresistor.r_light;
+            double light = comp->props.photoresistor.light_level;
+            double gamma = comp->props.photoresistor.gamma;
+
+            // Logarithmic response to light
+            double R = R_dark * pow(R_light / R_dark, pow(light, gamma));
+            double G = 1.0 / R;
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+            break;
+        }
+
+        case COMP_THERMISTOR: {
+            // Thermistor: resistance varies with temperature
+            double R_25 = comp->props.thermistor.r_25;
+            double beta = comp->props.thermistor.beta;
+            double T = comp->props.thermistor.temp + 273.15;  // Convert to Kelvin
+            double T_25 = 298.15;  // 25°C in Kelvin
+
+            double R;
+            if (comp->props.thermistor.type == 0) {
+                // NTC: resistance decreases with temperature
+                R = R_25 * exp(beta * (1.0/T - 1.0/T_25));
+            } else {
+                // PTC: resistance increases with temperature (simplified)
+                R = R_25 * exp(-beta * (1.0/T - 1.0/T_25));
+            }
+            double G = 1.0 / R;
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+            break;
+        }
+
+        case COMP_MEMRISTOR: {
+            // Simplified memristor: acts like resistor
+            double G = 1.0 / comp->props.resistor.resistance;
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+            break;
+        }
+
+        case COMP_FUSE: {
+            // Fuse: low resistance when intact, very high when blown
+            double R = comp->props.fuse.blown ? 1e9 : comp->props.fuse.resistance;
+            double G = 1.0 / R;
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+            break;
+        }
+
+        case COMP_CRYSTAL:
+        case COMP_SPARK_GAP: {
+            // Simplified: treat as capacitor/high resistance
+            double G = 1e-12;  // Very high impedance
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+            break;
+        }
+
+        // === ADDITIONAL SOURCES ===
+
+        case COMP_AC_CURRENT: {
+            double amp = comp->props.ac_current.amplitude;
+            double freq = comp->props.ac_current.frequency;
+            double phase = comp->props.ac_current.phase * M_PI / 180.0;
+            double offset = comp->props.ac_current.offset;
+
+            double I = amp * sin(2 * M_PI * freq * time + phase) + offset;
+            if (n[0] > 0) vector_add(b, n[0]-1, -I);
+            if (n[1] > 0) vector_add(b, n[1]-1, I);
+            break;
+        }
+
+        case COMP_CLOCK: {
+            double freq = comp->props.clock.frequency;
+            double duty = comp->props.clock.duty;
+            double v_low = comp->props.clock.v_low;
+            double v_high = comp->props.clock.v_high;
+
+            double period = 1.0 / freq;
+            double t_norm = fmod(time, period) / period;
+            double V = (t_norm < duty) ? v_high : v_low;
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+
+            if (n[0] > 0) {
+                matrix_add(A, volt_idx, n[0]-1, 1);
+                matrix_add(A, n[0]-1, volt_idx, 1);
+            }
+            if (n[1] > 0) {
+                matrix_add(A, volt_idx, n[1]-1, -1);
+                matrix_add(A, n[1]-1, volt_idx, -1);
+            }
+            vector_add(b, volt_idx, V);
+            break;
+        }
+
+        case COMP_VADC_SOURCE:
+        case COMP_AM_SOURCE:
+        case COMP_FM_SOURCE: {
+            // Variable/modulated sources - treat as DC/AC for basic simulation
+            double V = comp->props.dc_voltage.voltage;
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+
+            if (n[0] > 0) {
+                matrix_add(A, volt_idx, n[0]-1, 1);
+                matrix_add(A, n[0]-1, volt_idx, 1);
+            }
+            if (n[1] > 0) {
+                matrix_add(A, volt_idx, n[1]-1, -1);
+                matrix_add(A, n[1]-1, volt_idx, -1);
+            }
+            vector_add(b, volt_idx, V);
+            break;
+        }
+
+        case COMP_PULSE_SOURCE: {
+            double v_low = comp->props.pulse_source.v_low;
+            double v_high = comp->props.pulse_source.v_high;
+            double delay = comp->props.pulse_source.delay;
+            double pw = comp->props.pulse_source.pulse_width;
+            double period = comp->props.pulse_source.period;
+
+            double V = v_low;
+            if (time >= delay) {
+                double t_in_period = fmod(time - delay, period);
+                if (t_in_period < pw) {
+                    V = v_high;
+                }
+            }
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+
+            if (n[0] > 0) {
+                matrix_add(A, volt_idx, n[0]-1, 1);
+                matrix_add(A, n[0]-1, volt_idx, 1);
+            }
+            if (n[1] > 0) {
+                matrix_add(A, volt_idx, n[1]-1, -1);
+                matrix_add(A, n[1]-1, volt_idx, -1);
+            }
+            vector_add(b, volt_idx, V);
+            break;
+        }
+
+        case COMP_PWM_SOURCE: {
+            double amp = comp->props.pwm_source.amplitude;
+            double freq = comp->props.pwm_source.frequency;
+            double duty = comp->props.pwm_source.duty;
+            double offset = comp->props.pwm_source.offset;
+
+            double period = 1.0 / freq;
+            double t_norm = fmod(time, period) / period;
+            double V = (t_norm < duty) ? (amp + offset) : offset;
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+
+            if (n[0] > 0) {
+                matrix_add(A, volt_idx, n[0]-1, 1);
+                matrix_add(A, n[0]-1, volt_idx, 1);
+            }
+            if (n[1] > 0) {
+                matrix_add(A, volt_idx, n[1]-1, -1);
+                matrix_add(A, n[1]-1, volt_idx, -1);
+            }
+            vector_add(b, volt_idx, V);
+            break;
+        }
+
+        // === ADDITIONAL DIODES ===
+
+        case COMP_VARACTOR:
+        case COMP_TUNNEL_DIODE:
+        case COMP_PHOTODIODE: {
+            // Simplified diode model
+            double Is = comp->props.diode.is;
+            double Vt = comp->props.diode.vt;
+            double nn = comp->props.diode.n;
+            double nVt = nn * Vt;
+
+            double Vd = 0.6;
+            if (prev_solution) {
+                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+                Vd = CLAMP(v1 - v2, -5*nVt, 40*nVt);
+            }
+
+            double expTerm = exp(Vd / nVt);
+            double Id = Is * (expTerm - 1);
+            double Gd = (Is / nVt) * expTerm + 1e-12;
+            double Ieq = Id - Gd * Vd;
+
+            STAMP_CONDUCTANCE(n[0], n[1], Gd);
+            if (n[0] > 0) vector_add(b, n[0]-1, -Ieq);
+            if (n[1] > 0) vector_add(b, n[1]-1, Ieq);
+            break;
+        }
+
+        // === ADDITIONAL TRANSISTORS ===
+
+        case COMP_NPN_DARLINGTON:
+        case COMP_PNP_DARLINGTON: {
+            // Darlington pair - same as BJT but with higher beta
+            double bf = comp->props.bjt.bf;
+            double Is = comp->props.bjt.is;
+            double nf = comp->props.bjt.nf;
+            double temp = comp->props.bjt.temp;
+            double Vt = 8.617e-5 * temp;
+
+            double sign = (comp->type == COMP_PNP_DARLINGTON) ? -1.0 : 1.0;
+
+            double Vbe = 0.6 * sign;
+            if (prev_solution) {
+                double vB = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                double vE = (n[2] > 0) ? vector_get(prev_solution, n[2]-1) : 0;
+                Vbe = sign * (vB - vE);
+                Vbe = CLAMP(Vbe, -5*nf*Vt, 40*nf*Vt);
+            }
+
+            double expBE = exp(Vbe / (nf * Vt));
+            double Ibe = (Is / bf) * (expBE - 1);
+            double Gbe = (Is / (bf * nf * Vt)) * expBE + 1e-12;
+            double Ieq_be = Ibe - Gbe * Vbe;
+            double Gm = (Is / (nf * Vt)) * expBE * sign;
+
+            Ieq_be *= sign;
+
+            STAMP_CONDUCTANCE(n[0], n[2], Gbe);
+            if (n[0] > 0) vector_add(b, n[0]-1, -Ieq_be);
+            if (n[2] > 0) vector_add(b, n[2]-1, Ieq_be);
+
+            if (n[1] > 0 && n[0] > 0) matrix_add(A, n[1]-1, n[0]-1, Gm);
+            if (n[1] > 0 && n[2] > 0) matrix_add(A, n[1]-1, n[2]-1, -Gm);
+            if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -Gm);
+            if (n[2] > 0 && n[2] > 0) matrix_add(A, n[2]-1, n[2]-1, Gm);
+            break;
+        }
+
+        case COMP_NJFET:
+        case COMP_PJFET: {
+            // JFET model (simplified Shichman-Hodges)
+            double Idss = comp->props.jfet.idss;
+            double Vp = comp->props.jfet.vp;
+            double lambda = comp->props.jfet.lambda;
+
+            double sign = (comp->type == COMP_PJFET) ? -1.0 : 1.0;
+            double Vp_abs = fabs(Vp);
+
+            double Vgs = 0, Vds = 0;
+            if (prev_solution) {
+                double vG = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                double vD = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+                double vS = (n[2] > 0) ? vector_get(prev_solution, n[2]-1) : 0;
+
+                if (comp->type == COMP_PJFET) {
+                    Vgs = vS - vG;
+                    Vds = vS - vD;
+                } else {
+                    Vgs = vG - vS;
+                    Vds = vD - vS;
+                }
+            }
+
+            double Gds = 1e-12;
+            double Gm = 0;
+            double Id = 0;
+
+            if (Vgs <= -Vp_abs) {
+                // Cutoff
+                Gds = 1e-12;
+                Id = 0;
+            } else if (Vds < Vgs + Vp_abs) {
+                // Triode/Linear region
+                double Vov = Vgs + Vp_abs;
+                Id = Idss * (2 * Vov * Vds / (Vp_abs * Vp_abs) - Vds * Vds / (Vp_abs * Vp_abs));
+                Gm = 2 * Idss * Vds / (Vp_abs * Vp_abs);
+                Gds = 2 * Idss * (Vov - Vds) / (Vp_abs * Vp_abs);
+            } else {
+                // Saturation region
+                double Vov = Vgs + Vp_abs;
+                Id = Idss * (Vov * Vov) / (Vp_abs * Vp_abs) * (1 + lambda * Vds);
+                Gm = 2 * Idss * Vov / (Vp_abs * Vp_abs) * (1 + lambda * Vds);
+                Gds = lambda * Idss * (Vov * Vov) / (Vp_abs * Vp_abs);
+            }
+
+            Gds = MAX(Gds, 1e-12);
+            double Ieq = Id - Gm * Vgs - Gds * Vds;
+
+            Gm *= sign;
+            Ieq *= sign;
+
+            STAMP_CONDUCTANCE(n[1], n[2], Gds);
+            if (n[1] > 0) vector_add(b, n[1]-1, -Ieq);
+            if (n[2] > 0) vector_add(b, n[2]-1, Ieq);
+
+            if (n[1] > 0 && n[0] > 0) matrix_add(A, n[1]-1, n[0]-1, Gm);
+            if (n[1] > 0 && n[2] > 0) matrix_add(A, n[1]-1, n[2]-1, -Gm);
+            if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -Gm);
+            if (n[2] > 0 && n[2] > 0) matrix_add(A, n[2]-1, n[2]-1, Gm);
+            break;
+        }
+
+        // === THYRISTORS ===
+
+        case COMP_SCR: {
+            // SCR: acts as diode when triggered, open circuit otherwise
+            double R = comp->props.scr.on ? 0.1 : 1e9;  // Low/high resistance
+            double G = 1.0 / R;
+            STAMP_CONDUCTANCE(n[1], n[2], G);  // Anode to Kathode
+            break;
+        }
+
+        case COMP_DIAC: {
+            // DIAC: conducts when voltage exceeds breakover
+            double Vbo = comp->props.diac.vbo;
+            double Vd = 0;
+            if (prev_solution) {
+                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+                Vd = v1 - v2;
+            }
+
+            double R = (fabs(Vd) > Vbo) ? 1.0 : 1e9;
+            double G = 1.0 / R;
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+            break;
+        }
+
+        case COMP_TRIAC: {
+            // TRIAC: bidirectional SCR
+            double R = comp->props.triac.on ? 0.1 : 1e9;
+            double G = 1.0 / R;
+            STAMP_CONDUCTANCE(n[1], n[2], G);  // MT1 to MT2
+            break;
+        }
+
+        case COMP_UJT: {
+            // UJT: simplified as resistor divider
+            double G = 1.0 / 1000.0;  // 1k default
+            STAMP_CONDUCTANCE(n[1], n[2], G);  // B2 to B1
+            break;
+        }
+
+        // === OP-AMPS & AMPLIFIERS ===
+
+        case COMP_OPAMP_REAL: {
+            // Real op-amp with finite parameters
+            double A_gain = comp->props.opamp.gain;
+            double r_in = comp->props.opamp.r_in;
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+
+            // Input resistance between + and - inputs
+            double G_in = 1.0 / r_in;
+            STAMP_CONDUCTANCE(n[0], n[1], G_in);
+
+            // VCVS model
+            if (n[2] > 0) {
+                matrix_add(A, volt_idx, n[2]-1, 1);
+                matrix_add(A, n[2]-1, volt_idx, 1);
+            }
+            if (n[1] > 0) matrix_add(A, volt_idx, n[1]-1, -A_gain);
+            if (n[0] > 0) matrix_add(A, volt_idx, n[0]-1, A_gain);
+            break;
+        }
+
+        case COMP_OTA: {
+            // OTA: transconductance amplifier
+            double gm = comp->props.opamp.gain;  // Transconductance
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+
+            if (n[2] > 0) {
+                matrix_add(A, volt_idx, n[2]-1, 1);
+                matrix_add(A, n[2]-1, volt_idx, 1);
+            }
+            if (n[1] > 0) matrix_add(A, volt_idx, n[1]-1, -gm);
+            if (n[0] > 0) matrix_add(A, volt_idx, n[0]-1, gm);
+            break;
+        }
+
+        case COMP_CCII_PLUS:
+        case COMP_CCII_MINUS: {
+            // Current conveyor: simplified model
+            double gain = comp->props.controlled_source.gain;
+            double G = 1.0 / 100.0;  // 100 ohm
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+            break;
+        }
+
+        // === CONTROLLED SOURCES ===
+
+        case COMP_VCVS: {
+            // Voltage-controlled voltage source
+            double gain = comp->props.controlled_source.gain;
+            double G_src = 1.0;  // Source conductance
+
+            // Control input (n[0], n[1]) is high-impedance
+            double G_in = 1e-12;
+            STAMP_CONDUCTANCE(n[0], n[1], G_in);
+
+            // Output (n[2], n[3]) follows control voltage times gain
+            STAMP_CONDUCTANCE(n[2], n[3], G_src);
+            if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -G_src * gain);
+            if (n[2] > 0 && n[1] > 0) matrix_add(A, n[2]-1, n[1]-1, G_src * gain);
+            if (n[3] > 0 && n[0] > 0) matrix_add(A, n[3]-1, n[0]-1, G_src * gain);
+            if (n[3] > 0 && n[1] > 0) matrix_add(A, n[3]-1, n[1]-1, -G_src * gain);
+            break;
+        }
+
+        case COMP_VCCS: {
+            // Voltage-controlled current source
+            double gm = comp->props.controlled_source.gain;  // Transconductance (A/V)
+
+            // Control input is high-impedance
+            double G_in = 1e-12;
+            STAMP_CONDUCTANCE(n[0], n[1], G_in);
+
+            // Output current proportional to control voltage
+            if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, gm);
+            if (n[2] > 0 && n[1] > 0) matrix_add(A, n[2]-1, n[1]-1, -gm);
+            if (n[3] > 0 && n[0] > 0) matrix_add(A, n[3]-1, n[0]-1, -gm);
+            if (n[3] > 0 && n[1] > 0) matrix_add(A, n[3]-1, n[1]-1, gm);
+            break;
+        }
+
+        case COMP_CCVS: {
+            // Current-controlled voltage source
+            double rm = comp->props.controlled_source.gain;  // Transresistance (V/A)
+            double r_sense = comp->props.controlled_source.r_in;
+
+            // Current sensing through low resistance
+            double G_sense = 1.0 / r_sense;
+            STAMP_CONDUCTANCE(n[0], n[1], G_sense);
+
+            // Output voltage proportional to sensed current
+            double G_src = 1.0;
+            STAMP_CONDUCTANCE(n[2], n[3], G_src);
+            // I_sense = G_sense * (V0 - V1), V_out = rm * I_sense
+            if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -G_src * rm * G_sense);
+            if (n[2] > 0 && n[1] > 0) matrix_add(A, n[2]-1, n[1]-1, G_src * rm * G_sense);
+            if (n[3] > 0 && n[0] > 0) matrix_add(A, n[3]-1, n[0]-1, G_src * rm * G_sense);
+            if (n[3] > 0 && n[1] > 0) matrix_add(A, n[3]-1, n[1]-1, -G_src * rm * G_sense);
+            break;
+        }
+
+        case COMP_CCCS: {
+            // Current-controlled current source
+            double gain = comp->props.controlled_source.gain;  // Current gain (A/A)
+            double r_sense = comp->props.controlled_source.r_in;
+
+            // Current sensing
+            double G_sense = 1.0 / r_sense;
+            STAMP_CONDUCTANCE(n[0], n[1], G_sense);
+
+            // Output current proportional to sensed current
+            if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, gain * G_sense);
+            if (n[2] > 0 && n[1] > 0) matrix_add(A, n[2]-1, n[1]-1, -gain * G_sense);
+            if (n[3] > 0 && n[0] > 0) matrix_add(A, n[3]-1, n[0]-1, -gain * G_sense);
+            if (n[3] > 0 && n[1] > 0) matrix_add(A, n[3]-1, n[1]-1, gain * G_sense);
+            break;
+        }
+
+        // === SWITCHES ===
+
+        case COMP_DPDT_SWITCH: {
+            // DPDT: two SPDT switches ganged together
+            double r_on = comp->props.switch_spdt.r_on;
+            double r_off = comp->props.switch_spdt.r_off;
+            int pos = comp->props.switch_spdt.position;
+
+            double R_ca = (pos == 0) ? r_on : r_off;
+            double R_cb = (pos == 1) ? r_on : r_off;
+
+            STAMP_CONDUCTANCE(n[0], n[2], 1.0/R_ca);  // C1 to A
+            STAMP_CONDUCTANCE(n[0], n[3], 1.0/R_cb);  // C1 to B
+            STAMP_CONDUCTANCE(n[1], n[2], 1.0/R_cb);  // C2 to A (opposite)
+            STAMP_CONDUCTANCE(n[1], n[3], 1.0/R_ca);  // C2 to B (opposite)
+            break;
+        }
+
+        case COMP_RELAY: {
+            // Relay: coil resistance + switched contact
+            double r_coil = comp->props.relay.r_coil;
+            double R_contact = comp->props.relay.energized ?
+                              comp->props.relay.r_contact_on :
+                              comp->props.relay.r_contact_off;
+
+            // Coil
+            STAMP_CONDUCTANCE(n[0], n[1], 1.0/r_coil);
+            // Contact (NO to COM)
+            STAMP_CONDUCTANCE(n[2], n[3], 1.0/R_contact);
+            break;
+        }
+
+        case COMP_ANALOG_SWITCH: {
+            // Analog switch: controlled by voltage on control terminal
+            double v_ctl = 0;
+            if (prev_solution && n[2] > 0) {
+                v_ctl = vector_get(prev_solution, n[2]-1);
+            }
+
+            bool on = v_ctl >= comp->props.analog_switch.v_on;
+            double R = on ? comp->props.analog_switch.r_on : comp->props.analog_switch.r_off;
+            STAMP_CONDUCTANCE(n[0], n[1], 1.0/R);
+            break;
+        }
+
+        // === LOGIC GATES ===
+
+        case COMP_LOGIC_INPUT: {
+            // Logic input: voltage source
+            double V = comp->props.logic_input.state ?
+                      comp->props.logic_input.v_high :
+                      comp->props.logic_input.v_low;
+            double R_out = comp->props.logic_input.r_out;
+
+            // Model as voltage source with series resistance
+            double G = 1.0 / R_out;
+            if (n[0] > 0) {
+                matrix_add(A, n[0]-1, n[0]-1, G);
+                vector_add(b, n[0]-1, G * V);
+            }
+            break;
+        }
+
+        case COMP_LOGIC_OUTPUT: {
+            // Logic output: high-impedance input (just observes voltage)
+            double G = 1e-12;
+            if (n[0] > 0) {
+                matrix_add(A, n[0]-1, n[0]-1, G);
+            }
+            break;
+        }
+
+        case COMP_NOT_GATE:
+        case COMP_BUFFER:
+        case COMP_SCHMITT_INV:
+        case COMP_SCHMITT_BUF: {
+            // Single-input logic gate
+            double v_th = comp->props.logic_gate.v_threshold;
+            double v_low = comp->props.logic_gate.v_low;
+            double v_high = comp->props.logic_gate.v_high;
+            double r_out = comp->props.logic_gate.r_out;
+
+            double v_in = 0;
+            if (prev_solution && n[0] > 0) {
+                v_in = vector_get(prev_solution, n[0]-1);
+            }
+
+            bool input_high = v_in >= v_th;
+            bool output_high;
+
+            if (comp->type == COMP_NOT_GATE || comp->type == COMP_SCHMITT_INV) {
+                output_high = !input_high;
+            } else {
+                output_high = input_high;
+            }
+
+            double V_out = output_high ? v_high : v_low;
+            double G = 1.0 / r_out;
+
+            // High-impedance input
+            if (n[0] > 0) matrix_add(A, n[0]-1, n[0]-1, 1e-12);
+
+            // Output as voltage source with resistance
+            if (n[1] > 0) {
+                matrix_add(A, n[1]-1, n[1]-1, G);
+                vector_add(b, n[1]-1, G * V_out);
+            }
+            break;
+        }
+
+        case COMP_AND_GATE:
+        case COMP_NAND_GATE: {
+            double v_th = comp->props.logic_gate.v_threshold;
+            double v_low = comp->props.logic_gate.v_low;
+            double v_high = comp->props.logic_gate.v_high;
+            double r_out = comp->props.logic_gate.r_out;
+
+            double v_a = 0, v_b = 0;
+            if (prev_solution) {
+                if (n[0] > 0) v_a = vector_get(prev_solution, n[0]-1);
+                if (n[1] > 0) v_b = vector_get(prev_solution, n[1]-1);
+            }
+
+            bool a_high = v_a >= v_th;
+            bool b_high = v_b >= v_th;
+            bool result = a_high && b_high;
+            if (comp->type == COMP_NAND_GATE) result = !result;
+
+            double V_out = result ? v_high : v_low;
+            double G = 1.0 / r_out;
+
+            // High-impedance inputs
+            if (n[0] > 0) matrix_add(A, n[0]-1, n[0]-1, 1e-12);
+            if (n[1] > 0) matrix_add(A, n[1]-1, n[1]-1, 1e-12);
+
+            // Output
+            if (n[2] > 0) {
+                matrix_add(A, n[2]-1, n[2]-1, G);
+                vector_add(b, n[2]-1, G * V_out);
+            }
+            break;
+        }
+
+        case COMP_OR_GATE:
+        case COMP_NOR_GATE: {
+            double v_th = comp->props.logic_gate.v_threshold;
+            double v_low = comp->props.logic_gate.v_low;
+            double v_high = comp->props.logic_gate.v_high;
+            double r_out = comp->props.logic_gate.r_out;
+
+            double v_a = 0, v_b = 0;
+            if (prev_solution) {
+                if (n[0] > 0) v_a = vector_get(prev_solution, n[0]-1);
+                if (n[1] > 0) v_b = vector_get(prev_solution, n[1]-1);
+            }
+
+            bool a_high = v_a >= v_th;
+            bool b_high = v_b >= v_th;
+            bool result = a_high || b_high;
+            if (comp->type == COMP_NOR_GATE) result = !result;
+
+            double V_out = result ? v_high : v_low;
+            double G = 1.0 / r_out;
+
+            if (n[0] > 0) matrix_add(A, n[0]-1, n[0]-1, 1e-12);
+            if (n[1] > 0) matrix_add(A, n[1]-1, n[1]-1, 1e-12);
+
+            if (n[2] > 0) {
+                matrix_add(A, n[2]-1, n[2]-1, G);
+                vector_add(b, n[2]-1, G * V_out);
+            }
+            break;
+        }
+
+        case COMP_XOR_GATE:
+        case COMP_XNOR_GATE: {
+            double v_th = comp->props.logic_gate.v_threshold;
+            double v_low = comp->props.logic_gate.v_low;
+            double v_high = comp->props.logic_gate.v_high;
+            double r_out = comp->props.logic_gate.r_out;
+
+            double v_a = 0, v_b = 0;
+            if (prev_solution) {
+                if (n[0] > 0) v_a = vector_get(prev_solution, n[0]-1);
+                if (n[1] > 0) v_b = vector_get(prev_solution, n[1]-1);
+            }
+
+            bool a_high = v_a >= v_th;
+            bool b_high = v_b >= v_th;
+            bool result = a_high != b_high;  // XOR
+            if (comp->type == COMP_XNOR_GATE) result = !result;
+
+            double V_out = result ? v_high : v_low;
+            double G = 1.0 / r_out;
+
+            if (n[0] > 0) matrix_add(A, n[0]-1, n[0]-1, 1e-12);
+            if (n[1] > 0) matrix_add(A, n[1]-1, n[1]-1, 1e-12);
+
+            if (n[2] > 0) {
+                matrix_add(A, n[2]-1, n[2]-1, G);
+                vector_add(b, n[2]-1, G * V_out);
+            }
+            break;
+        }
+
+        case COMP_TRISTATE_BUF: {
+            // Tri-state buffer: output can be high-impedance
+            double v_th = comp->props.logic_gate.v_threshold;
+            double v_low = comp->props.logic_gate.v_low;
+            double v_high = comp->props.logic_gate.v_high;
+            double r_out = comp->props.logic_gate.r_out;
+
+            double v_in = 0, v_en = 0;
+            if (prev_solution) {
+                if (n[0] > 0) v_in = vector_get(prev_solution, n[0]-1);
+                if (n[2] > 0) v_en = vector_get(prev_solution, n[2]-1);
+            }
+
+            bool enabled = v_en >= v_th;
+            bool input_high = v_in >= v_th;
+
+            if (n[0] > 0) matrix_add(A, n[0]-1, n[0]-1, 1e-12);
+            if (n[2] > 0) matrix_add(A, n[2]-1, n[2]-1, 1e-12);
+
+            if (enabled) {
+                double V_out = input_high ? v_high : v_low;
+                double G = 1.0 / r_out;
+                if (n[1] > 0) {
+                    matrix_add(A, n[1]-1, n[1]-1, G);
+                    vector_add(b, n[1]-1, G * V_out);
+                }
+            } else {
+                // High impedance output
+                if (n[1] > 0) matrix_add(A, n[1]-1, n[1]-1, 1e-12);
+            }
+            break;
+        }
+
+        // === DIGITAL ICs - Simplified behavioral models ===
+
+        case COMP_D_FLIPFLOP:
+        case COMP_JK_FLIPFLOP:
+        case COMP_T_FLIPFLOP:
+        case COMP_SR_LATCH:
+        case COMP_COUNTER:
+        case COMP_SHIFT_REG:
+        case COMP_MUX_2TO1:
+        case COMP_DEMUX_1TO2:
+        case COMP_DECODER:
+        case COMP_HALF_ADDER:
+        case COMP_FULL_ADDER: {
+            // Simplified: treat outputs as voltage sources based on state
+            double v_high = comp->props.logic_gate.v_high;
+            double v_low = comp->props.logic_gate.v_low;
+            double r_out = comp->props.logic_gate.r_out;
+            double G = 1.0 / r_out;
+
+            // High-impedance inputs
+            for (int i = 0; i < comp->num_terminals - 2; i++) {
+                if (n[i] > 0) matrix_add(A, n[i]-1, n[i]-1, 1e-12);
+            }
+
+            // Outputs (last two terminals typically)
+            double V_out = comp->props.logic_gate.state ? v_high : v_low;
+            int out1 = comp->num_terminals - 2;
+            int out2 = comp->num_terminals - 1;
+
+            if (n[out1] > 0) {
+                matrix_add(A, n[out1]-1, n[out1]-1, G);
+                vector_add(b, n[out1]-1, G * V_out);
+            }
+            if (n[out2] > 0) {
+                matrix_add(A, n[out2]-1, n[out2]-1, G);
+                vector_add(b, n[out2]-1, G * (v_high - V_out + v_low));  // Complement
+            }
+            break;
+        }
+
+        case COMP_BCD_DECODER: {
+            // BCD to 7-segment decoder (like 7447)
+            // Terminals: 0-3 = A,B,C,D (BCD inputs), 4-10 = a,b,c,d,e,f,g (segment outputs)
+            double v_high = comp->props.bcd_decoder.v_high;
+            double v_low = comp->props.bcd_decoder.v_low;
+            double v_thresh = comp->props.bcd_decoder.v_threshold;
+            bool active_low = comp->props.bcd_decoder.active_low;
+            double r_out = 100.0;
+            double G = 1.0 / r_out;
+
+            // Read BCD inputs (high-impedance)
+            int bcd_value = 0;
+            for (int i = 0; i < 4; i++) {
+                if (n[i] > 0) {
+                    matrix_add(A, n[i]-1, n[i]-1, 1e-12);
+                    // Read input voltage from previous solution
+                    if (prev_solution && prev_solution->data[n[i]-1] > v_thresh) {
+                        bcd_value |= (1 << i);
+                    }
+                }
+            }
+
+            // BCD to 7-segment lookup table (common cathode: 1=on, 0=off)
+            // Segments: a, b, c, d, e, f, g (bits 0-6)
+            static const uint8_t seg_table[16] = {
+                0x3F, // 0: abcdef
+                0x06, // 1: bc
+                0x5B, // 2: abdeg
+                0x4F, // 3: abcdg
+                0x66, // 4: bcfg
+                0x6D, // 5: acdfg
+                0x7D, // 6: acdefg
+                0x07, // 7: abc
+                0x7F, // 8: abcdefg
+                0x6F, // 9: abcdfg
+                0x77, // A: abcefg
+                0x7C, // b: cdefg
+                0x39, // C: adef
+                0x5E, // d: bcdeg
+                0x79, // E: adefg
+                0x71  // F: aefg
+            };
+
+            uint8_t segments = seg_table[bcd_value & 0x0F];
+
+            // Set outputs (terminals 4-10)
+            for (int i = 0; i < 7; i++) {
+                int term_idx = 4 + i;
+                if (n[term_idx] > 0) {
+                    bool seg_on = (segments >> i) & 1;
+                    if (active_low) seg_on = !seg_on;
+                    double V_out = seg_on ? v_high : v_low;
+                    matrix_add(A, n[term_idx]-1, n[term_idx]-1, G);
+                    vector_add(b, n[term_idx]-1, G * V_out);
+                }
+            }
+            break;
+        }
+
+        // === MIXED SIGNAL ===
+
+        case COMP_555_TIMER: {
+            // 555 Timer: functional model with trigger/threshold comparators
+            // Terminals: VCC(0), GND(1), TRG(2), THR(3), OUT(4)
+            double r_out = 100.0;
+            double G_out = 1.0 / r_out;
+            double G_in = 1e-7;  // High impedance inputs (10M)
+
+            // Get voltages from solution vector (for state update)
+            double v_vcc = 0, v_gnd = 0, v_trig = 0, v_thresh = 0;
+            if (prev_solution) {
+                if (n[0] > 0) v_vcc = vector_get(prev_solution, n[0] - 1);
+                if (n[1] > 0) v_gnd = vector_get(prev_solution, n[1] - 1);
+                if (n[2] > 0) v_trig = vector_get(prev_solution, n[2] - 1);
+                if (n[3] > 0) v_thresh = vector_get(prev_solution, n[3] - 1);
+            }
+
+            // Calculate supply voltage relative to GND
+            double vcc = v_vcc - v_gnd;
+            if (vcc < 0.5) vcc = comp->props.timer_555.vcc;  // Fallback
+
+            // 555 internal comparator thresholds
+            double v_trig_thresh = vcc / 3.0;    // Trigger threshold (1/3 VCC)
+            double v_upper_thresh = 2.0 * vcc / 3.0;  // Upper threshold (2/3 VCC)
+
+            // Relative voltages (referenced to GND)
+            double v_trig_rel = v_trig - v_gnd;
+            double v_thresh_rel = v_thresh - v_gnd;
+
+            // Update internal flip-flop state based on comparators
+            // TRIGGER < 1/3 VCC: SET output HIGH
+            // THRESHOLD > 2/3 VCC: RESET output LOW
+            if (v_trig_rel < v_trig_thresh) {
+                comp->props.timer_555.output = true;  // SET
+            }
+            if (v_thresh_rel > v_upper_thresh) {
+                comp->props.timer_555.output = false;  // RESET
+            }
+
+            // Output voltage based on flip-flop state
+            double v_out = comp->props.timer_555.output ? (vcc - 0.3 + v_gnd) : (0.1 + v_gnd);
+
+            // VCC input - small conductance to ground for stability
+            if (n[0] > 0) matrix_add(A, n[0]-1, n[0]-1, G_in);
+
+            // GND input - small conductance
+            if (n[1] > 0) matrix_add(A, n[1]-1, n[1]-1, G_in);
+
+            // TRIGGER input - high impedance to GND
+            if (n[2] > 0) matrix_add(A, n[2]-1, n[2]-1, G_in);
+
+            // THRESHOLD input - high impedance to GND
+            if (n[3] > 0) matrix_add(A, n[3]-1, n[3]-1, G_in);
+
+            // Output - voltage source behavior (low impedance output)
+            if (n[4] > 0) {
+                matrix_add(A, n[4]-1, n[4]-1, G_out);
+                vector_add(b, n[4]-1, G_out * v_out);
+            }
+            break;
+        }
+
+        case COMP_DAC:
+        case COMP_ADC:
+        case COMP_VCO:
+        case COMP_PLL:
+        case COMP_MONOSTABLE: {
+            // Simplified: output based on input
+            double r_out = 100.0;
+            double G = 1.0 / r_out;
+
+            // High-impedance inputs
+            for (int i = 0; i < comp->num_terminals - 1; i++) {
+                if (n[i] > 0) matrix_add(A, n[i]-1, n[i]-1, 1e-12);
+            }
+
+            // Output
+            int out_idx = comp->num_terminals - 1;
+            if (comp->type == COMP_DAC) out_idx = 2;  // DAC output is terminal 2
+
+            double V_out = 2.5;  // Default mid-rail
+            if (n[out_idx] > 0) {
+                matrix_add(A, n[out_idx]-1, n[out_idx]-1, G);
+                vector_add(b, n[out_idx]-1, G * V_out);
+            }
+            break;
+        }
+
+        case COMP_OPTOCOUPLER: {
+            // Optocoupler: LED on input, phototransistor on output
+            // Input side (LED)
+            double Is = 1e-20;
+            double Vt = 0.026;
+            double Vd = 0.6;
+            if (prev_solution) {
+                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+                Vd = CLAMP(v1 - v2, -0.5, 2.0);
+            }
+            double expTerm = exp(Vd / (2 * Vt));
+            double Gd = (Is / (2 * Vt)) * expTerm + 1e-12;
+            double Id = Is * (expTerm - 1);
+            double Ieq = Id - Gd * Vd;
+
+            STAMP_CONDUCTANCE(n[0], n[1], Gd);
+            if (n[0] > 0) vector_add(b, n[0]-1, -Ieq);
+            if (n[1] > 0) vector_add(b, n[1]-1, Ieq);
+
+            // Output side: current source proportional to LED current
+            double I_out = Id * 0.5;  // Current transfer ratio ~50%
+            if (n[2] > 0) vector_add(b, n[2]-1, -I_out);
+            if (n[3] > 0) vector_add(b, n[3]-1, I_out);
+            break;
+        }
+
+        // === VOLTAGE REGULATORS ===
+
+        case COMP_LM317: {
+            // LM317: Adjustable voltage regulator
+            // Vout = Vadj + 1.25V (reference voltage between OUT and ADJ)
+            // Dropout voltage ~3V (Vin must be at least Vout + 3V)
+            double v_ref = 1.25;
+            double v_dropout = 2.5;  // Minimum IN-OUT voltage
+            double r_out = 0.1;      // Low output impedance
+            double G_out = 1.0 / r_out;
+            double G_in = 1e-9;      // Input draws very little current at no load
+
+            // Get voltages from solution vector
+            double v_in = 0, v_adj = 0;
+            if (prev_solution) {
+                if (n[0] > 0) v_in = vector_get(prev_solution, n[0] - 1);
+                if (n[2] > 0) v_adj = vector_get(prev_solution, n[2] - 1);
+            }
+
+            // Calculate desired output voltage (ADJ + 1.25V)
+            double v_out_desired = v_adj + v_ref;
+
+            // Check dropout condition: if Vin < Vout + dropout, regulator can't maintain output
+            double v_out_max = v_in - v_dropout;
+            double V_out = (v_out_desired < v_out_max) ? v_out_desired : v_out_max;
+            if (V_out < 0) V_out = 0;  // Can't output negative
+
+            // Input connection - small conductance for bias current
+            if (n[0] > 0) matrix_add(A, n[0]-1, n[0]-1, G_in);
+
+            // ADJ pin - very high impedance (draws ~50uA typically)
+            if (n[2] > 0) matrix_add(A, n[2]-1, n[2]-1, 1e-12);
+
+            // Output - voltage source behavior
+            if (n[1] > 0) {
+                matrix_add(A, n[1]-1, n[1]-1, G_out);
+                vector_add(b, n[1]-1, G_out * V_out);
+            }
+            break;
+        }
+
+        case COMP_7805: {
+            // 7805: Fixed 5V voltage regulator
+            // Requires minimum ~7V input (2V dropout)
+            // Terminals: IN(0), OUT(1), GND(2)
+            double v_reg = 5.0;       // Regulated output voltage
+            double v_dropout = 2.0;   // Minimum IN-OUT voltage
+            double r_out = 0.1;       // Low output impedance
+            double G_out = 1.0 / r_out;
+            double G_in = 1e-9;       // Input draws very little current at no load
+
+            // Get voltages from solution vector
+            double v_in = 0, v_gnd = 0;
+            if (prev_solution) {
+                if (n[0] > 0) v_in = vector_get(prev_solution, n[0] - 1);
+                if (n[2] > 0) v_gnd = vector_get(prev_solution, n[2] - 1);
+            }
+
+            // Calculate voltage relative to GND pin
+            double v_in_rel = v_in - v_gnd;
+
+            // Check dropout condition: need at least 7V (5V + 2V dropout)
+            double V_out;
+            if (v_in_rel >= v_reg + v_dropout) {
+                // Normal regulation - output 5V above GND
+                V_out = v_gnd + v_reg;
+            } else if (v_in_rel > 0) {
+                // Dropout - output follows input minus dropout
+                V_out = v_in - v_dropout;
+                if (V_out < v_gnd) V_out = v_gnd;  // Can't go below GND
+            } else {
+                // No input voltage
+                V_out = v_gnd;
+            }
+
+            // Input connection - small conductance for bias current
+            if (n[0] > 0) matrix_add(A, n[0]-1, n[0]-1, G_in);
+
+            // GND pin - connection point
+            if (n[2] > 0) matrix_add(A, n[2]-1, n[2]-1, 1e-12);
+
+            // Output - voltage source behavior
+            if (n[1] > 0) {
+                matrix_add(A, n[1]-1, n[1]-1, G_out);
+                vector_add(b, n[1]-1, G_out * V_out);
+            }
+            break;
+        }
+
+        case COMP_TL431: {
+            // TL431: Programmable shunt regulator
+            double v_ref = 2.5;
+            // Acts like a zener at V_ref
+            double Vd = 0;
+            if (prev_solution) {
+                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+                Vd = v1 - v2;
+            }
+
+            double G = (Vd > v_ref) ? 1.0 : 1e-12;
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+            break;
+        }
+
+        // === DISPLAY/OUTPUT ===
+
+        case COMP_LAMP: {
+            // Lamp: temperature-dependent resistance
+            double R = comp->props.lamp.r_cold;  // Simplified: use cold resistance
+            double G = 1.0 / R;
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+            break;
+        }
+
+        case COMP_7SEG_DISPLAY: {
+            // 7-segment display: terminals 0-3=a,b,c,d, 4=COM, 5-8=e,f,g,DP
+            // Each segment is a diode from segment pin to COM
+            double Is = 1e-20;
+            double Vt = 0.026;
+            double nn = 2.0;
+            double nVt = nn * Vt;
+            int com = 4;  // COM is terminal 4
+
+            // Segment terminals: 0,1,2,3 (a,b,c,d) and 5,6,7,8 (e,f,g,DP)
+            int seg_terminals[] = {0, 1, 2, 3, 5, 6, 7, 8};
+            for (int j = 0; j < 8; j++) {
+                int i = seg_terminals[j];
+                double Vd = 0.6;
+                if (prev_solution) {
+                    double v1 = (n[i] > 0) ? vector_get(prev_solution, n[i]-1) : 0;
+                    double v2 = (n[com] > 0) ? vector_get(prev_solution, n[com]-1) : 0;
+                    Vd = CLAMP(v1 - v2, -1, 3);
+                }
+                double expTerm = exp(Vd / nVt);
+                double Gd = (Is / nVt) * expTerm + 1e-12;
+                double Id = Is * (expTerm - 1);
+                double Ieq = Id - Gd * Vd;
+
+                STAMP_CONDUCTANCE(n[i], n[com], Gd);
+                if (n[i] > 0) vector_add(b, n[i]-1, -Ieq);
+                if (n[com] > 0) vector_add(b, n[com]-1, Ieq);
+            }
+            break;
+        }
+
+        case COMP_LED_ARRAY: {
+            // LED array: last terminal is common
+            double Is = 1e-20;
+            double Vt = 0.026;
+            double nn = 2.0;
+            double nVt = nn * Vt;
+            int com = comp->num_terminals - 1;
+
+            for (int i = 0; i < comp->num_terminals - 1; i++) {
+                double Vd = 0.6;
+                if (prev_solution) {
+                    double v1 = (n[i] > 0) ? vector_get(prev_solution, n[i]-1) : 0;
+                    double v2 = (n[com] > 0) ? vector_get(prev_solution, n[com]-1) : 0;
+                    Vd = CLAMP(v1 - v2, -1, 3);
+                }
+                double expTerm = exp(Vd / nVt);
+                double Gd = (Is / nVt) * expTerm + 1e-12;
+                double Id = Is * (expTerm - 1);
+                double Ieq = Id - Gd * Vd;
+
+                STAMP_CONDUCTANCE(n[i], n[com], Gd);
+                if (n[i] > 0) vector_add(b, n[i]-1, -Ieq);
+                if (n[com] > 0) vector_add(b, n[com]-1, Ieq);
+            }
+            break;
+        }
+
+        case COMP_DC_MOTOR:
+        case COMP_SPEAKER: {
+            // Motor/Speaker: RL load
+            double R = comp->props.inductor.dcr;
+            double L = comp->props.inductor.inductance;
+            double Req = L / dt;
+
+            // Resistance
+            double G = 1.0 / R;
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+
+            // Inductance (simplified)
+            double Geq = 1.0 / Req;
+            STAMP_CONDUCTANCE(n[0], n[1], Geq);
+            break;
+        }
+
+        // === MEASUREMENT ===
+
+        case COMP_VOLTMETER: {
+            // Voltmeter: high-impedance
+            double G = comp->props.voltmeter.ideal ? 1e-15 : (1.0 / comp->props.voltmeter.r_in);
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+
+            // Calculate voltage reading from previous solution
+            if (prev_solution) {
+                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0] - 1) : 0.0;
+                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1] - 1) : 0.0;
+                comp->props.voltmeter.reading = v1 - v2;
+            }
+            break;
+        }
+
+        case COMP_AMMETER: {
+            // Ammeter: low-impedance (series element)
+            double R = comp->props.ammeter.ideal ? 1e-6 : comp->props.ammeter.r_shunt;
+            double G = 1.0 / R;
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+
+            // Calculate current reading from voltage drop across shunt
+            if (prev_solution) {
+                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0] - 1) : 0.0;
+                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1] - 1) : 0.0;
+                comp->props.ammeter.reading = (v1 - v2) * G;  // I = V * G
+            }
+            break;
+        }
+
+        case COMP_WATTMETER: {
+            // Wattmeter: voltage sensing (high-Z) and current sensing (low-Z)
+            double G_v = 1e-12;  // Voltage input (high impedance)
+            double R_i = 0.001;  // Current shunt (1mOhm, low impedance)
+            double G_i = 1.0 / R_i;
+            STAMP_CONDUCTANCE(n[0], n[1], G_v);
+            STAMP_CONDUCTANCE(n[2], n[3], G_i);
+
+            // Calculate power reading: P = V * I
+            if (prev_solution) {
+                // Voltage across V+ to V-
+                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0] - 1) : 0.0;
+                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1] - 1) : 0.0;
+                double voltage = v1 - v2;
+
+                // Current through I+ to I- (from voltage drop across shunt)
+                double vi1 = (n[2] > 0) ? vector_get(prev_solution, n[2] - 1) : 0.0;
+                double vi2 = (n[3] > 0) ? vector_get(prev_solution, n[3] - 1) : 0.0;
+                double current = (vi1 - vi2) * G_i;
+
+                // Store power in voltmeter.reading field
+                comp->props.voltmeter.reading = voltage * current;
+            }
+            break;
+        }
+
+        case COMP_TEST_POINT:
+        case COMP_LABEL: {
+            // Test point/Label: just a node marker, infinite impedance
+            if (n[0] > 0) matrix_add(A, n[0]-1, n[0]-1, 1e-15);
             break;
         }
 
