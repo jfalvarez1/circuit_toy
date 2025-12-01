@@ -1042,6 +1042,33 @@ void app_handle_events(App *app) {
                             app->input.pending_ui_action = UI_ACTION_NONE;
                             break;
                         }
+                        else if (prop_type == PROP_TEXT_BOLD) {
+                            // Toggle bold immediately
+                            if (c->type == COMP_TEXT) {
+                                c->props.text.bold = !c->props.text.bold;
+                                ui_set_status(&app->ui, c->props.text.bold ? "Text: Bold ON" : "Text: Bold OFF");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
+                        else if (prop_type == PROP_TEXT_ITALIC) {
+                            // Toggle italic immediately
+                            if (c->type == COMP_TEXT) {
+                                c->props.text.italic = !c->props.text.italic;
+                                ui_set_status(&app->ui, c->props.text.italic ? "Text: Italic ON" : "Text: Italic OFF");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
+                        else if (prop_type == PROP_TEXT_UNDERLINE) {
+                            // Toggle underline immediately
+                            if (c->type == COMP_TEXT) {
+                                c->props.text.underline = !c->props.text.underline;
+                                ui_set_status(&app->ui, c->props.text.underline ? "Text: Underline ON" : "Text: Underline OFF");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
+                        }
                         input_start_property_edit(&app->input, prop_type, current_value);
                         ui_set_status(&app->ui, "Type value (use k,M,m,u,n,p suffix), Enter to apply");
                     } else if (!app->input.selected_component) {
@@ -1233,6 +1260,9 @@ void app_render(App *app) {
     ui_render_bode_plot(&app->ui, r, app->simulation);
     ui_render_sweep_panel(&app->ui, r, &app->analysis);
     ui_render_monte_carlo_panel(&app->ui, r, &app->analysis);
+
+    // Render synthwave LED trim on top
+    ui_render_neon_trim(&app->ui, r);
 
     // Present
     SDL_RenderPresent(r);

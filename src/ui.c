@@ -123,6 +123,7 @@ static void ui_draw_char(SDL_Renderer *r, char c, int x, int y) {
 }
 
 static void ui_draw_text(SDL_Renderer *r, const char *text, int x, int y) {
+    if (!text) return;  // Safety check for NULL
     while (*text) {
         ui_draw_char(r, *text, x, y);
         x += 8;
@@ -905,6 +906,11 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
 static void draw_property_field(SDL_Renderer *renderer, int x, int y, int w,
                                 const char *label, const char *value,
                                 bool is_editing, const char *edit_buffer, int cursor_pos) {
+    // Safety checks for NULL strings
+    if (!value) value = "";
+    if (!edit_buffer) edit_buffer = "";
+    if (!label) label = "";
+
     // Label - synthwave text
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
     ui_draw_text(renderer, label, x, y + 2);
@@ -1089,18 +1095,11 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
         SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
         ui_draw_text(renderer, "Component:", x + 10, content_y + 35);
 
-        // Component type name (must match ComponentType enum order)
-        const char *type_names[] = {
-            "None", "Ground", "DC Voltage", "AC Voltage", "DC Current",
-            "Resistor", "Capacitor", "Elec. Cap", "Inductor", "Diode",
-            "Zener", "Schottky", "LED",
-            "NPN BJT", "PNP BJT", "NMOS", "PMOS", "Op-Amp",
-            "Square Wave", "Triangle Wave", "Sawtooth", "Noise",
-            "Text"
-        };
-        if (selected->type < COMP_TYPE_COUNT) {
+        // Get component type name safely from component info
+        const ComponentTypeInfo *info = component_get_info(selected->type);
+        if (info && info->name) {
             SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
-            ui_draw_text(renderer, type_names[selected->type], x + 100, content_y + 35);
+            ui_draw_text(renderer, info->name, x + 100, content_y + 35);
         }
 
         // Store property bounds for later reference
@@ -1979,6 +1978,48 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, buf, x + 100, prop_y + 2);
                 ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 60, 14};
                 ui->properties[ui->num_properties].prop_type = PROP_TEXT_SIZE;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Bold/Italic/Underline toggles on same row
+                int toggle_x = x + 10;
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Style:", toggle_x, prop_y + 2);
+                toggle_x += 50;
+
+                // Bold toggle
+                if (selected->props.text.bold) {
+                    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                } else {
+                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                }
+                ui_draw_text(renderer, "[B]", toggle_x, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){toggle_x, prop_y, 24, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_TEXT_BOLD;
+                ui->num_properties++;
+                toggle_x += 30;
+
+                // Italic toggle
+                if (selected->props.text.italic) {
+                    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                } else {
+                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                }
+                ui_draw_text(renderer, "[I]", toggle_x, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){toggle_x, prop_y, 24, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_TEXT_ITALIC;
+                ui->num_properties++;
+                toggle_x += 30;
+
+                // Underline toggle
+                if (selected->props.text.underline) {
+                    SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                } else {
+                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                }
+                ui_draw_text(renderer, "[U]", toggle_x, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){toggle_x, prop_y, 24, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_TEXT_UNDERLINE;
                 ui->num_properties++;
                 break;
             }
@@ -3554,6 +3595,117 @@ void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer) {
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
     line_y += 10;
     ui_draw_text(renderer, "Press Escape or F1 to close", dx + 20, line_y);
+
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+}
+
+// Synthwave gradient spectrum animation along window borders
+void ui_render_neon_trim(UIState *ui, SDL_Renderer *renderer) {
+    // Get time for animation
+    static Uint32 start_time = 0;
+    if (start_time == 0) start_time = SDL_GetTicks();
+    double time = (SDL_GetTicks() - start_time) / 1000.0;
+
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+
+    int w = ui->window_width;
+    int h = ui->window_height;
+    int border_thickness = 3;
+
+    // Total perimeter for position calculation
+    int perimeter = 2 * w + 2 * h;
+
+    // Chaser position (0-1, moves around the border over time)
+    double chaser_speed = 0.25;  // Full loop every 4 seconds
+    double chaser_pos = fmod(time * chaser_speed, 1.0);
+    double chaser_length = 0.2;  // Length of bright trail (20% of perimeter)
+
+    // Global pulse effect (brightness oscillation for whole border)
+    double pulse = 0.7 + 0.3 * sin(time * 2.5);
+
+    // Helper to get bright cyberpunk neon color at position
+    // Cycles through: Hot pink -> Electric purple -> Neon cyan -> Electric blue -> back
+    #define GET_SYNTH_COLOR(pos, out_r, out_g, out_b) do { \
+        double _hue = fmod((pos) + time * 0.15, 1.0); \
+        double _r, _g, _b; \
+        /* Brighter, more saturated cyberpunk colors */ \
+        if (_hue < 0.25) { \
+            /* Hot pink to electric purple */ \
+            double _t = _hue / 0.25; \
+            _r = 1.0; _g = 0.1 * (1.0 - _t); _b = 0.5 + 0.5 * _t; \
+        } else if (_hue < 0.5) { \
+            /* Electric purple to neon cyan */ \
+            double _t = (_hue - 0.25) / 0.25; \
+            _r = 1.0 - _t * 0.8; _g = _t; _b = 1.0; \
+        } else if (_hue < 0.75) { \
+            /* Neon cyan to electric blue */ \
+            double _t = (_hue - 0.5) / 0.25; \
+            _r = 0.2 - _t * 0.2; _g = 1.0 - _t * 0.5; _b = 1.0; \
+        } else { \
+            /* Electric blue back to hot pink */ \
+            double _t = (_hue - 0.75) / 0.25; \
+            _r = _t; _g = 0.5 - _t * 0.4; _b = 1.0 - _t * 0.5; \
+        } \
+        /* Calculate distance from chaser head (with wraparound) */ \
+        double _dist = (pos) - chaser_pos; \
+        if (_dist < 0) _dist += 1.0; \
+        /* Chaser brightness boost on top of pulse */ \
+        double _chaser_boost = 0.0; \
+        if (_dist < chaser_length) { \
+            _chaser_boost = (1.0 - _dist / chaser_length) * 0.5; \
+        } \
+        double _brightness = pulse + _chaser_boost; \
+        if (_brightness > 1.0) _brightness = 1.0; \
+        out_r = (uint8_t)(_r * 255 * _brightness); \
+        out_g = (uint8_t)(_g * 255 * _brightness); \
+        out_b = (uint8_t)(_b * 255 * _brightness); \
+    } while(0)
+
+    // Draw top border (left to right)
+    for (int x = 0; x < w; x++) {
+        double pos = (double)x / perimeter;
+        uint8_t r, g, b;
+        GET_SYNTH_COLOR(pos, r, g, b);
+        SDL_SetRenderDrawColor(renderer, r, g, b, 200);
+        for (int t = 0; t < border_thickness; t++) {
+            SDL_RenderDrawPoint(renderer, x, t);
+        }
+    }
+
+    // Draw right border (top to bottom)
+    for (int y = 0; y < h; y++) {
+        double pos = (double)(w + y) / perimeter;
+        uint8_t r, g, b;
+        GET_SYNTH_COLOR(pos, r, g, b);
+        SDL_SetRenderDrawColor(renderer, r, g, b, 200);
+        for (int t = 0; t < border_thickness; t++) {
+            SDL_RenderDrawPoint(renderer, w - 1 - t, y);
+        }
+    }
+
+    // Draw bottom border (right to left)
+    for (int x = w - 1; x >= 0; x--) {
+        double pos = (double)(w + h + (w - 1 - x)) / perimeter;
+        uint8_t r, g, b;
+        GET_SYNTH_COLOR(pos, r, g, b);
+        SDL_SetRenderDrawColor(renderer, r, g, b, 200);
+        for (int t = 0; t < border_thickness; t++) {
+            SDL_RenderDrawPoint(renderer, x, h - 1 - t);
+        }
+    }
+
+    // Draw left border (bottom to top)
+    for (int y = h - 1; y >= 0; y--) {
+        double pos = (double)(2 * w + h + (h - 1 - y)) / perimeter;
+        uint8_t r, g, b;
+        GET_SYNTH_COLOR(pos, r, g, b);
+        SDL_SetRenderDrawColor(renderer, r, g, b, 200);
+        for (int t = 0; t < border_thickness; t++) {
+            SDL_RenderDrawPoint(renderer, t, y);
+        }
+    }
+
+    #undef GET_SYNTH_COLOR
 
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }

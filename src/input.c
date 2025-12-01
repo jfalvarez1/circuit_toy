@@ -1709,6 +1709,38 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             }
             break;
 
+        case PROP_TEXT_SIZE:
+            // Cycle through font sizes: 1 -> 2 -> 3 -> 1
+            if (comp->type == COMP_TEXT) {
+                comp->props.text.font_size = (comp->props.text.font_size % 3) + 1;
+                applied = true;
+            }
+            break;
+
+        case PROP_TEXT_BOLD:
+            // Toggle bold
+            if (comp->type == COMP_TEXT) {
+                comp->props.text.bold = !comp->props.text.bold;
+                applied = true;
+            }
+            break;
+
+        case PROP_TEXT_ITALIC:
+            // Toggle italic
+            if (comp->type == COMP_TEXT) {
+                comp->props.text.italic = !comp->props.text.italic;
+                applied = true;
+            }
+            break;
+
+        case PROP_TEXT_UNDERLINE:
+            // Toggle underline
+            if (comp->type == COMP_TEXT) {
+                comp->props.text.underline = !comp->props.text.underline;
+                applied = true;
+            }
+            break;
+
         default:
             // Handle special cases for reused property types
             if (input->editing_prop_type == PROP_LED_VF && comp->type == COMP_SCHOTTKY) {

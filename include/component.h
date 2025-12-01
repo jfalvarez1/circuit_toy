@@ -245,6 +245,9 @@ typedef union {
         char text[128];         // Text content
         int font_size;          // Font size (1=small, 2=normal, 3=large)
         uint32_t color;         // Text color (RGBA packed)
+        bool bold;              // Bold text
+        bool italic;            // Italic text
+        bool underline;         // Underlined text
     } text;
 
     // Potentiometer (variable resistor with 3 terminals)

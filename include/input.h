@@ -118,6 +118,9 @@ typedef enum {
     // Text annotation parameters
     PROP_TEXT_CONTENT,            // Text content string
     PROP_TEXT_SIZE,               // Font size (1=small, 2=normal, 3=large)
+    PROP_TEXT_BOLD,               // Bold toggle
+    PROP_TEXT_ITALIC,             // Italic toggle
+    PROP_TEXT_UNDERLINE,          // Underline toggle
 
     // Bode plot parameters
     PROP_BODE_FREQ_START,         // Start frequency

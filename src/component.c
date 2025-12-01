@@ -1551,6 +1551,14 @@ Component *component_create(ComponentType type, float x, float y) {
     comp->num_terminals = info->num_terminals;
     comp->props = info->default_props;
 
+    // Special initialization for text component (char array needs explicit copy)
+    if (type == COMP_TEXT) {
+        strncpy(comp->props.text.text, "Label", sizeof(comp->props.text.text) - 1);
+        comp->props.text.text[sizeof(comp->props.text.text) - 1] = '\0';
+        comp->props.text.font_size = 2;
+        comp->props.text.color = 0xFFFFFFFF;
+    }
+
     // Set default label
     snprintf(comp->label, MAX_LABEL_LEN, "%s%d", info->short_name, comp->id);
 

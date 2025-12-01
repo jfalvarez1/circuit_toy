@@ -191,6 +191,29 @@ static void draw_char(SDL_Renderer *renderer, char c, int x, int y) {
     }
 }
 
+// Draw a scaled character using bitmap font
+static void draw_char_scaled(SDL_Renderer *renderer, char c, int x, int y, int scale, bool bold, bool italic) {
+    if (c < 32 || c > 126) c = '?';
+    const unsigned char *glyph = font8x8[c - 32];
+
+    for (int row = 0; row < 8; row++) {
+        unsigned char bits = glyph[row];
+        // Italic: shift pixels right based on row (from bottom to top)
+        int italic_shift = italic ? (7 - row) / 3 : 0;
+        for (int col = 0; col < 8; col++) {
+            if (bits & (1 << col)) {
+                SDL_Rect rect = {x + (col + italic_shift) * scale, y + row * scale, scale, scale};
+                SDL_RenderFillRect(renderer, &rect);
+                // Bold: draw extra pixel to the right
+                if (bold) {
+                    SDL_Rect bold_rect = {x + (col + italic_shift + 1) * scale, y + row * scale, scale, scale};
+                    SDL_RenderFillRect(renderer, &bold_rect);
+                }
+            }
+        }
+    }
+}
+
 RenderContext *render_create(SDL_Renderer *renderer) {
     RenderContext *ctx = calloc(1, sizeof(RenderContext));
     if (!ctx) return NULL;
@@ -316,6 +339,7 @@ void render_fill_rect_screen(RenderContext *ctx, int x, int y, int w, int h) {
 
 // Text rendering using bitmap font
 void render_draw_text(RenderContext *ctx, const char *text, int x, int y, Color color) {
+    if (!text || !*text) return;  // Safety check for NULL or empty string
     SDL_SetRenderDrawColor(ctx->renderer, color.r, color.g, color.b, color.a);
     int cx = x;
     while (*text) {
@@ -328,6 +352,33 @@ void render_draw_text(RenderContext *ctx, const char *text, int x, int y, Color 
 void render_draw_text_small(RenderContext *ctx, const char *text, int x, int y, Color color) {
     // Use same font for now (could scale down if needed)
     render_draw_text(ctx, text, x, y, color);
+}
+
+// Styled text rendering with size and formatting
+void render_draw_text_styled(RenderContext *ctx, const char *text, int x, int y, Color color,
+                             int font_size, bool bold, bool italic, bool underline) {
+    if (!text || !*text) return;
+    SDL_SetRenderDrawColor(ctx->renderer, color.r, color.g, color.b, color.a);
+
+    // Scale based on font_size: 1=small(1x), 2=normal(2x), 3=large(3x)
+    int scale = (font_size < 1) ? 1 : (font_size > 3) ? 3 : font_size;
+    int char_width = 8 * scale + (bold ? scale : 0);  // Extra width for bold
+    int char_height = 8 * scale;
+
+    int cx = x;
+    int text_start_x = x;
+    while (*text) {
+        draw_char_scaled(ctx->renderer, *text, cx, y, scale, bold, italic);
+        cx += char_width;
+        text++;
+    }
+
+    // Draw underline if enabled
+    if (underline) {
+        int underline_y = y + char_height + scale;
+        SDL_Rect underline_rect = {text_start_x, underline_y, cx - text_start_x, scale};
+        SDL_RenderFillRect(ctx->renderer, &underline_rect);
+    }
 }
 
 void render_grid(RenderContext *ctx) {
@@ -521,7 +572,7 @@ void render_component(RenderContext *ctx, Component *comp) {
             render_transformer_ct(ctx, comp->x, comp->y, comp->rotation);
             break;
         case COMP_TEXT: {
-            // Render text annotation
+            // Render text annotation with formatting
             int sx, sy;
             render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
             // Extract color from packed RGBA
@@ -536,7 +587,11 @@ void render_component(RenderContext *ctx, Component *comp) {
             if (comp->selected) {
                 text_color = COLOR_ACCENT2;
             }
-            render_draw_text(ctx, comp->props.text.text, sx, sy, text_color);
+            render_draw_text_styled(ctx, comp->props.text.text, sx, sy, text_color,
+                                    comp->props.text.font_size,
+                                    comp->props.text.bold,
+                                    comp->props.text.italic,
+                                    comp->props.text.underline);
             break;
         }
         // === NEW COMPONENT SYMBOLS ===

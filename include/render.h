@@ -62,6 +62,8 @@ void render_fill_rect_screen(RenderContext *ctx, int x, int y, int w, int h);
 // Text rendering (basic - screen coordinates)
 void render_draw_text(RenderContext *ctx, const char *text, int x, int y, Color color);
 void render_draw_text_small(RenderContext *ctx, const char *text, int x, int y, Color color);
+void render_draw_text_styled(RenderContext *ctx, const char *text, int x, int y, Color color,
+                             int font_size, bool bold, bool italic, bool underline);
 
 // Circuit rendering
 void render_grid(RenderContext *ctx);
