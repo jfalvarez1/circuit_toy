@@ -2,6 +2,8 @@
 
 A native desktop circuit simulator written in C with SDL2, inspired by The Powder Toy. Build, simulate, and analyze electronic circuits with an intuitive interface.
 
+![Circuit Playground Screenshot](screenshot.png)
+
 ## Features
 
 ### Components
