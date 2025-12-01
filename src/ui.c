@@ -841,7 +841,9 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
     int scroll_offset = ui->palette_scroll_offset;
 
     // Draw category headers based on known component indices
-    // Tools: items 0-3, Sources: 4-7, Waveforms: 8-11, Passives: 12-15, Diodes: 16-19, Transistors: 20-24
+    // Tools: 0-4 (5 items), Sources: 5-8 (4), Waveforms: 9-12 (4), Passives: 13-16 (4),
+    // Diodes: 17-20 (4), Transistors: 21-25 (5), Switches: 26-28 (3),
+    // Logic: 29-34 (6), Digital: 35-38 (4), Display: 39-43 (5)
     typedef struct { int start_idx; const char *label; } PaletteSection;
     PaletteSection sections[] = {
         {0, "Tools"},
@@ -849,7 +851,11 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
         {9, "Waveforms"},
         {13, "Passives"},
         {17, "Diodes"},
-        {21, "Transistors"}
+        {21, "Transistors"},
+        {26, "Switches"},
+        {29, "Logic Gates"},
+        {35, "Digital ICs"},
+        {39, "Display"}
     };
     int num_sections = sizeof(sections) / sizeof(sections[0]);
 
