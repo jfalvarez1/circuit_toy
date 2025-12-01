@@ -177,227 +177,177 @@ void ui_init(UIState *ui) {
     int pal_h = 35;
     int col = 0;
 
-    // === TOOLS SECTION ===
-    // Header drawn at pal_y - 14
-    int tools_header_y = pal_y - 14;
-    (void)tools_header_y;  // Will use in render
+    // Helper macro to add a palette item
+    #define ADD_TOOL(tool, lbl) do { \
+        ui->palette_items[ui->num_palette_items++] = (PaletteItem){ \
+            {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, tool, true, lbl, false, (tool == TOOL_SELECT) \
+        }; \
+        col++; if (col >= 2) { col = 0; pal_y += pal_h + 3; } \
+    } while(0)
+
+    #define ADD_COMP(comp, lbl) do { \
+        ui->palette_items[ui->num_palette_items++] = (PaletteItem){ \
+            {10 + col*70, pal_y, 60, pal_h}, comp, TOOL_COMPONENT, false, lbl, false, false \
+        }; \
+        col++; if (col >= 2) { col = 0; pal_y += pal_h + 3; } \
+    } while(0)
+
+    #define NEW_SECTION() do { col = 0; pal_y += pal_h + 15; } while(0)
+
+    // === TOOLS SECTION (index 0) ===
     pal_y += 4;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, TOOL_SELECT, true, "Select", false, true
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, TOOL_WIRE, true, "Wire", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, TOOL_DELETE, true, "Delete", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, TOOL_PROBE, true, "Probe", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_TEXT, TOOL_COMPONENT, false, "Text", false, false
-    };
+    ADD_TOOL(TOOL_SELECT, "Select");
+    ADD_TOOL(TOOL_WIRE, "Wire");
+    ADD_TOOL(TOOL_DELETE, "Delete");
+    ADD_TOOL(TOOL_PROBE, "Probe");
+    ADD_COMP(COMP_TEXT, "Text");
 
-    // === SOURCES SECTION ===
-    pal_y += pal_h + 18;
-    col = 0;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_GROUND, TOOL_COMPONENT, false, "GND", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_DC_VOLTAGE, TOOL_COMPONENT, false, "DC V", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 3;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_AC_VOLTAGE, TOOL_COMPONENT, false, "AC V", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_DC_CURRENT, TOOL_COMPONENT, false, "DC I", false, false
-    };
+    // === SOURCES SECTION (index 5) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_GROUND, "GND");
+    ADD_COMP(COMP_DC_VOLTAGE, "DC V");
+    ADD_COMP(COMP_AC_VOLTAGE, "AC V");
+    ADD_COMP(COMP_DC_CURRENT, "DC I");
+    ADD_COMP(COMP_AC_CURRENT, "AC I");
+    ADD_COMP(COMP_CLOCK, "Clock");
 
-    // === WAVEFORMS SECTION ===
-    col = 0;
-    pal_y += pal_h + 18;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_SQUARE_WAVE, TOOL_COMPONENT, false, "Square", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_TRIANGLE_WAVE, TOOL_COMPONENT, false, "Tri", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_SAWTOOTH_WAVE, TOOL_COMPONENT, false, "Saw", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_NOISE_SOURCE, TOOL_COMPONENT, false, "Noise", false, false
-    };
+    // === WAVEFORMS SECTION (index 11) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_SQUARE_WAVE, "Square");
+    ADD_COMP(COMP_TRIANGLE_WAVE, "Tri");
+    ADD_COMP(COMP_SAWTOOTH_WAVE, "Saw");
+    ADD_COMP(COMP_NOISE_SOURCE, "Noise");
+    ADD_COMP(COMP_PULSE_SOURCE, "Pulse");
+    ADD_COMP(COMP_PWM_SOURCE, "PWM");
 
-    // === PASSIVES SECTION ===
-    pal_y += pal_h + 18;
-    col = 0;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_RESISTOR, TOOL_COMPONENT, false, "R", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_CAPACITOR, TOOL_COMPONENT, false, "C", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 3;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_CAPACITOR_ELEC, TOOL_COMPONENT, false, "Elec", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_INDUCTOR, TOOL_COMPONENT, false, "L", false, false
-    };
+    // === PASSIVES SECTION (index 17) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_RESISTOR, "R");
+    ADD_COMP(COMP_CAPACITOR, "C");
+    ADD_COMP(COMP_CAPACITOR_ELEC, "Elec");
+    ADD_COMP(COMP_INDUCTOR, "L");
+    ADD_COMP(COMP_POTENTIOMETER, "Pot");
+    ADD_COMP(COMP_CRYSTAL, "Xtal");
+    ADD_COMP(COMP_FUSE, "Fuse");
+    ADD_COMP(COMP_THERMISTOR, "Therm");
 
-    // === DIODES SECTION ===
-    pal_y += pal_h + 18;
-    col = 0;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_DIODE, TOOL_COMPONENT, false, "Diode", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_ZENER, TOOL_COMPONENT, false, "Zener", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 3;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_SCHOTTKY, TOOL_COMPONENT, false, "Schky", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_LED, TOOL_COMPONENT, false, "LED", false, false
-    };
+    // === DIODES SECTION (index 25) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_DIODE, "Diode");
+    ADD_COMP(COMP_ZENER, "Zener");
+    ADD_COMP(COMP_SCHOTTKY, "Schky");
+    ADD_COMP(COMP_LED, "LED");
+    ADD_COMP(COMP_VARACTOR, "Varac");
+    ADD_COMP(COMP_PHOTODIODE, "Photo");
 
-    // === TRANSISTORS SECTION ===
-    pal_y += pal_h + 18;
-    col = 0;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_NPN_BJT, TOOL_COMPONENT, false, "NPN", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_PNP_BJT, TOOL_COMPONENT, false, "PNP", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 3;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_NMOS, TOOL_COMPONENT, false, "NMOS", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_PMOS, TOOL_COMPONENT, false, "PMOS", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 3;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_OPAMP, TOOL_COMPONENT, false, "OpAmp", false, false
-    };
+    // === TRANSISTORS - BJT SECTION (index 31) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_NPN_BJT, "NPN");
+    ADD_COMP(COMP_PNP_BJT, "PNP");
+    ADD_COMP(COMP_NPN_DARLINGTON, "NPN-D");
+    ADD_COMP(COMP_PNP_DARLINGTON, "PNP-D");
 
-    // === SWITCHES SECTION ===
-    pal_y += pal_h + 18;
-    col = 0;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_SPST_SWITCH, TOOL_COMPONENT, false, "SPST", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_SPDT_SWITCH, TOOL_COMPONENT, false, "SPDT", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 3;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_PUSH_BUTTON, TOOL_COMPONENT, false, "PushB", false, false
-    };
+    // === TRANSISTORS - FET SECTION (index 35) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_NMOS, "NMOS");
+    ADD_COMP(COMP_PMOS, "PMOS");
+    ADD_COMP(COMP_NJFET, "NJFET");
+    ADD_COMP(COMP_PJFET, "PJFET");
 
-    // === LOGIC GATES SECTION ===
-    pal_y += pal_h + 18;
-    col = 0;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_NOT_GATE, TOOL_COMPONENT, false, "NOT", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_AND_GATE, TOOL_COMPONENT, false, "AND", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 3;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_OR_GATE, TOOL_COMPONENT, false, "OR", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_NAND_GATE, TOOL_COMPONENT, false, "NAND", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 3;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_NOR_GATE, TOOL_COMPONENT, false, "NOR", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_XOR_GATE, TOOL_COMPONENT, false, "XOR", false, false
-    };
+    // === THYRISTORS SECTION (index 39) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_SCR, "SCR");
+    ADD_COMP(COMP_DIAC, "DIAC");
+    ADD_COMP(COMP_TRIAC, "TRIAC");
+    ADD_COMP(COMP_UJT, "UJT");
 
-    // === DIGITAL ICS SECTION ===
-    pal_y += pal_h + 18;
-    col = 0;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_D_FLIPFLOP, TOOL_COMPONENT, false, "D-FF", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_JK_FLIPFLOP, TOOL_COMPONENT, false, "JK-FF", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 3;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_555_TIMER, TOOL_COMPONENT, false, "555", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_COUNTER, TOOL_COMPONENT, false, "Cntr", false, false
-    };
+    // === OP-AMPS & AMPLIFIERS SECTION (index 43) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_OPAMP, "OpAmp");
+    ADD_COMP(COMP_OPAMP_FLIPPED, "OpFlip");
+    ADD_COMP(COMP_OPAMP_REAL, "OpReal");
+    ADD_COMP(COMP_OTA, "OTA");
 
-    // === DISPLAY/OUTPUT SECTION ===
-    pal_y += pal_h + 18;
-    col = 0;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_7SEG_DISPLAY, TOOL_COMPONENT, false, "7Seg", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_LED_ARRAY, TOOL_COMPONENT, false, "LEDBar", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 3;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_DC_MOTOR, TOOL_COMPONENT, false, "Motor", false, false
-    };
-    col++;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_SPEAKER, TOOL_COMPONENT, false, "Spkr", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 3;
-    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, COMP_LAMP, TOOL_COMPONENT, false, "Lamp", false, false
-    };
+    // === CONTROLLED SOURCES SECTION (index 47) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_VCVS, "VCVS");
+    ADD_COMP(COMP_VCCS, "VCCS");
+    ADD_COMP(COMP_CCVS, "CCVS");
+    ADD_COMP(COMP_CCCS, "CCCS");
+
+    // === SWITCHES SECTION (index 51) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_SPST_SWITCH, "SPST");
+    ADD_COMP(COMP_SPDT_SWITCH, "SPDT");
+    ADD_COMP(COMP_DPDT_SWITCH, "DPDT");
+    ADD_COMP(COMP_PUSH_BUTTON, "PushB");
+    ADD_COMP(COMP_RELAY, "Relay");
+    ADD_COMP(COMP_ANALOG_SWITCH, "AnaSw");
+
+    // === TRANSFORMERS SECTION (index 57) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_TRANSFORMER, "Xfmr");
+    ADD_COMP(COMP_TRANSFORMER_CT, "XfmrCT");
+
+    // === LOGIC GATES SECTION (index 59) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_LOGIC_INPUT, "LogIn");
+    ADD_COMP(COMP_LOGIC_OUTPUT, "LogOut");
+    ADD_COMP(COMP_NOT_GATE, "NOT");
+    ADD_COMP(COMP_AND_GATE, "AND");
+    ADD_COMP(COMP_OR_GATE, "OR");
+    ADD_COMP(COMP_NAND_GATE, "NAND");
+    ADD_COMP(COMP_NOR_GATE, "NOR");
+    ADD_COMP(COMP_XOR_GATE, "XOR");
+    ADD_COMP(COMP_XNOR_GATE, "XNOR");
+    ADD_COMP(COMP_BUFFER, "Buffer");
+
+    // === DIGITAL ICS SECTION (index 69) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_D_FLIPFLOP, "D-FF");
+    ADD_COMP(COMP_JK_FLIPFLOP, "JK-FF");
+    ADD_COMP(COMP_T_FLIPFLOP, "T-FF");
+    ADD_COMP(COMP_SR_LATCH, "SR");
+    ADD_COMP(COMP_555_TIMER, "555");
+    ADD_COMP(COMP_COUNTER, "Cntr");
+    ADD_COMP(COMP_SHIFT_REG, "ShReg");
+    ADD_COMP(COMP_MUX_2TO1, "Mux");
+    ADD_COMP(COMP_DECODER, "Decod");
+    ADD_COMP(COMP_BCD_DECODER, "BCD");
+
+    // === MIXED SIGNAL SECTION (index 79) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_DAC, "DAC");
+    ADD_COMP(COMP_ADC, "ADC");
+    ADD_COMP(COMP_VCO, "VCO");
+    ADD_COMP(COMP_PLL, "PLL");
+    ADD_COMP(COMP_MONOSTABLE, "Mono");
+    ADD_COMP(COMP_OPTOCOUPLER, "Opto");
+
+    // === VOLTAGE REGULATORS SECTION (index 85) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_LM317, "LM317");
+    ADD_COMP(COMP_7805, "7805");
+    ADD_COMP(COMP_TL431, "TL431");
+
+    // === DISPLAY/OUTPUT SECTION (index 88) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_7SEG_DISPLAY, "7Seg");
+    ADD_COMP(COMP_LED_ARRAY, "LEDBar");
+    ADD_COMP(COMP_DC_MOTOR, "Motor");
+    ADD_COMP(COMP_SPEAKER, "Spkr");
+    ADD_COMP(COMP_LAMP, "Lamp");
+
+    // === MEASUREMENT SECTION (index 93) ===
+    NEW_SECTION();
+    ADD_COMP(COMP_VOLTMETER, "VMeter");
+    ADD_COMP(COMP_AMMETER, "AMeter");
+    ADD_COMP(COMP_WATTMETER, "WMeter");
+    ADD_COMP(COMP_TEST_POINT, "TstPt");
+
+    #undef ADD_TOOL
+    #undef ADD_COMP
+    #undef NEW_SECTION
 
     // === CIRCUITS SECTION ===
     pal_y += pal_h + 18;
@@ -841,21 +791,30 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
     int scroll_offset = ui->palette_scroll_offset;
 
     // Draw category headers based on known component indices
-    // Tools: 0-4 (5 items), Sources: 5-8 (4), Waveforms: 9-12 (4), Passives: 13-16 (4),
-    // Diodes: 17-20 (4), Transistors: 21-25 (5), Switches: 26-28 (3),
-    // Logic: 29-34 (6), Digital: 35-38 (4), Display: 39-43 (5)
+    // Tools: 0-4, Sources: 5-10, Waveforms: 11-16, Passives: 17-24, Diodes: 25-30,
+    // BJT: 31-34, FET: 35-38, Thyristors: 39-42, Op-Amps: 43-46, Ctrl: 47-50,
+    // Switches: 51-56, Transformers: 57-58, Logic: 59-68, Digital: 69-78,
+    // Mixed: 79-84, Regulators: 85-87, Display: 88-92, Measurement: 93-96
     typedef struct { int start_idx; const char *label; } PaletteSection;
     PaletteSection sections[] = {
         {0, "Tools"},
         {5, "Sources"},
-        {9, "Waveforms"},
-        {13, "Passives"},
-        {17, "Diodes"},
-        {21, "Transistors"},
-        {26, "Switches"},
-        {29, "Logic Gates"},
-        {35, "Digital ICs"},
-        {39, "Display"}
+        {11, "Waveforms"},
+        {17, "Passives"},
+        {25, "Diodes"},
+        {31, "BJT"},
+        {35, "FET"},
+        {39, "Thyristors"},
+        {43, "Op-Amps"},
+        {47, "Ctrl Sources"},
+        {51, "Switches"},
+        {57, "Transformers"},
+        {59, "Logic Gates"},
+        {69, "Digital ICs"},
+        {79, "Mixed Signal"},
+        {85, "Regulators"},
+        {88, "Display"},
+        {93, "Measurement"}
     };
     int num_sections = sizeof(sections) / sizeof(sections[0]);
 
