@@ -325,6 +325,80 @@ void ui_init(UIState *ui) {
         {10 + col*70, pal_y, 60, pal_h}, COMP_PUSH_BUTTON, TOOL_COMPONENT, false, "PushB", false, false
     };
 
+    // === LOGIC GATES SECTION ===
+    pal_y += pal_h + 18;
+    col = 0;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_NOT_GATE, TOOL_COMPONENT, false, "NOT", false, false
+    };
+    col++;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_AND_GATE, TOOL_COMPONENT, false, "AND", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 3;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_OR_GATE, TOOL_COMPONENT, false, "OR", false, false
+    };
+    col++;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_NAND_GATE, TOOL_COMPONENT, false, "NAND", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 3;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_NOR_GATE, TOOL_COMPONENT, false, "NOR", false, false
+    };
+    col++;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_XOR_GATE, TOOL_COMPONENT, false, "XOR", false, false
+    };
+
+    // === DIGITAL ICS SECTION ===
+    pal_y += pal_h + 18;
+    col = 0;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_D_FLIPFLOP, TOOL_COMPONENT, false, "D-FF", false, false
+    };
+    col++;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_JK_FLIPFLOP, TOOL_COMPONENT, false, "JK-FF", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 3;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_555_TIMER, TOOL_COMPONENT, false, "555", false, false
+    };
+    col++;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_COUNTER, TOOL_COMPONENT, false, "Cntr", false, false
+    };
+
+    // === DISPLAY/OUTPUT SECTION ===
+    pal_y += pal_h + 18;
+    col = 0;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_7SEG_DISPLAY, TOOL_COMPONENT, false, "7Seg", false, false
+    };
+    col++;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_LED_ARRAY, TOOL_COMPONENT, false, "LEDBar", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 3;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_DC_MOTOR, TOOL_COMPONENT, false, "Motor", false, false
+    };
+    col++;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_SPEAKER, TOOL_COMPONENT, false, "Spkr", false, false
+    };
+    col = 0;
+    pal_y += pal_h + 3;
+    ui->palette_items[ui->num_palette_items++] = (PaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, COMP_LAMP, TOOL_COMPONENT, false, "Lamp", false, false
+    };
+
     // === CIRCUITS SECTION ===
     pal_y += pal_h + 18;
     col = 0;
@@ -2850,13 +2924,22 @@ void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
         }
 
         // Find and draw -3dB point
-        // First, find the DC/low frequency gain (reference level)
-        double dc_gain_db = sim->freq_response[0].magnitude_db;
-        double target_db = dc_gain_db - 3.0;  // -3dB from DC gain
+        // Find the MAXIMUM gain across all frequencies (works for both low-pass and high-pass)
+        double max_gain_db = sim->freq_response[0].magnitude_db;
+        int max_gain_idx = 0;
+        for (int i = 1; i < sim->freq_response_count; i++) {
+            if (sim->freq_response[i].magnitude_db > max_gain_db) {
+                max_gain_db = sim->freq_response[i].magnitude_db;
+                max_gain_idx = i;
+            }
+        }
+        double target_db = max_gain_db - 3.0;  // -3dB from maximum gain
         double cutoff_freq = 0;
         bool found_cutoff = false;
 
         // Search for the -3dB crossover point
+        // For low-pass filters: max is at low freq, cutoff is where gain drops below target
+        // For high-pass filters: max is at high freq, cutoff is where gain rises above target
         for (int i = 1; i < sim->freq_response_count; i++) {
             FreqResponsePoint *p0 = &sim->freq_response[i - 1];
             FreqResponsePoint *p1 = &sim->freq_response[i];
@@ -3065,6 +3148,125 @@ void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
     // Button text
     SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
     ui_draw_text(renderer, "Recalc", r->x + 10, recalc_y + 4);
+
+    // Bode cursor toggle button
+    SDL_SetRenderDrawColor(renderer, ui->bode_cursor_active ? 0x00 : 0x80, ui->bode_cursor_active ? 0xff : 0x80, ui->bode_cursor_active ? 0x00 : 0x80, 0xff);
+    ui_draw_text(renderer, ui->bode_cursor_active ? "[Cursor ON]" : "[Cursor]", r->x + 80, recalc_y);
+
+    // Draw cursor if active and we have data
+    if (ui->bode_cursor_active && sim && sim->freq_response_count > 1) {
+        // Initialize cursor to center if not set
+        if (ui->bode_cursor_freq <= 0) {
+            ui->bode_cursor_freq = sqrt(ui->bode_freq_start * ui->bode_freq_stop);
+        }
+
+        // Clamp cursor to valid range
+        if (ui->bode_cursor_freq < ui->bode_freq_start) ui->bode_cursor_freq = ui->bode_freq_start;
+        if (ui->bode_cursor_freq > ui->bode_freq_stop) ui->bode_cursor_freq = ui->bode_freq_stop;
+
+        // Calculate cursor x position (log scale)
+        double log_cursor = log10(ui->bode_cursor_freq);
+        double log_start = log10(ui->bode_freq_start);
+        double log_stop = log10(ui->bode_freq_stop);
+        double x_norm = (log_cursor - log_start) / (log_stop - log_start);
+        int cursor_x = r->x + (int)(x_norm * r->w);
+
+        // Draw vertical cursor line (green, dashed)
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x00, 0xff);
+        for (int y = r->y; y < r->y + r->h; y += 4) {
+            int y_end = y + 2;
+            if (y_end > r->y + r->h) y_end = r->y + r->h;
+            SDL_RenderDrawLine(renderer, cursor_x, y, cursor_x, y_end);
+        }
+
+        // Interpolate magnitude and phase at cursor frequency
+        double cursor_magnitude = 0;
+        double cursor_phase = 0;
+
+        for (int i = 1; i < sim->freq_response_count; i++) {
+            FreqResponsePoint *p0 = &sim->freq_response[i - 1];
+            FreqResponsePoint *p1 = &sim->freq_response[i];
+
+            if (p0->frequency <= ui->bode_cursor_freq && p1->frequency >= ui->bode_cursor_freq) {
+                // Log interpolation for frequency
+                double log_f0 = log10(p0->frequency);
+                double log_f1 = log10(p1->frequency);
+                double t = (log_cursor - log_f0) / (log_f1 - log_f0);
+
+                // Linear interpolation for magnitude and phase
+                cursor_magnitude = p0->magnitude_db + t * (p1->magnitude_db - p0->magnitude_db);
+                cursor_phase = p0->phase_deg + t * (p1->phase_deg - p0->phase_deg);
+                break;
+            }
+        }
+
+        // Store values for display
+        ui->bode_cursor_magnitude = cursor_magnitude;
+        ui->bode_cursor_phase = cursor_phase;
+
+        // Draw magnitude marker (yellow dot)
+        double db_min = -60.0;
+        double db_max = 20.0;
+        double db_range = db_max - db_min;
+        double y_mag_norm = 1.0 - (cursor_magnitude - db_min) / db_range;
+        y_mag_norm = fmax(0, fmin(1, y_mag_norm));
+        int mag_y = r->y + (int)(y_mag_norm * r->h);
+
+        SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0x00, 0xff);
+        SDL_Rect mag_marker = {cursor_x - 4, mag_y - 4, 8, 8};
+        SDL_RenderFillRect(renderer, &mag_marker);
+
+        // Draw phase marker (cyan dot)
+        double y_phase_norm = 0.5 - cursor_phase / 360.0;
+        y_phase_norm = fmax(0, fmin(1, y_phase_norm));
+        int phase_y = r->y + (int)(y_phase_norm * r->h);
+
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);
+        SDL_Rect phase_marker = {cursor_x - 4, phase_y - 4, 8, 8};
+        SDL_RenderFillRect(renderer, &phase_marker);
+
+        // Draw cursor info box
+        int info_x = cursor_x + 10;
+        int info_y = r->y + 10;
+        // Flip to left side if too close to right edge
+        if (info_x + 120 > r->x + r->w) {
+            info_x = cursor_x - 130;
+        }
+
+        // Info box background
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(renderer, 0x10, 0x10, 0x30, 0xe0);
+        SDL_Rect info_box = {info_x, info_y, 120, 55};
+        SDL_RenderFillRect(renderer, &info_box);
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x00, 0xff);
+        SDL_RenderDrawRect(renderer, &info_box);
+
+        // Cursor frequency
+        char cursor_buf[48];
+        if (ui->bode_cursor_freq >= 1000000) {
+            snprintf(cursor_buf, sizeof(cursor_buf), "f: %.3f MHz", ui->bode_cursor_freq / 1000000);
+        } else if (ui->bode_cursor_freq >= 1000) {
+            snprintf(cursor_buf, sizeof(cursor_buf), "f: %.3f kHz", ui->bode_cursor_freq / 1000);
+        } else {
+            snprintf(cursor_buf, sizeof(cursor_buf), "f: %.1f Hz", ui->bode_cursor_freq);
+        }
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x00, 0xff);
+        ui_draw_text(renderer, cursor_buf, info_x + 5, info_y + 5);
+
+        // Magnitude
+        snprintf(cursor_buf, sizeof(cursor_buf), "Mag: %.2f dB", cursor_magnitude);
+        SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0x00, 0xff);
+        ui_draw_text(renderer, cursor_buf, info_x + 5, info_y + 20);
+
+        // Phase
+        snprintf(cursor_buf, sizeof(cursor_buf), "Phase: %.1f deg", cursor_phase);
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);
+        ui_draw_text(renderer, cursor_buf, info_x + 5, info_y + 35);
+
+        // Draw drag hint
+        SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+        ui_draw_text(renderer, "(drag to move)", info_x + 5, info_y + 48);
+    }
 
     // Close button hint
     SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
@@ -3511,6 +3713,29 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
                 ui->btn_bode_recalc.pressed = true;
                 return UI_ACTION_BODE_RECALC;
             }
+
+            // Cursor toggle button (next to recalc)
+            int recalc_y_btn = settings_y + 18;  // Same as recalc button
+            if (x >= br->x + 80 && x <= br->x + 170 &&
+                y >= recalc_y_btn && y <= recalc_y_btn + 14) {
+                ui->bode_cursor_active = !ui->bode_cursor_active;
+                return UI_ACTION_NONE;
+            }
+
+            // Cursor dragging in plot area
+            if (ui->bode_cursor_active &&
+                x >= br->x && x <= br->x + br->w &&
+                y >= br->y && y <= br->y + br->h) {
+                // Calculate frequency from x position
+                double log_start = log10(ui->bode_freq_start);
+                double log_stop = log10(ui->bode_freq_stop);
+                double x_norm = (double)(x - br->x) / br->w;
+                x_norm = CLAMP(x_norm, 0.0, 1.0);
+                double log_freq = log_start + x_norm * (log_stop - log_start);
+                ui->bode_cursor_freq = pow(10, log_freq);
+                ui->bode_cursor_dragging = true;
+                return UI_ACTION_NONE;
+            }
         }
 
         // Handle cursor positioning when cursor mode is enabled
@@ -3554,6 +3779,10 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
         if (ui->bode_dragging) {
             ui->bode_dragging = false;
+        }
+        // Release Bode cursor drag
+        if (ui->bode_cursor_dragging) {
+            ui->bode_cursor_dragging = false;
         }
         // Release cursor drag
         if (ui->scope_cursor_drag != 0) {
@@ -3828,6 +4057,19 @@ int ui_handle_motion(UIState *ui, int x, int y) {
         ui->bode_rect.x = new_x;
         ui->bode_rect.y = new_y;
 
+        return UI_ACTION_NONE;
+    }
+
+    // Handle Bode cursor dragging
+    if (ui->bode_cursor_dragging && ui->show_bode_plot) {
+        Rect *br = &ui->bode_rect;
+        // Calculate frequency from x position
+        double log_start = log10(ui->bode_freq_start);
+        double log_stop = log10(ui->bode_freq_stop);
+        double x_norm = (double)(x - br->x) / br->w;
+        x_norm = CLAMP(x_norm, 0.0, 1.0);
+        double log_freq = log_start + x_norm * (log_stop - log_start);
+        ui->bode_cursor_freq = pow(10, log_freq);
         return UI_ACTION_NONE;
     }
 

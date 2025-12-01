@@ -286,6 +286,13 @@ typedef struct {
     int bode_rect_start_x;          // Rect X when drag started
     int bode_rect_start_y;          // Rect Y when drag started
 
+    // Bode plot cursor
+    bool bode_cursor_active;        // Cursor mode active for Bode plot
+    double bode_cursor_freq;        // Cursor frequency (Hz)
+    bool bode_cursor_dragging;      // Currently dragging the cursor
+    double bode_cursor_magnitude;   // Magnitude at cursor position (dB)
+    double bode_cursor_phase;       // Phase at cursor position (degrees)
+
     // Parametric sweep panel
     bool show_sweep_panel;          // Show sweep panel
     int sweep_component_idx;        // Selected component for sweep
