@@ -181,8 +181,18 @@ typedef enum {
     COMP_LAMP,              // Indicator lamp
     COMP_7SEG_DISPLAY,      // 7-segment LED display
     COMP_LED_ARRAY,         // LED bar graph
+    COMP_LED_MATRIX,        // 8x8 LED dot matrix display
     COMP_DC_MOTOR,          // DC motor
     COMP_SPEAKER,           // Audio output
+    COMP_MICROPHONE,        // Audio input (from system mic)
+
+    // === WIRELESS ===
+    COMP_ANTENNA_TX,        // Transmitter antenna
+    COMP_ANTENNA_RX,        // Receiver antenna
+
+    // === WIRING ===
+    COMP_BUS,               // Wire bundle (multi-wire bus)
+    COMP_BUS_TAP,           // Bus tap (extract single wire from bus)
 
     // === MEASUREMENT ===
     COMP_VOLTMETER,         // Voltage measurement point
@@ -193,6 +203,10 @@ typedef enum {
     // === ANNOTATION ===
     COMP_TEXT,
     COMP_LABEL,             // Named node label
+
+    // === SUB-CIRCUITS ===
+    COMP_PIN,               // Pin marker for subcircuit creation (has pin_number property)
+    COMP_SUBCIRCUIT,        // User-defined sub-circuit / IC block
 
     COMP_TYPE_COUNT
 } ComponentType;
@@ -397,5 +411,165 @@ typedef struct {
 
 // Global environment instance (defined in component.c)
 extern EnvironmentState g_environment;
+
+// ============================================================================
+// Thermal & Failure State (for destructive component failure / magic smoke)
+// ============================================================================
+
+// Maximum smoke particles per component
+#define MAX_SMOKE_PARTICLES 8
+
+// Smoke particle for visual effect
+typedef struct {
+    float x, y;           // Position relative to component
+    float vx, vy;         // Velocity
+    float life;           // Remaining lifetime (0-1)
+    float size;           // Particle size
+    uint8_t alpha;        // Current alpha
+} SmokeParticle;
+
+// Thermal state for a component (tracks temperature and failure)
+typedef struct {
+    double temperature;           // Current temperature (°C)
+    double ambient_temperature;   // Ambient temperature (°C), default 25
+    double power_dissipated;      // Current power dissipation (W)
+    double thermal_mass;          // Thermal mass/capacity (J/°C)
+    double thermal_resistance;    // Thermal resistance to ambient (°C/W)
+    double max_temperature;       // Maximum safe temperature (°C)
+    double damage;                // Accumulated thermal damage (0-1, 1=failed)
+    double damage_threshold;      // Power rating multiplier where damage starts
+    double failure_time;          // Simulation time when component failed (-1 if intact)
+    bool failed;                  // Component has failed (magic smoke released)
+    bool smoke_active;            // Smoke particles are active
+    SmokeParticle smoke[MAX_SMOKE_PARTICLES];  // Smoke particles
+    int num_smoke;                // Active smoke particle count
+} ThermalState;
+
+// ============================================================================
+// Audio Output State (for speaker component)
+// ============================================================================
+
+// Audio ring buffer size (power of 2 for efficient modulo)
+#define AUDIO_BUFFER_SIZE 4096
+#define AUDIO_SAMPLE_RATE 44100
+
+// Audio output state
+typedef struct {
+    bool initialized;             // SDL audio initialized
+    bool enabled;                 // Audio output enabled
+    uint32_t device_id;           // SDL audio device ID for cleanup
+    float buffer[AUDIO_BUFFER_SIZE];  // Ring buffer for audio samples
+    int write_pos;                // Write position in buffer
+    int read_pos;                 // Read position in buffer
+    float volume;                 // Master volume (0-1)
+    float last_sample;            // Last sample for interpolation
+    int speaker_node_id;          // Node ID of active speaker (0 if none)
+} AudioState;
+
+// Global audio state (defined in app.c)
+extern AudioState g_audio;
+
+// ============================================================================
+// Microphone Input State (for audio source component)
+// ============================================================================
+
+// Microphone ring buffer size
+#define MIC_BUFFER_SIZE 4096
+#define MIC_SAMPLE_RATE 44100
+
+// Microphone input state
+typedef struct {
+    bool initialized;             // SDL audio capture initialized
+    bool enabled;                 // Microphone input enabled
+    uint32_t device_id;           // SDL audio capture device ID
+    float buffer[MIC_BUFFER_SIZE]; // Ring buffer for captured samples
+    int write_pos;                // Write position in buffer
+    int read_pos;                 // Read position in buffer
+    float gain;                   // Input gain (0-10), default 1.0
+    float last_sample;            // Last sample for interpolation
+    float current_voltage;        // Current output voltage (scaled from audio)
+    float peak_level;             // Peak audio level for visualization
+} MicrophoneState;
+
+// Global microphone state (defined in app.c)
+extern MicrophoneState g_microphone;
+
+// ============================================================================
+// SUB-CIRCUIT / IC DEFINITION
+// ============================================================================
+
+// Maximum components/wires in a sub-circuit
+#define MAX_SUBCIRCUIT_COMPONENTS 64
+#define MAX_SUBCIRCUIT_WIRES 128
+#define MAX_SUBCIRCUIT_PINS 16
+#define MAX_SUBCIRCUIT_DEFS 32
+
+// Pin definition for a sub-circuit (external connection point)
+typedef struct {
+    char name[16];          // Pin name (e.g., "VCC", "GND", "IN1", "OUT")
+    int internal_node_id;   // Internal node ID this pin connects to
+    int side;               // 0=left, 1=right, 2=top, 3=bottom
+    int position;           // Position along the side (0 = first)
+} SubCircuitPin;
+
+// Forward declaration - full definition in circuit.h
+struct Wire;
+struct Component;
+
+// Sub-circuit definition (template)
+typedef struct {
+    int id;                                     // Unique definition ID
+    char name[32];                              // Sub-circuit name (e.g., "Half Adder")
+    char description[128];                      // Optional description
+
+    // Internal circuit (stored as copies, not pointers to avoid dangling refs)
+    int num_components;
+    int num_wires;
+    int num_pins;
+
+    // Component data stored as bytes (serialized)
+    // When instantiating, we deserialize and create fresh components
+    void *component_data;                       // Serialized component array
+    void *wire_data;                            // Serialized wire array
+    size_t component_data_size;
+    size_t wire_data_size;
+
+    // Pin definitions (exposed terminals)
+    SubCircuitPin pins[MAX_SUBCIRCUIT_PINS];
+
+    // Bounding box for internal circuit (for rendering preview)
+    float internal_width;
+    float internal_height;
+
+    // Visual size of the IC block
+    float block_width;
+    float block_height;
+} SubCircuitDef;
+
+// Global sub-circuit library
+typedef struct {
+    SubCircuitDef defs[MAX_SUBCIRCUIT_DEFS];
+    int count;
+    int next_id;
+} SubCircuitLibrary;
+
+// Global subcircuit library (defined in component.c)
+extern SubCircuitLibrary g_subcircuit_library;
+
+// ============================================================================
+// WIRELESS ANTENNA STATE
+// ============================================================================
+
+// Number of wireless channels available
+#define WIRELESS_CHANNEL_COUNT 16
+
+// Wireless channel state - stores TX voltages for each channel
+typedef struct {
+    double voltage[WIRELESS_CHANNEL_COUNT];   // Voltage being transmitted on each channel
+    int tx_count[WIRELESS_CHANNEL_COUNT];     // Number of TX antennas on each channel
+} WirelessState;
+
+// Global wireless state (defined in simulation.c)
+extern WirelessState g_wireless;
 
 #endif // TYPES_H

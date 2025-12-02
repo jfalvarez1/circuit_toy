@@ -27,6 +27,7 @@ typedef struct {
     bool show_voltages;
     bool show_current;
     bool snap_to_grid;
+    bool show_heatmap;  // Thermal heatmap overlay mode
 
     // Animation timing (for current flow)
     double sim_time;
@@ -93,6 +94,7 @@ void render_square_wave(RenderContext *ctx, float x, float y, int rotation);
 void render_triangle_wave(RenderContext *ctx, float x, float y, int rotation);
 void render_sawtooth_wave(RenderContext *ctx, float x, float y, int rotation);
 void render_noise_source(RenderContext *ctx, float x, float y, int rotation);
+void render_pin(RenderContext *ctx, float x, float y, int rotation, int pin_number, const char *pin_name);
 
 // Ghost component (while placing)
 void render_ghost_component(RenderContext *ctx, Component *comp);
@@ -102,5 +104,9 @@ void render_wire_preview(RenderContext *ctx, float x1, float y1, float x2, float
 
 // Selection box (for multi-select drag)
 void render_selection_box(RenderContext *ctx, float x1, float y1, float x2, float y2);
+
+// Thermal heatmap rendering
+void render_heatmap_overlay(RenderContext *ctx, Component *comp);
+Color temperature_to_color(double temp, double min_temp, double max_temp);
 
 #endif // RENDER_H

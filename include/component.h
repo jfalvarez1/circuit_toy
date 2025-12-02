@@ -9,7 +9,7 @@
 #include "matrix.h"
 
 // Maximum terminals per component
-#define MAX_TERMINALS 12
+#define MAX_TERMINALS 16
 
 // Terminal definition
 typedef struct {
@@ -578,6 +578,75 @@ typedef union {
         bool discharged;         // Battery is depleted
         bool ideal;              // Ideal mode (no internal resistance, no discharge)
     } battery;
+
+    // Speaker/Buzzer (audio output)
+    struct {
+        double impedance;       // Speaker impedance (Ohm), default: 8
+        double sensitivity;     // Sensitivity (dB/W/m), default: 90
+        double max_power;       // Max power rating (W), default: 1.0
+        double power_dissipated; // Current power (W)
+        double voltage;         // Current voltage across speaker
+        double current;         // Current through speaker
+        double frequency;       // Detected dominant frequency (Hz)
+        bool audio_enabled;     // Output to SDL audio
+        bool failed;            // Speaker is damaged
+    } speaker;
+
+    // Microphone (audio input source)
+    struct {
+        double amplitude;       // Output amplitude (V peak), default: 5.0
+        double offset;          // DC offset (V), default: 2.5
+        double gain;            // Input gain multiplier, default: 1.0
+        double r_series;        // Output resistance (Ohm), default: 1000
+        double voltage;         // Current output voltage (calculated)
+        double peak_level;      // Current peak audio level (0-1)
+        bool enabled;           // Microphone capture enabled
+        bool ideal;             // Ideal mode (zero output resistance)
+    } microphone;
+
+    // Antenna (TX/RX pair for wireless signal transmission)
+    struct {
+        int channel;            // Wireless channel (0-15)
+        double r_series;        // Series resistance (Ohm), default: 50
+        double voltage;         // Current voltage (TX: measured, RX: received)
+        double gain;            // Signal gain multiplier, default: 1.0
+        bool ideal;             // Ideal mode (zero resistance)
+    } antenna;
+
+    // LED Dot Matrix (8x8 LED display with common cathode)
+    struct {
+        uint8_t pixel_state[8];  // 8 bytes, each bit represents one LED in a row
+        double vf;               // Forward voltage per LED (default: 2.0V)
+        double if_max;           // Max forward current per LED (default: 20mA)
+        uint8_t color;           // LED color (0=red, 1=green, 2=blue, 3=yellow, 4=white)
+        bool common_cathode;     // True = common cathode, False = common anode
+    } led_matrix;
+
+    // Bus (wire bundle - groups multiple wires together)
+    struct {
+        int width;              // Bus width (number of wires), default: 8
+        char name[16];          // Bus name (e.g., "DATA", "ADDR")
+        int bus_id;             // Bus identifier for matching bus/tap pairs
+    } bus;
+
+    // Bus Tap (extracts a single wire from a bus)
+    struct {
+        int bus_id;             // Bus identifier to connect to
+        int tap_index;          // Which wire to tap (0 to width-1)
+        char signal_name[16];   // Signal name (e.g., "D0", "A7")
+    } bus_tap;
+
+    // Pin marker for subcircuit creation
+    struct {
+        int pin_number;         // Pin number (1-16)
+        char pin_name[16];      // Pin name (e.g., "VCC", "IN1", "OUT")
+    } pin;
+
+    // Sub-circuit instance (user-defined IC block)
+    struct {
+        int def_id;             // Reference to SubCircuitDef in g_subcircuit_library
+        char name[32];          // Instance name (e.g., "U1", "IC2")
+    } subcircuit;
 } ComponentProps;
 
 // Component structure
@@ -603,6 +672,9 @@ typedef struct Component {
 
     // Mixed-signal logic state (for digital components)
     LogicGateState logic_state;
+
+    // Thermal state (for power dissipation / magic smoke)
+    ThermalState thermal;
 } Component;
 
 // Component type info

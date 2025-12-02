@@ -39,6 +39,12 @@ void render_relay(RenderContext *ctx, float x, float y, int rotation, bool energ
 void render_analog_switch(RenderContext *ctx, float x, float y, int rotation, bool closed);
 void render_lamp(RenderContext *ctx, float x, float y, int rotation);
 void render_speaker(RenderContext *ctx, float x, float y, int rotation);
+void render_microphone(RenderContext *ctx, float x, float y, int rotation);
+void render_antenna_tx(RenderContext *ctx, float x, float y, int rotation);
+void render_antenna_rx(RenderContext *ctx, float x, float y, int rotation);
+void render_bus(RenderContext *ctx, float x, float y, int rotation, int width);
+void render_bus_tap(RenderContext *ctx, float x, float y, int rotation);
+void render_led_matrix(RenderContext *ctx, float x, float y, int rotation, uint8_t *pixel_state, uint8_t color_idx);
 void render_dc_motor(RenderContext *ctx, float x, float y, int rotation);
 void render_voltmeter(RenderContext *ctx, float x, float y, int rotation);
 void render_ammeter(RenderContext *ctx, float x, float y, int rotation);
@@ -65,6 +71,7 @@ void render_test_point(RenderContext *ctx, float x, float y, int rotation);
 void render_7seg_display(RenderContext *ctx, float x, float y, int rotation);
 void render_led_array(RenderContext *ctx, float x, float y, int rotation);
 void render_bcd_decoder(RenderContext *ctx, float x, float y, int rotation);
+void render_subcircuit(RenderContext *ctx, float x, float y, int rotation, int def_id, const char *name);
 
 // Simple 8x8 bitmap font (ASCII 32-126)
 static const unsigned char font8x8[95][8] = {
@@ -700,6 +707,21 @@ void render_component(RenderContext *ctx, Component *comp) {
         case COMP_SPEAKER:
             render_speaker(ctx, comp->x, comp->y, comp->rotation);
             break;
+        case COMP_MICROPHONE:
+            render_microphone(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_ANTENNA_TX:
+            render_antenna_tx(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_ANTENNA_RX:
+            render_antenna_rx(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_BUS:
+            render_bus(ctx, comp->x, comp->y, comp->rotation, comp->props.bus.width);
+            break;
+        case COMP_BUS_TAP:
+            render_bus_tap(ctx, comp->x, comp->y, comp->rotation);
+            break;
         case COMP_DC_MOTOR:
             render_dc_motor(ctx, comp->x, comp->y, comp->rotation);
             break;
@@ -785,8 +807,24 @@ void render_component(RenderContext *ctx, Component *comp) {
         case COMP_LED_ARRAY:
             render_led_array(ctx, comp->x, comp->y, comp->rotation);
             break;
+        case COMP_LED_MATRIX:
+            render_led_matrix(ctx, comp->x, comp->y, comp->rotation,
+                            comp->props.led_matrix.pixel_state, comp->props.led_matrix.color);
+            break;
         case COMP_BCD_DECODER:
             render_bcd_decoder(ctx, comp->x, comp->y, comp->rotation);
+            break;
+
+        // Pin marker for subcircuit creation
+        case COMP_PIN:
+            render_pin(ctx, comp->x, comp->y, comp->rotation,
+                      comp->props.pin.pin_number, comp->props.pin.pin_name);
+            break;
+
+        // User-defined sub-circuit / IC
+        case COMP_SUBCIRCUIT:
+            render_subcircuit(ctx, comp->x, comp->y, comp->rotation,
+                            comp->props.subcircuit.def_id, comp->props.subcircuit.name);
             break;
 
         // Tristate and Schmitt - use buffer with indicator
@@ -1212,6 +1250,41 @@ void render_probe(RenderContext *ctx, Probe *probe, int index) {
     render_draw_text(ctx, volt_str, sx, sy, probe->color);
 }
 
+// Draw smoke particles from failed components (magic smoke effect)
+static void render_component_smoke(RenderContext *ctx, Component *comp) {
+    if (!comp || !comp->thermal.smoke_active || comp->thermal.num_smoke == 0) return;
+
+    int cx, cy;
+    render_world_to_screen(ctx, comp->x, comp->y, &cx, &cy);
+
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+
+    for (int i = 0; i < comp->thermal.num_smoke; i++) {
+        SmokeParticle *p = &comp->thermal.smoke[i];
+        if (p->life <= 0) continue;
+
+        // Screen position of smoke particle
+        int sx = cx + (int)(p->x * ctx->zoom);
+        int sy = cy + (int)(p->y * ctx->zoom);
+        int size = (int)(p->size * ctx->zoom);
+
+        // Draw smoke as semi-transparent dark gray circles
+        uint8_t gray = 40 + (uint8_t)(60 * (1.0f - p->life));  // Gets lighter as it fades
+        SDL_SetRenderDrawColor(ctx->renderer, gray, gray, gray, p->alpha);
+
+        // Draw filled circle for smoke puff
+        for (int dy = -size; dy <= size; dy++) {
+            for (int dx = -size; dx <= size; dx++) {
+                if (dx * dx + dy * dy <= size * size) {
+                    SDL_RenderDrawPoint(ctx->renderer, sx + dx, sy + dy);
+                }
+            }
+        }
+    }
+
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_NONE);
+}
+
 // Draw current flow animation through two-terminal components
 static void render_component_current_flow(RenderContext *ctx, Component *comp, Circuit *circuit) {
     if (!comp || !circuit || !ctx->show_current || !ctx->sim_running) return;
@@ -1393,6 +1466,18 @@ void render_circuit(RenderContext *ctx, Circuit *circuit) {
     // Draw current flow animation through components (after components so particles appear on top)
     for (int i = 0; i < circuit->num_components; i++) {
         render_component_current_flow(ctx, circuit->components[i], circuit);
+    }
+
+    // Draw thermal heatmap overlay (if enabled)
+    if (ctx->show_heatmap) {
+        for (int i = 0; i < circuit->num_components; i++) {
+            render_heatmap_overlay(ctx, circuit->components[i]);
+        }
+    }
+
+    // Draw smoke from failed components (magic smoke effect)
+    for (int i = 0; i < circuit->num_components; i++) {
+        render_component_smoke(ctx, circuit->components[i]);
     }
 
     // Draw probes
@@ -1775,6 +1860,36 @@ void render_noise_source(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_line_rotated(ctx, x, y, 4, -4, 6, 5, rotation);
     render_draw_line_rotated(ctx, x, y, 6, 5, 8, -3, rotation);
     render_draw_line_rotated(ctx, x, y, 8, -3, 10, 1, rotation);
+}
+
+void render_pin(RenderContext *ctx, float x, float y, int rotation, int pin_number, const char *pin_name) {
+    // Pin marker: diamond shape with connection point
+    // Terminal at (40, 0) for wire connection
+
+    // Connection line from diamond to terminal
+    render_draw_line_rotated(ctx, x, y, 12, 0, 40, 0, rotation);
+
+    // Diamond shape (rotated square)
+    render_draw_line_rotated(ctx, x, y, 0, -12, 12, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, 0, 0, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 12, -12, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -12, 0, 0, -12, rotation);
+
+    // Small filled circle at center
+    render_fill_circle(ctx, x, y, 4);
+
+    // Draw pin label above the diamond
+    char label[24];
+    if (pin_name && pin_name[0] != '\0') {
+        snprintf(label, sizeof(label), "%s", pin_name);
+    } else {
+        snprintf(label, sizeof(label), "P%d", pin_number);
+    }
+
+    // Convert to screen coords for text
+    int sx, sy;
+    render_world_to_screen(ctx, x, y - 20, &sx, &sy);
+    render_draw_text_small(ctx, label, sx - 10, sy, (Color){0, 255, 255, 255});  // Cyan label
 }
 
 void render_spst_switch(RenderContext *ctx, float x, float y, int rotation, bool closed) {
@@ -2677,6 +2792,185 @@ void render_speaker(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_line_rotated(ctx, x, y, 20, -20, 20, 20, rotation);
 }
 
+// Microphone - circular capsule with sound waves coming in
+void render_microphone(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (+40, 0) and (-40, 0) - output on right
+    render_draw_line_rotated(ctx, x, y, 40, 0, 20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 0, -20, 0, rotation);
+    // Capsule body (circle)
+    render_draw_circle(ctx, x, y, 15);
+    // Diaphragm lines inside
+    render_draw_line_rotated(ctx, x, y, -10, -8, -10, 8, rotation);
+    render_draw_line_rotated(ctx, x, y, -5, -10, -5, 10, rotation);
+    // Sound waves coming in (curved arcs represented as lines pointing inward)
+    render_draw_line_rotated(ctx, x, y, -30, -12, -22, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -30, 0, -22, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -30, 12, -22, 8, rotation);
+    // Second set of waves further out
+    render_draw_line_rotated(ctx, x, y, -38, -15, -32, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, -38, 0, -32, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -38, 15, -32, 10, rotation);
+}
+
+// Antenna TX - vertical antenna with radio waves going out
+void render_antenna_tx(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -8, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, 0, 40, 0, rotation);
+    // Vertical antenna mast
+    render_draw_line_rotated(ctx, x, y, 0, 0, 0, -18, rotation);
+    // Ground plane
+    render_draw_line_rotated(ctx, x, y, -8, 0, 8, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -6, 3, 0, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 6, 3, 0, 0, rotation);
+    // Radio waves going out (TX)
+    render_draw_line_rotated(ctx, x, y, 8, -18, 12, -14, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, -10, 12, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, -2, 12, -6, rotation);
+    render_draw_line_rotated(ctx, x, y, 16, -18, 22, -12, rotation);
+    render_draw_line_rotated(ctx, x, y, 16, -10, 22, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, 16, -2, 22, -8, rotation);
+}
+
+// Antenna RX - vertical antenna with radio waves coming in
+void render_antenna_rx(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -8, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, 0, 40, 0, rotation);
+    // Vertical antenna mast
+    render_draw_line_rotated(ctx, x, y, 0, 0, 0, -18, rotation);
+    // Ground plane
+    render_draw_line_rotated(ctx, x, y, -8, 0, 8, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -6, 3, 0, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 6, 3, 0, 0, rotation);
+    // Radio waves coming in (RX - arrows point inward)
+    render_draw_line_rotated(ctx, x, y, 22, -18, 16, -14, rotation);
+    render_draw_line_rotated(ctx, x, y, 22, -10, 16, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, 22, -2, 16, -6, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, -16, 8, -14, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, -10, 8, -10, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, -4, 8, -6, rotation);
+}
+
+// Bus - thick line with slash marks indicating multiple wires
+void render_bus(RenderContext *ctx, float x, float y, int rotation, int width) {
+    (void)width;  // Width is displayed as text, not used for drawing
+    // Terminals at (-40, 0) and (40, 0)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, 0, 40, 0, rotation);
+    // Thick bus line (multiple parallel lines)
+    render_draw_line_rotated(ctx, x, y, -15, -4, 15, -4, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, 0, 15, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -15, 4, 15, 4, rotation);
+    // Bus ends
+    render_draw_line_rotated(ctx, x, y, -15, -4, -15, 4, rotation);
+    render_draw_line_rotated(ctx, x, y, 15, -4, 15, 4, rotation);
+    // Slash marks indicating bus (3 slashes)
+    render_draw_line_rotated(ctx, x, y, -8, 8, -4, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -2, 8, 2, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, 4, 8, 8, -8, rotation);
+}
+
+// Bus Tap - connection point from bus to single wire
+void render_bus_tap(RenderContext *ctx, float x, float y, int rotation) {
+    // Terminals at (-20, 0) BUS and (20, 0) SIG
+    render_draw_line_rotated(ctx, x, y, -20, 0, -8, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, 0, 20, 0, rotation);
+    // Small box with slash
+    render_draw_line_rotated(ctx, x, y, -8, -6, 8, -6, rotation);
+    render_draw_line_rotated(ctx, x, y, -8, 6, 8, 6, rotation);
+    render_draw_line_rotated(ctx, x, y, -8, -6, -8, 6, rotation);
+    render_draw_line_rotated(ctx, x, y, 8, -6, 8, 6, rotation);
+    // Diagonal slash inside
+    render_draw_line_rotated(ctx, x, y, -4, 4, 4, -4, rotation);
+}
+
+// LED Dot Matrix 8x8 - grid of LED dots
+void render_led_matrix(RenderContext *ctx, float x, float y, int rotation, uint8_t *pixel_state, uint8_t color_idx) {
+    // Matrix body - large rectangle
+    render_draw_line_rotated(ctx, x, y, -50, -60, 50, -60, rotation);
+    render_draw_line_rotated(ctx, x, y, -50, 60, 50, 60, rotation);
+    render_draw_line_rotated(ctx, x, y, -50, -60, -50, 60, rotation);
+    render_draw_line_rotated(ctx, x, y, 50, -60, 50, 60, rotation);
+
+    // Row pins on left side (R0-R7 at terminals 0-7) - Row anodes
+    for (int i = 0; i < 8; i++) {
+        int pin_y = -52 + i * 15;
+        render_draw_line_rotated(ctx, x, y, -60, pin_y, -50, pin_y, rotation);
+
+        // Pin label (R0-R7)
+        char label[4];
+        snprintf(label, sizeof(label), "R%d", i);
+        int sx, sy;
+        render_world_to_screen(ctx, x - 48, y + pin_y, &sx, &sy);
+        render_draw_text_small(ctx, label, sx + 2, sy - 4, COLOR_TEXT_DIM);
+    }
+
+    // Column pins on right side (C0-C7 at terminals 8-15) - Column cathodes
+    for (int i = 0; i < 8; i++) {
+        int pin_y = -52 + i * 15;
+        render_draw_line_rotated(ctx, x, y, 50, pin_y, 60, pin_y, rotation);
+
+        // Pin label (C0-C7)
+        char label[4];
+        snprintf(label, sizeof(label), "C%d", i);
+        int sx, sy;
+        render_world_to_screen(ctx, x + 48, y + pin_y, &sx, &sy);
+        render_draw_text_small(ctx, label, sx - 14, sy - 4, COLOR_TEXT_DIM);
+    }
+
+    // Component label at top
+    {
+        int sx, sy;
+        render_world_to_screen(ctx, x, y - 55, &sx, &sy);
+        render_draw_text_small(ctx, "8x8 LED", sx - 20, sy - 10, COLOR_TEXT_DIM);
+    }
+
+    // Draw 8x8 LED grid inside
+    SDL_Color led_colors[] = {
+        {255, 60, 60, 255},    // 0 = Red
+        {60, 255, 60, 255},    // 1 = Green
+        {60, 100, 255, 255},   // 2 = Blue
+        {255, 255, 60, 255},   // 3 = Yellow
+        {255, 255, 255, 255}   // 4 = White
+    };
+    SDL_Color off_color = {40, 40, 40, 255};
+    SDL_Color on_color = led_colors[color_idx % 5];
+
+    int row, col;
+    for (row = 0; row < 8; row++) {
+        for (col = 0; col < 8; col++) {
+            // LED position in grid (world coordinates relative to component center)
+            float px = -35.0f + col * 10.0f;
+            float py = -45.0f + row * 12.0f;
+
+            // Check if this LED is on
+            bool is_on = (pixel_state[row] >> (7 - col)) & 1;
+
+            // Set LED color directly
+            if (is_on) {
+                SDL_SetRenderDrawColor(ctx->renderer, on_color.r, on_color.g, on_color.b, on_color.a);
+            } else {
+                SDL_SetRenderDrawColor(ctx->renderer, off_color.r, off_color.g, off_color.b, off_color.a);
+            }
+
+            // Transform to screen coordinates and draw filled rectangle for LED
+            int sx, sy;
+            render_world_to_screen(ctx, x + px, y + py, &sx, &sy);
+            int led_size = (int)(6 * ctx->zoom);
+            if (led_size < 2) led_size = 2;  // Minimum visible size
+            SDL_Rect led_rect;
+            led_rect.x = sx - led_size / 2;
+            led_rect.y = sy - led_size / 2;
+            led_rect.w = led_size;
+            led_rect.h = led_size;
+            SDL_RenderFillRect(ctx->renderer, &led_rect);
+        }
+    }
+
+    // Note: render color will be reset by next render_set_color call
+}
+
 // DC Motor - circle with M
 void render_dc_motor(RenderContext *ctx, float x, float y, int rotation) {
     // Terminals at (-40, 0) and (40, 0)
@@ -3244,4 +3538,216 @@ void render_bcd_decoder(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_text_small(ctx, "7447", sx - 10, sy, label_color);
     render_world_to_screen(ctx, x, y + 10, &sx, &sy);
     render_draw_text_small(ctx, "BCD", sx - 8, sy, label_color);
+}
+
+// User-defined sub-circuit / IC block
+// Renders a DIP-style IC with dynamic pins based on the definition
+void render_subcircuit(RenderContext *ctx, float x, float y, int rotation, int def_id, const char *name) {
+    (void)rotation;  // TODO: Support rotation
+
+    // Look up the subcircuit definition
+    SubCircuitDef *def = NULL;
+    for (int i = 0; i < g_subcircuit_library.count; i++) {
+        if (g_subcircuit_library.defs[i].id == def_id) {
+            def = &g_subcircuit_library.defs[i];
+            break;
+        }
+    }
+
+    // Default dimensions if no definition found
+    float width = def ? def->block_width : 80.0f;
+    float height = def ? def->block_height : 60.0f;
+    float half_w = width / 2.0f;
+    float half_h = height / 2.0f;
+
+    Color body_color = {60, 60, 80, 255};      // Dark blue-gray IC body
+    Color outline_color = {120, 120, 140, 255}; // Lighter outline
+    Color pin_color = {180, 180, 180, 255};     // Silver pins
+    Color label_color = {200, 200, 220, 255};   // Light label
+
+    // Draw IC body (filled rectangle)
+    render_set_color(ctx, body_color);
+    render_fill_rect(ctx, x - half_w + 5, y - half_h + 5, width - 10, height - 10);
+
+    // Draw outline
+    render_set_color(ctx, outline_color);
+    render_draw_line(ctx, x - half_w + 5, y - half_h + 5, x + half_w - 5, y - half_h + 5);  // Top
+    render_draw_line(ctx, x + half_w - 5, y - half_h + 5, x + half_w - 5, y + half_h - 5);  // Right
+    render_draw_line(ctx, x + half_w - 5, y + half_h - 5, x - half_w + 5, y + half_h - 5);  // Bottom
+    render_draw_line(ctx, x - half_w + 5, y + half_h - 5, x - half_w + 5, y - half_h + 5);  // Left
+
+    // Draw notch at top (IC orientation marker)
+    render_draw_circle(ctx, x, y - half_h + 8, 5);
+
+    // Draw pins if definition exists
+    if (def) {
+        render_set_color(ctx, pin_color);
+        int sx, sy;
+
+        for (int i = 0; i < def->num_pins; i++) {
+            SubCircuitPin *pin = &def->pins[i];
+            float px, py;
+
+            switch (pin->side) {
+                case 0:  // Left
+                    px = x - half_w;
+                    py = y - half_h + 20 + pin->position * 20;
+                    render_draw_line(ctx, px - 10, py, px + 5, py);
+                    render_world_to_screen(ctx, px + 8, py, &sx, &sy);
+                    render_draw_text_small(ctx, pin->name, sx, sy - 4, label_color);
+                    break;
+                case 1:  // Right
+                    px = x + half_w;
+                    py = y - half_h + 20 + pin->position * 20;
+                    render_draw_line(ctx, px - 5, py, px + 10, py);
+                    render_world_to_screen(ctx, px - 25, py, &sx, &sy);
+                    render_draw_text_small(ctx, pin->name, sx, sy - 4, label_color);
+                    break;
+                case 2:  // Top
+                    px = x - half_w + 20 + pin->position * 20;
+                    py = y - half_h;
+                    render_draw_line(ctx, px, py - 10, px, py + 5);
+                    break;
+                case 3:  // Bottom
+                    px = x - half_w + 20 + pin->position * 20;
+                    py = y + half_h;
+                    render_draw_line(ctx, px, py - 5, px, py + 10);
+                    break;
+            }
+        }
+    } else {
+        // Draw default 4-pin configuration when no definition
+        render_set_color(ctx, pin_color);
+
+        // Left pins
+        render_draw_line(ctx, x - half_w - 10, y - 20, x - half_w + 5, y - 20);
+        render_draw_line(ctx, x - half_w - 10, y + 20, x - half_w + 5, y + 20);
+
+        // Right pins
+        render_draw_line(ctx, x + half_w - 5, y - 20, x + half_w + 10, y - 20);
+        render_draw_line(ctx, x + half_w - 5, y + 20, x + half_w + 10, y + 20);
+    }
+
+    // Draw instance name in center
+    int sx, sy;
+    if (name && name[0]) {
+        render_world_to_screen(ctx, x, y - 5, &sx, &sy);
+        render_draw_text_small(ctx, name, sx - 8, sy, label_color);
+    }
+
+    // Draw subcircuit definition name below
+    if (def && def->name[0]) {
+        render_world_to_screen(ctx, x, y + 10, &sx, &sy);
+        render_draw_text_small(ctx, def->name, sx - 15, sy, (Color){150, 150, 170, 255});
+    } else {
+        render_world_to_screen(ctx, x, y + 10, &sx, &sy);
+        render_draw_text_small(ctx, "IC", sx - 5, sy, (Color){150, 150, 170, 255});
+    }
+}
+
+// Convert temperature to heatmap color (blue -> cyan -> green -> yellow -> red)
+Color temperature_to_color(double temp, double min_temp, double max_temp) {
+    // Normalize temperature to 0-1 range
+    double t = (temp - min_temp) / (max_temp - min_temp);
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+
+    Color c = {0, 0, 0, 180};  // Semi-transparent
+
+    // Color gradient: blue (0.0) -> cyan (0.25) -> green (0.5) -> yellow (0.75) -> red (1.0)
+    if (t < 0.25) {
+        // Blue to Cyan
+        double f = t / 0.25;
+        c.r = 0;
+        c.g = (Uint8)(255 * f);
+        c.b = 255;
+    } else if (t < 0.5) {
+        // Cyan to Green
+        double f = (t - 0.25) / 0.25;
+        c.r = 0;
+        c.g = 255;
+        c.b = (Uint8)(255 * (1.0 - f));
+    } else if (t < 0.75) {
+        // Green to Yellow
+        double f = (t - 0.5) / 0.25;
+        c.r = (Uint8)(255 * f);
+        c.g = 255;
+        c.b = 0;
+    } else {
+        // Yellow to Red
+        double f = (t - 0.75) / 0.25;
+        c.r = 255;
+        c.g = (Uint8)(255 * (1.0 - f));
+        c.b = 0;
+    }
+
+    return c;
+}
+
+// Render thermal heatmap overlay for a component
+void render_heatmap_overlay(RenderContext *ctx, Component *comp) {
+    if (!comp || comp->type == COMP_GROUND || comp->type == COMP_TEXT) {
+        return;
+    }
+
+    // Get component temperature
+    double temp = comp->thermal.temperature;
+    double ambient = comp->thermal.ambient_temperature;
+    double max_temp = comp->thermal.max_temperature;
+
+    // Only show overlay if temperature is above ambient
+    if (temp <= ambient + 1.0) {
+        return;
+    }
+
+    // Get color based on temperature (ambient to max_temp range)
+    Color heat_color = temperature_to_color(temp, ambient, max_temp);
+
+    // Determine component size for overlay
+    float size = 30.0f;  // Default size
+
+    // Adjust size based on component type
+    switch (comp->type) {
+        case COMP_RESISTOR:
+        case COMP_CAPACITOR:
+        case COMP_INDUCTOR:
+        case COMP_DIODE:
+        case COMP_LED:
+            size = 25.0f;
+            break;
+        case COMP_NPN_BJT:
+        case COMP_PNP_BJT:
+        case COMP_NMOS:
+        case COMP_PMOS:
+            size = 35.0f;
+            break;
+        case COMP_OPAMP:
+            size = 45.0f;
+            break;
+        default:
+            size = 30.0f;
+            break;
+    }
+
+    // Draw semi-transparent circle overlay with blend
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+    render_set_color(ctx, heat_color);
+
+    // Draw filled circle (radial gradient effect approximated by multiple circles)
+    for (float r = size; r > 0; r -= 2.0f) {
+        // Increase alpha as we get closer to center
+        Uint8 alpha = (Uint8)(heat_color.a * (1.0 - (r / size) * 0.5));
+        Color inner_color = heat_color;
+        inner_color.a = alpha;
+        render_set_color(ctx, inner_color);
+        render_fill_circle(ctx, comp->x, comp->y, r);
+    }
+
+    // Draw temperature label
+    int sx, sy;
+    render_world_to_screen(ctx, comp->x, comp->y + size + 10, &sx, &sy);
+    char temp_str[16];
+    snprintf(temp_str, sizeof(temp_str), "%.0f°C", temp);
+    Color text_color = {255, 255, 255, 255};
+    render_draw_text_small(ctx, temp_str, sx - 15, sy, text_color);
 }

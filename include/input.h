@@ -179,7 +179,13 @@ typedef enum {
     PROP_VOLTAGE_RATING,          // Voltage rating
 
     // Fuse reset
-    PROP_RESET_FUSE               // Reset blown fuse
+    PROP_RESET_FUSE,              // Reset blown fuse
+
+    // Microphone
+    PROP_MIC_ENABLED,             // Microphone capture enabled toggle
+    PROP_MIC_GAIN,                // Microphone input gain
+    PROP_MIC_AMPLITUDE,           // Output amplitude
+    PROP_MIC_OFFSET               // DC offset
 } PropertyType;
 
 // Input state

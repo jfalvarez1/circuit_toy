@@ -365,8 +365,19 @@ void ui_init(UIState *ui) {
     NEW_SECTION();
     ADD_COMP(COMP_7SEG_DISPLAY, "7Seg");
     ADD_COMP(COMP_LED_ARRAY, "LEDBar");
+    ADD_COMP(COMP_LED_MATRIX, "8x8");
     ADD_COMP(COMP_DC_MOTOR, "Motor");
     ADD_COMP(COMP_SPEAKER, "Spkr");
+    ADD_COMP(COMP_MICROPHONE, "Mic");
+    ADD_COMP(COMP_ANTENNA_TX, "TX");
+    ADD_COMP(COMP_ANTENNA_RX, "RX");
+
+    // === SUB-CIRCUITS SECTION ===
+    NEW_SECTION();
+    ADD_COMP(COMP_PIN, "Pin");
+    ADD_COMP(COMP_SUBCIRCUIT, "IC");
+    ADD_COMP(COMP_BUS, "Bus");
+    ADD_COMP(COMP_BUS_TAP, "Tap");
     ADD_COMP(COMP_LAMP, "Lamp");
 
     // === MEASUREMENT SECTION (index 93) ===
@@ -2214,6 +2225,92 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->num_properties++;
                     prop_y += 18;
                 }
+                break;
+            }
+
+            case COMP_MICROPHONE: {
+                // Global microphone status - always shows status of system mic
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Source:", x + 10, prop_y + 2);
+                if (g_microphone.initialized) {
+                    SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);
+                    ui_draw_text(renderer, "System Mic", x + 100, prop_y + 2);
+                } else {
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0x40, 0x40, 0xff);
+                    ui_draw_text(renderer, "No Device", x + 100, prop_y + 2);
+                }
+                prop_y += 18;
+
+                // Enabled toggle - controls this component's use of mic
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Enabled:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.microphone.enabled ? "[On]" : "[Off]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_MIC_ENABLED;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Audio level meter
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Level:", x + 10, prop_y + 2);
+                // Draw level bar
+                int bar_x = x + 100;
+                int bar_w = prop_w - 110;
+                SDL_SetRenderDrawColor(renderer, 0x40, 0x40, 0x40, 0xff);
+                SDL_Rect bar_bg = {bar_x, prop_y + 2, bar_w, 10};
+                SDL_RenderFillRect(renderer, &bar_bg);
+                // Level fill
+                float level = (float)g_microphone.peak_level;
+                if (level > 1.0f) level = 1.0f;
+                int fill_w = (int)(bar_w * level);
+                if (level > 0.8f) {
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0x40, 0x40, 0xff);  // Red - clipping
+                } else if (level > 0.5f) {
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);  // Orange
+                } else {
+                    SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);       // Green - OK
+                }
+                SDL_Rect bar_fill = {bar_x, prop_y + 2, fill_w, 10};
+                SDL_RenderFillRect(renderer, &bar_fill);
+                prop_y += 18;
+
+                // Gain control
+                bool edit_gain = input && input->editing_property && input->editing_prop_type == PROP_MIC_GAIN;
+                snprintf(buf, sizeof(buf), "%.1fx", selected->props.microphone.gain);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Gain:", buf,
+                                   edit_gain, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_MIC_GAIN;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Amplitude control
+                bool edit_amp = input && input->editing_property && input->editing_prop_type == PROP_MIC_AMPLITUDE;
+                snprintf(buf, sizeof(buf), "%.2f V", selected->props.microphone.amplitude);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
+                                   edit_amp, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_MIC_AMPLITUDE;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // DC Offset control
+                bool edit_offset = input && input->editing_property && input->editing_prop_type == PROP_MIC_OFFSET;
+                snprintf(buf, sizeof(buf), "%.2f V", selected->props.microphone.offset);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "DC Offset:", buf,
+                                   edit_offset, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_MIC_OFFSET;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Output voltage (read-only)
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Output:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                snprintf(buf, sizeof(buf), "%.3f V", selected->props.microphone.voltage);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 2);
                 break;
             }
 
@@ -4321,6 +4418,350 @@ void ui_render_spotlight(UIState *ui, SDL_Renderer *renderer) {
     // Hint at bottom
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
     ui_draw_text(renderer, "Enter to select, Esc to close", dx + 10, dy + dh - 18);
+
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+}
+
+// ============================================================================
+// SUBCIRCUIT DIALOG FUNCTIONS
+// ============================================================================
+
+// Open the subcircuit creation dialog
+void ui_subcircuit_dialog_open(UIState *ui, int num_selected, int detected_pins, char detected_names[][16]) {
+    ui->show_subcircuit_dialog = true;
+    ui->subcircuit_name[0] = '\0';
+    ui->subcircuit_name_cursor = 0;
+    ui->subcircuit_editing_field = 0;  // Start with name field
+    ui->subcircuit_selected_pin = 0;
+
+    // Use detected pins if available, otherwise fall back to default
+    if (detected_pins > 0) {
+        ui->subcircuit_num_pins = MIN(detected_pins, 16);
+        // Copy detected pin names
+        for (int i = 0; i < ui->subcircuit_num_pins; i++) {
+            if (detected_names && detected_names[i][0] != '\0') {
+                strncpy(ui->subcircuit_pin_names[i], detected_names[i], sizeof(ui->subcircuit_pin_names[i]) - 1);
+                ui->subcircuit_pin_names[i][sizeof(ui->subcircuit_pin_names[i]) - 1] = '\0';
+            } else {
+                snprintf(ui->subcircuit_pin_names[i], sizeof(ui->subcircuit_pin_names[i]), "P%d", i + 1);
+            }
+        }
+        // Initialize remaining slots with defaults
+        for (int i = ui->subcircuit_num_pins; i < 16; i++) {
+            snprintf(ui->subcircuit_pin_names[i], sizeof(ui->subcircuit_pin_names[i]), "P%d", i + 1);
+        }
+    } else {
+        // Fall back to default behavior
+        ui->subcircuit_num_pins = (num_selected > 0) ? MIN(num_selected * 2, 8) : 4;
+        for (int i = 0; i < 16; i++) {
+            snprintf(ui->subcircuit_pin_names[i], sizeof(ui->subcircuit_pin_names[i]), "P%d", i + 1);
+        }
+    }
+}
+
+// Close the subcircuit creation dialog
+void ui_subcircuit_dialog_close(UIState *ui) {
+    ui->show_subcircuit_dialog = false;
+}
+
+// Handle text input for subcircuit dialog
+void ui_subcircuit_dialog_text_input(UIState *ui, const char *text) {
+    if (!ui->show_subcircuit_dialog) return;
+
+    if (ui->subcircuit_editing_field == 0) {
+        // Editing name
+        size_t len = strlen(ui->subcircuit_name);
+        size_t text_len = strlen(text);
+        if (len + text_len < sizeof(ui->subcircuit_name) - 1) {
+            // Insert at cursor position
+            memmove(&ui->subcircuit_name[ui->subcircuit_name_cursor + text_len],
+                   &ui->subcircuit_name[ui->subcircuit_name_cursor],
+                   len - ui->subcircuit_name_cursor + 1);
+            memcpy(&ui->subcircuit_name[ui->subcircuit_name_cursor], text, text_len);
+            ui->subcircuit_name_cursor += (int)text_len;
+        }
+    } else {
+        // Editing pin name
+        int pin_idx = ui->subcircuit_editing_field - 1;
+        if (pin_idx >= 0 && pin_idx < ui->subcircuit_num_pins) {
+            size_t len = strlen(ui->subcircuit_pin_names[pin_idx]);
+            size_t text_len = strlen(text);
+            if (len + text_len < sizeof(ui->subcircuit_pin_names[pin_idx]) - 1) {
+                strcat(ui->subcircuit_pin_names[pin_idx], text);
+            }
+        }
+    }
+}
+
+// Handle key events for subcircuit dialog
+// Returns true if a subcircuit should be created (Enter pressed with valid name)
+bool ui_subcircuit_dialog_key(UIState *ui, SDL_Keycode key) {
+    if (!ui->show_subcircuit_dialog) return false;
+
+    if (key == SDLK_ESCAPE) {
+        ui_subcircuit_dialog_close(ui);
+        return false;
+    }
+
+    if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
+        // Confirm creation if name is not empty
+        if (ui->subcircuit_name[0] != '\0') {
+            return true;  // Signal to create the subcircuit
+        }
+        return false;
+    }
+
+    if (key == SDLK_TAB) {
+        // Cycle through fields (name, then pin names)
+        ui->subcircuit_editing_field++;
+        if (ui->subcircuit_editing_field > ui->subcircuit_num_pins) {
+            ui->subcircuit_editing_field = 0;
+        }
+        return false;
+    }
+
+    if (key == SDLK_UP) {
+        if (ui->subcircuit_editing_field > 0) {
+            ui->subcircuit_editing_field--;
+        }
+        return false;
+    }
+
+    if (key == SDLK_DOWN) {
+        if (ui->subcircuit_editing_field < ui->subcircuit_num_pins) {
+            ui->subcircuit_editing_field++;
+        }
+        return false;
+    }
+
+    if (key == SDLK_BACKSPACE) {
+        if (ui->subcircuit_editing_field == 0) {
+            // Editing name
+            if (ui->subcircuit_name_cursor > 0) {
+                size_t len = strlen(ui->subcircuit_name);
+                memmove(&ui->subcircuit_name[ui->subcircuit_name_cursor - 1],
+                       &ui->subcircuit_name[ui->subcircuit_name_cursor],
+                       len - ui->subcircuit_name_cursor + 1);
+                ui->subcircuit_name_cursor--;
+            }
+        } else {
+            // Editing pin name
+            int pin_idx = ui->subcircuit_editing_field - 1;
+            if (pin_idx >= 0 && pin_idx < ui->subcircuit_num_pins) {
+                size_t len = strlen(ui->subcircuit_pin_names[pin_idx]);
+                if (len > 0) {
+                    ui->subcircuit_pin_names[pin_idx][len - 1] = '\0';
+                }
+            }
+        }
+        return false;
+    }
+
+    // Adjust number of pins with +/-
+    if (key == SDLK_PLUS || key == SDLK_KP_PLUS || key == SDLK_EQUALS) {
+        if (ui->subcircuit_num_pins < 16) {
+            ui->subcircuit_num_pins++;
+        }
+        return false;
+    }
+
+    if (key == SDLK_MINUS || key == SDLK_KP_MINUS) {
+        if (ui->subcircuit_num_pins > 2) {
+            ui->subcircuit_num_pins--;
+        }
+        return false;
+    }
+
+    return false;
+}
+
+// Handle mouse click on subcircuit dialog
+// Returns true if dialog should close
+bool ui_subcircuit_dialog_click(UIState *ui, int mouse_x, int mouse_y) {
+    if (!ui->show_subcircuit_dialog) return false;
+
+    // Dialog dimensions
+    int dw = 400, dh = 350;
+    int dx = (ui->window_width - dw) / 2;
+    int dy = (ui->window_height - dh) / 2;
+
+    // Check if click is outside dialog to close
+    if (mouse_x < dx || mouse_x >= dx + dw || mouse_y < dy || mouse_y >= dy + dh) {
+        ui_subcircuit_dialog_close(ui);
+        return false;
+    }
+
+    // Check name field click (y = dy + 45 to dy + 73)
+    if (mouse_y >= dy + 45 && mouse_y < dy + 73) {
+        ui->subcircuit_editing_field = 0;
+        return false;
+    }
+
+    // Check pin name field clicks (starting at y = dy + 110)
+    int pin_start_y = dy + 110;
+    int pin_height = 24;
+    for (int i = 0; i < ui->subcircuit_num_pins; i++) {
+        int py = pin_start_y + i * pin_height;
+        if (mouse_y >= py && mouse_y < py + pin_height) {
+            ui->subcircuit_editing_field = i + 1;
+            return false;
+        }
+    }
+
+    // Check Create button (bottom right)
+    int btn_x = dx + dw - 90;
+    int btn_y = dy + dh - 45;
+    if (mouse_x >= btn_x && mouse_x < btn_x + 80 &&
+        mouse_y >= btn_y && mouse_y < btn_y + 30) {
+        if (ui->subcircuit_name[0] != '\0') {
+            return true;  // Create subcircuit
+        }
+    }
+
+    // Check Cancel button (bottom left)
+    btn_x = dx + 10;
+    if (mouse_x >= btn_x && mouse_x < btn_x + 80 &&
+        mouse_y >= btn_y && mouse_y < btn_y + 30) {
+        ui_subcircuit_dialog_close(ui);
+        return false;
+    }
+
+    return false;
+}
+
+// Render subcircuit creation dialog
+void ui_render_subcircuit_dialog(UIState *ui, SDL_Renderer *renderer) {
+    if (!ui->show_subcircuit_dialog) return;
+
+    // Semi-transparent overlay
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xb0);
+    SDL_Rect overlay = {0, 0, ui->window_width, ui->window_height};
+    SDL_RenderFillRect(renderer, &overlay);
+
+    // Dialog dimensions
+    int dw = 400, dh = 350;
+    int dx = (ui->window_width - dw) / 2;
+    int dy = (ui->window_height - dh) / 2;
+
+    // Dialog background
+    SDL_SetRenderDrawColor(renderer, SYNTH_BG_MID, 0xff);
+    SDL_Rect dialog = {dx, dy, dw, dh};
+    SDL_RenderFillRect(renderer, &dialog);
+
+    // Outer glow effect
+    SDL_SetRenderDrawColor(renderer, SYNTH_PURPLE, 0x60);
+    SDL_Rect glow1 = {dx - 2, dy - 2, dw + 4, dh + 4};
+    SDL_RenderDrawRect(renderer, &glow1);
+    SDL_SetRenderDrawColor(renderer, SYNTH_PURPLE, 0x30);
+    SDL_Rect glow2 = {dx - 4, dy - 4, dw + 8, dh + 8};
+    SDL_RenderDrawRect(renderer, &glow2);
+
+    // Main border
+    SDL_SetRenderDrawColor(renderer, SYNTH_PURPLE, 0xff);
+    SDL_RenderDrawRect(renderer, &dialog);
+
+    // Title
+    SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
+    ui_draw_text(renderer, "CREATE SUBCIRCUIT", dx + 120, dy + 15);
+
+    // Name label and field
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
+    ui_draw_text(renderer, "Name:", dx + 15, dy + 50);
+
+    // Name input field
+    bool name_focused = (ui->subcircuit_editing_field == 0);
+    SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
+    SDL_Rect name_bg = {dx + 70, dy + 45, dw - 90, 28};
+    SDL_RenderFillRect(renderer, &name_bg);
+    SDL_SetRenderDrawColor(renderer, name_focused ? SYNTH_CYAN : SYNTH_BORDER, 0xff);
+    SDL_RenderDrawRect(renderer, &name_bg);
+
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
+    if (ui->subcircuit_name[0] != '\0') {
+        ui_draw_text(renderer, ui->subcircuit_name, dx + 78, dy + 53);
+    } else {
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
+        ui_draw_text(renderer, "Enter IC name...", dx + 78, dy + 53);
+    }
+
+    // Blinking cursor for name field
+    if (name_focused && (SDL_GetTicks() / 500) % 2 == 0) {
+        SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+        int cursor_x = dx + 78 + ui->subcircuit_name_cursor * 8;
+        SDL_RenderDrawLine(renderer, cursor_x, dy + 49, cursor_x, dy + 69);
+    }
+
+    // Number of pins section
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
+    char pins_str[32];
+    snprintf(pins_str, sizeof(pins_str), "Pins: %d  (+/- to adjust)", ui->subcircuit_num_pins);
+    ui_draw_text(renderer, pins_str, dx + 15, dy + 85);
+
+    // Pin names section
+    SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
+    ui_draw_text(renderer, "Pin Names:", dx + 15, dy + 110);
+
+    int pin_start_y = dy + 130;
+    int pin_col_width = dw / 2 - 20;
+
+    for (int i = 0; i < ui->subcircuit_num_pins && i < 16; i++) {
+        int col = i % 2;
+        int row = i / 2;
+        int px = dx + 15 + col * pin_col_width;
+        int py = pin_start_y + row * 24;
+
+        bool pin_focused = (ui->subcircuit_editing_field == i + 1);
+
+        // Pin number label
+        char pin_label[8];
+        snprintf(pin_label, sizeof(pin_label), "%d:", i + 1);
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
+        ui_draw_text(renderer, pin_label, px, py + 4);
+
+        // Pin name input
+        SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
+        SDL_Rect pin_bg = {px + 25, py, 110, 20};
+        SDL_RenderFillRect(renderer, &pin_bg);
+        SDL_SetRenderDrawColor(renderer, pin_focused ? SYNTH_CYAN : SYNTH_BORDER, 0xff);
+        SDL_RenderDrawRect(renderer, &pin_bg);
+
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
+        ui_draw_text(renderer, ui->subcircuit_pin_names[i], px + 30, py + 4);
+
+        // Cursor for focused pin
+        if (pin_focused && (SDL_GetTicks() / 500) % 2 == 0) {
+            SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+            int cursor_x = px + 30 + (int)strlen(ui->subcircuit_pin_names[i]) * 8;
+            SDL_RenderDrawLine(renderer, cursor_x, py + 2, cursor_x, py + 18);
+        }
+    }
+
+    // Buttons at bottom
+    int btn_y = dy + dh - 45;
+
+    // Cancel button
+    SDL_SetRenderDrawColor(renderer, SYNTH_BG_LIGHT, 0xff);
+    SDL_Rect cancel_btn = {dx + 10, btn_y, 80, 30};
+    SDL_RenderFillRect(renderer, &cancel_btn);
+    SDL_SetRenderDrawColor(renderer, SYNTH_BORDER_LIGHT, 0xff);
+    SDL_RenderDrawRect(renderer, &cancel_btn);
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
+    ui_draw_text(renderer, "Cancel", dx + 25, btn_y + 10);
+
+    // Create button
+    bool can_create = (ui->subcircuit_name[0] != '\0');
+    SDL_SetRenderDrawColor(renderer, can_create ? SYNTH_PURPLE_DIM : SYNTH_BG_LIGHT, 0xff);
+    SDL_Rect create_btn = {dx + dw - 90, btn_y, 80, 30};
+    SDL_RenderFillRect(renderer, &create_btn);
+    SDL_SetRenderDrawColor(renderer, can_create ? SYNTH_PURPLE : SYNTH_BORDER, 0xff);
+    SDL_RenderDrawRect(renderer, &create_btn);
+    SDL_SetRenderDrawColor(renderer, can_create ? SYNTH_TEXT : SYNTH_TEXT_DARK, 0xff);
+    ui_draw_text(renderer, "Create", dx + dw - 75, btn_y + 10);
+
+    // Hint at bottom
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
+    ui_draw_text(renderer, "Tab: next field  Enter: create  Esc: cancel", dx + 60, dy + dh - 15);
 
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }

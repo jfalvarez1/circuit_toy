@@ -232,6 +232,9 @@ bool simulation_dc_analysis(Simulation *sim) {
             return false;
         }
 
+        // Clear wireless state for antenna TX/RX pairs
+        memset(&g_wireless, 0, sizeof(g_wireless));
+
         // Stamp all components
         // Use large dt for DC analysis so capacitors → open circuit, inductors → short circuit
         double dc_dt = 1e9;  // Very large dt for steady-state DC behavior
@@ -315,6 +318,9 @@ static Vector *simulation_solve_step(Simulation *sim, double dt) {
             return NULL;
         }
 
+        // Clear wireless state for antenna TX/RX pairs
+        memset(&g_wireless, 0, sizeof(g_wireless));
+
         // Stamp components
         for (int i = 0; i < circuit->num_components; i++) {
             component_stamp(circuit->components[i], A, b,
@@ -378,6 +384,162 @@ static double simulation_estimate_error(Simulation *sim, Vector *new_solution) {
     }
 
     return max_rel_change;
+}
+
+// Update thermal state for all components - calculates temperature rise and damage
+static void thermal_update_components(Circuit *circuit, double dt, double sim_time) {
+    if (!circuit) return;
+
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *c = circuit->components[i];
+        if (!c) continue;
+
+        // Skip components without thermal modeling
+        if (c->thermal.max_temperature <= 0) continue;
+
+        // Get power dissipation based on component type
+        double power = 0.0;
+        switch (c->type) {
+            case COMP_RESISTOR:
+                // P = V * I (already tracked in component)
+                power = c->thermal.power_dissipated;
+                break;
+            case COMP_NPN_BJT:
+            case COMP_PNP_BJT:
+                power = c->thermal.power_dissipated;
+                break;
+            case COMP_NMOS:
+            case COMP_PMOS:
+                power = c->thermal.power_dissipated;
+                break;
+            case COMP_CAPACITOR:
+                // Capacitors dissipate power through ESR
+                power = c->thermal.power_dissipated;
+                break;
+            case COMP_LED:
+                power = c->thermal.power_dissipated;
+                break;
+            case COMP_DIODE:
+            case COMP_ZENER:
+            case COMP_SCHOTTKY:
+                power = c->thermal.power_dissipated;
+                break;
+            default:
+                continue;  // No thermal model for this component
+        }
+
+        // Skip if already failed
+        if (c->thermal.failed) {
+            // Update smoke particles
+            if (c->thermal.smoke_active) {
+                for (int s = 0; s < c->thermal.num_smoke; s++) {
+                    SmokeParticle *p = &c->thermal.smoke[s];
+                    // Move particle upward with some randomness
+                    p->vy -= 0.5f * (float)dt;  // Gravity affects rising smoke
+                    p->x += p->vx * (float)dt;
+                    p->y += p->vy * (float)dt;
+                    p->life -= (float)dt * 0.5f;  // Decay over ~2 seconds
+                    p->alpha = (uint8_t)(p->life * 200);
+                    p->size += (float)dt * 2.0f;  // Expand as it rises
+                }
+                // Remove dead particles
+                int alive = 0;
+                for (int s = 0; s < c->thermal.num_smoke; s++) {
+                    if (c->thermal.smoke[s].life > 0) {
+                        if (alive != s) {
+                            c->thermal.smoke[alive] = c->thermal.smoke[s];
+                        }
+                        alive++;
+                    }
+                }
+                c->thermal.num_smoke = alive;
+                if (alive == 0) {
+                    c->thermal.smoke_active = false;
+                }
+            }
+            continue;
+        }
+
+        // Store power for thermal visualization
+        c->thermal.power_dissipated = power;
+
+        // Calculate temperature change using thermal model
+        // dT/dt = (P - (T - T_ambient) / R_thermal) / C_thermal
+        double thermal_resistance = c->thermal.thermal_resistance;
+        double thermal_mass = c->thermal.thermal_mass;
+        double ambient = c->thermal.ambient_temperature;
+
+        if (thermal_mass > 0) {
+            double heat_in = power;  // Power dissipation heats up
+            double heat_out = (c->thermal.temperature - ambient) / thermal_resistance;  // Cooling
+            double dT = (heat_in - heat_out) * dt / thermal_mass;
+            c->thermal.temperature += dT;
+
+            // Clamp to reasonable range
+            if (c->thermal.temperature < ambient) {
+                c->thermal.temperature = ambient;
+            }
+        }
+
+        // Calculate power rating based on component type
+        double power_rating = 0.25;  // Default 1/4W for resistors
+        switch (c->type) {
+            case COMP_RESISTOR:
+                power_rating = 0.25;  // 1/4W typical through-hole
+                break;
+            case COMP_NPN_BJT:
+            case COMP_PNP_BJT:
+                power_rating = 0.625;  // 625mW for small signal TO-92
+                break;
+            case COMP_LED:
+                power_rating = 0.1;  // 100mW typical LED
+                break;
+            default:
+                power_rating = 0.5;
+                break;
+        }
+
+        // Accumulate damage if over temperature or power limit
+        double damage_rate = 0.0;
+
+        // Temperature-based damage
+        if (c->thermal.temperature > c->thermal.max_temperature) {
+            double over_temp = c->thermal.temperature - c->thermal.max_temperature;
+            damage_rate = over_temp / 50.0;  // Full damage in ~50°C over limit
+        }
+
+        // Power-based damage (exceeding rated power)
+        if (power > power_rating * c->thermal.damage_threshold) {
+            double over_power = (power - power_rating) / power_rating;
+            damage_rate = fmax(damage_rate, over_power * 0.5);  // Scale with overpower
+        }
+
+        // Accumulate damage over time
+        if (damage_rate > 0) {
+            c->thermal.damage += damage_rate * dt;
+
+            // Component fails when damage reaches 1.0
+            if (c->thermal.damage >= 1.0) {
+                c->thermal.damage = 1.0;
+                c->thermal.failed = true;
+                c->thermal.failure_time = sim_time;
+                c->thermal.smoke_active = true;
+
+                // Spawn initial smoke particles
+                c->thermal.num_smoke = MAX_SMOKE_PARTICLES;
+                for (int s = 0; s < MAX_SMOKE_PARTICLES; s++) {
+                    SmokeParticle *p = &c->thermal.smoke[s];
+                    p->x = (float)(rand() % 20 - 10);  // Random offset
+                    p->y = (float)(rand() % 10 - 5);
+                    p->vx = (float)(rand() % 20 - 10) * 0.5f;
+                    p->vy = (float)(rand() % 10 + 10) * -2.0f;  // Rise upward
+                    p->life = 1.0f + (float)(rand() % 50) / 100.0f;
+                    p->size = 3.0f + (float)(rand() % 5);
+                    p->alpha = 200;
+                }
+            }
+        }
+    }
 }
 
 bool simulation_step(Simulation *sim) {
@@ -506,6 +668,9 @@ bool simulation_step(Simulation *sim) {
     // Update circuit voltages and wire currents
     circuit_update_voltages(circuit, sim->solution);
     circuit_update_wire_currents(circuit);
+
+    // Update thermal state for all components (magic smoke simulation)
+    thermal_update_components(circuit, dt, sim->time);
 
     // Mixed-signal logic solver phase
     // 1. ADC: Sample analog node voltages and convert to logic states

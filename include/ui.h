@@ -347,6 +347,15 @@ typedef struct {
     // Cursor info
     int cursor_x, cursor_y;
     float world_x, world_y;
+
+    // Subcircuit editor dialog (Ctrl+G to create from selection)
+    bool show_subcircuit_dialog;            // Show the create subcircuit dialog
+    char subcircuit_name[32];               // Name for the new subcircuit
+    int subcircuit_name_cursor;             // Cursor position in name field
+    int subcircuit_num_pins;                // Number of pins defined
+    char subcircuit_pin_names[16][16];      // Pin names (max 16 pins)
+    int subcircuit_selected_pin;            // Currently selected pin for editing
+    int subcircuit_editing_field;           // 0=name, 1+=pin names
 } UIState;
 
 // Initialize UI
@@ -373,7 +382,15 @@ void ui_render_monte_carlo_panel(UIState *ui, SDL_Renderer *renderer, void *anal
 void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer);
 void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer);
 void ui_render_spotlight(UIState *ui, SDL_Renderer *renderer);
+void ui_render_subcircuit_dialog(UIState *ui, SDL_Renderer *renderer);
 void ui_render_neon_trim(UIState *ui, SDL_Renderer *renderer);
+
+// Subcircuit editor functions
+void ui_subcircuit_dialog_open(UIState *ui, int num_selected, int detected_pins, char detected_names[][16]);
+void ui_subcircuit_dialog_close(UIState *ui);
+void ui_subcircuit_dialog_text_input(UIState *ui, const char *text);
+bool ui_subcircuit_dialog_key(UIState *ui, SDL_Keycode key);
+bool ui_subcircuit_dialog_click(UIState *ui, int mouse_x, int mouse_y);
 
 // Spotlight search functions
 void ui_spotlight_open(UIState *ui);
@@ -427,6 +444,7 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_MC_TOL_UP     38   // Increase MC tolerance
 #define UI_ACTION_MC_TOL_DOWN   39   // Decrease MC tolerance
 #define UI_ACTION_MC_RESET      40   // Reset MC results
+#define UI_ACTION_CREATE_SUBCIRCUIT 41   // Create subcircuit from selection (Ctrl+G)
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type (supports up to 300 component types)
 #define UI_ACTION_SELECT_CIRCUIT 500 // + circuit template type

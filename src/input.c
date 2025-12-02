@@ -74,6 +74,19 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 return true;  // Consume click when spotlight is open
             }
 
+            // If subcircuit dialog is open, handle subcircuit dialog clicks
+            if (ui && ui->show_subcircuit_dialog) {
+                bool clicked = ui_subcircuit_dialog_click(ui, x, y);
+                if (clicked) {
+                    // Check if create button was clicked (dialog closes and returns true for create)
+                    if (!ui->show_subcircuit_dialog) {
+                        // Dialog closed - trigger create action if it wasn't cancelled
+                        input->pending_ui_action = UI_ACTION_CREATE_SUBCIRCUIT;
+                    }
+                }
+                return true;  // Consume click when dialog is open
+            }
+
             // Check if click is in UI area first
             int action = ui_handle_click(ui, x, y, true);
             if (action != UI_ACTION_NONE) {
@@ -724,6 +737,14 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     case COMP_NOISE_SOURCE:
                         c->props.noise_source.amplitude *= factor;
                         break;
+                    case COMP_LED_MATRIX:
+                        // Cycle through LED colors (0-4: red, green, blue, yellow, white)
+                        if (event->wheel.y > 0) {
+                            c->props.led_matrix.color = (c->props.led_matrix.color + 1) % 5;
+                        } else {
+                            c->props.led_matrix.color = (c->props.led_matrix.color + 4) % 5;  // +4 = -1 mod 5
+                        }
+                        break;
                     default:
                         break;
                 }
@@ -759,6 +780,17 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 return true;
             }
 
+            // If subcircuit dialog is open, handle subcircuit dialog keys
+            if (ui && ui->show_subcircuit_dialog) {
+                SDL_Keycode key = event->key.keysym.sym;
+                bool handled = ui_subcircuit_dialog_key(ui, key);
+                if (handled && key == SDLK_RETURN) {
+                    // User confirmed - trigger create subcircuit action
+                    input->pending_ui_action = UI_ACTION_CREATE_SUBCIRCUIT;
+                }
+                return true;
+            }
+
             // If editing a property, handle text editing keys
             if (input->editing_property) {
                 SDL_Keycode key = event->key.keysym.sym;
@@ -779,6 +811,40 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 return true;
             }
 
+            // Handle Ctrl+G to open subcircuit creation dialog
+            if (event->key.keysym.sym == SDLK_g && (SDL_GetModState() & KMOD_CTRL) && ui && circuit) {
+                // Count selected components and detect COMP_PIN markers
+                int num_selected = 0;
+                int detected_pins = 0;
+                char detected_names[16][16] = {{0}};
+
+                for (int i = 0; i < circuit->num_components; i++) {
+                    if (circuit->components[i] && circuit->components[i]->selected) {
+                        num_selected++;
+
+                        // Check if this is a COMP_PIN marker
+                        if (circuit->components[i]->type == COMP_PIN && detected_pins < 16) {
+                            int pin_num = circuit->components[i]->props.pin.pin_number;
+                            // Use pin_number as index (1-based, so subtract 1)
+                            int idx = (pin_num > 0 && pin_num <= 16) ? pin_num - 1 : detected_pins;
+
+                            // Copy pin name if available
+                            if (circuit->components[i]->props.pin.pin_name[0] != '\0') {
+                                strncpy(detected_names[idx], circuit->components[i]->props.pin.pin_name, 15);
+                                detected_names[idx][15] = '\0';
+                            } else {
+                                snprintf(detected_names[idx], 16, "P%d", pin_num);
+                            }
+                            detected_pins++;
+                        }
+                    }
+                }
+                if (num_selected > 0) {
+                    ui_subcircuit_dialog_open(ui, num_selected, detected_pins, detected_names);
+                }
+                return true;
+            }
+
             // Close panels on ESC
             if (event->key.keysym.sym == SDLK_ESCAPE && ui) {
                 if (ui->show_bode_plot) {
@@ -796,10 +862,16 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             }
 
             input_handle_key(input, event->key.keysym.sym, circuit, render);
+
             return true;
         }
 
         case SDL_TEXTINPUT: {
+            // Handle subcircuit dialog text input
+            if (ui->show_subcircuit_dialog) {
+                ui_subcircuit_dialog_text_input(ui, event->text.text);
+                return true;
+            }
             // Handle spotlight text input
             if (ui->show_spotlight) {
                 ui_spotlight_text_input(ui, event->text.text);
@@ -817,6 +889,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             input->shift_down = (mod & KMOD_SHIFT) != 0;
             input->ctrl_down = (mod & KMOD_CTRL) != 0;
             input->alt_down = (mod & KMOD_ALT) != 0;
+
             return true;
         }
     }
@@ -983,6 +1056,13 @@ void input_handle_key(InputState *input, SDL_Keycode key,
             // T: Add SPST switch (toggle switch)
             if (!ctrl) {
                 input_start_placing(input, COMP_SPST_SWITCH);
+            }
+            break;
+
+        case SDLK_h:
+            // H: Toggle thermal heatmap overlay
+            if (!ctrl) {
+                render->show_heatmap = !render->show_heatmap;
             }
             break;
 
@@ -1865,6 +1945,28 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             // Toggle underline
             if (comp->type == COMP_TEXT) {
                 comp->props.text.underline = !comp->props.text.underline;
+                applied = true;
+            }
+            break;
+
+        // Microphone parameters
+        case PROP_MIC_GAIN:
+            if (comp->type == COMP_MICROPHONE && value >= 0 && value <= 100) {
+                comp->props.microphone.gain = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_MIC_AMPLITUDE:
+            if (comp->type == COMP_MICROPHONE && value >= 0 && value <= 100) {
+                comp->props.microphone.amplitude = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_MIC_OFFSET:
+            if (comp->type == COMP_MICROPHONE && value >= -100 && value <= 100) {
+                comp->props.microphone.offset = value;
                 applied = true;
             }
             break;

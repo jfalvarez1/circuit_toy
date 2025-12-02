@@ -14,6 +14,12 @@ EnvironmentState g_environment = {
     .temperature = 25.0     // Default: room temperature (°C)
 };
 
+// Global sub-circuit library
+SubCircuitLibrary g_subcircuit_library = {
+    .count = 0,
+    .next_id = 1
+};
+
 // Component type information table
 // NOTE: Terminal positions must be multiples of GRID_SIZE (20) for proper grid alignment
 // Array is sized to COMP_TYPE_COUNT to ensure all component types have entries
@@ -1516,6 +1522,22 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         }}
     },
 
+    [COMP_LED_MATRIX] = {
+        "LED Matrix 8x8", "DOT", 16,
+        {{ -60, -52, "R0" }, { -60, -37, "R1" }, { -60, -22, "R2" }, { -60, -7, "R3" },
+         { -60, 8, "R4" }, { -60, 23, "R5" }, { -60, 38, "R6" }, { -60, 53, "R7" },
+         { 60, -52, "C0" }, { 60, -37, "C1" }, { 60, -22, "C2" }, { 60, -7, "C3" },
+         { 60, 8, "C4" }, { 60, 23, "C5" }, { 60, 38, "C6" }, { 60, 53, "C7" }},
+        120, 130,
+        { .led_matrix = {
+            .pixel_state = {0, 0, 0, 0, 0, 0, 0, 0},
+            .vf = 2.0,
+            .if_max = 0.02,
+            .color = 0,
+            .common_cathode = true
+        }}
+    },
+
     [COMP_DC_MOTOR] = {
         "DC Motor", "M", 2,
         {{ -40, 0, "+" }, { 40, 0, "-" }},
@@ -1539,10 +1561,106 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         "Speaker", "SPK", 2,
         {{ -40, -10, "+" }, { -40, 10, "-" }},
         80, 50,
-        { .inductor = {
-            .inductance = 1e-3,
-            .dcr = 8.0,                 // 8 ohm speaker
-            .ideal = true
+        { .speaker = {
+            .impedance = 8.0,           // 8 ohm speaker
+            .sensitivity = 90.0,        // 90 dB/W/m
+            .max_power = 1.0,           // 1W max
+            .power_dissipated = 0.0,
+            .voltage = 0.0,
+            .current = 0.0,
+            .frequency = 0.0,
+            .audio_enabled = true,
+            .failed = false
+        }}
+    },
+
+    [COMP_MICROPHONE] = {
+        "Microphone", "MIC", 2,
+        {{ 40, 0, "+" }, { -40, 0, "-" }},
+        80, 40,
+        { .microphone = {
+            .amplitude = 5.0,           // 5V peak output
+            .offset = 2.5,              // 2.5V DC offset (centered)
+            .gain = 1.0,                // Unity gain
+            .r_series = 1000.0,         // 1K output resistance
+            .voltage = 0.0,
+            .peak_level = 0.0,
+            .enabled = true,
+            .ideal = false
+        }}
+    },
+
+    // === WIRELESS ===
+
+    [COMP_ANTENNA_TX] = {
+        "Antenna TX", "TX", 2,
+        {{ -40, 0, "+" }, { 40, 0, "-" }},
+        80, 40,
+        { .antenna = {
+            .channel = 0,               // Channel 0 by default
+            .r_series = 50.0,           // 50 ohm (standard RF impedance)
+            .voltage = 0.0,
+            .gain = 1.0,
+            .ideal = false
+        }}
+    },
+
+    [COMP_ANTENNA_RX] = {
+        "Antenna RX", "RX", 2,
+        {{ -40, 0, "+" }, { 40, 0, "-" }},
+        80, 40,
+        { .antenna = {
+            .channel = 0,               // Channel 0 by default
+            .r_series = 50.0,           // 50 ohm (standard RF impedance)
+            .voltage = 0.0,
+            .gain = 1.0,
+            .ideal = false
+        }}
+    },
+
+    // === WIRING ===
+
+    [COMP_BUS] = {
+        "Bus", "BUS", 2,
+        {{ -40, 0, "A" }, { 40, 0, "B" }},
+        80, 30,
+        { .bus = {
+            .width = 8,                 // 8-bit bus by default
+            .name = "DATA",
+            .bus_id = 0
+        }}
+    },
+
+    [COMP_BUS_TAP] = {
+        "Bus Tap", "TAP", 2,
+        {{ -20, 0, "BUS" }, { 20, 0, "SIG" }},
+        40, 30,
+        { .bus_tap = {
+            .bus_id = 0,
+            .tap_index = 0,
+            .signal_name = "D0"
+        }}
+    },
+
+    // === SUB-CIRCUITS ===
+
+    [COMP_PIN] = {
+        "Pin Marker", "P", 1,  // One terminal for connection
+        {{ 40, 0, "P" }},      // Terminal at right side (40, 0)
+        60, 30,
+        { .pin = {
+            .pin_number = 1,
+            .pin_name = ""
+        }}
+    },
+
+    [COMP_SUBCIRCUIT] = {
+        "Sub-Circuit", "IC", 4,  // Default 4 pins, dynamically adjusted
+        {{ -40, -20, "1" }, { -40, 20, "2" }, { 40, -20, "3" }, { 40, 20, "4" }},
+        80, 60,
+        { .subcircuit = {
+            .def_id = -1,           // No definition yet
+            .name = "U1"
         }}
     },
 
@@ -1661,6 +1779,59 @@ Component *component_create(ComponentType type, float x, float y) {
                                type == COMP_BATTERY ||
                                type == COMP_PULSE_SOURCE ||
                                type == COMP_PWM_SOURCE);
+
+    // Initialize thermal state for components that can fail
+    comp->thermal.temperature = 25.0;           // Room temperature
+    comp->thermal.ambient_temperature = 25.0;
+    comp->thermal.power_dissipated = 0.0;
+    comp->thermal.damage = 0.0;
+    comp->thermal.damage_threshold = 1.5;       // Start damage at 150% power rating
+    comp->thermal.failure_time = -1.0;
+    comp->thermal.failed = false;
+    comp->thermal.smoke_active = false;
+    comp->thermal.num_smoke = 0;
+
+    // Component-specific thermal parameters
+    switch (type) {
+        case COMP_RESISTOR:
+            comp->thermal.max_temperature = 155.0;   // Typical resistor max temp
+            comp->thermal.thermal_mass = 0.1;        // Small thermal mass
+            comp->thermal.thermal_resistance = 100.0; // °C/W to ambient
+            break;
+        case COMP_NPN_BJT:
+        case COMP_PNP_BJT:
+            comp->thermal.max_temperature = 150.0;   // Junction temp limit
+            comp->thermal.thermal_mass = 0.05;
+            comp->thermal.thermal_resistance = 200.0;
+            break;
+        case COMP_NMOS:
+        case COMP_PMOS:
+            comp->thermal.max_temperature = 175.0;
+            comp->thermal.thermal_mass = 0.05;
+            comp->thermal.thermal_resistance = 150.0;
+            break;
+        case COMP_CAPACITOR:
+        case COMP_CAPACITOR_ELEC:
+            comp->thermal.max_temperature = 105.0;   // Electrolytic cap limit
+            comp->thermal.thermal_mass = 0.2;
+            comp->thermal.thermal_resistance = 80.0;
+            break;
+        case COMP_LED:
+            comp->thermal.max_temperature = 100.0;
+            comp->thermal.thermal_mass = 0.02;
+            comp->thermal.thermal_resistance = 250.0;
+            break;
+        case COMP_SPEAKER:
+            comp->thermal.max_temperature = 120.0;
+            comp->thermal.thermal_mass = 1.0;        // Larger thermal mass
+            comp->thermal.thermal_resistance = 50.0;
+            break;
+        default:
+            comp->thermal.max_temperature = 150.0;
+            comp->thermal.thermal_mass = 0.1;
+            comp->thermal.thermal_resistance = 100.0;
+            break;
+    }
 
     return comp;
 }
@@ -4021,6 +4192,40 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             break;
         }
 
+        case COMP_LED_MATRIX: {
+            // LED Matrix 8x8: rows R0-R7 (terminals 0-7) are anodes
+            // columns C0-C7 (terminals 8-15) are cathodes
+            // Each LED(r,c) is connected between row r and column c
+            double Is = 1e-20;
+            double Vt = 0.026;
+            double nn = 2.0;
+            double nVt = nn * Vt;
+
+            // Model 64 LEDs (8x8 matrix)
+            for (int row = 0; row < 8; row++) {
+                for (int col = 0; col < 8; col++) {
+                    int anode = row;       // Row terminal (anode)
+                    int cathode = 8 + col; // Column terminal (cathode)
+
+                    double Vd = 0.6;
+                    if (prev_solution) {
+                        double v1 = (n[anode] > 0) ? vector_get(prev_solution, n[anode]-1) : 0;
+                        double v2 = (n[cathode] > 0) ? vector_get(prev_solution, n[cathode]-1) : 0;
+                        Vd = CLAMP(v1 - v2, -1, 3);
+                    }
+                    double expTerm = exp(Vd / nVt);
+                    double Gd = (Is / nVt) * expTerm + 1e-12;
+                    double Id = Is * (expTerm - 1);
+                    double Ieq = Id - Gd * Vd;
+
+                    STAMP_CONDUCTANCE(n[anode], n[cathode], Gd);
+                    if (n[anode] > 0) vector_add(b, n[anode]-1, -Ieq);
+                    if (n[cathode] > 0) vector_add(b, n[cathode]-1, Ieq);
+                }
+            }
+            break;
+        }
+
         case COMP_DC_MOTOR: {
             // DC Motor: R_a + L_a in series with back-EMF voltage source
             // V = I*R_a + L_a*dI/dt + V_bemf where V_bemf = kv * omega
@@ -4076,18 +4281,145 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         }
 
         case COMP_SPEAKER: {
-            // Speaker: Simple RL load (uses inductor properties)
-            double R = comp->props.inductor.dcr;
-            double L = comp->props.inductor.inductance;
-            double Req = L / dt;
+            // Speaker: Resistive load with audio output
+            // Check if failed (thermal damage)
+            if (comp->thermal.failed || comp->props.speaker.failed) {
+                // Open circuit when failed
+                STAMP_CONDUCTANCE(n[0], n[1], 1e-15);
+                break;
+            }
 
-            // Resistance
+            double R = comp->props.speaker.impedance;
             double G = 1.0 / R;
             STAMP_CONDUCTANCE(n[0], n[1], G);
 
-            // Inductance (simplified)
-            double Geq = 1.0 / Req;
-            STAMP_CONDUCTANCE(n[0], n[1], Geq);
+            // Calculate voltage and current for audio output and power tracking
+            if (prev_solution) {
+                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0] - 1) : 0.0;
+                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1] - 1) : 0.0;
+                double V = v1 - v2;
+                double I = V / R;
+                double P = V * I;  // Power dissipation
+
+                comp->props.speaker.voltage = V;
+                comp->props.speaker.current = I;
+                comp->props.speaker.power_dissipated = fabs(P);
+
+                // Feed voltage to audio buffer if audio is enabled
+                if (comp->props.speaker.audio_enabled && g_audio.enabled) {
+                    // Scale voltage to audio range [-1, 1]
+                    // Assuming typical voltage range of ±10V maps to ±1
+                    float sample = (float)(V / 10.0);
+                    if (sample > 1.0f) sample = 1.0f;
+                    if (sample < -1.0f) sample = -1.0f;
+
+                    // Write to ring buffer
+                    g_audio.buffer[g_audio.write_pos] = sample;
+                    g_audio.write_pos = (g_audio.write_pos + 1) % AUDIO_BUFFER_SIZE;
+                }
+            }
+            break;
+        }
+
+        case COMP_MICROPHONE: {
+            // Microphone: Voltage source driven by audio input from system mic
+            // Acts as a voltage source with value from microphone buffer
+            double R_series = comp->props.microphone.ideal ? 1e-6 : comp->props.microphone.r_series;
+            double G = 1.0 / R_series;
+
+            // Get voltage from microphone input buffer
+            double V_mic = comp->props.microphone.offset;  // DC offset
+
+            if (comp->props.microphone.enabled && g_microphone.initialized && g_microphone.enabled) {
+                // Read sample from microphone buffer
+                float sample = g_microphone.current_voltage;
+
+                // Scale audio sample [-1, 1] to voltage range
+                double amplitude = comp->props.microphone.amplitude;
+                double gain = comp->props.microphone.gain;
+                V_mic = comp->props.microphone.offset + (sample * amplitude * gain);
+
+                // Update peak level for visualization
+                float abs_sample = sample < 0 ? -sample : sample;
+                comp->props.microphone.peak_level = abs_sample;
+            }
+
+            comp->props.microphone.voltage = V_mic;
+
+            // Stamp as voltage source with series resistance
+            // V = V_mic, with series R
+            // I = (V+ - V- - V_mic) / R
+            // Stamp conductance
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+
+            // Stamp current source for voltage
+            double I_eq = V_mic * G;
+            if (n[0] > 0) vector_add(b, n[0] - 1, I_eq);
+            if (n[1] > 0) vector_add(b, n[1] - 1, -I_eq);
+            break;
+        }
+
+        // === WIRELESS ===
+
+        case COMP_ANTENNA_TX: {
+            // TX Antenna: Measures voltage across terminals and broadcasts on channel
+            // Acts as a high-impedance voltmeter that stores voltage to wireless channel
+            double R_series = comp->props.antenna.ideal ? 1e-6 : comp->props.antenna.r_series;
+            double G = 1.0 / R_series;
+
+            // Stamp as high-impedance load
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+
+            // Read voltage from previous solution and broadcast to channel
+            if (prev_solution) {
+                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0] - 1) : 0.0;
+                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1] - 1) : 0.0;
+                double v_diff = (v1 - v2) * comp->props.antenna.gain;
+                comp->props.antenna.voltage = v_diff;
+
+                // Contribute to wireless channel (will be averaged if multiple TX)
+                int ch = comp->props.antenna.channel;
+                if (ch >= 0 && ch < WIRELESS_CHANNEL_COUNT) {
+                    g_wireless.voltage[ch] += v_diff;
+                    g_wireless.tx_count[ch]++;
+                }
+            }
+            break;
+        }
+
+        case COMP_ANTENNA_RX: {
+            // RX Antenna: Receives voltage from wireless channel and outputs it
+            // Acts as a voltage source with the received signal
+            double R_series = comp->props.antenna.ideal ? 1e-6 : comp->props.antenna.r_series;
+            double G = 1.0 / R_series;
+
+            // Get voltage from wireless channel
+            int ch = comp->props.antenna.channel;
+            double V_rx = 0.0;
+            if (ch >= 0 && ch < WIRELESS_CHANNEL_COUNT && g_wireless.tx_count[ch] > 0) {
+                // Average voltage from all TX on this channel
+                V_rx = (g_wireless.voltage[ch] / g_wireless.tx_count[ch]) * comp->props.antenna.gain;
+            }
+            comp->props.antenna.voltage = V_rx;
+
+            // Stamp as voltage source with series resistance
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+
+            // Stamp current source for received voltage
+            double I_eq = V_rx * G;
+            if (n[0] > 0) vector_add(b, n[0] - 1, I_eq);
+            if (n[1] > 0) vector_add(b, n[1] - 1, -I_eq);
+            break;
+        }
+
+        // === WIRING ===
+
+        case COMP_BUS:
+        case COMP_BUS_TAP: {
+            // Bus and Bus Tap: essentially short circuits connecting terminals
+            // Very low resistance to pass signals through
+            double G = 1e6;  // 1 micro-ohm resistance
+            STAMP_CONDUCTANCE(n[0], n[1], G);
             break;
         }
 

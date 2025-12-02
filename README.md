@@ -95,6 +95,10 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 - 7812 (12V fixed regulator)
 - LM317 (adjustable regulator)
 
+**Subcircuits**
+- Pin Marker (mark nodes as subcircuit pins with customizable names)
+- IC Block (user-defined subcircuit/integrated circuit)
+
 **Other**
 - Text Annotation (with font size, bold, italic, underline options)
 - Voltage Probe (connect to oscilloscope)
@@ -215,6 +219,16 @@ Simulate real-world environmental conditions:
 - **Conventional current** - Particles follow conventional current flow (positive to negative)
 - **Speed scaling** - Particle speed scales logarithmically with current magnitude
 - **Size indication** - Larger currents show larger particles
+
+### Subcircuit Creation (Ctrl+G)
+
+Create reusable subcircuits from your designs:
+
+1. **Place Pin Markers** - Add Pin markers from the palette to nodes that will become subcircuit pins
+2. **Set Pin Names** - Configure pin names (e.g., "VCC", "IN", "OUT", "GND") in the properties panel
+3. **Select Components** - Select all components including Pin markers
+4. **Open Dialog** - Press Ctrl+G to open the subcircuit creation dialog
+5. **Auto-Detection** - Pin markers are automatically detected and their names populated in the dialog
 
 ### Simulation Engine
 
@@ -366,6 +380,7 @@ meson compile -C build
 | Space | Start/pause simulation |
 | + / - | Adjust simulation speed |
 | Ctrl+K | Open spotlight search |
+| Ctrl+G | Open subcircuit creation dialog (with selection) |
 | F1 | Show keyboard shortcuts dialog |
 
 ## Technical Details

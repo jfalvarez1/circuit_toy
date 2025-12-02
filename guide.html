@@ -1188,6 +1188,35 @@
                     <p>Place measurement probes on circuit nodes. Each probe connects to an oscilloscope channel (up to 4 probes). Drag probes to reposition.</p>
                     <div class="shortcut">Keyboard: <kbd>P</kbd></div>
                 </div>
+                <div class="component-card">
+                    <h4>Pin Marker</h4>
+                    <p>Mark circuit nodes as subcircuit pins. Place on nodes that will become external connections when creating a subcircuit (IC block). Configure pin number and name in properties.</p>
+                    <div class="shortcut">Properties: Pin Number, Pin Name (e.g., "VCC", "IN", "OUT")</div>
+                </div>
+            </div>
+
+            <h3>Creating Subcircuits</h3>
+            <p>Turn your circuit designs into reusable subcircuit blocks:</p>
+            <div class="workflow-step">
+                <span class="step-number">1</span>
+                <div class="step-content">
+                    <strong>Place Pin Markers</strong><br>
+                    Add Pin markers from the palette to nodes that will become external pins of your subcircuit. Set meaningful names like "VCC", "GND", "IN", "OUT" in the properties panel.
+                </div>
+            </div>
+            <div class="workflow-step">
+                <span class="step-number">2</span>
+                <div class="step-content">
+                    <strong>Select All Components</strong><br>
+                    Use drag-select or <kbd>Ctrl+A</kbd> to select all components including the Pin markers.
+                </div>
+            </div>
+            <div class="workflow-step">
+                <span class="step-number">3</span>
+                <div class="step-content">
+                    <strong>Open Subcircuit Dialog</strong><br>
+                    Press <kbd>Ctrl+G</kbd> to open the subcircuit creation dialog. Pin markers are automatically detected and their names populated.
+                </div>
             </div>
 
             <h3>Mouse Controls</h3>
