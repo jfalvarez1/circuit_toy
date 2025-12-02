@@ -121,6 +121,7 @@ void circuit_set_ground(Circuit *circuit, int node_id);
 int circuit_add_wire(Circuit *circuit, int start_node_id, int end_node_id);
 void circuit_remove_wire(Circuit *circuit, int wire_id);
 Wire *circuit_find_wire_at(Circuit *circuit, float x, float y, float threshold);
+int circuit_split_wire_at(Circuit *circuit, Wire *wire, float x, float y);
 
 // Node cleanup
 void circuit_cleanup_orphaned_nodes(Circuit *circuit);

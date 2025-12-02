@@ -138,13 +138,33 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             }
                             float snapped_x = snap_to_grid(wx);
                             float snapped_y = snap_to_grid(wy);
-                            int end_node_id = circuit_find_or_create_node(circuit, snapped_x, snapped_y, 10);
-                            if (end_node_id != input->wire_start_node) {
-                                int wire_id = circuit_add_wire(circuit, input->wire_start_node, end_node_id);
-                                if (wire_id >= 0) {
-                                    circuit_push_undo(circuit, UNDO_ADD_WIRE, wire_id, NULL, input->wire_start_node, end_node_id);
+                            int end_node_id = -1;
+
+                            // First check if clicking on an existing wire - auto-split it
+                            Wire *target_wire = circuit_find_wire_at(circuit, wx, wy, 8.0f);
+                            if (target_wire) {
+                                // Split the wire at click point
+                                end_node_id = circuit_split_wire_at(circuit, target_wire, wx, wy);
+                                if (end_node_id >= 0) {
+                                    // Connect to the new split point
+                                    if (end_node_id != input->wire_start_node) {
+                                        int wire_id = circuit_add_wire(circuit, input->wire_start_node, end_node_id);
+                                        if (wire_id >= 0) {
+                                            circuit_push_undo(circuit, UNDO_ADD_WIRE, wire_id, NULL, input->wire_start_node, end_node_id);
+                                        }
+                                        ui_set_status(ui, "Wire connected to junction (Ctrl+Z to undo)");
+                                    }
                                 }
-                                ui_set_status(ui, "Wire connected (Ctrl+Z to undo)");
+                            } else {
+                                // No wire at click point - use existing node or create new one
+                                end_node_id = circuit_find_or_create_node(circuit, snapped_x, snapped_y, 10);
+                                if (end_node_id != input->wire_start_node) {
+                                    int wire_id = circuit_add_wire(circuit, input->wire_start_node, end_node_id);
+                                    if (wire_id >= 0) {
+                                        circuit_push_undo(circuit, UNDO_ADD_WIRE, wire_id, NULL, input->wire_start_node, end_node_id);
+                                    }
+                                    ui_set_status(ui, "Wire connected (Ctrl+Z to undo)");
+                                }
                             }
                             input->drawing_wire = false;
                             break;
@@ -232,6 +252,18 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                 // Check for wire click
                                 int wire_idx = find_wire_at(circuit, wx, wy, 8.0f);
                                 if (wire_idx >= 0) {
+                                    // Double-click: split wire at click point
+                                    if (event->button.clicks >= 2 && !input->sim_running) {
+                                        Wire *wire = &circuit->wires[wire_idx];
+                                        int new_node = circuit_split_wire_at(circuit, wire, wx, wy);
+                                        if (new_node >= 0) {
+                                            ui_set_status(ui, "Wire split - new junction created");
+                                            input->selected_wire_idx = -1;  // Clear selection
+                                        }
+                                        break;
+                                    }
+
+                                    // Single-click: select wire
                                     // Clear previous selections
                                     if (input->selected_component) {
                                         input->selected_component->selected = false;
@@ -250,7 +282,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
 
                                     input->selected_wire_idx = wire_idx;
                                     circuit->wires[wire_idx].selected = true;
-                                    ui_set_status(ui, "Wire selected - press Delete to remove");
+                                    ui_set_status(ui, "Wire selected - Delete to remove, double-click to split");
                                 } else {
                                     // Empty space - start box selection or deselect
                                     if (input->selected_component) {

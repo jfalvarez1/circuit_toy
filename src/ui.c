@@ -2854,15 +2854,17 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         ui_draw_text(renderer, "see waveforms", r->x + 75, r->y + r->h/2 + 4);
     }
 
-    // Display waveform measurements panel (right side of scope)
+    // Display waveform measurements panel (below channel readings, relative to scope_rect)
     if (analysis && ui->scope_num_channels > 0) {
-        int meas_x = r->x + r->w + 15;
-        int meas_y = r->y;
+        // Start measurements below the channel readings (info_y + 15 for spacing)
+        int meas_y = info_y + 18;
+        int meas_x = r->x;
+        int col_width = r->w / 2;  // Split into 2 columns if we have room
 
         // Measurements header
         SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
         ui_draw_text(renderer, "MEASUREMENTS", meas_x, meas_y);
-        meas_y += 18;
+        meas_y += 14;
 
         for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
             if (!ui->scope_channels[ch].enabled) continue;
@@ -2877,86 +2879,63 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 ui->scope_channels[ch].color.b, 0xff);
             snprintf(buf, sizeof(buf), "CH%d:", ch + 1);
             ui_draw_text(renderer, buf, meas_x, meas_y);
-            meas_y += 14;
 
-            // Measurements in gray
+            // Measurements in gray, laid out in two columns
             SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xff);
+            int col1_x = meas_x + 35;
+            int col2_x = meas_x + col_width;
+            int line_y = meas_y;
 
-            // Vpp
+            // Column 1: Vpp, Vrms, Vavg
             if (m->v_pp < 1.0) {
-                snprintf(buf, sizeof(buf), "Vpp: %.1fmV", m->v_pp * 1000);
+                snprintf(buf, sizeof(buf), "Vpp:%.0fmV", m->v_pp * 1000);
             } else {
-                snprintf(buf, sizeof(buf), "Vpp: %.2fV", m->v_pp);
+                snprintf(buf, sizeof(buf), "Vpp:%.2fV", m->v_pp);
             }
-            ui_draw_text(renderer, buf, meas_x + 8, meas_y);
-            meas_y += 12;
+            ui_draw_text(renderer, buf, col1_x, line_y);
+            line_y += 11;
 
-            // Vrms
             if (m->v_rms < 1.0) {
-                snprintf(buf, sizeof(buf), "Vrms:%.1fmV", m->v_rms * 1000);
+                snprintf(buf, sizeof(buf), "Vrms:%.0fmV", m->v_rms * 1000);
             } else {
                 snprintf(buf, sizeof(buf), "Vrms:%.2fV", m->v_rms);
             }
-            ui_draw_text(renderer, buf, meas_x + 8, meas_y);
-            meas_y += 12;
+            ui_draw_text(renderer, buf, col1_x, line_y);
+            line_y += 11;
 
-            // Vavg (DC offset)
             if (fabs(m->v_avg) < 1.0) {
-                snprintf(buf, sizeof(buf), "Vavg:%.1fmV", m->v_avg * 1000);
+                snprintf(buf, sizeof(buf), "Vavg:%.0fmV", m->v_avg * 1000);
             } else {
                 snprintf(buf, sizeof(buf), "Vavg:%.2fV", m->v_avg);
             }
-            ui_draw_text(renderer, buf, meas_x + 8, meas_y);
-            meas_y += 12;
+            ui_draw_text(renderer, buf, col1_x, line_y);
 
-            // Frequency
+            // Column 2: Freq, Period, Duty
+            line_y = meas_y;
             if (m->frequency > 0) {
                 if (m->frequency >= 1000) {
-                    snprintf(buf, sizeof(buf), "Freq:%.2fkHz", m->frequency / 1000);
+                    snprintf(buf, sizeof(buf), "f:%.1fkHz", m->frequency / 1000);
                 } else {
-                    snprintf(buf, sizeof(buf), "Freq:%.1fHz", m->frequency);
+                    snprintf(buf, sizeof(buf), "f:%.1fHz", m->frequency);
                 }
-                ui_draw_text(renderer, buf, meas_x + 8, meas_y);
-                meas_y += 12;
+                ui_draw_text(renderer, buf, col2_x, line_y);
+                line_y += 11;
 
-                // Period
                 if (m->period < 0.001) {
-                    snprintf(buf, sizeof(buf), "T: %.1fus", m->period * 1e6);
+                    snprintf(buf, sizeof(buf), "T:%.1fus", m->period * 1e6);
                 } else if (m->period < 1.0) {
-                    snprintf(buf, sizeof(buf), "T: %.2fms", m->period * 1000);
+                    snprintf(buf, sizeof(buf), "T:%.2fms", m->period * 1000);
                 } else {
-                    snprintf(buf, sizeof(buf), "T: %.2fs", m->period);
+                    snprintf(buf, sizeof(buf), "T:%.2fs", m->period);
                 }
-                ui_draw_text(renderer, buf, meas_x + 8, meas_y);
-                meas_y += 12;
+                ui_draw_text(renderer, buf, col2_x, line_y);
+                line_y += 11;
 
-                // Duty cycle
-                snprintf(buf, sizeof(buf), "Duty:%.1f%%", m->duty_cycle);
-                ui_draw_text(renderer, buf, meas_x + 8, meas_y);
-                meas_y += 12;
+                snprintf(buf, sizeof(buf), "D:%.0f%%", m->duty_cycle);
+                ui_draw_text(renderer, buf, col2_x, line_y);
             }
 
-            // Rise/fall time if measured
-            if (m->rise_time > 0) {
-                if (m->rise_time < 0.001) {
-                    snprintf(buf, sizeof(buf), "Rise:%.1fus", m->rise_time * 1e6);
-                } else {
-                    snprintf(buf, sizeof(buf), "Rise:%.2fms", m->rise_time * 1000);
-                }
-                ui_draw_text(renderer, buf, meas_x + 8, meas_y);
-                meas_y += 12;
-            }
-            if (m->fall_time > 0) {
-                if (m->fall_time < 0.001) {
-                    snprintf(buf, sizeof(buf), "Fall:%.1fus", m->fall_time * 1e6);
-                } else {
-                    snprintf(buf, sizeof(buf), "Fall:%.2fms", m->fall_time * 1000);
-                }
-                ui_draw_text(renderer, buf, meas_x + 8, meas_y);
-                meas_y += 12;
-            }
-
-            meas_y += 6;  // Space between channels
+            meas_y += 38;  // Space for each channel's measurements (3 rows + padding)
         }
     }
 }

@@ -272,6 +272,49 @@ Wire *circuit_find_wire_at(Circuit *circuit, float x, float y, float threshold) 
     return NULL;
 }
 
+// Split a wire at a given point, creating a new node and two new wires
+// Returns the new node ID, or -1 on failure
+int circuit_split_wire_at(Circuit *circuit, Wire *wire, float x, float y) {
+    if (!circuit || !wire) return -1;
+
+    Node *start = circuit_get_node(circuit, wire->start_node_id);
+    Node *end = circuit_get_node(circuit, wire->end_node_id);
+    if (!start || !end) return -1;
+
+    // Calculate the closest point on the wire to (x, y)
+    float dx = end->x - start->x;
+    float dy = end->y - start->y;
+    float len_sq = dx*dx + dy*dy;
+
+    if (len_sq == 0) return -1;
+
+    float t = ((x - start->x) * dx + (y - start->y) * dy) / len_sq;
+    t = CLAMP(t, 0.05f, 0.95f);  // Don't split too close to endpoints
+
+    float split_x = start->x + t * dx;
+    float split_y = start->y + t * dy;
+
+    // Store original wire info before removing
+    int orig_start_id = wire->start_node_id;
+    int orig_end_id = wire->end_node_id;
+    int wire_id = wire->id;
+
+    // Create new node at split point
+    int new_node_id = circuit_create_node(circuit, split_x, split_y);
+    if (new_node_id < 0) return -1;
+
+    // Remove original wire
+    circuit_remove_wire(circuit, wire_id);
+
+    // Create two new wires
+    circuit_add_wire(circuit, orig_start_id, new_node_id);
+    circuit_add_wire(circuit, new_node_id, orig_end_id);
+
+    circuit->modified = true;
+
+    return new_node_id;
+}
+
 // Check if a node is connected to any component or wire
 static bool is_node_connected(Circuit *circuit, int node_id) {
     // Check components
