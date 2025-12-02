@@ -496,7 +496,7 @@
 |  Divider |                                           |                            |
 |  RC Filt |                                           |                            |
 +-----------------------------------------------------------------------------------+
-| <span class="area">STATUS BAR</span>:  t=0.00ms  |  Components: 5  |  Nodes: 4  |  FPS: 60              |
+| <span class="area">STATUS BAR</span>:  t=0.00ms | VM:5.00V | AM:5.00mA | Lux | Temp | Nodes:4 | FPS:60 |
 +-----------------------------------------------------------------------------------+
 </pre>
             </div>
@@ -509,12 +509,17 @@
                 <li><strong>Properties Panel</strong> - Shows details of the selected component and allows editing values</li>
                 <li><strong>Measurements Panel</strong> - Displays real-time voltage and current readings</li>
                 <li><strong>Oscilloscope</strong> - Waveform display with controls for time base, voltage scale, and triggering</li>
-                <li><strong>Status Bar</strong> - Shows simulation time, component/node counts, and system status</li>
+                <li><strong>Status Bar</strong> - Shows simulation time, voltmeter/ammeter readings (VM/AM), environment controls (Light/Temp), component/node counts, and system status</li>
             </ul>
 
             <div class="tip">
                 <div class="tip-title">Resizable Panels</div>
                 You can resize the oscilloscope by dragging its top or left edge. The properties panel can also be resized by dragging its left edge.
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Animated Neon Border</div>
+                The application features a synthwave-themed animated border with dual glowing chasers that smoothly flow around the window edges in opposite directions, creating a retro aesthetic.
             </div>
         </section>
 
@@ -1562,6 +1567,13 @@
                 <li>Click PopOut again (or close window) to return to embedded view</li>
             </ul>
 
+            <h3>Scrollable Scope Controls</h3>
+            <p>When the application window is resized smaller, the oscilloscope control buttons may not all fit on screen. Use the mouse scroll wheel while hovering over the oscilloscope controls area to scroll through all available buttons.</p>
+            <div class="tip">
+                <div class="tip-title">Scroll Tip</div>
+                If you can't see all scope control buttons (like FFT, Screenshot, or Math), scroll down in the controls area using your mouse wheel.
+            </div>
+
             <h3>Trigger Modes</h3>
             <ul>
                 <li><strong>Auto</strong> - Free-running display, triggers automatically if signal is present</li>
@@ -1593,11 +1605,12 @@
             <p>The measurement panel provides real-time readings and waveform statistics.</p>
 
             <h3>Voltage & Current Display</h3>
-            <p>The upper measurement panel shows:</p>
+            <p>Real-time voltmeter (VM) and ammeter (AM) readings are displayed in the status bar at the bottom of the window:</p>
             <ul>
-                <li><strong>V</strong> - Instantaneous voltage at the first probe</li>
-                <li><strong>I</strong> - Current through the probed component (if applicable)</li>
+                <li><strong>VM</strong> - Voltmeter reading showing voltage at the selected probe point (displayed in green)</li>
+                <li><strong>AM</strong> - Ammeter reading showing current through the selected component in milliamps (displayed in orange)</li>
             </ul>
+            <p>These readings update continuously during simulation and provide quick access to key measurements without needing to check the oscilloscope.</p>
 
             <h3>Waveform Measurements</h3>
             <p>When the oscilloscope is running, automatic measurements are displayed:</p>
