@@ -747,9 +747,52 @@ void circuit_delete_selected(Circuit *circuit) {
     }
 }
 
-// Undo operations
+// Helper to push action to redo stack
+static void circuit_push_redo_internal(Circuit *circuit, UndoActionType type, int id, Component *backup, float old_x, float old_y, int wire_start, int wire_end) {
+    if (!circuit) return;
+
+    // Shift stack if full
+    if (circuit->redo_count >= MAX_UNDO) {
+        // Free the oldest backup if it exists
+        if (circuit->redo_stack[0].component_backup) {
+            component_free(circuit->redo_stack[0].component_backup);
+        }
+        // Shift everything down
+        for (int i = 0; i < MAX_UNDO - 1; i++) {
+            circuit->redo_stack[i] = circuit->redo_stack[i + 1];
+        }
+        circuit->redo_count = MAX_UNDO - 1;
+    }
+
+    UndoAction *action = &circuit->redo_stack[circuit->redo_count++];
+    action->type = type;
+    action->id = id;
+    action->component_backup = backup;
+    action->old_x = old_x;
+    action->old_y = old_y;
+    action->wire_start = wire_start;
+    action->wire_end = wire_end;
+}
+
+// Clear redo stack
+void circuit_clear_redo(Circuit *circuit) {
+    if (!circuit) return;
+
+    for (int i = 0; i < circuit->redo_count; i++) {
+        if (circuit->redo_stack[i].component_backup) {
+            component_free(circuit->redo_stack[i].component_backup);
+            circuit->redo_stack[i].component_backup = NULL;
+        }
+    }
+    circuit->redo_count = 0;
+}
+
+// Undo/Redo operations
 void circuit_push_undo(Circuit *circuit, UndoActionType type, int id, Component *backup, float old_x, float old_y) {
     if (!circuit) return;
+
+    // Clear redo stack when a new action is pushed
+    circuit_clear_redo(circuit);
 
     // Shift stack if full
     if (circuit->undo_count >= MAX_UNDO) {
@@ -778,12 +821,21 @@ bool circuit_undo(Circuit *circuit) {
     UndoAction *action = &circuit->undo_stack[--circuit->undo_count];
 
     switch (action->type) {
-        case UNDO_ADD_COMPONENT:
-            // Remove the component that was added
+        case UNDO_ADD_COMPONENT: {
+            // Remove the component that was added - first backup for redo
+            Component *backup = NULL;
+            for (int i = 0; i < circuit->num_components; i++) {
+                if (circuit->components[i]->id == action->id) {
+                    backup = component_clone(circuit->components[i]);
+                    break;
+                }
+            }
+            // Push to redo stack (redo will re-add it)
+            circuit_push_redo_internal(circuit, UNDO_REMOVE_COMPONENT, action->id, backup, 0, 0, 0, 0);
+            // Remove the component
             circuit_remove_component(circuit, action->id);
-            // Don't push this removal to undo stack
+            // Remove the undo entry that circuit_remove_component just pushed
             if (circuit->undo_count > 0) {
-                // Check if we just pushed an undo for this removal and remove it
                 UndoAction *last = &circuit->undo_stack[circuit->undo_count - 1];
                 if (last->type == UNDO_REMOVE_COMPONENT && last->id == action->id) {
                     if (last->component_backup) {
@@ -793,12 +845,15 @@ bool circuit_undo(Circuit *circuit) {
                 }
             }
             break;
+        }
 
         case UNDO_REMOVE_COMPONENT:
             // Re-add the component that was removed
             if (action->component_backup) {
                 action->component_backup->id = action->id;
                 circuit->components[circuit->num_components++] = action->component_backup;
+                // Push to redo stack (redo will remove it again)
+                circuit_push_redo_internal(circuit, UNDO_ADD_COMPONENT, action->id, NULL, 0, 0, 0, 0);
                 action->component_backup = NULL;  // Don't free it
             }
             break;
@@ -807,21 +862,160 @@ bool circuit_undo(Circuit *circuit) {
             // Move component back to old position
             for (int i = 0; i < circuit->num_components; i++) {
                 if (circuit->components[i]->id == action->id) {
+                    float cur_x = circuit->components[i]->x;
+                    float cur_y = circuit->components[i]->y;
                     circuit->components[i]->x = action->old_x;
                     circuit->components[i]->y = action->old_y;
                     circuit_update_component_nodes(circuit, circuit->components[i]);
+                    // Push to redo stack (redo will move back to current position)
+                    circuit_push_redo_internal(circuit, UNDO_MOVE_COMPONENT, action->id, NULL, cur_x, cur_y, 0, 0);
                     break;
                 }
             }
             break;
 
         case UNDO_ADD_WIRE:
+            // Push to redo stack before removing (redo will re-add it)
+            circuit_push_redo_internal(circuit, UNDO_REMOVE_WIRE, action->id, NULL, 0, 0,
+                                       (int)action->old_x, (int)action->old_y);
             circuit_remove_wire(circuit, action->id);
             break;
 
-        case UNDO_REMOVE_WIRE:
-            circuit_add_wire(circuit, action->wire_start, action->wire_end);
+        case UNDO_REMOVE_WIRE: {
+            int wire_id = circuit_add_wire(circuit, action->wire_start, action->wire_end);
+            // Push to redo stack (redo will remove it)
+            circuit_push_redo_internal(circuit, UNDO_ADD_WIRE, wire_id, NULL,
+                                       (float)action->wire_start, (float)action->wire_end, 0, 0);
             break;
+        }
+    }
+
+    // Clean up backup if not used
+    if (action->component_backup) {
+        component_free(action->component_backup);
+        action->component_backup = NULL;
+    }
+
+    circuit->modified = true;
+    return true;
+}
+
+bool circuit_redo(Circuit *circuit) {
+    if (!circuit || circuit->redo_count == 0) return false;
+
+    UndoAction *action = &circuit->redo_stack[--circuit->redo_count];
+
+    switch (action->type) {
+        case UNDO_ADD_COMPONENT: {
+            // Re-remove the component - first backup for undo
+            Component *backup = NULL;
+            for (int i = 0; i < circuit->num_components; i++) {
+                if (circuit->components[i]->id == action->id) {
+                    backup = component_clone(circuit->components[i]);
+                    break;
+                }
+            }
+            // Remove the component (don't use circuit_remove_component to avoid pushing to undo)
+            for (int i = 0; i < circuit->num_components; i++) {
+                if (circuit->components[i]->id == action->id) {
+                    component_free(circuit->components[i]);
+                    // Shift remaining components
+                    for (int j = i; j < circuit->num_components - 1; j++) {
+                        circuit->components[j] = circuit->components[j + 1];
+                    }
+                    circuit->num_components--;
+                    break;
+                }
+            }
+            // Push to undo stack directly (undo will re-add it)
+            if (circuit->undo_count < MAX_UNDO) {
+                UndoAction *undo = &circuit->undo_stack[circuit->undo_count++];
+                undo->type = UNDO_ADD_COMPONENT;
+                undo->id = action->id;
+                undo->component_backup = backup;
+                undo->old_x = 0;
+                undo->old_y = 0;
+            } else if (backup) {
+                component_free(backup);
+            }
+            break;
+        }
+
+        case UNDO_REMOVE_COMPONENT:
+            // Re-add the component
+            if (action->component_backup) {
+                action->component_backup->id = action->id;
+                circuit->components[circuit->num_components++] = action->component_backup;
+                // Push to undo stack (undo will remove it)
+                if (circuit->undo_count < MAX_UNDO) {
+                    UndoAction *undo = &circuit->undo_stack[circuit->undo_count++];
+                    undo->type = UNDO_REMOVE_COMPONENT;
+                    undo->id = action->id;
+                    undo->component_backup = NULL;
+                    undo->old_x = 0;
+                    undo->old_y = 0;
+                }
+                action->component_backup = NULL;  // Don't free it
+            }
+            break;
+
+        case UNDO_MOVE_COMPONENT:
+            // Move component to the redo position
+            for (int i = 0; i < circuit->num_components; i++) {
+                if (circuit->components[i]->id == action->id) {
+                    float cur_x = circuit->components[i]->x;
+                    float cur_y = circuit->components[i]->y;
+                    circuit->components[i]->x = action->old_x;
+                    circuit->components[i]->y = action->old_y;
+                    circuit_update_component_nodes(circuit, circuit->components[i]);
+                    // Push to undo stack (undo will move back)
+                    if (circuit->undo_count < MAX_UNDO) {
+                        UndoAction *undo = &circuit->undo_stack[circuit->undo_count++];
+                        undo->type = UNDO_MOVE_COMPONENT;
+                        undo->id = action->id;
+                        undo->component_backup = NULL;
+                        undo->old_x = cur_x;
+                        undo->old_y = cur_y;
+                    }
+                    break;
+                }
+            }
+            break;
+
+        case UNDO_ADD_WIRE: {
+            // Remove the wire
+            int wire_start = (int)action->old_x;
+            int wire_end = (int)action->old_y;
+            circuit_remove_wire(circuit, action->id);
+            // Push to undo stack (undo will re-add it)
+            if (circuit->undo_count < MAX_UNDO) {
+                UndoAction *undo = &circuit->undo_stack[circuit->undo_count++];
+                undo->type = UNDO_ADD_WIRE;
+                undo->id = action->id;
+                undo->component_backup = NULL;
+                undo->old_x = (float)wire_start;
+                undo->old_y = (float)wire_end;
+                undo->wire_start = wire_start;
+                undo->wire_end = wire_end;
+            }
+            break;
+        }
+
+        case UNDO_REMOVE_WIRE: {
+            int wire_id = circuit_add_wire(circuit, action->wire_start, action->wire_end);
+            // Push to undo stack (undo will remove it)
+            if (circuit->undo_count < MAX_UNDO) {
+                UndoAction *undo = &circuit->undo_stack[circuit->undo_count++];
+                undo->type = UNDO_REMOVE_WIRE;
+                undo->id = wire_id;
+                undo->component_backup = NULL;
+                undo->old_x = (float)action->wire_start;
+                undo->old_y = (float)action->wire_end;
+                undo->wire_start = action->wire_start;
+                undo->wire_end = action->wire_end;
+            }
+            break;
+        }
     }
 
     // Clean up backup if not used

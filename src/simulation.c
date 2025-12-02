@@ -6,6 +6,7 @@
 #include <string.h>
 #include <math.h>
 #include "simulation.h"
+#include "logic.h"
 
 // GMIN - minimum conductance added from each node to ground
 // This stabilizes floating nodes and prevents singular matrices
@@ -22,6 +23,16 @@ Simulation *simulation_create(Circuit *circuit) {
     sim->time_step = DEFAULT_TIME_STEP;
     sim->speed = 1.0;
 
+    // Initialize adaptive time-stepping (disabled by default - needs more tuning)
+    sim->adaptive_enabled = false;
+    sim->dt_target = DEFAULT_TIME_STEP;
+    sim->dt_actual = DEFAULT_TIME_STEP;
+    sim->error_estimate = 0.0;
+    sim->step_rejections = 0;
+    sim->total_step_rejections = 0;
+    sim->adaptive_factor = 1.0;
+    sim->saved_solution = NULL;
+
     return sim;
 }
 
@@ -33,6 +44,9 @@ void simulation_free(Simulation *sim) {
     }
     if (sim->prev_solution) {
         vector_free(sim->prev_solution);
+    }
+    if (sim->saved_solution) {
+        vector_free(sim->saved_solution);
     }
 
     free(sim);
@@ -70,19 +84,68 @@ void simulation_reset(Simulation *sim) {
         vector_free(sim->prev_solution);
         sim->prev_solution = NULL;
     }
+    if (sim->saved_solution) {
+        vector_free(sim->saved_solution);
+        sim->saved_solution = NULL;
+    }
 
     sim->history_count = 0;
     sim->history_start = 0;
     sim->has_error = false;
     sim->error_msg[0] = '\0';
 
-    // Reset node voltages
+    // Reset adaptive time-stepping state
+    sim->dt_actual = sim->time_step;
+    sim->dt_target = sim->time_step;
+    sim->error_estimate = 0.0;
+    sim->step_rejections = 0;
+    sim->total_step_rejections = 0;
+    sim->adaptive_factor = 1.0;
+
+    // Reset node voltages and component state
     if (sim->circuit) {
         for (int i = 0; i < sim->circuit->num_nodes; i++) {
             sim->circuit->nodes[i].voltage = 0;
         }
         for (int i = 0; i < sim->circuit->num_probes; i++) {
             sim->circuit->probes[i].voltage = 0;
+        }
+
+        // Reset component state variables (fuses, capacitors, etc.)
+        for (int i = 0; i < sim->circuit->num_components; i++) {
+            Component *comp = sim->circuit->components[i];
+            if (!comp) continue;
+
+            switch (comp->type) {
+                case COMP_FUSE:
+                    // Reset fuse to intact state
+                    comp->props.fuse.blown = false;
+                    comp->props.fuse.i2t_accumulated = 0.0;
+                    comp->props.fuse.current = 0.0;
+                    comp->props.fuse.blow_time = -1.0;
+                    break;
+
+                case COMP_CAPACITOR:
+                case COMP_CAPACITOR_ELEC:
+                    // Reset capacitor voltage
+                    comp->props.capacitor.voltage = 0.0;
+                    break;
+
+                case COMP_INDUCTOR:
+                    // Reset inductor current
+                    comp->props.inductor.current = 0.0;
+                    break;
+
+                case COMP_BATTERY:
+                    // Reset battery charge to full
+                    comp->props.battery.charge_state = 1.0;  // Full charge
+                    comp->props.battery.charge_coulombs = comp->props.battery.capacity_mah * 3.6;
+                    comp->props.battery.discharged = false;
+                    break;
+
+                default:
+                    break;
+            }
         }
     }
 }
@@ -231,22 +294,16 @@ bool simulation_dc_analysis(Simulation *sim) {
     return true;
 }
 
-bool simulation_step(Simulation *sim) {
-    if (!sim || !sim->circuit) return false;
-
+// Helper function to perform a single Newton-Raphson solve iteration
+// Returns the new solution vector, or NULL on failure
+static Vector *simulation_solve_step(Simulation *sim, double dt) {
     Circuit *circuit = sim->circuit;
-
-    // Ensure we have a solution
-    if (!sim->solution) {
-        if (!simulation_dc_analysis(sim)) {
-            return false;
-        }
-    }
-
     int num_nodes = circuit->num_matrix_nodes;
     int matrix_size = sim->solution_size;
 
-    // Iterative solve
+    Vector *current_solution = vector_clone(sim->solution);
+    if (!current_solution) return NULL;
+
     for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
         Matrix *A = matrix_create(matrix_size, matrix_size);
         Vector *b = vector_create(matrix_size);
@@ -254,19 +311,18 @@ bool simulation_step(Simulation *sim) {
         if (!A || !b) {
             matrix_free(A);
             vector_free(b);
-            simulation_set_error(sim, "Memory allocation failed");
-            return false;
+            vector_free(current_solution);
+            return NULL;
         }
 
         // Stamp components
         for (int i = 0; i < circuit->num_components; i++) {
             component_stamp(circuit->components[i], A, b,
                            circuit->node_map, num_nodes,
-                           sim->time, sim->solution, sim->time_step);
+                           sim->time, current_solution, dt);
         }
 
         // Add GMIN (minimum conductance) from each node to ground
-        // This stabilizes floating nodes and prevents singular matrices
         for (int i = 0; i < num_nodes; i++) {
             matrix_add(A, i, i, GMIN);
         }
@@ -276,34 +332,188 @@ bool simulation_step(Simulation *sim) {
         vector_free(b);
 
         if (!new_solution) {
-            simulation_set_error(sim, "Matrix solver failed");
-            return false;
+            vector_free(current_solution);
+            return NULL;
         }
 
         // Check convergence
         double max_diff = 0;
         for (int i = 0; i < matrix_size; i++) {
-            double diff = fabs(vector_get(new_solution, i) - vector_get(sim->solution, i));
+            double diff = fabs(vector_get(new_solution, i) - vector_get(current_solution, i));
             if (diff > max_diff) max_diff = diff;
         }
 
-        vector_free(sim->solution);
-        sim->solution = new_solution;
+        vector_free(current_solution);
+        current_solution = new_solution;
 
         if (max_diff < CONVERGENCE_TOL) {
             break;
         }
     }
 
+    return current_solution;
+}
+
+// Estimate the local truncation error based on change in solution
+// Returns the maximum relative change across all node voltages
+static double simulation_estimate_error(Simulation *sim, Vector *new_solution) {
+    if (!sim->prev_solution || !new_solution) return 0.0;
+
+    int matrix_size = sim->solution_size;
+    double max_rel_change = 0.0;
+
+    for (int i = 0; i < matrix_size; i++) {
+        double old_val = vector_get(sim->prev_solution, i);
+        double new_val = vector_get(new_solution, i);
+        double change = fabs(new_val - old_val);
+
+        // Use relative error with a minimum reference to avoid division by near-zero
+        double ref = fmax(fabs(old_val), fabs(new_val));
+        if (ref < 1e-6) ref = 1e-6;  // Minimum reference voltage of 1µV
+
+        double rel_change = change / ref;
+        if (rel_change > max_rel_change) {
+            max_rel_change = rel_change;
+        }
+    }
+
+    return max_rel_change;
+}
+
+bool simulation_step(Simulation *sim) {
+    if (!sim || !sim->circuit) return false;
+
+    Circuit *circuit = sim->circuit;
+
+    // Ensure we have a solution (run DC analysis if needed)
+    if (!sim->solution) {
+        if (!simulation_dc_analysis(sim)) {
+            return false;
+        }
+        // Initialize adaptive state after DC analysis
+        sim->dt_target = sim->time_step;
+        sim->dt_actual = sim->time_step;
+    }
+
+    // Reset per-frame rejection counter
+    sim->step_rejections = 0;
+
+    // Current time step to try
+    double dt = sim->adaptive_enabled ? sim->dt_actual : sim->time_step;
+    double dt_new = dt;
+
+    // Maximum retries to prevent infinite loops
+    int max_retries = 10;
+    int retries = 0;
+
+    while (retries < max_retries) {
+        // Save the current solution in case we need to reject this step
+        if (sim->saved_solution) {
+            vector_free(sim->saved_solution);
+        }
+        sim->saved_solution = vector_clone(sim->solution);
+
+        // Attempt a solve with current dt
+        Vector *trial_solution = simulation_solve_step(sim, dt);
+
+        if (!trial_solution) {
+            // Solver failed - halve dt and retry
+            if (sim->adaptive_enabled) {
+                dt *= ADAPTIVE_MIN_FACTOR;
+                dt = fmax(dt, MIN_TIME_STEP);
+                retries++;
+                sim->step_rejections++;
+                sim->total_step_rejections++;
+                continue;
+            } else {
+                simulation_set_error(sim, "Matrix solver failed");
+                return false;
+            }
+        }
+
+        // Estimate error from solution change
+        double error = simulation_estimate_error(sim, trial_solution);
+        sim->error_estimate = error;
+
+        if (sim->adaptive_enabled) {
+            if (error > ADAPTIVE_ERROR_TOL) {
+                // Error too large - reject step, halve dt, and retry
+                vector_free(trial_solution);
+
+                // Restore the saved solution
+                vector_free(sim->solution);
+                sim->solution = vector_clone(sim->saved_solution);
+
+                // Reduce time step
+                double factor = ADAPTIVE_SAFETY_FACTOR * sqrt(ADAPTIVE_ERROR_TOL / error);
+                factor = fmax(factor, ADAPTIVE_MIN_FACTOR);
+                dt *= factor;
+                dt = fmax(dt, MIN_TIME_STEP);
+
+                retries++;
+                sim->step_rejections++;
+                sim->total_step_rejections++;
+                continue;
+            }
+
+            // Step accepted - compute new dt for next step
+            if (error < ADAPTIVE_STEADY_THRESHOLD) {
+                // Circuit is very steady - increase dt gradually
+                dt_new = dt * ADAPTIVE_MAX_FACTOR;
+            } else if (error < ADAPTIVE_ERROR_TOL * 0.5) {
+                // Error is comfortably below tolerance - increase dt
+                double factor = ADAPTIVE_SAFETY_FACTOR * sqrt(ADAPTIVE_ERROR_TOL / error);
+                factor = fmin(factor, ADAPTIVE_MAX_FACTOR);
+                dt_new = dt * factor;
+            } else {
+                // Error is close to tolerance - keep dt similar
+                dt_new = dt;
+            }
+
+            // Clamp to valid range
+            dt_new = fmax(dt_new, MIN_TIME_STEP);
+            dt_new = fmin(dt_new, MAX_TIME_STEP);
+            // Don't exceed the target/nominal time step by too much
+            dt_new = fmin(dt_new, sim->dt_target * ADAPTIVE_MAX_FACTOR * 2.0);
+        }
+
+        // Accept the step
+        vector_free(sim->solution);
+        sim->solution = trial_solution;
+        break;
+    }
+
+    if (retries >= max_retries) {
+        simulation_set_error(sim, "Adaptive stepping: too many retries");
+        return false;
+    }
+
     // Update for next step
     if (sim->prev_solution) vector_free(sim->prev_solution);
     sim->prev_solution = vector_clone(sim->solution);
 
-    sim->time += sim->time_step;
+    // Update adaptive state
+    sim->dt_actual = dt;
+    if (sim->adaptive_enabled) {
+        sim->dt_actual = dt_new;  // Use new dt for next step
+        sim->adaptive_factor = dt / sim->dt_target;
+    } else {
+        sim->adaptive_factor = 1.0;
+    }
+
+    sim->time += dt;
 
     // Update circuit voltages and wire currents
     circuit_update_voltages(circuit, sim->solution);
     circuit_update_wire_currents(circuit);
+
+    // Mixed-signal logic solver phase
+    // 1. ADC: Sample analog node voltages and convert to logic states
+    logic_sample_inputs(sim, circuit);
+    // 2. Propagate logic through digital gates
+    logic_propagate(circuit, sim->time, dt);
+    // 3. DAC: Drive logic outputs to analog nodes
+    logic_drive_outputs(sim, circuit);
 
     // Record history
     int hist_idx = (sim->history_start + sim->history_count) % MAX_HISTORY;
@@ -331,7 +541,38 @@ void simulation_set_speed(Simulation *sim, double speed) {
 void simulation_set_time_step(Simulation *sim, double dt) {
     if (sim) {
         sim->time_step = CLAMP(dt, MIN_TIME_STEP, MAX_TIME_STEP);
+        // Also update target for adaptive stepping
+        sim->dt_target = sim->time_step;
+        sim->dt_actual = sim->time_step;
     }
+}
+
+// Adaptive time-stepping control
+void simulation_enable_adaptive(Simulation *sim, bool enable) {
+    if (sim) {
+        sim->adaptive_enabled = enable;
+        if (!enable) {
+            // Reset to fixed stepping
+            sim->dt_actual = sim->time_step;
+            sim->adaptive_factor = 1.0;
+        }
+    }
+}
+
+bool simulation_is_adaptive_enabled(Simulation *sim) {
+    return sim ? sim->adaptive_enabled : false;
+}
+
+double simulation_get_adaptive_factor(Simulation *sim) {
+    return sim ? sim->adaptive_factor : 1.0;
+}
+
+int simulation_get_step_rejections(Simulation *sim) {
+    return sim ? sim->step_rejections : 0;
+}
+
+double simulation_get_error_estimate(Simulation *sim) {
+    return sim ? sim->error_estimate : 0.0;
 }
 
 double simulation_auto_time_step(Simulation *sim) {

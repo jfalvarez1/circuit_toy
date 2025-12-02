@@ -97,27 +97,61 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 
 ### Pre-Built Circuit Templates
 
-Load complete circuit configurations instantly:
+Load complete circuit configurations instantly from the Circuits menu:
+
+**Basic Circuits**
 - **Voltage Divider** - Basic resistive divider
+- **LED with Resistor** - Simple LED driver circuit
+
+**Filters**
 - **RC Low-Pass Filter** - First-order RC filter
 - **RC High-Pass Filter** - First-order RC high-pass
+- **RL Low-Pass Filter** - First-order RL filter
+- **RL High-Pass Filter** - First-order RL high-pass
+- **Sallen-Key Low-Pass** - Second-order active filter
+- **Active Band-Pass Filter** - Op-amp based band-pass
+- **Twin-T Notch Filter** - Notch/band-reject filter
+
+**Rectifiers & Power**
 - **Half-Wave Rectifier** - Simple diode rectifier
-- **Full-Wave Rectifier** - Bridge rectifier
-- **Common Emitter Amplifier** - BJT amplifier stage
-- **Inverting Amplifier** - Op-amp inverting configuration
-- **Non-Inverting Amplifier** - Op-amp non-inverting
-- **Differential Amplifier** - Op-amp differential input
-- **LED Driver** - Transistor-based LED driver
-- **Voltage Regulator** - Zener-based regulation
-- **Current Mirror** - BJT current mirror
-- **Astable Multivibrator** - 555 timer oscillator
+- **Full-Wave Bridge** - Bridge rectifier
+- **Center-Tap Rectifier** - Transformer-based rectifier
+- **AC-DC Power Supply** - Complete transformer-based supply
+- **120V/60Hz to 12V DC** - American-style power supply
+
+**Transistor Amplifiers**
+- **Common Emitter** - BJT voltage amplifier
+- **Common Source** - MOSFET amplifier
+- **Common Drain** - Source follower (buffer)
+- **Multistage Amplifier** - Cascaded gain stages
+- **Differential Pair** - Matched transistor pair
 - **Push-Pull Output** - Complementary output stage
-- **Schmitt Trigger** - Hysteresis comparator
+- **CMOS Inverter** - Digital inverter
+
+**Current Circuits**
+- **Current Mirror** - BJT current mirror
+- **Constant Current Source** - BJT-based current source
+
+**Op-Amp Circuits**
+- **Voltage Follower** - Unity-gain buffer
+- **Inverting Amplifier** - Negative gain amplifier
+- **Non-Inverting Amplifier** - Positive gain amplifier
+- **Difference Amplifier** - Subtractor circuit
+- **Summing Amplifier** - Voltage adder
+- **Integrator** - Op-amp integrator
+- **Differentiator** - Op-amp differentiator
+- **Transimpedance Amplifier** - Current to voltage converter
+- **Instrumentation Amplifier** - Three op-amp precision amplifier
+- **Comparator** - Voltage comparator
+- **Window Comparator** - Dual-threshold comparator
+- **Schmitt Trigger** - Comparator with hysteresis
+- **Precision Rectifier** - Full-wave precision rectifier
+
+**Oscillators**
 - **Wien Bridge Oscillator** - Sine wave generator
-- **Colpitts Oscillator** - LC oscillator
-- **Phase Shift Oscillator** - RC oscillator
-- **Darlington Pair** - High-gain transistor pair
-- **Cascode Amplifier** - High-frequency amplifier
+
+**Voltage References**
+- **Zener Reference** - Zener-based voltage reference
 
 ### Advanced Oscilloscope
 
@@ -136,6 +170,11 @@ Full-featured virtual oscilloscope with:
 - **Measurement Cursors** - Time and voltage cursors with delta display
 - **Waveform Measurements** - Vpp, Vrms, Vavg, frequency, period, duty cycle
 - **FFT Analysis** - Frequency spectrum view with THD and SNR
+- **Math Channels** - Combine probe signals with operations:
+  - Add (A + B), Subtract (A - B), Multiply (A × B), Divide (A / B)
+  - Derivative (dA/dt), Integral (∫A dt)
+  - Absolute value, Invert, Log, Square root
+- **Persistence Mode** - Phosphor-like trace decay for visualizing signal variations
 - **Autoset** - Automatic scale adjustment
 - **Screenshot** - Save oscilloscope display as BMP
 - **Pop-out Window** - Detach oscilloscope to separate resizable window
@@ -148,6 +187,23 @@ Frequency response analysis tool:
 - Phase plot (degrees)
 - Cursor for precise measurements
 - Automatic frequency sweep
+
+### Monte Carlo Analysis
+
+Statistical tolerance analysis for worst-case design:
+- Run up to 1000 iterations with randomized component values
+- Gaussian distribution based on component tolerances
+- Statistical results: mean, standard deviation, min/max
+- 1% and 99% percentile calculations
+- Visualize output variation due to component tolerances
+- Trigger from "MC" button in oscilloscope toolbar
+
+### Environment Controls
+
+Simulate real-world environmental conditions:
+- **Light Level** - Adjust ambient light (0-100%) for photoresistors and photodiodes
+- **Temperature** - Adjust ambient temperature (-40°C to +125°C) for temperature-sensitive components
+- Sliders in status bar for quick adjustment
 
 ### Current Flow Visualization
 

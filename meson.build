@@ -21,6 +21,7 @@ src_files = files(
   'src/circuit.c',
   'src/circuits.c',
   'src/simulation.c',
+  'src/logic.c',
   'src/render.c',
   'src/ui.c',
   'src/input.c',

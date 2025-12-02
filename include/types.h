@@ -69,6 +69,7 @@ typedef enum {
     COMP_VADC_SOURCE,       // Variable amplitude DC source
     COMP_AM_SOURCE,         // Amplitude modulated source
     COMP_FM_SOURCE,         // Frequency modulated source
+    COMP_BATTERY,           // Battery with discharge model
 
     // === WAVEFORM GENERATORS ===
     COMP_SQUARE_WAVE,
@@ -77,6 +78,8 @@ typedef enum {
     COMP_NOISE_SOURCE,
     COMP_PULSE_SOURCE,      // Pulse generator with configurable width
     COMP_PWM_SOURCE,        // PWM signal generator
+    COMP_PWL_SOURCE,        // Piecewise linear voltage source
+    COMP_EXPR_SOURCE,       // Expression-based voltage source V(t)
 
     // === DIODES ===
     COMP_DIODE,
@@ -250,6 +253,92 @@ typedef enum {
     SIM_PAUSED
 } SimState;
 
+// ============================================================================
+// Mixed-Signal / Digital Logic Types
+// ============================================================================
+
+// Logic state (3-state + unknown for mixed-signal simulation)
+typedef enum {
+    LOGIC_LOW = 0,      // Below low threshold (typically 0V)
+    LOGIC_HIGH = 1,     // Above high threshold (typically VCC)
+    LOGIC_Z = 2,        // High impedance (floating/tri-state)
+    LOGIC_X = 3         // Unknown/conflict (multiple drivers or undefined)
+} LogicState;
+
+// Logic family (determines voltage levels and thresholds)
+typedef enum {
+    LOGIC_FAMILY_TTL = 0,    // TTL: VIL=0.8V, VIH=2.0V, VOL=0.4V, VOH=2.4V
+    LOGIC_FAMILY_CMOS_5V,    // 5V CMOS: VIL=1.5V, VIH=3.5V, VOL=0V, VOH=5V
+    LOGIC_FAMILY_CMOS_3V3,   // 3.3V CMOS: VIL=0.8V, VIH=2.0V, VOL=0V, VOH=3.3V
+    LOGIC_FAMILY_LVCMOS,     // Low-voltage CMOS (1.8V)
+    LOGIC_FAMILY_CUSTOM      // User-defined thresholds
+} LogicFamily;
+
+// Edge type for sequential logic
+typedef enum {
+    EDGE_NONE = 0,
+    EDGE_RISING,
+    EDGE_FALLING
+} EdgeType;
+
+// Logic timing parameters
+typedef struct {
+    double prop_delay_lh;    // Propagation delay low-to-high (seconds)
+    double prop_delay_hl;    // Propagation delay high-to-low (seconds)
+    double rise_time;        // Output rise time (seconds)
+    double fall_time;        // Output fall time (seconds)
+} LogicTiming;
+
+// Logic level configuration (ADC/DAC bridge thresholds)
+typedef struct {
+    double v_il;             // Input low threshold (max voltage for LOW)
+    double v_ih;             // Input high threshold (min voltage for HIGH)
+    double v_ol;             // Output low voltage
+    double v_oh;             // Output high voltage
+    double v_hyst;           // Schmitt trigger hysteresis (0 = no hysteresis)
+    double r_out;            // Output source impedance
+} LogicLevels;
+
+// Maximum number of logic inputs/outputs per component
+#define MAX_LOGIC_INPUTS 8
+#define MAX_LOGIC_OUTPUTS 8
+
+// ============================================================================
+// Logic Gate State Structure (for mixed-signal simulation)
+// ============================================================================
+
+// Per-component logic state (stored in each logic component)
+typedef struct {
+    // Current input states (sampled from analog nodes)
+    LogicState inputs[MAX_LOGIC_INPUTS];
+    LogicState prev_inputs[MAX_LOGIC_INPUTS];  // For edge detection
+
+    // Current output states (driven to analog nodes)
+    LogicState outputs[MAX_LOGIC_OUTPUTS];
+    LogicState prev_outputs[MAX_LOGIC_OUTPUTS];
+
+    // Sequential logic internal state
+    LogicState q;           // Flip-flop Q output
+    LogicState q_bar;       // Flip-flop Q-bar output
+    LogicState sr_set;      // SR latch set state
+    LogicState sr_reset;    // SR latch reset state
+
+    // Schmitt trigger state (for hysteresis)
+    bool schmitt_state;     // Current output level (used for hysteresis)
+
+    // Timing state
+    double last_change_time;    // Time of last output change
+    bool output_pending;        // Output change is pending (propagation delay)
+
+    // Logic level configuration
+    LogicLevels levels;
+    LogicFamily family;
+
+    // Flags
+    bool is_logic_component;    // True if this component uses logic abstraction
+    bool outputs_dirty;         // Outputs need to be re-propagated
+} LogicGateState;
+
 // 2D Point
 typedef struct {
     float x;
@@ -295,5 +384,18 @@ typedef struct {
 static inline int snap_to_grid(float val) {
     return (int)round(val / GRID_SIZE) * GRID_SIZE;
 }
+
+// ============================================================================
+// Global Environment Settings
+// ============================================================================
+// These affect LDR (photoresistor) and thermistor components globally
+
+typedef struct {
+    double light_level;     // Global light level (0.0=dark to 1.0=bright), default: 0.5
+    double temperature;     // Global ambient temperature (°C), default: 25.0
+} EnvironmentState;
+
+// Global environment instance (defined in component.c)
+extern EnvironmentState g_environment;
 
 #endif // TYPES_H

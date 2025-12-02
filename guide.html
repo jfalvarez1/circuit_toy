@@ -1381,6 +1381,24 @@
                 </div>
             </div>
 
+            <!-- Active Filters -->
+            <h3>Active Filters</h3>
+            <p>Active filters use op-amps combined with resistors and capacitors to achieve sharper roll-offs and gain than passive filters. They don't require inductors and can provide gain.</p>
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>Sallen-Key Low-Pass</h4>
+                    <p>Second-order active low-pass filter with 40dB/decade roll-off. Uses two RC sections with positive feedback. Unity gain version is simplest and most stable.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Active Band-Pass</h4>
+                    <p>Op-amp based band-pass filter that passes frequencies between two cutoffs. Q factor determines bandwidth. Higher Q = narrower pass band.</p>
+                </div>
+                <div class="component-card">
+                    <h4>Twin-T Notch Filter</h4>
+                    <p>Rejects a specific frequency while passing all others. The twin-T network creates a deep notch. Used for removing power line hum (50/60Hz) or other interference.</p>
+                </div>
+            </div>
+
             <!-- Op-Amp Circuits -->
             <h3>Op-Amp Circuits</h3>
             <p>Op-amps (operational amplifiers) are high-gain differential amplifiers. With negative feedback, they form the basis of analog signal processing. Key concept: the op-amp tries to make both inputs equal (virtual short).</p>
@@ -1684,19 +1702,30 @@
             <h3>Monte Carlo Analysis</h3>
             <p>Simulate manufacturing tolerances by running multiple simulations with randomized component values:</p>
             <ol>
-                <li>Click the <strong>Monte Carlo</strong> button</li>
-                <li>Set number of simulation runs (e.g., 100)</li>
-                <li>Component values will vary according to their tolerance settings</li>
-                <li>Results show distribution of output values</li>
+                <li>Click the <strong>MC</strong> button in the oscilloscope toolbar to open the Monte Carlo panel</li>
+                <li>Set number of simulation runs (1 to 1000 iterations)</li>
+                <li>Component values will vary according to a Gaussian distribution based on their tolerance settings</li>
+                <li>Results show distribution of output values across all runs</li>
             </ol>
-            <p><em>Outputs:</em> Mean, standard deviation, min/max, and percentile statistics.</p>
+            <p><em>Outputs:</em> Mean, standard deviation, min/max, and 1st/99th percentile statistics for worst-case design.</p>
 
-            <h3>Temperature Analysis</h3>
-            <p>Components include temperature coefficients that affect their behavior:</p>
+            <h3>Environment Controls</h3>
+            <p>The status bar includes sliders for adjusting environmental conditions that affect component behavior:</p>
+
+            <h4>Light Level (Lux)</h4>
+            <p>Adjust ambient light from 0% to 100% to affect light-sensitive components:</p>
             <ul>
-                <li>Resistors: Typically +50 to +100 ppm/°C</li>
-                <li>Capacitors: Varies by type (-750 to +150 ppm/°C)</li>
-                <li>Semiconductors: Strong temperature dependence</li>
+                <li><strong>Photoresistors:</strong> Resistance decreases as light increases</li>
+                <li><strong>Photodiodes:</strong> Current increases with light intensity</li>
+            </ul>
+
+            <h4>Temperature</h4>
+            <p>Adjust ambient temperature from -40°C to +125°C using the Temperature slider. Components include temperature coefficients:</p>
+            <ul>
+                <li><strong>Resistors:</strong> Typically +50 to +100 ppm/°C (metal film)</li>
+                <li><strong>Capacitors:</strong> Varies by type (-750 to +150 ppm/°C)</li>
+                <li><strong>Semiconductors:</strong> Strong temperature dependence (diode Vf drops ~2mV/°C)</li>
+                <li><strong>Thermistors:</strong> Resistance follows beta model based on temperature</li>
             </ul>
 
             <div class="note">

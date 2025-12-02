@@ -9,7 +9,7 @@
 #include "render.h"
 
 // Forward declarations for new component symbols
-void render_fuse(RenderContext *ctx, float x, float y, int rotation);
+void render_fuse(RenderContext *ctx, float x, float y, int rotation, bool blown, double heat_level);
 void render_crystal(RenderContext *ctx, float x, float y, int rotation);
 void render_spark_gap(RenderContext *ctx, float x, float y, int rotation);
 void render_potentiometer(RenderContext *ctx, float x, float y, int rotation);
@@ -599,9 +599,17 @@ void render_component(RenderContext *ctx, Component *comp) {
             break;
         }
         // === NEW COMPONENT SYMBOLS ===
-        case COMP_FUSE:
-            render_fuse(ctx, comp->x, comp->y, comp->rotation);
+        case COMP_FUSE: {
+            // Calculate heat level based on current relative to rating
+            double heat_level = 0.0;
+            if (!comp->props.fuse.blown && comp->props.fuse.rating > 0) {
+                heat_level = comp->props.fuse.current / comp->props.fuse.rating;
+                if (heat_level > 1.0) heat_level = 1.0;
+            }
+            render_fuse(ctx, comp->x, comp->y, comp->rotation,
+                       comp->props.fuse.blown, heat_level);
             break;
+        }
         case COMP_CRYSTAL:
             render_crystal(ctx, comp->x, comp->y, comp->rotation);
             break;
@@ -1993,23 +2001,71 @@ void render_selection_box(RenderContext *ctx, float x1, float y1, float x2, floa
 // NEW COMPONENT SYMBOLS
 // ============================================================================
 
-// Fuse - rectangle with S-curve inside
-void render_fuse(RenderContext *ctx, float x, float y, int rotation) {
+// Fuse - rectangle with S-curve inside (shows blown state and heat glow)
+void render_fuse(RenderContext *ctx, float x, float y, int rotation, bool blown, double heat_level) {
+    SDL_Renderer *renderer = ctx->renderer;
+
+    // Save original color
+    uint8_t orig_r, orig_g, orig_b, orig_a;
+    SDL_GetRenderDrawColor(renderer, &orig_r, &orig_g, &orig_b, &orig_a);
+
     // Terminals at (-40, 0) and (40, 0)
     render_draw_line_rotated(ctx, x, y, -40, 0, -20, 0, rotation);
     render_draw_line_rotated(ctx, x, y, 20, 0, 40, 0, rotation);
-    // Rectangle body
+
+    // Rectangle body - turns red/orange when hot, gray when blown
+    if (blown) {
+        // Blown fuse: gray body
+        SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+    } else if (heat_level > 0.5) {
+        // Hot fuse: orange/red tint based on heat level
+        uint8_t r = (uint8_t)(0x00 + (0xff - 0x00) * heat_level);
+        uint8_t g = (uint8_t)(0xd9 - (0xd9 - 0x40) * heat_level);
+        uint8_t b = (uint8_t)(0xff - (0xff - 0x00) * heat_level);
+        SDL_SetRenderDrawColor(renderer, r, g, b, 0xff);
+    }
     render_draw_line_rotated(ctx, x, y, -20, -8, 20, -8, rotation);
     render_draw_line_rotated(ctx, x, y, -20, 8, 20, 8, rotation);
     render_draw_line_rotated(ctx, x, y, -20, -8, -20, 8, rotation);
     render_draw_line_rotated(ctx, x, y, 20, -8, 20, 8, rotation);
-    // S-curve fuse element inside
-    render_draw_line_rotated(ctx, x, y, -15, 0, -10, -4, rotation);
-    render_draw_line_rotated(ctx, x, y, -10, -4, -5, 4, rotation);
-    render_draw_line_rotated(ctx, x, y, -5, 4, 0, -4, rotation);
-    render_draw_line_rotated(ctx, x, y, 0, -4, 5, 4, rotation);
-    render_draw_line_rotated(ctx, x, y, 5, 4, 10, -4, rotation);
-    render_draw_line_rotated(ctx, x, y, 10, -4, 15, 0, rotation);
+
+    // Restore color for element
+    SDL_SetRenderDrawColor(renderer, orig_r, orig_g, orig_b, orig_a);
+
+    if (blown) {
+        // Blown fuse: broken element with gap in the middle
+        // Left half of element (broken)
+        SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);  // Gray for broken parts
+        render_draw_line_rotated(ctx, x, y, -15, 0, -10, -4, rotation);
+        render_draw_line_rotated(ctx, x, y, -10, -4, -6, 2, rotation);  // Broken end
+
+        // Right half of element (broken)
+        render_draw_line_rotated(ctx, x, y, 6, -2, 10, -4, rotation);  // Broken start
+        render_draw_line_rotated(ctx, x, y, 10, -4, 15, 0, rotation);
+
+        // X mark in the gap to indicate blown
+        SDL_SetRenderDrawColor(renderer, 0xff, 0x44, 0x44, 0xff);  // Red X
+        render_draw_line_rotated(ctx, x, y, -4, -4, 4, 4, rotation);
+        render_draw_line_rotated(ctx, x, y, -4, 4, 4, -4, rotation);
+    } else {
+        // Intact fuse: S-curve element
+        // Apply heat color if hot
+        if (heat_level > 0.5) {
+            uint8_t r = (uint8_t)(0x00 + (0xff - 0x00) * heat_level);
+            uint8_t g = (uint8_t)(0xd9 - (0xd9 - 0x60) * heat_level);
+            uint8_t b = (uint8_t)(0xff - (0xff - 0x20) * heat_level);
+            SDL_SetRenderDrawColor(renderer, r, g, b, 0xff);
+        }
+        render_draw_line_rotated(ctx, x, y, -15, 0, -10, -4, rotation);
+        render_draw_line_rotated(ctx, x, y, -10, -4, -5, 4, rotation);
+        render_draw_line_rotated(ctx, x, y, -5, 4, 0, -4, rotation);
+        render_draw_line_rotated(ctx, x, y, 0, -4, 5, 4, rotation);
+        render_draw_line_rotated(ctx, x, y, 5, 4, 10, -4, rotation);
+        render_draw_line_rotated(ctx, x, y, 10, -4, 15, 0, rotation);
+    }
+
+    // Restore original color
+    SDL_SetRenderDrawColor(renderer, orig_r, orig_g, orig_b, orig_a);
 }
 
 // Crystal oscillator - rectangle between two capacitor plates

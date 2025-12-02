@@ -730,6 +730,18 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             input->ctrl_down = (mod & KMOD_CTRL) != 0;
             input->alt_down = (mod & KMOD_ALT) != 0;
 
+            // If spotlight is open, handle spotlight keys first
+            if (ui && ui->show_spotlight) {
+                SDL_Keycode key = event->key.keysym.sym;
+                ComponentType selected = ui_spotlight_key(ui, key);
+                if (selected != COMP_NONE) {
+                    // Component selected - start placing it
+                    input_start_placing(input, selected);
+                    ui_set_status(ui, "Click to place component");
+                }
+                return true;
+            }
+
             // If editing a property, handle text editing keys
             if (input->editing_property) {
                 SDL_Keycode key = event->key.keysym.sym;
@@ -741,6 +753,12 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 } else {
                     input_handle_text_key(input, key);
                 }
+                return true;
+            }
+
+            // Handle Ctrl+K to open spotlight search
+            if (event->key.keysym.sym == SDLK_k && (SDL_GetModState() & KMOD_CTRL) && ui) {
+                ui_spotlight_open(ui);
                 return true;
             }
 
@@ -765,6 +783,11 @@ bool input_handle_event(InputState *input, SDL_Event *event,
         }
 
         case SDL_TEXTINPUT: {
+            // Handle spotlight text input
+            if (ui->show_spotlight) {
+                ui_spotlight_text_input(ui, event->text.text);
+                return true;
+            }
             if (input->editing_property) {
                 input_handle_text_input(input, event->text.text);
                 return true;
@@ -787,6 +810,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
 void input_handle_key(InputState *input, SDL_Keycode key,
                       Circuit *circuit, RenderContext *render) {
     bool ctrl = input->ctrl_down;
+    bool shift = input->shift_down;
 
     switch (key) {
         case SDLK_ESCAPE:
@@ -893,8 +917,21 @@ void input_handle_key(InputState *input, SDL_Keycode key,
             break;
 
         case SDLK_z:
-            if (ctrl) {
+            if (ctrl && shift) {
+                // Ctrl+Shift+Z = Redo
+                circuit_redo(circuit);
+                input->selected_component = NULL;
+            } else if (ctrl) {
+                // Ctrl+Z = Undo
                 circuit_undo(circuit);
+                input->selected_component = NULL;
+            }
+            break;
+
+        case SDLK_y:
+            if (ctrl) {
+                // Ctrl+Y = Redo
+                circuit_redo(circuit);
                 input->selected_component = NULL;
             }
             break;
@@ -1345,6 +1382,14 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                 case COMP_TRANSFORMER_CT:
                     if (value > 0 && value <= 1000) {
                         comp->props.transformer.turns_ratio = value;
+                        applied = true;
+                    }
+                    break;
+                case COMP_FUSE:
+                    if (value > 0) {
+                        comp->props.fuse.rating = value;
+                        // Scale i2t rating with square of current rating (i2t ~ I^2 * t)
+                        comp->props.fuse.i2t = value * value * 1.0;  // 1 second trip at rating
                         applied = true;
                     }
                     break;

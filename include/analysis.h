@@ -237,6 +237,28 @@ void analysis_monte_carlo_run(AnalysisState *state, Circuit *circuit,
 void analysis_monte_carlo_stats(AnalysisState *state);
 void analysis_monte_carlo_reset(AnalysisState *state);
 
+// Monte Carlo component value manipulation
+// Backup arrays for component values during MC analysis
+typedef struct {
+    double values[MAX_COMPONENTS];    // Original component primary values
+    int num_backed_up;
+} MCBackup;
+
+// Save original component values before MC run
+void analysis_mc_backup_values(Circuit *circuit, MCBackup *backup);
+
+// Restore original component values after MC run
+void analysis_mc_restore_values(Circuit *circuit, MCBackup *backup);
+
+// Apply random Gaussian variation to component values
+// tolerance_pct: tolerance percentage (e.g., 10.0 for 10%)
+void analysis_mc_randomize_values(Circuit *circuit, double tolerance_pct);
+
+// Complete Monte Carlo analysis - runs all iterations
+// Returns true when complete
+bool analysis_monte_carlo_step(AnalysisState *state, Circuit *circuit,
+                               Simulation *sim, int probe_idx, MCBackup *backup);
+
 // FFT analysis
 void analysis_fft_compute(AnalysisState *state, double *samples,
                           int num_samples, double sample_rate, int channel);

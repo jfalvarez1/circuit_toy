@@ -32,8 +32,15 @@ typedef struct {
 // Maximum points in frequency sweep
 #define MAX_FREQ_POINTS 1000
 
+// Adaptive time-stepping configuration
+#define ADAPTIVE_ERROR_TOL 0.05       // 5% relative error tolerance
+#define ADAPTIVE_SAFETY_FACTOR 0.9    // Safety factor for step sizing
+#define ADAPTIVE_MIN_FACTOR 0.5       // Minimum step reduction factor
+#define ADAPTIVE_MAX_FACTOR 2.0       // Maximum step increase factor
+#define ADAPTIVE_STEADY_THRESHOLD 0.001  // Threshold for "steady" circuit (0.1%)
+
 // Simulation engine
-typedef struct {
+typedef struct Simulation {
     Circuit *circuit;
 
     // State
@@ -41,6 +48,16 @@ typedef struct {
     double time;
     double time_step;
     double speed;  // Speed multiplier
+
+    // Adaptive time-stepping
+    bool adaptive_enabled;          // Enable adaptive stepping
+    double dt_target;               // Target/nominal time step
+    double dt_actual;               // Actual time step used this iteration
+    double error_estimate;          // Estimated local truncation error
+    int step_rejections;            // Number of rejected steps (for UI)
+    int total_step_rejections;      // Total rejections since start
+    double adaptive_factor;         // Current step size multiplier (for UI)
+    Vector *saved_solution;         // Saved solution for step rejection/retry
 
     // Solution vectors
     Vector *solution;
@@ -99,6 +116,15 @@ void simulation_set_time_step(Simulation *sim, double dt);
 // Auto-adjust time step based on circuit's highest frequency signal
 // Returns the new time step that ensures adequate sampling (at least 50 samples/cycle)
 double simulation_auto_time_step(Simulation *sim);
+
+// Adaptive time-stepping control
+void simulation_enable_adaptive(Simulation *sim, bool enable);
+bool simulation_is_adaptive_enabled(Simulation *sim);
+
+// Get adaptive stepping statistics for UI display
+double simulation_get_adaptive_factor(Simulation *sim);  // Current dt multiplier (1.0 = target)
+int simulation_get_step_rejections(Simulation *sim);     // Rejections this frame
+double simulation_get_error_estimate(Simulation *sim);   // Estimated error (0-1)
 
 // Get results
 double simulation_get_node_voltage(Simulation *sim, int node_id);

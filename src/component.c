@@ -8,6 +8,12 @@
 #include <math.h>
 #include "component.h"
 
+// Global environment state (affects LDR and thermistor components)
+EnvironmentState g_environment = {
+    .light_level = 0.5,     // Default: medium light (0.0=dark to 1.0=bright)
+    .temperature = 25.0     // Default: room temperature (°C)
+};
+
 // Component type information table
 // NOTE: Terminal positions must be multiples of GRID_SIZE (20) for proper grid alignment
 // Array is sized to COMP_TYPE_COUNT to ensure all component types have entries
@@ -226,6 +232,14 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
             .gamma = 0.4,       // Body effect coefficient (V^0.5)
             .phi = 0.65,        // Surface potential (V)
             .nsub = 1e15,       // Substrate doping (1/cm³)
+            .cgso = 1e-10,      // Gate-source overlap capacitance (F/m)
+            .cgdo = 1e-10,      // Gate-drain overlap capacitance (F/m)
+            .cgbo = 1e-10,      // Gate-body overlap capacitance (F/m)
+            .cj = 1e-4,         // Junction capacitance (F/m²)
+            .vgs_prev = 0.0,    // Previous Vgs
+            .vgd_prev = 0.0,    // Previous Vgd
+            .i_cgs = 0.0,       // Gate-source capacitor current
+            .i_cgd = 0.0,       // Gate-drain capacitor current
             .temp = 300.0,      // Temperature (K)
             .ideal = true       // Use ideal (simplified) model
         }}
@@ -245,6 +259,14 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
             .gamma = 0.4,       // Body effect coefficient (V^0.5)
             .phi = 0.65,        // Surface potential (V)
             .nsub = 1e15,       // Substrate doping (1/cm³)
+            .cgso = 1e-10,      // Gate-source overlap capacitance (F/m)
+            .cgdo = 1e-10,      // Gate-drain overlap capacitance (F/m)
+            .cgbo = 1e-10,      // Gate-body overlap capacitance (F/m)
+            .cj = 1e-4,         // Junction capacitance (F/m²)
+            .vgs_prev = 0.0,    // Previous Vgs
+            .vgd_prev = 0.0,    // Previous Vgd
+            .i_cgs = 0.0,       // Gate-source capacitor current
+            .i_cgd = 0.0,       // Gate-drain capacitor current
             .temp = 300.0,      // Temperature (K)
             .ideal = true       // Use ideal (simplified) model
         }}
@@ -490,7 +512,10 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         { .fuse = {
             .rating = 1.0,              // 1A rating
             .resistance = 0.01,         // 10 mOhm cold resistance
-            .i2t = 1.0,
+            .i2t = 1.0,                 // I²t rating (A²s) - typical for 1A fast-blow
+            .i2t_accumulated = 0.0,     // Accumulated energy starts at 0
+            .current = 0.0,             // No current initially
+            .blow_time = -1.0,          // Not blown (-1 means never blown)
             .blown = false,
             .ideal = true
         }}
@@ -583,6 +608,23 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         }}
     },
 
+    [COMP_BATTERY] = {
+        "Battery", "BAT", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .battery = {
+            .nominal_voltage = 1.5,       // AA battery
+            .capacity_mah = 2500.0,       // Typical AA capacity
+            .internal_r = 0.1,            // 100mOhm internal resistance
+            .charge_state = 1.0,          // Fully charged
+            .charge_coulombs = 9000.0,    // 2500mAh * 3.6 = 9000 C
+            .current_draw = 0.0,
+            .v_cutoff = 0.9,              // Cutoff voltage
+            .discharged = false,
+            .ideal = false                // Non-ideal by default for discharge
+        }}
+    },
+
     [COMP_PULSE_SOURCE] = {
         "Pulse Source", "PLS", 2,
         {{ 0, -40, "+" }, { 0, 40, "-" }},
@@ -610,6 +652,34 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
             .duty = 0.5,
             .offset = 0.0,
             .r_series = 0.001,
+            .ideal = true
+        }}
+    },
+
+    [COMP_PWL_SOURCE] = {
+        "PWL Source", "PWL", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .pwl_source = {
+            .times = {0.0, 0.001, 0.002, 0.003, 0.004},  // Example: 0, 1ms, 2ms, 3ms, 4ms
+            .values = {0.0, 5.0, 5.0, 0.0, 0.0},        // Step up to 5V, hold, step down
+            .num_points = 5,
+            .repeat = true,
+            .repeat_period = 0.0,       // Auto from last time point
+            .r_series = 0.001,
+            .ideal = true
+        }}
+    },
+
+    [COMP_EXPR_SOURCE] = {
+        "Expr Source", "V(t)", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .expr_source = {
+            .expression = "5*sin(2*pi*60*t)",  // Default: 60Hz sine wave
+            .r_series = 0.001,
+            .cached_value = 0.0,
+            .cache_time = -1.0,
             .ideal = true
         }}
     },
@@ -889,12 +959,14 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         { .relay = {
             .v_coil = 12.0,
             .r_coil = 200.0,
-            .i_pickup = 0.05,           // 50mA pickup
-            .i_dropout = 0.01,          // 10mA dropout
+            .l_coil = 0.1,              // 100mH coil inductance (for kickback)
+            .i_pickup = 0.05,           // 50mA pickup (pull-in)
+            .i_dropout = 0.01,          // 10mA dropout (release)
             .r_contact_on = 0.1,
             .r_contact_off = 1e9,
+            .i_coil = 0.0,              // Initial coil current
             .energized = false,
-            .ideal = true
+            .ideal = false              // Non-ideal by default for kickback
         }}
     },
 
@@ -1448,10 +1520,18 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         "DC Motor", "M", 2,
         {{ -40, 0, "+" }, { 40, 0, "-" }},
         80, 50,
-        { .inductor = {
-            .inductance = 1e-3,
-            .dcr = 10.0,                // Motor resistance
-            .ideal = true
+        { .dc_motor = {
+            .r_armature = 1.0,          // Armature resistance (Ohm)
+            .l_armature = 1e-3,         // Armature inductance (H)
+            .kv = 0.01,                 // Back-EMF constant (V/rad/s)
+            .kt = 0.01,                 // Torque constant (Nm/A) - usually equal to kv
+            .j_rotor = 1e-5,            // Rotor inertia (kg*m^2)
+            .b_friction = 1e-6,         // Viscous friction (Nm*s/rad)
+            .omega = 0.0,               // Initial angular velocity
+            .current = 0.0,             // Initial current
+            .torque_load = 0.0,         // External load torque
+            .v_bemf = 0.0,              // Back-EMF (calculated)
+            .ideal = false              // Full physics model by default
         }}
     },
 
@@ -1578,6 +1658,7 @@ Component *component_create(ComponentType type, float x, float y) {
                                type == COMP_VADC_SOURCE ||
                                type == COMP_AM_SOURCE ||
                                type == COMP_FM_SOURCE ||
+                               type == COMP_BATTERY ||
                                type == COMP_PULSE_SOURCE ||
                                type == COMP_PWM_SOURCE);
 
@@ -2191,6 +2272,70 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             if (n[1] > 0 && n[2] > 0) matrix_add(A, n[1]-1, n[2]-1, -Gm);
             if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -Gm);
             if (n[2] > 0 && n[2] > 0) matrix_add(A, n[2]-1, n[2]-1, Gm);
+
+            // Gate capacitance model (non-ideal mode only)
+            if (!ideal && dt > 0) {
+                double cgso = comp->props.mosfet.cgso;
+                double cgdo = comp->props.mosfet.cgdo;
+                double tox = comp->props.mosfet.tox;
+
+                // Oxide capacitance per unit area (epsilon_ox ≈ 3.9 * epsilon_0)
+                const double epsilon_ox = 3.9 * 8.854e-12;  // F/m
+                double Cox = epsilon_ox / tox;  // F/m²
+
+                // Total gate capacitances depend on operating region
+                double Cgs, Cgd;
+
+                if (Vov <= 0) {
+                    // Cutoff: only overlap capacitances
+                    Cgs = cgso * W;
+                    Cgd = cgdo * W;
+                } else if (Vds < Vov) {
+                    // Triode: channel capacitance distributed between G-S and G-D
+                    double Cch = Cox * W * L;  // Total channel capacitance
+                    double x = Vds / Vov;
+                    // Meyer's model approximation
+                    Cgs = cgso * W + Cch * (1.0 - (x*x - x + 1.0) / (3.0 * (1.0 - x + 1e-12)));
+                    Cgd = cgdo * W + Cch * (1.0 - (1.0 - x + x*x) / (3.0 * (1.0 - x + 1e-12)));
+                } else {
+                    // Saturation: most channel capacitance goes to G-S
+                    double Cch = Cox * W * L;
+                    Cgs = cgso * W + (2.0/3.0) * Cch;
+                    Cgd = cgdo * W;  // Only overlap in saturation
+                }
+
+                // Get current voltages for capacitor integration
+                double vG = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                double vD = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+                double vS = (n[2] > 0) ? vector_get(prev_solution, n[2]-1) : 0;
+
+                double Vgs_curr = vG - vS;
+                double Vgd_curr = vG - vD;
+
+                // Trapezoidal integration: G_eq = 2*C/dt, I_eq = G_eq*V_prev + I_prev
+                double G_cgs = 2.0 * Cgs / dt;
+                double G_cgd = 2.0 * Cgd / dt;
+
+                // Equivalent currents from previous timestep
+                double I_cgs_eq = G_cgs * comp->props.mosfet.vgs_prev + comp->props.mosfet.i_cgs;
+                double I_cgd_eq = G_cgd * comp->props.mosfet.vgd_prev + comp->props.mosfet.i_cgd;
+
+                // Stamp Cgs (between gate n[0] and source n[2])
+                STAMP_CONDUCTANCE(n[0], n[2], G_cgs);
+                if (n[0] > 0) vector_add(b, n[0]-1, -I_cgs_eq);
+                if (n[2] > 0) vector_add(b, n[2]-1, I_cgs_eq);
+
+                // Stamp Cgd (between gate n[0] and drain n[1])
+                STAMP_CONDUCTANCE(n[0], n[1], G_cgd);
+                if (n[0] > 0) vector_add(b, n[0]-1, -I_cgd_eq);
+                if (n[1] > 0) vector_add(b, n[1]-1, I_cgd_eq);
+
+                // Update state for next iteration
+                comp->props.mosfet.i_cgs = G_cgs * Vgs_curr - I_cgs_eq;
+                comp->props.mosfet.i_cgd = G_cgd * Vgd_curr - I_cgd_eq;
+                comp->props.mosfet.vgs_prev = Vgs_curr;
+                comp->props.mosfet.vgd_prev = Vgd_curr;
+            }
             break;
         }
 
@@ -2506,9 +2651,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
 
         case COMP_PHOTORESISTOR: {
             // Photoresistor: resistance varies with light level
+            // Use global environment light level for all LDRs
             double R_dark = comp->props.photoresistor.r_dark;
             double R_light = comp->props.photoresistor.r_light;
-            double light = comp->props.photoresistor.light_level;
+            double light = g_environment.light_level;  // Use global light level
             double gamma = comp->props.photoresistor.gamma;
 
             // Logarithmic response to light
@@ -2520,9 +2666,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
 
         case COMP_THERMISTOR: {
             // Thermistor: resistance varies with temperature
+            // Use global environment temperature for all thermistors
             double R_25 = comp->props.thermistor.r_25;
             double beta = comp->props.thermistor.beta;
-            double T = comp->props.thermistor.temp + 273.15;  // Convert to Kelvin
+            double T = g_environment.temperature + 273.15;  // Use global temperature, convert to Kelvin
             double T_25 = 298.15;  // 25°C in Kelvin
 
             double R;
@@ -2546,7 +2693,57 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         }
 
         case COMP_FUSE: {
-            // Fuse: low resistance when intact, very high when blown
+            // Fuse with i²t protection model
+            // When not blown: accumulate i²t energy, blow when it exceeds rating
+            // When blown: very high resistance (open circuit)
+
+            if (!comp->props.fuse.blown) {
+                // Calculate current from previous solution voltages
+                double V1 = (n[0] > 0 && prev_solution) ? vector_get(prev_solution, n[0]-1) : 0.0;
+                double V2 = (n[1] > 0 && prev_solution) ? vector_get(prev_solution, n[1]-1) : 0.0;
+                double Vdiff = V1 - V2;
+                double R = comp->props.fuse.resistance;
+                double I = Vdiff / R;
+                double I_abs = fabs(I);
+
+                // Store current for display/animation
+                comp->props.fuse.current = I_abs;
+
+                if (comp->props.fuse.ideal) {
+                    // Ideal mode: instant blow when current exceeds rating
+                    if (I_abs > comp->props.fuse.rating) {
+                        comp->props.fuse.blown = true;
+                        comp->props.fuse.blow_time = time;
+                    }
+                } else {
+                    // Realistic mode: i²t accumulation
+                    // Only accumulate when current exceeds rating (pre-arcing region)
+                    if (I_abs > comp->props.fuse.rating) {
+                        // Accumulate i²t energy: integral of I² over time
+                        double i2t_increment = I_abs * I_abs * dt;
+                        comp->props.fuse.i2t_accumulated += i2t_increment;
+
+                        // Check if accumulated energy exceeds i²t rating
+                        if (comp->props.fuse.i2t_accumulated >= comp->props.fuse.i2t) {
+                            comp->props.fuse.blown = true;
+                            comp->props.fuse.blow_time = time;
+                        }
+                    } else {
+                        // Below rating: slowly cool down (dissipate accumulated energy)
+                        // This simulates thermal recovery when overcurrent is removed
+                        double cooling_rate = 0.1; // 10% per second
+                        comp->props.fuse.i2t_accumulated *= (1.0 - cooling_rate * dt);
+                        if (comp->props.fuse.i2t_accumulated < 0.001) {
+                            comp->props.fuse.i2t_accumulated = 0.0;
+                        }
+                    }
+                }
+            } else {
+                // Blown fuse: no current
+                comp->props.fuse.current = 0.0;
+            }
+
+            // Stamp conductance: low when intact, very high resistance when blown
             double R = comp->props.fuse.blown ? 1e9 : comp->props.fuse.resistance;
             double G = 1.0 / R;
             STAMP_CONDUCTANCE(n[0], n[1], G);
@@ -2617,6 +2814,91 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             break;
         }
 
+        case COMP_BATTERY: {
+            // Battery with discharge model
+            // Model: V_out = V_nominal * f(SoC) - I * R_internal
+            // where f(SoC) is a voltage curve based on state of charge
+
+            double V_nom = comp->props.battery.nominal_voltage;
+            double R_int = comp->props.battery.internal_r;
+            double SoC = comp->props.battery.charge_state;
+            double V_cutoff = comp->props.battery.v_cutoff;
+            bool discharged = comp->props.battery.discharged;
+            bool ideal = comp->props.battery.ideal;
+
+            // Voltage curve: V = V_nom * (0.9 + 0.1 * SoC) with cutoff
+            // This gives roughly 90% voltage at empty, 100% at full
+            double V_oc;  // Open-circuit voltage
+            if (discharged) {
+                V_oc = V_cutoff * 0.8;  // Dead battery
+            } else {
+                // Simple linear discharge curve
+                V_oc = V_nom * (0.85 + 0.15 * SoC);
+                if (V_oc < V_cutoff) {
+                    comp->props.battery.discharged = true;
+                    V_oc = V_cutoff * 0.8;
+                }
+            }
+
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+
+            if (ideal) {
+                // Ideal voltage source (no internal resistance)
+                if (n[0] > 0) {
+                    matrix_add(A, volt_idx, n[0]-1, 1);
+                    matrix_add(A, n[0]-1, volt_idx, 1);
+                }
+                if (n[1] > 0) {
+                    matrix_add(A, volt_idx, n[1]-1, -1);
+                    matrix_add(A, n[1]-1, volt_idx, -1);
+                }
+                vector_add(b, volt_idx, V_oc);
+            } else {
+                // Non-ideal: voltage source with series resistance
+                // Stamp as voltage source in series with resistor
+                // V = V_oc - I * R_int
+                // Using voltage source equation: V(n+) - V(n-) - I*R = V_oc
+                // Rearranged: V(n+) - V(n-) + I*R_int = V_oc
+                if (n[0] > 0) {
+                    matrix_add(A, volt_idx, n[0]-1, 1);
+                    matrix_add(A, n[0]-1, volt_idx, 1);
+                }
+                if (n[1] > 0) {
+                    matrix_add(A, volt_idx, n[1]-1, -1);
+                    matrix_add(A, n[1]-1, volt_idx, -1);
+                }
+                // Add internal resistance term to voltage equation
+                // Current flows from + to -, so I_source is in the positive direction
+                matrix_add(A, volt_idx, volt_idx, R_int);
+                vector_add(b, volt_idx, V_oc);
+            }
+
+            // Track discharge over time
+            // dQ = I * dt, where Q is charge in coulombs
+            if (!ideal && !discharged && prev_solution && dt > 0) {
+                // Get current from voltage source variable
+                double I_battery = vector_get(prev_solution, volt_idx);
+                comp->props.battery.current_draw = fabs(I_battery);
+
+                // Discharge: reduce charge_coulombs
+                double dQ = fabs(I_battery) * dt;
+                comp->props.battery.charge_coulombs -= dQ;
+
+                if (comp->props.battery.charge_coulombs < 0) {
+                    comp->props.battery.charge_coulombs = 0;
+                }
+
+                // Update SoC (charge_coulombs / initial_charge)
+                double initial_charge = comp->props.battery.capacity_mah * 3.6;  // mAh to C
+                comp->props.battery.charge_state = comp->props.battery.charge_coulombs / initial_charge;
+
+                if (comp->props.battery.charge_state < 0.01) {
+                    comp->props.battery.discharged = true;
+                }
+            }
+            break;
+        }
+
         case COMP_PULSE_SOURCE: {
             double v_low = comp->props.pulse_source.v_low;
             double v_high = comp->props.pulse_source.v_high;
@@ -2656,6 +2938,102 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double V = (t_norm < duty) ? (amp + offset) : offset;
             int volt_idx = num_nodes + comp->voltage_var_idx;
 
+            if (n[0] > 0) {
+                matrix_add(A, volt_idx, n[0]-1, 1);
+                matrix_add(A, n[0]-1, volt_idx, 1);
+            }
+            if (n[1] > 0) {
+                matrix_add(A, volt_idx, n[1]-1, -1);
+                matrix_add(A, n[1]-1, volt_idx, -1);
+            }
+            vector_add(b, volt_idx, V);
+            break;
+        }
+
+        case COMP_PWL_SOURCE: {
+            // Piecewise linear source - interpolate between time-value pairs
+            int num_pts = comp->props.pwl_source.num_points;
+            double V = 0.0;
+
+            if (num_pts > 0) {
+                double t = time;
+
+                // Handle repeat mode
+                if (comp->props.pwl_source.repeat && num_pts > 1) {
+                    double period = comp->props.pwl_source.repeat_period;
+                    if (period <= 0) {
+                        period = comp->props.pwl_source.times[num_pts - 1];
+                    }
+                    if (period > 0) {
+                        t = fmod(time, period);
+                    }
+                }
+
+                // Find the segment and interpolate
+                if (t <= comp->props.pwl_source.times[0]) {
+                    V = comp->props.pwl_source.values[0];
+                } else if (t >= comp->props.pwl_source.times[num_pts - 1]) {
+                    V = comp->props.pwl_source.values[num_pts - 1];
+                } else {
+                    // Binary search for segment
+                    for (int i = 0; i < num_pts - 1; i++) {
+                        double t1 = comp->props.pwl_source.times[i];
+                        double t2 = comp->props.pwl_source.times[i + 1];
+                        if (t >= t1 && t < t2) {
+                            double v1 = comp->props.pwl_source.values[i];
+                            double v2 = comp->props.pwl_source.values[i + 1];
+                            // Linear interpolation
+                            double alpha = (t - t1) / (t2 - t1);
+                            V = v1 + alpha * (v2 - v1);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+            if (n[0] > 0) {
+                matrix_add(A, volt_idx, n[0]-1, 1);
+                matrix_add(A, n[0]-1, volt_idx, 1);
+            }
+            if (n[1] > 0) {
+                matrix_add(A, volt_idx, n[1]-1, -1);
+                matrix_add(A, n[1]-1, volt_idx, -1);
+            }
+            vector_add(b, volt_idx, V);
+            break;
+        }
+
+        case COMP_EXPR_SOURCE: {
+            // Expression-based source - parse and evaluate V(t)
+            // For now, implement common built-in functions
+            double V = 0.0;
+            const char *expr = comp->props.expr_source.expression;
+
+            // Simple expression parser for common patterns
+            // Pattern: "A*sin(2*pi*F*t)" or "A*sin(2*pi*F*t)+B*rand()"
+            double amp = 1.0, freq = 60.0, offset = 0.0;
+            double noise_amp = 0.0;
+
+            // Try to parse sine wave pattern: "A*sin(2*pi*F*t)"
+            if (sscanf(expr, "%lf*sin(2*pi*%lf*t)", &amp, &freq) == 2) {
+                V = amp * sin(2.0 * M_PI * freq * time);
+            }
+            // Try pattern with offset: "A*sin(2*pi*F*t)+C"
+            else if (sscanf(expr, "%lf*sin(2*pi*%lf*t)+%lf", &amp, &freq, &offset) == 3) {
+                V = amp * sin(2.0 * M_PI * freq * time) + offset;
+            }
+            // Try pattern with noise: "A*sin(2*pi*F*t)+N*rand()"
+            else if (sscanf(expr, "%lf*sin(2*pi*%lf*t)+%lf*rand()", &amp, &freq, &noise_amp) == 3) {
+                V = amp * sin(2.0 * M_PI * freq * time);
+                V += noise_amp * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+            }
+            // Simple constant
+            else if (sscanf(expr, "%lf", &V) != 1) {
+                V = 0.0;  // Default if parsing fails
+            }
+
+            int volt_idx = num_nodes + comp->voltage_var_idx;
             if (n[0] > 0) {
                 matrix_add(A, volt_idx, n[0]-1, 1);
                 matrix_add(A, n[0]-1, volt_idx, 1);
@@ -2979,15 +3357,72 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         }
 
         case COMP_RELAY: {
-            // Relay: coil resistance + switched contact
-            double r_coil = comp->props.relay.r_coil;
-            double R_contact = comp->props.relay.energized ?
+            // Relay with coil inductance and hysteresis
+            // Terminals: 0=C+ (coil+), 1=C- (coil-), 2=NO, 3=COM
+            double R_coil = comp->props.relay.r_coil;
+            double L_coil = comp->props.relay.l_coil;
+            double i_pickup = comp->props.relay.i_pickup;
+            double i_dropout = comp->props.relay.i_dropout;
+            double I_prev = comp->props.relay.i_coil;
+            bool energized = comp->props.relay.energized;
+
+            // --- Coil Circuit (R + L in series) ---
+            if (comp->props.relay.ideal || L_coil < 1e-9) {
+                // Ideal mode: just coil resistance, no inductance
+                STAMP_CONDUCTANCE(n[0], n[1], 1.0/R_coil);
+
+                // Estimate coil current from voltage for hysteresis
+                double V_coil = 0;
+                if (prev_solution) {
+                    double v0 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                    double v1 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+                    V_coil = v0 - v1;
+                }
+                I_prev = V_coil / R_coil;
+                comp->props.relay.i_coil = I_prev;
+            } else {
+                // Non-ideal: R + L companion model
+                // V = I*R + L*dI/dt -> V = I*R_eq + V_eq
+                // where R_eq = R + L/dt, V_eq = L/dt * I_prev
+                double R_eq = R_coil + L_coil / dt;
+                double G = 1.0 / R_eq;
+                STAMP_CONDUCTANCE(n[0], n[1], G);
+
+                // Current source for inductor history (I_eq = I_prev * L/dt / R_eq)
+                double I_eq = (L_coil / dt) * I_prev / R_eq;
+                if (n[0] > 0) vector_add(b, n[0]-1, -I_eq);
+                if (n[1] > 0) vector_add(b, n[1]-1, I_eq);
+
+                // Update coil current from solution for next iteration
+                // (done after matrix solve, but we can estimate from voltage)
+                if (prev_solution) {
+                    double v0 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                    double v1 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+                    double V_coil = v0 - v1;
+                    // I = (V - V_eq) / R_eq = (V - L/dt * I_prev) / R_eq
+                    double I_new = (V_coil + (L_coil / dt) * I_prev) / R_eq;
+                    comp->props.relay.i_coil = I_new;
+                    I_prev = I_new;  // Use updated current for hysteresis
+                }
+            }
+
+            // --- Hysteresis Logic ---
+            // Apply hysteresis: energize at pickup, de-energize at dropout
+            double I_abs = fabs(I_prev);
+            if (!energized && I_abs >= i_pickup) {
+                // Pull-in: energize relay
+                comp->props.relay.energized = true;
+                energized = true;
+            } else if (energized && I_abs <= i_dropout) {
+                // Drop-out: de-energize relay
+                comp->props.relay.energized = false;
+                energized = false;
+            }
+
+            // --- Contact Circuit (NO to COM) ---
+            double R_contact = energized ?
                               comp->props.relay.r_contact_on :
                               comp->props.relay.r_contact_off;
-
-            // Coil
-            STAMP_CONDUCTANCE(n[0], n[1], 1.0/r_coil);
-            // Contact (NO to COM)
             STAMP_CONDUCTANCE(n[2], n[3], 1.0/R_contact);
             break;
         }
@@ -3586,9 +4021,62 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             break;
         }
 
-        case COMP_DC_MOTOR:
+        case COMP_DC_MOTOR: {
+            // DC Motor: R_a + L_a in series with back-EMF voltage source
+            // V = I*R_a + L_a*dI/dt + V_bemf where V_bemf = kv * omega
+            // Motor dynamics: J*d(omega)/dt = kt*I - b*omega - T_load
+            double R_a = comp->props.dc_motor.r_armature;
+            double L_a = comp->props.dc_motor.l_armature;
+            double kv = comp->props.dc_motor.kv;
+            double kt = comp->props.dc_motor.kt;
+            double J = comp->props.dc_motor.j_rotor;
+            double b_f = comp->props.dc_motor.b_friction;
+            double T_load = comp->props.dc_motor.torque_load;
+
+            // Get previous state
+            double omega_prev = comp->props.dc_motor.omega;
+            double I_prev = comp->props.dc_motor.current;
+
+            // Back-EMF voltage
+            double V_bemf = kv * omega_prev;
+            comp->props.dc_motor.v_bemf = V_bemf;
+
+            // Update motor speed using Euler integration
+            // Torque = kt * I, friction torque = b * omega
+            double T_motor = kt * I_prev;
+            double T_friction = b_f * omega_prev;
+            double d_omega = (T_motor - T_friction - T_load) / J;
+            double omega_new = omega_prev + d_omega * dt;
+            if (omega_new < 0) omega_new = 0;  // Prevent negative rotation for simple DC motor
+            comp->props.dc_motor.omega = omega_new;
+
+            // Stamp armature circuit: R_a + L_a with back-EMF
+            // Use companion model: V = I*R_eq + V_eq where R_eq = R_a + L_a/dt
+            double Req = R_a + L_a / dt;
+            double G = 1.0 / Req;
+            STAMP_CONDUCTANCE(n[0], n[1], G);
+
+            // Back-EMF acts as voltage source in series (reduces current)
+            // Current source equivalent for back-EMF: I_bemf = V_bemf / Req
+            double I_bemf = V_bemf / Req;
+            // Also add previous inductor current contribution
+            double I_L_prev = (L_a / dt) * I_prev / Req;
+            double I_eq = I_bemf - I_L_prev;
+
+            if (n[0] > 0) vector_add(b, n[0]-1, -I_eq);
+            if (n[1] > 0) vector_add(b, n[1]-1, I_eq);
+
+            // Update current from solution (will be done after solve)
+            if (prev_solution) {
+                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+                comp->props.dc_motor.current = (v1 - v2 - V_bemf) / Req + I_prev * L_a / (Req * dt);
+            }
+            break;
+        }
+
         case COMP_SPEAKER: {
-            // Motor/Speaker: RL load
+            // Speaker: Simple RL load (uses inductor properties)
             double R = comp->props.inductor.dcr;
             double L = comp->props.inductor.inductance;
             double Req = L / dt;

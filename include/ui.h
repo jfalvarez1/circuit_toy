@@ -147,6 +147,7 @@ typedef struct {
     Button btn_clear;
     Button btn_save;
     Button btn_load;
+    Button btn_export_svg;
 
     // Speed slider
     Rect speed_slider;
@@ -276,6 +277,12 @@ typedef struct {
     int node_count;
     int component_count;
 
+    // Adaptive time-stepping status (for UI display)
+    bool adaptive_enabled;
+    double adaptive_factor;      // Current dt multiplier (1.0 = target)
+    int step_rejections;         // Rejections this frame
+    double error_estimate;       // Estimated error (0-1)
+
     // Modal dialogs
     bool show_shortcuts_dialog;
 
@@ -283,6 +290,7 @@ typedef struct {
     bool show_bode_plot;            // Show Bode plot panel
     Button btn_bode;                // Button to run/toggle Bode plot
     Button btn_bode_recalc;         // Button to recalculate Bode plot
+    Button btn_mc;                  // Button to toggle Monte Carlo panel
     Rect bode_rect;                 // Bode plot panel bounds
     double bode_freq_start;         // Start frequency (Hz)
     double bode_freq_stop;          // Stop frequency (Hz)
@@ -316,6 +324,20 @@ typedef struct {
     int monte_carlo_runs;           // Number of Monte Carlo runs
     double monte_carlo_tolerance;   // Tolerance percentage
 
+    // Component spotlight/search (Ctrl+K)
+    bool show_spotlight;                    // Show spotlight dialog
+    char spotlight_query[64];               // Search query text
+    int spotlight_cursor;                   // Cursor position in query
+    ComponentType spotlight_results[32];    // Matching component types
+    int spotlight_num_results;              // Number of matching results
+    int spotlight_selected;                 // Currently highlighted result index
+
+    // Environment sliders (for LDR and Thermistor)
+    Rect env_light_slider;          // Light level slider bounds
+    Rect env_temp_slider;           // Temperature slider bounds
+    bool dragging_light;            // Currently dragging light slider
+    bool dragging_temp;             // Currently dragging temperature slider
+
     // Cursor info
     int cursor_x, cursor_y;
     float world_x, world_y;
@@ -344,7 +366,14 @@ void ui_render_sweep_panel(UIState *ui, SDL_Renderer *renderer, void *analysis);
 void ui_render_monte_carlo_panel(UIState *ui, SDL_Renderer *renderer, void *analysis);
 void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer);
 void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer);
+void ui_render_spotlight(UIState *ui, SDL_Renderer *renderer);
 void ui_render_neon_trim(UIState *ui, SDL_Renderer *renderer);
+
+// Spotlight search functions
+void ui_spotlight_open(UIState *ui);
+void ui_spotlight_close(UIState *ui);
+void ui_spotlight_text_input(UIState *ui, const char *text);
+ComponentType ui_spotlight_key(UIState *ui, SDL_Keycode key);
 
 // Handle UI events
 // Returns: -1 = not handled, 0+ = action ID
@@ -383,6 +412,14 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_TIMESTEP_DOWN 30   // Decrease time step
 #define UI_ACTION_TIMESTEP_AUTO 31   // Auto-adjust time step
 #define UI_ACTION_SCOPE_POPUP   32   // Pop out oscilloscope to separate window
+#define UI_ACTION_SPOTLIGHT     33   // Open component spotlight search (Ctrl+K)
+#define UI_ACTION_EXPORT_SVG    34   // Export circuit to SVG file
+#define UI_ACTION_MC_RUN        35   // Start Monte Carlo analysis
+#define UI_ACTION_MC_RUNS_UP    36   // Increase MC runs
+#define UI_ACTION_MC_RUNS_DOWN  37   // Decrease MC runs
+#define UI_ACTION_MC_TOL_UP     38   // Increase MC tolerance
+#define UI_ACTION_MC_TOL_DOWN   39   // Decrease MC tolerance
+#define UI_ACTION_MC_RESET      40   // Reset MC results
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type (supports up to 300 component types)
 #define UI_ACTION_SELECT_CIRCUIT 500 // + circuit template type

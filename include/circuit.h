@@ -61,7 +61,7 @@ typedef struct {
 #define MAX_UNDO 100
 
 // Circuit structure
-typedef struct {
+typedef struct Circuit {
     // Components
     Component *components[MAX_COMPONENTS];
     int num_components;
@@ -94,6 +94,10 @@ typedef struct {
     // Undo stack
     UndoAction undo_stack[MAX_UNDO];
     int undo_count;
+
+    // Redo stack
+    UndoAction redo_stack[MAX_UNDO];
+    int redo_count;
 
     // Modified flag
     bool modified;
@@ -153,10 +157,12 @@ void circuit_select_all(Circuit *circuit);
 void circuit_deselect_all(Circuit *circuit);
 void circuit_delete_selected(Circuit *circuit);
 
-// Undo operations
+// Undo/Redo operations
 void circuit_push_undo(Circuit *circuit, UndoActionType type, int id, Component *backup, float old_x, float old_y);
 bool circuit_undo(Circuit *circuit);
+bool circuit_redo(Circuit *circuit);
 void circuit_clear_undo(Circuit *circuit);
+void circuit_clear_redo(Circuit *circuit);
 
 // Serialization
 bool circuit_save(Circuit *circuit, const char *filename);

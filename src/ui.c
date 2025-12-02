@@ -181,6 +181,8 @@ void ui_init(UIState *ui) {
     ui->btn_save = (Button){{btn_x, 10, btn_w, btn_h}, "Save", "Save circuit (Ctrl+S)", false, false, true, false};
     btn_x += btn_w + 10;
     ui->btn_load = (Button){{btn_x, 10, btn_w, btn_h}, "Load", "Load circuit (Ctrl+O)", false, false, true, false};
+    btn_x += btn_w + 10;
+    ui->btn_export_svg = (Button){{btn_x, 10, btn_w, btn_h}, "SVG", "Export as SVG", false, false, true, false};
 
     // Speed slider
     ui->speed_slider = (Rect){btn_x + btn_w + 30, 15, 100, 20};
@@ -193,6 +195,13 @@ void ui_init(UIState *ui) {
     ui->btn_timestep_up = (Button){{ts_x + 77, 12, 20, 20}, "+", "Increase time step", false, false, true, false};
     ui->btn_timestep_auto = (Button){{ts_x + 100, 10, 40, 24}, "Auto", "Auto time step", false, false, true, false};
     ui->display_time_step = 1e-7;  // Default 100 nanoseconds (will be updated from simulation)
+
+    // Environment sliders (positioned in status bar area - will be updated in ui_update_layout)
+    // These control global light/temperature for LDR and thermistor components
+    ui->env_light_slider = (Rect){0, 0, 80, 14};   // Will be positioned in render
+    ui->env_temp_slider = (Rect){0, 0, 80, 14};    // Will be positioned in render
+    ui->dragging_light = false;
+    ui->dragging_temp = false;
 
     // Initialize palette items
     int pal_y = TOOLBAR_HEIGHT + 18;
@@ -536,6 +545,8 @@ void ui_init(UIState *ui) {
     scope_btn_x += 38;
     ui->btn_bode = (Button){{scope_btn_x, scope_btn_y, 40, scope_btn_h}, "Bode", "Frequency response plot", false, false, true, false};
     scope_btn_x += 43;
+    ui->btn_mc = (Button){{scope_btn_x, scope_btn_y, 25, scope_btn_h}, "MC", "Monte Carlo statistical analysis", false, false, true, false};
+    scope_btn_x += 28;
     ui->btn_scope_popup = (Button){{scope_btn_x, scope_btn_y, 50, scope_btn_h}, "PopOut", "Pop out oscilloscope to separate window", false, false, true, false};
 
     // Initialize cursor state
@@ -618,6 +629,12 @@ void ui_update(UIState *ui, Circuit *circuit, Simulation *sim) {
         ui->display_time_step = sim->time_step;
         // Sync speed slider value to simulation speed
         sim->speed = (double)ui->speed_value;
+
+        // Copy adaptive time-stepping status for UI display
+        ui->adaptive_enabled = sim->adaptive_enabled;
+        ui->adaptive_factor = sim->adaptive_factor;
+        ui->step_rejections = sim->step_rejections;
+        ui->error_estimate = sim->error_estimate;
     }
 
     if (circuit) {
@@ -750,6 +767,7 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     draw_button(renderer, &ui->btn_clear);
     draw_button(renderer, &ui->btn_save);
     draw_button(renderer, &ui->btn_load);
+    draw_button(renderer, &ui->btn_export_svg);
 
     // Speed slider label
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
@@ -2141,6 +2159,50 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 break;
             }
 
+            case COMP_FUSE: {
+                // Rating (current in amps)
+                snprintf(buf, sizeof(buf), "%.3g A", selected->props.fuse.rating);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Rating:", buf,
+                                   editing_value, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Model mode toggle (Ideal = instant blow, Real = i²t model)
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.fuse.ideal ? "[Ideal]" : "[i2t]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Show fuse status
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Status:", x + 10, prop_y + 2);
+                if (selected->props.fuse.blown) {
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0x40, 0x40, 0xff);  // Red for blown
+                    ui_draw_text(renderer, "BLOWN", x + 100, prop_y + 2);
+                } else {
+                    SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);
+                    ui_draw_text(renderer, "OK", x + 100, prop_y + 2);
+                }
+                prop_y += 18;
+
+                // Reset button (if blown)
+                if (selected->props.fuse.blown) {
+                    SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+                    ui_draw_text(renderer, "[Reset Fuse]", x + 10, prop_y + 2);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 10, prop_y, 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_RESET_FUSE;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
             default:
                 break;
         }
@@ -2848,12 +2910,16 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
     draw_button(renderer, &ui->btn_bode);
 
+    // Monte Carlo button with toggle state indicator
+    ui->btn_mc.toggled = ui->show_monte_carlo_panel;
+    draw_button(renderer, &ui->btn_mc);
+
     // Pop-out button with toggle state indicator
     ui->btn_scope_popup.toggled = ui->scope_popped_out;
     draw_button(renderer, &ui->btn_scope_popup);
 
-    // Display settings panel below buttons (3 rows of buttons = ~79px, so start at +85)
-    int info_y = r->y + r->h + 85;
+    // Display settings panel below buttons (3 rows of buttons = ~79px, so start at +100)
+    int info_y = r->y + r->h + 100;
 
     // Time/div with label
     SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
@@ -3521,6 +3587,10 @@ void ui_render_sweep_panel(UIState *ui, SDL_Renderer *renderer, void *analysis_p
     ui_draw_text(renderer, "Click component, then ESC to close", label_x, y);
 }
 
+// Static button bounds for Monte Carlo panel (for click handling)
+static Rect mc_btn_run, mc_btn_reset, mc_btn_runs_up, mc_btn_runs_down, mc_btn_tol_up, mc_btn_tol_down;
+static Rect mc_panel_rect;
+
 void ui_render_monte_carlo_panel(UIState *ui, SDL_Renderer *renderer, void *analysis_ptr) {
     if (!ui || !renderer || !ui->show_monte_carlo_panel) return;
 
@@ -3529,9 +3599,12 @@ void ui_render_monte_carlo_panel(UIState *ui, SDL_Renderer *renderer, void *anal
 
     // Panel dimensions
     int panel_w = 350;
-    int panel_h = 300;
+    int panel_h = 340;
     int panel_x = (ui->window_width - panel_w) / 2;
     int panel_y = (ui->window_height - panel_h) / 2;
+
+    // Store panel rect for click handling
+    mc_panel_rect = (Rect){panel_x, panel_y, panel_w, panel_h};
 
     // Semi-transparent background
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
@@ -3548,21 +3621,83 @@ void ui_render_monte_carlo_panel(UIState *ui, SDL_Renderer *renderer, void *anal
 
     int y = panel_y + 35;
     int label_x = panel_x + 15;
-    int value_x = panel_x + 150;
+    int value_x = panel_x + 130;
+    int btn_size = 18;
 
-    SDL_SetRenderDrawColor(renderer, 0x90, 0x90, 0x90, 0xff);
+    SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
 
-    // Number of runs
+    // Number of runs with +/- buttons
     ui_draw_text(renderer, "Runs:", label_x, y);
     snprintf(buf, sizeof(buf), "%d", ui->monte_carlo_runs);
     ui_draw_text(renderer, buf, value_x, y);
-    y += 20;
 
-    // Tolerance
+    // +/- buttons for runs
+    mc_btn_runs_down = (Rect){value_x + 50, y - 2, btn_size, btn_size};
+    mc_btn_runs_up = (Rect){value_x + 75, y - 2, btn_size, btn_size};
+    SDL_SetRenderDrawColor(renderer, 0x40, 0x40, 0x60, 0xff);
+    SDL_Rect r1 = {mc_btn_runs_down.x, mc_btn_runs_down.y, mc_btn_runs_down.w, mc_btn_runs_down.h};
+    SDL_Rect r2 = {mc_btn_runs_up.x, mc_btn_runs_up.y, mc_btn_runs_up.w, mc_btn_runs_up.h};
+    SDL_RenderFillRect(renderer, &r1);
+    SDL_RenderFillRect(renderer, &r2);
+    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+    SDL_RenderDrawRect(renderer, &r1);
+    SDL_RenderDrawRect(renderer, &r2);
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    ui_draw_text(renderer, "-", mc_btn_runs_down.x + 5, mc_btn_runs_down.y + 2);
+    ui_draw_text(renderer, "+", mc_btn_runs_up.x + 4, mc_btn_runs_up.y + 2);
+    y += 22;
+
+    // Tolerance with +/- buttons
+    SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
     ui_draw_text(renderer, "Tolerance:", label_x, y);
-    snprintf(buf, sizeof(buf), "%.1f%%", ui->monte_carlo_tolerance);
+    snprintf(buf, sizeof(buf), "%.0f%%", ui->monte_carlo_tolerance);
     ui_draw_text(renderer, buf, value_x, y);
+
+    // +/- buttons for tolerance
+    mc_btn_tol_down = (Rect){value_x + 50, y - 2, btn_size, btn_size};
+    mc_btn_tol_up = (Rect){value_x + 75, y - 2, btn_size, btn_size};
+    SDL_SetRenderDrawColor(renderer, 0x40, 0x40, 0x60, 0xff);
+    SDL_Rect r3 = {mc_btn_tol_down.x, mc_btn_tol_down.y, mc_btn_tol_down.w, mc_btn_tol_down.h};
+    SDL_Rect r4 = {mc_btn_tol_up.x, mc_btn_tol_up.y, mc_btn_tol_up.w, mc_btn_tol_up.h};
+    SDL_RenderFillRect(renderer, &r3);
+    SDL_RenderFillRect(renderer, &r4);
+    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+    SDL_RenderDrawRect(renderer, &r3);
+    SDL_RenderDrawRect(renderer, &r4);
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    ui_draw_text(renderer, "-", mc_btn_tol_down.x + 5, mc_btn_tol_down.y + 2);
+    ui_draw_text(renderer, "+", mc_btn_tol_up.x + 4, mc_btn_tol_up.y + 2);
     y += 25;
+
+    // Run and Reset buttons
+    int btn_w = 70;
+    int btn_h = 24;
+    mc_btn_run = (Rect){label_x, y, btn_w, btn_h};
+    mc_btn_reset = (Rect){label_x + btn_w + 10, y, btn_w, btn_h};
+
+    // Run button - green if not running, disabled if running
+    bool is_running = analysis && analysis->monte_carlo.active && !analysis->monte_carlo.complete;
+    if (is_running) {
+        SDL_SetRenderDrawColor(renderer, 0x30, 0x30, 0x30, 0xff);
+    } else {
+        SDL_SetRenderDrawColor(renderer, 0x00, 0x80, 0x00, 0xff);
+    }
+    SDL_Rect run_rect = {mc_btn_run.x, mc_btn_run.y, mc_btn_run.w, mc_btn_run.h};
+    SDL_RenderFillRect(renderer, &run_rect);
+    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x00, 0xff);
+    SDL_RenderDrawRect(renderer, &run_rect);
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    ui_draw_text(renderer, is_running ? "Running" : "RUN", mc_btn_run.x + 15, mc_btn_run.y + 6);
+
+    // Reset button - orange
+    SDL_SetRenderDrawColor(renderer, 0x80, 0x40, 0x00, 0xff);
+    SDL_Rect reset_rect = {mc_btn_reset.x, mc_btn_reset.y, mc_btn_reset.w, mc_btn_reset.h};
+    SDL_RenderFillRect(renderer, &reset_rect);
+    SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);
+    SDL_RenderDrawRect(renderer, &reset_rect);
+    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    ui_draw_text(renderer, "RESET", mc_btn_reset.x + 12, mc_btn_reset.y + 6);
+    y += 35;
 
     // Results
     if (analysis && analysis->monte_carlo.complete) {
@@ -3678,6 +3813,30 @@ void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer) {
         ui_draw_text(renderer, "Ready - Press F1 for help", 10, y + 8);
     }
 
+    // Adaptive time-stepping indicator
+    if (ui->adaptive_enabled) {
+        char dt_str[32];
+        // Show factor relative to 1.0 (target)
+        if (ui->adaptive_factor < 0.9) {
+            // Struggling - orange/red for slow stepping
+            snprintf(dt_str, sizeof(dt_str), "dt:%.1fx", ui->adaptive_factor);
+            if (ui->step_rejections > 0) {
+                SDL_SetRenderDrawColor(renderer, 0xff, 0x40, 0x40, 0xff);  // Red - step rejections
+            } else {
+                SDL_SetRenderDrawColor(renderer, SYNTH_ORANGE, 0xff);  // Orange - slowed down
+            }
+        } else if (ui->adaptive_factor > 1.5) {
+            // Fast - green for speeded up
+            snprintf(dt_str, sizeof(dt_str), "dt:%.1fx", ui->adaptive_factor);
+            SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);
+        } else {
+            // Normal - cyan
+            snprintf(dt_str, sizeof(dt_str), "dt:%.1fx", ui->adaptive_factor);
+            SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+        }
+        ui_draw_text(renderer, dt_str, ui->window_width - 350, y + 8);
+    }
+
     // Time display - synthwave cyan
     char time_str[32];
     snprintf(time_str, sizeof(time_str), "t=%.3fs", ui->sim_time);
@@ -3689,6 +3848,89 @@ void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer) {
     snprintf(count_str, sizeof(count_str), "C:%d N:%d", ui->component_count, ui->node_count);
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
     ui_draw_text(renderer, count_str, ui->window_width - 120, y + 8);
+
+    // Environment sliders (Light and Temperature) - positioned center-left of status bar
+    // Calculate right boundary of sliders area (leave room for right-side displays)
+    int right_boundary = ui->window_width - 370;  // dt/time/count start at -350, add margin
+    int env_x = 240;  // Start position for environment sliders
+    int slider_y = y + 5;
+    int slider_w = 70;
+    int slider_h = 14;
+    int text_w = 28;
+
+    // Calculate how much space the sliders need
+    // Lux: text_w + slider_w + value_text (~35) = ~133
+    // Gap between sliders: 45
+    // Temp: text_w + slider_w + value_text (~35) = ~133
+    // Total: ~311 pixels
+    int sliders_total_width = 311;
+
+    // Only show sliders if there's enough room
+    if (env_x + sliders_total_width > right_boundary) {
+        // Not enough room - skip sliders or adjust
+        // Hide sliders and just init bounds to offscreen
+        ui->env_light_slider = (Rect){-100, -100, 0, 0};
+        ui->env_temp_slider = (Rect){-100, -100, 0, 0};
+    } else {
+
+    // Light slider (for LDR components)
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
+    ui_draw_text(renderer, "Lux:", env_x, y + 8);
+
+    // Update slider bounds for click detection
+    ui->env_light_slider = (Rect){env_x + text_w, slider_y, slider_w, slider_h};
+
+    // Light slider background
+    SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
+    SDL_Rect light_bg = {env_x + text_w, slider_y, slider_w, slider_h};
+    SDL_RenderFillRect(renderer, &light_bg);
+    SDL_SetRenderDrawColor(renderer, SYNTH_YELLOW, 0x60);
+    SDL_RenderDrawRect(renderer, &light_bg);
+
+    // Light slider fill (0-100%)
+    int light_fill = (int)(slider_w * g_environment.light_level);
+    light_fill = CLAMP(light_fill, 0, slider_w);
+    SDL_SetRenderDrawColor(renderer, SYNTH_YELLOW, 0xff);
+    SDL_Rect light_fill_rect = {env_x + text_w, slider_y, light_fill, slider_h};
+    SDL_RenderFillRect(renderer, &light_fill_rect);
+
+    // Light value text
+    char light_text[16];
+    snprintf(light_text, sizeof(light_text), "%d%%", (int)(g_environment.light_level * 100));
+    SDL_SetRenderDrawColor(renderer, SYNTH_YELLOW, 0xff);
+    ui_draw_text(renderer, light_text, env_x + text_w + slider_w + 4, y + 8);
+
+    // Temperature slider (for Thermistor components)
+    int temp_x = env_x + text_w + slider_w + 45;
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
+    ui_draw_text(renderer, "Tmp:", temp_x, y + 8);
+
+    // Update slider bounds for click detection
+    ui->env_temp_slider = (Rect){temp_x + text_w, slider_y, slider_w, slider_h};
+
+    // Temperature slider background
+    SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
+    SDL_Rect temp_bg = {temp_x + text_w, slider_y, slider_w, slider_h};
+    SDL_RenderFillRect(renderer, &temp_bg);
+    SDL_SetRenderDrawColor(renderer, SYNTH_ORANGE, 0x60);
+    SDL_RenderDrawRect(renderer, &temp_bg);
+
+    // Temperature slider fill (map -40°C to 125°C to 0-1)
+    // Normalize: (temp - min) / (max - min)
+    double temp_min = -40.0, temp_max = 125.0;
+    double temp_norm = (g_environment.temperature - temp_min) / (temp_max - temp_min);
+    temp_norm = CLAMP(temp_norm, 0.0, 1.0);
+    int temp_fill = (int)(slider_w * temp_norm);
+    SDL_SetRenderDrawColor(renderer, SYNTH_ORANGE, 0xff);
+    SDL_Rect temp_fill_rect = {temp_x + text_w, slider_y, temp_fill, slider_h};
+    SDL_RenderFillRect(renderer, &temp_fill_rect);
+
+    // Temperature value text
+    char temp_text[16];
+    snprintf(temp_text, sizeof(temp_text), "%.0fC", g_environment.temperature);
+    SDL_SetRenderDrawColor(renderer, SYNTH_ORANGE, 0xff);
+    ui_draw_text(renderer, temp_text, temp_x + text_w + slider_w + 4, y + 8);
+    }  // End of else block (sliders have room)
 }
 
 void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer) {
@@ -3737,6 +3979,299 @@ void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer) {
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
     line_y += 10;
     ui_draw_text(renderer, "Press Escape or F1 to close", dx + 20, line_y);
+
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+}
+
+// Helper: case-insensitive substring search
+static bool str_contains_ci(const char *haystack, const char *needle) {
+    if (!haystack || !needle || needle[0] == '\0') return true;
+    size_t hlen = strlen(haystack);
+    size_t nlen = strlen(needle);
+    if (nlen > hlen) return false;
+
+    for (size_t i = 0; i <= hlen - nlen; i++) {
+        bool match = true;
+        for (size_t j = 0; j < nlen; j++) {
+            char h = haystack[i + j];
+            char n = needle[j];
+            // Convert to lowercase
+            if (h >= 'A' && h <= 'Z') h += 32;
+            if (n >= 'A' && n <= 'Z') n += 32;
+            if (h != n) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return true;
+    }
+    return false;
+}
+
+// Update spotlight search results based on query
+static void spotlight_update_results(UIState *ui) {
+    ui->spotlight_num_results = 0;
+    if (ui->spotlight_query[0] == '\0') {
+        // Empty query - show popular components
+        ui->spotlight_results[ui->spotlight_num_results++] = COMP_RESISTOR;
+        ui->spotlight_results[ui->spotlight_num_results++] = COMP_CAPACITOR;
+        ui->spotlight_results[ui->spotlight_num_results++] = COMP_INDUCTOR;
+        ui->spotlight_results[ui->spotlight_num_results++] = COMP_DIODE;
+        ui->spotlight_results[ui->spotlight_num_results++] = COMP_DC_VOLTAGE;
+        ui->spotlight_results[ui->spotlight_num_results++] = COMP_AC_VOLTAGE;
+        ui->spotlight_results[ui->spotlight_num_results++] = COMP_GROUND;
+        ui->spotlight_results[ui->spotlight_num_results++] = COMP_NPN_BJT;
+        ui->spotlight_results[ui->spotlight_num_results++] = COMP_OPAMP;
+        ui->spotlight_results[ui->spotlight_num_results++] = COMP_LED;
+        return;
+    }
+
+    // Search through all component types
+    for (int i = 1; i < COMP_TYPE_COUNT && ui->spotlight_num_results < 32; i++) {
+        const ComponentTypeInfo *info = component_get_info(i);
+        if (info && info->name) {
+            if (str_contains_ci(info->name, ui->spotlight_query) ||
+                str_contains_ci(info->short_name, ui->spotlight_query)) {
+                ui->spotlight_results[ui->spotlight_num_results++] = (ComponentType)i;
+            }
+        }
+    }
+
+    // Clamp selected index
+    if (ui->spotlight_selected >= ui->spotlight_num_results) {
+        ui->spotlight_selected = ui->spotlight_num_results > 0 ? ui->spotlight_num_results - 1 : 0;
+    }
+}
+
+// Open spotlight search dialog
+void ui_spotlight_open(UIState *ui) {
+    ui->show_spotlight = true;
+    ui->spotlight_query[0] = '\0';
+    ui->spotlight_cursor = 0;
+    ui->spotlight_selected = 0;
+    spotlight_update_results(ui);
+    SDL_StartTextInput();
+}
+
+// Close spotlight search dialog
+void ui_spotlight_close(UIState *ui) {
+    ui->show_spotlight = false;
+    SDL_StopTextInput();
+}
+
+// Handle spotlight text input
+void ui_spotlight_text_input(UIState *ui, const char *text) {
+    if (!ui->show_spotlight) return;
+
+    int len = (int)strlen(ui->spotlight_query);
+    int text_len = (int)strlen(text);
+
+    if (len + text_len < 63) {
+        // Insert text at cursor position
+        memmove(&ui->spotlight_query[ui->spotlight_cursor + text_len],
+                &ui->spotlight_query[ui->spotlight_cursor],
+                len - ui->spotlight_cursor + 1);
+        memcpy(&ui->spotlight_query[ui->spotlight_cursor], text, text_len);
+        ui->spotlight_cursor += text_len;
+        spotlight_update_results(ui);
+        ui->spotlight_selected = 0;  // Reset selection on new search
+    }
+}
+
+// Handle spotlight key input
+// Returns: component type to place, or COMP_NONE if no selection
+ComponentType ui_spotlight_key(UIState *ui, SDL_Keycode key) {
+    if (!ui->show_spotlight) return COMP_NONE;
+
+    int len = (int)strlen(ui->spotlight_query);
+
+    switch (key) {
+        case SDLK_ESCAPE:
+            ui_spotlight_close(ui);
+            return COMP_NONE;
+
+        case SDLK_RETURN:
+        case SDLK_KP_ENTER:
+            if (ui->spotlight_num_results > 0) {
+                ComponentType result = ui->spotlight_results[ui->spotlight_selected];
+                ui_spotlight_close(ui);
+                return result;
+            }
+            return COMP_NONE;
+
+        case SDLK_UP:
+            if (ui->spotlight_selected > 0) {
+                ui->spotlight_selected--;
+            }
+            return COMP_NONE;
+
+        case SDLK_DOWN:
+            if (ui->spotlight_selected < ui->spotlight_num_results - 1) {
+                ui->spotlight_selected++;
+            }
+            return COMP_NONE;
+
+        case SDLK_BACKSPACE:
+            if (ui->spotlight_cursor > 0) {
+                memmove(&ui->spotlight_query[ui->spotlight_cursor - 1],
+                        &ui->spotlight_query[ui->spotlight_cursor],
+                        len - ui->spotlight_cursor + 1);
+                ui->spotlight_cursor--;
+                spotlight_update_results(ui);
+            }
+            return COMP_NONE;
+
+        case SDLK_DELETE:
+            if (ui->spotlight_cursor < len) {
+                memmove(&ui->spotlight_query[ui->spotlight_cursor],
+                        &ui->spotlight_query[ui->spotlight_cursor + 1],
+                        len - ui->spotlight_cursor);
+                spotlight_update_results(ui);
+            }
+            return COMP_NONE;
+
+        case SDLK_LEFT:
+            if (ui->spotlight_cursor > 0) {
+                ui->spotlight_cursor--;
+            }
+            return COMP_NONE;
+
+        case SDLK_RIGHT:
+            if (ui->spotlight_cursor < len) {
+                ui->spotlight_cursor++;
+            }
+            return COMP_NONE;
+
+        case SDLK_HOME:
+            ui->spotlight_cursor = 0;
+            return COMP_NONE;
+
+        case SDLK_END:
+            ui->spotlight_cursor = len;
+            return COMP_NONE;
+
+        default:
+            return COMP_NONE;
+    }
+}
+
+// Render spotlight search dialog
+void ui_render_spotlight(UIState *ui, SDL_Renderer *renderer) {
+    if (!ui->show_spotlight) return;
+
+    // Semi-transparent overlay
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xa0);
+    SDL_Rect overlay = {0, 0, ui->window_width, ui->window_height};
+    SDL_RenderFillRect(renderer, &overlay);
+
+    // Dialog dimensions - centered, top-third of screen
+    int dw = 450, max_results = 10;
+    int dh = 50 + (ui->spotlight_num_results > 0 ? MIN(ui->spotlight_num_results, max_results) * 28 + 10 : 0);
+    int dx = (ui->window_width - dw) / 2;
+    int dy = ui->window_height / 5;
+
+    // Dialog background - dark with cyan border (synthwave style)
+    SDL_SetRenderDrawColor(renderer, SYNTH_BG_MID, 0xff);
+    SDL_Rect dialog = {dx, dy, dw, dh};
+    SDL_RenderFillRect(renderer, &dialog);
+
+    // Outer glow effect
+    SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0x60);
+    SDL_Rect glow1 = {dx - 2, dy - 2, dw + 4, dh + 4};
+    SDL_RenderDrawRect(renderer, &glow1);
+    SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0x30);
+    SDL_Rect glow2 = {dx - 4, dy - 4, dw + 8, dh + 8};
+    SDL_RenderDrawRect(renderer, &glow2);
+
+    // Main border
+    SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+    SDL_RenderDrawRect(renderer, &dialog);
+
+    // Search icon (magnifying glass approximation)
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
+    int icon_x = dx + 15, icon_y = dy + 18;
+    // Circle
+    for (int a = 0; a < 360; a += 30) {
+        int cx = icon_x + (int)(6 * cos(a * M_PI / 180));
+        int cy = icon_y + (int)(6 * sin(a * M_PI / 180));
+        SDL_RenderDrawPoint(renderer, cx, cy);
+    }
+    // Handle
+    SDL_RenderDrawLine(renderer, icon_x + 4, icon_y + 4, icon_x + 8, icon_y + 8);
+
+    // Search input field background
+    SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
+    SDL_Rect input_bg = {dx + 35, dy + 10, dw - 50, 28};
+    SDL_RenderFillRect(renderer, &input_bg);
+    SDL_SetRenderDrawColor(renderer, SYNTH_BORDER, 0xff);
+    SDL_RenderDrawRect(renderer, &input_bg);
+
+    // Query text
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
+    if (ui->spotlight_query[0] != '\0') {
+        ui_draw_text(renderer, ui->spotlight_query, dx + 42, dy + 18);
+    } else {
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
+        ui_draw_text(renderer, "Search components...", dx + 42, dy + 18);
+    }
+
+    // Cursor (blinking)
+    Uint32 tick = SDL_GetTicks();
+    if ((tick / 500) % 2 == 0) {
+        SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+        int cursor_x = dx + 42 + ui->spotlight_cursor * 8;
+        SDL_RenderDrawLine(renderer, cursor_x, dy + 14, cursor_x, dy + 32);
+    }
+
+    // Results list
+    if (ui->spotlight_num_results > 0) {
+        int result_y = dy + 48;
+        int visible = MIN(ui->spotlight_num_results, max_results);
+
+        for (int i = 0; i < visible; i++) {
+            ComponentType comp = ui->spotlight_results[i];
+            const ComponentTypeInfo *info = component_get_info(comp);
+            if (!info) continue;
+
+            // Highlight selected item
+            if (i == ui->spotlight_selected) {
+                SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0x40);
+                SDL_Rect sel_bg = {dx + 5, result_y - 2, dw - 10, 24};
+                SDL_RenderFillRect(renderer, &sel_bg);
+                SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0x80);
+                SDL_RenderDrawRect(renderer, &sel_bg);
+            }
+
+            // Component prefix (like "R" for resistor)
+            SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
+            char prefix_str[8];
+            snprintf(prefix_str, sizeof(prefix_str), "[%s]", info->short_name);
+            ui_draw_text(renderer, prefix_str, dx + 15, result_y + 4);
+
+            // Component name
+            SDL_SetRenderDrawColor(renderer, i == ui->spotlight_selected ? SYNTH_TEXT : SYNTH_TEXT_DIM, 0xff);
+            ui_draw_text(renderer, info->name, dx + 60, result_y + 4);
+
+            result_y += 28;
+        }
+
+        // Show "more results" indicator if needed
+        if (ui->spotlight_num_results > max_results) {
+            SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
+            char more_str[32];
+            snprintf(more_str, sizeof(more_str), "... +%d more", ui->spotlight_num_results - max_results);
+            ui_draw_text(renderer, more_str, dx + 15, result_y + 4);
+        }
+    } else if (ui->spotlight_query[0] != '\0') {
+        // No results message
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
+        ui_draw_text(renderer, "No matching components", dx + 15, dy + 55);
+    }
+
+    // Hint at bottom
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
+    ui_draw_text(renderer, "Enter to select, Esc to close", dx + 10, dy + dh - 18);
 
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }
@@ -3999,6 +4534,18 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             }
         }
 
+        // Monte Carlo panel button handling
+        if (ui->show_monte_carlo_panel) {
+            if (point_in_rect(x, y, &mc_btn_run)) return UI_ACTION_MC_RUN;
+            if (point_in_rect(x, y, &mc_btn_reset)) return UI_ACTION_MC_RESET;
+            if (point_in_rect(x, y, &mc_btn_runs_up)) return UI_ACTION_MC_RUNS_UP;
+            if (point_in_rect(x, y, &mc_btn_runs_down)) return UI_ACTION_MC_RUNS_DOWN;
+            if (point_in_rect(x, y, &mc_btn_tol_up)) return UI_ACTION_MC_TOL_UP;
+            if (point_in_rect(x, y, &mc_btn_tol_down)) return UI_ACTION_MC_TOL_DOWN;
+            // Check if click is within panel to consume it
+            if (point_in_rect(x, y, &mc_panel_rect)) return UI_ACTION_NONE;
+        }
+
         // Handle trigger level dragging - check if click is near trigger indicator
         // The trigger indicator is on the right edge of the scope (arrow at r->x + r->w - 10 to r->x + r->w)
         if (ui->display_mode == SCOPE_MODE_YT && ui->scope_num_channels > 0) {
@@ -4079,6 +4626,13 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (ui->dragging_speed) {
             ui->dragging_speed = false;
         }
+        // Release environment slider drags
+        if (ui->dragging_light) {
+            ui->dragging_light = false;
+        }
+        if (ui->dragging_temp) {
+            ui->dragging_temp = false;
+        }
     }
 
     // Check toolbar buttons
@@ -4105,6 +4659,9 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_load.bounds) && ui->btn_load.enabled) {
             return UI_ACTION_LOAD;
         }
+        if (point_in_rect(x, y, &ui->btn_export_svg.bounds) && ui->btn_export_svg.enabled) {
+            return UI_ACTION_EXPORT_SVG;
+        }
 
         // Check time step control buttons
         if (point_in_rect(x, y, &ui->btn_timestep_up.bounds) && ui->btn_timestep_up.enabled) {
@@ -4130,6 +4687,26 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             ui->speed_value = CLAMP(ui->speed_value, 1.0f, 100.0f);
             ui->dragging_speed = true;
             return UI_ACTION_NONE;  // Handled internally
+        }
+
+        // Check environment light slider click (in status bar)
+        if (point_in_rect(x, y, &ui->env_light_slider)) {
+            // Map click position to light level (0 to 1)
+            float normalized = (float)(x - ui->env_light_slider.x) / ui->env_light_slider.w;
+            normalized = CLAMP(normalized, 0.0f, 1.0f);
+            g_environment.light_level = normalized;
+            ui->dragging_light = true;
+            return UI_ACTION_NONE;
+        }
+
+        // Check environment temperature slider click (in status bar)
+        if (point_in_rect(x, y, &ui->env_temp_slider)) {
+            // Map click position to temperature (-40°C to 125°C)
+            float normalized = (float)(x - ui->env_temp_slider.x) / ui->env_temp_slider.w;
+            normalized = CLAMP(normalized, 0.0f, 1.0f);
+            g_environment.temperature = -40.0 + normalized * 165.0;  // -40 + (0-1) * 165 = -40 to 125
+            ui->dragging_temp = true;
+            return UI_ACTION_NONE;
         }
 
         // Check oscilloscope control buttons
@@ -4177,6 +4754,9 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
         if (point_in_rect(x, y, &ui->btn_bode.bounds) && ui->btn_bode.enabled) {
             return UI_ACTION_BODE_PLOT;
+        }
+        if (point_in_rect(x, y, &ui->btn_mc.bounds) && ui->btn_mc.enabled) {
+            return UI_ACTION_MONTE_CARLO;
         }
         if (point_in_rect(x, y, &ui->btn_scope_popup.bounds) && ui->btn_scope_popup.enabled) {
             return UI_ACTION_SCOPE_POPUP;
@@ -4425,6 +5005,22 @@ int ui_handle_motion(UIState *ui, int x, int y) {
         return UI_ACTION_NONE;
     }
 
+    // Handle environment light slider dragging
+    if (ui->dragging_light) {
+        float normalized = (float)(x - ui->env_light_slider.x) / ui->env_light_slider.w;
+        normalized = CLAMP(normalized, 0.0f, 1.0f);
+        g_environment.light_level = normalized;
+        return UI_ACTION_NONE;
+    }
+
+    // Handle environment temperature slider dragging
+    if (ui->dragging_temp) {
+        float normalized = (float)(x - ui->env_temp_slider.x) / ui->env_temp_slider.w;
+        normalized = CLAMP(normalized, 0.0f, 1.0f);
+        g_environment.temperature = -40.0 + normalized * 165.0;  // -40 to 125
+        return UI_ACTION_NONE;
+    }
+
     // Handle properties panel resizing
     if (ui->props_resizing) {
         int new_width = ui->window_width - x;
@@ -4447,6 +5043,7 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_clear.hovered = point_in_rect(x, y, &ui->btn_clear.bounds);
     ui->btn_save.hovered = point_in_rect(x, y, &ui->btn_save.bounds);
     ui->btn_load.hovered = point_in_rect(x, y, &ui->btn_load.bounds);
+    ui->btn_export_svg.hovered = point_in_rect(x, y, &ui->btn_export_svg.bounds);
     ui->btn_timestep_up.hovered = point_in_rect(x, y, &ui->btn_timestep_up.bounds);
     ui->btn_timestep_down.hovered = point_in_rect(x, y, &ui->btn_timestep_down.bounds);
     ui->btn_timestep_auto.hovered = point_in_rect(x, y, &ui->btn_timestep_auto.bounds);
@@ -4467,6 +5064,7 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_scope_fft.hovered = point_in_rect(x, y, &ui->btn_scope_fft.bounds);
     ui->btn_scope_autoset.hovered = point_in_rect(x, y, &ui->btn_scope_autoset.bounds);
     ui->btn_bode.hovered = point_in_rect(x, y, &ui->btn_bode.bounds);
+    ui->btn_mc.hovered = point_in_rect(x, y, &ui->btn_mc.bounds);
     ui->btn_scope_popup.hovered = point_in_rect(x, y, &ui->btn_scope_popup.bounds);
     ui->btn_bode_recalc.hovered = ui->show_bode_plot && point_in_rect(x, y, &ui->btn_bode_recalc.bounds);
 
@@ -4619,6 +5217,8 @@ void ui_update_layout(UIState *ui) {
     scope_btn_x += 38;
     ui->btn_bode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
     scope_btn_x += 43;
+    ui->btn_mc.bounds = (Rect){scope_btn_x, scope_btn_y, 25, scope_btn_h};
+    scope_btn_x += 28;
     ui->btn_scope_popup.bounds = (Rect){scope_btn_x, scope_btn_y, 50, scope_btn_h};
 }
 

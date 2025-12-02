@@ -176,7 +176,10 @@ typedef enum {
 
     // Lamp
     PROP_POWER_RATING,            // Power rating
-    PROP_VOLTAGE_RATING           // Voltage rating
+    PROP_VOLTAGE_RATING,          // Voltage rating
+
+    // Fuse reset
+    PROP_RESET_FUSE               // Reset blown fuse
 } PropertyType;
 
 // Input state

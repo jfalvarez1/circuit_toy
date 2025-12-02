@@ -24,6 +24,9 @@ bool file_export_json(Circuit *circuit, const char *filename);
 // Import circuit from JSON
 bool file_import_json(Circuit *circuit, const char *filename);
 
+// Export circuit as SVG (scalable vector graphics)
+bool file_export_svg(Circuit *circuit, const char *filename);
+
 // Get last error message
 const char *file_get_error(void);
 

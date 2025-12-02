@@ -173,6 +173,18 @@ typedef union {
         double phi;        // PHI - Surface potential (V), default: 0.65
         double nsub;       // NSUB - Substrate doping (1/cm³), default: 1e15
 
+        // Gate capacitance parameters
+        double cgso;       // CGSO - Gate-source overlap capacitance (F/m), default: 1e-10
+        double cgdo;       // CGDO - Gate-drain overlap capacitance (F/m), default: 1e-10
+        double cgbo;       // CGBO - Gate-body overlap capacitance (F/m), default: 1e-10
+        double cj;         // CJ - Junction capacitance (F/m²), default: 1e-4
+
+        // State variables for capacitor integration
+        double vgs_prev;   // Previous Vgs for capacitor integration
+        double vgd_prev;   // Previous Vgd for capacitor integration
+        double i_cgs;      // Gate-source capacitor current
+        double i_cgd;      // Gate-drain capacitor current
+
         // Temperature
         double temp;       // Operating temperature (K), default: 300
 
@@ -281,7 +293,10 @@ typedef union {
     struct {
         double rating;          // Current rating (A)
         double resistance;      // Cold resistance (Ohm), default: 0.01
-        double i2t;             // I²t for time-current characteristic
+        double i2t;             // I²t rating for time-current characteristic (A²s)
+        double i2t_accumulated; // Accumulated I²t energy (A²s) - state variable
+        double current;         // Current through fuse (A) - for display/animation
+        double blow_time;       // Simulation time when fuse blew (for animation)
         bool blown;             // Current state
         bool ideal;             // Ideal mode (instant blow at rating)
     } fuse;
@@ -410,16 +425,18 @@ typedef union {
         bool ideal;             // Ideal mode
     } timer_555;
 
-    // Relay
+    // Relay (with coil inductance and hysteresis)
     struct {
         double v_coil;          // Coil voltage rating (V)
         double r_coil;          // Coil resistance (Ohm)
-        double i_pickup;        // Pickup current (A)
-        double i_dropout;       // Dropout current (A)
+        double l_coil;          // Coil inductance (H), for inductive kickback
+        double i_pickup;        // Pickup current threshold (A)
+        double i_dropout;       // Dropout current threshold (A)
         double r_contact_on;    // Contact on-resistance (Ohm)
         double r_contact_off;   // Contact off-resistance (Ohm)
-        bool energized;         // Current state
-        bool ideal;             // Ideal mode
+        double i_coil;          // Current coil current (A) - state variable
+        bool energized;         // Current contact state
+        bool ideal;             // Ideal mode (no inductance)
     } relay;
 
     // Analog Switch (voltage controlled)
@@ -513,10 +530,58 @@ typedef union {
         bool lamp_test;         // Lamp test input state
         bool ideal;             // Ideal mode
     } bcd_decoder;
+
+    // PWL (Piecewise Linear) Source - up to 32 time-value pairs
+    struct {
+        double times[32];       // Time points (s)
+        double values[32];      // Voltage values (V) at each time point
+        int num_points;         // Number of defined points (max 32)
+        bool repeat;            // Repeat waveform after last point
+        double repeat_period;   // Period for repeat mode (0 = auto from last time)
+        double r_series;        // Output resistance (Ohm)
+        bool ideal;             // Ideal mode (zero output resistance)
+    } pwl_source;
+
+    // Expression-based Source V(t)
+    struct {
+        char expression[256];   // Math expression string (e.g., "3*sin(2*pi*60*t)+0.1*rand()")
+        double r_series;        // Output resistance (Ohm)
+        double cached_value;    // Last computed value (for efficiency)
+        double cache_time;      // Time of cached value
+        bool ideal;             // Ideal mode
+    } expr_source;
+
+    // DC Motor (armature model with back-EMF)
+    struct {
+        double r_armature;      // Armature resistance (Ohm), default: 1.0
+        double l_armature;      // Armature inductance (H), default: 1e-3
+        double kv;              // Back-EMF constant (V/rad/s), default: 0.01
+        double kt;              // Torque constant (Nm/A), default: 0.01
+        double j_rotor;         // Rotor moment of inertia (kg*m^2), default: 1e-5
+        double b_friction;      // Viscous friction coefficient (Nm*s/rad), default: 1e-6
+        double omega;           // Angular velocity state (rad/s)
+        double current;         // Armature current state (A)
+        double torque_load;     // External load torque (Nm)
+        double v_bemf;          // Back-EMF voltage (calculated)
+        bool ideal;             // Ideal mode (no inductance, no friction)
+    } dc_motor;
+
+    // Battery with discharge model
+    struct {
+        double nominal_voltage;  // Nominal voltage (V), default: 1.5 (AA)
+        double capacity_mah;     // Capacity in mAh, default: 2500
+        double internal_r;       // Internal resistance (Ohm), default: 0.1
+        double charge_state;     // State of charge (0.0=empty, 1.0=full)
+        double charge_coulombs;  // Remaining charge in coulombs (C = mAh * 3.6)
+        double current_draw;     // Tracked current draw (A), for discharge calculation
+        double v_cutoff;         // Cutoff voltage (V), default: 0.9
+        bool discharged;         // Battery is depleted
+        bool ideal;              // Ideal mode (no internal resistance, no discharge)
+    } battery;
 } ComponentProps;
 
 // Component structure
-typedef struct {
+typedef struct Component {
     int id;
     ComponentType type;
     float x, y;
@@ -535,6 +600,9 @@ typedef struct {
 
     // Properties
     ComponentProps props;
+
+    // Mixed-signal logic state (for digital components)
+    LogicGateState logic_state;
 } Component;
 
 // Component type info

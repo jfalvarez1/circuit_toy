@@ -255,6 +255,231 @@ void analysis_monte_carlo_reset(AnalysisState *state) {
     state->monte_carlo.current_run = 0;
 }
 
+// ============================================
+// MONTE CARLO COMPONENT VALUE MANIPULATION
+// ============================================
+
+// Helper to get primary value for a component
+static double mc_get_component_value(Component *comp) {
+    switch (comp->type) {
+        case COMP_RESISTOR:
+            return comp->props.resistor.resistance;
+        case COMP_CAPACITOR:
+        case COMP_CAPACITOR_ELEC:
+            return comp->props.capacitor.capacitance;
+        case COMP_INDUCTOR:
+            return comp->props.inductor.inductance;
+        case COMP_POTENTIOMETER:
+            return comp->props.potentiometer.resistance;
+        case COMP_DC_VOLTAGE:
+            return comp->props.dc_voltage.voltage;
+        case COMP_DC_CURRENT:
+            return comp->props.dc_current.current;
+        case COMP_DIODE:
+        case COMP_SCHOTTKY:
+            return comp->props.diode.is;  // Saturation current
+        case COMP_ZENER:
+            return comp->props.zener.vz;  // Zener voltage
+        case COMP_LED:
+            return comp->props.led.vf;    // Forward voltage
+        case COMP_NPN_BJT:
+        case COMP_PNP_BJT:
+            return comp->props.bjt.bf;    // Beta
+        case COMP_NMOS:
+        case COMP_PMOS:
+            return comp->props.mosfet.vth;  // Threshold voltage
+        default:
+            return 0.0;
+    }
+}
+
+// Helper to set primary value for a component
+static void mc_set_component_value(Component *comp, double value) {
+    switch (comp->type) {
+        case COMP_RESISTOR:
+            comp->props.resistor.resistance = value;
+            break;
+        case COMP_CAPACITOR:
+        case COMP_CAPACITOR_ELEC:
+            comp->props.capacitor.capacitance = value;
+            break;
+        case COMP_INDUCTOR:
+            comp->props.inductor.inductance = value;
+            break;
+        case COMP_POTENTIOMETER:
+            comp->props.potentiometer.resistance = value;
+            break;
+        case COMP_DC_VOLTAGE:
+            comp->props.dc_voltage.voltage = value;
+            break;
+        case COMP_DC_CURRENT:
+            comp->props.dc_current.current = value;
+            break;
+        case COMP_DIODE:
+        case COMP_SCHOTTKY:
+            comp->props.diode.is = value;
+            break;
+        case COMP_ZENER:
+            comp->props.zener.vz = value;
+            break;
+        case COMP_LED:
+            comp->props.led.vf = value;
+            break;
+        case COMP_NPN_BJT:
+        case COMP_PNP_BJT:
+            comp->props.bjt.bf = value;
+            break;
+        case COMP_NMOS:
+        case COMP_PMOS:
+            comp->props.mosfet.vth = value;
+            break;
+        default:
+            break;
+    }
+}
+
+// Check if component should participate in Monte Carlo
+static bool mc_component_has_value(ComponentType type) {
+    switch (type) {
+        case COMP_RESISTOR:
+        case COMP_CAPACITOR:
+        case COMP_CAPACITOR_ELEC:
+        case COMP_INDUCTOR:
+        case COMP_POTENTIOMETER:
+        case COMP_DC_VOLTAGE:
+        case COMP_DC_CURRENT:
+        case COMP_DIODE:
+        case COMP_SCHOTTKY:
+        case COMP_ZENER:
+        case COMP_LED:
+        case COMP_NPN_BJT:
+        case COMP_PNP_BJT:
+        case COMP_NMOS:
+        case COMP_PMOS:
+            return true;
+        default:
+            return false;
+    }
+}
+
+void analysis_mc_backup_values(Circuit *circuit, MCBackup *backup) {
+    if (!circuit || !backup) return;
+
+    backup->num_backed_up = 0;
+    for (int i = 0; i < circuit->num_components && i < MAX_COMPONENTS; i++) {
+        Component *comp = circuit->components[i];
+        if (!comp) continue;
+
+        if (mc_component_has_value(comp->type)) {
+            backup->values[i] = mc_get_component_value(comp);
+        } else {
+            backup->values[i] = 0.0;
+        }
+        backup->num_backed_up = i + 1;
+    }
+}
+
+void analysis_mc_restore_values(Circuit *circuit, MCBackup *backup) {
+    if (!circuit || !backup) return;
+
+    for (int i = 0; i < backup->num_backed_up && i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+        if (!comp) continue;
+
+        if (mc_component_has_value(comp->type)) {
+            mc_set_component_value(comp, backup->values[i]);
+        }
+    }
+}
+
+void analysis_mc_randomize_values(Circuit *circuit, double tolerance_pct) {
+    if (!circuit) return;
+
+    // Standard deviation for Gaussian distribution
+    // For ±tolerance%, we use 3-sigma = tolerance, so sigma = tolerance/3
+    double sigma_factor = tolerance_pct / 100.0 / 3.0;
+
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+        if (!comp) continue;
+
+        if (mc_component_has_value(comp->type)) {
+            double base_value = mc_get_component_value(comp);
+            if (base_value == 0.0) continue;
+
+            // Apply Gaussian variation
+            double variation = rand_gaussian(1.0, sigma_factor);
+            double new_value = base_value * variation;
+
+            // Ensure positive values for passive components
+            if (new_value < 0) new_value = fabs(new_value);
+
+            mc_set_component_value(comp, new_value);
+        }
+    }
+}
+
+bool analysis_monte_carlo_step(AnalysisState *state, Circuit *circuit,
+                               Simulation *sim, int probe_idx, MCBackup *backup) {
+    if (!state || !circuit || !sim || !backup) return true;
+
+    MonteCarloAnalysis *mc = &state->monte_carlo;
+
+    if (!mc->active || mc->complete) return true;
+
+    // First run: backup original values
+    if (mc->current_run == 0) {
+        analysis_mc_backup_values(circuit, backup);
+    }
+
+    // Restore original values before applying new random variation
+    analysis_mc_restore_values(circuit, backup);
+
+    // Apply random variation
+    analysis_mc_randomize_values(circuit, mc->global_tolerance);
+
+    // Reset simulation state for clean DC analysis
+    simulation_reset(sim);
+
+    // Run DC analysis to get steady-state operating point
+    if (!simulation_dc_analysis(sim)) {
+        // DC analysis failed, record zero or skip
+        mc->output_values[mc->current_run] = 0.0;
+    } else {
+        // Get the voltage at the probe node
+        if (probe_idx >= 0 && probe_idx < circuit->num_probes) {
+            mc->output_values[mc->current_run] = circuit->probes[probe_idx].voltage;
+        } else if (circuit->num_probes > 0) {
+            // Use first probe if index invalid
+            mc->output_values[mc->current_run] = circuit->probes[0].voltage;
+        } else {
+            // No probes, try to get a meaningful voltage
+            mc->output_values[mc->current_run] = 0.0;
+        }
+    }
+
+    mc->num_results = mc->current_run + 1;
+    mc->current_run++;
+
+    // Check if complete
+    if (mc->current_run >= mc->num_runs) {
+        mc->complete = true;
+
+        // Restore original values
+        analysis_mc_restore_values(circuit, backup);
+
+        // Calculate statistics
+        analysis_monte_carlo_stats(state);
+
+        // Reset simulation back to normal
+        simulation_reset(sim);
+
+        return true;  // Complete
+    }
+
+    return false;  // Not complete, more runs needed
+}
+
 // FFT functions
 void analysis_fft_window(double *samples, int num_samples, int window_type) {
     for (int i = 0; i < num_samples; i++) {

@@ -8,6 +8,7 @@
 #include "app.h"
 #include "file_io.h"
 #include "circuits.h"
+#include "analysis.h"
 
 // Thread data for frequency sweep
 typedef struct {
@@ -30,6 +31,9 @@ static int freq_sweep_thread_func(void *data) {
 
 // Static thread data (one sweep at a time)
 static FreqSweepThreadData g_sweep_data;
+
+// Static Monte Carlo backup storage
+static MCBackup g_mc_backup;
 
 bool app_init(App *app) {
     memset(app, 0, sizeof(App));
@@ -243,6 +247,23 @@ void app_handle_events(App *app) {
             case UI_ACTION_LOAD:
                 app_load_circuit(app);
                 break;
+            case UI_ACTION_EXPORT_SVG:
+                {
+                    // Generate timestamped filename
+                    time_t now = time(NULL);
+                    struct tm *t = localtime(&now);
+                    char filename[256];
+                    snprintf(filename, sizeof(filename), "circuit_%04d%02d%02d_%02d%02d%02d.svg",
+                        t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+                        t->tm_hour, t->tm_min, t->tm_sec);
+
+                    if (file_export_svg(app->circuit, filename)) {
+                        printf("Circuit exported to %s\n", filename);
+                    } else {
+                        printf("Failed to export SVG: %s\n", file_get_error());
+                    }
+                }
+                break;
             case UI_ACTION_SCOPE_VOLT_UP:
                 // Increase volts/div using 1-2-5 sequence (like real scopes)
                 {
@@ -292,6 +313,8 @@ void app_handle_events(App *app) {
                             break;
                         }
                     }
+                    // Invalidate capture to force re-render with new time scale
+                    app->ui.scope_capture_valid = false;
                 }
                 break;
             case UI_ACTION_SCOPE_TIME_DOWN:
@@ -311,6 +334,8 @@ void app_handle_events(App *app) {
                             break;
                         }
                     }
+                    // Invalidate capture to force re-render with new time scale
+                    app->ui.scope_capture_valid = false;
                 }
                 break;
             case UI_ACTION_SCOPE_TRIG_MODE:
@@ -552,6 +577,60 @@ void app_handle_events(App *app) {
                 } else {
                     ui_set_status(&app->ui, "Monte Carlo panel closed");
                 }
+                break;
+
+            case UI_ACTION_MC_RUN:
+                // Start Monte Carlo analysis
+                if (!app->analysis.monte_carlo.active) {
+                    // Initialize MC analysis
+                    analysis_monte_carlo_init(&app->analysis, app->ui.monte_carlo_runs,
+                                             true, app->ui.monte_carlo_tolerance);
+                    // Backup original component values
+                    analysis_mc_backup_values(app->circuit, &g_mc_backup);
+                    ui_set_status(&app->ui, "Monte Carlo analysis started...");
+                }
+                break;
+
+            case UI_ACTION_MC_RUNS_UP:
+                // Increase MC runs
+                if (app->ui.monte_carlo_runs < 1000) {
+                    if (app->ui.monte_carlo_runs < 50) app->ui.monte_carlo_runs += 10;
+                    else if (app->ui.monte_carlo_runs < 200) app->ui.monte_carlo_runs += 25;
+                    else app->ui.monte_carlo_runs += 100;
+                    if (app->ui.monte_carlo_runs > 1000) app->ui.monte_carlo_runs = 1000;
+                }
+                break;
+
+            case UI_ACTION_MC_RUNS_DOWN:
+                // Decrease MC runs
+                if (app->ui.monte_carlo_runs > 10) {
+                    if (app->ui.monte_carlo_runs <= 50) app->ui.monte_carlo_runs -= 10;
+                    else if (app->ui.monte_carlo_runs <= 200) app->ui.monte_carlo_runs -= 25;
+                    else app->ui.monte_carlo_runs -= 100;
+                    if (app->ui.monte_carlo_runs < 10) app->ui.monte_carlo_runs = 10;
+                }
+                break;
+
+            case UI_ACTION_MC_TOL_UP:
+                // Increase MC tolerance
+                if (app->ui.monte_carlo_tolerance < 30.0) {
+                    app->ui.monte_carlo_tolerance += 1.0;
+                }
+                break;
+
+            case UI_ACTION_MC_TOL_DOWN:
+                // Decrease MC tolerance
+                if (app->ui.monte_carlo_tolerance > 1.0) {
+                    app->ui.monte_carlo_tolerance -= 1.0;
+                }
+                break;
+
+            case UI_ACTION_MC_RESET:
+                // Reset Monte Carlo results
+                analysis_monte_carlo_reset(&app->analysis);
+                // Restore original values if MC was interrupted
+                analysis_mc_restore_values(app->circuit, &g_mc_backup);
+                ui_set_status(&app->ui, "Monte Carlo analysis reset");
                 break;
 
             case UI_ACTION_TIMESTEP_UP:
@@ -851,11 +930,27 @@ void app_handle_events(App *app) {
                                     c->props.led.ideal = !c->props.led.ideal;
                                     model_name = c->props.led.ideal ? "Ideal (fixed Vf)" : "Real (Shockley)";
                                     break;
+                                case COMP_FUSE:
+                                    c->props.fuse.ideal = !c->props.fuse.ideal;
+                                    model_name = c->props.fuse.ideal ? "Ideal (instant)" : "Real (i2t)";
+                                    break;
                                 default: break;
                             }
                             char msg[64];
                             snprintf(msg, sizeof(msg), "Model: %s", model_name);
                             ui_set_status(&app->ui, msg);
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;  // Don't start text edit for toggle
+                        }
+                        // Fuse reset
+                        else if (prop_type == PROP_RESET_FUSE) {
+                            if (c->type == COMP_FUSE) {
+                                c->props.fuse.blown = false;
+                                c->props.fuse.i2t_accumulated = 0.0;
+                                c->props.fuse.blow_time = -1.0;
+                                c->props.fuse.current = 0.0;
+                                ui_set_status(&app->ui, "Fuse reset");
+                            }
                             app->input.pending_ui_action = UI_ACTION_NONE;
                             break;  // Don't start text edit for toggle
                         }
@@ -1199,6 +1294,38 @@ void app_update(App *app) {
         }
     }
 
+    // Run Monte Carlo analysis if active
+    if (app->analysis.monte_carlo.active && !app->analysis.monte_carlo.complete) {
+        // Run a few MC iterations per frame to keep UI responsive
+        for (int i = 0; i < 5; i++) {
+            bool done = analysis_monte_carlo_step(&app->analysis, app->circuit,
+                                                   app->simulation, 0, &g_mc_backup);
+            if (done) {
+                // Restore original component values
+                analysis_mc_restore_values(app->circuit, &g_mc_backup);
+
+                // Update status with results
+                char msg[128];
+                snprintf(msg, sizeof(msg), "MC complete: Mean=%.3fV, StdDev=%.3fV, Range=[%.3f, %.3f]V",
+                    app->analysis.monte_carlo.mean,
+                    app->analysis.monte_carlo.std_dev,
+                    app->analysis.monte_carlo.min_val,
+                    app->analysis.monte_carlo.max_val);
+                ui_set_status(&app->ui, msg);
+                break;
+            }
+        }
+
+        // Update progress in status bar
+        if (!app->analysis.monte_carlo.complete) {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "Monte Carlo: %d/%d runs...",
+                app->analysis.monte_carlo.current_run,
+                app->analysis.monte_carlo.num_runs);
+            ui_set_status(&app->ui, msg);
+        }
+    }
+
     // Run simulation if active
     if (app->simulation->state == SIM_RUNNING) {
         // Calculate steps based on speed
@@ -1328,13 +1455,19 @@ void app_render(App *app) {
     ui_render_palette(&app->ui, r);
     ui_render_properties(&app->ui, r, app->input.selected_component, &app->input);
     ui_render_measurements(&app->ui, r, app->simulation);
-    ui_render_oscilloscope(&app->ui, r, app->simulation, &app->analysis);
+    // Only render oscilloscope in main window if not popped out
+    if (!app->ui.scope_popped_out) {
+        ui_render_oscilloscope(&app->ui, r, app->simulation, &app->analysis);
+    }
     ui_render_statusbar(&app->ui, r);
 
     // Render dialogs
     if (app->ui.show_shortcuts_dialog) {
         ui_render_shortcuts_dialog(&app->ui, r);
     }
+
+    // Render spotlight search (on top of everything except neon trim)
+    ui_render_spotlight(&app->ui, r);
 
     // Render overlay panels
     ui_render_bode_plot(&app->ui, r, app->simulation);
@@ -1376,6 +1509,7 @@ void app_render(App *app) {
         Rect orig_btn_fft = app->ui.btn_scope_fft.bounds;
         Rect orig_btn_screenshot = app->ui.btn_scope_screenshot.bounds;
         Rect orig_btn_bode = app->ui.btn_bode.bounds;
+        Rect orig_btn_mc = app->ui.btn_mc.bounds;
 
         app->ui.scope_rect = (Rect){10, 30, popup_w - 20, popup_h - 130};
 
@@ -1421,6 +1555,8 @@ void app_render(App *app) {
         app->ui.btn_scope_screenshot.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
         scope_btn_x += 38;
         app->ui.btn_bode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
+        scope_btn_x += 43;
+        app->ui.btn_mc.bounds = (Rect){scope_btn_x, scope_btn_y, 25, scope_btn_h};
 
         // Render oscilloscope to popup window
         ui_render_oscilloscope(&app->ui, popup_r, app->simulation, &app->analysis);
@@ -1442,6 +1578,7 @@ void app_render(App *app) {
         app->ui.btn_scope_fft.bounds = orig_btn_fft;
         app->ui.btn_scope_screenshot.bounds = orig_btn_screenshot;
         app->ui.btn_bode.bounds = orig_btn_bode;
+        app->ui.btn_mc.bounds = orig_btn_mc;
 
         // Present popup window
         SDL_RenderPresent(popup_r);
