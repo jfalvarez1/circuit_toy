@@ -486,6 +486,139 @@ void circuit_update_voltages(Circuit *circuit, Vector *solution) {
     }
 }
 
+// Helper: Calculate current through a 2-terminal component based on type and voltages
+static double calculate_component_current(Component *comp, double v1, double v2) {
+    double v_diff = v1 - v2;
+
+    switch (comp->type) {
+        case COMP_RESISTOR:
+            if (comp->props.resistor.resistance > 0) {
+                return v_diff / comp->props.resistor.resistance;
+            }
+            break;
+
+        case COMP_DC_VOLTAGE:
+            // Current through voltage source: use internal resistance
+            if (comp->props.dc_voltage.r_series > 0) {
+                return (v_diff - comp->props.dc_voltage.voltage) / comp->props.dc_voltage.r_series;
+            }
+            // For ideal source, estimate based on typical load
+            return v_diff / 1000.0;  // Assume 1k load for visualization
+
+        case COMP_AC_VOLTAGE:
+            if (comp->props.ac_voltage.r_series > 0) {
+                return v_diff / comp->props.ac_voltage.r_series;
+            }
+            return v_diff / 1000.0;
+
+        case COMP_DC_CURRENT:
+            // Current source: current is specified
+            return comp->props.dc_current.current;
+
+        case COMP_DIODE:
+        case COMP_LED:
+        case COMP_ZENER:
+        case COMP_SCHOTTKY: {
+            // Diode current: exponential model approximation
+            // For visualization, use simplified I = (V - Vf) / Rd where Rd ~ 10-100 ohms
+            double vf = (comp->type == COMP_LED) ? comp->props.led.vf : 0.7;
+            if (v_diff > vf) {
+                return (v_diff - vf) / 50.0;  // ~50 ohm dynamic resistance
+            } else if (v_diff < -5.0 && comp->type == COMP_ZENER) {
+                return (v_diff + comp->props.zener.vz) / comp->props.zener.rz;
+            }
+            return 0;
+        }
+
+        case COMP_CAPACITOR:
+            // Capacitor: for DC, very small current (leakage)
+            // For animation purposes, show small current proportional to voltage
+            return v_diff * 1e-6;  // Small leakage current for visualization
+
+        case COMP_INDUCTOR:
+            // Inductor: current from stored state or estimate from DCR
+            if (comp->props.inductor.dcr > 0) {
+                return v_diff / comp->props.inductor.dcr;
+            }
+            return comp->props.inductor.current;
+
+        case COMP_SPST_SWITCH:
+            if (comp->props.switch_spst.closed) {
+                return v_diff / comp->props.switch_spst.r_on;
+            }
+            return 0;
+
+        case COMP_PUSH_BUTTON:
+            if (comp->props.push_button.pressed) {
+                return v_diff / comp->props.push_button.r_on;
+            }
+            return 0;
+
+        default:
+            // For unknown components, estimate based on voltage difference
+            if (fabs(v_diff) > 0.001) {
+                return v_diff / 1000.0;  // Assume 1k equivalent resistance
+            }
+            break;
+    }
+    return 0;
+}
+
+void circuit_update_wire_currents(Circuit *circuit) {
+    if (!circuit) return;
+
+    // For each wire, find connected components and calculate current
+    for (int w = 0; w < circuit->num_wires; w++) {
+        Wire *wire = &circuit->wires[w];
+        double total_current = 0;
+        int current_count = 0;
+
+        // Get wire endpoint nodes
+        Node *start_node = circuit_get_node(circuit, wire->start_node_id);
+        Node *end_node = circuit_get_node(circuit, wire->end_node_id);
+        if (!start_node || !end_node) {
+            wire->current = 0;
+            continue;
+        }
+
+        // Find components connected to start node
+        for (int c = 0; c < circuit->num_components; c++) {
+            Component *comp = circuit->components[c];
+            if (!comp || comp->num_terminals < 2) continue;
+
+            // Check if this component connects to the wire's start node
+            for (int t = 0; t < comp->num_terminals; t++) {
+                if (comp->node_ids[t] == wire->start_node_id) {
+                    // Found a component connected to start node
+                    // Get the voltage at the other terminal(s)
+                    for (int t2 = 0; t2 < comp->num_terminals; t2++) {
+                        if (t2 != t) {
+                            Node *other_node = circuit_get_node(circuit, comp->node_ids[t2]);
+                            if (other_node) {
+                                double current = calculate_component_current(comp,
+                                    start_node->voltage, other_node->voltage);
+                                // Current flowing INTO the start node (toward the wire)
+                                total_current += current;
+                                current_count++;
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        // If we found component currents, use the average magnitude
+        if (current_count > 0) {
+            wire->current = total_current / current_count;
+        } else {
+            // Fallback: no components found, use voltage difference estimation
+            // This shouldn't happen in a properly connected circuit
+            wire->current = 0;
+        }
+    }
+}
+
 void circuit_update_component_nodes(Circuit *circuit, Component *comp) {
     if (!circuit || !comp) return;
 

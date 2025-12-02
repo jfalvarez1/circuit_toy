@@ -229,6 +229,10 @@ RenderContext *render_create(SDL_Renderer *renderer) {
     ctx->canvas_rect = (Rect){CANVAS_X, CANVAS_Y, CANVAS_WIDTH, CANVAS_HEIGHT};
     ctx->show_current = true;  // Show current flow by default
 
+    // Initialize animation timing
+    ctx->animation_time = 0.0;
+    ctx->last_frame_time = (double)SDL_GetTicks() / 1000.0;
+
     return ctx;
 }
 
@@ -1010,21 +1014,23 @@ void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
 
     render_draw_line(ctx, start->x, start->y, end->x, end->y);
 
-    // Draw animated current flow particles (tiny yellow dots flowing continuously)
+    // Draw animated current flow particles (cyan dots flowing along wires)
     if (ctx->show_current && ctx->sim_running) {
         // Use wire current if available, otherwise estimate from voltage difference
         double current = wire->current;
-        if (current == 0) {
+        if (fabs(current) < 1e-12) {
+            // Estimate current from voltage difference (assuming typical wire connects components)
             double v_diff = start->voltage - end->voltage;
-            current = v_diff / 1000.0;  // Rough estimate assuming 1k resistance
+            // Use a reasonable estimate - if there's a voltage difference, there's likely current
+            current = v_diff / 100.0;  // Rough estimate
         }
         double abs_current = fabs(current);
 
-        // Show particles if any measurable current (threshold lowered significantly)
-        if (abs_current > 0.0001) {  // 0.1mA threshold
-            // Direction: positive current flows from start to end (or based on voltage)
+        // Show particles if any measurable current
+        if (abs_current > 1e-6) {  // 1µA threshold for visibility
+            // Direction: conventional current flows from higher to lower voltage
             float from_x, from_y, to_x, to_y;
-            if (current > 0) {
+            if (start->voltage > end->voltage) {
                 from_x = start->x; from_y = start->y;
                 to_x = end->x; to_y = end->y;
             } else {
@@ -1036,59 +1042,53 @@ void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
             float dy = to_y - from_y;
             float len = sqrt(dx*dx + dy*dy);
 
-            if (len > 10) {  // Draw on wires >= 10 pixels
+            if (len > 5) {  // Draw on wires >= 5 pixels
                 // Normalize direction
                 dx /= len;
                 dy /= len;
 
-                // Animation speed based on current magnitude:
-                // 0.1mA = very slow, 1mA = slow, 10mA = moderate, 100mA = fast, 1A+ = very fast
-                double speed_factor;
-                if (abs_current < 0.001) {
-                    speed_factor = 0.3;  // Very slow for < 1mA
-                } else if (abs_current < 0.01) {
-                    speed_factor = 0.5 + (abs_current - 0.001) * 50;  // 0.5-1.0 for 1-10mA
-                } else if (abs_current < 0.1) {
-                    speed_factor = 1.0 + (abs_current - 0.01) * 20;  // 1.0-2.8 for 10-100mA
-                } else if (abs_current < 1.0) {
-                    speed_factor = 3.0 + (abs_current - 0.1) * 5;  // 3.0-7.5 for 100mA-1A
-                } else {
-                    speed_factor = 8.0 + fmin(abs_current - 1.0, 10.0) * 2;  // 8-28 for 1A+
-                }
+                // Animation speed based on current magnitude (logarithmic scale for better visibility)
+                // Base speed is comfortable viewing speed, scaled by current
+                double log_current = log10(abs_current + 1e-9);  // Range: roughly -9 to 1 for µA to A
+                double speed_factor = 0.3 + (log_current + 9.0) * 0.15;  // Map to 0.3 - 1.8 range
+                if (speed_factor < 0.2) speed_factor = 0.2;
+                if (speed_factor > 3.0) speed_factor = 3.0;
 
-                // Animation phase - use simulation time scaled for smooth continuous flow
-                // Lower multiplier for smoother, more visible motion
-                double anim_phase = fmod(ctx->sim_time * speed_factor * 2.0, 1.0);
+                // Use real-time animation_time for smooth, consistent motion
+                double anim_phase = fmod(ctx->animation_time * speed_factor, 1.0);
 
-                // More particles for longer wires, spaced ~15 pixels apart
-                int num_particles = (int)(len / 15) + 2;
-                if (num_particles > 10) num_particles = 10;
-                if (num_particles < 2) num_particles = 2;
-                float particle_spacing = 1.0f / num_particles;
+                // Particle spacing based on wire length - about 20 pixels apart
+                int num_particles = (int)(len / 20) + 1;
+                if (num_particles > 8) num_particles = 8;
+                if (num_particles < 1) num_particles = 1;
+                float particle_spacing = 1.0f / (num_particles + 1);
 
-                // Bright yellow particles - intensity based on current
-                uint8_t intensity = (uint8_t)(200 + fmin(abs_current * 500, 55));
-                Color particle_color = {0xff, 0xff, 0x00, intensity};  // Pure bright yellow
+                // Cyan particles (synthwave theme) - brighter for higher current
+                uint8_t base_intensity = 180;
+                uint8_t intensity = (uint8_t)(base_intensity + fmin(log_current + 6.0, 3.0) * 25);
 
                 for (int i = 0; i < num_particles; i++) {
                     // Position along wire (0 to 1), continuously animated
-                    float t = fmod(anim_phase + i * particle_spacing, 1.0f);
+                    float t = fmod(anim_phase + (i + 1) * particle_spacing, 1.0f);
 
-                    // Draw all particles, even near ends (for continuous flow appearance)
                     float particle_x = from_x + dx * len * t;
                     float particle_y = from_y + dy * len * t;
 
-                    // Draw tiny glowing particle
-                    // Outer glow (dimmer, larger)
-                    render_set_color(ctx, (Color){0xff, 0xff, 0x00, 0x40});
-                    render_fill_circle(ctx, particle_x, particle_y, 4);
+                    // Draw glowing particle with cyan color (synthwave theme)
+                    // Outer glow
+                    render_set_color(ctx, (Color){0x00, 0xff, 0xff, 0x30});
+                    render_fill_circle(ctx, particle_x, particle_y, 5);
+
+                    // Middle glow
+                    render_set_color(ctx, (Color){0x00, 0xff, 0xff, 0x60});
+                    render_fill_circle(ctx, particle_x, particle_y, 3);
 
                     // Inner bright core
-                    render_set_color(ctx, particle_color);
+                    render_set_color(ctx, (Color){0x00, intensity, intensity, 0xff});
                     render_fill_circle(ctx, particle_x, particle_y, 2);
 
-                    // Bright center point
-                    render_set_color(ctx, (Color){0xff, 0xff, 0xff, 0xff});
+                    // White center for extra pop
+                    render_set_color(ctx, (Color){0xff, 0xff, 0xff, intensity});
                     render_fill_circle(ctx, particle_x, particle_y, 1);
                 }
             }

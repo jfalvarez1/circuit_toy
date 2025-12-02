@@ -223,8 +223,9 @@ bool simulation_dc_analysis(Simulation *sim) {
     sim->solution = solution;
     sim->prev_solution = vector_clone(solution);
 
-    // Update circuit voltages
+    // Update circuit voltages and wire currents
     circuit_update_voltages(circuit, solution);
+    circuit_update_wire_currents(circuit);
 
     sim->has_error = false;
     return true;
@@ -300,8 +301,9 @@ bool simulation_step(Simulation *sim) {
 
     sim->time += sim->time_step;
 
-    // Update circuit
+    // Update circuit voltages and wire currents
     circuit_update_voltages(circuit, sim->solution);
+    circuit_update_wire_currents(circuit);
 
     // Record history
     int hist_idx = (sim->history_start + sim->history_count) % MAX_HISTORY;

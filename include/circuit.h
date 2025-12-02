@@ -135,6 +135,9 @@ void circuit_build_node_map(Circuit *circuit);
 // Update node voltages from solution
 void circuit_update_voltages(Circuit *circuit, Vector *solution);
 
+// Update wire currents based on connected components
+void circuit_update_wire_currents(Circuit *circuit);
+
 // Update component terminals after movement
 void circuit_update_component_nodes(Circuit *circuit, Component *comp);
 

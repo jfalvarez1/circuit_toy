@@ -1205,6 +1205,15 @@ void app_render(App *app) {
     app->render->sim_time = app->simulation ? app->simulation->time : 0.0;
     app->render->sim_running = app->simulation && app->simulation->state == SIM_RUNNING;
 
+    // Update real-time animation (independent of simulation speed for smooth visuals)
+    double current_time = (double)SDL_GetTicks() / 1000.0;
+    double delta_time = current_time - app->render->last_frame_time;
+    app->render->last_frame_time = current_time;
+    // Only advance animation when simulation is running
+    if (app->render->sim_running) {
+        app->render->animation_time += delta_time;
+    }
+
     // Render grid
     if (app->render->show_grid) {
         render_grid(app->render);

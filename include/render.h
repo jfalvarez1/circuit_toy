@@ -31,6 +31,10 @@ typedef struct {
     // Animation timing (for current flow)
     double sim_time;
     bool sim_running;
+
+    // Real-time animation (independent of simulation speed)
+    double animation_time;      // Real-time accumulator for smooth animation
+    double last_frame_time;     // Last frame timestamp for delta calculation
 } RenderContext;
 
 // Initialize/cleanup
