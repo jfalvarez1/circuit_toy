@@ -1016,24 +1016,22 @@ void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
 
     // Draw animated current flow particles (cyan dots flowing along wires)
     if (ctx->show_current && ctx->sim_running) {
-        // Use wire current if available, otherwise estimate from voltage difference
+        // Use wire current from simulation (sign indicates direction)
+        // Positive current: flows from start_node to end_node
+        // Negative current: flows from end_node to start_node
         double current = wire->current;
-        if (fabs(current) < 1e-12) {
-            // Estimate current from voltage difference (assuming typical wire connects components)
-            double v_diff = start->voltage - end->voltage;
-            // Use a reasonable estimate - if there's a voltage difference, there's likely current
-            current = v_diff / 100.0;  // Rough estimate
-        }
         double abs_current = fabs(current);
 
         // Show particles if any measurable current
         if (abs_current > 1e-6) {  // 1µA threshold for visibility
-            // Direction: conventional current flows from higher to lower voltage
+            // Direction based on current sign (conventional current flow)
             float from_x, from_y, to_x, to_y;
-            if (start->voltage > end->voltage) {
+            if (current > 0) {
+                // Positive current: flows from start to end
                 from_x = start->x; from_y = start->y;
                 to_x = end->x; to_y = end->y;
             } else {
+                // Negative current: flows from end to start
                 from_x = end->x; from_y = end->y;
                 to_x = start->x; to_y = start->y;
             }
@@ -1077,19 +1075,19 @@ void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
                     // Draw glowing particle with cyan color (synthwave theme)
                     // Outer glow
                     render_set_color(ctx, (Color){0x00, 0xff, 0xff, 0x30});
-                    render_fill_circle(ctx, particle_x, particle_y, 5);
+                    render_fill_circle(ctx, particle_x, particle_y, 3);
 
                     // Middle glow
                     render_set_color(ctx, (Color){0x00, 0xff, 0xff, 0x60});
-                    render_fill_circle(ctx, particle_x, particle_y, 3);
+                    render_fill_circle(ctx, particle_x, particle_y, 2);
 
                     // Inner bright core
                     render_set_color(ctx, (Color){0x00, intensity, intensity, 0xff});
-                    render_fill_circle(ctx, particle_x, particle_y, 2);
+                    render_fill_circle(ctx, particle_x, particle_y, 1.5f);
 
                     // White center for extra pop
                     render_set_color(ctx, (Color){0xff, 0xff, 0xff, intensity});
-                    render_fill_circle(ctx, particle_x, particle_y, 1);
+                    render_fill_circle(ctx, particle_x, particle_y, 0.8f);
                 }
             }
         }
@@ -1197,6 +1195,140 @@ void render_probe(RenderContext *ctx, Probe *probe, int index) {
     render_draw_text(ctx, volt_str, sx, sy, probe->color);
 }
 
+// Draw current flow animation through two-terminal components
+static void render_component_current_flow(RenderContext *ctx, Component *comp, Circuit *circuit) {
+    if (!comp || !circuit || !ctx->show_current || !ctx->sim_running) return;
+
+    // Only handle two-terminal components for now
+    if (comp->num_terminals != 2) return;
+
+    // Skip components that don't conduct current in a visible path
+    if (comp->type == COMP_GROUND || comp->type == COMP_TEXT ||
+        comp->type == COMP_TEST_POINT) return;
+
+    // Get terminal positions
+    float t0_x, t0_y, t1_x, t1_y;
+    component_get_terminal_pos(comp, 0, &t0_x, &t0_y);
+    component_get_terminal_pos(comp, 1, &t1_x, &t1_y);
+
+    // Get node voltages to determine current direction
+    double v0 = 0.0, v1 = 0.0;
+    if (comp->node_ids[0] >= 0) {
+        for (int i = 0; i < circuit->num_nodes; i++) {
+            if (circuit->nodes[i].id == comp->node_ids[0]) {
+                v0 = circuit->nodes[i].voltage;
+                break;
+            }
+        }
+    }
+    if (comp->node_ids[1] >= 0) {
+        for (int i = 0; i < circuit->num_nodes; i++) {
+            if (circuit->nodes[i].id == comp->node_ids[1]) {
+                v1 = circuit->nodes[i].voltage;
+                break;
+            }
+        }
+    }
+
+    // Estimate current based on component type
+    double current = 0.0;
+    double v_diff = v0 - v1;
+
+    switch (comp->type) {
+        case COMP_RESISTOR:
+            if (comp->props.resistor.resistance > 0)
+                current = v_diff / comp->props.resistor.resistance;
+            break;
+        case COMP_CAPACITOR:
+        case COMP_CAPACITOR_ELEC:
+            // Capacitor current is proportional to dV/dt, estimate from voltage difference
+            current = v_diff / 1000.0;  // Rough approximation
+            break;
+        case COMP_INDUCTOR:
+            current = comp->props.inductor.current;
+            break;
+        case COMP_DIODE:
+        case COMP_ZENER:
+        case COMP_SCHOTTKY:
+        case COMP_LED:
+            // For diodes, use exponential approximation
+            if (v_diff > 0.3) current = v_diff / 100.0;  // Forward biased
+            break;
+        case COMP_FUSE:
+            if (!comp->props.fuse.blown)
+                current = v_diff / comp->props.fuse.resistance;
+            break;
+        default:
+            // Generic estimation based on voltage difference
+            current = v_diff / 1000.0;
+            break;
+    }
+
+    double abs_current = fabs(current);
+
+    // Threshold for visibility
+    if (abs_current < 1e-6) return;
+
+    // Determine direction (conventional current: high to low voltage)
+    float from_x, from_y, to_x, to_y;
+    if (v0 > v1) {
+        from_x = t0_x; from_y = t0_y;
+        to_x = t1_x; to_y = t1_y;
+    } else {
+        from_x = t1_x; from_y = t1_y;
+        to_x = t0_x; to_y = t0_y;
+    }
+
+    float dx = to_x - from_x;
+    float dy = to_y - from_y;
+    float len = sqrt(dx*dx + dy*dy);
+
+    if (len < 5) return;  // Too short
+
+    // Normalize direction
+    dx /= len;
+    dy /= len;
+
+    // Animation speed based on current magnitude
+    double log_current = log10(abs_current + 1e-9);
+    double speed_factor = 0.3 + (log_current + 9.0) * 0.15;
+    if (speed_factor < 0.2) speed_factor = 0.2;
+    if (speed_factor > 3.0) speed_factor = 3.0;
+
+    // Use real-time animation_time for smooth motion
+    double anim_phase = fmod(ctx->animation_time * speed_factor, 1.0);
+
+    // Particle spacing - about 15 pixels apart for components
+    int num_particles = (int)(len / 15) + 1;
+    if (num_particles > 6) num_particles = 6;
+    if (num_particles < 1) num_particles = 1;
+    float particle_spacing = 1.0f / (num_particles + 1);
+
+    // Cyan particles - brighter for higher current
+    uint8_t base_intensity = 180;
+    uint8_t intensity = (uint8_t)(base_intensity + fmin(log_current + 6.0, 3.0) * 25);
+
+    for (int i = 0; i < num_particles; i++) {
+        float t = fmod(anim_phase + (i + 1) * particle_spacing, 1.0f);
+
+        float particle_x = from_x + dx * len * t;
+        float particle_y = from_y + dy * len * t;
+
+        // Draw glowing particle
+        render_set_color(ctx, (Color){0x00, 0xff, 0xff, 0x30});
+        render_fill_circle(ctx, particle_x, particle_y, 2.5f);
+
+        render_set_color(ctx, (Color){0x00, 0xff, 0xff, 0x60});
+        render_fill_circle(ctx, particle_x, particle_y, 1.5f);
+
+        render_set_color(ctx, (Color){0x00, intensity, intensity, 0xff});
+        render_fill_circle(ctx, particle_x, particle_y, 1);
+
+        render_set_color(ctx, (Color){0xff, 0xff, 0xff, intensity});
+        render_fill_circle(ctx, particle_x, particle_y, 0.5f);
+    }
+}
+
 void render_circuit(RenderContext *ctx, Circuit *circuit) {
     if (!circuit) return;
 
@@ -1213,6 +1345,11 @@ void render_circuit(RenderContext *ctx, Circuit *circuit) {
     // Draw components
     for (int i = 0; i < circuit->num_components; i++) {
         render_component(ctx, circuit->components[i]);
+    }
+
+    // Draw current flow animation through components (after components so particles appear on top)
+    for (int i = 0; i < circuit->num_components; i++) {
+        render_component_current_flow(ctx, circuit->components[i], circuit);
     }
 
     // Draw probes

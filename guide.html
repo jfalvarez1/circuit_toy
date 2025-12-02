@@ -434,7 +434,7 @@
             <div class="feature-list">
                 <div class="feature-item">
                     <h4>Real-Time Simulation</h4>
-                    <p>Watch your circuits come alive with real-time voltage and current visualization. See electron flow animated through wires.</p>
+                    <p>Watch your circuits come alive with real-time voltage and current visualization. See conventional current flow animated through wires.</p>
                 </div>
                 <div class="feature-item">
                     <h4>Accurate Analysis</h4>
@@ -442,7 +442,7 @@
                 </div>
                 <div class="feature-item">
                     <h4>Digital Oscilloscope</h4>
-                    <p>Built-in 4-channel oscilloscope with triggering, cursors, measurements, and FFT spectrum analysis.</p>
+                    <p>Built-in 8-channel oscilloscope with triggering, cursors, measurements, FFT spectrum analysis, and pop-out window.</p>
                 </div>
                 <div class="feature-item">
                     <h4>Circuit Templates</h4>
@@ -1495,7 +1495,7 @@
         <!-- 13. Oscilloscope -->
         <section id="oscilloscope" class="section">
             <h2>13. Oscilloscope</h2>
-            <p>The built-in digital oscilloscope displays voltage waveforms over time. It supports up to 4 channels with independent triggering and measurement capabilities.</p>
+            <p>The built-in digital oscilloscope displays voltage waveforms over time. It supports up to 8 channels with independent triggering and measurement capabilities.</p>
 
             <h3>Setting Up Probes</h3>
             <ol>
@@ -1523,8 +1523,26 @@
                     <tr><td><strong>MODE</strong></td><td>Toggle between Y-T (normal) and X-Y (Lissajous) display modes.</td></tr>
                     <tr><td><strong>CUR</strong></td><td>Toggle measurement cursors (two vertical lines for time measurement).</td></tr>
                     <tr><td><strong>FFT</strong></td><td>Toggle FFT spectrum display (frequency domain view).</td></tr>
+                    <tr><td><strong>PopOut</strong></td><td>Detach oscilloscope to a separate resizable window for larger display.</td></tr>
                 </tbody>
             </table>
+
+            <h3>Voltage Scale Labels</h3>
+            <p>The oscilloscope displays dynamic voltage labels on the Y-axis that adjust automatically based on the V/div setting:</p>
+            <ul>
+                <li>8 vertical divisions total (4 above center, 4 below)</li>
+                <li>Center line is 0V reference</li>
+                <li>Labels show actual voltage values with appropriate precision</li>
+                <li>Tick marks on left edge indicate division boundaries</li>
+            </ul>
+
+            <h3>Pop-Out Window</h3>
+            <p>Click the <strong>PopOut</strong> button to detach the oscilloscope to a separate window:</p>
+            <ul>
+                <li>Resizable window for larger waveform display</li>
+                <li>All oscilloscope controls and measurements available</li>
+                <li>Click PopOut again (or close window) to return to embedded view</li>
+            </ul>
 
             <h3>Trigger Modes</h3>
             <ul>
@@ -1685,6 +1703,33 @@
                 <div class="note-title">Pro Tip</div>
                 Use parametric sweep combined with temperature variation to find robust operating points that work across all conditions.
             </div>
+
+            <h3>Bode Plot Analysis</h3>
+            <p>Analyze the frequency response of your circuit with Bode plots showing magnitude and phase:</p>
+            <ol>
+                <li>Add an AC voltage source as the circuit input</li>
+                <li>Place a probe at the output node</li>
+                <li>Click the <strong>Bode</strong> button to open the Bode plot panel</li>
+                <li>Set the frequency range (1Hz to 1GHz supported)</li>
+                <li>Click <strong>Recalc</strong> to run the frequency sweep</li>
+            </ol>
+            <p>The Bode plot displays:</p>
+            <ul>
+                <li><strong>Magnitude plot</strong> - Gain in decibels (dB) vs frequency</li>
+                <li><strong>Phase plot</strong> - Phase shift in degrees vs frequency</li>
+                <li><strong>Cursor</strong> - Click to read exact values at any frequency</li>
+                <li><strong>-3dB marker</strong> - Automatically identifies cutoff frequencies</li>
+            </ul>
+
+            <h3>Current Flow Visualization</h3>
+            <p>When simulation is running, animated cyan particles show current flow through the circuit:</p>
+            <ul>
+                <li><strong>Direction</strong> - Particles follow conventional current flow (positive to negative)</li>
+                <li><strong>Speed</strong> - Particle speed scales logarithmically with current magnitude</li>
+                <li><strong>Size</strong> - Larger currents show larger particles</li>
+                <li><strong>Visibility</strong> - Current below 1µA threshold is not shown</li>
+            </ul>
+            <p>This visualization helps understand how current distributes through parallel paths and verify circuit operation.</p>
         </section>
 
         <!-- 15b. Data Export -->

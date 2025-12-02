@@ -535,6 +535,8 @@ void ui_init(UIState *ui) {
     ui->btn_scope_screenshot = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "CAP", "Capture screenshot (saves scope.bmp)", false, false, true, false};
     scope_btn_x += 38;
     ui->btn_bode = (Button){{scope_btn_x, scope_btn_y, 40, scope_btn_h}, "Bode", "Frequency response plot", false, false, true, false};
+    scope_btn_x += 43;
+    ui->btn_scope_popup = (Button){{scope_btn_x, scope_btn_y, 50, scope_btn_h}, "PopOut", "Pop out oscilloscope to separate window", false, false, true, false};
 
     // Initialize cursor state
     ui->scope_cursor_mode = false;
@@ -552,6 +554,12 @@ void ui_init(UIState *ui) {
     ui->triggered = false;
     ui->trigger_holdoff = 0.001;  // 1ms holdoff
     ui->dragging_trigger_level = false;
+
+    // Initialize pop-out oscilloscope window
+    ui->scope_popup_window = NULL;
+    ui->scope_popup_renderer = NULL;
+    ui->scope_popup_window_id = 0;
+    ui->scope_popped_out = false;
 
     // Initialize trigger capture state
     ui->scope_capture_count = 0;
@@ -2348,6 +2356,35 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         SDL_RenderDrawLine(renderer, center_x - 3, y, center_x + 3, y);
     }
 
+    // Draw voltage scale labels on Y-axis (left side)
+    // 8 divisions total: 4 above center (positive) and 4 below (negative)
+    SDL_SetRenderDrawColor(renderer, 0x60, 0x80, 0x60, 0xff);
+    for (int i = 0; i <= 8; i++) {
+        int y = r->y + i * div_y;
+        // Calculate voltage value: top is +4*V/div, center is 0, bottom is -4*V/div
+        double voltage = (4 - i) * ui->scope_volt_div;
+
+        // Format voltage label
+        char vlabel[16];
+        if (fabs(voltage) < 0.001) {
+            snprintf(vlabel, sizeof(vlabel), "0V");
+        } else if (fabs(ui->scope_volt_div) >= 1.0) {
+            snprintf(vlabel, sizeof(vlabel), "%+.0fV", voltage);
+        } else if (fabs(ui->scope_volt_div) >= 0.1) {
+            snprintf(vlabel, sizeof(vlabel), "%+.1fV", voltage);
+        } else if (fabs(ui->scope_volt_div) >= 0.01) {
+            snprintf(vlabel, sizeof(vlabel), "%+.0fmV", voltage * 1000);
+        } else {
+            snprintf(vlabel, sizeof(vlabel), "%+.1fmV", voltage * 1000);
+        }
+
+        // Draw tick mark on left edge
+        SDL_RenderDrawLine(renderer, r->x, y, r->x + 5, y);
+
+        // Draw label to the right of tick (inside scope area)
+        ui_draw_text(renderer, vlabel, r->x + 7, y - 5);
+    }
+
     // Draw traces for all active channels (based on probes)
     if (sim && sim->history_count > 1 && !ui->scope_paused) {
         double scale = (r->h / 8.0) / ui->scope_volt_div;
@@ -2811,6 +2848,10 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
     draw_button(renderer, &ui->btn_bode);
 
+    // Pop-out button with toggle state indicator
+    ui->btn_scope_popup.toggled = ui->scope_popped_out;
+    draw_button(renderer, &ui->btn_scope_popup);
+
     // Display settings panel below buttons (3 rows of buttons = ~79px, so start at +85)
     int info_y = r->y + r->h + 85;
 
@@ -3152,14 +3193,22 @@ void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
     ui_draw_text(renderer, buf, r->x - 10, label_y);
 
     double mid_freq = sqrt(ui->bode_freq_start * ui->bode_freq_stop);
-    if (mid_freq >= 1000) {
+    if (mid_freq >= 1000000000) {
+        snprintf(buf, sizeof(buf), "%.1fGHz", mid_freq / 1000000000);
+    } else if (mid_freq >= 1000000) {
+        snprintf(buf, sizeof(buf), "%.1fMHz", mid_freq / 1000000);
+    } else if (mid_freq >= 1000) {
         snprintf(buf, sizeof(buf), "%.1fkHz", mid_freq / 1000);
     } else {
         snprintf(buf, sizeof(buf), "%.0fHz", mid_freq);
     }
     ui_draw_text(renderer, buf, r->x + r->w/2 - 20, label_y);
 
-    if (ui->bode_freq_stop >= 1000) {
+    if (ui->bode_freq_stop >= 1000000000) {
+        snprintf(buf, sizeof(buf), "%.0fGHz", ui->bode_freq_stop / 1000000000);
+    } else if (ui->bode_freq_stop >= 1000000) {
+        snprintf(buf, sizeof(buf), "%.0fMHz", ui->bode_freq_stop / 1000000);
+    } else if (ui->bode_freq_stop >= 1000) {
         snprintf(buf, sizeof(buf), "%.0fkHz", ui->bode_freq_stop / 1000);
     } else {
         snprintf(buf, sizeof(buf), "%.0fHz", ui->bode_freq_stop);
@@ -3202,8 +3251,10 @@ void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
     SDL_SetRenderDrawColor(renderer, 0xc0, 0xc0, 0xc0, 0xff);
     ui_draw_text(renderer, "Stop:", r->x + 130, settings_y);
     SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
-    if (ui->bode_freq_stop >= 1000000) {
-        snprintf(buf, sizeof(buf), "[%.1fMHz]", ui->bode_freq_stop / 1000000);
+    if (ui->bode_freq_stop >= 1000000000) {
+        snprintf(buf, sizeof(buf), "[%.1fGHz]", ui->bode_freq_stop / 1000000000);
+    } else if (ui->bode_freq_stop >= 1000000) {
+        snprintf(buf, sizeof(buf), "[%.0fMHz]", ui->bode_freq_stop / 1000000);
     } else if (ui->bode_freq_stop >= 1000) {
         snprintf(buf, sizeof(buf), "[%.0fkHz]", ui->bode_freq_stop / 1000);
     } else {
@@ -3338,7 +3389,9 @@ void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
 
         // Cursor frequency
         char cursor_buf[48];
-        if (ui->bode_cursor_freq >= 1000000) {
+        if (ui->bode_cursor_freq >= 1000000000) {
+            snprintf(cursor_buf, sizeof(cursor_buf), "f: %.3f GHz", ui->bode_cursor_freq / 1000000000);
+        } else if (ui->bode_cursor_freq >= 1000000) {
             snprintf(cursor_buf, sizeof(cursor_buf), "f: %.3f MHz", ui->bode_cursor_freq / 1000000);
         } else if (ui->bode_cursor_freq >= 1000) {
             snprintf(cursor_buf, sizeof(cursor_buf), "f: %.3f kHz", ui->bode_cursor_freq / 1000);
@@ -3895,10 +3948,12 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             // Stop frequency control (x: br->x + 175 to br->x + 260)
             if (x >= br->x + 175 && x <= br->x + 260 &&
                 y >= settings_y && y <= settings_y + 14) {
-                // Cycle through stop frequencies: 10k, 100k, 1M, 10M Hz
+                // Cycle through stop frequencies: 10k, 100k, 1M, 10M, 100M, 1G Hz
                 if (ui->bode_freq_stop <= 10000.0) ui->bode_freq_stop = 100000.0;
                 else if (ui->bode_freq_stop <= 100000.0) ui->bode_freq_stop = 1000000.0;
                 else if (ui->bode_freq_stop <= 1000000.0) ui->bode_freq_stop = 10000000.0;
+                else if (ui->bode_freq_stop <= 10000000.0) ui->bode_freq_stop = 100000000.0;
+                else if (ui->bode_freq_stop <= 100000000.0) ui->bode_freq_stop = 1000000000.0;
                 else ui->bode_freq_stop = 10000.0;
                 return UI_ACTION_NONE;
             }
@@ -4122,6 +4177,9 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
         if (point_in_rect(x, y, &ui->btn_bode.bounds) && ui->btn_bode.enabled) {
             return UI_ACTION_BODE_PLOT;
+        }
+        if (point_in_rect(x, y, &ui->btn_scope_popup.bounds) && ui->btn_scope_popup.enabled) {
+            return UI_ACTION_SCOPE_POPUP;
         }
 
         // Check property fields for click-to-edit
@@ -4409,6 +4467,7 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_scope_fft.hovered = point_in_rect(x, y, &ui->btn_scope_fft.bounds);
     ui->btn_scope_autoset.hovered = point_in_rect(x, y, &ui->btn_scope_autoset.bounds);
     ui->btn_bode.hovered = point_in_rect(x, y, &ui->btn_bode.bounds);
+    ui->btn_scope_popup.hovered = point_in_rect(x, y, &ui->btn_scope_popup.bounds);
     ui->btn_bode_recalc.hovered = ui->show_bode_plot && point_in_rect(x, y, &ui->btn_bode_recalc.bounds);
 
     // Update palette hover states (adjust y for scroll offset)
@@ -4559,6 +4618,8 @@ void ui_update_layout(UIState *ui) {
     ui->btn_scope_screenshot.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
     scope_btn_x += 38;
     ui->btn_bode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
+    scope_btn_x += 43;
+    ui->btn_scope_popup.bounds = (Rect){scope_btn_x, scope_btn_y, 50, scope_btn_h};
 }
 
 // Oscilloscope autoset - automatically configure scope based on signal analysis

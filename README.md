@@ -124,6 +124,7 @@ Load complete circuit configurations instantly:
 Full-featured virtual oscilloscope with:
 - **8 Channels** - Connect multiple voltage probes
 - **Adjustable Scales** - Time/div (1µs to 1s), Volts/div (1mV to 100V)
+- **Voltage Scale Labels** - Y-axis shows voltage marks dynamically based on V/div setting
 - **Trigger System**
   - Auto, Normal, Single-shot modes
   - Rising, Falling, Both edge triggers
@@ -133,18 +134,27 @@ Full-featured virtual oscilloscope with:
   - Y-T (voltage vs time)
   - X-Y (Lissajous patterns)
 - **Measurement Cursors** - Time and voltage cursors with delta display
-- **FFT Analysis** - Frequency spectrum view
+- **Waveform Measurements** - Vpp, Vrms, Vavg, frequency, period, duty cycle
+- **FFT Analysis** - Frequency spectrum view with THD and SNR
 - **Autoset** - Automatic scale adjustment
 - **Screenshot** - Save oscilloscope display as BMP
+- **Pop-out Window** - Detach oscilloscope to separate resizable window
 
 ### Bode Plot Analysis
 
 Frequency response analysis tool:
-- Configurable frequency range (1Hz to 10MHz)
+- Configurable frequency range (1Hz to 1GHz)
 - Magnitude plot (dB)
 - Phase plot (degrees)
 - Cursor for precise measurements
 - Automatic frequency sweep
+
+### Current Flow Visualization
+
+- **Animated particles** - Cyan dots flow along wires showing current direction
+- **Conventional current** - Particles follow conventional current flow (positive to negative)
+- **Speed scaling** - Particle speed scales logarithmically with current magnitude
+- **Size indication** - Larger currents show larger particles
 
 ### Simulation Engine
 

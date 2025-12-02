@@ -221,6 +221,13 @@ typedef struct {
     Button btn_scope_cursor;         // Toggle measurement cursors
     Button btn_scope_fft;            // Toggle FFT view
     Button btn_scope_autoset;        // Auto-configure scope settings
+    Button btn_scope_popup;          // Pop out oscilloscope to separate window
+
+    // Pop-out oscilloscope window
+    SDL_Window *scope_popup_window;      // Separate window for oscilloscope
+    SDL_Renderer *scope_popup_renderer;  // Renderer for popup window
+    Uint32 scope_popup_window_id;        // Window ID for event handling
+    bool scope_popped_out;               // Whether scope is popped out
 
     // Cursor state
     bool scope_cursor_mode;          // Cursor mode active
@@ -375,6 +382,7 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_TIMESTEP_UP   29   // Increase time step
 #define UI_ACTION_TIMESTEP_DOWN 30   // Decrease time step
 #define UI_ACTION_TIMESTEP_AUTO 31   // Auto-adjust time step
+#define UI_ACTION_SCOPE_POPUP   32   // Pop out oscilloscope to separate window
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type (supports up to 300 component types)
 #define UI_ACTION_SELECT_CIRCUIT 500 // + circuit template type

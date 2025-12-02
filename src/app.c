@@ -124,6 +124,17 @@ void app_shutdown(App *app) {
         app->freq_sweep_thread_running = false;
     }
 
+    // Clean up popup oscilloscope window if open
+    if (app->ui.scope_popup_renderer) {
+        SDL_DestroyRenderer(app->ui.scope_popup_renderer);
+        app->ui.scope_popup_renderer = NULL;
+    }
+    if (app->ui.scope_popup_window) {
+        SDL_DestroyWindow(app->ui.scope_popup_window);
+        app->ui.scope_popup_window = NULL;
+    }
+    app->ui.scope_popped_out = false;
+
     if (app->simulation) {
         simulation_free(app->simulation);
         app->simulation = NULL;
@@ -160,8 +171,25 @@ void app_handle_events(App *app) {
                 break;
 
             case SDL_WINDOWEVENT:
-                if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
-                    // Handle window resize
+                // Check if this event is for the popup window
+                if (app->ui.scope_popped_out &&
+                    event.window.windowID == app->ui.scope_popup_window_id) {
+                    if (event.window.event == SDL_WINDOWEVENT_CLOSE) {
+                        // Close the popup window (dock the oscilloscope)
+                        if (app->ui.scope_popup_renderer) {
+                            SDL_DestroyRenderer(app->ui.scope_popup_renderer);
+                            app->ui.scope_popup_renderer = NULL;
+                        }
+                        if (app->ui.scope_popup_window) {
+                            SDL_DestroyWindow(app->ui.scope_popup_window);
+                            app->ui.scope_popup_window = NULL;
+                        }
+                        app->ui.scope_popup_window_id = 0;
+                        app->ui.scope_popped_out = false;
+                        ui_set_status(&app->ui, "Oscilloscope docked");
+                    }
+                } else if (event.window.event == SDL_WINDOWEVENT_RESIZED) {
+                    // Handle main window resize
                     int w, h;
                     SDL_GetWindowSize(app->window, &w, &h);
 
@@ -461,6 +489,49 @@ void app_handle_events(App *app) {
                 // Auto-configure scope settings based on signal analysis
                 ui_scope_autoset(&app->ui, app->simulation);
                 ui_set_status(&app->ui, "Scope autoset complete");
+                break;
+
+            case UI_ACTION_SCOPE_POPUP:
+                // Toggle pop-out oscilloscope window
+                if (app->ui.scope_popped_out) {
+                    // Close the popup window
+                    if (app->ui.scope_popup_renderer) {
+                        SDL_DestroyRenderer(app->ui.scope_popup_renderer);
+                        app->ui.scope_popup_renderer = NULL;
+                    }
+                    if (app->ui.scope_popup_window) {
+                        SDL_DestroyWindow(app->ui.scope_popup_window);
+                        app->ui.scope_popup_window = NULL;
+                    }
+                    app->ui.scope_popup_window_id = 0;
+                    app->ui.scope_popped_out = false;
+                    ui_set_status(&app->ui, "Oscilloscope docked");
+                } else {
+                    // Create popup window
+                    app->ui.scope_popup_window = SDL_CreateWindow(
+                        "Oscilloscope",
+                        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                        600, 400,
+                        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
+                    );
+                    if (app->ui.scope_popup_window) {
+                        app->ui.scope_popup_renderer = SDL_CreateRenderer(
+                            app->ui.scope_popup_window, -1,
+                            SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
+                        );
+                        if (app->ui.scope_popup_renderer) {
+                            app->ui.scope_popup_window_id = SDL_GetWindowID(app->ui.scope_popup_window);
+                            app->ui.scope_popped_out = true;
+                            ui_set_status(&app->ui, "Oscilloscope popped out");
+                        } else {
+                            SDL_DestroyWindow(app->ui.scope_popup_window);
+                            app->ui.scope_popup_window = NULL;
+                            ui_set_status(&app->ui, "Failed to create popup renderer");
+                        }
+                    } else {
+                        ui_set_status(&app->ui, "Failed to create popup window");
+                    }
+                }
                 break;
 
             case UI_ACTION_SWEEP_PANEL:
@@ -1273,8 +1344,108 @@ void app_render(App *app) {
     // Render synthwave LED trim on top
     ui_render_neon_trim(&app->ui, r);
 
-    // Present
+    // Present main window
     SDL_RenderPresent(r);
+
+    // Render to popup oscilloscope window if it exists
+    if (app->ui.scope_popped_out && app->ui.scope_popup_renderer) {
+        SDL_Renderer *popup_r = app->ui.scope_popup_renderer;
+
+        // Get popup window size
+        int popup_w, popup_h;
+        SDL_GetWindowSize(app->ui.scope_popup_window, &popup_w, &popup_h);
+
+        // Clear popup window
+        SDL_SetRenderDrawColor(popup_r, 0x10, 0x10, 0x10, 0xff);
+        SDL_RenderClear(popup_r);
+
+        // Save original scope rect and button positions
+        Rect orig_scope_rect = app->ui.scope_rect;
+        Rect orig_btn_volt_up = app->ui.btn_scope_volt_up.bounds;
+        Rect orig_btn_volt_down = app->ui.btn_scope_volt_down.bounds;
+        Rect orig_btn_time_up = app->ui.btn_scope_time_up.bounds;
+        Rect orig_btn_time_down = app->ui.btn_scope_time_down.bounds;
+        Rect orig_btn_autoset = app->ui.btn_scope_autoset.bounds;
+        Rect orig_btn_trig_mode = app->ui.btn_scope_trig_mode.bounds;
+        Rect orig_btn_trig_edge = app->ui.btn_scope_trig_edge.bounds;
+        Rect orig_btn_trig_ch = app->ui.btn_scope_trig_ch.bounds;
+        Rect orig_btn_trig_up = app->ui.btn_scope_trig_up.bounds;
+        Rect orig_btn_trig_down = app->ui.btn_scope_trig_down.bounds;
+        Rect orig_btn_mode = app->ui.btn_scope_mode.bounds;
+        Rect orig_btn_cursor = app->ui.btn_scope_cursor.bounds;
+        Rect orig_btn_fft = app->ui.btn_scope_fft.bounds;
+        Rect orig_btn_screenshot = app->ui.btn_scope_screenshot.bounds;
+        Rect orig_btn_bode = app->ui.btn_bode.bounds;
+
+        app->ui.scope_rect = (Rect){10, 30, popup_w - 20, popup_h - 130};
+
+        // Recalculate button positions for popup window
+        int scope_btn_y = app->ui.scope_rect.y + app->ui.scope_rect.h + 5;
+        int scope_btn_w = 32, scope_btn_h = 22;
+        int scope_btn_x = app->ui.scope_rect.x;
+        int row_spacing = scope_btn_h + 4;
+
+        // Row 1: Scale controls
+        app->ui.btn_scope_volt_up.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
+        scope_btn_x += scope_btn_w + 3;
+        app->ui.btn_scope_volt_down.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
+        scope_btn_x += scope_btn_w + 10;
+        app->ui.btn_scope_time_up.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
+        scope_btn_x += scope_btn_w + 3;
+        app->ui.btn_scope_time_down.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
+        scope_btn_x += scope_btn_w + 10;
+        app->ui.btn_scope_autoset.bounds = (Rect){scope_btn_x, scope_btn_y, 50, scope_btn_h};
+
+        // Row 2: Trigger controls
+        scope_btn_y += row_spacing;
+        scope_btn_x = app->ui.scope_rect.x;
+        app->ui.btn_scope_trig_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 45, scope_btn_h};
+        scope_btn_x += 48;
+        app->ui.btn_scope_trig_edge.bounds = (Rect){scope_btn_x, scope_btn_y, 28, scope_btn_h};
+        scope_btn_x += 31;
+        app->ui.btn_scope_trig_ch.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+        scope_btn_x += 38;
+        app->ui.btn_scope_trig_up.bounds = (Rect){scope_btn_x, scope_btn_y, 24, scope_btn_h};
+        scope_btn_x += 27;
+        app->ui.btn_scope_trig_down.bounds = (Rect){scope_btn_x, scope_btn_y, 24, scope_btn_h};
+
+        // Row 3: Display modes and tools
+        scope_btn_y += row_spacing;
+        scope_btn_x = app->ui.scope_rect.x;
+        app->ui.btn_scope_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+        scope_btn_x += 38;
+        app->ui.btn_scope_cursor.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+        scope_btn_x += 38;
+        app->ui.btn_scope_fft.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+        scope_btn_x += 38;
+        app->ui.btn_scope_screenshot.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+        scope_btn_x += 38;
+        app->ui.btn_bode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
+
+        // Render oscilloscope to popup window
+        ui_render_oscilloscope(&app->ui, popup_r, app->simulation, &app->analysis);
+
+        // Restore original scope rect and button bounds
+        app->ui.scope_rect = orig_scope_rect;
+        app->ui.btn_scope_volt_up.bounds = orig_btn_volt_up;
+        app->ui.btn_scope_volt_down.bounds = orig_btn_volt_down;
+        app->ui.btn_scope_time_up.bounds = orig_btn_time_up;
+        app->ui.btn_scope_time_down.bounds = orig_btn_time_down;
+        app->ui.btn_scope_autoset.bounds = orig_btn_autoset;
+        app->ui.btn_scope_trig_mode.bounds = orig_btn_trig_mode;
+        app->ui.btn_scope_trig_edge.bounds = orig_btn_trig_edge;
+        app->ui.btn_scope_trig_ch.bounds = orig_btn_trig_ch;
+        app->ui.btn_scope_trig_up.bounds = orig_btn_trig_up;
+        app->ui.btn_scope_trig_down.bounds = orig_btn_trig_down;
+        app->ui.btn_scope_mode.bounds = orig_btn_mode;
+        app->ui.btn_scope_cursor.bounds = orig_btn_cursor;
+        app->ui.btn_scope_fft.bounds = orig_btn_fft;
+        app->ui.btn_scope_screenshot.bounds = orig_btn_screenshot;
+        app->ui.btn_bode.bounds = orig_btn_bode;
+
+        // Present popup window
+        SDL_RenderPresent(popup_r);
+    }
 }
 
 void app_new_circuit(App *app) {
