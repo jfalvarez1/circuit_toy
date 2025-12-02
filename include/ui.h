@@ -241,6 +241,7 @@ typedef struct {
     bool trigger_armed;              // Single-shot mode armed
     bool triggered;                  // Has triggered (for single-shot)
     double trigger_holdoff;          // Time to wait after trigger before re-arming
+    bool dragging_trigger_level;     // Currently dragging trigger level indicator
 
     // Triggered capture state (for stable display)
     // Use smaller buffer for display (1000 samples is plenty for visual display)

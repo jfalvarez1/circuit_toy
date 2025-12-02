@@ -551,6 +551,7 @@ void ui_init(UIState *ui) {
     ui->trigger_armed = true;
     ui->triggered = false;
     ui->trigger_holdoff = 0.001;  // 1ms holdoff
+    ui->dragging_trigger_level = false;
 
     // Initialize trigger capture state
     ui->scope_capture_count = 0;
@@ -3943,6 +3944,28 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             }
         }
 
+        // Handle trigger level dragging - check if click is near trigger indicator
+        // The trigger indicator is on the right edge of the scope (arrow at r->x + r->w - 10 to r->x + r->w)
+        if (ui->display_mode == SCOPE_MODE_YT && ui->scope_num_channels > 0) {
+            Rect *sr = &ui->scope_rect;
+            int trig_ch = ui->trigger_channel;
+            if (trig_ch < ui->scope_num_channels && ui->scope_channels[trig_ch].enabled) {
+                // Calculate current trigger level Y position
+                double scale = (sr->h / 8.0) / ui->scope_volt_div;
+                int center_y = sr->y + sr->h / 2;
+                double trig_offset = ui->scope_channels[trig_ch].offset;
+                int trig_y = center_y - (int)((ui->trigger_level + trig_offset) * scale);
+                trig_y = CLAMP(trig_y, sr->y, sr->y + sr->h);
+
+                // Check if click is near the trigger level indicator (right edge, +/- 8 pixels vertically)
+                if (x >= sr->x + sr->w - 15 && x <= sr->x + sr->w &&
+                    y >= trig_y - 8 && y <= trig_y + 8) {
+                    ui->dragging_trigger_level = true;
+                    return UI_ACTION_NONE;
+                }
+            }
+        }
+
         // Handle cursor positioning when cursor mode is enabled
         if (ui->scope_cursor_mode && ui->display_mode == SCOPE_MODE_YT) {
             Rect *sr = &ui->scope_rect;
@@ -3992,6 +4015,10 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         // Release cursor drag
         if (ui->scope_cursor_drag != 0) {
             ui->scope_cursor_drag = 0;
+        }
+        // Release trigger level drag
+        if (ui->dragging_trigger_level) {
+            ui->dragging_trigger_level = false;
         }
         // Release speed slider drag
         if (ui->dragging_speed) {
@@ -4303,6 +4330,28 @@ int ui_handle_motion(UIState *ui, int x, int y) {
             ui->cursor1_time = normalized_x;
         } else {
             ui->cursor2_time = normalized_x;
+        }
+        return UI_ACTION_NONE;
+    }
+
+    // Handle trigger level dragging
+    if (ui->dragging_trigger_level && ui->scope_num_channels > 0) {
+        Rect *sr = &ui->scope_rect;
+        int trig_ch = ui->trigger_channel;
+        if (trig_ch < ui->scope_num_channels && ui->scope_channels[trig_ch].enabled) {
+            // Calculate scale and center_y (same as in rendering)
+            double scale = (sr->h / 8.0) / ui->scope_volt_div;
+            int center_y = sr->y + sr->h / 2;
+            double trig_offset = ui->scope_channels[trig_ch].offset;
+
+            // Convert mouse Y position to trigger level voltage
+            // From rendering: trig_y = center_y - (int)((trigger_level + trig_offset) * scale)
+            // So: trigger_level = (center_y - y) / scale - trig_offset
+            double new_level = (double)(center_y - y) / scale - trig_offset;
+
+            // Clamp to reasonable voltage range based on volt_div (4 divisions = 4 * volt_div)
+            double max_level = 4.0 * ui->scope_volt_div;
+            ui->trigger_level = CLAMP(new_level, -max_level, max_level);
         }
         return UI_ACTION_NONE;
     }
