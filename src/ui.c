@@ -494,19 +494,24 @@ void ui_init(UIState *ui) {
     ui->scope_paused = false;
     ui->scope_resizing = false;
     ui->scope_resize_edge = -1;
+    ui->scope_controls_scroll = 0;
+    ui->scope_controls_content_height = 0;
+    ui->scope_controls_visible_height = 0;
+    ui->scope_controls_scrolling = false;
 
     // Initialize all channels with predefined colors
     for (int i = 0; i < MAX_PROBES; i++) {
         ui->scope_channels[i] = (ScopeChannel){false, PROBE_COLORS[i], i, 0.0};
     }
 
-    // Oscilloscope control buttons - organized in rows for clarity
-    // Row 1: Scale controls (V/div, T/div) + Autoset
+    // Oscilloscope control buttons - initialized with default positions
+    // Actual positions are recalculated in ui_update_layout with auto-wrapping
     int scope_btn_y = ui->scope_rect.y + ui->scope_rect.h + 5;
     int scope_btn_w = 32, scope_btn_h = 22;
     int scope_btn_x = ui->scope_rect.x;
     int row_spacing = scope_btn_h + 4;
 
+    // Row 1: Scale controls
     ui->btn_scope_volt_up = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "V+", "Increase V/div", false, false, true, false};
     scope_btn_x += scope_btn_w + 3;
     ui->btn_scope_volt_down = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "V-", "Decrease V/div", false, false, true, false};
@@ -515,12 +520,11 @@ void ui_init(UIState *ui) {
     scope_btn_x += scope_btn_w + 3;
     ui->btn_scope_time_down = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "T-", "Decrease time/div", false, false, true, false};
     scope_btn_x += scope_btn_w + 10;
-    ui->btn_scope_autoset = (Button){{scope_btn_x, scope_btn_y, 50, scope_btn_h}, "Autoset", "Auto-configure scope settings", false, false, true, false};
+    ui->btn_scope_autoset = (Button){{scope_btn_x, scope_btn_y, 60, scope_btn_h}, "Autoset", "Auto-configure scope settings", false, false, true, false};
 
     // Row 2: Trigger controls
     scope_btn_y += row_spacing;
     scope_btn_x = ui->scope_rect.x;
-
     ui->btn_scope_trig_mode = (Button){{scope_btn_x, scope_btn_y, 45, scope_btn_h}, "AUTO", "Trigger mode (Auto/Normal/Single)", false, false, true, false};
     scope_btn_x += 48;
     ui->btn_scope_trig_edge = (Button){{scope_btn_x, scope_btn_y, 28, scope_btn_h}, "/\\", "Trigger edge (Rising/Falling/Both)", false, false, true, false};
@@ -534,7 +538,6 @@ void ui_init(UIState *ui) {
     // Row 3: Display modes and tools
     scope_btn_y += row_spacing;
     scope_btn_x = ui->scope_rect.x;
-
     ui->btn_scope_mode = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "Y-T", "Display mode (Y-T/X-Y)", false, false, true, false};
     scope_btn_x += 38;
     ui->btn_scope_cursor = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "CUR", "Toggle measurement cursors", false, false, true, false};
@@ -2263,34 +2266,26 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
 }
 
 void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
-    int x = ui->window_width - ui->properties_width;
-    // Position measurements panel below the oscilloscope
-    int y = ui->scope_rect.y + ui->scope_rect.h + 5;
-
-    // Background - synthwave dark
-    SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
-    SDL_Rect panel = {x, y, ui->properties_width, 180};
-    SDL_RenderFillRect(renderer, &panel);
-
-    // Title - synthwave pink
-    SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
-    ui_draw_text(renderer, "Measurements", x + 10, y + 10);
+    // Render voltmeter/ammeter readings inline in the status bar
+    // Position between env sliders (ends ~600) and dt/time displays (starts ~-350 from right)
+    int y = ui->window_height - STATUSBAR_HEIGHT;
+    int x = ui->window_width - 480;  // Position before dt/time readings
 
     // Voltmeter
-    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
-    ui_draw_text(renderer, "Voltmeter:", x + 10, y + 35);
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
+    ui_draw_text(renderer, "VM:", x, y + 8);
     char volt_str[32];
-    snprintf(volt_str, sizeof(volt_str), "%.3f V", ui->voltmeter_value);
+    snprintf(volt_str, sizeof(volt_str), "%.3fV", ui->voltmeter_value);
     SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);
-    ui_draw_text(renderer, volt_str, x + 100, y + 35);
+    ui_draw_text(renderer, volt_str, x + 28, y + 8);
 
     // Ammeter
-    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
-    ui_draw_text(renderer, "Ammeter:", x + 10, y + 55);
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
+    ui_draw_text(renderer, "AM:", x + 90, y + 8);
     char amp_str[32];
-    snprintf(amp_str, sizeof(amp_str), "%.3f mA", ui->ammeter_value * 1000.0);
+    snprintf(amp_str, sizeof(amp_str), "%.3fmA", ui->ammeter_value * 1000.0);
     SDL_SetRenderDrawColor(renderer, SYNTH_ORANGE, 0xff);
-    ui_draw_text(renderer, amp_str, x + 100, y + 55);
+    ui_draw_text(renderer, amp_str, x + 118, y + 8);
 }
 
 // Helper to format scope values with proper units
@@ -2918,8 +2913,9 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     ui->btn_scope_popup.toggled = ui->scope_popped_out;
     draw_button(renderer, &ui->btn_scope_popup);
 
-    // Display settings panel below buttons (3 rows of buttons = ~79px, so start at +100)
-    int info_y = r->y + r->h + 100;
+    // Display settings panel below buttons (TIME/VOLTS info, channel readings, measurements)
+    // Buttons are positioned BEFORE this section (scope -> buttons -> info -> measurements)
+    int info_y = r->y + r->h + 100 - ui->scope_controls_scroll;
 
     // Time/div with label
     SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
@@ -3852,7 +3848,7 @@ void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer) {
     // Environment sliders (Light and Temperature) - positioned center-left of status bar
     // Calculate right boundary of sliders area (leave room for right-side displays)
     int right_boundary = ui->window_width - 370;  // dt/time/count start at -350, add margin
-    int env_x = 240;  // Start position for environment sliders
+    int env_x = 400;  // Start position for environment sliders (moved right for better spacing)
     int slider_y = y + 5;
     int slider_w = 70;
     int slider_h = 14;
@@ -4277,6 +4273,7 @@ void ui_render_spotlight(UIState *ui, SDL_Renderer *renderer) {
 }
 
 // Synthwave gradient spectrum animation along window borders
+// Two smooth chasers on opposite sides with thick glowing bars
 void ui_render_neon_trim(UIState *ui, SDL_Renderer *renderer) {
     // Get time for animation
     static Uint32 start_time = 0;
@@ -4287,23 +4284,26 @@ void ui_render_neon_trim(UIState *ui, SDL_Renderer *renderer) {
 
     int w = ui->window_width;
     int h = ui->window_height;
-    int border_thickness = 3;
+    int border_thickness = 5;  // Thicker bars
 
     // Total perimeter for position calculation
     int perimeter = 2 * w + 2 * h;
 
-    // Chaser position (0-1, moves around the border over time)
-    double chaser_speed = 0.25;  // Full loop every 4 seconds
-    double chaser_pos = fmod(time * chaser_speed, 1.0);
-    double chaser_length = 0.2;  // Length of bright trail (20% of perimeter)
+    // Two chasers on opposite sides, smooth motion
+    double chaser_speed = 0.15;  // Slower for smoother flow (full loop every ~6.7 seconds)
+    double chaser1_pos = fmod(time * chaser_speed, 1.0);
+    double chaser2_pos = fmod(time * chaser_speed + 0.5, 1.0);  // Opposite side (180 degrees)
+    double chaser_length = 0.15;  // Length of bright trail (15% of perimeter)
 
-    // Global pulse effect (brightness oscillation for whole border)
-    double pulse = 0.7 + 0.3 * sin(time * 2.5);
+    // Smooth easing function for gradient falloff
+    #define SMOOTH_FALLOFF(x) ((x) * (x) * (3.0 - 2.0 * (x)))
 
-    // Helper to get bright cyberpunk neon color at position
-    // Cycles through: Hot pink -> Electric purple -> Neon cyan -> Electric blue -> back
+    // Global pulse effect (subtle brightness oscillation)
+    double pulse = 0.6 + 0.15 * sin(time * 1.5);
+
+    // Helper to get bright cyberpunk neon color at position with two chasers
     #define GET_SYNTH_COLOR(pos, out_r, out_g, out_b) do { \
-        double _hue = fmod((pos) + time * 0.15, 1.0); \
+        double _hue = fmod((pos) + time * 0.1, 1.0); \
         double _r, _g, _b; \
         /* Brighter, more saturated cyberpunk colors */ \
         if (_hue < 0.25) { \
@@ -4323,13 +4323,20 @@ void ui_render_neon_trim(UIState *ui, SDL_Renderer *renderer) {
             double _t = (_hue - 0.75) / 0.25; \
             _r = _t; _g = 0.5 - _t * 0.4; _b = 1.0 - _t * 0.5; \
         } \
-        /* Calculate distance from chaser head (with wraparound) */ \
-        double _dist = (pos) - chaser_pos; \
-        if (_dist < 0) _dist += 1.0; \
-        /* Chaser brightness boost on top of pulse */ \
+        /* Calculate distance from both chasers (with wraparound) */ \
+        double _dist1 = (pos) - chaser1_pos; \
+        if (_dist1 < 0) _dist1 += 1.0; \
+        double _dist2 = (pos) - chaser2_pos; \
+        if (_dist2 < 0) _dist2 += 1.0; \
+        /* Smooth chaser brightness boost with falloff */ \
         double _chaser_boost = 0.0; \
-        if (_dist < chaser_length) { \
-            _chaser_boost = (1.0 - _dist / chaser_length) * 0.5; \
+        if (_dist1 < chaser_length) { \
+            double _t = 1.0 - _dist1 / chaser_length; \
+            _chaser_boost = SMOOTH_FALLOFF(_t) * 0.6; \
+        } \
+        if (_dist2 < chaser_length) { \
+            double _t = 1.0 - _dist2 / chaser_length; \
+            _chaser_boost += SMOOTH_FALLOFF(_t) * 0.6; \
         } \
         double _brightness = pulse + _chaser_boost; \
         if (_brightness > 1.0) _brightness = 1.0; \
@@ -4343,7 +4350,7 @@ void ui_render_neon_trim(UIState *ui, SDL_Renderer *renderer) {
         double pos = (double)x / perimeter;
         uint8_t r, g, b;
         GET_SYNTH_COLOR(pos, r, g, b);
-        SDL_SetRenderDrawColor(renderer, r, g, b, 200);
+        SDL_SetRenderDrawColor(renderer, r, g, b, 220);
         for (int t = 0; t < border_thickness; t++) {
             SDL_RenderDrawPoint(renderer, x, t);
         }
@@ -4354,7 +4361,7 @@ void ui_render_neon_trim(UIState *ui, SDL_Renderer *renderer) {
         double pos = (double)(w + y) / perimeter;
         uint8_t r, g, b;
         GET_SYNTH_COLOR(pos, r, g, b);
-        SDL_SetRenderDrawColor(renderer, r, g, b, 200);
+        SDL_SetRenderDrawColor(renderer, r, g, b, 220);
         for (int t = 0; t < border_thickness; t++) {
             SDL_RenderDrawPoint(renderer, w - 1 - t, y);
         }
@@ -4365,7 +4372,7 @@ void ui_render_neon_trim(UIState *ui, SDL_Renderer *renderer) {
         double pos = (double)(w + h + (w - 1 - x)) / perimeter;
         uint8_t r, g, b;
         GET_SYNTH_COLOR(pos, r, g, b);
-        SDL_SetRenderDrawColor(renderer, r, g, b, 200);
+        SDL_SetRenderDrawColor(renderer, r, g, b, 220);
         for (int t = 0; t < border_thickness; t++) {
             SDL_RenderDrawPoint(renderer, x, h - 1 - t);
         }
@@ -4376,13 +4383,14 @@ void ui_render_neon_trim(UIState *ui, SDL_Renderer *renderer) {
         double pos = (double)(2 * w + h + (h - 1 - y)) / perimeter;
         uint8_t r, g, b;
         GET_SYNTH_COLOR(pos, r, g, b);
-        SDL_SetRenderDrawColor(renderer, r, g, b, 200);
+        SDL_SetRenderDrawColor(renderer, r, g, b, 220);
         for (int t = 0; t < border_thickness; t++) {
             SDL_RenderDrawPoint(renderer, t, y);
         }
     }
 
     #undef GET_SYNTH_COLOR
+    #undef SMOOTH_FALLOFF
 
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }
@@ -5172,54 +5180,78 @@ void ui_update_layout(UIState *ui) {
         ui->scope_rect.y = max_scope_y;
     }
 
-    // Update oscilloscope control buttons - 3 row layout
-    // Row 1: Scale controls (V/div, T/div) + Autoset
-    int scope_btn_y = ui->scope_rect.y + ui->scope_rect.h + 5;
+    // Update oscilloscope control buttons - dynamic row layout with wrapping
+    // Buttons are positioned immediately below scope, BEFORE the measurements section
+    int scope_btn_y = ui->scope_rect.y + ui->scope_rect.h + 5 - ui->scope_controls_scroll;
     int scope_btn_w = 32, scope_btn_h = 22;
-    int scope_btn_x = ui->scope_rect.x;
+    int scope_btn_start_x = ui->scope_rect.x;  // Left edge of scope area
+    int scope_btn_max_x = ui->scope_rect.x + ui->scope_rect.w;  // Right edge of scope area
+    int scope_btn_x = scope_btn_start_x;
     int row_spacing = scope_btn_h + 4;
+    int btn_spacing = 3;
 
-    ui->btn_scope_volt_up.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
-    scope_btn_x += scope_btn_w + 3;
-    ui->btn_scope_volt_down.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
-    scope_btn_x += scope_btn_w + 10;
-    ui->btn_scope_time_up.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
-    scope_btn_x += scope_btn_w + 3;
-    ui->btn_scope_time_down.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
-    scope_btn_x += scope_btn_w + 10;
-    ui->btn_scope_autoset.bounds = (Rect){scope_btn_x, scope_btn_y, 50, scope_btn_h};
+    // Helper macro for placing buttons with auto-wrap
+    #define PLACE_BTN(btn, w) do { \
+        if (scope_btn_x + (w) > scope_btn_max_x && scope_btn_x > scope_btn_start_x) { \
+            scope_btn_y += row_spacing; \
+            scope_btn_x = scope_btn_start_x; \
+        } \
+        (btn)->bounds = (Rect){scope_btn_x, scope_btn_y, (w), scope_btn_h}; \
+        scope_btn_x += (w) + btn_spacing; \
+    } while(0)
 
-    // Row 2: Trigger controls
+    // All scope buttons with auto-wrapping
+    PLACE_BTN(&ui->btn_scope_volt_up, scope_btn_w);
+    PLACE_BTN(&ui->btn_scope_volt_down, scope_btn_w);
+    scope_btn_x += 7;  // Extra gap between groups
+    PLACE_BTN(&ui->btn_scope_time_up, scope_btn_w);
+    PLACE_BTN(&ui->btn_scope_time_down, scope_btn_w);
+    scope_btn_x += 7;
+    PLACE_BTN(&ui->btn_scope_autoset, 60);
+
+    // Force new row for trigger controls (visual grouping)
     scope_btn_y += row_spacing;
-    scope_btn_x = ui->scope_rect.x;
+    scope_btn_x = scope_btn_start_x;
+    PLACE_BTN(&ui->btn_scope_trig_mode, 45);
+    PLACE_BTN(&ui->btn_scope_trig_edge, 28);
+    PLACE_BTN(&ui->btn_scope_trig_ch, 35);
+    PLACE_BTN(&ui->btn_scope_trig_up, 24);
+    PLACE_BTN(&ui->btn_scope_trig_down, 24);
 
-    ui->btn_scope_trig_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 45, scope_btn_h};
-    scope_btn_x += 48;
-    ui->btn_scope_trig_edge.bounds = (Rect){scope_btn_x, scope_btn_y, 28, scope_btn_h};
-    scope_btn_x += 31;
-    ui->btn_scope_trig_ch.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
-    scope_btn_x += 38;
-    ui->btn_scope_trig_up.bounds = (Rect){scope_btn_x, scope_btn_y, 24, scope_btn_h};
-    scope_btn_x += 27;
-    ui->btn_scope_trig_down.bounds = (Rect){scope_btn_x, scope_btn_y, 24, scope_btn_h};
-
-    // Row 3: Display modes and tools
+    // Force new row for display modes and tools (visual grouping)
     scope_btn_y += row_spacing;
-    scope_btn_x = ui->scope_rect.x;
+    scope_btn_x = scope_btn_start_x;
+    PLACE_BTN(&ui->btn_scope_mode, 35);
+    PLACE_BTN(&ui->btn_scope_cursor, 35);
+    PLACE_BTN(&ui->btn_scope_fft, 35);
+    PLACE_BTN(&ui->btn_scope_screenshot, 35);
+    PLACE_BTN(&ui->btn_bode, 40);
+    PLACE_BTN(&ui->btn_mc, 25);
+    PLACE_BTN(&ui->btn_scope_popup, 50);
 
-    ui->btn_scope_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
-    scope_btn_x += 38;
-    ui->btn_scope_cursor.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
-    scope_btn_x += 38;
-    ui->btn_scope_fft.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
-    scope_btn_x += 38;
-    ui->btn_scope_screenshot.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
-    scope_btn_x += 38;
-    ui->btn_bode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
-    scope_btn_x += 43;
-    ui->btn_mc.bounds = (Rect){scope_btn_x, scope_btn_y, 25, scope_btn_h};
-    scope_btn_x += 28;
-    ui->btn_scope_popup.bounds = (Rect){scope_btn_x, scope_btn_y, 50, scope_btn_h};
+    #undef PLACE_BTN
+
+    // Calculate scope controls content and visible heights for scrolling
+    // Content: buttons (3 rows) + info section + measurements
+    // The final scope_btn_y is at the last row, add button height to get bottom of buttons
+    int buttons_end_y = scope_btn_y + scope_btn_h;
+    int buttons_height = buttons_end_y - (ui->scope_rect.y + ui->scope_rect.h + 5);
+
+    // Info section: +100 offset, then +15 for channel readings, +18 for measurements, +14 header + 38*channels
+    int info_height = 100 + 15 + 18 + 14 + (ui->scope_num_channels * 38);
+
+    // Total content height (from bottom of scope)
+    ui->scope_controls_content_height = buttons_height + info_height;
+
+    // Visible height: from bottom of scope to status bar
+    ui->scope_controls_visible_height = ui->window_height - STATUSBAR_HEIGHT - (ui->scope_rect.y + ui->scope_rect.h + 5);
+    if (ui->scope_controls_visible_height < 50) ui->scope_controls_visible_height = 50;
+
+    // Clamp scroll offset
+    int scope_max_scroll = ui->scope_controls_content_height - ui->scope_controls_visible_height;
+    if (scope_max_scroll < 0) scope_max_scroll = 0;
+    if (ui->scope_controls_scroll > scope_max_scroll) ui->scope_controls_scroll = scope_max_scroll;
+    if (ui->scope_controls_scroll < 0) ui->scope_controls_scroll = 0;
 }
 
 // Oscilloscope autoset - automatically configure scope based on signal analysis
@@ -5415,4 +5447,28 @@ bool ui_point_in_properties(UIState *ui, int x, int y) {
     int props_y_end = ui->scope_rect.y - 50;  // Match the gap in ui_render_properties
     return (x >= props_x && x < ui->window_width &&
             y >= TOOLBAR_HEIGHT && y < props_y_end);
+}
+
+// Check if point is in scope controls area (below the scope, buttons/info/measurements)
+bool ui_point_in_scope_controls(UIState *ui, int x, int y) {
+    if (!ui) return false;
+    // Scope controls are in the right panel, below the oscilloscope
+    int scope_controls_x = ui->scope_rect.x;
+    int scope_controls_y = ui->scope_rect.y + ui->scope_rect.h + 5;
+    int scope_controls_w = ui->scope_rect.w;
+    int scope_controls_h = ui->scope_controls_visible_height;
+    return (x >= scope_controls_x && x < scope_controls_x + scope_controls_w &&
+            y >= scope_controls_y && y < scope_controls_y + scope_controls_h);
+}
+
+// Scroll scope controls area
+void ui_scope_controls_scroll(UIState *ui, int direction) {
+    if (!ui) return;
+    int max_scroll = ui->scope_controls_content_height - ui->scope_controls_visible_height;
+    if (max_scroll < 0) max_scroll = 0;
+
+    ui->scope_controls_scroll -= direction * 20;  // 20px per scroll tick
+
+    if (ui->scope_controls_scroll < 0) ui->scope_controls_scroll = 0;
+    if (ui->scope_controls_scroll > max_scroll) ui->scope_controls_scroll = max_scroll;
 }

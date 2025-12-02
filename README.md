@@ -225,6 +225,7 @@ Simulate real-world environmental conditions:
 ### User Interface
 
 - **Synthwave color theme** - Neon pink, cyan, and purple accents
+- **Animated neon border** - Dual smooth chasers flow around window edges with thick glowing bars
 - **Collapsible palette categories** - Click to expand/collapse component groups
 - **Grid-based placement** with snap-to-grid (toggle with 'S')
 - **Pan and zoom** - Middle mouse or Shift+drag to pan, scroll to zoom
@@ -233,7 +234,9 @@ Simulate real-world environmental conditions:
 - **Property editor** - Right panel for adjusting component values
 - **Engineering notation** - Supports k, M, G, m, µ, n, p suffixes
 - **Resizable panels** - Drag edges to resize oscilloscope and properties
-- **Status bar** - Shows simulation time, node count, component count
+- **Scrollable scope controls** - Mouse wheel scrolls oscilloscope buttons when window is small
+- **Status bar** - Shows simulation time, voltmeter/ammeter readings, Lux/Temp sliders, node count, component count
+- **Live measurements** - Voltmeter (VM) and Ammeter (AM) readings displayed in status bar
 
 ### File Operations
 

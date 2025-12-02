@@ -665,6 +665,12 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 return true;
             }
 
+            // Check if mouse is in scope controls area - scroll scope controls
+            if (ui_point_in_scope_controls(ui, x, y)) {
+                ui_scope_controls_scroll(ui, event->wheel.y);
+                return true;
+            }
+
             // Check if mouse is in properties panel (right side, below scroll area)
             // and there's a selected component - adjust value with wheel
             if (x >= render->canvas_rect.x + render->canvas_rect.w && input->selected_component) {

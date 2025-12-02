@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "window": {"width": 1280, "height": 720},
+  "constants": {
+    "TOOLBAR_HEIGHT": 50,
+    "PALETTE_WIDTH": 160,
+    "PROPERTIES_WIDTH": 420,
+    "STATUSBAR_HEIGHT": 24
+  },
+  "elements": [
+    {
+      "type": "toolbar",
+      "name": "toolbar",
+      "x": 0, "y": 0,
+      "width": 1280, "height": 50,
+      "locked": true,
+      "resizable": false
+    },
+    {
+      "type": "palette",
+      "name": "palette",
+      "x": 0, "y": 50,
+      "width": 160, "height": 646,
+      "locked": false,
+      "resizable": true
+    },
+    {
+      "type": "canvas",
+      "name": "canvas",
+      "x": 160, "y": 50,
+      "width": 700, "height": 646,
+      "locked": true,
+      "resizable": false
+    },
+    {
+      "type": "properties",
+      "name": "properties",
+      "x": 860, "y": 50,
+      "width": 420, "height": 200,
+      "locked": false,
+      "resizable": true
+    },
+    {
+      "type": "oscilloscope",
+      "name": "oscilloscope",
+      "x": 870, "y": 250,
+      "width": 330, "height": 300,
+      "locked": false,
+      "resizable": true
+    },
+    {
+      "type": "scope_controls",
+      "name": "scope_controls",
+      "x": 870, "y": 570,
+      "width": 330, "height": 100,
+      "locked": false,
+      "resizable": false
+    },
+    {
+      "type": "statusbar",
+      "name": "statusbar",
+      "x": 0, "y": 696,
+      "width": 1280, "height": 24,
+      "locked": true,
+      "resizable": false
+    },
+    {
+      "type": "scope_channels",
+      "name": "scope_channels",
+      "x": 870, "y": 670,
+      "width": 330, "height": 30,
+      "locked": false,
+      "resizable": true
+    }
+  ]
+}

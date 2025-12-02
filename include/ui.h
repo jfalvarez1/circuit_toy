@@ -199,6 +199,12 @@ typedef struct {
     bool scope_resizing;            // Currently resizing scope panel
     int scope_resize_edge;          // Which edge is being dragged (0=top, 1=left)
 
+    // Scope controls scrolling (for buttons/measurements when window is small)
+    int scope_controls_scroll;          // Current scroll offset
+    int scope_controls_content_height;  // Total height of scope controls content
+    int scope_controls_visible_height;  // Visible height of scope controls area
+    bool scope_controls_scrolling;      // Currently dragging scrollbar
+
     // Properties panel resizing and scrolling
     int properties_width;           // Current width of properties panel
     bool props_resizing;            // Currently resizing properties panel
@@ -452,5 +458,11 @@ bool ui_point_in_palette(UIState *ui, int x, int y);
 
 // Check if point is in properties area
 bool ui_point_in_properties(UIState *ui, int x, int y);
+
+// Check if point is in scope controls area
+bool ui_point_in_scope_controls(UIState *ui, int x, int y);
+
+// Scroll scope controls area
+void ui_scope_controls_scroll(UIState *ui, int direction);
 
 #endif // UI_H

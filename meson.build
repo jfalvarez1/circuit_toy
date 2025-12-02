@@ -41,3 +41,6 @@ executable('circuit-playground',
   install : true,
   win_subsystem : 'windows'  # Hide console window on Windows
 )
+
+# Development tools
+subdir('tools')
