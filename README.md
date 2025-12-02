@@ -365,28 +365,28 @@ meson compile -C build
 
 The simulator uses Modified Nodal Analysis (MNA) to solve circuit equations:
 
-1. Build conductance matrix (G) and current vector (I)
+1. Build conductance matrix $G$ and current vector $I$
 2. Each component "stamps" its contribution to the matrix
-3. Solve Gx = I using Gaussian elimination with partial pivoting
+3. Solve $Gx = I$ using Gaussian elimination with partial pivoting
 4. Iterate with Newton-Raphson for nonlinear components until convergence
 
 ### Transient Analysis
 
 For time-domain simulation:
-- Capacitors use companion model: `I = C(V - V_prev)/dt`
-- Inductors use companion model: `V = L(I - I_prev)/dt`
+- Capacitors use companion model: $I = C \frac{V - V_{prev}}{\Delta t}$
+- Inductors use companion model: $V = L \frac{I - I_{prev}}{\Delta t}$
 - Adaptive time step based on highest frequency signal
 - 50-300 samples per period for smooth waveforms
 
 ### Component Models
 
-- **Diode**: Shockley equation `I = Is(exp(V/nVt) - 1)`
+- **Diode**: Shockley equation $I = I_s \left( e^{\frac{V}{nV_t}} - 1 \right)$
 - **LED**: Diode model with forward voltage drop based on color
-- **Zener**: Reverse breakdown with knee resistance
-- **BJT**: Ebers-Moll model with beta, Early voltage, saturation current
-- **MOSFET**: Square-law model with cutoff, triode, and saturation regions
-- **JFET**: Shockley equation with IDSS and pinch-off voltage
-- **Op-Amp**: VCVS with gain, GBW, slew rate, and rail limiting
+- **Zener**: Reverse breakdown with knee resistance $R_z$
+- **BJT**: Ebers-Moll model with $\beta$, Early voltage $V_{AF}$, saturation current $I_s$
+- **MOSFET**: Square-law model $I_D = K_n(V_{GS} - V_{th})^2$ with cutoff, triode, and saturation regions
+- **JFET**: Shockley equation with $I_{DSS}$ and pinch-off voltage $V_P$
+- **Op-Amp**: VCVS with gain $A_{OL}$, GBW, slew rate, and rail limiting
 - **Thyristor**: Latching behavior with trigger conditions
 
 ## File Structure
