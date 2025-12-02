@@ -239,6 +239,40 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                 input->selected_probe_idx = -1;
                                 input->multi_selected_count = 0;
 
+                                // Check if this is a switch component and simulation is running
+                                // If so, toggle the switch state instead of starting a drag
+                                if (input->sim_running) {
+                                    bool is_switch = false;
+                                    switch (comp->type) {
+                                        case COMP_SPST_SWITCH:
+                                            comp->props.switch_spst.closed = !comp->props.switch_spst.closed;
+                                            ui_set_status(ui, comp->props.switch_spst.closed ?
+                                                "Switch CLOSED" : "Switch OPEN");
+                                            is_switch = true;
+                                            break;
+                                        case COMP_SPDT_SWITCH:
+                                            comp->props.switch_spdt.position = (comp->props.switch_spdt.position == 0) ? 1 : 0;
+                                            ui_set_status(ui, comp->props.switch_spdt.position == 0 ?
+                                                "Switch position A" : "Switch position B");
+                                            is_switch = true;
+                                            break;
+                                        case COMP_PUSH_BUTTON:
+                                            comp->props.push_button.pressed = !comp->props.push_button.pressed;
+                                            ui_set_status(ui, comp->props.push_button.pressed ?
+                                                "Button PRESSED" : "Button RELEASED");
+                                            is_switch = true;
+                                            break;
+                                        default:
+                                            break;
+                                    }
+                                    if (is_switch) {
+                                        // Select the switch but don't start dragging
+                                        comp->selected = true;
+                                        input->selected_component = comp;
+                                        break;  // Don't start drag, just toggle
+                                    }
+                                }
+
                                 comp->selected = true;
                                 input->selected_component = comp;
                                 // Auto-pause simulation when starting to drag
