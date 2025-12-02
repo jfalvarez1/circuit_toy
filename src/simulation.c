@@ -365,19 +365,23 @@ double simulation_auto_time_step(Simulation *sim) {
         }
     }
 
-    // Calculate time step to ensure at least 50 samples per cycle
-    // For good waveform visualization, we want more samples at higher frequencies
+    // Calculate time step to ensure smooth waveform visualization
+    // More samples per period = smoother sine waves (avoiding triangular appearance)
     double dt;
     if (max_freq > 0) {
         double period = 1.0 / max_freq;
-        dt = period / 50.0;  // 50 samples per period minimum
 
-        // For very high frequencies, increase sample rate more
-        if (max_freq > 10000) {
-            dt = period / 100.0;  // 100 samples per period for >10kHz
-        }
-        if (max_freq > 100000) {
-            dt = period / 200.0;  // 200 samples per period for >100kHz
+        // Use progressively more samples at higher frequencies for smooth curves
+        if (max_freq <= 100) {
+            dt = period / 50.0;   // 50 samples/period for very low frequencies
+        } else if (max_freq <= 1000) {
+            dt = period / 100.0;  // 100 samples/period for 100Hz-1kHz
+        } else if (max_freq <= 10000) {
+            dt = period / 200.0;  // 200 samples/period for 1kHz-10kHz (fixes triangular appearance)
+        } else if (max_freq <= 100000) {
+            dt = period / 200.0;  // 200 samples/period for 10kHz-100kHz
+        } else {
+            dt = period / 300.0;  // 300 samples/period for >100kHz
         }
     } else {
         // No AC signals, use default time step

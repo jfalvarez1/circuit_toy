@@ -134,6 +134,27 @@ static void ui_draw_text(SDL_Renderer *r, const char *text, int x, int y) {
 void ui_init(UIState *ui) {
     memset(ui, 0, sizeof(UIState));
 
+    // Initialize collapsible categories
+    ui->categories[PCAT_TOOLS] = (PaletteCategory){"Tools", false, 0};
+    ui->categories[PCAT_SOURCES] = (PaletteCategory){"Sources", false, 0};
+    ui->categories[PCAT_WAVEFORMS] = (PaletteCategory){"Waveforms", false, 0};
+    ui->categories[PCAT_PASSIVES] = (PaletteCategory){"Passives", false, 0};
+    ui->categories[PCAT_DIODES] = (PaletteCategory){"Diodes", false, 0};
+    ui->categories[PCAT_BJT] = (PaletteCategory){"BJT", false, 0};
+    ui->categories[PCAT_FET] = (PaletteCategory){"FET", false, 0};
+    ui->categories[PCAT_THYRISTORS] = (PaletteCategory){"Thyristors", false, 0};
+    ui->categories[PCAT_OPAMPS] = (PaletteCategory){"Op-Amps", false, 0};
+    ui->categories[PCAT_CONTROLLED] = (PaletteCategory){"Ctrl Sources", false, 0};
+    ui->categories[PCAT_SWITCHES] = (PaletteCategory){"Switches", false, 0};
+    ui->categories[PCAT_TRANSFORMERS] = (PaletteCategory){"Transformers", false, 0};
+    ui->categories[PCAT_LOGIC] = (PaletteCategory){"Logic Gates", false, 0};
+    ui->categories[PCAT_DIGITAL] = (PaletteCategory){"Digital ICs", false, 0};
+    ui->categories[PCAT_MIXED] = (PaletteCategory){"Mixed Signal", false, 0};
+    ui->categories[PCAT_REGULATORS] = (PaletteCategory){"Regulators", false, 0};
+    ui->categories[PCAT_DISPLAY] = (PaletteCategory){"Display", false, 0};
+    ui->categories[PCAT_MEASUREMENT] = (PaletteCategory){"Measurement", false, 0};
+    ui->categories[PCAT_CIRCUITS] = (PaletteCategory){"Circuits", false, 0};
+
     // Set initial window dimensions
     ui->window_width = WINDOW_WIDTH;
     ui->window_height = WINDOW_HEIGHT;
@@ -791,82 +812,169 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
 
     int scroll_offset = ui->palette_scroll_offset;
 
-    // Draw category headers based on known component indices
-    // Tools: 0-4, Sources: 5-10, Waveforms: 11-16, Passives: 17-24, Diodes: 25-30,
-    // BJT: 31-34, FET: 35-38, Thyristors: 39-42, Op-Amps: 43-46, Ctrl: 47-50,
-    // Switches: 51-56, Transformers: 57-58, Logic: 59-68, Digital: 69-78,
-    // Mixed: 79-84, Regulators: 85-87, Display: 88-92, Measurement: 93-96
-    typedef struct { int start_idx; const char *label; } PaletteSection;
-    PaletteSection sections[] = {
-        {0, "Tools"},
-        {5, "Sources"},
-        {11, "Waveforms"},
-        {17, "Passives"},
-        {25, "Diodes"},
-        {31, "BJT"},
-        {35, "FET"},
-        {39, "Thyristors"},
-        {43, "Op-Amps"},
-        {47, "Ctrl Sources"},
-        {51, "Switches"},
-        {57, "Transformers"},
-        {59, "Logic Gates"},
-        {69, "Digital ICs"},
-        {79, "Mixed Signal"},
-        {85, "Regulators"},
-        {88, "Display"},
-        {93, "Measurement"}
+    // Section mapping: maps start index to category ID
+    typedef struct { int start_idx; int end_idx; PaletteCategoryID cat_id; } SectionMapping;
+    SectionMapping sections[] = {
+        {0, 4, PCAT_TOOLS},
+        {5, 10, PCAT_SOURCES},
+        {11, 16, PCAT_WAVEFORMS},
+        {17, 24, PCAT_PASSIVES},
+        {25, 30, PCAT_DIODES},
+        {31, 34, PCAT_BJT},
+        {35, 38, PCAT_FET},
+        {39, 42, PCAT_THYRISTORS},
+        {43, 46, PCAT_OPAMPS},
+        {47, 50, PCAT_CONTROLLED},
+        {51, 56, PCAT_SWITCHES},
+        {57, 58, PCAT_TRANSFORMERS},
+        {59, 68, PCAT_LOGIC},
+        {69, 78, PCAT_DIGITAL},
+        {79, 84, PCAT_MIXED},
+        {85, 87, PCAT_REGULATORS},
+        {88, 92, PCAT_DISPLAY},
+        {93, 96, PCAT_MEASUREMENT}
     };
     int num_sections = sizeof(sections) / sizeof(sections[0]);
 
+    // Calculate dynamic positions and draw
+    int pal_h = 35;  // Item height
+    int draw_y = TOOLBAR_HEIGHT + 4;  // Starting y position (content coords, not screen)
+    int content_height = 4;  // Track total content height
+
     for (int s = 0; s < num_sections; s++) {
-        if (sections[s].start_idx < ui->num_palette_items) {
-            int header_y = ui->palette_items[sections[s].start_idx].bounds.y - 14 - scroll_offset;
-            if (header_y >= TOOLBAR_HEIGHT - 14 && header_y < ui->window_height - STATUSBAR_HEIGHT) {
-                SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);  // Pink for headers
-                ui_draw_text(renderer, sections[s].label, 10, header_y);
+        if (sections[s].start_idx >= ui->num_palette_items) continue;
+
+        PaletteCategoryID cat_id = sections[s].cat_id;
+        PaletteCategory *cat = &ui->categories[cat_id];
+        bool collapsed = cat->collapsed;
+
+        // Store header y position for click detection (in content coords)
+        cat->header_y = draw_y;
+
+        // Draw header
+        int header_screen_y = draw_y - scroll_offset;
+        if (header_screen_y >= TOOLBAR_HEIGHT - 14 && header_screen_y < ui->window_height - STATUSBAR_HEIGHT) {
+            // Draw collapse indicator
+            SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+            if (collapsed) {
+                // Draw right-pointing triangle (collapsed)
+                int tx = 3, ty = header_screen_y + 2;
+                SDL_RenderDrawLine(renderer, tx, ty, tx, ty + 6);
+                SDL_RenderDrawLine(renderer, tx, ty, tx + 4, ty + 3);
+                SDL_RenderDrawLine(renderer, tx, ty + 6, tx + 4, ty + 3);
+            } else {
+                // Draw down-pointing triangle (expanded)
+                int tx = 2, ty = header_screen_y + 1;
+                SDL_RenderDrawLine(renderer, tx, ty, tx + 6, ty);
+                SDL_RenderDrawLine(renderer, tx, ty, tx + 3, ty + 4);
+                SDL_RenderDrawLine(renderer, tx + 6, ty, tx + 3, ty + 4);
+            }
+
+            // Draw header text
+            SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
+            ui_draw_text(renderer, cat->name, 12, header_screen_y);
+        }
+        draw_y += 14;  // Header height
+        content_height += 14;
+
+        if (!collapsed) {
+            // Draw items in this section
+            int col = 0;
+            for (int i = sections[s].start_idx; i <= sections[s].end_idx && i < ui->num_palette_items; i++) {
+                PaletteItem *item = &ui->palette_items[i];
+
+                // Update item bounds to dynamic position
+                item->bounds.x = 10 + col * 70;
+                item->bounds.y = draw_y;
+
+                int screen_y = draw_y - scroll_offset;
+                // Draw if visible
+                if (screen_y + item->bounds.h >= TOOLBAR_HEIGHT && screen_y < ui->window_height - STATUSBAR_HEIGHT) {
+                    int orig_y = item->bounds.y;
+                    item->bounds.y = screen_y;
+                    draw_palette_item(renderer, item);
+                    item->bounds.y = orig_y;
+                }
+
+                col++;
+                if (col >= 2) {
+                    col = 0;
+                    draw_y += pal_h + 3;
+                    content_height += pal_h + 3;
+                }
+            }
+            // Move to next row if we ended mid-row
+            if (col > 0) {
+                draw_y += pal_h + 3;
+                content_height += pal_h + 3;
+            }
+            draw_y += 12;  // Section spacing
+            content_height += 12;
+        } else {
+            draw_y += 4;  // Small spacing when collapsed
+            content_height += 4;
+        }
+    }
+
+    // Circuits section
+    PaletteCategory *circuits_cat = &ui->categories[PCAT_CIRCUITS];
+    if (ui->num_circuit_items > 0) {
+        circuits_cat->header_y = draw_y;
+
+        int header_screen_y = draw_y - scroll_offset;
+        if (header_screen_y >= TOOLBAR_HEIGHT - 14 && header_screen_y < ui->window_height - STATUSBAR_HEIGHT) {
+            // Draw collapse indicator
+            SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+            if (circuits_cat->collapsed) {
+                int tx = 3, ty = header_screen_y + 2;
+                SDL_RenderDrawLine(renderer, tx, ty, tx, ty + 6);
+                SDL_RenderDrawLine(renderer, tx, ty, tx + 4, ty + 3);
+                SDL_RenderDrawLine(renderer, tx, ty + 6, tx + 4, ty + 3);
+            } else {
+                int tx = 2, ty = header_screen_y + 1;
+                SDL_RenderDrawLine(renderer, tx, ty, tx + 6, ty);
+                SDL_RenderDrawLine(renderer, tx, ty, tx + 3, ty + 4);
+                SDL_RenderDrawLine(renderer, tx + 6, ty, tx + 3, ty + 4);
+            }
+
+            SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
+            ui_draw_text(renderer, "Circuits", 12, header_screen_y);
+        }
+        draw_y += 14;
+        content_height += 14;
+
+        if (!circuits_cat->collapsed) {
+            int col = 0;
+            for (int i = 0; i < ui->num_circuit_items; i++) {
+                CircuitPaletteItem *item = &ui->circuit_items[i];
+
+                item->bounds.x = 10 + col * 70;
+                item->bounds.y = draw_y;
+
+                int screen_y = draw_y - scroll_offset;
+                if (screen_y + item->bounds.h >= TOOLBAR_HEIGHT && screen_y < ui->window_height - STATUSBAR_HEIGHT) {
+                    int orig_y = item->bounds.y;
+                    item->bounds.y = screen_y;
+                    draw_circuit_item(renderer, item);
+                    item->bounds.y = orig_y;
+                }
+
+                col++;
+                if (col >= 2) {
+                    col = 0;
+                    draw_y += pal_h + 5;
+                    content_height += pal_h + 5;
+                }
+            }
+            if (col > 0) {
+                draw_y += pal_h + 5;
+                content_height += pal_h + 5;
             }
         }
     }
 
-    // Palette items - draw at adjusted position
-    for (int i = 0; i < ui->num_palette_items; i++) {
-        PaletteItem *item = &ui->palette_items[i];
-        int adjusted_y = item->bounds.y - scroll_offset;
-        // Skip if fully outside visible area
-        if (adjusted_y + item->bounds.h < TOOLBAR_HEIGHT || adjusted_y > ui->window_height - STATUSBAR_HEIGHT) {
-            continue;
-        }
-        // Temporarily adjust bounds for drawing
-        int orig_y = item->bounds.y;
-        item->bounds.y = adjusted_y;
-        draw_palette_item(renderer, item);
-        item->bounds.y = orig_y;  // Restore for hit testing
-    }
-
-    // Circuits section header
-    if (ui->num_circuit_items > 0) {
-        int header_y = ui->circuit_items[0].bounds.y - 14 - scroll_offset;
-        if (header_y >= TOOLBAR_HEIGHT - 14 && header_y < ui->window_height - STATUSBAR_HEIGHT) {
-            SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);  // Pink header
-            ui_draw_text(renderer, "Circuits", 10, header_y);
-        }
-    }
-
-    // Circuit palette items - draw at adjusted position
-    for (int i = 0; i < ui->num_circuit_items; i++) {
-        CircuitPaletteItem *item = &ui->circuit_items[i];
-        int adjusted_y = item->bounds.y - scroll_offset;
-        // Skip if fully outside visible area
-        if (adjusted_y + item->bounds.h < TOOLBAR_HEIGHT || adjusted_y > ui->window_height - STATUSBAR_HEIGHT) {
-            continue;
-        }
-        // Temporarily adjust bounds for drawing
-        int orig_y = item->bounds.y;
-        item->bounds.y = adjusted_y;
-        draw_circuit_item(renderer, item);
-        item->bounds.y = orig_y;  // Restore for hit testing
-    }
+    // Update content height for scrollbar
+    ui->palette_content_height = content_height + 10;
 
     // Reset clipping
     SDL_RenderSetClipRect(renderer, NULL);
@@ -2085,7 +2193,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
 
 void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
     int x = ui->window_width - ui->properties_width;
-    int y = TOOLBAR_HEIGHT + 210;
+    // Position measurements panel below the oscilloscope
+    int y = ui->scope_rect.y + ui->scope_rect.h + 5;
 
     // Background - synthwave dark
     SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
@@ -4014,6 +4123,21 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         for (int i = 0; i < ui->num_properties && i < 16; i++) {
             if (point_in_rect(x, y, &ui->properties[i].bounds)) {
                 return UI_ACTION_PROP_EDIT + ui->properties[i].prop_type;
+            }
+        }
+
+        // Check palette category headers for collapse/expand (must be in palette area)
+        if (x >= 0 && x < PALETTE_WIDTH - 10 && y >= TOOLBAR_HEIGHT && y < ui->window_height - STATUSBAR_HEIGHT) {
+            int content_y = y + ui->palette_scroll_offset;  // Convert screen y to content y
+            // Check all categories for header clicks
+            for (int cat = 0; cat < PCAT_COUNT; cat++) {
+                PaletteCategory *category = &ui->categories[cat];
+                // Header_y is in content coords, header is 14 pixels tall
+                if (content_y >= category->header_y && content_y < category->header_y + 14) {
+                    // Toggle collapsed state
+                    category->collapsed = !category->collapsed;
+                    return UI_ACTION_NONE;  // Handled, no further action needed
+                }
             }
         }
 
