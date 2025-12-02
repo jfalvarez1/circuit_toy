@@ -643,6 +643,17 @@ void ui_update(UIState *ui, Circuit *circuit, Simulation *sim) {
     if (circuit) {
         ui->node_count = circuit->num_nodes;
         ui->component_count = circuit->num_components;
+
+        // Extract voltmeter and ammeter readings from circuit components
+        for (int i = 0; i < circuit->num_components; i++) {
+            Component *comp = circuit->components[i];
+            if (!comp) continue;
+            if (comp->type == COMP_VOLTMETER) {
+                ui->voltmeter_value = comp->props.voltmeter.reading;
+            } else if (comp->type == COMP_AMMETER) {
+                ui->ammeter_value = comp->props.ammeter.reading;
+            }
+        }
     }
 }
 
@@ -2267,9 +2278,9 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
 
 void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
     // Render voltmeter/ammeter readings inline in the status bar
-    // Position between env sliders (ends ~600) and dt/time displays (starts ~-350 from right)
+    // Position right after env sliders (Lux/Temp end around 711)
     int y = ui->window_height - STATUSBAR_HEIGHT;
-    int x = ui->window_width - 480;  // Position before dt/time readings
+    int x = 720;  // Right after Lux/Temp sliders
 
     // Voltmeter
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
@@ -4149,6 +4160,48 @@ ComponentType ui_spotlight_key(UIState *ui, SDL_Keycode key) {
         default:
             return COMP_NONE;
     }
+}
+
+// Handle mouse click on spotlight search dialog
+// Returns selected ComponentType if a result was clicked, COMP_NONE otherwise
+ComponentType ui_spotlight_click(UIState *ui, int mouse_x, int mouse_y) {
+    if (!ui->show_spotlight) return COMP_NONE;
+    if (ui->spotlight_num_results <= 0) return COMP_NONE;
+
+    // Dialog dimensions - must match ui_render_spotlight
+    int dw = 450, max_results = 10;
+    int dx = (ui->window_width - dw) / 2;
+    int dy = ui->window_height / 5;
+    int results_start_y = dy + 48;
+    int item_height = 28;
+    int visible = MIN(ui->spotlight_num_results, max_results);
+
+    // Check if click is within the results area
+    int results_area_x = dx + 5;
+    int results_area_w = dw - 10;
+
+    if (mouse_x >= results_area_x && mouse_x < results_area_x + results_area_w) {
+        // Calculate which result item was clicked
+        int rel_y = mouse_y - results_start_y + 2;  // +2 to account for -2 offset in render
+        if (rel_y >= 0) {
+            int clicked_index = rel_y / item_height;
+            if (clicked_index >= 0 && clicked_index < visible) {
+                // Select and confirm the clicked item
+                ui->spotlight_selected = clicked_index;
+                ComponentType result = ui->spotlight_results[clicked_index];
+                ui_spotlight_close(ui);
+                return result;
+            }
+        }
+    }
+
+    // Click was outside results - check if outside dialog entirely to close
+    int dh = 50 + (ui->spotlight_num_results > 0 ? visible * 28 + 10 : 0);
+    if (mouse_x < dx || mouse_x >= dx + dw || mouse_y < dy || mouse_y >= dy + dh) {
+        ui_spotlight_close(ui);
+    }
+
+    return COMP_NONE;
 }
 
 // Render spotlight search dialog

@@ -380,6 +380,7 @@ void ui_spotlight_open(UIState *ui);
 void ui_spotlight_close(UIState *ui);
 void ui_spotlight_text_input(UIState *ui, const char *text);
 ComponentType ui_spotlight_key(UIState *ui, SDL_Keycode key);
+ComponentType ui_spotlight_click(UIState *ui, int mouse_x, int mouse_y);
 
 // Handle UI events
 // Returns: -1 = not handled, 0+ = action ID

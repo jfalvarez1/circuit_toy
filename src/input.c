@@ -63,6 +63,17 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             int x = event->button.x;
             int y = event->button.y;
 
+            // If spotlight is open, handle spotlight clicks first
+            if (ui && ui->show_spotlight) {
+                ComponentType selected = ui_spotlight_click(ui, x, y);
+                if (selected != COMP_NONE) {
+                    // Component selected - start placing it
+                    input_start_placing(input, selected);
+                    ui_set_status(ui, "Click to place component");
+                }
+                return true;  // Consume click when spotlight is open
+            }
+
             // Check if click is in UI area first
             int action = ui_handle_click(ui, x, y, true);
             if (action != UI_ACTION_NONE) {

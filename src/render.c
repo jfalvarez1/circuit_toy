@@ -1024,22 +1024,31 @@ void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
 
     // Draw animated current flow particles (cyan dots flowing along wires)
     if (ctx->show_current && ctx->sim_running) {
-        // Use wire current from simulation (sign indicates direction)
-        // Positive current: flows from start_node to end_node
-        // Negative current: flows from end_node to start_node
-        double current = wire->current;
-        double abs_current = fabs(current);
+        // Get node voltages to determine flow direction
+        // Conventional current flows from high voltage to low voltage
+        double v_start = start->voltage;
+        double v_end = end->voltage;
+        double v_diff = fabs(v_start - v_end);
+        double abs_current = fabs(wire->current);
 
-        // Show particles if any measurable current
-        if (abs_current > 1e-6) {  // 1µA threshold for visibility
-            // Direction based on current sign (conventional current flow)
+        // If wire current is zero but there's a voltage difference, estimate current
+        // This handles wires where the simulation didn't compute current properly
+        if (abs_current < 1e-9 && v_diff > 1e-6) {
+            // Assume typical wire resistance of ~1 ohm for visualization purposes
+            abs_current = v_diff / 1.0;
+            if (abs_current > 10.0) abs_current = 10.0;  // Cap for display
+        }
+
+        // Show particles if any measurable current or voltage difference
+        if (abs_current > 1e-9 || v_diff > 0.001) {  // Much lower threshold
+            // Direction based on voltage difference (conventional current: high V to low V)
             float from_x, from_y, to_x, to_y;
-            if (current > 0) {
-                // Positive current: flows from start to end
+            if (v_start > v_end) {
+                // Current flows from start to end (higher V to lower V)
                 from_x = start->x; from_y = start->y;
                 to_x = end->x; to_y = end->y;
             } else {
-                // Negative current: flows from end to start
+                // Current flows from end to start (higher V to lower V)
                 from_x = end->x; from_y = end->y;
                 to_x = start->x; to_y = start->y;
             }
@@ -1241,6 +1250,7 @@ static void render_component_current_flow(RenderContext *ctx, Component *comp, C
     // Estimate current based on component type
     double current = 0.0;
     double v_diff = v0 - v1;
+    bool is_source = false;  // Sources have reversed current flow direction
 
     switch (comp->type) {
         case COMP_RESISTOR:
@@ -1266,6 +1276,22 @@ static void render_component_current_flow(RenderContext *ctx, Component *comp, C
             if (!comp->props.fuse.blown)
                 current = v_diff / comp->props.fuse.resistance;
             break;
+        // Voltage and current sources - current EXITS from positive terminal
+        case COMP_DC_VOLTAGE:
+        case COMP_AC_VOLTAGE:
+        case COMP_BATTERY:
+        case COMP_SQUARE_WAVE:
+        case COMP_TRIANGLE_WAVE:
+        case COMP_SAWTOOTH_WAVE:
+        case COMP_NOISE_SOURCE:
+        case COMP_PULSE_SOURCE:
+        case COMP_PWM_SOURCE:
+        case COMP_DC_CURRENT:
+        case COMP_AC_CURRENT:
+            is_source = true;
+            current = v_diff / 100.0;  // Estimate based on typical load
+            if (fabs(current) < 1e-6) current = 0.01;  // Show flow even with small current
+            break;
         default:
             // Generic estimation based on voltage difference
             current = v_diff / 1000.0;
@@ -1277,9 +1303,18 @@ static void render_component_current_flow(RenderContext *ctx, Component *comp, C
     // Threshold for visibility
     if (abs_current < 1e-6) return;
 
-    // Determine direction (conventional current: high to low voltage)
+    // Determine direction:
+    // - Passive components: conventional current flows from high V to low V
+    // - Sources: current enters at negative terminal (t1), flows through source, exits at positive (t0)
+    //   So inside the source, particles flow from t1 (negative) to t0 (positive)
     float from_x, from_y, to_x, to_y;
-    if (v0 > v1) {
+    if (is_source) {
+        // For sources: current enters at negative (t1) and exits at positive (t0)
+        // Particles flow FROM negative TO positive inside the source
+        from_x = t1_x; from_y = t1_y;
+        to_x = t0_x; to_y = t0_y;
+    } else if (v0 > v1) {
+        // Passive component: flow from high voltage to low voltage
         from_x = t0_x; from_y = t0_y;
         to_x = t1_x; to_y = t1_y;
     } else {

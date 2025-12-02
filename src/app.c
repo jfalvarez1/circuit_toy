@@ -1454,12 +1454,13 @@ void app_render(App *app) {
     ui_render_toolbar(&app->ui, r);
     ui_render_palette(&app->ui, r);
     ui_render_properties(&app->ui, r, app->input.selected_component, &app->input);
-    ui_render_measurements(&app->ui, r, app->simulation);
     // Only render oscilloscope in main window if not popped out
     if (!app->ui.scope_popped_out) {
         ui_render_oscilloscope(&app->ui, r, app->simulation, &app->analysis);
     }
     ui_render_statusbar(&app->ui, r);
+    // Render VM/AM measurements after statusbar so they appear on top
+    ui_render_measurements(&app->ui, r, app->simulation);
 
     // Render dialogs
     if (app->ui.show_shortcuts_dialog) {

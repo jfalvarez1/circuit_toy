@@ -226,6 +226,7 @@ Simulate real-world environmental conditions:
 
 - **Synthwave color theme** - Neon pink, cyan, and purple accents
 - **Animated neon border** - Dual smooth chasers flow around window edges with thick glowing bars
+- **Spotlight Search (Ctrl+K)** - Quick component search with fuzzy matching, keyboard navigation, and mouse click selection
 - **Collapsible palette categories** - Click to expand/collapse component groups
 - **Grid-based placement** with snap-to-grid (toggle with 'S')
 - **Pan and zoom** - Middle mouse or Shift+drag to pan, scroll to zoom
@@ -360,6 +361,7 @@ meson compile -C build
 | Ctrl+Shift+Z | Redo |
 | Space | Start/pause simulation |
 | + / - | Adjust simulation speed |
+| Ctrl+K | Open spotlight search |
 | F1 | Show keyboard shortcuts dialog |
 
 ## Technical Details
@@ -432,6 +434,10 @@ circuit_toy/
 - Windows (x64) - Primary development platform
 - Linux (x64) - Tested on Ubuntu
 - macOS (x64, arm64) - Should work with SDL2
+
+## Known Issues / Work in Progress
+
+- **Current Flow Visualization** - The animated current flow particles may not appear on all wires in some circuit configurations. Direction is based on voltage difference between nodes. This feature is under active development.
 
 ## License
 
