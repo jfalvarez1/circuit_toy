@@ -4,6 +4,10 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 
 ![Circuit Playground Screenshot](screenshot.png)
 
+### Spotlight Search (Ctrl+K)
+
+![Component Search](component_search.png)
+
 ## Features
 
 ### Extensive Component Library
