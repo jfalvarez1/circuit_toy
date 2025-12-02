@@ -62,6 +62,7 @@ void render_xor_gate(RenderContext *ctx, float x, float y, int rotation);
 void render_xnor_gate(RenderContext *ctx, float x, float y, int rotation);
 void render_buffer(RenderContext *ctx, float x, float y, int rotation);
 void render_555_timer(RenderContext *ctx, float x, float y, int rotation);
+void render_regulator_box(RenderContext *ctx, float x, float y, int rotation);
 void render_logic_input(RenderContext *ctx, float x, float y, int rotation, bool high);
 void render_logic_output(RenderContext *ctx, float x, float y, int rotation, bool high);
 void render_d_flipflop(RenderContext *ctx, float x, float y, int rotation);
@@ -922,23 +923,35 @@ void render_component(RenderContext *ctx, Component *comp) {
             break;
         }
 
-        // Voltage regulators - use 555-style box with label
+        // Voltage regulators - use TO-220 style box with labels
         case COMP_LM317: {
-            render_555_timer(ctx, comp->x, comp->y, comp->rotation);
+            render_regulator_box(ctx, comp->x, comp->y, comp->rotation);
             int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
-            render_draw_text_small(ctx, "317", sx - 10, sy - 4, COLOR_TEXT);
+            render_draw_text_small(ctx, "LM317", sx - 18, sy - 4, COLOR_TEXT);
+            // Terminal labels: IN (left), OUT (right), ADJ (bottom)
+            render_draw_text_small(ctx, "IN", sx - 38, sy - 12, COLOR_ACCENT);
+            render_draw_text_small(ctx, "OUT", sx + 28, sy - 12, COLOR_ACCENT);
+            render_draw_text_small(ctx, "ADJ", sx - 10, sy + 40, COLOR_ACCENT);
             break;
         }
         case COMP_7805: {
-            render_555_timer(ctx, comp->x, comp->y, comp->rotation);
+            render_regulator_box(ctx, comp->x, comp->y, comp->rotation);
             int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
             render_draw_text_small(ctx, "7805", sx - 14, sy - 4, COLOR_TEXT);
+            // Terminal labels: IN (left), OUT (right), GND (bottom)
+            render_draw_text_small(ctx, "IN", sx - 38, sy - 12, COLOR_ACCENT);
+            render_draw_text_small(ctx, "OUT", sx + 28, sy - 12, COLOR_ACCENT);
+            render_draw_text_small(ctx, "GND", sx - 10, sy + 40, COLOR_ACCENT);
             break;
         }
         case COMP_TL431: {
-            render_555_timer(ctx, comp->x, comp->y, comp->rotation);
+            render_regulator_box(ctx, comp->x, comp->y, comp->rotation);
             int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
-            render_draw_text_small(ctx, "431", sx - 10, sy - 4, COLOR_TEXT);
+            render_draw_text_small(ctx, "TL431", sx - 18, sy - 4, COLOR_TEXT);
+            // Terminal labels: K (left), A (right), REF (bottom)
+            render_draw_text_small(ctx, "K", sx - 38, sy - 12, COLOR_ACCENT);
+            render_draw_text_small(ctx, "A", sx + 32, sy - 12, COLOR_ACCENT);
+            render_draw_text_small(ctx, "REF", sx - 10, sy + 40, COLOR_ACCENT);
             break;
         }
 
@@ -1062,31 +1075,22 @@ void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
 
     // Draw animated current flow particles (cyan dots flowing along wires)
     if (ctx->show_current && ctx->sim_running) {
-        // Get node voltages to determine flow direction
-        // Conventional current flows from high voltage to low voltage
-        double v_start = start->voltage;
-        double v_end = end->voltage;
-        double v_diff = fabs(v_start - v_end);
-        double abs_current = fabs(wire->current);
+        // Use signed wire current for direction
+        // Positive current = flows from start_node to end_node
+        // Negative current = flows from end_node to start_node
+        double signed_current = wire->current;
+        double abs_current = fabs(signed_current);
 
-        // If wire current is zero but there's a voltage difference, estimate current
-        // This handles wires where the simulation didn't compute current properly
-        if (abs_current < 1e-9 && v_diff > 1e-6) {
-            // Assume typical wire resistance of ~1 ohm for visualization purposes
-            abs_current = v_diff / 1.0;
-            if (abs_current > 10.0) abs_current = 10.0;  // Cap for display
-        }
-
-        // Show particles if any measurable current or voltage difference
-        if (abs_current > 1e-9 || v_diff > 0.001) {  // Much lower threshold
-            // Direction based on voltage difference (conventional current: high V to low V)
+        // Show particles if any measurable current
+        if (abs_current > 1e-9) {
+            // Direction based on sign of current (already calculated with KCL)
             float from_x, from_y, to_x, to_y;
-            if (v_start > v_end) {
-                // Current flows from start to end (higher V to lower V)
+            if (signed_current > 0) {
+                // Current flows from start to end (positive)
                 from_x = start->x; from_y = start->y;
                 to_x = end->x; to_y = end->y;
             } else {
-                // Current flows from end to start (higher V to lower V)
+                // Current flows from end to start (negative)
                 from_x = end->x; from_y = end->y;
                 to_x = start->x; to_y = start->y;
             }
@@ -2995,6 +2999,12 @@ void render_voltmeter(RenderContext *ctx, float x, float y, int rotation) {
     // V inside
     render_draw_line_rotated(ctx, x, y, -8, -10, 0, 10, rotation);
     render_draw_line_rotated(ctx, x, y, 0, 10, 8, -10, rotation);
+    // Polarity markers: + on left terminal, - on right terminal
+    // "+" near left terminal (above wire)
+    render_draw_line_rotated(ctx, x, y, -34, -10, -26, -10, rotation);  // horizontal
+    render_draw_line_rotated(ctx, x, y, -30, -14, -30, -6, rotation);   // vertical
+    // "-" near right terminal (above wire)
+    render_draw_line_rotated(ctx, x, y, 26, -10, 34, -10, rotation);    // horizontal only
 }
 
 // Ammeter - circle with A
@@ -3008,6 +3018,12 @@ void render_ammeter(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_line_rotated(ctx, x, y, -8, 10, 0, -10, rotation);
     render_draw_line_rotated(ctx, x, y, 0, -10, 8, 10, rotation);
     render_draw_line_rotated(ctx, x, y, -5, 3, 5, 3, rotation);
+    // Polarity markers: + on left terminal, - on right terminal
+    // "+" near left terminal (above wire)
+    render_draw_line_rotated(ctx, x, y, -34, -10, -26, -10, rotation);  // horizontal
+    render_draw_line_rotated(ctx, x, y, -30, -14, -30, -6, rotation);   // vertical
+    // "-" near right terminal (above wire)
+    render_draw_line_rotated(ctx, x, y, 26, -10, 34, -10, rotation);    // horizontal only
 }
 
 // Wattmeter - circle with W
@@ -3281,6 +3297,25 @@ void render_555_timer(RenderContext *ctx, float x, float y, int rotation) {
     int sx, sy;
     render_world_to_screen(ctx, x, y, &sx, &sy);
     render_draw_text_small(ctx, "555", sx - 10, sy - 4, COLOR_TEXT);
+}
+
+// Voltage regulator (TO-220 style package - 3-pin)
+void render_regulator_box(RenderContext *ctx, float x, float y, int rotation) {
+    // TO-220 style package body (rectangle)
+    render_draw_line_rotated(ctx, x, y, -25, -20, 25, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, 20, 25, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, -25, -20, -25, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, 25, -20, 25, 20, rotation);
+    // Heat tab at top
+    render_draw_line_rotated(ctx, x, y, -20, -20, -20, -25, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, -20, 20, -25, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, -25, 20, -25, rotation);
+    // Mounting hole
+    render_draw_circle_rotated(ctx, x, y, 0, -22, 3, rotation);
+    // Three terminals: IN (left), OUT (right), GND/ADJ (bottom center)
+    render_draw_line_rotated(ctx, x, y, -40, 0, -25, 0, rotation);   // IN
+    render_draw_line_rotated(ctx, x, y, 25, 0, 40, 0, rotation);     // OUT
+    render_draw_line_rotated(ctx, x, y, 0, 20, 0, 30, rotation);     // GND/ADJ/REF
 }
 
 // Logic input (switch/level)

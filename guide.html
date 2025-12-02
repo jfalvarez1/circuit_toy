@@ -395,9 +395,10 @@
                 <div>
                     <div class="toc-section">Advanced Components</div>
                     <a href="#controlled-sources">7d. Controlled Sources</a>
-                    <a href="#logic">7e. Logic Gates & Digital</a>
-                    <a href="#ics">7f. Integrated Circuits</a>
-                    <a href="#measurement-tools">7g. Measurement Tools</a>
+                    <a href="#regulators">7e. Voltage Regulators</a>
+                    <a href="#logic">7f. Logic Gates & Digital</a>
+                    <a href="#ics">7g. Integrated Circuits</a>
+                    <a href="#measurement-tools">7h. Measurement Tools</a>
 
                     <div class="toc-section">Theory & Concepts</div>
                     <a href="#theory">8. Circuit Theory Fundamentals</a>
@@ -913,9 +914,36 @@
             </div>
         </section>
 
-        <!-- 7e. Logic Gates & Digital -->
+        <!-- 7e. Voltage Regulators -->
+        <section id="regulators" class="section">
+            <h2>7e. Voltage Regulators</h2>
+            <p>Voltage regulators provide stable output voltages regardless of input voltage variations or load changes. These three-terminal devices are essential for power supply design.</p>
+
+            <div class="component-grid">
+                <div class="component-card">
+                    <h4>7805 - Fixed 5V Regulator</h4>
+                    <p>Linear regulator providing a stable 5V output from higher input voltages. Common in digital circuits requiring 5V logic supply.</p>
+                    <div class="shortcut">Terminals: IN (input), OUT (output), GND (ground)</div>
+                    <p><strong>Typical Application:</strong> Connect input to 9-12V, output provides regulated 5V.</p>
+                </div>
+                <div class="component-card">
+                    <h4>LM317 - Adjustable Regulator</h4>
+                    <p>Adjustable positive voltage regulator. Output voltage set by external resistor divider: Vout = 1.25V × (1 + R2/R1)</p>
+                    <div class="shortcut">Terminals: IN (input), OUT (output), ADJ (adjust)</div>
+                    <p><strong>Typical Application:</strong> Create variable power supplies from 1.25V to 37V.</p>
+                </div>
+                <div class="component-card">
+                    <h4>TL431 - Programmable Shunt Reference</h4>
+                    <p>Precision programmable shunt regulator. Acts as a voltage reference with adjustable threshold voltage.</p>
+                    <div class="shortcut">Terminals: K (cathode), A (anode), REF (reference input)</div>
+                    <p><strong>Typical Application:</strong> Precision voltage references, feedback for switching supplies.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7f. Logic Gates & Digital -->
         <section id="logic" class="section">
-            <h2>7e. Logic Gates & Digital</h2>
+            <h2>7f. Logic Gates & Digital</h2>
             <p>Digital logic components operate with discrete voltage levels representing 0 and 1. Default levels are 0V (low) and 5V (high) with 2.5V threshold.</p>
 
             <div class="component-grid">

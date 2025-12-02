@@ -4506,6 +4506,7 @@ bool ui_subcircuit_dialog_key(UIState *ui, SDL_Keycode key) {
     if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
         // Confirm creation if name is not empty
         if (ui->subcircuit_name[0] != '\0') {
+            ui_subcircuit_dialog_close(ui);  // Close dialog before returning
             return true;  // Signal to create the subcircuit
         }
         return false;
@@ -4614,6 +4615,7 @@ bool ui_subcircuit_dialog_click(UIState *ui, int mouse_x, int mouse_y) {
     if (mouse_x >= btn_x && mouse_x < btn_x + 80 &&
         mouse_y >= btn_y && mouse_y < btn_y + 30) {
         if (ui->subcircuit_name[0] != '\0') {
+            ui_subcircuit_dialog_close(ui);  // Close dialog before returning
             return true;  // Create subcircuit
         }
     }

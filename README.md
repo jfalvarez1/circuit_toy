@@ -91,9 +91,10 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 - Ammeter (virtual)
 
 **Regulators**
-- 7805 (5V fixed regulator)
+- 7805 (5V fixed regulator with IN/OUT/GND terminal labels)
 - 7812 (12V fixed regulator)
-- LM317 (adjustable regulator)
+- LM317 (adjustable regulator with IN/OUT/ADJ terminal labels)
+- TL431 (programmable shunt reference with K/A/REF terminal labels)
 
 **Subcircuits**
 - Pin Marker (mark nodes as subcircuit pins with customizable names)
@@ -217,6 +218,8 @@ Simulate real-world environmental conditions:
 
 - **Animated particles** - Cyan dots flow along wires showing current direction
 - **Conventional current** - Particles follow conventional current flow (positive to negative)
+- **KCL-based direction** - Current direction calculated using Kirchhoff's Current Law for accurate flow
+- **Voltage source handling** - Correct current direction on wires connected to voltage sources
 - **Speed scaling** - Particle speed scales logarithmically with current magnitude
 - **Size indication** - Larger currents show larger particles
 

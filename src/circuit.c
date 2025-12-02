@@ -529,6 +529,56 @@ void circuit_update_voltages(Circuit *circuit, Vector *solution) {
     }
 }
 
+void circuit_update_meter_readings(Circuit *circuit) {
+    if (!circuit) return;
+
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+        if (!comp) continue;
+
+        if (comp->type == COMP_VOLTMETER) {
+            // Voltmeter: read voltage difference directly from node voltages
+            Node *n1 = circuit_get_node(circuit, comp->node_ids[0]);
+            Node *n2 = circuit_get_node(circuit, comp->node_ids[1]);
+            double v1 = n1 ? n1->voltage : 0.0;
+            double v2 = n2 ? n2->voltage : 0.0;
+            comp->props.voltmeter.reading = v1 - v2;
+        }
+        else if (comp->type == COMP_AMMETER) {
+            // Ammeter: calculate current from voltage drop across shunt resistance
+            // The ammeter is stamped as a low resistance (0.001 ohms for accurate measurement)
+            Node *n1 = circuit_get_node(circuit, comp->node_ids[0]);
+            Node *n2 = circuit_get_node(circuit, comp->node_ids[1]);
+            double v1 = n1 ? n1->voltage : 0.0;
+            double v2 = n2 ? n2->voltage : 0.0;
+
+            // Use the same shunt resistance as in stamp function
+            double R = comp->props.ammeter.ideal ? 0.001 : comp->props.ammeter.r_shunt;
+            if (R < 1e-9) R = 0.001;  // Prevent division by zero
+
+            // I = V_drop / R_shunt
+            comp->props.ammeter.reading = (v1 - v2) / R;
+        }
+        else if (comp->type == COMP_WATTMETER) {
+            // Wattmeter: P = V * I
+            // Voltage across V+ to V- (terminals 0, 1)
+            Node *vp = circuit_get_node(circuit, comp->node_ids[0]);
+            Node *vn = circuit_get_node(circuit, comp->node_ids[1]);
+            double voltage = (vp ? vp->voltage : 0.0) - (vn ? vn->voltage : 0.0);
+
+            // Current through I+ to I- (terminals 2, 3)
+            Node *ip = circuit_get_node(circuit, comp->node_ids[2]);
+            Node *in = circuit_get_node(circuit, comp->node_ids[3]);
+            double vi1 = ip ? ip->voltage : 0.0;
+            double vi2 = in ? in->voltage : 0.0;
+            double R_i = 0.001;  // 1mOhm shunt
+            double current = (vi1 - vi2) / R_i;
+
+            comp->props.voltmeter.reading = voltage * current;
+        }
+    }
+}
+
 // Helper: Calculate current through a 2-terminal component based on type and voltages
 static double calculate_component_current(Component *comp, double v1, double v2) {
     double v_diff = v1 - v2;
@@ -610,55 +660,197 @@ static double calculate_component_current(Component *comp, double v1, double v2)
 void circuit_update_wire_currents(Circuit *circuit) {
     if (!circuit) return;
 
-    // For each wire, find connected components and calculate current
-    for (int w = 0; w < circuit->num_wires; w++) {
-        Wire *wire = &circuit->wires[w];
-        double total_current = 0;
-        int current_count = 0;
+    // First, find the circuit current from resistors (they can tell us current, voltage sources can't)
+    double circuit_current = 0;
+    for (int c = 0; c < circuit->num_components; c++) {
+        Component *comp = circuit->components[c];
+        if (!comp || comp->num_terminals < 2) continue;
 
-        // Get wire endpoint nodes
-        Node *start_node = circuit_get_node(circuit, wire->start_node_id);
-        Node *end_node = circuit_get_node(circuit, wire->end_node_id);
-        if (!start_node || !end_node) {
-            wire->current = 0;
-            continue;
-        }
-
-        // Find components connected to start node
-        for (int c = 0; c < circuit->num_components; c++) {
-            Component *comp = circuit->components[c];
-            if (!comp || comp->num_terminals < 2) continue;
-
-            // Check if this component connects to the wire's start node
-            for (int t = 0; t < comp->num_terminals; t++) {
-                if (comp->node_ids[t] == wire->start_node_id) {
-                    // Found a component connected to start node
-                    // Get the voltage at the other terminal(s)
-                    for (int t2 = 0; t2 < comp->num_terminals; t2++) {
-                        if (t2 != t) {
-                            Node *other_node = circuit_get_node(circuit, comp->node_ids[t2]);
-                            if (other_node) {
-                                double current = calculate_component_current(comp,
-                                    start_node->voltage, other_node->voltage);
-                                // Current flowing INTO the start node (toward the wire)
-                                total_current += current;
-                                current_count++;
-                            }
-                        }
-                    }
-                    break;
+        // Look for resistors, LEDs, and other components that can give us current
+        if (comp->type == COMP_RESISTOR || comp->type == COMP_LED ||
+            comp->type == COMP_SPST_SWITCH || comp->type == COMP_PUSH_BUTTON) {
+            Node *n0 = circuit_get_node(circuit, comp->node_ids[0]);
+            Node *n1 = circuit_get_node(circuit, comp->node_ids[1]);
+            if (n0 && n1) {
+                double current = fabs(calculate_component_current(comp, n0->voltage, n1->voltage));
+                if (current > circuit_current) {
+                    circuit_current = current;
                 }
             }
         }
+    }
 
-        // If we found component currents, use the average magnitude
-        if (current_count > 0) {
-            wire->current = total_current / current_count;
-        } else {
-            // Fallback: no components found, use voltage difference estimation
-            // This shouldn't happen in a properly connected circuit
-            wire->current = 0;
+    // If no resistor current found, estimate from voltage source
+    if (circuit_current < 1e-12) {
+        for (int c = 0; c < circuit->num_components; c++) {
+            Component *comp = circuit->components[c];
+            if (!comp) continue;
+            if (comp->type == COMP_DC_VOLTAGE) {
+                // Estimate current as if there's a 1k load
+                circuit_current = comp->props.dc_voltage.voltage / 1000.0;
+                break;
+            }
         }
+    }
+
+    // Now assign current to each wire based on its position in the circuit
+    // Direction is determined by voltage: current flows from high V toward low V (ground)
+    for (int w = 0; w < circuit->num_wires; w++) {
+        Wire *wire = &circuit->wires[w];
+        wire->current = 0;
+
+        Node *start_node = circuit_get_node(circuit, wire->start_node_id);
+        Node *end_node = circuit_get_node(circuit, wire->end_node_id);
+        if (!start_node || !end_node) continue;
+
+        // Get node voltages
+        double v_start = start_node->voltage;
+        double v_end = end_node->voltage;
+
+        // Determine direction based on which node has higher voltage
+        // In a circuit, current flows from the high-voltage side toward ground
+        // For wires at the same voltage, we need to look at the overall path
+
+        double v_diff = v_start - v_end;
+
+        if (fabs(v_diff) > 1e-9) {
+            // Wire endpoints have different voltages - current flows from high to low
+            if (v_diff > 0) {
+                wire->current = circuit_current;  // Flows from start to end
+            } else {
+                wire->current = -circuit_current;  // Flows from end to start
+            }
+        } else {
+            // Wire is at equipotential - determine direction from connected components
+            // Check if one end connects to a voltage source + terminal (current should flow OUT)
+            // or to ground/- terminal (current should flow IN)
+            bool start_is_source = false;
+            bool end_is_source = false;
+
+            for (int c = 0; c < circuit->num_components; c++) {
+                Component *comp = circuit->components[c];
+                if (!comp) continue;
+
+                if (comp->type == COMP_DC_VOLTAGE || comp->type == COMP_AC_VOLTAGE) {
+                    // Terminal 0 is + (positive), terminal 1 is - (negative)
+                    if (comp->node_ids[0] == wire->start_node_id) {
+                        start_is_source = true;  // Start connects to + terminal
+                    }
+                    if (comp->node_ids[0] == wire->end_node_id) {
+                        end_is_source = true;  // End connects to + terminal
+                    }
+                }
+            }
+
+            if (start_is_source && !end_is_source) {
+                // Current flows OUT from start (+ terminal) toward end
+                wire->current = circuit_current;
+            } else if (end_is_source && !start_is_source) {
+                // Current flows OUT from end (+ terminal) toward start
+                wire->current = -circuit_current;
+            } else {
+                // Check for ground connection - current flows INTO ground
+                if (start_node->is_ground && !end_node->is_ground) {
+                    wire->current = -circuit_current;  // Flows from end toward start (ground)
+                } else if (end_node->is_ground && !start_node->is_ground) {
+                    wire->current = circuit_current;   // Flows from start toward end (ground)
+                }
+            }
+        }
+    }
+
+    // Second pass: Propagate current to intermediate wires WITH correct direction
+    // When wires share a node:
+    // - If other wire's current flows INTO the shared node, this wire's current flows OUT
+    // - The sign depends on which end of this wire connects to the shared node
+    for (int pass = 0; pass < 10; pass++) {
+        bool changed = false;
+        for (int w = 0; w < circuit->num_wires; w++) {
+            Wire *wire = &circuit->wires[w];
+
+            // Skip wires that already have current
+            if (fabs(wire->current) > 1e-12) continue;
+
+            double best_current = 0;
+            int best_direction = 0;  // +1 = start->end, -1 = end->start
+
+            for (int w2 = 0; w2 < circuit->num_wires; w2++) {
+                if (w == w2) continue;
+                Wire *other = &circuit->wires[w2];
+                if (fabs(other->current) < 1e-12) continue;
+
+                // Determine which nodes are shared and current direction
+                // other->current > 0 means current flows from other.start to other.end
+                // other->current < 0 means current flows from other.end to other.start
+
+                int shared_node = -1;
+                bool other_flows_into_shared = false;
+                bool wire_start_is_shared = false;
+
+                // Check all connection combinations
+                if (other->end_node_id == wire->start_node_id) {
+                    // Other's end connects to our start
+                    shared_node = wire->start_node_id;
+                    wire_start_is_shared = true;
+                    other_flows_into_shared = (other->current > 0);  // Positive = flows to end
+                }
+                else if (other->start_node_id == wire->start_node_id) {
+                    // Other's start connects to our start
+                    shared_node = wire->start_node_id;
+                    wire_start_is_shared = true;
+                    other_flows_into_shared = (other->current < 0);  // Negative = flows to start
+                }
+                else if (other->end_node_id == wire->end_node_id) {
+                    // Other's end connects to our end
+                    shared_node = wire->end_node_id;
+                    wire_start_is_shared = false;
+                    other_flows_into_shared = (other->current > 0);
+                }
+                else if (other->start_node_id == wire->end_node_id) {
+                    // Other's start connects to our end
+                    shared_node = wire->end_node_id;
+                    wire_start_is_shared = false;
+                    other_flows_into_shared = (other->current < 0);
+                }
+
+                if (shared_node >= 0) {
+                    double current_mag = fabs(other->current);
+                    if (current_mag > fabs(best_current)) {
+                        best_current = current_mag;
+
+                        // Current flows INTO shared node, so it flows OUT through this wire
+                        if (other_flows_into_shared) {
+                            // Current enters shared node from other wire
+                            // So it exits through this wire
+                            if (wire_start_is_shared) {
+                                // Current exits through our start -> flows to end (positive)
+                                best_direction = 1;
+                            } else {
+                                // Current exits through our end -> flows from end to start (negative)
+                                best_direction = -1;
+                            }
+                        } else {
+                            // Current exits shared node through other wire
+                            // So current enters this wire from the shared node
+                            if (wire_start_is_shared) {
+                                // Current enters at start, must have come from somewhere
+                                // This means current flows INTO start, so negative
+                                best_direction = -1;
+                            } else {
+                                // Current enters at end, flows toward start
+                                best_direction = 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (fabs(best_current) > 1e-12 && best_direction != 0) {
+                wire->current = best_current * best_direction;
+                changed = true;
+            }
+        }
+        if (!changed) break;
     }
 }
 

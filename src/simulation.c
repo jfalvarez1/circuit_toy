@@ -292,6 +292,7 @@ bool simulation_dc_analysis(Simulation *sim) {
     // Update circuit voltages and wire currents
     circuit_update_voltages(circuit, solution);
     circuit_update_wire_currents(circuit);
+    circuit_update_meter_readings(circuit);
 
     sim->has_error = false;
     return true;
@@ -665,9 +666,10 @@ bool simulation_step(Simulation *sim) {
 
     sim->time += dt;
 
-    // Update circuit voltages and wire currents
+    // Update circuit voltages, wire currents, and meter readings
     circuit_update_voltages(circuit, sim->solution);
     circuit_update_wire_currents(circuit);
+    circuit_update_meter_readings(circuit);
 
     // Update thermal state for all components (magic smoke simulation)
     thermal_update_components(circuit, dt, sim->time);

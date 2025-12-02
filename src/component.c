@@ -4426,57 +4426,33 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         // === MEASUREMENT ===
 
         case COMP_VOLTMETER: {
-            // Voltmeter: high-impedance
-            double G = comp->props.voltmeter.ideal ? 1e-15 : (1.0 / comp->props.voltmeter.r_in);
+            // Voltmeter: high-impedance (minimal loading on circuit)
+            // Readings are calculated in circuit_update_meter_readings() after solve
+            double G = comp->props.voltmeter.ideal ? 1e-12 : (1.0 / comp->props.voltmeter.r_in);
             STAMP_CONDUCTANCE(n[0], n[1], G);
-
-            // Calculate voltage reading from previous solution
-            if (prev_solution) {
-                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0] - 1) : 0.0;
-                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1] - 1) : 0.0;
-                comp->props.voltmeter.reading = v1 - v2;
-            }
             break;
         }
 
         case COMP_AMMETER: {
-            // Ammeter: low-impedance (series element)
-            double R = comp->props.ammeter.ideal ? 1e-6 : comp->props.ammeter.r_shunt;
+            // Ammeter: low-impedance shunt (series element)
+            // Use 1mOhm for ideal - small enough to not affect circuit but large enough
+            // for accurate voltage drop measurement
+            // Readings are calculated in circuit_update_meter_readings() after solve
+            double R = comp->props.ammeter.ideal ? 0.001 : comp->props.ammeter.r_shunt;
+            if (R < 1e-9) R = 0.001;  // Ensure minimum resistance
             double G = 1.0 / R;
             STAMP_CONDUCTANCE(n[0], n[1], G);
-
-            // Calculate current reading from voltage drop across shunt
-            if (prev_solution) {
-                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0] - 1) : 0.0;
-                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1] - 1) : 0.0;
-                comp->props.ammeter.reading = (v1 - v2) * G;  // I = V * G
-            }
             break;
         }
 
         case COMP_WATTMETER: {
             // Wattmeter: voltage sensing (high-Z) and current sensing (low-Z)
+            // Readings are calculated in circuit_update_meter_readings() after solve
             double G_v = 1e-12;  // Voltage input (high impedance)
             double R_i = 0.001;  // Current shunt (1mOhm, low impedance)
             double G_i = 1.0 / R_i;
             STAMP_CONDUCTANCE(n[0], n[1], G_v);
             STAMP_CONDUCTANCE(n[2], n[3], G_i);
-
-            // Calculate power reading: P = V * I
-            if (prev_solution) {
-                // Voltage across V+ to V-
-                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0] - 1) : 0.0;
-                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1] - 1) : 0.0;
-                double voltage = v1 - v2;
-
-                // Current through I+ to I- (from voltage drop across shunt)
-                double vi1 = (n[2] > 0) ? vector_get(prev_solution, n[2] - 1) : 0.0;
-                double vi2 = (n[3] > 0) ? vector_get(prev_solution, n[3] - 1) : 0.0;
-                double current = (vi1 - vi2) * G_i;
-
-                // Store power in voltmeter.reading field
-                comp->props.voltmeter.reading = voltage * current;
-            }
             break;
         }
 
