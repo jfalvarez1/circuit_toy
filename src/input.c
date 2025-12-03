@@ -63,6 +63,14 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             int x = event->button.x;
             int y = event->button.y;
 
+            // Check if click is from popup scope window
+            bool is_popup_event = ui && ui->scope_popped_out &&
+                                  event->button.windowID == ui->scope_popup_window_id;
+            ScopeCoordsBackup backup = {0};
+            if (is_popup_event) {
+                backup = ui_setup_popup_scope_coords(ui);
+            }
+
             // If spotlight is open, handle spotlight clicks first
             if (ui && ui->show_spotlight) {
                 ComponentType selected = ui_spotlight_click(ui, x, y);
@@ -90,6 +98,10 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             // Check if click is in UI area first
             int action = ui_handle_click(ui, x, y, true);
             if (action != UI_ACTION_NONE) {
+                // Restore popup coordinates if needed
+                if (is_popup_event) {
+                    ui_restore_popup_scope_coords(ui, &backup);
+                }
                 // Handle UI action
                 if (action >= UI_ACTION_SELECT_TOOL && action < UI_ACTION_SELECT_COMP) {
                     input_set_tool(input, action - UI_ACTION_SELECT_TOOL);
@@ -105,6 +117,12 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     input->pending_ui_action = action;
                 }
                 return true;
+            }
+
+            // Restore popup coordinates if needed (even if no action was handled)
+            if (is_popup_event) {
+                ui_restore_popup_scope_coords(ui, &backup);
+                return true;  // Consume popup window clicks, don't try canvas operations
             }
 
             // Check if in canvas area (use dynamic canvas bounds)
@@ -683,7 +701,18 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 input->middle.down = false;
                 input->is_panning = false;
             }
+
+            // Check if button up is from popup scope window
+            bool is_popup_up = ui && ui->scope_popped_out &&
+                               event->button.windowID == ui->scope_popup_window_id;
+            ScopeCoordsBackup backup_up = {0};
+            if (is_popup_up) {
+                backup_up = ui_setup_popup_scope_coords(ui);
+            }
             ui_handle_click(ui, event->button.x, event->button.y, false);
+            if (is_popup_up) {
+                ui_restore_popup_scope_coords(ui, &backup_up);
+            }
             return true;
         }
 
@@ -693,7 +722,18 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             input->mouse_x = x;
             input->mouse_y = y;
 
-            ui_handle_motion(ui, x, y);
+            // Check if motion is from popup scope window
+            bool is_popup_motion = ui && ui->scope_popped_out &&
+                                   event->motion.windowID == ui->scope_popup_window_id;
+            ScopeCoordsBackup backup_motion = {0};
+            if (is_popup_motion) {
+                backup_motion = ui_setup_popup_scope_coords(ui);
+            }
+            ui_handle_motion(ui, x, y, is_popup_motion);
+            if (is_popup_motion) {
+                ui_restore_popup_scope_coords(ui, &backup_motion);
+                return true;  // Consume popup window motion events
+            }
 
             // Panning
             if (input->is_panning) {

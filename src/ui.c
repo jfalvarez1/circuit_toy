@@ -5253,6 +5253,12 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
                 ui->bode_cursor_dragging = true;
                 return UI_ACTION_NONE;
             }
+
+            // Consume all other clicks within the Bode panel to prevent component placement
+            if (x >= panel_x && x <= panel_x + panel_w &&
+                y >= panel_y && y <= panel_y + panel_h) {
+                return UI_ACTION_NONE;
+            }
         }
 
         // Monte Carlo panel button handling
@@ -5268,7 +5274,7 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
 
         // Handle trigger level dragging - check if click is near trigger indicator
-        // The trigger indicator is on the right edge of the scope (arrow at r->x + r->w - 10 to r->x + r->w)
+        // Allow clicking on the right edge arrow OR anywhere along the horizontal trigger line
         if (ui->display_mode == SCOPE_MODE_YT && ui->scope_num_channels > 0) {
             Rect *sr = &ui->scope_rect;
             int trig_ch = ui->trigger_channel;
@@ -5280,9 +5286,13 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
                 int trig_y = center_y - (int)((ui->trigger_level + trig_offset) * scale);
                 trig_y = CLAMP(trig_y, sr->y, sr->y + sr->h);
 
-                // Check if click is near the trigger level indicator (right edge, +/- 8 pixels vertically)
-                if (x >= sr->x + sr->w - 15 && x <= sr->x + sr->w &&
-                    y >= trig_y - 8 && y <= trig_y + 8) {
+                // Check if click is near the trigger level line (entire width, +/- 5 pixels vertically)
+                // Or on the right edge indicator (+/- 8 pixels vertically)
+                bool on_trigger_line = (x >= sr->x && x <= sr->x + sr->w &&
+                                        y >= trig_y - 5 && y <= trig_y + 5);
+                bool on_trigger_arrow = (x >= sr->x + sr->w - 15 && x <= sr->x + sr->w &&
+                                         y >= trig_y - 8 && y <= trig_y + 8);
+                if (on_trigger_line || on_trigger_arrow) {
                     ui->dragging_trigger_level = true;
                     return UI_ACTION_NONE;
                 }
@@ -5623,7 +5633,7 @@ int ui_handle_right_click(UIState *ui, int x, int y) {
     return UI_ACTION_NONE;
 }
 
-int ui_handle_motion(UIState *ui, int x, int y) {
+int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
     if (!ui) return UI_ACTION_NONE;
 
     // Handle scope resizing
@@ -5814,18 +5824,20 @@ int ui_handle_motion(UIState *ui, int x, int y) {
         return UI_ACTION_NONE;
     }
 
-    // Update button hover states
-    ui->btn_run.hovered = point_in_rect(x, y, &ui->btn_run.bounds);
-    ui->btn_pause.hovered = point_in_rect(x, y, &ui->btn_pause.bounds);
-    ui->btn_step.hovered = point_in_rect(x, y, &ui->btn_step.bounds);
-    ui->btn_reset.hovered = point_in_rect(x, y, &ui->btn_reset.bounds);
-    ui->btn_clear.hovered = point_in_rect(x, y, &ui->btn_clear.bounds);
-    ui->btn_save.hovered = point_in_rect(x, y, &ui->btn_save.bounds);
-    ui->btn_load.hovered = point_in_rect(x, y, &ui->btn_load.bounds);
-    ui->btn_export_svg.hovered = point_in_rect(x, y, &ui->btn_export_svg.bounds);
-    ui->btn_timestep_up.hovered = point_in_rect(x, y, &ui->btn_timestep_up.bounds);
-    ui->btn_timestep_down.hovered = point_in_rect(x, y, &ui->btn_timestep_down.bounds);
-    ui->btn_timestep_auto.hovered = point_in_rect(x, y, &ui->btn_timestep_auto.bounds);
+    // Update button hover states (skip if in popup mode)
+    if (!popup_mode) {
+        ui->btn_run.hovered = point_in_rect(x, y, &ui->btn_run.bounds);
+        ui->btn_pause.hovered = point_in_rect(x, y, &ui->btn_pause.bounds);
+        ui->btn_step.hovered = point_in_rect(x, y, &ui->btn_step.bounds);
+        ui->btn_reset.hovered = point_in_rect(x, y, &ui->btn_reset.bounds);
+        ui->btn_clear.hovered = point_in_rect(x, y, &ui->btn_clear.bounds);
+        ui->btn_save.hovered = point_in_rect(x, y, &ui->btn_save.bounds);
+        ui->btn_load.hovered = point_in_rect(x, y, &ui->btn_load.bounds);
+        ui->btn_export_svg.hovered = point_in_rect(x, y, &ui->btn_export_svg.bounds);
+        ui->btn_timestep_up.hovered = point_in_rect(x, y, &ui->btn_timestep_up.bounds);
+        ui->btn_timestep_down.hovered = point_in_rect(x, y, &ui->btn_timestep_down.bounds);
+        ui->btn_timestep_auto.hovered = point_in_rect(x, y, &ui->btn_timestep_auto.bounds);
+    }
 
     // Update oscilloscope button hover states
     ui->btn_scope_volt_up.hovered = point_in_rect(x, y, &ui->btn_scope_volt_up.bounds);
@@ -5847,36 +5859,38 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     ui->btn_scope_popup.hovered = point_in_rect(x, y, &ui->btn_scope_popup.bounds);
     ui->btn_bode_recalc.hovered = ui->show_bode_plot && point_in_rect(x, y, &ui->btn_bode_recalc.bounds);
 
-    // Update palette hover states (adjust y for scroll offset)
-    int adjusted_y = y + ui->palette_scroll_offset;
-    for (int i = 0; i < ui->num_palette_items; i++) {
-        // Skip items in collapsed categories (their bounds are stale)
-        if (is_palette_item_in_collapsed_category(ui, i)) {
-            ui->palette_items[i].hovered = false;
-            continue;
-        }
-        bool in_bounds = point_in_rect(x, adjusted_y, &ui->palette_items[i].bounds);
-        // Also check if item is visible on screen
-        if (in_bounds) {
-            int item_screen_y = ui->palette_items[i].bounds.y - ui->palette_scroll_offset;
-            if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->palette_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
-                in_bounds = false;  // Item is scrolled out of view
+    // Update palette hover states (skip if in popup mode)
+    if (!popup_mode) {
+        int adjusted_y = y + ui->palette_scroll_offset;
+        for (int i = 0; i < ui->num_palette_items; i++) {
+            // Skip items in collapsed categories (their bounds are stale)
+            if (is_palette_item_in_collapsed_category(ui, i)) {
+                ui->palette_items[i].hovered = false;
+                continue;
             }
+            bool in_bounds = point_in_rect(x, adjusted_y, &ui->palette_items[i].bounds);
+            // Also check if item is visible on screen
+            if (in_bounds) {
+                int item_screen_y = ui->palette_items[i].bounds.y - ui->palette_scroll_offset;
+                if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->palette_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                    in_bounds = false;  // Item is scrolled out of view
+                }
+            }
+            ui->palette_items[i].hovered = in_bounds;
         }
-        ui->palette_items[i].hovered = in_bounds;
-    }
 
-    // Update circuit items hover states (adjust y for scroll offset)
-    for (int i = 0; i < ui->num_circuit_items; i++) {
-        bool in_bounds = point_in_rect(x, adjusted_y, &ui->circuit_items[i].bounds);
-        // Also check if item is visible on screen
-        if (in_bounds) {
-            int item_screen_y = ui->circuit_items[i].bounds.y - ui->palette_scroll_offset;
-            if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->circuit_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
-                in_bounds = false;  // Item is scrolled out of view
+        // Update circuit items hover states (adjust y for scroll offset)
+        for (int i = 0; i < ui->num_circuit_items; i++) {
+            bool in_bounds = point_in_rect(x, adjusted_y, &ui->circuit_items[i].bounds);
+            // Also check if item is visible on screen
+            if (in_bounds) {
+                int item_screen_y = ui->circuit_items[i].bounds.y - ui->palette_scroll_offset;
+                if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->circuit_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                    in_bounds = false;  // Item is scrolled out of view
+                }
             }
+            ui->circuit_items[i].hovered = in_bounds;
         }
-        ui->circuit_items[i].hovered = in_bounds;
     }
 
     return UI_ACTION_NONE;
@@ -6247,4 +6261,107 @@ void ui_scope_controls_scroll(UIState *ui, int direction) {
 
     if (ui->scope_controls_scroll < 0) ui->scope_controls_scroll = 0;
     if (ui->scope_controls_scroll > max_scroll) ui->scope_controls_scroll = max_scroll;
+}
+
+// Setup popup scope coordinates for input handling
+// Returns backup of original coordinates
+ScopeCoordsBackup ui_setup_popup_scope_coords(UIState *ui) {
+    ScopeCoordsBackup backup = {0};
+    if (!ui || !ui->scope_popped_out || !ui->scope_popup_window) return backup;
+
+    // Save original values
+    backup.scope_rect = ui->scope_rect;
+    backup.btn_volt_up = ui->btn_scope_volt_up.bounds;
+    backup.btn_volt_down = ui->btn_scope_volt_down.bounds;
+    backup.btn_time_up = ui->btn_scope_time_up.bounds;
+    backup.btn_time_down = ui->btn_scope_time_down.bounds;
+    backup.btn_autoset = ui->btn_scope_autoset.bounds;
+    backup.btn_trig_mode = ui->btn_scope_trig_mode.bounds;
+    backup.btn_trig_edge = ui->btn_scope_trig_edge.bounds;
+    backup.btn_trig_ch = ui->btn_scope_trig_ch.bounds;
+    backup.btn_trig_up = ui->btn_scope_trig_up.bounds;
+    backup.btn_trig_down = ui->btn_scope_trig_down.bounds;
+    backup.btn_mode = ui->btn_scope_mode.bounds;
+    backup.btn_cursor = ui->btn_scope_cursor.bounds;
+    backup.btn_fft = ui->btn_scope_fft.bounds;
+    backup.btn_screenshot = ui->btn_scope_screenshot.bounds;
+    backup.btn_bode = ui->btn_bode.bounds;
+    backup.btn_mc = ui->btn_mc.bounds;
+
+    // Get popup window size
+    int popup_w, popup_h;
+    SDL_GetWindowSize(ui->scope_popup_window, &popup_w, &popup_h);
+
+    // Set popup coordinates (same as in app.c rendering)
+    ui->scope_rect = (Rect){10, 30, popup_w - 20, popup_h - 130};
+
+    // Recalculate button positions for popup window
+    int scope_btn_y = ui->scope_rect.y + ui->scope_rect.h + 5;
+    int scope_btn_w = 32, scope_btn_h = 22;
+    int scope_btn_x = ui->scope_rect.x;
+    int row_spacing = scope_btn_h + 4;
+
+    // Row 1: Scale controls
+    ui->btn_scope_volt_up.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
+    scope_btn_x += scope_btn_w + 3;
+    ui->btn_scope_volt_down.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
+    scope_btn_x += scope_btn_w + 10;
+    ui->btn_scope_time_up.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
+    scope_btn_x += scope_btn_w + 3;
+    ui->btn_scope_time_down.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
+    scope_btn_x += scope_btn_w + 10;
+    ui->btn_scope_autoset.bounds = (Rect){scope_btn_x, scope_btn_y, 50, scope_btn_h};
+
+    // Row 2: Trigger controls
+    scope_btn_y += row_spacing;
+    scope_btn_x = ui->scope_rect.x;
+    ui->btn_scope_trig_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 45, scope_btn_h};
+    scope_btn_x += 48;
+    ui->btn_scope_trig_edge.bounds = (Rect){scope_btn_x, scope_btn_y, 28, scope_btn_h};
+    scope_btn_x += 31;
+    ui->btn_scope_trig_ch.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+    scope_btn_x += 38;
+    ui->btn_scope_trig_up.bounds = (Rect){scope_btn_x, scope_btn_y, 24, scope_btn_h};
+    scope_btn_x += 27;
+    ui->btn_scope_trig_down.bounds = (Rect){scope_btn_x, scope_btn_y, 24, scope_btn_h};
+
+    // Row 3: Display modes and tools
+    scope_btn_y += row_spacing;
+    scope_btn_x = ui->scope_rect.x;
+    ui->btn_scope_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+    scope_btn_x += 38;
+    ui->btn_scope_cursor.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+    scope_btn_x += 38;
+    ui->btn_scope_fft.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+    scope_btn_x += 38;
+    ui->btn_scope_screenshot.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
+    scope_btn_x += 38;
+    ui->btn_bode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
+    scope_btn_x += 43;
+    ui->btn_mc.bounds = (Rect){scope_btn_x, scope_btn_y, 25, scope_btn_h};
+
+    return backup;
+}
+
+// Restore original scope coordinates from backup
+void ui_restore_popup_scope_coords(UIState *ui, const ScopeCoordsBackup *backup) {
+    if (!ui || !backup) return;
+
+    ui->scope_rect = backup->scope_rect;
+    ui->btn_scope_volt_up.bounds = backup->btn_volt_up;
+    ui->btn_scope_volt_down.bounds = backup->btn_volt_down;
+    ui->btn_scope_time_up.bounds = backup->btn_time_up;
+    ui->btn_scope_time_down.bounds = backup->btn_time_down;
+    ui->btn_scope_autoset.bounds = backup->btn_autoset;
+    ui->btn_scope_trig_mode.bounds = backup->btn_trig_mode;
+    ui->btn_scope_trig_edge.bounds = backup->btn_trig_edge;
+    ui->btn_scope_trig_ch.bounds = backup->btn_trig_ch;
+    ui->btn_scope_trig_up.bounds = backup->btn_trig_up;
+    ui->btn_scope_trig_down.bounds = backup->btn_trig_down;
+    ui->btn_scope_mode.bounds = backup->btn_mode;
+    ui->btn_scope_cursor.bounds = backup->btn_cursor;
+    ui->btn_scope_fft.bounds = backup->btn_fft;
+    ui->btn_scope_screenshot.bounds = backup->btn_screenshot;
+    ui->btn_bode.bounds = backup->btn_bode;
+    ui->btn_mc.bounds = backup->btn_mc;
 }

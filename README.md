@@ -4,9 +4,11 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 
 ![Circuit Playground Screenshot](screenshot.png)
 
+![Circuit Example](gifs/circuit_example.gif)
+
 ### Spotlight Search (Ctrl+K)
 
-![Component Search](component_search.png)
+![Spotlight Search](gifs/spotlight_search.gif)
 
 ## Features
 
@@ -106,6 +108,8 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 
 ### Pre-Built Circuit Templates
 
+![Example Circuits](gifs/example_circuits.gif)
+
 Load complete circuit configurations instantly from the Circuits menu:
 
 **Basic Circuits**
@@ -164,6 +168,8 @@ Load complete circuit configurations instantly from the Circuits menu:
 
 ### Advanced Oscilloscope
 
+![Pop-out Scope](gifs/pop_out_scope.gif)
+
 Full-featured virtual oscilloscope with:
 - **8 Channels** - Connect multiple voltage probes
 - **Adjustable Scales** - Time/div (1µs to 1s), Volts/div (1mV to 100V)
@@ -189,6 +195,8 @@ Full-featured virtual oscilloscope with:
 - **Pop-out Window** - Detach oscilloscope to separate resizable window
 
 ### Bode Plot Analysis
+
+![Bode Plot](gifs/bode_plot.gif)
 
 Frequency response analysis tool:
 - Configurable frequency range (1Hz to 1GHz)
@@ -244,6 +252,8 @@ Create reusable subcircuits from your designs:
 - Auto-adjusting time step for high-frequency accuracy
 
 ### User Interface
+
+![Collapsible Sections](gifs/collapsible_sections.gif)
 
 - **Synthwave color theme** - Neon pink, cyan, and purple accents
 - **Animated neon border** - Dual smooth chasers flow around window edges with thick glowing bars

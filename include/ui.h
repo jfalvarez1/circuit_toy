@@ -423,7 +423,7 @@ ComponentType ui_spotlight_click(UIState *ui, int mouse_x, int mouse_y);
 // Returns: -1 = not handled, 0+ = action ID
 int ui_handle_click(UIState *ui, int x, int y, bool is_down);
 int ui_handle_right_click(UIState *ui, int x, int y);  // Handle right-click on palette items
-int ui_handle_motion(UIState *ui, int x, int y);
+int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode);
 
 // UI action IDs
 #define UI_ACTION_NONE          -1
@@ -506,5 +506,22 @@ bool ui_point_in_scope_controls(UIState *ui, int x, int y);
 
 // Scroll scope controls area
 void ui_scope_controls_scroll(UIState *ui, int direction);
+
+// Popup scope coordinate handling for input events
+// Stores saved coordinates for scope rect and buttons
+typedef struct {
+    Rect scope_rect;
+    Rect btn_volt_up, btn_volt_down, btn_time_up, btn_time_down;
+    Rect btn_autoset, btn_trig_mode, btn_trig_edge, btn_trig_ch;
+    Rect btn_trig_up, btn_trig_down, btn_mode, btn_cursor;
+    Rect btn_fft, btn_screenshot, btn_bode, btn_mc;
+} ScopeCoordsBackup;
+
+// Setup popup scope coordinates for input handling
+// Returns backup of original coordinates
+ScopeCoordsBackup ui_setup_popup_scope_coords(UIState *ui);
+
+// Restore original scope coordinates from backup
+void ui_restore_popup_scope_coords(UIState *ui, const ScopeCoordsBackup *backup);
 
 #endif // UI_H
