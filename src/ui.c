@@ -154,6 +154,7 @@ void ui_init(UIState *ui) {
     ui->categories[PCAT_DISPLAY] = (PaletteCategory){"Display", false, 0};
     ui->categories[PCAT_MEASUREMENT] = (PaletteCategory){"Measurement", false, 0};
     ui->categories[PCAT_CIRCUITS] = (PaletteCategory){"Circuits", false, 0};
+    ui->categories[PCAT_SUBCIRCUITS] = (PaletteCategory){"My Circuits", false, 0};
 
     // Set initial window dimensions
     ui->window_width = WINDOW_WIDTH;
@@ -397,6 +398,12 @@ void ui_init(UIState *ui) {
     ui->num_circuit_items = 0;
     ui->selected_circuit_type = -1;
     ui->placing_circuit = false;
+
+    // User subcircuits (dynamically updated from g_subcircuit_library)
+    ui->num_subcircuit_items = 0;
+    ui->selected_subcircuit_def_id = -1;
+    ui->placing_subcircuit = false;
+    ui->subcircuit_editing_def_id = -1;  // -1 = creating new
 
     ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_RC_LOWPASS, "RC LP", false, false
@@ -1023,6 +1030,139 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
                 content_height += pal_h + 5;
             }
         }
+    }
+
+    // My Circuits (user subcircuits) section
+    PaletteCategory *subcircuits_cat = &ui->categories[PCAT_SUBCIRCUITS];
+
+    // Update subcircuit items from g_subcircuit_library
+    ui->num_subcircuit_items = 0;
+    for (int i = 0; i < g_subcircuit_library.count && ui->num_subcircuit_items < MAX_SUBCIRCUIT_DEFS; i++) {
+        SubCircuitDef *def = &g_subcircuit_library.defs[i];
+        if (def->id >= 0) {
+            SubcircuitPaletteItem *item = &ui->subcircuit_items[ui->num_subcircuit_items];
+            item->def_id = def->id;
+            strncpy(item->label, def->name, sizeof(item->label) - 1);
+            item->label[sizeof(item->label) - 1] = '\0';
+            item->num_pins = def->num_pins;
+            item->hovered = false;
+            item->selected = (ui->selected_subcircuit_def_id == def->id);
+            item->bounds.w = 60;
+            item->bounds.h = 35;
+            ui->num_subcircuit_items++;
+        }
+    }
+
+    if (ui->num_subcircuit_items > 0) {
+        subcircuits_cat->header_y = draw_y;
+
+        int header_screen_y = draw_y - scroll_offset;
+        if (header_screen_y >= TOOLBAR_HEIGHT - 14 && header_screen_y < ui->window_height - STATUSBAR_HEIGHT) {
+            // Draw collapse indicator
+            SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+            if (subcircuits_cat->collapsed) {
+                int tx = 3, ty = header_screen_y + 2;
+                SDL_RenderDrawLine(renderer, tx, ty, tx, ty + 6);
+                SDL_RenderDrawLine(renderer, tx, ty, tx + 4, ty + 3);
+                SDL_RenderDrawLine(renderer, tx, ty + 6, tx + 4, ty + 3);
+            } else {
+                int tx = 2, ty = header_screen_y + 1;
+                SDL_RenderDrawLine(renderer, tx, ty, tx + 6, ty);
+                SDL_RenderDrawLine(renderer, tx, ty, tx + 3, ty + 4);
+                SDL_RenderDrawLine(renderer, tx + 6, ty, tx + 3, ty + 4);
+            }
+
+            SDL_SetRenderDrawColor(renderer, SYNTH_ORANGE, 0xff);
+            ui_draw_text(renderer, "My Circuits", 12, header_screen_y);
+        }
+        draw_y += 14;
+        content_height += 14;
+
+        if (!subcircuits_cat->collapsed) {
+            int col = 0;
+            for (int i = 0; i < ui->num_subcircuit_items; i++) {
+                SubcircuitPaletteItem *item = &ui->subcircuit_items[i];
+
+                item->bounds.x = 10 + col * 70;
+                item->bounds.y = draw_y;
+
+                int screen_y = draw_y - scroll_offset;
+                if (screen_y + item->bounds.h >= TOOLBAR_HEIGHT && screen_y < ui->window_height - STATUSBAR_HEIGHT) {
+                    // Draw subcircuit item
+                    Rect bounds = {item->bounds.x, screen_y, item->bounds.w, item->bounds.h};
+
+                    // Background
+                    if (item->selected) {
+                        SDL_SetRenderDrawColor(renderer, SYNTH_ORANGE_DIM, 0xff);
+                    } else if (item->hovered) {
+                        SDL_SetRenderDrawColor(renderer, 0x40, 0x30, 0x20, 0xff);
+                    } else {
+                        SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
+                    }
+                    SDL_Rect bg = {bounds.x, bounds.y, bounds.w, bounds.h};
+                    SDL_RenderFillRect(renderer, &bg);
+
+                    // Border
+                    SDL_SetRenderDrawColor(renderer, item->selected ? SYNTH_ORANGE : SYNTH_BORDER, 0xff);
+                    SDL_RenderDrawRect(renderer, &bg);
+
+                    // Subcircuit icon (IC chip with notch)
+                    int icon_x = bounds.x + bounds.w / 2;
+                    int icon_y = bounds.y + 12;
+                    SDL_SetRenderDrawColor(renderer, SYNTH_ORANGE, 0xff);
+
+                    // Draw DIP-style IC body
+                    SDL_Rect icon = {icon_x - 10, icon_y - 7, 20, 14};
+                    SDL_RenderDrawRect(renderer, &icon);
+
+                    // Draw notch at top (IC orientation indicator)
+                    SDL_RenderDrawLine(renderer, icon_x - 3, icon_y - 7, icon_x, icon_y - 4);
+                    SDL_RenderDrawLine(renderer, icon_x, icon_y - 4, icon_x + 3, icon_y - 7);
+
+                    // Draw 3 pins on each side
+                    for (int p = 0; p < 3; p++) {
+                        // Left pins
+                        SDL_RenderDrawLine(renderer, icon_x - 14, icon_y - 4 + p * 4, icon_x - 10, icon_y - 4 + p * 4);
+                        // Right pins
+                        SDL_RenderDrawLine(renderer, icon_x + 10, icon_y - 4 + p * 4, icon_x + 14, icon_y - 4 + p * 4);
+                    }
+
+                    // Label (truncate if needed)
+                    char short_label[10];
+                    strncpy(short_label, item->label, 9);
+                    short_label[9] = '\0';
+                    int text_x = bounds.x + (bounds.w - strlen(short_label) * 6) / 2;
+                    int text_y = bounds.y + bounds.h - 12;
+                    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
+                    ui_draw_text(renderer, short_label, text_x, text_y);
+                }
+
+                col++;
+                if (col >= 2) {
+                    col = 0;
+                    draw_y += pal_h + 5;
+                    content_height += pal_h + 5;
+                }
+            }
+            if (col > 0) {
+                draw_y += pal_h + 5;
+                content_height += pal_h + 5;
+            }
+        }
+    } else {
+        // Show hint when no subcircuits
+        subcircuits_cat->header_y = draw_y;
+        int header_screen_y = draw_y - scroll_offset;
+        if (header_screen_y >= TOOLBAR_HEIGHT - 14 && header_screen_y < ui->window_height - STATUSBAR_HEIGHT) {
+            SDL_SetRenderDrawColor(renderer, SYNTH_ORANGE, 0xff);
+            ui_draw_text(renderer, "My Circuits", 12, header_screen_y);
+
+            // Hint text
+            SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
+            ui_draw_text(renderer, "(Ctrl+G to create)", 12, header_screen_y + 14);
+        }
+        draw_y += 30;
+        content_height += 30;
     }
 
     // Update content height for scrollbar
@@ -4433,6 +4573,7 @@ void ui_subcircuit_dialog_open(UIState *ui, int num_selected, int detected_pins,
     ui->subcircuit_name_cursor = 0;
     ui->subcircuit_editing_field = 0;  // Start with name field
     ui->subcircuit_selected_pin = 0;
+    ui->subcircuit_editing_def_id = -1;  // Creating new, not editing
 
     // Use detected pins if available, otherwise fall back to default
     if (detected_pins > 0) {
@@ -4457,11 +4598,49 @@ void ui_subcircuit_dialog_open(UIState *ui, int num_selected, int detected_pins,
             snprintf(ui->subcircuit_pin_names[i], sizeof(ui->subcircuit_pin_names[i]), "P%d", i + 1);
         }
     }
+    SDL_StartTextInput();
+}
+
+// Open the subcircuit dialog to edit an existing subcircuit definition
+void ui_subcircuit_dialog_open_edit(UIState *ui, int def_id) {
+    // Find the subcircuit definition
+    SubCircuitDef *def = NULL;
+    for (int i = 0; i < g_subcircuit_library.count; i++) {
+        if (g_subcircuit_library.defs[i].id == def_id) {
+            def = &g_subcircuit_library.defs[i];
+            break;
+        }
+    }
+
+    if (!def) return;  // Definition not found
+
+    ui->show_subcircuit_dialog = true;
+    ui->subcircuit_editing_def_id = def_id;  // Editing existing
+    ui->subcircuit_editing_field = 0;  // Start with name field
+    ui->subcircuit_selected_pin = 0;
+
+    // Copy name from definition
+    strncpy(ui->subcircuit_name, def->name, sizeof(ui->subcircuit_name) - 1);
+    ui->subcircuit_name[sizeof(ui->subcircuit_name) - 1] = '\0';
+    ui->subcircuit_name_cursor = (int)strlen(ui->subcircuit_name);
+
+    // Copy pin count and names from definition
+    ui->subcircuit_num_pins = def->num_pins;
+    for (int i = 0; i < def->num_pins && i < 16; i++) {
+        strncpy(ui->subcircuit_pin_names[i], def->pins[i].name, sizeof(ui->subcircuit_pin_names[i]) - 1);
+        ui->subcircuit_pin_names[i][sizeof(ui->subcircuit_pin_names[i]) - 1] = '\0';
+    }
+    // Initialize remaining slots with defaults
+    for (int i = def->num_pins; i < 16; i++) {
+        snprintf(ui->subcircuit_pin_names[i], sizeof(ui->subcircuit_pin_names[i]), "P%d", i + 1);
+    }
+    SDL_StartTextInput();
 }
 
 // Close the subcircuit creation dialog
 void ui_subcircuit_dialog_close(UIState *ui) {
     ui->show_subcircuit_dialog = false;
+    SDL_StopTextInput();
 }
 
 // Handle text input for subcircuit dialog
@@ -4598,12 +4777,18 @@ bool ui_subcircuit_dialog_click(UIState *ui, int mouse_x, int mouse_y) {
         return false;
     }
 
-    // Check pin name field clicks (starting at y = dy + 110)
-    int pin_start_y = dy + 110;
+    // Check pin name field clicks (2 column layout starting at y = dy + 130)
+    int pin_start_y = dy + 130;
     int pin_height = 24;
+    int pin_col_width = dw / 2 - 20;  // Same as rendering
     for (int i = 0; i < ui->subcircuit_num_pins; i++) {
-        int py = pin_start_y + i * pin_height;
-        if (mouse_y >= py && mouse_y < py + pin_height) {
+        int col = i % 2;
+        int row = i / 2;
+        int px = dx + 15 + col * pin_col_width;
+        int py = pin_start_y + row * pin_height;
+        // Check if click is within this pin's input field area
+        if (mouse_x >= px && mouse_x < px + 140 &&
+            mouse_y >= py && mouse_y < py + pin_height) {
             ui->subcircuit_editing_field = i + 1;
             return false;
         }
@@ -4663,9 +4848,10 @@ void ui_render_subcircuit_dialog(UIState *ui, SDL_Renderer *renderer) {
     SDL_SetRenderDrawColor(renderer, SYNTH_PURPLE, 0xff);
     SDL_RenderDrawRect(renderer, &dialog);
 
-    // Title
+    // Title - different for create vs edit mode
     SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
-    ui_draw_text(renderer, "CREATE SUBCIRCUIT", dx + 120, dy + 15);
+    bool is_editing = (ui->subcircuit_editing_def_id >= 0);
+    ui_draw_text(renderer, is_editing ? "EDIT SUBCIRCUIT" : "CREATE SUBCIRCUIT", dx + 120, dy + 15);
 
     // Name label and field
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
@@ -4751,7 +4937,7 @@ void ui_render_subcircuit_dialog(UIState *ui, SDL_Renderer *renderer) {
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
     ui_draw_text(renderer, "Cancel", dx + 25, btn_y + 10);
 
-    // Create button
+    // Create/Save button - different text for edit mode
     bool can_create = (ui->subcircuit_name[0] != '\0');
     SDL_SetRenderDrawColor(renderer, can_create ? SYNTH_PURPLE_DIM : SYNTH_BG_LIGHT, 0xff);
     SDL_Rect create_btn = {dx + dw - 90, btn_y, 80, 30};
@@ -4759,11 +4945,11 @@ void ui_render_subcircuit_dialog(UIState *ui, SDL_Renderer *renderer) {
     SDL_SetRenderDrawColor(renderer, can_create ? SYNTH_PURPLE : SYNTH_BORDER, 0xff);
     SDL_RenderDrawRect(renderer, &create_btn);
     SDL_SetRenderDrawColor(renderer, can_create ? SYNTH_TEXT : SYNTH_TEXT_DARK, 0xff);
-    ui_draw_text(renderer, "Create", dx + dw - 75, btn_y + 10);
+    ui_draw_text(renderer, is_editing ? "Save" : "Create", is_editing ? (dx + dw - 67) : (dx + dw - 75), btn_y + 10);
 
-    // Hint at bottom
+    // Hint at bottom - different text for edit mode
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
-    ui_draw_text(renderer, "Tab: next field  Enter: create  Esc: cancel", dx + 60, dy + dh - 15);
+    ui_draw_text(renderer, is_editing ? "Tab: next field  Enter: save  Esc: cancel" : "Tab: next field  Enter: create  Esc: cancel", dx + 60, dy + dh - 15);
 
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }
@@ -4893,6 +5079,37 @@ void ui_render_neon_trim(UIState *ui, SDL_Renderer *renderer) {
 
 static bool point_in_rect(int x, int y, Rect *r) {
     return x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + r->h;
+}
+
+static bool is_palette_item_in_collapsed_category(UIState *ui, int item_idx) {
+    // Index ranges for each category (must match the sections array in render_palette)
+    static const struct { int start; int end; PaletteCategoryID cat; } item_categories[] = {
+        {0, 4, PCAT_TOOLS},
+        {5, 10, PCAT_SOURCES},
+        {11, 16, PCAT_WAVEFORMS},
+        {17, 24, PCAT_PASSIVES},
+        {25, 30, PCAT_DIODES},
+        {31, 34, PCAT_BJT},
+        {35, 38, PCAT_FET},
+        {39, 42, PCAT_THYRISTORS},
+        {43, 46, PCAT_OPAMPS},
+        {47, 50, PCAT_CONTROLLED},
+        {51, 56, PCAT_SWITCHES},
+        {57, 58, PCAT_TRANSFORMERS},
+        {59, 68, PCAT_LOGIC},
+        {69, 78, PCAT_DIGITAL},
+        {79, 84, PCAT_MIXED},
+        {85, 87, PCAT_REGULATORS},
+        {88, 92, PCAT_DISPLAY},
+        {93, 96, PCAT_MEASUREMENT}
+    };
+    int num_cats = sizeof(item_categories) / sizeof(item_categories[0]);
+    for (int c = 0; c < num_cats; c++) {
+        if (item_idx >= item_categories[c].start && item_idx <= item_categories[c].end) {
+            return ui->categories[item_categories[c].cat].collapsed;
+        }
+    }
+    return false;
 }
 
 int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
@@ -5292,6 +5509,10 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         // Check palette items (adjust y for scroll offset)
         int adjusted_y = y + ui->palette_scroll_offset;
         for (int i = 0; i < ui->num_palette_items; i++) {
+            // Skip items in collapsed categories (their bounds are stale)
+            if (is_palette_item_in_collapsed_category(ui, i)) {
+                continue;
+            }
             if (point_in_rect(x, adjusted_y, &ui->palette_items[i].bounds)) {
                 // Verify item is visible (not clipped by scroll)
                 int item_screen_y = ui->palette_items[i].bounds.y - ui->palette_scroll_offset;
@@ -5340,9 +5561,63 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
                 return UI_ACTION_SELECT_CIRCUIT + ui->circuit_items[i].circuit_type;
             }
         }
+
+        // Check user subcircuit items (adjust y for scroll offset)
+        for (int i = 0; i < ui->num_subcircuit_items; i++) {
+            if (point_in_rect(x, adjusted_y, &ui->subcircuit_items[i].bounds)) {
+                // Verify item is visible (not clipped by scroll)
+                int item_screen_y = ui->subcircuit_items[i].bounds.y - ui->palette_scroll_offset;
+                if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->subcircuit_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                    continue;  // Item is scrolled out of view
+                }
+                // Deselect all palette, circuit, and subcircuit items
+                for (int j = 0; j < ui->num_palette_items; j++) {
+                    ui->palette_items[j].selected = false;
+                }
+                for (int j = 0; j < ui->num_circuit_items; j++) {
+                    ui->circuit_items[j].selected = false;
+                }
+                for (int j = 0; j < ui->num_subcircuit_items; j++) {
+                    ui->subcircuit_items[j].selected = false;
+                }
+                ui->subcircuit_items[i].selected = true;
+                ui->placing_subcircuit = true;
+                ui->placing_circuit = false;
+                ui->selected_subcircuit_def_id = ui->subcircuit_items[i].def_id;
+
+                return UI_ACTION_SELECT_SUBCIRCUIT + ui->subcircuit_items[i].def_id;
+            }
+        }
     } else {
         ui->btn_run.pressed = false;
         ui->btn_bode_recalc.pressed = false;
+    }
+
+    return UI_ACTION_NONE;
+}
+
+// Handle right-click on palette items (for editing subcircuits)
+int ui_handle_right_click(UIState *ui, int x, int y) {
+    if (!ui) return UI_ACTION_NONE;
+
+    // Only check palette area
+    if (!ui_point_in_palette(ui, x, y)) return UI_ACTION_NONE;
+
+    // Adjust y for scroll offset
+    int adjusted_y = y + ui->palette_scroll_offset;
+
+    // Check user subcircuit items for right-click (edit)
+    for (int i = 0; i < ui->num_subcircuit_items; i++) {
+        if (point_in_rect(x, adjusted_y, &ui->subcircuit_items[i].bounds)) {
+            // Verify item is visible (not clipped by scroll)
+            int item_screen_y = ui->subcircuit_items[i].bounds.y - ui->palette_scroll_offset;
+            if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->subcircuit_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                continue;  // Item is scrolled out of view
+            }
+            // Open edit dialog for this subcircuit
+            ui_subcircuit_dialog_open_edit(ui, ui->subcircuit_items[i].def_id);
+            return UI_ACTION_EDIT_SUBCIRCUIT;
+        }
     }
 
     return UI_ACTION_NONE;
@@ -5575,6 +5850,11 @@ int ui_handle_motion(UIState *ui, int x, int y) {
     // Update palette hover states (adjust y for scroll offset)
     int adjusted_y = y + ui->palette_scroll_offset;
     for (int i = 0; i < ui->num_palette_items; i++) {
+        // Skip items in collapsed categories (their bounds are stale)
+        if (is_palette_item_in_collapsed_category(ui, i)) {
+            ui->palette_items[i].hovered = false;
+            continue;
+        }
         bool in_bounds = point_in_rect(x, adjusted_y, &ui->palette_items[i].bounds);
         // Also check if item is visible on screen
         if (in_bounds) {

@@ -1757,6 +1757,14 @@ Component *component_create(ComponentType type, float x, float y) {
         comp->props.text.color = 0xFFFFFFFF;
     }
 
+    // Special initialization for PIN component - auto-increment pin number
+    if (type == COMP_PIN) {
+        static int next_pin_number = 1;
+        comp->props.pin.pin_number = next_pin_number;
+        snprintf(comp->props.pin.pin_name, sizeof(comp->props.pin.pin_name), "P%d", next_pin_number);
+        next_pin_number++;
+    }
+
     // Set default label
     snprintf(comp->label, MAX_LABEL_LEN, "%s%d", info->short_name, comp->id);
 
@@ -1872,8 +1880,56 @@ void component_get_terminal_pos(Component *comp, int terminal_idx, float *x, flo
     }
 
     const ComponentTypeInfo *info = component_get_info(comp->type);
-    float dx = info->terminals[terminal_idx].dx;
-    float dy = info->terminals[terminal_idx].dy;
+    float dx, dy;
+
+    // Special handling for subcircuits - calculate from definition's pin positions
+    if (comp->type == COMP_SUBCIRCUIT) {
+        // Find the subcircuit definition
+        SubCircuitDef *def = NULL;
+        for (int i = 0; i < g_subcircuit_library.count; i++) {
+            if (g_subcircuit_library.defs[i].id == comp->props.subcircuit.def_id) {
+                def = &g_subcircuit_library.defs[i];
+                break;
+            }
+        }
+
+        if (def && terminal_idx < def->num_pins) {
+            SubCircuitPin *pin = &def->pins[terminal_idx];
+            // Use the definition's actual block size, not the default ComponentTypeInfo size
+            float half_w = def->block_width / 2.0f;
+            float half_h = def->block_height / 2.0f;
+
+            switch (pin->side) {
+                case 0:  // Left
+                    dx = -half_w - 10;
+                    dy = -half_h + 20 + pin->position * 20;
+                    break;
+                case 1:  // Right
+                    dx = half_w + 10;
+                    dy = -half_h + 20 + pin->position * 20;
+                    break;
+                case 2:  // Top
+                    dx = -half_w + 20 + pin->position * 20;
+                    dy = -half_h - 10;
+                    break;
+                case 3:  // Bottom
+                    dx = -half_w + 20 + pin->position * 20;
+                    dy = half_h + 10;
+                    break;
+                default:
+                    dx = info->terminals[terminal_idx].dx;
+                    dy = info->terminals[terminal_idx].dy;
+                    break;
+            }
+        } else {
+            // Fallback to default terminal positions
+            dx = info->terminals[terminal_idx].dx;
+            dy = info->terminals[terminal_idx].dy;
+        }
+    } else {
+        dx = info->terminals[terminal_idx].dx;
+        dy = info->terminals[terminal_idx].dy;
+    }
 
     // Apply rotation
     double rad = comp->rotation * M_PI / 180.0;
@@ -4460,6 +4516,91 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         case COMP_LABEL: {
             // Test point/Label: just a node marker, infinite impedance
             if (n[0] > 0) matrix_add(A, n[0]-1, n[0]-1, 1e-15);
+            break;
+        }
+
+        case COMP_SUBCIRCUIT: {
+            // Subcircuit: expand and stamp internal components
+            // Find the subcircuit definition
+            SubCircuitDef *def = NULL;
+            for (int i = 0; i < g_subcircuit_library.count; i++) {
+                if (g_subcircuit_library.defs[i].id == comp->props.subcircuit.def_id) {
+                    def = &g_subcircuit_library.defs[i];
+                    break;
+                }
+            }
+
+            if (!def || !def->component_data || def->num_components == 0) {
+                break;  // No definition found or empty
+            }
+
+            // External global counter for allocating subcircuit internal node indices
+            extern int g_subcircuit_internal_node_offset;
+
+            // Create node remapping table: internal_node_id -> matrix index
+            // -1 means not yet assigned, 0 means ground
+            int node_remap[MAX_NODES];
+            for (int i = 0; i < MAX_NODES; i++) {
+                node_remap[i] = -1;  // Not yet assigned
+            }
+
+            // First, map pin internal nodes to external circuit nodes
+            for (int i = 0; i < def->num_pins && i < comp->num_terminals; i++) {
+                int internal_id = def->pins[i].internal_node_id;
+                int external_id = comp->node_ids[i];
+                if (internal_id > 0 && internal_id < MAX_NODES && external_id > 0) {
+                    // Map internal node to the matrix index of the external node
+                    node_remap[internal_id] = node_map[external_id];
+                }
+            }
+
+            // Then, allocate matrix indices for non-pin internal nodes
+            // Collect all internal node IDs used by components
+            Component *internal_comps = (Component *)def->component_data;
+            for (int c_idx = 0; c_idx < def->num_components; c_idx++) {
+                Component *ic = &internal_comps[c_idx];
+                for (int t = 0; t < ic->num_terminals && t < MAX_TERMINALS; t++) {
+                    int orig_node = ic->node_ids[t];
+                    if (orig_node > 0 && orig_node < MAX_NODES && node_remap[orig_node] == -1) {
+                        // This internal node hasn't been assigned yet - allocate new index
+                        node_remap[orig_node] = g_subcircuit_internal_node_offset++;
+                    }
+                }
+            }
+
+            // Iterate through internal components and stamp them
+            for (int c_idx = 0; c_idx < def->num_components; c_idx++) {
+                Component *ic = &internal_comps[c_idx];
+
+                // Skip non-stampable components (wires are stored separately, not in component_data)
+                if (ic->type == COMP_PIN || ic->type == COMP_LABEL ||
+                    ic->type == COMP_TEST_POINT || ic->type == COMP_SUBCIRCUIT) {
+                    continue;
+                }
+
+                // Create a temporary component with remapped node IDs
+                Component temp_comp;
+                memcpy(&temp_comp, ic, sizeof(Component));
+
+                // Remap node IDs using the mapping table
+                for (int t = 0; t < temp_comp.num_terminals && t < MAX_TERMINALS; t++) {
+                    int orig_node = ic->node_ids[t];
+                    if (orig_node > 0 && orig_node < MAX_NODES) {
+                        int mapped = node_remap[orig_node];
+                        temp_comp.node_ids[t] = (mapped >= 0) ? mapped : 0;
+                    } else {
+                        temp_comp.node_ids[t] = 0;  // Ground
+                    }
+                }
+
+                // Stamp the remapped component directly using matrix indices
+                // Note: We pass a dummy node_map since temp_comp already has matrix indices
+                int dummy_node_map[MAX_NODES];
+                for (int i = 0; i < MAX_NODES; i++) {
+                    dummy_node_map[i] = i;  // Identity mapping
+                }
+                component_stamp(&temp_comp, A, b, dummy_node_map, num_nodes, time, prev_solution, dt);
+            }
             break;
         }
 

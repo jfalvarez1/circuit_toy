@@ -7,6 +7,36 @@
 #include <math.h>
 #include "simulation.h"
 #include "logic.h"
+#include "component.h"
+
+// External subcircuit library
+extern SubCircuitLibrary g_subcircuit_library;
+
+// Global counter for allocating subcircuit internal node indices during stamping
+int g_subcircuit_internal_node_offset = 0;
+
+// Helper to count internal nodes needed for a subcircuit definition
+// Returns the max internal node ID found (excluding pin nodes)
+static int subcircuit_count_internal_nodes(SubCircuitDef *def) {
+    if (!def || !def->component_data || def->num_components == 0) {
+        return 0;
+    }
+
+    int max_node_id = 0;
+    Component *internal_comps = (Component *)def->component_data;
+
+    // Find max node ID used by internal components
+    for (int i = 0; i < def->num_components; i++) {
+        Component *ic = &internal_comps[i];
+        for (int t = 0; t < ic->num_terminals && t < MAX_TERMINALS; t++) {
+            if (ic->node_ids[t] > max_node_id) {
+                max_node_id = ic->node_ids[t];
+            }
+        }
+    }
+
+    return max_node_id;
+}
 
 // GMIN - minimum conductance added from each node to ground
 // This stabilizes floating nodes and prevents singular matrices
@@ -208,8 +238,28 @@ bool simulation_dc_analysis(Simulation *sim) {
         }
     }
 
-    int matrix_size = num_nodes + num_volt_vars;
+    // Count subcircuit internal nodes needed
+    // Each subcircuit instance needs space for internal nodes not exposed as pins
+    int num_subcircuit_internal = 0;
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+        if (comp->type == COMP_SUBCIRCUIT) {
+            // Find the definition
+            for (int d = 0; d < g_subcircuit_library.count; d++) {
+                if (g_subcircuit_library.defs[d].id == comp->props.subcircuit.def_id) {
+                    int max_internal = subcircuit_count_internal_nodes(&g_subcircuit_library.defs[d]);
+                    num_subcircuit_internal += max_internal + 1;  // +1 for safety
+                    break;
+                }
+            }
+        }
+    }
+
+    int matrix_size = num_nodes + num_volt_vars + num_subcircuit_internal;
     sim->solution_size = matrix_size;
+
+    // Store base offset for subcircuit internal nodes (after voltage variables)
+    g_subcircuit_internal_node_offset = num_nodes + num_volt_vars;
 
     // Iterative solution for nonlinear components
     Vector *solution = vector_create(matrix_size);
@@ -234,6 +284,10 @@ bool simulation_dc_analysis(Simulation *sim) {
 
         // Clear wireless state for antenna TX/RX pairs
         memset(&g_wireless, 0, sizeof(g_wireless));
+
+        // Reset subcircuit internal node offset for this iteration
+        // (subcircuit stamping increments this, so we must reset each pass)
+        g_subcircuit_internal_node_offset = num_nodes + num_volt_vars;
 
         // Stamp all components
         // Use large dt for DC analysis so capacitors → open circuit, inductors → short circuit
@@ -321,6 +375,16 @@ static Vector *simulation_solve_step(Simulation *sim, double dt) {
 
         // Clear wireless state for antenna TX/RX pairs
         memset(&g_wireless, 0, sizeof(g_wireless));
+
+        // Reset subcircuit internal node offset for this iteration
+        // Count voltage variables to compute base offset
+        int num_volt_vars = 0;
+        for (int i = 0; i < circuit->num_components; i++) {
+            if (circuit->components[i]->needs_voltage_var) {
+                num_volt_vars++;
+            }
+        }
+        g_subcircuit_internal_node_offset = num_nodes + num_volt_vars;
 
         // Stamp components
         for (int i = 0; i < circuit->num_components; i++) {

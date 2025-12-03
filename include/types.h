@@ -544,6 +544,10 @@ typedef struct {
     // Visual size of the IC block
     float block_width;
     float block_height;
+
+    // Number of unique internal nodes (for matrix sizing during simulation)
+    // This is the count of internal nodes EXCLUDING those exposed as pins
+    int num_internal_nodes;
 } SubCircuitDef;
 
 // Global sub-circuit library

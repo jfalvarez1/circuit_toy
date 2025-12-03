@@ -190,6 +190,10 @@ static const CircuitTemplateInfo template_info[] = {
     // TI Analog Circuits - Power/Voltage
     [CIRCUIT_ZENER_REF] = {"Zener Reference", "Zref", "Zener diode voltage reference"},
     [CIRCUIT_PRECISION_RECT] = {"Precision Rect", "PRec", "Precision full-wave rectifier"},
+    // Voltage Regulator Circuits
+    [CIRCUIT_7805_REG] = {"7805 Regulator", "7805", "7805 fixed 5V regulator with filtering"},
+    [CIRCUIT_LM317_REG] = {"LM317 Adj Reg", "317", "LM317 adjustable regulator with voltage set"},
+    [CIRCUIT_TL431_REF] = {"TL431 Reference", "431", "TL431 precision shunt reference"},
 };
 
 const CircuitTemplateInfo *circuit_template_get_info(CircuitTemplateType type) {
@@ -5144,6 +5148,452 @@ static int place_precision_rect(Circuit *circuit, float x, float y) {
     return 15;
 }
 
+// 7805 Fixed 5V Regulator Circuit
+// Basic power supply with input/output filtering
+static int place_7805_reg(Circuit *circuit, float x, float y) {
+    // Input voltage source (9V)
+    Component *vin = add_comp(circuit, COMP_DC_VOLTAGE, x - 100, y, 0);
+    if (!vin) return 0;
+    vin->props.dc_voltage.voltage = 9.0;
+
+    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 100, y + 60, 0);
+
+    // Input filter capacitor
+    Component *cin = add_comp(circuit, COMP_CAPACITOR, x, y + 30, 90);
+    cin->props.capacitor.capacitance = 0.33e-6;  // 0.33uF
+
+    // 7805 regulator - positioned horizontally
+    Component *reg = add_comp(circuit, COMP_7805, x + 80, y, 0);
+
+    // Output filter capacitor
+    Component *cout = add_comp(circuit, COMP_CAPACITOR, x + 160, y + 30, 90);
+    cout->props.capacitor.capacitance = 0.1e-6;  // 0.1uF
+
+    // Load resistor (50 ohms for 100mA at 5V)
+    Component *rload = add_comp(circuit, COMP_RESISTOR, x + 240, y + 30, 90);
+    rload->props.resistor.resistance = 50.0;
+
+    Component *gnd_load = add_comp(circuit, COMP_GROUND, x + 240, y + 90, 0);
+
+    // Get terminal positions
+    float vin_pos_x, vin_pos_y, vin_neg_x, vin_neg_y;
+    component_get_terminal_pos(vin, 0, &vin_pos_x, &vin_pos_y);
+    component_get_terminal_pos(vin, 1, &vin_neg_x, &vin_neg_y);
+
+    float gnd_in_x, gnd_in_y;
+    component_get_terminal_pos(gnd_in, 0, &gnd_in_x, &gnd_in_y);
+
+    float cin_top_x, cin_top_y, cin_bot_x, cin_bot_y;
+    component_get_terminal_pos(cin, 0, &cin_top_x, &cin_top_y);
+    component_get_terminal_pos(cin, 1, &cin_bot_x, &cin_bot_y);
+
+    float reg_in_x, reg_in_y, reg_out_x, reg_out_y, reg_gnd_x, reg_gnd_y;
+    component_get_terminal_pos(reg, 0, &reg_in_x, &reg_in_y);
+    component_get_terminal_pos(reg, 1, &reg_out_x, &reg_out_y);
+    component_get_terminal_pos(reg, 2, &reg_gnd_x, &reg_gnd_y);
+
+    float cout_top_x, cout_top_y, cout_bot_x, cout_bot_y;
+    component_get_terminal_pos(cout, 0, &cout_top_x, &cout_top_y);
+    component_get_terminal_pos(cout, 1, &cout_bot_x, &cout_bot_y);
+
+    float rload_top_x, rload_top_y, rload_bot_x, rload_bot_y;
+    component_get_terminal_pos(rload, 0, &rload_top_x, &rload_top_y);
+    component_get_terminal_pos(rload, 1, &rload_bot_x, &rload_bot_y);
+
+    float gnd_load_x, gnd_load_y;
+    component_get_terminal_pos(gnd_load, 0, &gnd_load_x, &gnd_load_y);
+
+    // Connect Vin+ to input bus (top rail)
+    int vin_pos_node = circuit_find_or_create_node(circuit, vin_pos_x, vin_pos_y, 5.0f);
+    int input_bus = circuit_find_or_create_node(circuit, vin_pos_x, y - 40, 5.0f);
+    circuit_add_wire(circuit, vin_pos_node, input_bus);
+    vin->node_ids[0] = vin_pos_node;
+
+    // Input bus to Cin top
+    int cin_top_node = circuit_find_or_create_node(circuit, cin_top_x, cin_top_y, 5.0f);
+    int bus_to_cin = circuit_find_or_create_node(circuit, cin_top_x, y - 40, 5.0f);
+    circuit_add_wire(circuit, input_bus, bus_to_cin);
+    circuit_add_wire(circuit, bus_to_cin, cin_top_node);
+    cin->node_ids[0] = cin_top_node;
+
+    // Input bus to regulator IN
+    int reg_in_node = circuit_find_or_create_node(circuit, reg_in_x, reg_in_y, 5.0f);
+    int bus_to_reg = circuit_find_or_create_node(circuit, reg_in_x, y - 40, 5.0f);
+    circuit_add_wire(circuit, bus_to_cin, bus_to_reg);
+    int corner_reg_in = circuit_find_or_create_node(circuit, reg_in_x, reg_in_y, 5.0f);
+    circuit_add_wire(circuit, bus_to_reg, corner_reg_in);
+    reg->node_ids[0] = reg_in_node;
+
+    // Regulator OUT to output bus
+    int reg_out_node = circuit_find_or_create_node(circuit, reg_out_x, reg_out_y, 5.0f);
+    int output_bus = circuit_find_or_create_node(circuit, reg_out_x, y - 40, 5.0f);
+    circuit_add_wire(circuit, reg_out_node, output_bus);
+    reg->node_ids[1] = reg_out_node;
+
+    // Output bus to Cout top
+    int cout_top_node = circuit_find_or_create_node(circuit, cout_top_x, cout_top_y, 5.0f);
+    int bus_to_cout = circuit_find_or_create_node(circuit, cout_top_x, y - 40, 5.0f);
+    circuit_add_wire(circuit, output_bus, bus_to_cout);
+    circuit_add_wire(circuit, bus_to_cout, cout_top_node);
+    cout->node_ids[0] = cout_top_node;
+
+    // Output bus to load
+    int rload_top_node = circuit_find_or_create_node(circuit, rload_top_x, rload_top_y, 5.0f);
+    int bus_to_load = circuit_find_or_create_node(circuit, rload_top_x, y - 40, 5.0f);
+    circuit_add_wire(circuit, bus_to_cout, bus_to_load);
+    circuit_add_wire(circuit, bus_to_load, rload_top_node);
+    rload->node_ids[0] = rload_top_node;
+
+    // Ground rail
+    int gnd_in_node = circuit_find_or_create_node(circuit, gnd_in_x, gnd_in_y, 5.0f);
+    int vin_neg_node = circuit_find_or_create_node(circuit, vin_neg_x, vin_neg_y, 5.0f);
+    circuit_add_wire(circuit, vin_neg_node, gnd_in_node);
+    vin->node_ids[1] = vin_neg_node;
+    gnd_in->node_ids[0] = gnd_in_node;
+
+    // Cin bottom to ground
+    int cin_bot_node = circuit_find_or_create_node(circuit, cin_bot_x, cin_bot_y, 5.0f);
+    int gnd_rail = circuit_find_or_create_node(circuit, cin_bot_x, y + 80, 5.0f);
+    circuit_add_wire(circuit, cin_bot_node, gnd_rail);
+    cin->node_ids[1] = cin_bot_node;
+
+    // Connect Vin- to ground rail
+    int corner_vin_gnd = circuit_find_or_create_node(circuit, vin_neg_x, y + 80, 5.0f);
+    circuit_add_wire(circuit, gnd_in_node, corner_vin_gnd);
+    circuit_add_wire(circuit, corner_vin_gnd, gnd_rail);
+
+    // Regulator GND to ground rail
+    int reg_gnd_node = circuit_find_or_create_node(circuit, reg_gnd_x, reg_gnd_y, 5.0f);
+    int gnd_rail_reg = circuit_find_or_create_node(circuit, reg_gnd_x, y + 80, 5.0f);
+    circuit_add_wire(circuit, gnd_rail, gnd_rail_reg);
+    circuit_add_wire(circuit, reg_gnd_node, gnd_rail_reg);
+    reg->node_ids[2] = reg_gnd_node;
+
+    // Cout bottom to ground rail
+    int cout_bot_node = circuit_find_or_create_node(circuit, cout_bot_x, cout_bot_y, 5.0f);
+    int gnd_rail_cout = circuit_find_or_create_node(circuit, cout_bot_x, y + 80, 5.0f);
+    circuit_add_wire(circuit, gnd_rail_reg, gnd_rail_cout);
+    circuit_add_wire(circuit, cout_bot_node, gnd_rail_cout);
+    cout->node_ids[1] = cout_bot_node;
+
+    // Load resistor bottom to ground
+    int rload_bot_node = circuit_find_or_create_node(circuit, rload_bot_x, rload_bot_y, 5.0f);
+    int gnd_load_node = circuit_find_or_create_node(circuit, gnd_load_x, gnd_load_y, 5.0f);
+    circuit_add_wire(circuit, rload_bot_node, gnd_load_node);
+    rload->node_ids[1] = rload_bot_node;
+    gnd_load->node_ids[0] = gnd_load_node;
+
+    // Connect ground rail to load ground
+    int gnd_rail_load = circuit_find_or_create_node(circuit, rload_bot_x, y + 80, 5.0f);
+    circuit_add_wire(circuit, gnd_rail_cout, gnd_rail_load);
+    circuit_add_wire(circuit, gnd_rail_load, gnd_load_node);
+
+    return 8;  // vin, gnd_in, cin, reg, cout, rload, gnd_load
+}
+
+// LM317 Adjustable Regulator Circuit
+// Vout = 1.25V * (1 + R2/R1) with R1=240 ohm, R2=720 ohm -> Vout ~= 5V
+static int place_lm317_reg(Circuit *circuit, float x, float y) {
+    // Input voltage source (12V)
+    Component *vin = add_comp(circuit, COMP_DC_VOLTAGE, x - 100, y, 0);
+    if (!vin) return 0;
+    vin->props.dc_voltage.voltage = 12.0;
+
+    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 100, y + 60, 0);
+
+    // Input filter capacitor
+    Component *cin = add_comp(circuit, COMP_CAPACITOR, x, y + 30, 90);
+    cin->props.capacitor.capacitance = 0.1e-6;  // 0.1uF
+
+    // LM317 regulator
+    Component *reg = add_comp(circuit, COMP_LM317, x + 80, y, 0);
+
+    // R1 (between OUT and ADJ) - 240 ohm
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 140, y + 50, 90);
+    r1->props.resistor.resistance = 240.0;
+
+    // R2 (between ADJ and GND) - 720 ohm for ~5V output
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 140, y + 110, 90);
+    r2->props.resistor.resistance = 720.0;
+
+    // Output filter capacitor
+    Component *cout = add_comp(circuit, COMP_CAPACITOR, x + 200, y + 30, 90);
+    cout->props.capacitor.capacitance = 1.0e-6;  // 1uF
+
+    // Load resistor
+    Component *rload = add_comp(circuit, COMP_RESISTOR, x + 260, y + 30, 90);
+    rload->props.resistor.resistance = 100.0;
+
+    Component *gnd_load = add_comp(circuit, COMP_GROUND, x + 200, y + 150, 0);
+
+    // Get terminal positions
+    float vin_pos_x, vin_pos_y, vin_neg_x, vin_neg_y;
+    component_get_terminal_pos(vin, 0, &vin_pos_x, &vin_pos_y);
+    component_get_terminal_pos(vin, 1, &vin_neg_x, &vin_neg_y);
+
+    float gnd_in_x, gnd_in_y;
+    component_get_terminal_pos(gnd_in, 0, &gnd_in_x, &gnd_in_y);
+
+    float cin_top_x, cin_top_y, cin_bot_x, cin_bot_y;
+    component_get_terminal_pos(cin, 0, &cin_top_x, &cin_top_y);
+    component_get_terminal_pos(cin, 1, &cin_bot_x, &cin_bot_y);
+
+    float reg_in_x, reg_in_y, reg_out_x, reg_out_y, reg_adj_x, reg_adj_y;
+    component_get_terminal_pos(reg, 0, &reg_in_x, &reg_in_y);
+    component_get_terminal_pos(reg, 1, &reg_out_x, &reg_out_y);
+    component_get_terminal_pos(reg, 2, &reg_adj_x, &reg_adj_y);
+
+    float r1_top_x, r1_top_y, r1_bot_x, r1_bot_y;
+    component_get_terminal_pos(r1, 0, &r1_top_x, &r1_top_y);
+    component_get_terminal_pos(r1, 1, &r1_bot_x, &r1_bot_y);
+
+    float r2_top_x, r2_top_y, r2_bot_x, r2_bot_y;
+    component_get_terminal_pos(r2, 0, &r2_top_x, &r2_top_y);
+    component_get_terminal_pos(r2, 1, &r2_bot_x, &r2_bot_y);
+
+    float cout_top_x, cout_top_y, cout_bot_x, cout_bot_y;
+    component_get_terminal_pos(cout, 0, &cout_top_x, &cout_top_y);
+    component_get_terminal_pos(cout, 1, &cout_bot_x, &cout_bot_y);
+
+    float rload_top_x, rload_top_y, rload_bot_x, rload_bot_y;
+    component_get_terminal_pos(rload, 0, &rload_top_x, &rload_top_y);
+    component_get_terminal_pos(rload, 1, &rload_bot_x, &rload_bot_y);
+
+    float gnd_load_x, gnd_load_y;
+    component_get_terminal_pos(gnd_load, 0, &gnd_load_x, &gnd_load_y);
+
+    // Input power rail
+    int vin_pos_node = circuit_find_or_create_node(circuit, vin_pos_x, vin_pos_y, 5.0f);
+    int input_bus = circuit_find_or_create_node(circuit, vin_pos_x, y - 40, 5.0f);
+    circuit_add_wire(circuit, vin_pos_node, input_bus);
+    vin->node_ids[0] = vin_pos_node;
+
+    // Cin top to input bus
+    int cin_top_node = circuit_find_or_create_node(circuit, cin_top_x, cin_top_y, 5.0f);
+    int bus_to_cin = circuit_find_or_create_node(circuit, cin_top_x, y - 40, 5.0f);
+    circuit_add_wire(circuit, input_bus, bus_to_cin);
+    circuit_add_wire(circuit, bus_to_cin, cin_top_node);
+    cin->node_ids[0] = cin_top_node;
+
+    // Regulator IN to input bus
+    int reg_in_node = circuit_find_or_create_node(circuit, reg_in_x, reg_in_y, 5.0f);
+    int bus_to_reg = circuit_find_or_create_node(circuit, reg_in_x, y - 40, 5.0f);
+    circuit_add_wire(circuit, bus_to_cin, bus_to_reg);
+    circuit_add_wire(circuit, bus_to_reg, reg_in_node);
+    reg->node_ids[0] = reg_in_node;
+
+    // Output power rail from regulator OUT
+    int reg_out_node = circuit_find_or_create_node(circuit, reg_out_x, reg_out_y, 5.0f);
+    int output_bus = circuit_find_or_create_node(circuit, reg_out_x, y - 40, 5.0f);
+    circuit_add_wire(circuit, reg_out_node, output_bus);
+    reg->node_ids[1] = reg_out_node;
+
+    // R1 top to output bus
+    int r1_top_node = circuit_find_or_create_node(circuit, r1_top_x, r1_top_y, 5.0f);
+    int bus_to_r1 = circuit_find_or_create_node(circuit, r1_top_x, y - 40, 5.0f);
+    circuit_add_wire(circuit, output_bus, bus_to_r1);
+    circuit_add_wire(circuit, bus_to_r1, r1_top_node);
+    r1->node_ids[0] = r1_top_node;
+
+    // Cout top to output bus
+    int cout_top_node = circuit_find_or_create_node(circuit, cout_top_x, cout_top_y, 5.0f);
+    int bus_to_cout = circuit_find_or_create_node(circuit, cout_top_x, y - 40, 5.0f);
+    circuit_add_wire(circuit, bus_to_r1, bus_to_cout);
+    circuit_add_wire(circuit, bus_to_cout, cout_top_node);
+    cout->node_ids[0] = cout_top_node;
+
+    // Rload top to output bus
+    int rload_top_node = circuit_find_or_create_node(circuit, rload_top_x, rload_top_y, 5.0f);
+    int bus_to_load = circuit_find_or_create_node(circuit, rload_top_x, y - 40, 5.0f);
+    circuit_add_wire(circuit, bus_to_cout, bus_to_load);
+    circuit_add_wire(circuit, bus_to_load, rload_top_node);
+    rload->node_ids[0] = rload_top_node;
+
+    // R1 bottom to ADJ and R2 top (feedback junction)
+    int r1_bot_node = circuit_find_or_create_node(circuit, r1_bot_x, r1_bot_y, 5.0f);
+    int reg_adj_node = circuit_find_or_create_node(circuit, reg_adj_x, reg_adj_y, 5.0f);
+    int r2_top_node = circuit_find_or_create_node(circuit, r2_top_x, r2_top_y, 5.0f);
+    r1->node_ids[1] = r1_bot_node;
+    r2->node_ids[0] = r2_top_node;
+    reg->node_ids[2] = reg_adj_node;
+
+    // Connect R1 bottom to ADJ
+    int adj_junction = circuit_find_or_create_node(circuit, reg_adj_x, r1_bot_y, 5.0f);
+    circuit_add_wire(circuit, r1_bot_node, adj_junction);
+    circuit_add_wire(circuit, adj_junction, reg_adj_node);
+
+    // Connect R2 top to ADJ junction
+    circuit_add_wire(circuit, adj_junction, r2_top_node);
+
+    // Ground connections
+    int gnd_in_node = circuit_find_or_create_node(circuit, gnd_in_x, gnd_in_y, 5.0f);
+    int vin_neg_node = circuit_find_or_create_node(circuit, vin_neg_x, vin_neg_y, 5.0f);
+    circuit_add_wire(circuit, vin_neg_node, gnd_in_node);
+    vin->node_ids[1] = vin_neg_node;
+    gnd_in->node_ids[0] = gnd_in_node;
+
+    // Ground rail
+    float gnd_y = y + 140;
+    int gnd_rail = circuit_find_or_create_node(circuit, cin_bot_x, gnd_y, 5.0f);
+
+    // Cin bottom to ground
+    int cin_bot_node = circuit_find_or_create_node(circuit, cin_bot_x, cin_bot_y, 5.0f);
+    circuit_add_wire(circuit, cin_bot_node, gnd_rail);
+    cin->node_ids[1] = cin_bot_node;
+
+    // Connect vin- to ground rail
+    int corner_vin_gnd = circuit_find_or_create_node(circuit, vin_neg_x, gnd_y, 5.0f);
+    circuit_add_wire(circuit, gnd_in_node, corner_vin_gnd);
+    circuit_add_wire(circuit, corner_vin_gnd, gnd_rail);
+
+    // R2 bottom to ground rail
+    int r2_bot_node = circuit_find_or_create_node(circuit, r2_bot_x, r2_bot_y, 5.0f);
+    int gnd_rail_r2 = circuit_find_or_create_node(circuit, r2_bot_x, gnd_y, 5.0f);
+    circuit_add_wire(circuit, gnd_rail, gnd_rail_r2);
+    circuit_add_wire(circuit, r2_bot_node, gnd_rail_r2);
+    r2->node_ids[1] = r2_bot_node;
+
+    // Cout bottom to ground rail
+    int cout_bot_node = circuit_find_or_create_node(circuit, cout_bot_x, cout_bot_y, 5.0f);
+    int gnd_rail_cout = circuit_find_or_create_node(circuit, cout_bot_x, gnd_y, 5.0f);
+    circuit_add_wire(circuit, gnd_rail_r2, gnd_rail_cout);
+    circuit_add_wire(circuit, cout_bot_node, gnd_rail_cout);
+    cout->node_ids[1] = cout_bot_node;
+
+    // Rload bottom and ground symbol
+    int rload_bot_node = circuit_find_or_create_node(circuit, rload_bot_x, rload_bot_y, 5.0f);
+    int gnd_load_node = circuit_find_or_create_node(circuit, gnd_load_x, gnd_load_y, 5.0f);
+    int gnd_rail_load = circuit_find_or_create_node(circuit, rload_bot_x, gnd_y, 5.0f);
+    circuit_add_wire(circuit, gnd_rail_cout, gnd_rail_load);
+    circuit_add_wire(circuit, rload_bot_node, gnd_rail_load);
+    rload->node_ids[1] = rload_bot_node;
+
+    // Ground symbol connection
+    circuit_add_wire(circuit, gnd_rail_cout, gnd_load_node);
+    gnd_load->node_ids[0] = gnd_load_node;
+
+    return 10;  // vin, gnd_in, cin, reg, r1, r2, cout, rload, gnd_load
+}
+
+// TL431 Precision Shunt Reference Circuit
+// Used as a precision 2.5V reference with external resistor setting
+static int place_tl431_ref(Circuit *circuit, float x, float y) {
+    // Input voltage source (5V)
+    Component *vin = add_comp(circuit, COMP_DC_VOLTAGE, x - 80, y, 0);
+    if (!vin) return 0;
+    vin->props.dc_voltage.voltage = 5.0;
+
+    Component *gnd_in = add_comp(circuit, COMP_GROUND, x - 80, y + 60, 0);
+
+    // Series resistor (limits current through TL431)
+    Component *rs = add_comp(circuit, COMP_RESISTOR, x + 20, y - 40, 0);
+    rs->props.resistor.resistance = 470.0;  // 470 ohm
+
+    // TL431 shunt reference
+    Component *ref = add_comp(circuit, COMP_TL431, x + 100, y + 20, 0);
+
+    // Load resistor to demonstrate voltage reference
+    Component *rload = add_comp(circuit, COMP_RESISTOR, x + 180, y + 20, 90);
+    rload->props.resistor.resistance = 1000.0;  // 1k ohm
+
+    Component *gnd_load = add_comp(circuit, COMP_GROUND, x + 180, y + 100, 0);
+
+    // Get terminal positions
+    float vin_pos_x, vin_pos_y, vin_neg_x, vin_neg_y;
+    component_get_terminal_pos(vin, 0, &vin_pos_x, &vin_pos_y);
+    component_get_terminal_pos(vin, 1, &vin_neg_x, &vin_neg_y);
+
+    float gnd_in_x, gnd_in_y;
+    component_get_terminal_pos(gnd_in, 0, &gnd_in_x, &gnd_in_y);
+
+    float rs_left_x, rs_left_y, rs_right_x, rs_right_y;
+    component_get_terminal_pos(rs, 0, &rs_left_x, &rs_left_y);
+    component_get_terminal_pos(rs, 1, &rs_right_x, &rs_right_y);
+
+    // TL431: K(0)=cathode, A(1)=anode, REF(2)=reference
+    float ref_k_x, ref_k_y, ref_a_x, ref_a_y, ref_ref_x, ref_ref_y;
+    component_get_terminal_pos(ref, 0, &ref_k_x, &ref_k_y);
+    component_get_terminal_pos(ref, 1, &ref_a_x, &ref_a_y);
+    component_get_terminal_pos(ref, 2, &ref_ref_x, &ref_ref_y);
+
+    float rload_top_x, rload_top_y, rload_bot_x, rload_bot_y;
+    component_get_terminal_pos(rload, 0, &rload_top_x, &rload_top_y);
+    component_get_terminal_pos(rload, 1, &rload_bot_x, &rload_bot_y);
+
+    float gnd_load_x, gnd_load_y;
+    component_get_terminal_pos(gnd_load, 0, &gnd_load_x, &gnd_load_y);
+
+    // Vin+ to Rs left
+    int vin_pos_node = circuit_find_or_create_node(circuit, vin_pos_x, vin_pos_y, 5.0f);
+    int rs_left_node = circuit_find_or_create_node(circuit, rs_left_x, rs_left_y, 5.0f);
+    vin->node_ids[0] = vin_pos_node;
+    rs->node_ids[0] = rs_left_node;
+
+    int corner_vin_rs = circuit_find_or_create_node(circuit, vin_pos_x, rs_left_y, 5.0f);
+    circuit_add_wire(circuit, vin_pos_node, corner_vin_rs);
+    circuit_add_wire(circuit, corner_vin_rs, rs_left_node);
+
+    // Rs right to TL431 cathode (K) and Rload top
+    int rs_right_node = circuit_find_or_create_node(circuit, rs_right_x, rs_right_y, 5.0f);
+    int ref_k_node = circuit_find_or_create_node(circuit, ref_k_x, ref_k_y, 5.0f);
+    int rload_top_node = circuit_find_or_create_node(circuit, rload_top_x, rload_top_y, 5.0f);
+    rs->node_ids[1] = rs_right_node;
+    ref->node_ids[0] = ref_k_node;
+    rload->node_ids[0] = rload_top_node;
+
+    // Output junction (cathode node is the reference voltage output)
+    int output_junction = circuit_find_or_create_node(circuit, ref_k_x, rs_right_y, 5.0f);
+    circuit_add_wire(circuit, rs_right_node, output_junction);
+    circuit_add_wire(circuit, output_junction, ref_k_node);
+
+    // Rload top to output junction
+    int corner_load = circuit_find_or_create_node(circuit, rload_top_x, rs_right_y, 5.0f);
+    circuit_add_wire(circuit, output_junction, corner_load);
+    circuit_add_wire(circuit, corner_load, rload_top_node);
+
+    // TL431 REF connected to cathode for 2.5V reference mode
+    int ref_ref_node = circuit_find_or_create_node(circuit, ref_ref_x, ref_ref_y, 5.0f);
+    ref->node_ids[2] = ref_ref_node;
+
+    // Connect REF to cathode for basic 2.5V shunt mode
+    int corner_ref_k = circuit_find_or_create_node(circuit, ref_k_x, ref_ref_y, 5.0f);
+    circuit_add_wire(circuit, ref_ref_node, corner_ref_k);
+    circuit_add_wire(circuit, corner_ref_k, ref_k_node);
+
+    // Ground connections
+    int gnd_in_node = circuit_find_or_create_node(circuit, gnd_in_x, gnd_in_y, 5.0f);
+    int vin_neg_node = circuit_find_or_create_node(circuit, vin_neg_x, vin_neg_y, 5.0f);
+    circuit_add_wire(circuit, vin_neg_node, gnd_in_node);
+    vin->node_ids[1] = vin_neg_node;
+    gnd_in->node_ids[0] = gnd_in_node;
+
+    // Ground rail
+    float gnd_y = y + 90;
+    int gnd_rail = circuit_find_or_create_node(circuit, vin_neg_x, gnd_y, 5.0f);
+    circuit_add_wire(circuit, gnd_in_node, gnd_rail);
+
+    // TL431 anode to ground
+    int ref_a_node = circuit_find_or_create_node(circuit, ref_a_x, ref_a_y, 5.0f);
+    ref->node_ids[1] = ref_a_node;
+    int gnd_rail_ref = circuit_find_or_create_node(circuit, ref_a_x, gnd_y, 5.0f);
+    circuit_add_wire(circuit, gnd_rail, gnd_rail_ref);
+    circuit_add_wire(circuit, ref_a_node, gnd_rail_ref);
+
+    // Rload bottom to ground
+    int rload_bot_node = circuit_find_or_create_node(circuit, rload_bot_x, rload_bot_y, 5.0f);
+    int gnd_load_node = circuit_find_or_create_node(circuit, gnd_load_x, gnd_load_y, 5.0f);
+    circuit_add_wire(circuit, rload_bot_node, gnd_load_node);
+    rload->node_ids[1] = rload_bot_node;
+    gnd_load->node_ids[0] = gnd_load_node;
+
+    // Connect ground rail to load ground
+    int gnd_rail_load = circuit_find_or_create_node(circuit, rload_bot_x, gnd_y, 5.0f);
+    circuit_add_wire(circuit, gnd_rail_ref, gnd_rail_load);
+    circuit_add_wire(circuit, gnd_rail_load, gnd_load_node);
+
+    return 7;  // vin, gnd_in, rs, ref, rload, gnd_load
+}
+
 int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, float y) {
     if (!circuit) return 0;
 
@@ -5229,6 +5679,13 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
             return place_zener_ref(circuit, x, y);
         case CIRCUIT_PRECISION_RECT:
             return place_precision_rect(circuit, x, y);
+        // Voltage Regulator Circuits
+        case CIRCUIT_7805_REG:
+            return place_7805_reg(circuit, x, y);
+        case CIRCUIT_LM317_REG:
+            return place_lm317_reg(circuit, x, y);
+        case CIRCUIT_TL431_REF:
+            return place_tl431_ref(circuit, x, y);
         default:
             return 0;
     }

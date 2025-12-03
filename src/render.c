@@ -3611,8 +3611,20 @@ void render_subcircuit(RenderContext *ctx, float x, float y, int rotation, int d
     render_draw_line(ctx, x + half_w - 5, y + half_h - 5, x - half_w + 5, y + half_h - 5);  // Bottom
     render_draw_line(ctx, x - half_w + 5, y + half_h - 5, x - half_w + 5, y - half_h + 5);  // Left
 
-    // Draw notch at top (IC orientation marker)
-    render_draw_circle(ctx, x, y - half_h + 8, 5);
+    // Draw notch at top (IC orientation marker - semi-circular indent)
+    // Draw a small half-circle indent at the top edge
+    float notch_y = y - half_h + 5;
+    float notch_r = 6.0f;
+    // Draw arc segments to make a semi-circle indent pointing down
+    for (int i = 0; i < 8; i++) {
+        float a1 = 3.14159f * (float)i / 8.0f;  // 0 to PI
+        float a2 = 3.14159f * (float)(i + 1) / 8.0f;
+        float x1 = x - notch_r * cosf(a1);
+        float y1 = notch_y + notch_r * sinf(a1);
+        float x2 = x - notch_r * cosf(a2);
+        float y2 = notch_y + notch_r * sinf(a2);
+        render_draw_line(ctx, x1, y1, x2, y2);
+    }
 
     // Draw pins if definition exists
     if (def) {
@@ -3628,55 +3640,69 @@ void render_subcircuit(RenderContext *ctx, float x, float y, int rotation, int d
                     px = x - half_w;
                     py = y - half_h + 20 + pin->position * 20;
                     render_draw_line(ctx, px - 10, py, px + 5, py);
-                    render_world_to_screen(ctx, px + 8, py, &sx, &sy);
+                    // Draw label inside the body (right of pin)
+                    render_world_to_screen(ctx, px + 10, py, &sx, &sy);
                     render_draw_text_small(ctx, pin->name, sx, sy - 4, label_color);
                     break;
                 case 1:  // Right
                     px = x + half_w;
                     py = y - half_h + 20 + pin->position * 20;
                     render_draw_line(ctx, px - 5, py, px + 10, py);
-                    render_world_to_screen(ctx, px - 25, py, &sx, &sy);
-                    render_draw_text_small(ctx, pin->name, sx, sy - 4, label_color);
+                    // Draw label inside the body (left of pin)
+                    render_world_to_screen(ctx, px - 10, py, &sx, &sy);
+                    render_draw_text_small(ctx, pin->name, sx - 16, sy - 4, label_color);
                     break;
                 case 2:  // Top
                     px = x - half_w + 20 + pin->position * 20;
                     py = y - half_h;
                     render_draw_line(ctx, px, py - 10, px, py + 5);
+                    // Draw label inside the body (below pin)
+                    render_world_to_screen(ctx, px, py + 12, &sx, &sy);
+                    render_draw_text_small(ctx, pin->name, sx - 5, sy - 4, label_color);
                     break;
                 case 3:  // Bottom
                     px = x - half_w + 20 + pin->position * 20;
                     py = y + half_h;
                     render_draw_line(ctx, px, py - 5, px, py + 10);
+                    // Draw label inside the body (above pin)
+                    render_world_to_screen(ctx, px, py - 12, &sx, &sy);
+                    render_draw_text_small(ctx, pin->name, sx - 5, sy - 4, label_color);
                     break;
             }
         }
     } else {
         // Draw default 4-pin configuration when no definition
         render_set_color(ctx, pin_color);
+        int sx, sy;
 
-        // Left pins
+        // Left pins with labels (inside body)
         render_draw_line(ctx, x - half_w - 10, y - 20, x - half_w + 5, y - 20);
+        render_world_to_screen(ctx, x - half_w + 10, y - 20, &sx, &sy);
+        render_draw_text_small(ctx, "1", sx, sy - 4, label_color);
+
         render_draw_line(ctx, x - half_w - 10, y + 20, x - half_w + 5, y + 20);
+        render_world_to_screen(ctx, x - half_w + 10, y + 20, &sx, &sy);
+        render_draw_text_small(ctx, "2", sx, sy - 4, label_color);
 
-        // Right pins
+        // Right pins with labels (inside body)
         render_draw_line(ctx, x + half_w - 5, y - 20, x + half_w + 10, y - 20);
+        render_world_to_screen(ctx, x + half_w - 10, y - 20, &sx, &sy);
+        render_draw_text_small(ctx, "3", sx - 8, sy - 4, label_color);
+
         render_draw_line(ctx, x + half_w - 5, y + 20, x + half_w + 10, y + 20);
+        render_world_to_screen(ctx, x + half_w - 10, y + 20, &sx, &sy);
+        render_draw_text_small(ctx, "4", sx - 8, sy - 4, label_color);
     }
 
-    // Draw instance name in center
+    // Draw subcircuit name in center (use definition name, or instance name if no def)
     int sx, sy;
-    if (name && name[0]) {
-        render_world_to_screen(ctx, x, y - 5, &sx, &sy);
-        render_draw_text_small(ctx, name, sx - 8, sy, label_color);
-    }
-
-    // Draw subcircuit definition name below
+    render_world_to_screen(ctx, x, y, &sx, &sy);
     if (def && def->name[0]) {
-        render_world_to_screen(ctx, x, y + 10, &sx, &sy);
-        render_draw_text_small(ctx, def->name, sx - 15, sy, (Color){150, 150, 170, 255});
+        render_draw_text_small(ctx, def->name, sx - 15, sy - 4, label_color);
+    } else if (name && name[0]) {
+        render_draw_text_small(ctx, name, sx - 8, sy - 4, label_color);
     } else {
-        render_world_to_screen(ctx, x, y + 10, &sx, &sy);
-        render_draw_text_small(ctx, "IC", sx - 5, sy, (Color){150, 150, 170, 255});
+        render_draw_text_small(ctx, "IC", sx - 5, sy - 4, (Color){150, 150, 170, 255});
     }
 }
 

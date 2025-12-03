@@ -151,6 +151,57 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     return true;
                 }
 
+                // Check if placing a user subcircuit
+                if (ui->placing_subcircuit && ui->selected_subcircuit_def_id >= 0) {
+                    if (!input->sim_running) {
+                        float snapped_x = snap_to_grid(wx);
+                        float snapped_y = snap_to_grid(wy);
+
+                        // Find the subcircuit definition
+                        SubCircuitDef *def = NULL;
+                        for (int i = 0; i < g_subcircuit_library.count; i++) {
+                            if (g_subcircuit_library.defs[i].id == ui->selected_subcircuit_def_id) {
+                                def = &g_subcircuit_library.defs[i];
+                                break;
+                            }
+                        }
+
+                        if (def) {
+                            // Create a COMP_SUBCIRCUIT component
+                            Component *comp = component_create(COMP_SUBCIRCUIT, snapped_x, snapped_y);
+                            if (comp) {
+                                comp->props.subcircuit.def_id = def->id;
+                                strncpy(comp->props.subcircuit.name, def->name, sizeof(comp->props.subcircuit.name) - 1);
+                                comp->props.subcircuit.name[sizeof(comp->props.subcircuit.name) - 1] = '\0';
+
+                                // Update terminal count based on definition
+                                comp->num_terminals = def->num_pins;
+                                if (comp->num_terminals > MAX_TERMINALS) {
+                                    comp->num_terminals = MAX_TERMINALS;
+                                }
+
+                                circuit_add_component(circuit, comp);
+                                char msg[128];
+                                snprintf(msg, sizeof(msg), "Placed subcircuit '%s'", def->name);
+                                ui_set_status(ui, msg);
+                                circuit->modified = true;
+                            }
+                        } else {
+                            ui_set_status(ui, "Subcircuit definition not found");
+                        }
+
+                        // Deselect subcircuit after placing
+                        ui->placing_subcircuit = false;
+                        ui->selected_subcircuit_def_id = -1;
+                        for (int i = 0; i < ui->num_subcircuit_items; i++) {
+                            ui->subcircuit_items[i].selected = false;
+                        }
+                    } else {
+                        ui_set_status(ui, "Stop simulation to place subcircuits");
+                    }
+                    return true;
+                }
+
                 switch (input->current_tool) {
                     case TOOL_SELECT: {
                         // If already drawing a wire (started from terminal click), complete it
@@ -480,14 +531,41 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     }
 
                     case TOOL_PROBE: {
-                        // Search at raw world coordinates with generous threshold
-                        // Don't snap - we want to find the nearest node to where user clicked
-                        Node *node = circuit_find_node_at(circuit, wx, wy, 25);
-                        if (node) {
-                            circuit_add_probe(circuit, node->id, node->x, node->y);
+                        // First check component terminals using dynamic positions
+                        // This is more accurate than stored node positions for subcircuits
+                        int best_node_id = -1;
+                        float best_dist = 25.0f;  // threshold
+                        float best_tx = 0, best_ty = 0;
+
+                        for (int c = 0; c < circuit->num_components; c++) {
+                            Component *comp = circuit->components[c];
+                            for (int t = 0; t < comp->num_terminals; t++) {
+                                float tx, ty;
+                                component_get_terminal_pos(comp, t, &tx, &ty);
+                                float dx = tx - wx;
+                                float dy = ty - wy;
+                                float dist = sqrt(dx*dx + dy*dy);
+                                if (dist < best_dist) {
+                                    best_dist = dist;
+                                    best_node_id = comp->node_ids[t];
+                                    best_tx = tx;
+                                    best_ty = ty;
+                                }
+                            }
+                        }
+
+                        if (best_node_id >= 0) {
+                            circuit_add_probe(circuit, best_node_id, best_tx, best_ty);
                             ui_set_status(ui, "Probe placed");
                         } else {
-                            ui_set_status(ui, "Click on a node or wire junction to place probe");
+                            // Fallback to stored node positions for wire junctions
+                            Node *node = circuit_find_node_at(circuit, wx, wy, 25);
+                            if (node) {
+                                circuit_add_probe(circuit, node->id, node->x, node->y);
+                                ui_set_status(ui, "Probe placed");
+                            } else {
+                                ui_set_status(ui, "Click on a node or wire junction to place probe");
+                            }
                         }
                         break;
                     }
@@ -498,7 +576,13 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 input->middle.start_y = y;
                 input->is_panning = true;
             } else if (event->button.button == SDL_BUTTON_RIGHT) {
-                // Cancel current action
+                // Check if right-click is on a subcircuit palette item (to edit)
+                int action = ui_handle_right_click(ui, x, y);
+                if (action != UI_ACTION_NONE) {
+                    // Right-click triggered an action (e.g., edit subcircuit)
+                    return true;
+                }
+                // Otherwise, cancel current action
                 input_cancel_action(input);
             }
 
@@ -867,6 +951,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
         }
 
         case SDL_TEXTINPUT: {
+            if (!ui) break;  // Safety check
             // Handle subcircuit dialog text input
             if (ui->show_subcircuit_dialog) {
                 ui_subcircuit_dialog_text_input(ui, event->text.text);

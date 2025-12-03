@@ -863,6 +863,161 @@ void app_handle_events(App *app) {
                 }
                 break;
 
+            case UI_ACTION_CREATE_SUBCIRCUIT:
+                // Create or edit subcircuit
+                {
+                    // Check if we're editing an existing subcircuit
+                    if (app->ui.subcircuit_editing_def_id >= 0) {
+                        // Find and update existing definition
+                        SubCircuitDef *def = NULL;
+                        for (int i = 0; i < g_subcircuit_library.count; i++) {
+                            if (g_subcircuit_library.defs[i].id == app->ui.subcircuit_editing_def_id) {
+                                def = &g_subcircuit_library.defs[i];
+                                break;
+                            }
+                        }
+                        if (def) {
+                            // Update name
+                            strncpy(def->name, app->ui.subcircuit_name, sizeof(def->name) - 1);
+                            def->name[sizeof(def->name) - 1] = '\0';
+
+                            // Update pin names (keep same number of pins)
+                            for (int i = 0; i < def->num_pins && i < 16; i++) {
+                                strncpy(def->pins[i].name, app->ui.subcircuit_pin_names[i],
+                                        sizeof(def->pins[i].name) - 1);
+                                def->pins[i].name[sizeof(def->pins[i].name) - 1] = '\0';
+                            }
+
+                            char msg[128];
+                            snprintf(msg, sizeof(msg), "Updated subcircuit '%s'", def->name);
+                            ui_set_status(&app->ui, msg);
+                        }
+                        ui_subcircuit_dialog_close(&app->ui);
+                        break;
+                    }
+
+                    // Creating new subcircuit from selected components
+                    if (g_subcircuit_library.count >= MAX_SUBCIRCUIT_DEFS) {
+                        ui_set_status(&app->ui, "Subcircuit library is full");
+                        ui_subcircuit_dialog_close(&app->ui);
+                        break;
+                    }
+
+                    // Get new definition slot
+                    SubCircuitDef *def = &g_subcircuit_library.defs[g_subcircuit_library.count];
+                    memset(def, 0, sizeof(SubCircuitDef));
+
+                    // Set ID and name
+                    def->id = g_subcircuit_library.next_id++;
+                    strncpy(def->name, app->ui.subcircuit_name, sizeof(def->name) - 1);
+                    def->name[sizeof(def->name) - 1] = '\0';
+                    snprintf(def->description, sizeof(def->description), "User-created subcircuit");
+
+                    // Count selected components and pins
+                    int num_selected = 0;
+                    int num_pins = 0;
+                    float min_x = 1e9, min_y = 1e9, max_x = -1e9, max_y = -1e9;
+
+                    for (int i = 0; i < app->circuit->num_components; i++) {
+                        Component *c = app->circuit->components[i];
+                        if (c && c->selected) {
+                            if (c->type == COMP_PIN) {
+                                // This is a pin marker
+                                if (num_pins < MAX_SUBCIRCUIT_PINS) {
+                                    // Use the pin name if set, otherwise generate "P1", "P2", etc.
+                                    if (c->props.pin.pin_name[0] != '\0') {
+                                        strncpy(def->pins[num_pins].name, c->props.pin.pin_name,
+                                                sizeof(def->pins[num_pins].name) - 1);
+                                    } else {
+                                        snprintf(def->pins[num_pins].name, sizeof(def->pins[num_pins].name),
+                                                "P%d", num_pins + 1);
+                                    }
+                                    def->pins[num_pins].name[sizeof(def->pins[num_pins].name) - 1] = '\0';
+                                    def->pins[num_pins].internal_node_id = c->node_ids[0];
+                                    def->pins[num_pins].side = (num_pins < 8) ? 0 : 1;  // left or right
+                                    def->pins[num_pins].position = num_pins % 8;
+                                    num_pins++;
+                                }
+                            } else {
+                                num_selected++;
+                            }
+                            // Update bounding box
+                            if (c->x < min_x) min_x = c->x;
+                            if (c->y < min_y) min_y = c->y;
+                            if (c->x > max_x) max_x = c->x;
+                            if (c->y > max_y) max_y = c->y;
+                        }
+                    }
+
+                    if (num_selected == 0) {
+                        ui_set_status(&app->ui, "No components selected for subcircuit");
+                        ui_subcircuit_dialog_close(&app->ui);
+                        break;
+                    }
+
+                    // If no explicit PIN components, auto-generate default pins
+                    if (num_pins == 0) {
+                        // Create 4 default pins (2 left, 2 right)
+                        for (int p = 0; p < 4 && p < MAX_SUBCIRCUIT_PINS; p++) {
+                            snprintf(def->pins[p].name, sizeof(def->pins[p].name), "%d", p + 1);
+                            def->pins[p].internal_node_id = -1;  // Not connected internally
+                            def->pins[p].side = (p < 2) ? 0 : 1;  // First 2 on left, next 2 on right
+                            def->pins[p].position = p % 2;
+                        }
+                        num_pins = 4;
+                    }
+
+                    // Apply user-edited pin names from dialog (overrides defaults)
+                    for (int i = 0; i < num_pins && i < 16; i++) {
+                        if (app->ui.subcircuit_pin_names[i][0] != '\0') {
+                            strncpy(def->pins[i].name, app->ui.subcircuit_pin_names[i],
+                                    sizeof(def->pins[i].name) - 1);
+                            def->pins[i].name[sizeof(def->pins[i].name) - 1] = '\0';
+                        }
+                    }
+
+                    def->num_components = num_selected;
+                    def->num_pins = num_pins;
+                    def->internal_width = (max_x - min_x) + 80;
+                    def->internal_height = (max_y - min_y) + 80;
+                    def->block_width = 80 + num_pins * 10;
+                    def->block_height = 60 + num_pins * 10;
+
+                    // Serialize selected components (simplified - store component pointers for now)
+                    // In a full implementation, we'd serialize component data to allow save/load
+                    size_t comp_size = num_selected * sizeof(Component);
+                    def->component_data = malloc(comp_size);
+                    def->component_data_size = comp_size;
+
+                    if (def->component_data) {
+                        Component *comp_arr = (Component *)def->component_data;
+                        int idx = 0;
+                        for (int i = 0; i < app->circuit->num_components && idx < num_selected; i++) {
+                            Component *c = app->circuit->components[i];
+                            if (c && c->selected && c->type != COMP_PIN) {
+                                // Copy component data (excluding pointers)
+                                memcpy(&comp_arr[idx], c, sizeof(Component));
+                                // Offset positions relative to min corner
+                                comp_arr[idx].x -= min_x - 40;
+                                comp_arr[idx].y -= min_y - 40;
+                                idx++;
+                            }
+                        }
+                    }
+
+                    // Increment library count
+                    g_subcircuit_library.count++;
+
+                    // Close dialog and show status
+                    ui_subcircuit_dialog_close(&app->ui);
+
+                    char msg[128];
+                    snprintf(msg, sizeof(msg), "Created subcircuit '%s' with %d components, %d pins",
+                             def->name, num_selected, num_pins);
+                    ui_set_status(&app->ui, msg);
+                }
+                break;
+
             case UI_ACTION_PROP_APPLY:
                 // Apply text-edited property value
                 if (app->input.selected_component) {

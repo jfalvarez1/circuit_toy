@@ -28,6 +28,7 @@
 #define SYNTH_PURPLE_DIM    0x8a, 0x00, 0xb8  // Dimmed purple
 #define SYNTH_YELLOW        0xff, 0xf0, 0x00  // Neon yellow
 #define SYNTH_ORANGE        0xff, 0x61, 0x00  // Neon orange
+#define SYNTH_ORANGE_DIM    0xc0, 0x48, 0x00  // Dimmed orange
 #define SYNTH_GREEN         0x00, 0xff, 0x9f  // Neon green
 
 // Text colors
@@ -71,6 +72,7 @@ typedef enum {
     PCAT_DISPLAY,
     PCAT_MEASUREMENT,
     PCAT_CIRCUITS,
+    PCAT_SUBCIRCUITS,   // User-defined subcircuits (Ctrl+G)
     PCAT_COUNT
 } PaletteCategoryID;
 
@@ -101,6 +103,16 @@ typedef struct {
     bool hovered;
     bool selected;
 } CircuitPaletteItem;
+
+// User subcircuit palette item
+typedef struct {
+    Rect bounds;
+    int def_id;         // ID in g_subcircuit_library
+    char label[32];     // Subcircuit name
+    int num_pins;       // Number of pins
+    bool hovered;
+    bool selected;
+} SubcircuitPaletteItem;
 
 // Property field
 typedef struct {
@@ -180,6 +192,12 @@ typedef struct {
     int num_circuit_items;
     int selected_circuit_type;  // Currently selected circuit template (-1 = none)
     bool placing_circuit;       // True when placing a circuit template
+
+    // User subcircuit palette (from g_subcircuit_library)
+    SubcircuitPaletteItem subcircuit_items[MAX_SUBCIRCUIT_DEFS];
+    int num_subcircuit_items;
+    int selected_subcircuit_def_id;  // Selected subcircuit definition ID (-1 = none)
+    bool placing_subcircuit;         // True when placing a user subcircuit
 
     // Properties panel
     PropertyField properties[16];
@@ -356,6 +374,7 @@ typedef struct {
     char subcircuit_pin_names[16][16];      // Pin names (max 16 pins)
     int subcircuit_selected_pin;            // Currently selected pin for editing
     int subcircuit_editing_field;           // 0=name, 1+=pin names
+    int subcircuit_editing_def_id;          // -1 = creating new, >=0 = editing existing def
 } UIState;
 
 // Initialize UI
@@ -387,6 +406,7 @@ void ui_render_neon_trim(UIState *ui, SDL_Renderer *renderer);
 
 // Subcircuit editor functions
 void ui_subcircuit_dialog_open(UIState *ui, int num_selected, int detected_pins, char detected_names[][16]);
+void ui_subcircuit_dialog_open_edit(UIState *ui, int def_id);  // Open dialog to edit existing subcircuit
 void ui_subcircuit_dialog_close(UIState *ui);
 void ui_subcircuit_dialog_text_input(UIState *ui, const char *text);
 bool ui_subcircuit_dialog_key(UIState *ui, SDL_Keycode key);
@@ -402,6 +422,7 @@ ComponentType ui_spotlight_click(UIState *ui, int mouse_x, int mouse_y);
 // Handle UI events
 // Returns: -1 = not handled, 0+ = action ID
 int ui_handle_click(UIState *ui, int x, int y, bool is_down);
+int ui_handle_right_click(UIState *ui, int x, int y);  // Handle right-click on palette items
 int ui_handle_motion(UIState *ui, int x, int y);
 
 // UI action IDs
@@ -445,9 +466,11 @@ int ui_handle_motion(UIState *ui, int x, int y);
 #define UI_ACTION_MC_TOL_DOWN   39   // Decrease MC tolerance
 #define UI_ACTION_MC_RESET      40   // Reset MC results
 #define UI_ACTION_CREATE_SUBCIRCUIT 41   // Create subcircuit from selection (Ctrl+G)
+#define UI_ACTION_EDIT_SUBCIRCUIT   42   // Edit existing subcircuit (right-click in palette)
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type (supports up to 300 component types)
 #define UI_ACTION_SELECT_CIRCUIT 500 // + circuit template type
+#define UI_ACTION_SELECT_SUBCIRCUIT 600 // + subcircuit definition id
 #define UI_ACTION_PROP_APPLY    1000 // Apply property text edit
 #define UI_ACTION_PROP_EDIT     1100 // + property type (PROP_VALUE, PROP_FREQUENCY, etc.)
 

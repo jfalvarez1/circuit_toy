@@ -459,6 +459,8 @@ circuit_toy/
 
 ## Known Issues / Work in Progress
 
+- **Subcircuit Simulation (WIP)** - Subcircuits can be created and placed as IC blocks, but internal simulation is still under development. Currently subcircuits function as visual placeholders - full hierarchical simulation with internal node expansion is planned for a future release.
+
 - **Current Flow Visualization** - The animated current flow particles may not appear on all wires in some circuit configurations. Direction is based on voltage difference between nodes. This feature is under active development.
 
 ## License

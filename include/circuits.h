@@ -58,6 +58,10 @@ typedef enum {
     // TI Analog Circuits - Power/Voltage
     CIRCUIT_ZENER_REF,          // Zener voltage reference
     CIRCUIT_PRECISION_RECT,     // Precision full-wave rectifier
+    // Voltage Regulator Circuits
+    CIRCUIT_7805_REG,           // 7805 fixed 5V regulator circuit
+    CIRCUIT_LM317_REG,          // LM317 adjustable regulator circuit
+    CIRCUIT_TL431_REF,          // TL431 precision shunt reference circuit
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 
