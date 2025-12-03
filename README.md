@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v2.7.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v2.7.0)**
+**Latest Release: [v3.0.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.0.0)**
 
 A native desktop circuit simulator written in C with SDL2, featuring a synthwave-themed interface. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
 
@@ -175,6 +175,7 @@ Load complete circuit configurations instantly from the Circuits menu:
 Full-featured virtual oscilloscope with:
 - **8 Channels** - Connect multiple voltage probes
 - **Adjustable Scales** - Time/div (1µs to 1s), Volts/div (1mV to 100V)
+- **Time-Based Display** - Intelligent sample selection based on visible time window, ensuring smooth waveforms at all time/div settings
 - **Voltage Scale Labels** - Y-axis shows voltage marks dynamically based on V/div setting
 - **Trigger System**
   - Auto, Normal, Single-shot modes

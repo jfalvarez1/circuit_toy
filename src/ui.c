@@ -2619,6 +2619,55 @@ static void format_volt_value(char *buf, size_t size, double val) {
     }
 }
 
+// Cardinal spline interpolation with tension for smooth waveform rendering
+// Returns interpolated value between p1 and p2 at parameter t (0 to 1)
+// p0 and p3 are the neighboring points used to calculate the curve tangents
+// Tension controls overshoot: 0 = Catmull-Rom (max smoothness, can overshoot)
+//                             0.5 = balanced (smooth with reduced overshoot)
+//                             1 = linear (no overshoot, not smooth)
+#define SPLINE_TENSION 0.5
+
+static double cardinal_spline_interp(double p0, double p1, double p2, double p3, double t) {
+    double t2 = t * t;
+    double t3 = t2 * t;
+
+    // Cardinal spline with tension parameter
+    double s = (1.0 - SPLINE_TENSION) / 2.0;
+
+    double a = -s*p0 + (2.0-s)*p1 + (s-2.0)*p2 + s*p3;
+    double b = 2.0*s*p0 + (s-3.0)*p1 + (3.0-2.0*s)*p2 - s*p3;
+    double c = -s*p0 + s*p2;
+    double d = p1;
+
+    double result = a*t3 + b*t2 + c*t + d;
+
+    // Clamp to prevent excessive overshoot beyond the range of all 4 control points
+    // This prevents wild oscillations while still allowing smooth curves at peaks
+    double all_min = p0;
+    if (p1 < all_min) all_min = p1;
+    if (p2 < all_min) all_min = p2;
+    if (p3 < all_min) all_min = p3;
+
+    double all_max = p0;
+    if (p1 > all_max) all_max = p1;
+    if (p2 > all_max) all_max = p2;
+    if (p3 > all_max) all_max = p3;
+
+    // Allow 15% margin beyond the sample range for smooth peak interpolation
+    double range = all_max - all_min;
+    double margin = range * 0.15;
+    if (margin < 0.001) margin = 0.001;  // Minimum margin for flat signals
+
+    if (result < all_min - margin) result = all_min - margin;
+    if (result > all_max + margin) result = all_max + margin;
+
+    return result;
+}
+
+// Number of interpolation subdivisions per sample segment
+// Higher = smoother curves, but more CPU usage
+#define SCOPE_INTERP_SUBDIVISIONS 8
+
 void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim, void *analysis_ptr) {
     AnalysisState *analysis = (AnalysisState *)analysis_ptr;
     Rect *r = &ui->scope_rect;
@@ -2932,34 +2981,58 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 ui->scope_trigger_sample_idx = trigger_idx;
                 ui->triggered = true;
 
-                // Calculate subsample factor if history is larger than capture buffer
+                // Find samples covering the visible time window (+ 50% margin for pre-trigger)
+                double target_time_span = time_window * 1.5;
+                double t_end = trig_times[trig_count - 1];
+                double t_start = t_end - target_time_span;
+
+                // Find first sample index at or after t_start
+                int window_start = 0;
+                for (int i = 0; i < trig_count; i++) {
+                    if (trig_times[i] >= t_start) {
+                        window_start = i;
+                        break;
+                    }
+                }
+
+                int window_samples = trig_count - window_start;
+
+                // Only subsample if needed to fit in capture buffer
                 int subsample = 1;
-                if (trig_count > SCOPE_CAPTURE_SIZE - 10) {
-                    subsample = (trig_count + SCOPE_CAPTURE_SIZE - 11) / (SCOPE_CAPTURE_SIZE - 10);
+                if (window_samples > SCOPE_CAPTURE_SIZE - 10) {
+                    subsample = (window_samples + SCOPE_CAPTURE_SIZE - 11) / (SCOPE_CAPTURE_SIZE - 10);
                     if (subsample < 1) subsample = 1;
                 }
 
-                // With subsampling, we can capture the entire history
-                int capture_samples = (trig_count + subsample - 1) / subsample;
+                int capture_samples = (window_samples + subsample - 1) / subsample;
                 if (capture_samples > SCOPE_CAPTURE_SIZE - 10) capture_samples = SCOPE_CAPTURE_SIZE - 10;
 
                 ui->scope_capture_count = capture_samples;
 
-                // Capture times with subsampling (from trigger channel)
+                // Capture times with subsampling from window start
                 for (int i = 0; i < ui->scope_capture_count; i++) {
-                    int src_idx = i * subsample;
+                    int src_idx = window_start + i * subsample;
                     if (src_idx >= trig_count) src_idx = trig_count - 1;
                     ui->scope_capture_times[i] = trig_times[src_idx];
                 }
 
-                // Capture all channel values with subsampling
+                // Capture all channel values with subsampling from window start
                 for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
                     double ch_times[MAX_HISTORY], ch_values[MAX_HISTORY];
                     int ch_probe = ui->scope_channels[ch].probe_idx;
                     int ch_count = simulation_get_history(sim, ch_probe, ch_times, ch_values, samples_for_trigger);
 
+                    // Calculate corresponding window start for this channel
+                    int ch_window_start = 0;
+                    for (int i = 0; i < ch_count; i++) {
+                        if (ch_times[i] >= t_start) {
+                            ch_window_start = i;
+                            break;
+                        }
+                    }
+
                     for (int i = 0; i < ui->scope_capture_count; i++) {
-                        int src_idx = i * subsample;
+                        int src_idx = ch_window_start + i * subsample;
                         if (src_idx < ch_count) {
                             ui->scope_capture_values[ch][i] = ch_values[src_idx];
                         }
@@ -2975,43 +3048,58 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     // AUTO mode: free-run, show latest data without triggering
                     // NORMAL mode without trigger: also free-run (DC signals never trigger)
 
-                    // Calculate subsample factor if history is larger than capture buffer
+                    // Find samples covering the visible time window (+ 50% margin)
+                    double target_time_span = time_window * 1.5;
+                    double t_end = trig_times[trig_count - 1];
+                    double t_start = t_end - target_time_span;
+
+                    // Find first sample index at or after t_start
+                    int window_start = 0;
+                    for (int i = 0; i < trig_count; i++) {
+                        if (trig_times[i] >= t_start) {
+                            window_start = i;
+                            break;
+                        }
+                    }
+
+                    int window_samples = trig_count - window_start;
+
+                    // Only subsample if needed to fit in capture buffer
                     int subsample = 1;
-                    if (trig_count > SCOPE_CAPTURE_SIZE - 10) {
-                        subsample = (trig_count + SCOPE_CAPTURE_SIZE - 11) / (SCOPE_CAPTURE_SIZE - 10);
+                    if (window_samples > SCOPE_CAPTURE_SIZE - 10) {
+                        subsample = (window_samples + SCOPE_CAPTURE_SIZE - 11) / (SCOPE_CAPTURE_SIZE - 10);
                         if (subsample < 1) subsample = 1;
                     }
 
-                    // With subsampling, we can capture the entire history
-                    int capture_samples = (trig_count + subsample - 1) / subsample;
+                    int capture_samples = (window_samples + subsample - 1) / subsample;
                     if (capture_samples > SCOPE_CAPTURE_SIZE - 10) capture_samples = SCOPE_CAPTURE_SIZE - 10;
 
                     ui->scope_capture_count = capture_samples;
 
-                    // For free-run mode, capture from the END of history (most recent data)
-                    // Calculate start offset to ensure we get the latest samples
-                    int src_start = trig_count - (capture_samples * subsample);
-                    if (src_start < 0) src_start = 0;
-
-                    // Capture times with subsampling from the end
+                    // Capture times with subsampling from window start
                     for (int i = 0; i < ui->scope_capture_count; i++) {
-                        int src_idx = src_start + i * subsample;
+                        int src_idx = window_start + i * subsample;
                         if (src_idx >= trig_count) src_idx = trig_count - 1;
                         ui->scope_capture_times[i] = trig_times[src_idx];
                     }
 
-                    // Capture all channel values with subsampling from the end
+                    // Capture all channel values with subsampling from window start
                     for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
                         double ch_times[MAX_HISTORY], ch_values[MAX_HISTORY];
                         int ch_probe = ui->scope_channels[ch].probe_idx;
                         int ch_count = simulation_get_history(sim, ch_probe, ch_times, ch_values, samples_for_trigger);
 
-                        // Use same start offset for all channels
-                        int ch_src_start = ch_count - (capture_samples * subsample);
-                        if (ch_src_start < 0) ch_src_start = 0;
+                        // Calculate corresponding window start for this channel
+                        int ch_window_start = 0;
+                        for (int i = 0; i < ch_count; i++) {
+                            if (ch_times[i] >= t_start) {
+                                ch_window_start = i;
+                                break;
+                            }
+                        }
 
                         for (int i = 0; i < ui->scope_capture_count; i++) {
-                            int src_idx = ch_src_start + i * subsample;
+                            int src_idx = ch_window_start + i * subsample;
                             if (src_idx < ch_count) {
                                 ui->scope_capture_values[ch][i] = ch_values[src_idx];
                             }
@@ -3091,7 +3179,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                         // DC voltage is constant, so there's no reason to limit the line length
                         SDL_RenderDrawLine(renderer, r->x, y_dc, r->x + r->w, y_dc);
                     } else {
-                        // Normal waveform rendering for AC signals
+                        // Simple linear waveform rendering - accurate amplitude display
                         for (int i = 1; i < ui->scope_capture_count; i++) {
                             double x_frac1 = (ui->scope_capture_times[i-1] - t_reference) / display_time_span;
                             double x_frac2 = (ui->scope_capture_times[i] - t_reference) / display_time_span;

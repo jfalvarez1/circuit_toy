@@ -123,7 +123,7 @@ void simulation_reset(Simulation *sim) {
     sim->history_count = 0;
     sim->history_start = 0;
     sim->history_decimate_counter = 0;
-    sim->history_decimate_factor = 1;  // No decimation initially
+    sim->history_decimate_factor = 0;  // 0 means "not yet calculated" - will be set when dt is valid
     sim->has_error = false;
     sim->error_msg[0] = '\0';
 
@@ -874,24 +874,62 @@ bool simulation_step(Simulation *sim) {
     // 3. DAC: Drive logic outputs to analog nodes
     logic_drive_outputs(sim, circuit);
 
-    // Adaptive decimation for history recording
-    // Goal: ensure history covers at least 10 seconds regardless of time step
-    // With MAX_HISTORY=10000 samples:
-    // - Target span: 10 seconds
-    // - If dt is very small, decimate to avoid buffer overflow
-    double target_history_span = 10.0;  // 10 seconds of history
-    double current_history_span = MAX_HISTORY * sim->time_step;
+    // Adaptive decimation for history recording - calculated ONCE when dt becomes valid
+    // Changing decimation mid-run causes inconsistent sample spacing and distorted waveforms
+    // history_decimate_factor == 0 means "not yet calculated"
+    if (sim->history_decimate_factor == 0 && sim->time_step >= 1e-6) {
+        // Goal: ensure history covers enough time for the largest scope time window
+        // while maintaining enough samples per cycle for waveform visibility
+        double target_history_span = 60.0;  // 60 seconds of history for long time/div
+        double current_history_span = MAX_HISTORY * sim->time_step;
 
-    int new_decimate_factor = 1;
-    if (current_history_span < target_history_span && sim->time_step > 0) {
-        new_decimate_factor = (int)ceil(target_history_span / current_history_span);
-        if (new_decimate_factor < 1) new_decimate_factor = 1;
-        if (new_decimate_factor > 10000) new_decimate_factor = 10000;  // Cap at reasonable value
+        int new_decimate_factor = 1;
+        if (current_history_span < target_history_span && sim->time_step > 0) {
+            new_decimate_factor = (int)ceil(target_history_span / current_history_span);
+            if (new_decimate_factor < 1) new_decimate_factor = 1;
+            if (new_decimate_factor > 10000) new_decimate_factor = 10000;
+        }
+
+        // IMPORTANT: Limit decimation to preserve waveform shape
+        // Need at least 20 samples per cycle of highest frequency signal
+        double max_freq = 0;
+        for (int i = 0; i < circuit->num_components; i++) {
+            Component *c = circuit->components[i];
+            if (!c) continue;
+            double freq = 0;
+            switch (c->type) {
+                case COMP_AC_VOLTAGE: freq = c->props.ac_voltage.frequency; break;
+                case COMP_SQUARE_WAVE: freq = c->props.square_wave.frequency; break;
+                case COMP_TRIANGLE_WAVE: freq = c->props.triangle_wave.frequency; break;
+                case COMP_SAWTOOTH_WAVE: freq = c->props.sawtooth_wave.frequency; break;
+                default: break;
+            }
+            if (freq > max_freq) max_freq = freq;
+        }
+
+        if (max_freq > 0) {
+            double period = 1.0 / max_freq;
+            double min_samples_per_cycle = 20.0;
+            double max_effective_dt = period / min_samples_per_cycle;
+            int max_decimate = (int)(max_effective_dt / sim->time_step);
+            if (max_decimate < 1) max_decimate = 1;
+            if (new_decimate_factor > max_decimate) {
+                new_decimate_factor = max_decimate;
+            }
+        }
+
+        sim->history_decimate_factor = new_decimate_factor;
+
+        // Reset history when decimation is first calculated
+        // This ensures we don't have stale samples from before proper dt was set
+        sim->history_count = 0;
+        sim->history_start = 0;
+        sim->history_decimate_counter = 0;
     }
 
-    // Update decimation factor if changed significantly
-    if (new_decimate_factor != sim->history_decimate_factor) {
-        sim->history_decimate_factor = new_decimate_factor;
+    // Skip history recording until decimation is calculated (factor > 0)
+    if (sim->history_decimate_factor == 0) {
+        return true;  // Continue simulation, but don't record invalid samples
     }
 
     // Record history only every N samples (decimation)

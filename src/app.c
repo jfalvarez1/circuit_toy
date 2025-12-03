@@ -2165,8 +2165,7 @@ void app_run_simulation(App *app) {
     simulation_reset(app->simulation);
     app->circuit->modified = false;  // Clear the modified flag
 
-    // Auto-adjust time step based on circuit's highest frequency
-    simulation_auto_time_step(app->simulation);
+    // NOTE: dt is NOT auto-adjusted here - user controls it via +/- and Auto buttons only
 
     // Run DC analysis first
     if (!simulation_dc_analysis(app->simulation)) {
