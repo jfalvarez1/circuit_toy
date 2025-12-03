@@ -122,6 +122,8 @@ void simulation_reset(Simulation *sim) {
 
     sim->history_count = 0;
     sim->history_start = 0;
+    sim->history_decimate_counter = 0;
+    sim->history_decimate_factor = 1;  // No decimation initially
     sim->has_error = false;
     sim->error_msg[0] = '\0';
 
@@ -657,7 +659,8 @@ static void thermal_update_components(Circuit *circuit, double dt, double sim_ti
         // dT/dt = (P - (T - T_ambient) / R_thermal) / C_thermal
         double thermal_resistance = c->thermal.thermal_resistance;
         double thermal_mass = c->thermal.thermal_mass;
-        double ambient = c->thermal.ambient_temperature;
+        // Use global environment temperature for ambient
+        double ambient = g_environment.temperature;
 
         if (thermal_mass > 0) {
             double heat_in = power;  // Power dissipation heats up
@@ -871,18 +874,43 @@ bool simulation_step(Simulation *sim) {
     // 3. DAC: Drive logic outputs to analog nodes
     logic_drive_outputs(sim, circuit);
 
-    // Record history
-    int hist_idx = (sim->history_start + sim->history_count) % MAX_HISTORY;
-    sim->history[hist_idx].time = sim->time;
+    // Adaptive decimation for history recording
+    // Goal: ensure history covers at least 10 seconds regardless of time step
+    // With MAX_HISTORY=10000 samples:
+    // - Target span: 10 seconds
+    // - If dt is very small, decimate to avoid buffer overflow
+    double target_history_span = 10.0;  // 10 seconds of history
+    double current_history_span = MAX_HISTORY * sim->time_step;
 
-    for (int i = 0; i < circuit->num_probes && i < MAX_PROBES; i++) {
-        sim->history[hist_idx].values[i] = circuit->probes[i].voltage;
+    int new_decimate_factor = 1;
+    if (current_history_span < target_history_span && sim->time_step > 0) {
+        new_decimate_factor = (int)ceil(target_history_span / current_history_span);
+        if (new_decimate_factor < 1) new_decimate_factor = 1;
+        if (new_decimate_factor > 10000) new_decimate_factor = 10000;  // Cap at reasonable value
     }
 
-    if (sim->history_count < MAX_HISTORY) {
-        sim->history_count++;
-    } else {
-        sim->history_start = (sim->history_start + 1) % MAX_HISTORY;
+    // Update decimation factor if changed significantly
+    if (new_decimate_factor != sim->history_decimate_factor) {
+        sim->history_decimate_factor = new_decimate_factor;
+    }
+
+    // Record history only every N samples (decimation)
+    sim->history_decimate_counter++;
+    if (sim->history_decimate_counter >= sim->history_decimate_factor) {
+        sim->history_decimate_counter = 0;
+
+        int hist_idx = (sim->history_start + sim->history_count) % MAX_HISTORY;
+        sim->history[hist_idx].time = sim->time;
+
+        for (int i = 0; i < circuit->num_probes && i < MAX_PROBES; i++) {
+            sim->history[hist_idx].values[i] = circuit->probes[i].voltage;
+        }
+
+        if (sim->history_count < MAX_HISTORY) {
+            sim->history_count++;
+        } else {
+            sim->history_start = (sim->history_start + 1) % MAX_HISTORY;
+        }
     }
 
     return true;
@@ -1011,6 +1039,8 @@ double simulation_get_probe_voltage(Simulation *sim, int probe_idx) {
 int simulation_get_history(Simulation *sim, int probe_idx,
                            double *times, double *values, int max_points) {
     if (!sim || probe_idx < 0 || probe_idx >= MAX_PROBES) return 0;
+    // Also check against actual number of probes in circuit to avoid stale data
+    if (sim->circuit && probe_idx >= sim->circuit->num_probes) return 0;
 
     int count = MIN(sim->history_count, max_points);
 

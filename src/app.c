@@ -1601,7 +1601,9 @@ void app_update(App *app) {
     }
 
     // Auto-pause simulation when circuit is modified while running
-    if (app->simulation->state == SIM_RUNNING && app->circuit->modified) {
+    // Exception: Don't pause if a sweep is active (sweeps modify circuit values during simulation)
+    if (app->simulation->state == SIM_RUNNING && app->circuit->modified &&
+        !circuit_has_active_sweep(app->circuit)) {
         simulation_pause(app->simulation);
         ui_set_status(&app->ui, "Circuit changed - simulation paused");
     }
@@ -1729,6 +1731,146 @@ void app_update(App *app) {
         app->ui.hovered_node_voltage = hovered->voltage;
         app->ui.show_node_tooltip = true;
     }
+
+    // Update component hover tooltip (only if not hovering over a node)
+    app->ui.show_comp_tooltip = false;
+    app->ui.hovered_comp_id = -1;
+    if (!app->ui.show_node_tooltip) {
+        Component *hovered_comp = circuit_find_component_at(app->circuit, app->ui.world_x, app->ui.world_y);
+        if (hovered_comp && hovered_comp->num_terminals >= 2) {
+            app->ui.hovered_comp_id = hovered_comp->id;
+
+            // Get node voltages at component terminals
+            double v0 = 0, v1 = 0;
+            if (hovered_comp->node_ids[0] > 0) {
+                Node *n0 = circuit_get_node(app->circuit, hovered_comp->node_ids[0]);
+                if (n0) v0 = n0->voltage;
+            }
+            if (hovered_comp->node_ids[1] > 0) {
+                Node *n1 = circuit_get_node(app->circuit, hovered_comp->node_ids[1]);
+                if (n1) v1 = n1->voltage;
+            }
+
+            // Voltage drop across component (terminal 0 is positive reference)
+            app->ui.hovered_comp_voltage = v0 - v1;
+
+            // Calculate current through component based on type
+            double current = 0;
+            switch (hovered_comp->type) {
+                case COMP_RESISTOR: {
+                    double R = hovered_comp->props.resistor.resistance;
+                    if (R > 0.001) current = (v0 - v1) / R;
+                    break;
+                }
+                case COMP_CAPACITOR:
+                case COMP_CAPACITOR_ELEC: {
+                    // For capacitors, current is C * dV/dt, approximate from voltage
+                    double C = (hovered_comp->type == COMP_CAPACITOR) ?
+                               hovered_comp->props.capacitor.capacitance :
+                               hovered_comp->props.capacitor_elec.capacitance;
+                    // Estimate current from stored charge - this is approximate
+                    current = (v0 - v1) * C * 1000;  // Rough estimate
+                    break;
+                }
+                case COMP_INDUCTOR: {
+                    double L = hovered_comp->props.inductor.inductance;
+                    // Inductor current - use stored state if available
+                    current = (v0 - v1) / (L > 0.001 ? L : 0.001);  // Rough estimate
+                    break;
+                }
+                case COMP_DIODE:
+                case COMP_LED:
+                case COMP_ZENER:
+                case COMP_SCHOTTKY: {
+                    // Diode current: I = Is * (exp(V/Vt) - 1)
+                    double Vt = 0.026;
+                    double Is = 1e-12;
+                    double Vd = v0 - v1;
+                    if (Vd > 0) {
+                        current = Is * (exp(fmin(Vd / Vt, 40)) - 1);
+                    }
+                    break;
+                }
+                case COMP_DC_VOLTAGE:
+                case COMP_AC_VOLTAGE:
+                case COMP_SQUARE_WAVE:
+                case COMP_TRIANGLE_WAVE:
+                case COMP_SAWTOOTH_WAVE:
+                case COMP_NOISE_SOURCE:
+                case COMP_DC_CURRENT: {
+                    // For sources, calculate current by summing currents through other components
+                    // connected to the source's terminals (using KCL)
+                    // Use the node connected to terminal 0 (positive terminal)
+                    int source_node = hovered_comp->node_ids[0];
+                    if (source_node > 0) {
+                        double total_current = 0;
+                        // Sum currents through all other components at this node
+                        for (int i = 0; i < app->circuit->num_components; i++) {
+                            Component *c = app->circuit->components[i];
+                            if (!c || c->id == hovered_comp->id) continue;  // Skip self and null
+
+                            // Check if component is connected to this node
+                            for (int t = 0; t < c->num_terminals; t++) {
+                                if (c->node_ids[t] == source_node) {
+                                    // Get the other terminal's node voltage
+                                    int other_term = (t == 0) ? 1 : 0;
+                                    double v_this = 0, v_other = 0;
+
+                                    Node *n_this = circuit_get_node(app->circuit, c->node_ids[t]);
+                                    if (n_this) v_this = n_this->voltage;
+
+                                    if (other_term < c->num_terminals && c->node_ids[other_term] > 0) {
+                                        Node *n_other = circuit_get_node(app->circuit, c->node_ids[other_term]);
+                                        if (n_other) v_other = n_other->voltage;
+                                    }
+
+                                    // Calculate current flowing OUT of the source node
+                                    // Direction: current flows from source node to other node
+                                    double i_comp = 0;
+                                    switch (c->type) {
+                                        case COMP_RESISTOR: {
+                                            double R = c->props.resistor.resistance;
+                                            if (R > 0.001) {
+                                                // Current from this node to other
+                                                i_comp = (v_this - v_other) / R;
+                                            }
+                                            break;
+                                        }
+                                        case COMP_DIODE:
+                                        case COMP_LED:
+                                        case COMP_ZENER:
+                                        case COMP_SCHOTTKY: {
+                                            double Vt_d = 0.026;
+                                            double Is_d = 1e-12;
+                                            double Vd_d = v_this - v_other;
+                                            if (t == 0) {  // Anode at source node
+                                                i_comp = Is_d * (exp(fmin(Vd_d / Vt_d, 40)) - 1);
+                                            } else {  // Cathode at source node
+                                                i_comp = -Is_d * (exp(fmin(-Vd_d / Vt_d, 40)) - 1);
+                                            }
+                                            break;
+                                        }
+                                        default:
+                                            break;
+                                    }
+                                    total_current += i_comp;
+                                    break;  // Only count once per component
+                                }
+                            }
+                        }
+                        current = total_current;
+                    }
+                    break;
+                }
+                default:
+                    // For other components (transistors, opamps, etc.), show 0
+                    current = 0;
+                    break;
+            }
+            app->ui.hovered_comp_current = current;
+            app->ui.show_comp_tooltip = true;
+        }
+    }
 }
 
 void app_render(App *app) {
@@ -1781,6 +1923,12 @@ void app_render(App *app) {
     if (app->ui.show_node_tooltip) {
         render_node_voltage_tooltip(app->render, app->ui.cursor_x, app->ui.cursor_y,
                                     app->ui.hovered_node_voltage);
+    }
+
+    // Render component tooltip when hovering over a component
+    if (app->ui.show_comp_tooltip) {
+        render_component_tooltip(app->render, app->ui.cursor_x, app->ui.cursor_y,
+                                 app->ui.hovered_comp_voltage, app->ui.hovered_comp_current);
     }
 
     // Render ghost component if placing

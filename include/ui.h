@@ -276,7 +276,7 @@ typedef struct {
     bool dragging_trigger_level;     // Currently dragging trigger level indicator
 
     // Triggered capture state (for stable display)
-    // Use smaller buffer for display (1000 samples is plenty for visual display)
+    // 1000 samples is enough - we subsample history when needed
     #define SCOPE_CAPTURE_SIZE 1000
     double scope_capture_times[SCOPE_CAPTURE_SIZE];     // Time values of captured data
     double scope_capture_values[MAX_PROBES][SCOPE_CAPTURE_SIZE];  // Voltage values per channel
@@ -370,6 +370,12 @@ typedef struct {
     int hovered_node_id;            // ID of node currently being hovered (-1 if none)
     double hovered_node_voltage;    // Voltage at hovered node
     bool show_node_tooltip;         // Whether to show the tooltip
+
+    // Component hover tooltip
+    int hovered_comp_id;            // ID of component currently being hovered (-1 if none)
+    double hovered_comp_voltage;    // Voltage drop across component (V+ - V-)
+    double hovered_comp_current;    // Current through component (A)
+    bool show_comp_tooltip;         // Whether to show the component tooltip
 
     // Subcircuit editor dialog (Ctrl+G to create from selection)
     bool show_subcircuit_dialog;            // Show the create subcircuit dialog

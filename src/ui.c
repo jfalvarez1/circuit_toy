@@ -192,9 +192,9 @@ void ui_init(UIState *ui) {
     // Time step controls - positioned after speed slider text
     int ts_x = ui->speed_slider.x + 50 + ui->speed_slider.w + 60;  // After speed slider + text
     ui->timestep_display_x = ts_x;
-    ui->btn_timestep_down = (Button){{ts_x + 55, 12, 20, 20}, "-", "Decrease time step", false, false, true, false};
-    ui->btn_timestep_up = (Button){{ts_x + 77, 12, 20, 20}, "+", "Increase time step", false, false, true, false};
-    ui->btn_timestep_auto = (Button){{ts_x + 100, 10, 40, 24}, "Auto", "Auto time step", false, false, true, false};
+    ui->btn_timestep_down = (Button){{ts_x + 70, 12, 20, 20}, "-", "Decrease time step", false, false, true, false};
+    ui->btn_timestep_up = (Button){{ts_x + 92, 12, 20, 20}, "+", "Increase time step", false, false, true, false};
+    ui->btn_timestep_auto = (Button){{ts_x + 115, 10, 40, 24}, "Auto", "Auto time step", false, false, true, false};
     ui->display_time_step = 1e-7;  // Default 100 nanoseconds (will be updated from simulation)
 
     // Environment sliders (positioned in status bar area - will be updated in ui_update_layout)
@@ -2830,11 +2830,9 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             // Calculate time window (10 divisions on the scope)
             double time_window = 10.0 * ui->scope_time_div;
 
-            // Get more samples than needed to search for trigger points
-            // We want at least 2x the display window to find triggers
-            int samples_for_trigger = (int)(time_window * 3.0 / sim->time_step);
-            if (samples_for_trigger < 100) samples_for_trigger = 100;
-            if (samples_for_trigger > MAX_HISTORY) samples_for_trigger = MAX_HISTORY;
+            // Always request all available history - the simulation uses adaptive decimation
+            // so we can't predict how many samples cover a given time span
+            int samples_for_trigger = MAX_HISTORY;
 
             // Get trigger channel data for trigger detection
             double trig_times[MAX_HISTORY];
@@ -2842,7 +2840,29 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             int trig_ch = ui->trigger_channel;
             if (trig_ch >= ui->scope_num_channels) trig_ch = 0;
             int trig_probe = ui->scope_channels[trig_ch].probe_idx;
-            int trig_count = simulation_get_history(sim, trig_probe, trig_times, trig_values, samples_for_trigger);
+            int trig_count = 0;
+
+            // Get trigger data (simulation_get_history returns 0 for invalid probes)
+            if (trig_probe >= 0) {
+                trig_count = simulation_get_history(sim, trig_probe, trig_times, trig_values, samples_for_trigger);
+            }
+
+            // If trigger channel has no data, find any channel with valid data
+            // This ensures DC signals display even when trigger source probe was removed
+            if (trig_count < 2) {
+                for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
+                    if (!ui->scope_channels[ch].enabled) continue;
+                    int ch_probe = ui->scope_channels[ch].probe_idx;
+                    if (ch_probe < 0) continue;
+                    int ch_count = simulation_get_history(sim, ch_probe, trig_times, trig_values, samples_for_trigger);
+                    if (ch_count >= 2) {
+                        trig_count = ch_count;
+                        trig_ch = ch;
+                        trig_probe = ch_probe;
+                        break;
+                    }
+                }
+            }
 
             // Search for trigger point in the data
             int trigger_idx = -1;
@@ -2912,36 +2932,37 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 ui->scope_trigger_sample_idx = trigger_idx;
                 ui->triggered = true;
 
-                // Calculate how many samples to display (for the time window)
-                int display_samples = (int)(time_window / sim->time_step);
-                if (display_samples < 2) display_samples = 2;
-                if (display_samples > SCOPE_CAPTURE_SIZE - 10) display_samples = SCOPE_CAPTURE_SIZE - 10;
-
-                // Capture data: start some samples before trigger for pre-trigger view
-                // Put trigger point at about 20% from left edge
-                int pre_trigger = display_samples / 5;
-                int capture_start = trigger_idx - pre_trigger;
-                if (capture_start < 0) capture_start = 0;
-                int capture_end = capture_start + display_samples;
-                if (capture_end > trig_count) capture_end = trig_count;
-
-                ui->scope_capture_count = capture_end - capture_start;
-                if (ui->scope_capture_count > SCOPE_CAPTURE_SIZE) ui->scope_capture_count = SCOPE_CAPTURE_SIZE;
-
-                // Capture times (from trigger channel)
-                for (int i = 0; i < ui->scope_capture_count; i++) {
-                    ui->scope_capture_times[i] = trig_times[capture_start + i];
+                // Calculate subsample factor if history is larger than capture buffer
+                int subsample = 1;
+                if (trig_count > SCOPE_CAPTURE_SIZE - 10) {
+                    subsample = (trig_count + SCOPE_CAPTURE_SIZE - 11) / (SCOPE_CAPTURE_SIZE - 10);
+                    if (subsample < 1) subsample = 1;
                 }
 
-                // Capture all channel values
+                // With subsampling, we can capture the entire history
+                int capture_samples = (trig_count + subsample - 1) / subsample;
+                if (capture_samples > SCOPE_CAPTURE_SIZE - 10) capture_samples = SCOPE_CAPTURE_SIZE - 10;
+
+                ui->scope_capture_count = capture_samples;
+
+                // Capture times with subsampling (from trigger channel)
+                for (int i = 0; i < ui->scope_capture_count; i++) {
+                    int src_idx = i * subsample;
+                    if (src_idx >= trig_count) src_idx = trig_count - 1;
+                    ui->scope_capture_times[i] = trig_times[src_idx];
+                }
+
+                // Capture all channel values with subsampling
                 for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
                     double ch_times[MAX_HISTORY], ch_values[MAX_HISTORY];
                     int ch_probe = ui->scope_channels[ch].probe_idx;
                     int ch_count = simulation_get_history(sim, ch_probe, ch_times, ch_values, samples_for_trigger);
 
-                    // Match samples by index (assumes same time base)
-                    for (int i = 0; i < ui->scope_capture_count && (capture_start + i) < ch_count; i++) {
-                        ui->scope_capture_values[ch][i] = ch_values[capture_start + i];
+                    for (int i = 0; i < ui->scope_capture_count; i++) {
+                        int src_idx = i * subsample;
+                        if (src_idx < ch_count) {
+                            ui->scope_capture_values[ch][i] = ch_values[src_idx];
+                        }
                     }
                 }
 
@@ -2950,31 +2971,50 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 use_capture = true;
             } else {
                 // No trigger found
-                if (ui->trigger_mode == TRIG_AUTO) {
+                if (ui->trigger_mode == TRIG_AUTO || ui->trigger_mode == TRIG_NORMAL) {
                     // AUTO mode: free-run, show latest data without triggering
-                    // Use the most recent samples
-                    int display_samples = (int)(time_window / sim->time_step);
-                    if (display_samples < 2) display_samples = 2;
-                    if (display_samples > trig_count) display_samples = trig_count;
-                    if (display_samples > SCOPE_CAPTURE_SIZE - 10) display_samples = SCOPE_CAPTURE_SIZE - 10;
+                    // NORMAL mode without trigger: also free-run (DC signals never trigger)
 
-                    int capture_start = trig_count - display_samples;
-                    if (capture_start < 0) capture_start = 0;
-
-                    ui->scope_capture_count = trig_count - capture_start;
-                    if (ui->scope_capture_count > SCOPE_CAPTURE_SIZE) ui->scope_capture_count = SCOPE_CAPTURE_SIZE;
-
-                    for (int i = 0; i < ui->scope_capture_count; i++) {
-                        ui->scope_capture_times[i] = trig_times[capture_start + i];
+                    // Calculate subsample factor if history is larger than capture buffer
+                    int subsample = 1;
+                    if (trig_count > SCOPE_CAPTURE_SIZE - 10) {
+                        subsample = (trig_count + SCOPE_CAPTURE_SIZE - 11) / (SCOPE_CAPTURE_SIZE - 10);
+                        if (subsample < 1) subsample = 1;
                     }
 
+                    // With subsampling, we can capture the entire history
+                    int capture_samples = (trig_count + subsample - 1) / subsample;
+                    if (capture_samples > SCOPE_CAPTURE_SIZE - 10) capture_samples = SCOPE_CAPTURE_SIZE - 10;
+
+                    ui->scope_capture_count = capture_samples;
+
+                    // For free-run mode, capture from the END of history (most recent data)
+                    // Calculate start offset to ensure we get the latest samples
+                    int src_start = trig_count - (capture_samples * subsample);
+                    if (src_start < 0) src_start = 0;
+
+                    // Capture times with subsampling from the end
+                    for (int i = 0; i < ui->scope_capture_count; i++) {
+                        int src_idx = src_start + i * subsample;
+                        if (src_idx >= trig_count) src_idx = trig_count - 1;
+                        ui->scope_capture_times[i] = trig_times[src_idx];
+                    }
+
+                    // Capture all channel values with subsampling from the end
                     for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
                         double ch_times[MAX_HISTORY], ch_values[MAX_HISTORY];
                         int ch_probe = ui->scope_channels[ch].probe_idx;
                         int ch_count = simulation_get_history(sim, ch_probe, ch_times, ch_values, samples_for_trigger);
 
-                        for (int i = 0; i < ui->scope_capture_count && (capture_start + i) < ch_count; i++) {
-                            ui->scope_capture_values[ch][i] = ch_values[capture_start + i];
+                        // Use same start offset for all channels
+                        int ch_src_start = ch_count - (capture_samples * subsample);
+                        if (ch_src_start < 0) ch_src_start = 0;
+
+                        for (int i = 0; i < ui->scope_capture_count; i++) {
+                            int src_idx = ch_src_start + i * subsample;
+                            if (src_idx < ch_count) {
+                                ui->scope_capture_values[ch][i] = ch_values[src_idx];
+                            }
                         }
                     }
 
@@ -2992,7 +3032,22 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 double t_start = ui->scope_capture_times[0];
                 double t_end = ui->scope_capture_times[ui->scope_capture_count - 1];
                 double t_span = t_end - t_start;
-                if (t_span < 1e-12) t_span = time_window;
+
+                // Always use time_window for proper scaling relative to time/div setting
+                // This ensures the grid divisions match the time/div setting exactly
+                double display_time_span = time_window;
+                double t_reference;
+
+                // Check if we have enough data to fill the time window
+                // Use 90% threshold to account for sampling granularity
+                if (t_span >= time_window * 0.9) {
+                    // Enough data - anchor to right edge, waveform fills screen
+                    t_reference = t_end - time_window;
+                } else {
+                    // Not enough data yet - anchor to left edge
+                    // Data starts at x=0 and grows rightward as simulation runs
+                    t_reference = t_start;
+                }
 
                 for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
                     if (!ui->scope_channels[ch].enabled) continue;
@@ -3004,18 +3059,52 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
                     double offset = ui->scope_channels[ch].offset;
 
-                    for (int i = 1; i < ui->scope_capture_count; i++) {
-                        double x_frac1 = (ui->scope_capture_times[i-1] - t_start) / t_span;
-                        double x_frac2 = (ui->scope_capture_times[i] - t_start) / t_span;
-                        int x1 = r->x + (int)(x_frac1 * r->w);
-                        int x2 = r->x + (int)(x_frac2 * r->w);
-                        int y1 = center_y - (int)((ui->scope_capture_values[ch][i-1] + offset) * scale);
-                        int y2 = center_y - (int)((ui->scope_capture_values[ch][i] + offset) * scale);
-                        x1 = CLAMP(x1, r->x, r->x + r->w);
-                        x2 = CLAMP(x2, r->x, r->x + r->w);
-                        y1 = CLAMP(y1, r->y, r->y + r->h);
-                        y2 = CLAMP(y2, r->y, r->y + r->h);
-                        SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
+                    // Check if this is a DC signal (very low variance)
+                    double v_min = ui->scope_capture_values[ch][0];
+                    double v_max = ui->scope_capture_values[ch][0];
+                    double v_sum = 0;
+                    for (int i = 0; i < ui->scope_capture_count; i++) {
+                        double v = ui->scope_capture_values[ch][i];
+                        if (v < v_min) v_min = v;
+                        if (v > v_max) v_max = v;
+                        v_sum += v;
+                    }
+                    double v_avg = v_sum / ui->scope_capture_count;
+                    double v_range = v_max - v_min;
+                    bool is_dc = (v_range < 0.01);  // Less than 10mV variation = DC
+
+                    // Calculate x range for the captured data
+                    double x_frac_start = (ui->scope_capture_times[0] - t_reference) / display_time_span;
+                    double x_frac_end = (ui->scope_capture_times[ui->scope_capture_count - 1] - t_reference) / display_time_span;
+                    int x_start = r->x + (int)(x_frac_start * r->w);
+                    int x_end = r->x + (int)(x_frac_end * r->w);
+                    x_start = CLAMP(x_start, r->x, r->x + r->w);
+                    x_end = CLAMP(x_end, r->x, r->x + r->w);
+
+                    if (is_dc && ui->scope_capture_count >= 2) {
+                        // For DC signals, draw a horizontal line at the average voltage
+                        // DC signals should ALWAYS span the full visible width since the value is constant
+                        int y_dc = center_y - (int)((v_avg + offset) * scale);
+                        y_dc = CLAMP(y_dc, r->y, r->y + r->h);
+
+                        // Always draw DC line across full scope width
+                        // DC voltage is constant, so there's no reason to limit the line length
+                        SDL_RenderDrawLine(renderer, r->x, y_dc, r->x + r->w, y_dc);
+                    } else {
+                        // Normal waveform rendering for AC signals
+                        for (int i = 1; i < ui->scope_capture_count; i++) {
+                            double x_frac1 = (ui->scope_capture_times[i-1] - t_reference) / display_time_span;
+                            double x_frac2 = (ui->scope_capture_times[i] - t_reference) / display_time_span;
+                            int x1 = r->x + (int)(x_frac1 * r->w);
+                            int x2 = r->x + (int)(x_frac2 * r->w);
+                            int y1 = center_y - (int)((ui->scope_capture_values[ch][i-1] + offset) * scale);
+                            int y2 = center_y - (int)((ui->scope_capture_values[ch][i] + offset) * scale);
+                            x1 = CLAMP(x1, r->x, r->x + r->w);
+                            x2 = CLAMP(x2, r->x, r->x + r->w);
+                            y1 = CLAMP(y1, r->y, r->y + r->h);
+                            y2 = CLAMP(y2, r->y, r->y + r->h);
+                            SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
+                        }
                     }
 
                     // Draw ground reference arrow on left side (channel color)

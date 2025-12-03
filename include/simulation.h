@@ -73,6 +73,10 @@ typedef struct Simulation {
     int history_count;
     int history_start;  // Circular buffer start
 
+    // Adaptive decimation for history (ensures history covers long time spans)
+    int history_decimate_counter;   // Counter for decimation
+    int history_decimate_factor;    // Current decimation factor (record every Nth sample)
+
     // Error message
     char error_msg[256];
     bool has_error;

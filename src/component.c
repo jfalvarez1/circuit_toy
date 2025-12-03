@@ -2135,7 +2135,20 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         }
 
         case COMP_RESISTOR: {
-            double G = 1.0 / comp->props.resistor.resistance;
+            double R_base = comp->props.resistor.resistance;
+            double R = R_base;
+
+            // Apply temperature coefficient only in non-ideal mode
+            // R(T) = R_base * (1 + alpha * (T - T_ref))
+            // where alpha = temp_coeff / 1e6 (ppm to fraction), T_ref = 25°C
+            if (!comp->props.resistor.ideal) {
+                double alpha = comp->props.resistor.temp_coeff / 1e6;  // ppm/°C to fraction
+                double dT = g_environment.temperature - 25.0;  // Delta from reference temp
+                R = R_base * (1.0 + alpha * dT);
+            }
+
+            if (R < 0.001) R = 0.001;  // Minimum resistance to avoid divide by zero
+            double G = 1.0 / R;
             STAMP_CONDUCTANCE(n[0], n[1], G);
             break;
         }
@@ -2191,7 +2204,9 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
 
         case COMP_DIODE: {
             double Is = comp->props.diode.is;
-            double Vt = comp->props.diode.vt;
+            // Calculate thermal voltage from global environment temperature
+            // Vt = k*T/q where k/q = 8.617e-5 V/K
+            double Vt = 8.617e-5 * (g_environment.temperature + 273.15);
             double nn = comp->props.diode.n;
             double nVt = nn * Vt;
 
@@ -2216,7 +2231,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         case COMP_ZENER: {
             // Zener diode - bidirectional conduction
             double Is = comp->props.zener.is;
-            double Vt = comp->props.zener.vt;
+            // Calculate thermal voltage from global environment temperature
+            double Vt = 8.617e-5 * (g_environment.temperature + 273.15);
             double nn = comp->props.zener.n;
             double Vz = comp->props.zener.vz;
             double nVt = nn * Vt;
@@ -2259,16 +2275,16 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         case COMP_SCHOTTKY:
         case COMP_LED: {
             // Similar to regular diode but with different parameters
-            double Is, Vt, nn;
+            double Is, nn;
             if (comp->type == COMP_SCHOTTKY) {
                 Is = comp->props.schottky.is;
-                Vt = comp->props.schottky.vt;
                 nn = comp->props.schottky.n;
             } else {
                 Is = comp->props.led.is;
-                Vt = comp->props.led.vt;
                 nn = comp->props.led.n;
             }
+            // Calculate thermal voltage from global environment temperature
+            double Vt = 8.617e-5 * (g_environment.temperature + 273.15);
             double nVt = nn * Vt;
 
             double Vd = 0.6;
@@ -2301,11 +2317,11 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double Is = comp->props.bjt.is;      // Saturation current
             double Vaf = comp->props.bjt.vaf;    // Early voltage
             double nf = comp->props.bjt.nf;      // Emission coefficient
-            double temp = comp->props.bjt.temp;  // Temperature
             bool ideal = comp->props.bjt.ideal;
 
-            // Thermal voltage at temperature
-            double Vt = 8.617e-5 * temp;  // k*T/q
+            // Calculate thermal voltage from global environment temperature
+            // Vt = k*T/q where k/q = 8.617e-5 V/K, T must be in Kelvin
+            double Vt = 8.617e-5 * (g_environment.temperature + 273.15);
 
             // For PNP, invert voltage polarities
             double sign = (comp->type == COMP_PNP_BJT) ? -1.0 : 1.0;
@@ -2407,6 +2423,20 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double W = comp->props.mosfet.w;
             double L = comp->props.mosfet.l;
             bool ideal = comp->props.mosfet.ideal;
+
+            // Temperature effects (non-ideal mode)
+            // Reference temperature is 25°C (298.15K)
+            if (!ideal) {
+                double T = g_environment.temperature + 273.15;  // Current temp in Kelvin
+                double T0 = 298.15;  // Reference temp (25°C) in Kelvin
+                double dT_C = g_environment.temperature - 25.0;  // Delta in Celsius
+
+                // Vth decreases ~2mV/°C (typical for silicon MOSFETs)
+                Vth = Vth - 0.002 * dT_C;
+
+                // Mobility decreases with temperature: Kp(T) = Kp(T0) * (T0/T)^1.5
+                Kp = Kp * pow(T0 / T, 1.5);
+            }
 
             // Effective transconductance: K = Kp * W / L
             double K = Kp * (W / L);
@@ -4194,7 +4224,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // 7-segment display: terminals 0-3=a,b,c,d, 4=COM, 5-8=e,f,g,DP
             // Each segment is a diode from segment pin to COM
             double Is = 1e-20;
-            double Vt = 0.026;
+            // Calculate thermal voltage from global environment temperature
+            double Vt = 8.617e-5 * (g_environment.temperature + 273.15);
             double nn = 2.0;
             double nVt = nn * Vt;
             int com = 4;  // COM is terminal 4
@@ -4224,7 +4255,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         case COMP_LED_ARRAY: {
             // LED array: last terminal is common
             double Is = 1e-20;
-            double Vt = 0.026;
+            // Calculate thermal voltage from global environment temperature
+            double Vt = 8.617e-5 * (g_environment.temperature + 273.15);
             double nn = 2.0;
             double nVt = nn * Vt;
             int com = comp->num_terminals - 1;
@@ -4253,7 +4285,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // columns C0-C7 (terminals 8-15) are cathodes
             // Each LED(r,c) is connected between row r and column c
             double Is = 1e-20;
-            double Vt = 0.026;
+            // Calculate thermal voltage from global environment temperature
+            double Vt = 8.617e-5 * (g_environment.temperature + 273.15);
             double nn = 2.0;
             double nVt = nn * Vt;
 

@@ -1520,3 +1520,50 @@ void circuit_clear_undo(Circuit *circuit) {
     }
     circuit->undo_count = 0;
 }
+
+bool circuit_has_active_sweep(Circuit *circuit) {
+    if (!circuit) return false;
+
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+        if (!comp) continue;
+
+        switch (comp->type) {
+            case COMP_DC_VOLTAGE:
+                if (comp->props.dc_voltage.voltage_sweep.enabled)
+                    return true;
+                break;
+            case COMP_AC_VOLTAGE:
+                if (comp->props.ac_voltage.amplitude_sweep.enabled ||
+                    comp->props.ac_voltage.frequency_sweep.enabled)
+                    return true;
+                break;
+            case COMP_DC_CURRENT:
+                if (comp->props.dc_current.current_sweep.enabled)
+                    return true;
+                break;
+            case COMP_SQUARE_WAVE:
+                if (comp->props.square_wave.amplitude_sweep.enabled ||
+                    comp->props.square_wave.frequency_sweep.enabled)
+                    return true;
+                break;
+            case COMP_TRIANGLE_WAVE:
+                if (comp->props.triangle_wave.amplitude_sweep.enabled ||
+                    comp->props.triangle_wave.frequency_sweep.enabled)
+                    return true;
+                break;
+            case COMP_SAWTOOTH_WAVE:
+                if (comp->props.sawtooth_wave.amplitude_sweep.enabled ||
+                    comp->props.sawtooth_wave.frequency_sweep.enabled)
+                    return true;
+                break;
+            case COMP_NOISE_SOURCE:
+                if (comp->props.noise_source.amplitude_sweep.enabled)
+                    return true;
+                break;
+            default:
+                break;
+        }
+    }
+    return false;
+}

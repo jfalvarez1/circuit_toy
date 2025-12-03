@@ -116,4 +116,7 @@ Color temperature_to_color(double temp, double min_temp, double max_temp);
 // Node voltage tooltip (renders near cursor when hovering over a node)
 void render_node_voltage_tooltip(RenderContext *ctx, int screen_x, int screen_y, double voltage);
 
+// Component tooltip (renders voltage drop and current when hovering over a component)
+void render_component_tooltip(RenderContext *ctx, int screen_x, int screen_y, double voltage, double current);
+
 #endif // RENDER_H

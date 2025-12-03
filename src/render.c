@@ -4232,3 +4232,74 @@ void render_node_voltage_tooltip(RenderContext *ctx, int screen_x, int screen_y,
     Color text_color = {0, 255, 200, 255};  // Cyan-green for visibility
     render_draw_text_small(ctx, voltage_str, tooltip_x + padding, tooltip_y + padding, text_color);
 }
+
+// Render component tooltip showing voltage drop and current
+void render_component_tooltip(RenderContext *ctx, int screen_x, int screen_y, double voltage, double current) {
+    if (!ctx) return;
+
+    // Format voltage string
+    char voltage_str[32];
+    if (fabs(voltage) >= 1000.0) {
+        snprintf(voltage_str, sizeof(voltage_str), "V: %.2f kV", voltage / 1000.0);
+    } else if (fabs(voltage) >= 1.0) {
+        snprintf(voltage_str, sizeof(voltage_str), "V: %.3f V", voltage);
+    } else if (fabs(voltage) >= 0.001) {
+        snprintf(voltage_str, sizeof(voltage_str), "V: %.2f mV", voltage * 1000.0);
+    } else if (fabs(voltage) >= 0.000001) {
+        snprintf(voltage_str, sizeof(voltage_str), "V: %.2f uV", voltage * 1000000.0);
+    } else {
+        snprintf(voltage_str, sizeof(voltage_str), "V: %.3f V", voltage);
+    }
+
+    // Format current string
+    char current_str[32];
+    double abs_current = fabs(current);
+    if (abs_current >= 1.0) {
+        snprintf(current_str, sizeof(current_str), "I: %.3f A", current);
+    } else if (abs_current >= 0.001) {
+        snprintf(current_str, sizeof(current_str), "I: %.2f mA", current * 1000.0);
+    } else if (abs_current >= 0.000001) {
+        snprintf(current_str, sizeof(current_str), "I: %.2f uA", current * 1000000.0);
+    } else if (abs_current >= 0.000000001) {
+        snprintf(current_str, sizeof(current_str), "I: %.2f nA", current * 1000000000.0);
+    } else {
+        snprintf(current_str, sizeof(current_str), "I: %.3f A", current);
+    }
+
+    // Calculate tooltip dimensions (two lines)
+    int text_width1 = strlen(voltage_str) * 7;
+    int text_width2 = strlen(current_str) * 7;
+    int text_width = (text_width1 > text_width2) ? text_width1 : text_width2;
+    int line_height = 14;
+    int padding = 6;
+    int tooltip_w = text_width + padding * 2;
+    int tooltip_h = line_height * 2 + padding * 2 + 2;  // 2 lines + spacing
+
+    // Position tooltip above and to the right of cursor
+    int tooltip_x = screen_x + 15;
+    int tooltip_y = screen_y - tooltip_h - 5;
+
+    // Keep tooltip on screen
+    if (tooltip_x + tooltip_w > 1920) tooltip_x = screen_x - tooltip_w - 5;
+    if (tooltip_y < 0) tooltip_y = screen_y + 20;
+
+    // Draw tooltip background with semi-transparent dark fill
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+
+    // Dark background
+    SDL_SetRenderDrawColor(ctx->renderer, 30, 30, 40, 230);
+    SDL_Rect bg_rect = {tooltip_x, tooltip_y, tooltip_w, tooltip_h};
+    SDL_RenderFillRect(ctx->renderer, &bg_rect);
+
+    // Cyan border (matches circuit theme)
+    SDL_SetRenderDrawColor(ctx->renderer, 0, 200, 255, 255);
+    SDL_RenderDrawRect(ctx->renderer, &bg_rect);
+
+    // Draw voltage text (first line)
+    Color voltage_color = {0, 255, 200, 255};  // Cyan-green for voltage
+    render_draw_text_small(ctx, voltage_str, tooltip_x + padding, tooltip_y + padding, voltage_color);
+
+    // Draw current text (second line)
+    Color current_color = {255, 200, 0, 255};  // Yellow-orange for current
+    render_draw_text_small(ctx, current_str, tooltip_x + padding, tooltip_y + padding + line_height + 2, current_color);
+}

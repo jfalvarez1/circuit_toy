@@ -171,4 +171,7 @@ void circuit_clear_redo(Circuit *circuit);
 bool circuit_save(Circuit *circuit, const char *filename);
 bool circuit_load(Circuit *circuit, const char *filename);
 
+// Check if any component has an active sweep (voltage, frequency, or amplitude)
+bool circuit_has_active_sweep(Circuit *circuit);
+
 #endif // CIRCUIT_H
