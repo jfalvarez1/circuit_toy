@@ -1,5 +1,7 @@
 # Circuit Playground Simulator
 
+**Latest Release: [v2.5.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v2.5.0)**
+
 A native desktop circuit simulator written in C with SDL2, featuring a synthwave-themed interface. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
 
 ![Circuit Playground Screenshot](screenshot.png)
