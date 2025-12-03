@@ -77,6 +77,11 @@ typedef struct Simulation {
     char error_msg[256];
     bool has_error;
 
+    // Short circuit detection
+    bool has_short_circuit;
+    int short_circuit_comp_ids[8];  // Component IDs involved in short
+    int short_circuit_count;        // Number of components in short
+
     // Frequency response data
     FreqResponsePoint freq_response[MAX_FREQ_POINTS];
     int freq_response_count;

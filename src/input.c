@@ -448,8 +448,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     }
 
                     case TOOL_COMPONENT: {
-                        // Don't allow placing components while simulation running
-                        if (input->sim_running) break;
+                        // Allow placing components while simulation is running - will reset sim
                         if (input->placing_component != COMP_NONE) {
                             float snapped_x = snap_to_grid(wx);
                             float snapped_y = snap_to_grid(wy);
@@ -482,7 +481,14 @@ bool input_handle_event(InputState *input, SDL_Event *event,
 
                                 // Push undo action for component placement
                                 circuit_push_undo(circuit, UNDO_ADD_COMPONENT, temp->id, NULL, 0, 0);
-                                ui_set_status(ui, "Component placed (Ctrl+Z to undo)");
+
+                                // If simulation was running, reset it
+                                if (input->sim_running) {
+                                    input->pending_ui_action = UI_ACTION_RESET;
+                                    ui_set_status(ui, "Component placed - simulation reset");
+                                } else {
+                                    ui_set_status(ui, "Component placed (Ctrl+Z to undo)");
+                                }
                             }
                         }
                         break;
@@ -674,6 +680,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     // Only select if box is at least 5 pixels in size
                     if (max_x - min_x > 5 || max_y - min_y > 5) {
                         input->multi_selected_count = 0;
+                        int wire_selected_count = 0;
 
                         // Find components within box
                         for (int i = 0; i < circuit->num_components && input->multi_selected_count < 64; i++) {
@@ -686,9 +693,33 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             }
                         }
 
-                        if (input->multi_selected_count > 0) {
-                            char msg[64];
-                            snprintf(msg, sizeof(msg), "Selected %d components - press Delete to remove", input->multi_selected_count);
+                        // Find wires within or intersecting box
+                        for (int i = 0; i < circuit->num_wires; i++) {
+                            Wire *wire = &circuit->wires[i];
+                            Node *n1 = circuit_get_node(circuit, wire->start_node_id);
+                            Node *n2 = circuit_get_node(circuit, wire->end_node_id);
+                            if (!n1 || !n2) continue;
+
+                            // Check if either endpoint is within box, or if wire crosses box
+                            bool n1_in = (n1->x >= min_x && n1->x <= max_x && n1->y >= min_y && n1->y <= max_y);
+                            bool n2_in = (n2->x >= min_x && n2->x <= max_x && n2->y >= min_y && n2->y <= max_y);
+
+                            if (n1_in || n2_in) {
+                                wire->selected = true;
+                                wire_selected_count++;
+                            }
+                        }
+
+                        if (input->multi_selected_count > 0 || wire_selected_count > 0) {
+                            char msg[128];
+                            if (input->multi_selected_count > 0 && wire_selected_count > 0) {
+                                snprintf(msg, sizeof(msg), "Selected %d components, %d wires - Delete to remove",
+                                         input->multi_selected_count, wire_selected_count);
+                            } else if (input->multi_selected_count > 0) {
+                                snprintf(msg, sizeof(msg), "Selected %d components - Delete to remove", input->multi_selected_count);
+                            } else {
+                                snprintf(msg, sizeof(msg), "Selected %d wires - Delete to remove", wire_selected_count);
+                            }
                             ui_set_status(ui, msg);
                         }
                     }
@@ -1365,8 +1396,15 @@ void input_cancel_action(InputState *input) {
 void input_delete_selected(InputState *input, Circuit *circuit) {
     if (!input || !circuit) return;
 
-    // Delete multi-selected components first
-    if (input->multi_selected_count > 0) {
+    // Check if there are any wires selected (from box selection)
+    int wires_to_delete = 0;
+    for (int i = 0; i < circuit->num_wires; i++) {
+        if (circuit->wires[i].selected) wires_to_delete++;
+    }
+
+    // Delete multi-selected components and wires (from box selection)
+    if (input->multi_selected_count > 0 || wires_to_delete > 0) {
+        // Delete multi-selected components
         for (int i = 0; i < input->multi_selected_count; i++) {
             if (input->multi_selected[i]) {
                 circuit_remove_component(circuit, input->multi_selected[i]->id);
@@ -1374,6 +1412,14 @@ void input_delete_selected(InputState *input, Circuit *circuit) {
         }
         input->multi_selected_count = 0;
         input->selected_component = NULL;
+
+        // Delete all selected wires (iterate backwards to avoid index shifting)
+        for (int i = circuit->num_wires - 1; i >= 0; i--) {
+            if (circuit->wires[i].selected) {
+                circuit_remove_wire(circuit, circuit->wires[i].id);
+            }
+        }
+        input->selected_wire_idx = -1;
         return;
     }
 
@@ -1384,7 +1430,7 @@ void input_delete_selected(InputState *input, Circuit *circuit) {
         return;
     }
 
-    // Delete selected wire
+    // Delete single selected wire (by index)
     if (input->selected_wire_idx >= 0 && input->selected_wire_idx < circuit->num_wires) {
         circuit->wires[input->selected_wire_idx].selected = false;
         int wire_id = circuit->wires[input->selected_wire_idx].id;

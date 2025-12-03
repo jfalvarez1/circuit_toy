@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <math.h>
 #include "circuit.h"
+#include "component.h"  // For COMP_GROUND type check
 
 static int next_node_id = 1;
 static int next_wire_id = 1;
@@ -447,39 +448,89 @@ void circuit_build_node_map(Circuit *circuit) {
         parent[i] = i;
     }
 
-    // Union nodes connected by wires
+    // ROBUST FIX: First, union nodes at the same physical position
+    // This ensures that component terminals placed at the same (x,y) are
+    // automatically electrically connected, like in real EDA tools.
+    // This prevents issues with parallel resistors and other configurations
+    // where terminals overlap but may not have explicit wires between them.
+    // NOTE: Tolerance must match circuit_find_or_create_node threshold (10)
+    // to handle 90-degree wire turns where user clicks create multiple nodes
+    // at nearly the same corner position.
+    const float POSITION_TOLERANCE = 10.0f;  // Match node find/create threshold
+    for (int i = 0; i < circuit->num_nodes; i++) {
+        Node *ni = &circuit->nodes[i];
+        for (int j = i + 1; j < circuit->num_nodes; j++) {
+            Node *nj = &circuit->nodes[j];
+            float dx = ni->x - nj->x;
+            float dy = ni->y - nj->y;
+            // If nodes are at the same position (within tolerance), merge them
+            if (dx * dx + dy * dy <= POSITION_TOLERANCE * POSITION_TOLERANCE) {
+                uf_union(parent, ni->id, nj->id);
+            }
+        }
+    }
+
+    // Then union nodes connected by explicit wires
     for (int i = 0; i < circuit->num_wires; i++) {
         Wire *wire = &circuit->wires[i];
         uf_union(parent, wire->start_node_id, wire->end_node_id);
+    }
+
+    // CRITICAL FIX: Union ALL ground component terminals together
+    // In real circuits, all ground symbols are electrically connected.
+    // This ensures that separate GND symbols (GND2, GND3, etc.) all map
+    // to the same node, which is essential for short circuit detection
+    // when V+ connects to one ground and V- connects to another ground.
+    int first_ground_node = -1;
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+        if (comp && comp->type == COMP_GROUND && comp->num_terminals > 0) {
+            int ground_terminal_node = comp->node_ids[0];
+            if (first_ground_node < 0) {
+                first_ground_node = ground_terminal_node;
+            } else {
+                // Union this ground's terminal with the first ground's terminal
+                uf_union(parent, first_ground_node, ground_terminal_node);
+            }
+        }
     }
 
     // Build node index map
     memset(circuit->node_map, 0, sizeof(circuit->node_map));
     int next_idx = 1;  // 0 is reserved for ground
 
-    // First, assign ground
-    for (int i = 0; i < circuit->num_nodes; i++) {
-        Node *node = &circuit->nodes[i];
-        int root = uf_find(parent, node->id);
-        Node *root_node = circuit_get_node(circuit, root);
-
-        if (root_node && root_node->is_ground) {
-            if (circuit->node_map[root] == 0) {
-                circuit->node_map[root] = 0;  // Ground is index 0
+    // Determine ground root - use first_ground_node if we found COMP_GROUND components,
+    // otherwise fall back to the node marked with is_ground flag
+    int ground_root = -1;
+    if (first_ground_node >= 0) {
+        ground_root = uf_find(parent, first_ground_node);
+    } else {
+        // Fallback: check for nodes marked with is_ground
+        for (int i = 0; i < circuit->num_nodes; i++) {
+            if (circuit->nodes[i].is_ground) {
+                ground_root = uf_find(parent, circuit->nodes[i].id);
+                break;
             }
         }
     }
 
-    // Then assign other nodes
+    // Mark the ground root as index 0 (ground is always index 0)
+    // This is already the default from memset, but we track it explicitly
+    // to avoid assigning a non-zero index to the ground set
+
+    // Assign indices to non-ground nodes
     for (int i = 0; i < circuit->num_nodes; i++) {
         Node *node = &circuit->nodes[i];
         int root = uf_find(parent, node->id);
 
+        // Skip if this root is the ground root
+        if (ground_root >= 0 && root == ground_root) {
+            continue;  // node_map[root] stays 0 (ground)
+        }
+
+        // Assign new index if not already assigned
         if (circuit->node_map[root] == 0) {
-            Node *root_node = circuit_get_node(circuit, root);
-            if (!root_node || !root_node->is_ground) {
-                circuit->node_map[root] = next_idx++;
-            }
+            circuit->node_map[root] = next_idx++;
         }
     }
 
@@ -529,6 +580,51 @@ void circuit_update_voltages(Circuit *circuit, Vector *solution) {
     }
 }
 
+// Helper: Get voltage for a node_id using node_map for robust multi-instance support
+static double get_mapped_voltage(Circuit *circuit, int node_id) {
+    if (!circuit || node_id < 0 || node_id >= MAX_NODES) return 0.0;
+
+    // First try direct lookup
+    Node *node = circuit_get_node(circuit, node_id);
+    if (node) return node->voltage;
+
+    // Fallback: find voltage via node_map (for nodes connected via wires)
+    int target_idx = circuit->node_map[node_id];
+    if (target_idx == 0) return 0.0;  // Ground
+
+    // Find any node with the same mapped index
+    for (int i = 0; i < circuit->num_nodes; i++) {
+        if (circuit->node_map[circuit->nodes[i].id] == target_idx) {
+            return circuit->nodes[i].voltage;
+        }
+    }
+
+    return 0.0;
+}
+
+// Extended precision version for ammeter calculations where tiny voltage drops matter
+// long double provides ~18-19 decimal digits vs ~15-16 for double
+static long double get_mapped_voltage_extended(Circuit *circuit, int node_id) {
+    if (!circuit || node_id < 0 || node_id >= MAX_NODES) return 0.0L;
+
+    // First try direct lookup
+    Node *node = circuit_get_node(circuit, node_id);
+    if (node) return (long double)node->voltage;
+
+    // Fallback: find voltage via node_map (for nodes connected via wires)
+    int target_idx = circuit->node_map[node_id];
+    if (target_idx == 0) return 0.0L;  // Ground
+
+    // Find any node with the same mapped index
+    for (int i = 0; i < circuit->num_nodes; i++) {
+        if (circuit->node_map[circuit->nodes[i].id] == target_idx) {
+            return (long double)circuit->nodes[i].voltage;
+        }
+    }
+
+    return 0.0L;
+}
+
 void circuit_update_meter_readings(Circuit *circuit) {
     if (!circuit) return;
 
@@ -537,44 +633,42 @@ void circuit_update_meter_readings(Circuit *circuit) {
         if (!comp) continue;
 
         if (comp->type == COMP_VOLTMETER) {
-            // Voltmeter: read voltage difference directly from node voltages
-            Node *n1 = circuit_get_node(circuit, comp->node_ids[0]);
-            Node *n2 = circuit_get_node(circuit, comp->node_ids[1]);
-            double v1 = n1 ? n1->voltage : 0.0;
-            double v2 = n2 ? n2->voltage : 0.0;
+            // Voltmeter: read voltage difference using node_map for multi-instance support
+            double v1 = get_mapped_voltage(circuit, comp->node_ids[0]);
+            double v2 = get_mapped_voltage(circuit, comp->node_ids[1]);
             comp->props.voltmeter.reading = v1 - v2;
         }
         else if (comp->type == COMP_AMMETER) {
             // Ammeter: calculate current from voltage drop across shunt resistance
-            // The ammeter is stamped as a low resistance (0.001 ohms for accurate measurement)
-            Node *n1 = circuit_get_node(circuit, comp->node_ids[0]);
-            Node *n2 = circuit_get_node(circuit, comp->node_ids[1]);
-            double v1 = n1 ? n1->voltage : 0.0;
-            double v2 = n2 ? n2->voltage : 0.0;
+            // Use extended precision (long double) to handle tiny voltage drops
+            // across very low ammeter resistance (1µΩ for ideal ammeter)
+            long double v1 = get_mapped_voltage_extended(circuit, comp->node_ids[0]);
+            long double v2 = get_mapped_voltage_extended(circuit, comp->node_ids[1]);
 
             // Use the same shunt resistance as in stamp function
-            double R = comp->props.ammeter.ideal ? 0.001 : comp->props.ammeter.r_shunt;
-            if (R < 1e-9) R = 0.001;  // Prevent division by zero
+            // Ideal ammeter uses 1uOhm (1e-6) to act as effective short circuit
+            long double R = comp->props.ammeter.ideal ? 1e-6L : (long double)comp->props.ammeter.r_shunt;
+            if (R < 1e-9L) R = 1e-9L;  // Minimum resistance for numerical stability
 
-            // I = V_drop / R_shunt
-            comp->props.ammeter.reading = (v1 - v2) / R;
+            // I = V_drop / R_shunt (all in extended precision)
+            long double current = (v1 - v2) / R;
+            comp->props.ammeter.reading = (double)current;
         }
         else if (comp->type == COMP_WATTMETER) {
             // Wattmeter: P = V * I
             // Voltage across V+ to V- (terminals 0, 1)
-            Node *vp = circuit_get_node(circuit, comp->node_ids[0]);
-            Node *vn = circuit_get_node(circuit, comp->node_ids[1]);
-            double voltage = (vp ? vp->voltage : 0.0) - (vn ? vn->voltage : 0.0);
+            double vp = get_mapped_voltage(circuit, comp->node_ids[0]);
+            double vn = get_mapped_voltage(circuit, comp->node_ids[1]);
+            double voltage = vp - vn;
 
             // Current through I+ to I- (terminals 2, 3)
-            Node *ip = circuit_get_node(circuit, comp->node_ids[2]);
-            Node *in = circuit_get_node(circuit, comp->node_ids[3]);
-            double vi1 = ip ? ip->voltage : 0.0;
-            double vi2 = in ? in->voltage : 0.0;
-            double R_i = 0.001;  // 1mOhm shunt
-            double current = (vi1 - vi2) / R_i;
+            // Use extended precision for current measurement across low-R shunt
+            long double vi1 = get_mapped_voltage_extended(circuit, comp->node_ids[2]);
+            long double vi2 = get_mapped_voltage_extended(circuit, comp->node_ids[3]);
+            long double R_i = 0.001L;  // 1mOhm shunt
+            long double current = (vi1 - vi2) / R_i;
 
-            comp->props.voltmeter.reading = voltage * current;
+            comp->props.voltmeter.reading = voltage * (double)current;
         }
     }
 }

@@ -366,6 +366,11 @@ typedef struct {
     int cursor_x, cursor_y;
     float world_x, world_y;
 
+    // Node hover tooltip
+    int hovered_node_id;            // ID of node currently being hovered (-1 if none)
+    double hovered_node_voltage;    // Voltage at hovered node
+    bool show_node_tooltip;         // Whether to show the tooltip
+
     // Subcircuit editor dialog (Ctrl+G to create from selection)
     bool show_subcircuit_dialog;            // Show the create subcircuit dialog
     char subcircuit_name[32];               // Name for the new subcircuit

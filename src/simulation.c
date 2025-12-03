@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdio.h>
 #include "simulation.h"
 #include "logic.h"
 #include "component.h"
@@ -188,6 +189,118 @@ static void simulation_set_error(Simulation *sim, const char *msg) {
     }
 }
 
+// NOTE: The BFS function nodes_connected_via_wires was removed because it caused
+// false positives in short circuit detection for parallel resistor circuits.
+// The union-find based node_map check is sufficient and more accurate.
+
+// Detect short circuits: voltage sources with both terminals at same node
+// Returns true if a short circuit was detected
+static bool simulation_detect_short_circuit(Simulation *sim) {
+    if (!sim || !sim->circuit) return false;
+
+    Circuit *circuit = sim->circuit;
+    sim->has_short_circuit = false;
+    sim->short_circuit_count = 0;
+
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+        if (!comp) continue;
+
+        // Check voltage sources (DC, AC, battery) for shorted terminals
+        bool is_voltage_source = (comp->type == COMP_DC_VOLTAGE ||
+                                   comp->type == COMP_AC_VOLTAGE ||
+                                   comp->type == COMP_BATTERY);
+
+        if (is_voltage_source && comp->num_terminals >= 2) {
+            int n0 = comp->node_ids[0];
+            int n1 = comp->node_ids[1];
+            bool is_shorted = false;
+
+            // Method 1: Check if both terminals map to the same node via node_map
+            if (n0 >= 0 && n1 >= 0 && n0 < MAX_NODES && n1 < MAX_NODES) {
+                int mapped0 = circuit->node_map[n0];
+                int mapped1 = circuit->node_map[n1];
+
+                // Short circuit if both terminals at same node (including both at ground)
+                if (mapped0 == mapped1) {
+                    is_shorted = true;
+                }
+            }
+
+            // Note: Method 2 (BFS through wires) was removed because it caused false positives
+            // for valid parallel resistor circuits. The node_map check above should be sufficient
+            // since it uses union-find which properly handles transitive wire connections.
+
+            if (is_shorted) {
+                // Short circuit detected!
+                sim->has_short_circuit = true;
+                if (sim->short_circuit_count < 8) {
+                    sim->short_circuit_comp_ids[sim->short_circuit_count++] = comp->id;
+                }
+            }
+        }
+    }
+
+    return sim->has_short_circuit;
+}
+
+// Detect excessive current indicating a short circuit (e.g., no resistance in path)
+// Check ammeter readings after simulation converges - current > 100A indicates short
+// Also identify voltage sources connected to high-current ammeters
+static bool simulation_detect_excessive_current(Simulation *sim) {
+    if (!sim || !sim->circuit) return false;
+
+    Circuit *circuit = sim->circuit;
+    const double SHORT_CURRENT_THRESHOLD = 100.0;  // 100A threshold for short detection
+
+    // First pass: find ammeters with excessive current
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+        if (!comp) continue;
+
+        if (comp->type == COMP_AMMETER) {
+            double current = fabs(comp->props.ammeter.reading);
+
+            if (current > SHORT_CURRENT_THRESHOLD) {
+                // Excessive current detected - this is a short circuit
+                sim->has_short_circuit = true;
+
+                // Add the ammeter to the short circuit list
+                if (sim->short_circuit_count < 8) {
+                    sim->short_circuit_comp_ids[sim->short_circuit_count++] = comp->id;
+                }
+
+                // Find voltage sources in the circuit and add them too
+                // (they're the source of the excessive current)
+                for (int j = 0; j < circuit->num_components; j++) {
+                    Component *src = circuit->components[j];
+                    if (!src) continue;
+
+                    bool is_voltage_source = (src->type == COMP_DC_VOLTAGE ||
+                                               src->type == COMP_AC_VOLTAGE ||
+                                               src->type == COMP_BATTERY);
+
+                    if (is_voltage_source && sim->short_circuit_count < 8) {
+                        // Check if this source isn't already in the list
+                        bool already_added = false;
+                        for (int k = 0; k < sim->short_circuit_count; k++) {
+                            if (sim->short_circuit_comp_ids[k] == src->id) {
+                                already_added = true;
+                                break;
+                            }
+                        }
+                        if (!already_added) {
+                            sim->short_circuit_comp_ids[sim->short_circuit_count++] = src->id;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return sim->has_short_circuit;
+}
+
 bool simulation_dc_analysis(Simulation *sim) {
     if (!sim || !sim->circuit) {
         simulation_set_error(sim, "No circuit");
@@ -222,6 +335,12 @@ bool simulation_dc_analysis(Simulation *sim) {
 
     // Build node map
     circuit_build_node_map(circuit);
+
+    // Check for short circuits before proceeding
+    if (simulation_detect_short_circuit(sim)) {
+        simulation_set_error(sim, "SHORT! Voltage source terminals shorted");
+        return false;
+    }
 
     int num_nodes = circuit->num_matrix_nodes;
     if (num_nodes == 0) {
@@ -347,6 +466,12 @@ bool simulation_dc_analysis(Simulation *sim) {
     circuit_update_voltages(circuit, solution);
     circuit_update_wire_currents(circuit);
     circuit_update_meter_readings(circuit);
+
+    // Check for excessive current indicating short circuit (after meter readings updated)
+    if (simulation_detect_excessive_current(sim)) {
+        simulation_set_error(sim, "Short circuit: excessive current (>100A) detected!");
+        return false;
+    }
 
     sim->has_error = false;
     return true;

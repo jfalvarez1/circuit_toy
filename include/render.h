@@ -99,6 +99,10 @@ void render_pin(RenderContext *ctx, float x, float y, int rotation, int pin_numb
 // Ghost component (while placing)
 void render_ghost_component(RenderContext *ctx, Component *comp);
 
+// Short circuit highlight (draws blinking red rectangles around shorted components)
+void render_short_circuit_highlights(RenderContext *ctx, Circuit *circuit,
+                                     int *comp_ids, int comp_count);
+
 // Wire preview
 void render_wire_preview(RenderContext *ctx, float x1, float y1, float x2, float y2);
 
@@ -108,5 +112,8 @@ void render_selection_box(RenderContext *ctx, float x1, float y1, float x2, floa
 // Thermal heatmap rendering
 void render_heatmap_overlay(RenderContext *ctx, Component *comp);
 Color temperature_to_color(double temp, double min_temp, double max_temp);
+
+// Node voltage tooltip (renders near cursor when hovering over a node)
+void render_node_voltage_tooltip(RenderContext *ctx, int screen_x, int screen_y, double voltage);
 
 #endif // RENDER_H

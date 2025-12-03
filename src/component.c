@@ -4491,11 +4491,12 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
 
         case COMP_AMMETER: {
             // Ammeter: low-impedance shunt (series element)
-            // Use 1mOhm for ideal - small enough to not affect circuit but large enough
-            // for accurate voltage drop measurement
+            // Use 1uOhm (1e-6) for ideal - acts as effective short circuit
+            // Extended precision is used in circuit_update_meter_readings() to handle
+            // the tiny voltage drops across such low resistances
             // Readings are calculated in circuit_update_meter_readings() after solve
-            double R = comp->props.ammeter.ideal ? 0.001 : comp->props.ammeter.r_shunt;
-            if (R < 1e-9) R = 0.001;  // Ensure minimum resistance
+            double R = comp->props.ammeter.ideal ? 1e-6 : comp->props.ammeter.r_shunt;
+            if (R < 1e-9) R = 1e-9;  // Absolute minimum for numerical stability
             double G = 1.0 / R;
             STAMP_CONDUCTANCE(n[0], n[1], G);
             break;

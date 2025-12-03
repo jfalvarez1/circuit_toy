@@ -710,6 +710,36 @@ static void draw_button(SDL_Renderer *r, Button *btn) {
 }
 
 static void draw_palette_item(SDL_Renderer *r, PaletteItem *item) {
+    SDL_Rect rect = {item->bounds.x, item->bounds.y, item->bounds.w, item->bounds.h};
+
+    // Neon glow effect for selected items
+    if (item->selected) {
+        // Animation time using SDL_GetTicks (convert to seconds)
+        double anim_time = SDL_GetTicks() / 1000.0;
+        double pulse = 0.5 + 0.5 * sin(anim_time * 3.0);
+
+        // Enable additive blending for neon glow
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_ADD);
+
+        // Draw outer glow layers (pink/magenta)
+        for (int layer = 5; layer >= 1; layer--) {
+            int expand = layer * 2;
+            uint8_t alpha = (uint8_t)(pulse * (15 + (6 - layer) * 18));
+            if (alpha > 255) alpha = 255;
+
+            SDL_SetRenderDrawColor(r, SYNTH_PINK, alpha);
+            SDL_Rect glow_rect = {
+                rect.x - expand,
+                rect.y - expand,
+                rect.w + expand * 2,
+                rect.h + expand * 2
+            };
+            SDL_RenderDrawRect(r, &glow_rect);
+        }
+
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    }
+
     // Background - synthwave colors
     if (item->selected) {
         SDL_SetRenderDrawColor(r, SYNTH_PINK, 0x60);
@@ -718,7 +748,6 @@ static void draw_palette_item(SDL_Renderer *r, PaletteItem *item) {
     } else {
         SDL_SetRenderDrawColor(r, SYNTH_BG_MID, 0xff);
     }
-    SDL_Rect rect = {item->bounds.x, item->bounds.y, item->bounds.w, item->bounds.h};
     SDL_RenderFillRect(r, &rect);
 
     // Border - synthwave colors
@@ -746,6 +775,36 @@ static void draw_palette_item(SDL_Renderer *r, PaletteItem *item) {
 }
 
 static void draw_circuit_item(SDL_Renderer *r, CircuitPaletteItem *item) {
+    SDL_Rect rect = {item->bounds.x, item->bounds.y, item->bounds.w, item->bounds.h};
+
+    // Neon glow effect for selected items (green theme for circuits)
+    if (item->selected) {
+        // Animation time using SDL_GetTicks (convert to seconds)
+        double anim_time = SDL_GetTicks() / 1000.0;
+        double pulse = 0.5 + 0.5 * sin(anim_time * 3.0);
+
+        // Enable additive blending for neon glow
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_ADD);
+
+        // Draw outer glow layers (green)
+        for (int layer = 5; layer >= 1; layer--) {
+            int expand = layer * 2;
+            uint8_t alpha = (uint8_t)(pulse * (15 + (6 - layer) * 18));
+            if (alpha > 255) alpha = 255;
+
+            SDL_SetRenderDrawColor(r, SYNTH_GREEN, alpha);
+            SDL_Rect glow_rect = {
+                rect.x - expand,
+                rect.y - expand,
+                rect.w + expand * 2,
+                rect.h + expand * 2
+            };
+            SDL_RenderDrawRect(r, &glow_rect);
+        }
+
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    }
+
     // Background - synthwave green tint for circuit templates
     if (item->selected) {
         SDL_SetRenderDrawColor(r, SYNTH_GREEN, 0x40);
@@ -754,7 +813,6 @@ static void draw_circuit_item(SDL_Renderer *r, CircuitPaletteItem *item) {
     } else {
         SDL_SetRenderDrawColor(r, SYNTH_BG_MID, 0xff);
     }
-    SDL_Rect rect = {item->bounds.x, item->bounds.y, item->bounds.w, item->bounds.h};
     SDL_RenderFillRect(r, &rect);
 
     // Border

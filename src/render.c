@@ -74,6 +74,12 @@ void render_led_array(RenderContext *ctx, float x, float y, int rotation);
 void render_bcd_decoder(RenderContext *ctx, float x, float y, int rotation);
 void render_subcircuit(RenderContext *ctx, float x, float y, int rotation, int def_id, const char *name);
 
+// Neon glow effect helpers (for selected items)
+void render_neon_glow_component(RenderContext *ctx, float x, float y, float size);
+void render_neon_glow_wire(RenderContext *ctx, float x1, float y1, float x2, float y2);
+void render_neon_chaser_rect(RenderContext *ctx, float x, float y, float size);
+void render_neon_chaser_line(RenderContext *ctx, float x1, float y1, float x2, float y2);
+
 // Simple 8x8 bitmap font (ASCII 32-126)
 static const unsigned char font8x8[95][8] = {
     {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, // ' '
@@ -391,6 +397,225 @@ void render_draw_text_styled(RenderContext *ctx, const char *text, int x, int y,
         SDL_Rect underline_rect = {text_start_x, underline_y, cx - text_start_x, scale};
         SDL_RenderFillRect(ctx->renderer, &underline_rect);
     }
+}
+
+// ============================================================================
+// Neon Glow Effects for Selected Items (Synthwave Style)
+// ============================================================================
+
+// Draw a pulsating neon glow around a component
+void render_neon_glow_component(RenderContext *ctx, float x, float y, float size) {
+    // Get screen coordinates
+    int scr_x, scr_y;
+    render_world_to_screen(ctx, x, y, &scr_x, &scr_y);
+    int screen_size = (int)(size * ctx->zoom);
+
+    // Pulsating intensity using sine wave (0.5 to 1.0 range)
+    double pulse = 0.5 + 0.5 * sin(ctx->animation_time * 3.0);
+
+    // Enable additive blending for neon glow effect
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_ADD);
+
+    // Synthwave pink/magenta color (from COLOR_ACCENT2)
+    uint8_t r = 0xe9, g = 0x45, b = 0x60;
+
+    // Draw multiple expanding rectangles with decreasing alpha for outer glow
+    for (int layer = 6; layer >= 1; layer--) {
+        int expand = layer * 3;
+        uint8_t alpha = (uint8_t)(pulse * (30 + (7 - layer) * 20));
+        if (alpha > 255) alpha = 255;
+
+        SDL_SetRenderDrawColor(ctx->renderer, r, g, b, alpha);
+
+        // Draw rectangle outline at this expansion level
+        SDL_Rect rect = {
+            scr_x - screen_size/2 - expand,
+            scr_y - screen_size/2 - expand,
+            screen_size + expand * 2,
+            screen_size + expand * 2
+        };
+        SDL_RenderDrawRect(ctx->renderer, &rect);
+    }
+
+    // Inner bright core (white-ish pink)
+    uint8_t core_alpha = (uint8_t)(pulse * 200);
+    SDL_SetRenderDrawColor(ctx->renderer, 0xff, 0x80, 0xa0, core_alpha);
+    SDL_Rect inner = {
+        scr_x - screen_size/2 - 2,
+        scr_y - screen_size/2 - 2,
+        screen_size + 4,
+        screen_size + 4
+    };
+    SDL_RenderDrawRect(ctx->renderer, &inner);
+
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+}
+
+// Draw animated chaser lights around component selection
+void render_neon_chaser_rect(RenderContext *ctx, float x, float y, float size) {
+    int scr_x, scr_y;
+    render_world_to_screen(ctx, x, y, &scr_x, &scr_y);
+    int screen_size = (int)(size * ctx->zoom);
+    int expand = 8;  // Chaser runs slightly outside the glow
+
+    // Calculate perimeter positions for chaser dots
+    int left = scr_x - screen_size/2 - expand;
+    int right = scr_x + screen_size/2 + expand;
+    int top = scr_y - screen_size/2 - expand;
+    int bottom = scr_y + screen_size/2 + expand;
+    int width = right - left;
+    int height = bottom - top;
+    int perimeter = 2 * width + 2 * height;
+
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_ADD);
+
+    // Draw multiple chaser dots traveling around the perimeter
+    int num_chasers = 6;
+    for (int i = 0; i < num_chasers; i++) {
+        // Each chaser has a different phase offset
+        double phase = fmod(ctx->animation_time * 1.5 + (double)i / num_chasers, 1.0);
+        int pos = (int)(phase * perimeter);
+
+        int px, py;
+        // Top edge (left to right)
+        if (pos < width) {
+            px = left + pos;
+            py = top;
+        }
+        // Right edge (top to bottom)
+        else if (pos < width + height) {
+            px = right;
+            py = top + (pos - width);
+        }
+        // Bottom edge (right to left)
+        else if (pos < 2 * width + height) {
+            px = right - (pos - width - height);
+            py = bottom;
+        }
+        // Left edge (bottom to top)
+        else {
+            px = left;
+            py = bottom - (pos - 2 * width - height);
+        }
+
+        // Draw glowing chaser dot (cyan for contrast with pink glow)
+        // Outer glow
+        SDL_SetRenderDrawColor(ctx->renderer, 0x00, 0xff, 0xff, 0x40);
+        for (int dy = -4; dy <= 4; dy++) {
+            for (int dx = -4; dx <= 4; dx++) {
+                if (dx*dx + dy*dy <= 16) {
+                    SDL_RenderDrawPoint(ctx->renderer, px + dx, py + dy);
+                }
+            }
+        }
+
+        // Middle glow
+        SDL_SetRenderDrawColor(ctx->renderer, 0x00, 0xff, 0xff, 0x80);
+        for (int dy = -2; dy <= 2; dy++) {
+            for (int dx = -2; dx <= 2; dx++) {
+                if (dx*dx + dy*dy <= 4) {
+                    SDL_RenderDrawPoint(ctx->renderer, px + dx, py + dy);
+                }
+            }
+        }
+
+        // Bright core
+        SDL_SetRenderDrawColor(ctx->renderer, 0xff, 0xff, 0xff, 0xc0);
+        SDL_RenderDrawPoint(ctx->renderer, px, py);
+    }
+
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+}
+
+// Draw a pulsating neon glow around a wire
+void render_neon_glow_wire(RenderContext *ctx, float x1, float y1, float x2, float y2) {
+    int sx1, sy1, sx2, sy2;
+    render_world_to_screen(ctx, x1, y1, &sx1, &sy1);
+    render_world_to_screen(ctx, x2, y2, &sx2, &sy2);
+
+    // Pulsating intensity using sine wave
+    double pulse = 0.5 + 0.5 * sin(ctx->animation_time * 3.0);
+
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_ADD);
+
+    // Synthwave pink color
+    uint8_t r = 0xe9, g = 0x45, b = 0x60;
+
+    // Calculate perpendicular offset for parallel glow lines
+    float dx = (float)(sx2 - sx1);
+    float dy = (float)(sy2 - sy1);
+    float len = sqrt(dx*dx + dy*dy);
+    if (len < 1) len = 1;
+    float px = -dy / len;
+    float py = dx / len;
+
+    // Draw multiple parallel lines with decreasing alpha for glow
+    for (int layer = 5; layer >= 1; layer--) {
+        float offset = layer * 2.0f;
+        uint8_t alpha = (uint8_t)(pulse * (20 + (6 - layer) * 25));
+        if (alpha > 255) alpha = 255;
+
+        SDL_SetRenderDrawColor(ctx->renderer, r, g, b, alpha);
+
+        // Draw offset lines on both sides
+        SDL_RenderDrawLine(ctx->renderer,
+            sx1 + (int)(px * offset), sy1 + (int)(py * offset),
+            sx2 + (int)(px * offset), sy2 + (int)(py * offset));
+        SDL_RenderDrawLine(ctx->renderer,
+            sx1 - (int)(px * offset), sy1 - (int)(py * offset),
+            sx2 - (int)(px * offset), sy2 - (int)(py * offset));
+    }
+
+    // Bright core line
+    uint8_t core_alpha = (uint8_t)(pulse * 180);
+    SDL_SetRenderDrawColor(ctx->renderer, 0xff, 0x80, 0xa0, core_alpha);
+    SDL_RenderDrawLine(ctx->renderer, sx1, sy1, sx2, sy2);
+
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+}
+
+// Draw animated chaser lights along a wire
+void render_neon_chaser_line(RenderContext *ctx, float x1, float y1, float x2, float y2) {
+    int sx1, sy1, sx2, sy2;
+    render_world_to_screen(ctx, x1, y1, &sx1, &sy1);
+    render_world_to_screen(ctx, x2, y2, &sx2, &sy2);
+
+    float dx = (float)(sx2 - sx1);
+    float dy = (float)(sy2 - sy1);
+    float len = sqrt(dx*dx + dy*dy);
+    if (len < 10) return;  // Skip very short wires
+
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_ADD);
+
+    // Draw chaser dots along the wire
+    int num_chasers = (int)(len / 30) + 1;
+    if (num_chasers > 4) num_chasers = 4;
+
+    for (int i = 0; i < num_chasers; i++) {
+        double phase = fmod(ctx->animation_time * 2.0 + (double)i / num_chasers, 1.0);
+        float t = (float)phase;
+
+        int px = sx1 + (int)(dx * t);
+        int py = sy1 + (int)(dy * t);
+
+        // Outer glow (cyan)
+        SDL_SetRenderDrawColor(ctx->renderer, 0x00, 0xff, 0xff, 0x50);
+        for (int gy = -3; gy <= 3; gy++) {
+            for (int gx = -3; gx <= 3; gx++) {
+                if (gx*gx + gy*gy <= 9) {
+                    SDL_RenderDrawPoint(ctx->renderer, px + gx, py + gy);
+                }
+            }
+        }
+
+        // Bright core
+        SDL_SetRenderDrawColor(ctx->renderer, 0xff, 0xff, 0xff, 0xa0);
+        SDL_RenderDrawPoint(ctx->renderer, px, py);
+        SDL_RenderDrawPoint(ctx->renderer, px+1, py);
+        SDL_RenderDrawPoint(ctx->renderer, px, py+1);
+    }
+
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
 }
 
 void render_grid(RenderContext *ctx) {
@@ -726,12 +951,42 @@ void render_component(RenderContext *ctx, Component *comp) {
         case COMP_DC_MOTOR:
             render_dc_motor(ctx, comp->x, comp->y, comp->rotation);
             break;
-        case COMP_VOLTMETER:
+        case COMP_VOLTMETER: {
             render_voltmeter(ctx, comp->x, comp->y, comp->rotation);
+            // Display reading above the symbol
+            int sx, sy;
+            render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            char reading_str[32];
+            double v = comp->props.voltmeter.reading;
+            if (fabs(v) >= 1000.0)
+                snprintf(reading_str, sizeof(reading_str), "%.2fkV", v / 1000.0);
+            else if (fabs(v) >= 1.0)
+                snprintf(reading_str, sizeof(reading_str), "%.2fV", v);
+            else if (fabs(v) >= 0.001)
+                snprintf(reading_str, sizeof(reading_str), "%.2fmV", v * 1000.0);
+            else
+                snprintf(reading_str, sizeof(reading_str), "%.2fuV", v * 1e6);
+            render_draw_text_small(ctx, reading_str, sx - 20, sy - 30, COLOR_ACCENT);
             break;
-        case COMP_AMMETER:
+        }
+        case COMP_AMMETER: {
             render_ammeter(ctx, comp->x, comp->y, comp->rotation);
+            // Display reading above the symbol
+            int sx, sy;
+            render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            char reading_str[32];
+            double i = comp->props.ammeter.reading;
+            if (fabs(i) >= 1.0)
+                snprintf(reading_str, sizeof(reading_str), "%.2fA", i);
+            else if (fabs(i) >= 0.001)
+                snprintf(reading_str, sizeof(reading_str), "%.2fmA", i * 1000.0);
+            else if (fabs(i) >= 1e-6)
+                snprintf(reading_str, sizeof(reading_str), "%.2fuA", i * 1e6);
+            else
+                snprintf(reading_str, sizeof(reading_str), "%.2fnA", i * 1e9);
+            render_draw_text_small(ctx, reading_str, sx - 20, sy - 30, COLOR_ACCENT);
             break;
+        }
         case COMP_WATTMETER:
             render_wattmeter(ctx, comp->x, comp->y, comp->rotation);
             break;
@@ -2078,6 +2333,121 @@ void render_ghost_component(RenderContext *ctx, Component *comp) {
     SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
     render_set_color(ctx, (Color){0xff, 0xff, 0xff, 0x80});
     render_component(ctx, comp);
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_NONE);
+}
+
+void render_short_circuit_highlights(RenderContext *ctx, Circuit *circuit,
+                                     int *comp_ids, int comp_count) {
+    if (!ctx || !circuit || !comp_ids || comp_count <= 0) return;
+
+    Uint32 ticks = SDL_GetTicks();
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+
+    for (int i = 0; i < comp_count; i++) {
+        // Find component by ID
+        Component *comp = NULL;
+        for (int j = 0; j < circuit->num_components; j++) {
+            if (circuit->components[j] && circuit->components[j]->id == comp_ids[i]) {
+                comp = circuit->components[j];
+                break;
+            }
+        }
+        if (!comp) continue;
+
+        // Convert world to screen coordinates
+        int sx, sy;
+        render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+        int half_size = (int)(40 * ctx->zoom);
+
+        // === FIRE/BURNING GLOW EFFECT ===
+        // Flickering orange/red glow around component
+        float flicker = 0.5f + 0.5f * sinf((float)ticks * 0.015f + comp->id * 1.7f);
+        float flicker2 = 0.5f + 0.5f * sinf((float)ticks * 0.023f + comp->id * 2.3f);
+
+        // Draw multiple layers of fire glow
+        for (int layer = 3; layer >= 0; layer--) {
+            int expand = layer * 4;
+            uint8_t alpha = (uint8_t)(60 + 40 * flicker - layer * 15);
+            uint8_t red = (uint8_t)(255);
+            uint8_t green = (uint8_t)(50 + 100 * flicker2 - layer * 20);
+            uint8_t blue = 0;
+
+            SDL_SetRenderDrawColor(ctx->renderer, red, green, blue, alpha);
+            SDL_Rect glow = {
+                sx - half_size - 5 - expand,
+                sy - half_size - 5 - expand,
+                half_size * 2 + 10 + expand * 2,
+                half_size * 2 + 10 + expand * 2
+            };
+            SDL_RenderFillRect(ctx->renderer, &glow);
+        }
+
+        // === SMOKE PARTICLES ===
+        // Draw rising smoke particles
+        for (int p = 0; p < 12; p++) {
+            // Use deterministic pseudo-random based on component ID and particle index
+            unsigned int seed = comp->id * 17 + p * 31;
+            float px_offset = ((seed * 1103515245 + 12345) % 1000) / 1000.0f - 0.5f;
+            float speed_factor = 0.3f + ((seed * 1103515247 + 12347) % 1000) / 2000.0f;
+            float phase_offset = ((seed * 1103515249 + 12349) % 1000) / 1000.0f * 6.28f;
+
+            // Particle rises and resets in a cycle
+            float cycle_time = 2000.0f;  // 2 second cycle
+            float t = fmodf((float)ticks + phase_offset * 1000.0f, cycle_time) / cycle_time;
+
+            // Position: start at component, rise upward
+            float particle_x = sx + px_offset * half_size * 1.5f;
+            float particle_y = sy - t * 80 * speed_factor * ctx->zoom;
+
+            // Slight horizontal drift
+            particle_x += sinf(t * 3.14159f + phase_offset) * 10 * ctx->zoom;
+
+            // Size grows then shrinks
+            float size = (3 + 4 * sinf(t * 3.14159f)) * ctx->zoom;
+
+            // Alpha fades out as it rises
+            uint8_t smoke_alpha = (uint8_t)(150 * (1.0f - t * t));
+
+            // Gray smoke color with slight variation
+            uint8_t gray = (uint8_t)(40 + ((seed * 13) % 30));
+            SDL_SetRenderDrawColor(ctx->renderer, gray, gray, gray, smoke_alpha);
+
+            // Draw smoke particle as filled circle
+            for (int dy = -(int)size; dy <= (int)size; dy++) {
+                for (int dx = -(int)size; dx <= (int)size; dx++) {
+                    if (dx*dx + dy*dy <= (int)(size*size)) {
+                        SDL_RenderDrawPoint(ctx->renderer,
+                            (int)particle_x + dx,
+                            (int)particle_y + dy);
+                    }
+                }
+            }
+        }
+
+        // === BLINKING RED BORDER ===
+        // Blinking red border (original effect)
+        bool border_visible = ((ticks / 200) % 2) == 0;
+        if (border_visible) {
+            SDL_SetRenderDrawColor(ctx->renderer, 0xff, 0x20, 0x20, 0xe0);
+            SDL_Rect rect = {
+                sx - half_size - 5,
+                sy - half_size - 5,
+                half_size * 2 + 10,
+                half_size * 2 + 10
+            };
+            SDL_RenderDrawRect(ctx->renderer, &rect);
+            rect.x -= 2;
+            rect.y -= 2;
+            rect.w += 4;
+            rect.h += 4;
+            SDL_RenderDrawRect(ctx->renderer, &rect);
+        }
+
+        // === "SHORT!" TEXT ===
+        // Draw "SHORT!" text above the component
+        render_draw_text(ctx, "SHORT!", sx - 25, sy - half_size - 30, (Color){0xff, 0x40, 0x40, 0xff});
+    }
+
     SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_NONE);
 }
 
@@ -3811,4 +4181,54 @@ void render_heatmap_overlay(RenderContext *ctx, Component *comp) {
     snprintf(temp_str, sizeof(temp_str), "%.0f°C", temp);
     Color text_color = {255, 255, 255, 255};
     render_draw_text_small(ctx, temp_str, sx - 15, sy, text_color);
+}
+
+// Render node voltage tooltip near cursor
+void render_node_voltage_tooltip(RenderContext *ctx, int screen_x, int screen_y, double voltage) {
+    if (!ctx) return;
+
+    // Format voltage string
+    char voltage_str[32];
+    if (fabs(voltage) >= 1000.0) {
+        snprintf(voltage_str, sizeof(voltage_str), "%.2f kV", voltage / 1000.0);
+    } else if (fabs(voltage) >= 1.0) {
+        snprintf(voltage_str, sizeof(voltage_str), "%.3f V", voltage);
+    } else if (fabs(voltage) >= 0.001) {
+        snprintf(voltage_str, sizeof(voltage_str), "%.2f mV", voltage * 1000.0);
+    } else if (fabs(voltage) >= 0.000001) {
+        snprintf(voltage_str, sizeof(voltage_str), "%.2f µV", voltage * 1000000.0);
+    } else {
+        snprintf(voltage_str, sizeof(voltage_str), "%.3f V", voltage);
+    }
+
+    // Calculate tooltip dimensions
+    int text_width = strlen(voltage_str) * 7;  // Approximate character width
+    int text_height = 14;
+    int padding = 6;
+    int tooltip_w = text_width + padding * 2;
+    int tooltip_h = text_height + padding * 2;
+
+    // Position tooltip above and to the right of cursor
+    int tooltip_x = screen_x + 15;
+    int tooltip_y = screen_y - tooltip_h - 5;
+
+    // Keep tooltip on screen
+    if (tooltip_x + tooltip_w > 1920) tooltip_x = screen_x - tooltip_w - 5;
+    if (tooltip_y < 0) tooltip_y = screen_y + 20;
+
+    // Draw tooltip background with semi-transparent dark fill
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+
+    // Dark background
+    SDL_SetRenderDrawColor(ctx->renderer, 30, 30, 40, 230);
+    SDL_Rect bg_rect = {tooltip_x, tooltip_y, tooltip_w, tooltip_h};
+    SDL_RenderFillRect(ctx->renderer, &bg_rect);
+
+    // Cyan border (matches circuit theme)
+    SDL_SetRenderDrawColor(ctx->renderer, 0, 200, 255, 255);
+    SDL_RenderDrawRect(ctx->renderer, &bg_rect);
+
+    // Draw voltage text
+    Color text_color = {0, 255, 200, 255};  // Cyan-green for visibility
+    render_draw_text_small(ctx, voltage_str, tooltip_x + padding, tooltip_y + padding, text_color);
 }

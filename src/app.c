@@ -1600,6 +1600,12 @@ void app_update(App *app) {
         fps_timer = current_time;
     }
 
+    // Auto-pause simulation when circuit is modified while running
+    if (app->simulation->state == SIM_RUNNING && app->circuit->modified) {
+        simulation_pause(app->simulation);
+        ui_set_status(&app->ui, "Circuit changed - simulation paused");
+    }
+
     // Check for frequency sweep thread completion
     if (app->freq_sweep_thread_running && app->simulation) {
         if (!app->simulation->freq_sweep_running) {
@@ -1713,6 +1719,16 @@ void app_update(App *app) {
                            app->input.mouse_x - CANVAS_X,
                            app->input.mouse_y - CANVAS_Y,
                            &app->ui.world_x, &app->ui.world_y);
+
+    // Update node hover tooltip
+    app->ui.show_node_tooltip = false;
+    app->ui.hovered_node_id = -1;
+    Node *hovered = circuit_find_node_at(app->circuit, app->ui.world_x, app->ui.world_y, 15);
+    if (hovered) {
+        app->ui.hovered_node_id = hovered->id;
+        app->ui.hovered_node_voltage = hovered->voltage;
+        app->ui.show_node_tooltip = true;
+    }
 }
 
 void app_render(App *app) {
@@ -1753,6 +1769,19 @@ void app_render(App *app) {
 
     // Render circuit
     render_circuit(app->render, app->circuit);
+
+    // Render short circuit highlights (blinking red rectangles) if detected
+    if (app->simulation && app->simulation->has_short_circuit) {
+        render_short_circuit_highlights(app->render, app->circuit,
+                                        app->simulation->short_circuit_comp_ids,
+                                        app->simulation->short_circuit_count);
+    }
+
+    // Render node voltage tooltip when hovering over a node
+    if (app->ui.show_node_tooltip) {
+        render_node_voltage_tooltip(app->render, app->ui.cursor_x, app->ui.cursor_y,
+                                    app->ui.hovered_node_voltage);
+    }
 
     // Render ghost component if placing
     if (app->input.current_tool == TOOL_COMPONENT && app->input.placing_component != COMP_NONE) {
@@ -1977,11 +2006,16 @@ void app_load_circuit(App *app) {
 }
 
 void app_run_simulation(App *app) {
-    if (app->simulation->state == SIM_PAUSED) {
+    // If paused and circuit hasn't changed, just resume
+    if (app->simulation->state == SIM_PAUSED && !app->circuit->modified) {
         simulation_start(app->simulation);
         ui_set_status(&app->ui, "Simulation resumed");
         return;
     }
+
+    // Circuit changed or stopped - need full re-evaluation
+    simulation_reset(app->simulation);
+    app->circuit->modified = false;  // Clear the modified flag
 
     // Auto-adjust time step based on circuit's highest frequency
     simulation_auto_time_step(app->simulation);
