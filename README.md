@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v2.5.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v2.5.0)**
+**Latest Release: [v2.6.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v2.6.0)**
 
 A native desktop circuit simulator written in C with SDL2, featuring a synthwave-themed interface. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
 
@@ -228,8 +228,11 @@ Simulate real-world environmental conditions:
 
 - **Animated particles** - Cyan dots flow along wires showing current direction
 - **Conventional current** - Particles follow conventional current flow (positive to negative)
-- **KCL-based direction** - Current direction calculated using Kirchhoff's Current Law for accurate flow
+- **BFS path tracing** - Current flows from voltage/current source positive terminals to ground nodes
+- **Series wire uniformity** - All wires in series show the same animation speed
+- **Ground path completion** - Current properly flows to ground terminal wires
 - **Voltage source handling** - Correct current direction on wires connected to voltage sources
+- **Dual source handling** - When two voltage sources meet, current flows toward lower voltage
 - **Speed scaling** - Particle speed scales logarithmically with current magnitude
 - **Size indication** - Larger currents show larger particles
 
@@ -473,7 +476,7 @@ circuit_toy/
 
 - **Subcircuit Simulation (WIP)** - Subcircuits can be created and placed as IC blocks, but internal simulation is still under development. Currently subcircuits function as visual placeholders - full hierarchical simulation with internal node expansion is planned for a future release.
 
-- **Current Flow Visualization** - The animated current flow particles may not appear on all wires in some circuit configurations. Direction is based on voltage difference between nodes. This feature is under active development.
+- **Current Flow Visualization** - The animated current flow now uses BFS-based path tracing from sources to ground, with improved handling for voltage source negative terminal connections and dual voltage source configurations.
 
 ## License
 
