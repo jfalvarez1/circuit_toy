@@ -1,0 +1,7 @@
+// Windows Resource File for Circuit Playground
+// Embeds the application icon
+
+#include <windows.h>
+
+// Icon resource - ID 1 is used by Windows as the main application icon
+1 ICON "icon.ico"
