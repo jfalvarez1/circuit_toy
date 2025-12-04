@@ -877,17 +877,21 @@ bool simulation_step(Simulation *sim) {
     // Adaptive decimation for history recording - calculated ONCE when dt becomes valid
     // Changing decimation mid-run causes inconsistent sample spacing and distorted waveforms
     // history_decimate_factor == 0 means "not yet calculated"
-    if (sim->history_decimate_factor == 0 && sim->time_step >= 1e-6) {
-        // Goal: ensure history covers enough time for the largest scope time window
+    // Note: time_step can be as small as 100ns (1e-7), so use a lower threshold
+    if (sim->history_decimate_factor == 0 && sim->time_step >= 1e-9) {
+        // Goal: ensure history covers enough time for typical scope time windows
         // while maintaining enough samples per cycle for waveform visibility
-        double target_history_span = 60.0;  // 60 seconds of history for long time/div
+        // With 10000 history slots and 100ns time_step, raw span = 1ms
+        // Target 100ms of history (enough for 10ms/div scope setting with margin)
+        // This ensures the scope fills quickly after reset
+        double target_history_span = 0.1;  // 100ms of history
         double current_history_span = MAX_HISTORY * sim->time_step;
 
         int new_decimate_factor = 1;
         if (current_history_span < target_history_span && sim->time_step > 0) {
             new_decimate_factor = (int)ceil(target_history_span / current_history_span);
             if (new_decimate_factor < 1) new_decimate_factor = 1;
-            if (new_decimate_factor > 10000) new_decimate_factor = 10000;
+            if (new_decimate_factor > 100) new_decimate_factor = 100;  // Max 100x decimation
         }
 
         // IMPORTANT: Limit decimation to preserve waveform shape

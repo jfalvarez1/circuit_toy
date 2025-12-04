@@ -30,6 +30,13 @@ src_files = files(
   'src/threadpool.c'
 )
 
+# Windows resource file for application icon
+if host_machine.system() == 'windows'
+  windows = import('windows')
+  win_resources = windows.compile_resources('app.rc')
+  src_files += win_resources
+endif
+
 # Include directories
 inc_dirs = include_directories('include')
 
@@ -39,7 +46,7 @@ executable('circuit-playground',
   include_directories : inc_dirs,
   dependencies : [sdl2_dep, sdl2main_dep],
   install : true,
-  win_subsystem : 'windows'  # Hide console window on Windows
+  win_subsystem : 'console'  # Show console window for debug output
 )
 
 # Development tools

@@ -128,6 +128,13 @@ bool app_init(App *app) {
         return false;
     }
 
+    // Set window icon (cross-platform, works on Linux/macOS)
+    SDL_Surface *icon = SDL_LoadBMP("icon.bmp");
+    if (icon) {
+        SDL_SetWindowIcon(app->window, icon);
+        SDL_FreeSurface(icon);
+    }
+
     // Create renderer
     app->renderer = SDL_CreateRenderer(
         app->window,
