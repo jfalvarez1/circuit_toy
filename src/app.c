@@ -1805,70 +1805,40 @@ void app_update(App *app) {
                 case COMP_SQUARE_WAVE:
                 case COMP_TRIANGLE_WAVE:
                 case COMP_SAWTOOTH_WAVE:
-                case COMP_NOISE_SOURCE:
-                case COMP_DC_CURRENT: {
-                    // For sources, calculate current by summing currents through other components
-                    // connected to the source's terminals (using KCL)
-                    // Use the node connected to terminal 0 (positive terminal)
-                    int source_node = hovered_comp->node_ids[0];
-                    if (source_node > 0) {
-                        double total_current = 0;
-                        // Sum currents through all other components at this node
-                        for (int i = 0; i < app->circuit->num_components; i++) {
-                            Component *c = app->circuit->components[i];
-                            if (!c || c->id == hovered_comp->id) continue;  // Skip self and null
+                case COMP_NOISE_SOURCE: {
+                    // For a voltage source, the current it supplies equals the sum of currents
+                    // through all resistive loads in the circuit. This works because:
+                    // - In a single-source circuit, all current comes from the source
+                    // - For multiple sources, this gives an approximation
+                    double total_current = 0;
 
-                            // Check if component is connected to this node
-                            for (int t = 0; t < c->num_terminals; t++) {
-                                if (c->node_ids[t] == source_node) {
-                                    // Get the other terminal's node voltage
-                                    int other_term = (t == 0) ? 1 : 0;
-                                    double v_this = 0, v_other = 0;
+                    // Sum currents through ALL resistors in the circuit
+                    for (int i = 0; i < app->circuit->num_components; i++) {
+                        Component *c = app->circuit->components[i];
+                        if (!c || c->type != COMP_RESISTOR) continue;
 
-                                    Node *n_this = circuit_get_node(app->circuit, c->node_ids[t]);
-                                    if (n_this) v_this = n_this->voltage;
-
-                                    if (other_term < c->num_terminals && c->node_ids[other_term] > 0) {
-                                        Node *n_other = circuit_get_node(app->circuit, c->node_ids[other_term]);
-                                        if (n_other) v_other = n_other->voltage;
-                                    }
-
-                                    // Calculate current flowing OUT of the source node
-                                    // Direction: current flows from source node to other node
-                                    double i_comp = 0;
-                                    switch (c->type) {
-                                        case COMP_RESISTOR: {
-                                            double R = c->props.resistor.resistance;
-                                            if (R > 0.001) {
-                                                // Current from this node to other
-                                                i_comp = (v_this - v_other) / R;
-                                            }
-                                            break;
-                                        }
-                                        case COMP_DIODE:
-                                        case COMP_LED:
-                                        case COMP_ZENER:
-                                        case COMP_SCHOTTKY: {
-                                            double Vt_d = 0.026;
-                                            double Is_d = 1e-12;
-                                            double Vd_d = v_this - v_other;
-                                            if (t == 0) {  // Anode at source node
-                                                i_comp = Is_d * (exp(fmin(Vd_d / Vt_d, 40)) - 1);
-                                            } else {  // Cathode at source node
-                                                i_comp = -Is_d * (exp(fmin(-Vd_d / Vt_d, 40)) - 1);
-                                            }
-                                            break;
-                                        }
-                                        default:
-                                            break;
-                                    }
-                                    total_current += i_comp;
-                                    break;  // Only count once per component
-                                }
-                            }
+                        // Get voltage across resistor
+                        double v0 = 0, v1_r = 0;
+                        if (c->node_ids[0] > 0) {
+                            Node *n0 = circuit_get_node(app->circuit, c->node_ids[0]);
+                            if (n0) v0 = n0->voltage;
                         }
-                        current = total_current;
+                        if (c->node_ids[1] > 0) {
+                            Node *n1 = circuit_get_node(app->circuit, c->node_ids[1]);
+                            if (n1) v1_r = n1->voltage;
+                        }
+
+                        double R = c->props.resistor.resistance;
+                        if (R > 0.001) {
+                            total_current += fabs(v0 - v1_r) / R;
+                        }
                     }
+                    current = total_current;
+                    break;
+                }
+                case COMP_DC_CURRENT: {
+                    // Current source supplies its set current
+                    current = hovered_comp->props.dc_current.current;
                     break;
                 }
                 default:
