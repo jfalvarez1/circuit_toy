@@ -1078,8 +1078,13 @@
             <div class="component-grid">
                 <div class="component-card">
                     <h4>LED - Light Emitting Diode</h4>
-                    <p>A diode that emits light when forward biased. Color depends on wavelength setting. Shows realistic glow intensity based on current.</p>
-                    <div class="shortcut">Properties: Wavelength (nm)</div>
+                    <p>A diode that emits light when forward biased. Color depends on wavelength setting. Shows realistic glow intensity based on current. Uses Shockley diode equation for accurate I-V characteristics.</p>
+                    <div class="shortcut">Properties: Wavelength (nm), Vf, Imax</div>
+                </div>
+                <div class="component-card">
+                    <h4>LED Bar Graph (8-Segment)</h4>
+                    <p>An 8-segment LED bar display with common cathode. Each segment is an independent LED using the Shockley diode model. Terminals 0-7 are individual anodes (top), terminal 8 is the common cathode (bottom). LEDs will burn out if current exceeds 2x the max rating.</p>
+                    <div class="shortcut">Properties: Vf, Imax, Color (red/green/blue/yellow/orange/white)</div>
                 </div>
                 <div class="component-card">
                     <h4>Zener - Zener Diode</h4>
