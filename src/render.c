@@ -70,7 +70,8 @@ void render_vco(RenderContext *ctx, float x, float y, int rotation);
 void render_optocoupler(RenderContext *ctx, float x, float y, int rotation);
 void render_test_point(RenderContext *ctx, float x, float y, int rotation);
 void render_7seg_display(RenderContext *ctx, float x, float y, int rotation);
-void render_led_array(RenderContext *ctx, float x, float y, int rotation);
+void render_led_array(RenderContext *ctx, float x, float y, int rotation,
+                      double *currents, bool *failed, double max_current, int color_idx);
 void render_bcd_decoder(RenderContext *ctx, float x, float y, int rotation);
 void render_subcircuit(RenderContext *ctx, float x, float y, int rotation, int def_id, const char *name);
 
@@ -728,34 +729,62 @@ void render_component(RenderContext *ctx, Component *comp) {
                 r = 139; g = 0; b = 0;
             }
 
-            // Draw glow if LED has current
+            // Check if LED is burning (current exceeds max_current)
             double current = comp->props.led.current;
-            if (current > 1e-6) {  // Threshold for visible glow
-                // Calculate glow intensity based on current (max ~20mA)
-                double intensity = fmin(1.0, current / 0.015);  // Full brightness at 15mA
-                uint8_t alpha = (uint8_t)(intensity * 200);
+            double max_current = comp->props.led.max_current;
+            bool is_burning = (max_current > 0 && current > max_current);
 
-                // Draw glow circles (use SDL directly for filled circle approximation)
-                SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_ADD);
-                // Get screen coordinates for component center
+            // Draw glow if LED has current
+            if (current > 1e-6) {  // Threshold for visible glow
                 int scr_x, scr_y;
                 render_world_to_screen(ctx, comp->x, comp->y, &scr_x, &scr_y);
-                for (int radius = 20; radius >= 5; radius -= 3) {
-                    uint8_t glow_alpha = (uint8_t)(alpha * (1.0 - (radius - 5) / 15.0));
-                    SDL_SetRenderDrawColor(ctx->renderer, r, g, b, glow_alpha);
-                    int screen_radius = (int)(radius * ctx->zoom);
-                    // Draw filled circle approximation
-                    for (int dy = -screen_radius; dy <= screen_radius; dy++) {
-                        int dx = (int)sqrt(screen_radius * screen_radius - dy * dy);
-                        SDL_RenderDrawLine(ctx->renderer, scr_x - dx, scr_y + dy, scr_x + dx, scr_y + dy);
+
+                if (is_burning) {
+                    // Burning effect - flickering red/orange glow
+                    double overcurrent_ratio = current / max_current;
+                    double flicker = 0.7 + 0.3 * sin(SDL_GetTicks() * 0.02);  // Flicker animation
+                    uint8_t burn_alpha = (uint8_t)(200 * fmin(1.0, overcurrent_ratio - 1.0) * flicker);
+
+                    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_ADD);
+                    // Draw burning glow - larger and more intense
+                    for (int radius = 30; radius >= 5; radius -= 3) {
+                        uint8_t glow_alpha = (uint8_t)(burn_alpha * (1.0 - (radius - 5) / 25.0));
+                        // Orange-red burning color
+                        SDL_SetRenderDrawColor(ctx->renderer, 255, (uint8_t)(50 * flicker), 0, glow_alpha);
+                        int screen_radius = (int)(radius * ctx->zoom);
+                        for (int dy = -screen_radius; dy <= screen_radius; dy++) {
+                            int dx = (int)sqrt(screen_radius * screen_radius - dy * dy);
+                            SDL_RenderDrawLine(ctx->renderer, scr_x - dx, scr_y + dy, scr_x + dx, scr_y + dy);
+                        }
                     }
+                    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+                } else {
+                    // Normal LED glow
+                    double intensity = fmin(1.0, current / 0.015);  // Full brightness at 15mA
+                    uint8_t alpha = (uint8_t)(intensity * 200);
+
+                    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_ADD);
+                    for (int radius = 20; radius >= 5; radius -= 3) {
+                        uint8_t glow_alpha = (uint8_t)(alpha * (1.0 - (radius - 5) / 15.0));
+                        SDL_SetRenderDrawColor(ctx->renderer, r, g, b, glow_alpha);
+                        int screen_radius = (int)(radius * ctx->zoom);
+                        for (int dy = -screen_radius; dy <= screen_radius; dy++) {
+                            int dx = (int)sqrt(screen_radius * screen_radius - dy * dy);
+                            SDL_RenderDrawLine(ctx->renderer, scr_x - dx, scr_y + dy, scr_x + dx, scr_y + dy);
+                        }
+                    }
+                    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
                 }
-                SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
             }
 
-            // Set LED symbol color based on wavelength
+            // Set LED symbol color based on wavelength or burning state
             if (!comp->selected && !comp->highlighted) {
-                render_set_color(ctx, (Color){r, g, b, 0xff});
+                if (is_burning) {
+                    // Burning LED shows red
+                    render_set_color(ctx, (Color){0xff, 0x20, 0x20, 0xff});
+                } else {
+                    render_set_color(ctx, (Color){r, g, b, 0xff});
+                }
             }
             render_led(ctx, comp->x, comp->y, comp->rotation);
             break;
@@ -1061,7 +1090,9 @@ void render_component(RenderContext *ctx, Component *comp) {
             render_7seg_display(ctx, comp->x, comp->y, comp->rotation);
             break;
         case COMP_LED_ARRAY:
-            render_led_array(ctx, comp->x, comp->y, comp->rotation);
+            render_led_array(ctx, comp->x, comp->y, comp->rotation,
+                           comp->props.led_array.currents, comp->props.led_array.failed,
+                           comp->props.led_array.max_current, comp->props.led_array.color);
             break;
         case COMP_LED_MATRIX:
             render_led_matrix(ctx, comp->x, comp->y, comp->rotation,
@@ -2446,6 +2477,78 @@ void render_short_circuit_highlights(RenderContext *ctx, Circuit *circuit,
         // === "SHORT!" TEXT ===
         // Draw "SHORT!" text above the component
         render_draw_text(ctx, "SHORT!", sx - 25, sy - half_size - 30, (Color){0xff, 0x40, 0x40, 0xff});
+    }
+
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_NONE);
+}
+
+void render_open_circuit_highlights(RenderContext *ctx, Circuit *circuit,
+                                    int *comp_ids, int comp_count) {
+    if (!ctx || !circuit || !comp_ids || comp_count <= 0) return;
+
+    Uint32 ticks = SDL_GetTicks();
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+
+    for (int i = 0; i < comp_count; i++) {
+        // Find component by ID
+        Component *comp = NULL;
+        for (int j = 0; j < circuit->num_components; j++) {
+            if (circuit->components[j] && circuit->components[j]->id == comp_ids[i]) {
+                comp = circuit->components[j];
+                break;
+            }
+        }
+        if (!comp) continue;
+
+        // Convert world to screen coordinates
+        int sx, sy;
+        render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+        int half_size = (int)(40 * ctx->zoom);
+
+        // === ELECTRIC/SPARKING GLOW EFFECT ===
+        // Flickering yellow/cyan glow around component
+        float flicker = 0.5f + 0.5f * sinf((float)ticks * 0.02f + comp->id * 1.7f);
+        float flicker2 = 0.5f + 0.5f * sinf((float)ticks * 0.03f + comp->id * 2.3f);
+
+        // Draw multiple layers of electric glow
+        for (int layer = 3; layer >= 0; layer--) {
+            int expand = layer * 4;
+            uint8_t alpha = (uint8_t)(60 + 40 * flicker - layer * 15);
+            uint8_t red = (uint8_t)(255);
+            uint8_t green = (uint8_t)(200 + 55 * flicker2);
+            uint8_t blue = (uint8_t)(50 * flicker);
+
+            SDL_SetRenderDrawColor(ctx->renderer, red, green, blue, alpha);
+            SDL_Rect glow = {
+                sx - half_size - 5 - expand,
+                sy - half_size - 5 - expand,
+                half_size * 2 + 10 + expand * 2,
+                half_size * 2 + 10 + expand * 2
+            };
+            SDL_RenderFillRect(ctx->renderer, &glow);
+        }
+
+        // === BLINKING YELLOW BORDER ===
+        bool border_visible = ((ticks / 200) % 2) == 0;
+        if (border_visible) {
+            SDL_SetRenderDrawColor(ctx->renderer, 0xff, 0xcc, 0x00, 0xe0);
+            SDL_Rect rect = {
+                sx - half_size - 5,
+                sy - half_size - 5,
+                half_size * 2 + 10,
+                half_size * 2 + 10
+            };
+            SDL_RenderDrawRect(ctx->renderer, &rect);
+            rect.x -= 2;
+            rect.y -= 2;
+            rect.w += 4;
+            rect.h += 4;
+            SDL_RenderDrawRect(ctx->renderer, &rect);
+        }
+
+        // === "OPEN!" TEXT ===
+        // Draw "OPEN!" text above the component
+        render_draw_text(ctx, "OPEN!", sx - 22, sy - half_size - 30, (Color){0xff, 0xcc, 0x00, 0xff});
     }
 
     SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_NONE);
@@ -3853,32 +3956,92 @@ void render_7seg_display(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_text_small(ctx, "7SEG", sx - 10, sy - 5, label_color);
 }
 
-// LED array (bar graph)
-// Component size: 80x30, terminals at (-40, 0) and (40, 0)
-void render_led_array(RenderContext *ctx, float x, float y, int rotation) {
-    // Lead lines to terminals at (-40, 0) and (40, 0)
-    render_draw_line_rotated(ctx, x, y, -40, 0, -30, 0, rotation);  // Left lead
-    render_draw_line_rotated(ctx, x, y, 30, 0, 40, 0, rotation);    // Right lead
-
-    // Outer rectangle (sized to fit within component bounds)
-    render_draw_line_rotated(ctx, x, y, -30, -12, 30, -12, rotation);  // Top
-    render_draw_line_rotated(ctx, x, y, 30, -12, 30, 12, rotation);    // Right
-    render_draw_line_rotated(ctx, x, y, 30, 12, -30, 12, rotation);    // Bottom
-    render_draw_line_rotated(ctx, x, y, -30, 12, -30, -12, rotation);  // Left
-
-    // LED segments (8 bars)
+// LED array (bar graph) - 8 individual LEDs with common cathode
+// Component size: 160x70, 8 anode terminals at top (20-unit spacing), 1 common cathode at bottom
+// Each LED lights independently based on its individual current
+void render_led_array(RenderContext *ctx, float x, float y, int rotation,
+                      double *currents, bool *failed, double max_current, int color_idx) {
+    // Lead lines to 8 anode terminals at top (y = -30)
+    // Terminals at: -70, -50, -30, -10, 10, 30, 50, 70 (20-unit spacing, grid-aligned)
     for (int i = 0; i < 8; i++) {
-        float bx = -26 + i * 7;
-        render_draw_line_rotated(ctx, x, y, bx, -8, bx + 5, -8, rotation);
-        render_draw_line_rotated(ctx, x, y, bx + 5, -8, bx + 5, 8, rotation);
-        render_draw_line_rotated(ctx, x, y, bx + 5, 8, bx, 8, rotation);
-        render_draw_line_rotated(ctx, x, y, bx, 8, bx, -8, rotation);
+        float tx = -70 + i * 20;
+        render_draw_line_rotated(ctx, x, y, tx, -30, tx, -22, rotation);
     }
+    // Common cathode terminal at bottom (y = 30)
+    render_draw_line_rotated(ctx, x, y, 0, 22, 0, 30, rotation);
+
+    // Outer rectangle
+    render_draw_line_rotated(ctx, x, y, -78, -22, 78, -22, rotation);  // Top
+    render_draw_line_rotated(ctx, x, y, 78, -22, 78, 22, rotation);    // Right
+    render_draw_line_rotated(ctx, x, y, 78, 22, -78, 22, rotation);    // Bottom
+    render_draw_line_rotated(ctx, x, y, -78, 22, -78, -22, rotation);  // Left
+
+    // Get LED color based on color_idx
+    Color led_colors[] = {
+        {0xff, 0x00, 0x00, 0xff},  // 0: Red
+        {0x00, 0xff, 0x00, 0xff},  // 1: Green
+        {0x00, 0x00, 0xff, 0xff},  // 2: Blue
+        {0xff, 0xff, 0x00, 0xff},  // 3: Yellow
+        {0xff, 0xa5, 0x00, 0xff},  // 4: Orange
+        {0xff, 0xff, 0xff, 0xff},  // 5: White
+    };
+    int num_colors = sizeof(led_colors) / sizeof(led_colors[0]);
+    Color lit_color = led_colors[color_idx % num_colors];
+
+    // LED segments (8 bars) - each with independent state
+    for (int i = 0; i < 8; i++) {
+        float bx = -70 + i * 20;
+
+        // Draw outline (larger bars for bigger component)
+        render_draw_line_rotated(ctx, x, y, bx - 7, -18, bx + 7, -18, rotation);
+        render_draw_line_rotated(ctx, x, y, bx + 7, -18, bx + 7, 18, rotation);
+        render_draw_line_rotated(ctx, x, y, bx + 7, 18, bx - 7, 18, rotation);
+        render_draw_line_rotated(ctx, x, y, bx - 7, 18, bx - 7, -18, rotation);
+
+        // Check if this LED is burned (failed)
+        if (failed && failed[i]) {
+            // Draw burned LED - dark with X pattern
+            SDL_SetRenderDrawColor(ctx->renderer, 0x40, 0x20, 0x00, 0xff);
+            for (int dy = -17; dy <= 17; dy++) {
+                render_draw_line_rotated(ctx, x, y, bx - 6, (float)dy, bx + 6, (float)dy, rotation);
+            }
+            // Draw X to indicate burned
+            SDL_SetRenderDrawColor(ctx->renderer, 0x00, 0x00, 0x00, 0xff);
+            render_draw_line_rotated(ctx, x, y, bx - 5, -15, bx + 5, 15, rotation);
+            render_draw_line_rotated(ctx, x, y, bx + 5, -15, bx - 5, 15, rotation);
+            SDL_SetRenderDrawColor(ctx->renderer, 0x00, 0xff, 0xff, 0xff);
+            continue;
+        }
+
+        // Get current for this LED
+        double led_current = (currents) ? currents[i] : 0.0;
+
+        // Determine if lit (current > threshold)
+        bool is_lit = (led_current > 0.0001);  // 0.1mA threshold
+
+        if (is_lit) {
+            // Calculate brightness based on current
+            float brightness = (float)(led_current / max_current);
+            if (brightness > 1.0f) brightness = 1.0f;
+            if (brightness < 0.3f) brightness = 0.3f;
+
+            Uint8 r = (Uint8)(lit_color.r * brightness);
+            Uint8 g = (Uint8)(lit_color.g * brightness);
+            Uint8 b = (Uint8)(lit_color.b * brightness);
+
+            SDL_SetRenderDrawColor(ctx->renderer, r, g, b, 0xff);
+            for (int dy = -17; dy <= 17; dy++) {
+                render_draw_line_rotated(ctx, x, y, bx - 6, (float)dy, bx + 6, (float)dy, rotation);
+            }
+            SDL_SetRenderDrawColor(ctx->renderer, 0x00, 0xff, 0xff, 0xff);
+        }
+    }
+
     // Label
     int sx, sy;
-    render_world_to_screen(ctx, x, y - 22, &sx, &sy);
+    render_world_to_screen(ctx, x, y + 35, &sx, &sy);
     Color label_color = {0x00, 0xff, 0xff, 0xff};
-    render_draw_text(ctx, "LED ARR", sx - 20, sy, label_color);
+    render_draw_text(ctx, "LED BAR", sx - 22, sy, label_color);
 }
 
 // BCD to 7-segment decoder (7447/74LS47 style)

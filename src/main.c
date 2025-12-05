@@ -16,8 +16,8 @@ int main(int argc, char *argv[]) {
     printf("Circuit Playground v1.0.0\n");
     printf("A circuit simulator inspired by The Powder Toy\n\n");
 
-    // Initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
+    // Initialize SDL (including audio for microphone support)
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_AUDIO) < 0) {
         fprintf(stderr, "SDL initialization failed: %s\n", SDL_GetError());
         return 1;
     }

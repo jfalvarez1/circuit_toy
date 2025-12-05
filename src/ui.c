@@ -496,6 +496,36 @@ void ui_init(UIState *ui) {
     ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_COMPARATOR, "Cmp", false, false
     };
+    // RLC Resonant Circuits
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_SERIES_RLC, "sRLC", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_PARALLEL_RLC, "pRLC", false, false
+    };
+    // Measurement & Detection Circuits
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_WHEATSTONE, "Whst", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_PEAK_DETECTOR, "Peak", false, false
+    };
+    // Signal Processing Circuits
+    col = 0;
+    pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_CLAMPER, "Clmp", false, false
+    };
+    col++;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_PHASE_SHIFT_OSC, "PhOsc", false, false
+    };
 
     // Calculate palette content height (from toolbar to last item + padding)
     ui->palette_content_height = pal_y + pal_h + 10 - TOOLBAR_HEIGHT;
@@ -1843,6 +1873,26 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
                 ui->num_properties++;
 
+                // Phase
+                prop_y += 18;
+                bool edit_saw_phase = input && input->editing_property && input->editing_prop_type == PROP_PHASE;
+                snprintf(buf, sizeof(buf), "%.1f deg", selected->props.sawtooth_wave.phase);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Phase:", buf,
+                                   edit_saw_phase, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_PHASE;
+                ui->num_properties++;
+
+                // Offset
+                prop_y += 18;
+                bool edit_saw_offset = input && input->editing_property && input->editing_prop_type == PROP_OFFSET;
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.sawtooth_wave.offset);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Offset:", buf,
+                                   edit_saw_offset, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_OFFSET;
+                ui->num_properties++;
+
                 // Amplitude sweep
                 prop_y += 22;
                 prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
@@ -1870,6 +1920,16 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui->properties[ui->num_properties].prop_type = PROP_VALUE;
                 ui->num_properties++;
 
+                // Bandwidth
+                prop_y += 18;
+                bool edit_noise_bw = input && input->editing_property && input->editing_prop_type == PROP_BANDWIDTH;
+                format_engineering(selected->props.noise_source.bandwidth, "Hz", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Bandwidth:", buf,
+                                   edit_noise_bw, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_BANDWIDTH;
+                ui->num_properties++;
+
                 // Amplitude sweep
                 prop_y += 22;
                 prop_y = draw_sweep_config(renderer, ui, x, prop_y, prop_w,
@@ -1879,6 +1939,162 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     PROP_SWEEP_AMP_TIME, PROP_SWEEP_AMP_STEPS,
                     PROP_SWEEP_AMP_REPEAT, input, "V");
                 break;
+
+            case COMP_CLOCK: {
+                // Frequency
+                bool edit_clock_freq = input && input->editing_property && input->editing_prop_type == PROP_FREQUENCY;
+                snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.clock.frequency);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
+                                   edit_clock_freq, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                ui->num_properties++;
+
+                // V_high
+                prop_y += 18;
+                bool edit_v_high = input && input->editing_property && input->editing_prop_type == PROP_V_HIGH;
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.clock.v_high);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "V_high:", buf,
+                                   edit_v_high, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_V_HIGH;
+                ui->num_properties++;
+
+                // V_low
+                prop_y += 18;
+                bool edit_v_low = input && input->editing_property && input->editing_prop_type == PROP_V_LOW;
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.clock.v_low);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "V_low:", buf,
+                                   edit_v_low, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_V_LOW;
+                ui->num_properties++;
+
+                // Duty cycle
+                prop_y += 18;
+                bool edit_clock_duty = input && input->editing_property && input->editing_prop_type == PROP_DUTY;
+                snprintf(buf, sizeof(buf), "%.0f %%", selected->props.clock.duty * 100);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Duty:", buf,
+                                   edit_clock_duty, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_DUTY;
+                ui->num_properties++;
+                break;
+            }
+
+            case COMP_PULSE_SOURCE: {
+                // V_low
+                bool edit_pulse_v_low = input && input->editing_property && input->editing_prop_type == PROP_V_LOW;
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.pulse_source.v_low);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "V_low:", buf,
+                                   edit_pulse_v_low, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_V_LOW;
+                ui->num_properties++;
+
+                // V_high
+                prop_y += 18;
+                bool edit_pulse_v_high = input && input->editing_property && input->editing_prop_type == PROP_V_HIGH;
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.pulse_source.v_high);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "V_high:", buf,
+                                   edit_pulse_v_high, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_V_HIGH;
+                ui->num_properties++;
+
+                // Delay
+                prop_y += 18;
+                bool edit_pulse_delay = input && input->editing_property && input->editing_prop_type == PROP_DELAY;
+                format_engineering(selected->props.pulse_source.delay, "s", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Delay:", buf,
+                                   edit_pulse_delay, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_DELAY;
+                ui->num_properties++;
+
+                // Rise time
+                prop_y += 18;
+                bool edit_pulse_rise = input && input->editing_property && input->editing_prop_type == PROP_RISE_TIME;
+                format_engineering(selected->props.pulse_source.rise_time, "s", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Rise:", buf,
+                                   edit_pulse_rise, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_RISE_TIME;
+                ui->num_properties++;
+
+                // Fall time
+                prop_y += 18;
+                bool edit_pulse_fall = input && input->editing_property && input->editing_prop_type == PROP_FALL_TIME;
+                format_engineering(selected->props.pulse_source.fall_time, "s", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Fall:", buf,
+                                   edit_pulse_fall, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_FALL_TIME;
+                ui->num_properties++;
+
+                // Pulse width
+                prop_y += 18;
+                bool edit_pulse_width = input && input->editing_property && input->editing_prop_type == PROP_PULSE_WIDTH;
+                format_engineering(selected->props.pulse_source.pulse_width, "s", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Width:", buf,
+                                   edit_pulse_width, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_PULSE_WIDTH;
+                ui->num_properties++;
+
+                // Period
+                prop_y += 18;
+                bool edit_pulse_period = input && input->editing_property && input->editing_prop_type == PROP_PERIOD;
+                format_engineering(selected->props.pulse_source.period, "s", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Period:", buf,
+                                   edit_pulse_period, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_PERIOD;
+                ui->num_properties++;
+                break;
+            }
+
+            case COMP_PWM_SOURCE: {
+                // Amplitude
+                bool edit_pwm_amp = input && input->editing_property && input->editing_prop_type == PROP_VALUE;
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.pwm_source.amplitude);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
+                                   edit_pwm_amp, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
+
+                // Frequency
+                prop_y += 18;
+                bool edit_pwm_freq = input && input->editing_property && input->editing_prop_type == PROP_FREQUENCY;
+                snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.pwm_source.frequency);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
+                                   edit_pwm_freq, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                ui->num_properties++;
+
+                // Duty cycle
+                prop_y += 18;
+                bool edit_pwm_duty = input && input->editing_property && input->editing_prop_type == PROP_DUTY;
+                snprintf(buf, sizeof(buf), "%.0f %%", selected->props.pwm_source.duty * 100);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Duty:", buf,
+                                   edit_pwm_duty, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_DUTY;
+                ui->num_properties++;
+
+                // Offset
+                prop_y += 18;
+                bool edit_pwm_offset = input && input->editing_property && input->editing_prop_type == PROP_OFFSET;
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.pwm_source.offset);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Offset:", buf,
+                                   edit_pwm_offset, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_OFFSET;
+                ui->num_properties++;
+                break;
+            }
 
             case COMP_DIODE: {
                 // Model mode toggle
@@ -2183,6 +2399,33 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.2f mA (%.0f%%)", selected->props.led.current * 1000,
                          curr_ratio * 100);
                 ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                break;
+            }
+
+            case COMP_LED_ARRAY: {
+                // LED Array color selector
+                const char *color_names[] = {"Red", "Green", "Blue", "Yellow", "Orange", "White"};
+                int color_idx = selected->props.led_array.color % 6;
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Color:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                snprintf(buf, sizeof(buf), "[%s] v", color_names[color_idx]);
+                ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_LED_ARRAY_COLOR;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Forward voltage (read-only, based on color)
+                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                snprintf(buf, sizeof(buf), "Vf: %.2f V", selected->props.led_array.vf);
+                ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                prop_y += 18;
+
+                // Max current per LED
+                snprintf(buf, sizeof(buf), "Max I: %.0f mA", selected->props.led_array.max_current * 1000);
+                ui_draw_text(renderer, buf, x + 10, prop_y + 2);
                 break;
             }
 
@@ -5599,6 +5842,10 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (ui->dragging_temp) {
             ui->dragging_temp = false;
         }
+        // Release palette scrollbar drag
+        if (ui->palette_scrolling) {
+            ui->palette_scrolling = false;
+        }
     }
 
     // Check toolbar buttons
@@ -5733,6 +5980,52 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         for (int i = 0; i < ui->num_properties && i < 16; i++) {
             if (point_in_rect(x, y, &ui->properties[i].bounds)) {
                 return UI_ACTION_PROP_EDIT + ui->properties[i].prop_type;
+            }
+        }
+
+        // Check palette scrollbar click (scrollbar is at x = PALETTE_WIDTH - 8, width 6)
+        if (ui->palette_content_height > ui->palette_visible_height) {
+            int scrollbar_x = PALETTE_WIDTH - 8;
+            int scrollbar_track_y = TOOLBAR_HEIGHT + 2;
+            int scrollbar_track_h = ui->palette_visible_height - 4;
+
+            // Check if clicking on scrollbar track area
+            if (x >= scrollbar_x - 2 && x < PALETTE_WIDTH &&
+                y >= scrollbar_track_y && y < scrollbar_track_y + scrollbar_track_h) {
+
+                // Calculate thumb position and size (same as in render)
+                float visible_ratio = (float)ui->palette_visible_height / ui->palette_content_height;
+                int thumb_h = (int)(scrollbar_track_h * visible_ratio);
+                if (thumb_h < 20) thumb_h = 20;
+
+                int max_scroll = ui->palette_content_height - ui->palette_visible_height;
+                float scroll_ratio = (max_scroll > 0) ? (float)ui->palette_scroll_offset / max_scroll : 0;
+                int thumb_y = scrollbar_track_y + (int)((scrollbar_track_h - thumb_h) * scroll_ratio);
+
+                // Check if clicking on thumb (drag) or track (jump)
+                if (y >= thumb_y && y < thumb_y + thumb_h) {
+                    // Clicking on thumb - start drag
+                    ui->palette_scrolling = true;
+                    ui->palette_scroll_drag_start_y = y;
+                    ui->palette_scroll_drag_start_offset = ui->palette_scroll_offset;
+                } else {
+                    // Clicking on track - jump to position
+                    // Calculate scroll position based on click position in track
+                    int available_track = scrollbar_track_h - thumb_h;
+                    if (available_track > 0 && max_scroll > 0) {
+                        // Center the thumb on the click position
+                        int target_thumb_y = y - thumb_h / 2;
+                        if (target_thumb_y < scrollbar_track_y) target_thumb_y = scrollbar_track_y;
+                        if (target_thumb_y > scrollbar_track_y + available_track)
+                            target_thumb_y = scrollbar_track_y + available_track;
+
+                        float new_scroll_ratio = (float)(target_thumb_y - scrollbar_track_y) / available_track;
+                        ui->palette_scroll_offset = (int)(new_scroll_ratio * max_scroll);
+                        if (ui->palette_scroll_offset < 0) ui->palette_scroll_offset = 0;
+                        if (ui->palette_scroll_offset > max_scroll) ui->palette_scroll_offset = max_scroll;
+                    }
+                }
+                return UI_ACTION_NONE;
             }
         }
 
@@ -5979,6 +6272,33 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         x_norm = CLAMP(x_norm, 0.0, 1.0);
         double log_freq = log_start + x_norm * (log_stop - log_start);
         ui->bode_cursor_freq = pow(10, log_freq);
+        return UI_ACTION_NONE;
+    }
+
+    // Handle palette scrollbar dragging
+    if (ui->palette_scrolling) {
+        // Calculate scroll position based on mouse Y delta
+        int scrollbar_track_h = ui->palette_visible_height - 4;
+        int max_scroll = ui->palette_content_height - ui->palette_visible_height;
+        if (max_scroll > 0 && scrollbar_track_h > 0) {
+            // Calculate thumb size to determine how much track space is available
+            float visible_ratio = (float)ui->palette_visible_height / ui->palette_content_height;
+            int thumb_h = (int)(scrollbar_track_h * visible_ratio);
+            if (thumb_h < 20) thumb_h = 20;
+            int available_track = scrollbar_track_h - thumb_h;
+
+            if (available_track > 0) {
+                // Convert mouse delta to scroll delta
+                int mouse_delta = y - ui->palette_scroll_drag_start_y;
+                float scroll_ratio = (float)mouse_delta / available_track;
+                int new_offset = ui->palette_scroll_drag_start_offset + (int)(scroll_ratio * max_scroll);
+
+                // Clamp to valid range
+                if (new_offset < 0) new_offset = 0;
+                if (new_offset > max_scroll) new_offset = max_scroll;
+                ui->palette_scroll_offset = new_offset;
+            }
+        }
         return UI_ACTION_NONE;
     }
 

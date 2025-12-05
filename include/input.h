@@ -72,6 +72,7 @@ typedef enum {
     PROP_LED_COLOR,     // Color selector (cycle through presets)
     PROP_LED_VF,        // Forward voltage
     PROP_LED_IMAX,      // Max current
+    PROP_LED_ARRAY_COLOR, // LED Array color selector
 
     // Op-Amp parameters
     PROP_OPAMP_GAIN,    // Open-loop gain
@@ -87,6 +88,10 @@ typedef enum {
     // Waveform parameters
     PROP_RISE_TIME,     // Rise time
     PROP_FALL_TIME,     // Fall time
+    PROP_DELAY,         // Pulse delay time
+    PROP_PULSE_WIDTH,   // Pulse width time
+    PROP_PERIOD,        // Pulse period time
+    PROP_BANDWIDTH,     // Noise bandwidth
 
     // Sweep parameters
     PROP_SWEEP_VOLTAGE_ENABLE,    // Toggle voltage sweep
@@ -211,6 +216,7 @@ typedef struct InputState {
     bool is_panning;
     bool is_dragging;
     Component *dragging_component;
+    float drag_start_x, drag_start_y;  // Component position when drag started (for undo)
 
     // Wire drawing
     bool drawing_wire;

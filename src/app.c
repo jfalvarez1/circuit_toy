@@ -46,36 +46,56 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
 // SDL audio capture callback - called by SDL when mic data is available
 static void microphone_callback(void *userdata, Uint8 *stream, int len) {
     (void)userdata;
-    float *in = (float *)stream;
-    int samples = len / sizeof(float);
 
-    if (samples <= 0) return;
-
-    // Calculate average sample for this buffer (for current_voltage)
+    int samples;
     float sum = 0.0f;
     float peak = 0.0f;
 
-    for (int i = 0; i < samples; i++) {
-        float sample = in[i] * g_microphone.gain;
+    // Handle different audio formats
+    if (g_microphone.actual_format == AUDIO_F32SYS || g_microphone.actual_format == AUDIO_F32LSB || g_microphone.actual_format == AUDIO_F32MSB) {
+        // Float format
+        float *in = (float *)stream;
+        samples = len / sizeof(float);
+        if (samples <= 0) return;
 
-        // Clamp sample
-        if (sample > 1.0f) sample = 1.0f;
-        if (sample < -1.0f) sample = -1.0f;
+        for (int i = 0; i < samples; i++) {
+            float sample = in[i] * g_microphone.gain;
+            if (sample > 1.0f) sample = 1.0f;
+            if (sample < -1.0f) sample = -1.0f;
+            g_microphone.buffer[g_microphone.write_pos] = sample;
+            g_microphone.write_pos = (g_microphone.write_pos + 1) % MIC_BUFFER_SIZE;
+            sum += sample;
+            float abs_sample = sample < 0 ? -sample : sample;
+            if (abs_sample > peak) peak = abs_sample;
+        }
+        g_microphone.last_sample = in[samples - 1] * g_microphone.gain;
+    } else if (g_microphone.actual_format == AUDIO_S16SYS || g_microphone.actual_format == AUDIO_S16LSB || g_microphone.actual_format == AUDIO_S16MSB) {
+        // 16-bit signed format
+        Sint16 *in = (Sint16 *)stream;
+        samples = len / sizeof(Sint16);
+        if (samples <= 0) return;
 
-        // Store in ring buffer
-        g_microphone.buffer[g_microphone.write_pos] = sample;
-        g_microphone.write_pos = (g_microphone.write_pos + 1) % MIC_BUFFER_SIZE;
-
-        sum += sample;
-
-        // Track peak level
-        float abs_sample = sample < 0 ? -sample : sample;
-        if (abs_sample > peak) peak = abs_sample;
+        for (int i = 0; i < samples; i++) {
+            float sample = (in[i] / 32768.0f) * g_microphone.gain;
+            if (sample > 1.0f) sample = 1.0f;
+            if (sample < -1.0f) sample = -1.0f;
+            g_microphone.buffer[g_microphone.write_pos] = sample;
+            g_microphone.write_pos = (g_microphone.write_pos + 1) % MIC_BUFFER_SIZE;
+            sum += sample;
+            float abs_sample = sample < 0 ? -sample : sample;
+            if (abs_sample > peak) peak = abs_sample;
+        }
+        g_microphone.last_sample = (in[samples - 1] / 32768.0f) * g_microphone.gain;
+    } else {
+        // Unsupported format - just return
+        return;
     }
+
+    // Calculate average sample for this buffer (for current_voltage)
+    if (samples <= 0) return;
 
     // Update current voltage (average of buffer)
     g_microphone.current_voltage = sum / samples;
-    g_microphone.last_sample = in[samples - 1] * g_microphone.gain;
 
     // Update peak level with decay
     if (peak > g_microphone.peak_level) {
@@ -211,6 +231,13 @@ bool app_init(App *app) {
 
     // Initialize SDL audio capture for microphone input
     {
+        // List available capture devices for debugging
+        int num_capture_devices = SDL_GetNumAudioDevices(1);  // 1 = capture devices
+        printf("Available microphone devices (%d):\n", num_capture_devices);
+        for (int i = 0; i < num_capture_devices; i++) {
+            printf("  [%d] %s\n", i, SDL_GetAudioDeviceName(i, 1));
+        }
+
         SDL_AudioSpec want, have;
         SDL_memset(&want, 0, sizeof(want));
         want.freq = MIC_SAMPLE_RATE;
@@ -220,8 +247,10 @@ bool app_init(App *app) {
         want.callback = microphone_callback;
         want.userdata = NULL;
 
-        // Open audio device for capture (1 = capture mode)
-        SDL_AudioDeviceID mic_dev = SDL_OpenAudioDevice(NULL, 1, &want, &have, 0);
+        // Open default audio device for capture (NULL = default device, 1 = capture mode)
+        // Allow frequency and format changes for better compatibility
+        SDL_AudioDeviceID mic_dev = SDL_OpenAudioDevice(NULL, 1, &want, &have,
+            SDL_AUDIO_ALLOW_FREQUENCY_CHANGE | SDL_AUDIO_ALLOW_FORMAT_CHANGE);
         if (mic_dev > 0) {
             g_microphone.initialized = true;
             g_microphone.enabled = true;
@@ -232,8 +261,11 @@ bool app_init(App *app) {
             g_microphone.last_sample = 0.0f;
             g_microphone.current_voltage = 0.0f;
             g_microphone.peak_level = 0.0f;
+            g_microphone.actual_freq = have.freq;
+            g_microphone.actual_format = have.format;
             SDL_PauseAudioDevice(mic_dev, 0);  // Start audio capture
-            printf("Microphone initialized: %d Hz, %d channels\n", have.freq, have.channels);
+            printf("Microphone initialized: %d Hz, %d channels, format 0x%04X\n",
+                   have.freq, have.channels, have.format);
         } else {
             g_microphone.initialized = false;
             g_microphone.enabled = false;
@@ -1052,7 +1084,7 @@ void app_handle_events(App *app) {
                 }
                 // Handle property edit start actions (UI_ACTION_PROP_EDIT + prop_type)
                 else if (app->input.pending_ui_action >= UI_ACTION_PROP_EDIT &&
-                    app->input.pending_ui_action < UI_ACTION_PROP_EDIT + 100) {
+                    app->input.pending_ui_action < UI_ACTION_PROP_EDIT + 200) {
                     int prop_type = app->input.pending_ui_action - UI_ACTION_PROP_EDIT;
                     if (app->input.selected_component && !app->input.editing_property) {
                         // Get current value to show in edit field
@@ -1182,6 +1214,27 @@ void app_handle_events(App *app) {
                                 char msg[64];
                                 snprintf(msg, sizeof(msg), "LED Color: %s (%.0f nm, Vf=%.1fV)",
                                          new_color, c->props.led.wavelength, c->props.led.vf);
+                                ui_set_status(&app->ui, msg);
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;  // Don't start text edit for color selector
+                        }
+                        else if (prop_type == PROP_LED_ARRAY_COLOR) {
+                            // LED Array color selector - cycle through presets with realistic Vf
+                            if (c->type == COMP_LED_ARRAY) {
+                                // Realistic forward voltages per color
+                                // Red: 1.8-2.0V, Orange: 2.0-2.1V, Yellow: 2.0-2.1V
+                                // Green: 2.0-2.2V, Blue: 3.0-3.3V, White: 3.0-3.4V
+                                const char *color_names[] = {"Red", "Green", "Blue", "Yellow", "Orange", "White"};
+                                double color_vf[] = {1.8, 2.1, 3.2, 2.0, 2.0, 3.2};
+
+                                // Cycle to next color (0-5)
+                                c->props.led_array.color = (c->props.led_array.color + 1) % 6;
+                                c->props.led_array.vf = color_vf[c->props.led_array.color];
+
+                                char msg[64];
+                                snprintf(msg, sizeof(msg), "LED Array Color: %s (Vf=%.1fV)",
+                                         color_names[c->props.led_array.color], c->props.led_array.vf);
                                 ui_set_status(&app->ui, msg);
                             }
                             app->input.pending_ui_action = UI_ACTION_NONE;
@@ -1789,14 +1842,31 @@ void app_update(App *app) {
                 }
                 case COMP_DIODE:
                 case COMP_LED:
+                case COMP_LED_ARRAY:
                 case COMP_ZENER:
                 case COMP_SCHOTTKY: {
-                    // Diode current: I = Is * (exp(V/Vt) - 1)
-                    double Vt = 0.026;
-                    double Is = 1e-12;
-                    double Vd = v0 - v1;
-                    if (Vd > 0) {
-                        current = Is * (exp(fmin(Vd / Vt, 40)) - 1);
+                    // Use stored LED current from simulation for LEDs and LED arrays
+                    // This matches render.c and gives accurate values
+                    if (hovered_comp->type == COMP_LED) {
+                        current = hovered_comp->props.led.current;
+                    } else if (hovered_comp->type == COMP_LED_ARRAY) {
+                        // Sum currents from all LED segments
+                        current = 0;
+                        for (int seg = 0; seg < 8; seg++) {
+                            current += hovered_comp->props.led_array.currents[seg];
+                        }
+                    } else {
+                        // For other diodes, use simplified linear model
+                        double Vd = v0 - v1;
+                        double vf = 0.7;  // Default diode Vf
+                        if (hovered_comp->type == COMP_SCHOTTKY) {
+                            vf = hovered_comp->props.schottky.vf;
+                        }
+                        if (Vd > vf) {
+                            current = (Vd - vf) / 50.0;  // ~50 ohm dynamic resistance
+                        } else if (Vd < -5.0 && hovered_comp->type == COMP_ZENER) {
+                            current = fabs(Vd + hovered_comp->props.zener.vz) / hovered_comp->props.zener.rz;
+                        }
                     }
                     break;
                 }
@@ -1806,34 +1876,16 @@ void app_update(App *app) {
                 case COMP_TRIANGLE_WAVE:
                 case COMP_SAWTOOTH_WAVE:
                 case COMP_NOISE_SOURCE: {
-                    // For a voltage source, the current it supplies equals the sum of currents
-                    // through all resistive loads in the circuit. This works because:
-                    // - In a single-source circuit, all current comes from the source
-                    // - For multiple sources, this gives an approximation
-                    double total_current = 0;
-
-                    // Sum currents through ALL resistors in the circuit
-                    for (int i = 0; i < app->circuit->num_components; i++) {
-                        Component *c = app->circuit->components[i];
-                        if (!c || c->type != COMP_RESISTOR) continue;
-
-                        // Get voltage across resistor
-                        double v0 = 0, v1_r = 0;
-                        if (c->node_ids[0] > 0) {
-                            Node *n0 = circuit_get_node(app->circuit, c->node_ids[0]);
-                            if (n0) v0 = n0->voltage;
-                        }
-                        if (c->node_ids[1] > 0) {
-                            Node *n1 = circuit_get_node(app->circuit, c->node_ids[1]);
-                            if (n1) v1_r = n1->voltage;
-                        }
-
-                        double R = c->props.resistor.resistance;
-                        if (R > 0.001) {
-                            total_current += fabs(v0 - v1_r) / R;
+                    // Get current directly from MNA solution vector
+                    // In MNA, voltage sources have an associated current variable
+                    // stored at index: num_matrix_nodes + voltage_var_idx
+                    if (app->simulation->solution && hovered_comp->needs_voltage_var) {
+                        int num_nodes = app->circuit->num_matrix_nodes;
+                        int curr_idx = num_nodes + hovered_comp->voltage_var_idx;
+                        if (curr_idx < app->simulation->solution_size) {
+                            current = fabs(vector_get(app->simulation->solution, curr_idx));
                         }
                     }
-                    current = total_current;
                     break;
                 }
                 case COMP_DC_CURRENT: {
@@ -1896,6 +1948,13 @@ void app_render(App *app) {
         render_short_circuit_highlights(app->render, app->circuit,
                                         app->simulation->short_circuit_comp_ids,
                                         app->simulation->short_circuit_count);
+    }
+
+    // Render open circuit highlights (blinking yellow rectangles) if detected
+    if (app->simulation && app->simulation->has_open_circuit) {
+        render_open_circuit_highlights(app->render, app->circuit,
+                                       app->simulation->open_circuit_comp_ids,
+                                       app->simulation->open_circuit_count);
     }
 
     // Render node voltage tooltip when hovering over a node
@@ -2144,7 +2203,8 @@ void app_run_simulation(App *app) {
     simulation_reset(app->simulation);
     app->circuit->modified = false;  // Clear the modified flag
 
-    // NOTE: dt is NOT auto-adjusted here - user controls it via +/- and Auto buttons only
+    // Auto-adjust timestep based on highest frequency signal in circuit
+    simulation_auto_time_step(app->simulation);
 
     // Run DC analysis first
     if (!simulation_dc_analysis(app->simulation)) {

@@ -186,6 +186,8 @@ typedef struct {
     int palette_content_height;     // Total height of palette content
     int palette_visible_height;     // Visible height of palette area
     bool palette_scrolling;         // Currently dragging scrollbar
+    int palette_scroll_drag_start_y;     // Mouse Y when drag started
+    int palette_scroll_drag_start_offset; // Scroll offset when drag started
 
     // Circuit template palette
     CircuitPaletteItem circuit_items[48];

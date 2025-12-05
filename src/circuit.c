@@ -544,6 +544,19 @@ void circuit_build_node_map(Circuit *circuit) {
     circuit->num_matrix_nodes = next_idx - 1;
 }
 
+// Helper: Get voltage for a node_id using node_map for robust multi-instance support
+// Note: Forward declaration for use in circuit_update_voltages
+static double get_mapped_voltage_internal(Circuit *circuit, int node_id, Vector *solution) {
+    if (!circuit || !solution || node_id < 0 || node_id >= MAX_NODES) return 0.0;
+
+    int idx = circuit->node_map[node_id];
+    if (idx == 0) return 0.0;  // Ground
+    if (idx > 0 && idx <= solution->size) {
+        return vector_get(solution, idx - 1);
+    }
+    return 0.0;
+}
+
 void circuit_update_voltages(Circuit *circuit, Vector *solution) {
     if (!circuit || !solution) return;
 
@@ -564,7 +577,7 @@ void circuit_update_voltages(Circuit *circuit, Vector *solution) {
         circuit->probes[i].voltage = node ? node->voltage : 0;
     }
 
-    // Calculate power dissipation for components
+    // Calculate power dissipation for components and LED currents
     for (int i = 0; i < circuit->num_components; i++) {
         Component *comp = circuit->components[i];
         if (comp->type == COMP_RESISTOR && comp->num_terminals >= 2) {
@@ -575,6 +588,70 @@ void circuit_update_voltages(Circuit *circuit, Vector *solution) {
                 double R = comp->props.resistor.resistance;
                 // P = V^2 / R
                 comp->props.resistor.power_dissipated = (v_diff * v_diff) / R;
+            }
+        }
+        // Recalculate LED current from final converged solution
+        // For series circuits, find connected resistor and use its current (Ohm's law)
+        // This ensures KCL is satisfied for display purposes
+        else if (comp->type == COMP_LED && comp->num_terminals >= 2) {
+            Node *led_n1 = circuit_get_node(circuit, comp->node_ids[0]);
+            Node *led_n2 = circuit_get_node(circuit, comp->node_ids[1]);
+            double led_current = 0.0;
+
+            if (led_n1 && led_n2) {
+                // First, look for a resistor in series (shares exactly one node)
+                bool found_series_resistor = false;
+                for (int j = 0; j < circuit->num_components && !found_series_resistor; j++) {
+                    Component *other = circuit->components[j];
+                    if (other->type == COMP_RESISTOR && other->num_terminals >= 2) {
+                        // Check if resistor shares exactly one node with LED (series connection)
+                        int shared_count = 0;
+                        if (other->node_ids[0] == comp->node_ids[0] ||
+                            other->node_ids[0] == comp->node_ids[1]) shared_count++;
+                        if (other->node_ids[1] == comp->node_ids[0] ||
+                            other->node_ids[1] == comp->node_ids[1]) shared_count++;
+
+                        if (shared_count == 1) {
+                            // Series connection - use resistor current
+                            Node *r_n1 = circuit_get_node(circuit, other->node_ids[0]);
+                            Node *r_n2 = circuit_get_node(circuit, other->node_ids[1]);
+                            if (r_n1 && r_n2 && other->props.resistor.resistance > 0) {
+                                double v_diff = fabs(r_n1->voltage - r_n2->voltage);
+                                led_current = v_diff / other->props.resistor.resistance;
+                                found_series_resistor = true;
+                            }
+                        }
+                    }
+                }
+
+                // Fallback to Shockley equation if no series resistor found
+                if (!found_series_resistor) {
+                    double Vd = led_n1->voltage - led_n2->voltage;
+                    double Is = comp->props.led.is;
+                    double n = comp->props.led.n;
+                    double Vt = 0.02569;  // Thermal voltage at 25°C
+                    double nVt = n * Vt;
+
+                    if (Vd < -5 * nVt) Vd = -5 * nVt;
+                    if (Vd > 40 * nVt) Vd = 40 * nVt;
+
+                    double expTerm = exp(Vd / nVt);
+                    double Id = Is * (expTerm - 1);
+                    led_current = Id > 0 ? Id : 0;
+                }
+
+                comp->props.led.current = led_current;
+            }
+        }
+        // LED_ARRAY: Currents are calculated in component_stamp during MNA solve
+        // This block is kept for any post-solve updates if needed
+        else if (comp->type == COMP_LED_ARRAY && comp->num_terminals >= 9) {
+            // LED Array currents are already computed and stored during MNA stamping
+            // Just ensure failed segments have zero current
+            for (int seg = 0; seg < 8; seg++) {
+                if (comp->props.led_array.failed[seg]) {
+                    comp->props.led_array.currents[seg] = 0;
+                }
             }
         }
     }

@@ -263,28 +263,30 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             break;
                         }
 
-                        // Check if click is near a node/terminal to start a wire
-                        if (!input->sim_running) {
-                            Node *node = circuit_find_node_at(circuit, wx, wy, 12);
-                            if (node) {
-                                // Start drawing wire from this node
-                                input->wire_start_node = node->id;
-                                input->drawing_wire = true;
-                                input->wire_preview_x = node->x;
-                                input->wire_preview_y = node->y;
-                                ui_set_status(ui, "Click another terminal to connect wire");
-                                break;
-                            }
-                        }
-
-                        // Check for probe click (probes have visual priority)
+                        // Check for probe click FIRST (probes have highest priority)
                         bool found_probe = false;
                         for (int i = 0; i < circuit->num_probes; i++) {
                             Probe *probe = &circuit->probes[i];
-                            float dx = probe->x - wx;
-                            float dy = probe->y - wy;
-                            // Check if click is near probe tip (within 15 units)
-                            if (sqrt(dx*dx + dy*dy) < 15) {
+                            // Probe geometry: tip at (x,y), handle extends diagonally
+                            float tip_x = probe->x;
+                            float tip_y = probe->y;
+                            float handle_dx = -25;  // Same as render.c
+                            float handle_dy = -35;
+                            // Check distance from click to probe line segment (tip to handle)
+                            // Using point-to-line-segment distance formula
+                            float line_len_sq = handle_dx * handle_dx + handle_dy * handle_dy;
+                            float t = 0;
+                            if (line_len_sq > 0) {
+                                t = ((wx - tip_x) * handle_dx + (wy - tip_y) * handle_dy) / line_len_sq;
+                                if (t < 0) t = 0;
+                                if (t > 1) t = 1;
+                            }
+                            float closest_x = tip_x + t * handle_dx;
+                            float closest_y = tip_y + t * handle_dy;
+                            float dist_sq = (wx - closest_x) * (wx - closest_x) + (wy - closest_y) * (wy - closest_y);
+
+                            // Check if click is within 15 units of the probe body
+                            if (dist_sq < 15 * 15) {
                                 // Clear previous selections
                                 if (input->selected_component) {
                                     input->selected_component->selected = false;
@@ -312,7 +314,26 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             }
                         }
 
-                        if (!found_probe) {
+                        if (found_probe) {
+                            break;  // Don't start wire drawing when clicking on probe
+                        }
+
+                        // Check if click is near a node/terminal to start a wire
+                        if (!input->sim_running) {
+                            Node *node = circuit_find_node_at(circuit, wx, wy, 12);
+                            if (node) {
+                                // Start drawing wire from this node
+                                input->wire_start_node = node->id;
+                                input->drawing_wire = true;
+                                input->wire_preview_x = node->x;
+                                input->wire_preview_y = node->y;
+                                ui_set_status(ui, "Click another terminal to connect wire");
+                                break;
+                            }
+                        }
+
+                        // Not on probe or node, check for component/wire selection
+                        {
                             // Find component at click position
                             Component *comp = circuit_find_component_at(circuit, wx, wy);
                             if (comp) {
@@ -375,6 +396,8 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                 }
                                 input->is_dragging = true;
                                 input->dragging_component = comp;
+                                input->drag_start_x = comp->x;
+                                input->drag_start_y = comp->y;
                             } else {
                                 // Check for wire click
                                 int wire_idx = find_wire_at(circuit, wx, wy, 8.0f);
@@ -722,6 +745,15 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             }
                             ui_set_status(ui, msg);
                         }
+                    }
+                }
+
+                // Push undo for component move if the position changed
+                if (input->is_dragging && input->dragging_component) {
+                    Component *moved = input->dragging_component;
+                    if (moved->x != input->drag_start_x || moved->y != input->drag_start_y) {
+                        circuit_push_undo(circuit, UNDO_MOVE_COMPONENT, moved->id, NULL,
+                                         input->drag_start_x, input->drag_start_y);
                     }
                 }
 
@@ -1613,6 +1645,9 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                 case COMP_NOISE_SOURCE:
                     if (value > 0) { comp->props.noise_source.amplitude = value; applied = true; }
                     break;
+                case COMP_PWM_SOURCE:
+                    if (value > 0) { comp->props.pwm_source.amplitude = value; applied = true; }
+                    break;
                 case COMP_LED:
                     // Wavelength in nm (380-780 visible, 0 = white, >780 = IR)
                     if (value >= 0 && value <= 1000) {
@@ -1685,6 +1720,14 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                         comp->props.sawtooth_wave.frequency = value;
                         applied = true;
                         break;
+                    case COMP_CLOCK:
+                        comp->props.clock.frequency = value;
+                        applied = true;
+                        break;
+                    case COMP_PWM_SOURCE:
+                        comp->props.pwm_source.frequency = value;
+                        applied = true;
+                        break;
                     default:
                         break;
                 }
@@ -1732,14 +1775,88 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                     comp->props.sawtooth_wave.offset = value;
                     applied = true;
                     break;
+                case COMP_PWM_SOURCE:
+                    comp->props.pwm_source.offset = value;
+                    applied = true;
+                    break;
                 default:
                     break;
             }
             break;
 
         case PROP_DUTY:
-            if (comp->type == COMP_SQUARE_WAVE && value >= 0 && value <= 100) {
-                comp->props.square_wave.duty = value / 100.0;  // Convert percentage to fraction
+            if (value >= 0 && value <= 100) {
+                if (comp->type == COMP_SQUARE_WAVE) {
+                    comp->props.square_wave.duty = value / 100.0;  // Convert percentage to fraction
+                    applied = true;
+                } else if (comp->type == COMP_CLOCK) {
+                    comp->props.clock.duty = value / 100.0;  // Convert percentage to fraction
+                    applied = true;
+                } else if (comp->type == COMP_PWM_SOURCE) {
+                    comp->props.pwm_source.duty = value / 100.0;  // Convert percentage to fraction
+                    applied = true;
+                }
+            }
+            break;
+
+        case PROP_V_HIGH:
+            if (comp->type == COMP_CLOCK) {
+                comp->props.clock.v_high = value;
+                applied = true;
+            } else if (comp->type == COMP_PULSE_SOURCE) {
+                comp->props.pulse_source.v_high = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_V_LOW:
+            if (comp->type == COMP_CLOCK) {
+                comp->props.clock.v_low = value;
+                applied = true;
+            } else if (comp->type == COMP_PULSE_SOURCE) {
+                comp->props.pulse_source.v_low = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_RISE_TIME:
+            if (comp->type == COMP_PULSE_SOURCE && value >= 0) {
+                comp->props.pulse_source.rise_time = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_FALL_TIME:
+            if (comp->type == COMP_PULSE_SOURCE && value >= 0) {
+                comp->props.pulse_source.fall_time = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_DELAY:
+            if (comp->type == COMP_PULSE_SOURCE && value >= 0) {
+                comp->props.pulse_source.delay = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_PULSE_WIDTH:
+            if (comp->type == COMP_PULSE_SOURCE && value >= 0) {
+                comp->props.pulse_source.pulse_width = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_PERIOD:
+            if (comp->type == COMP_PULSE_SOURCE && value > 0) {
+                comp->props.pulse_source.period = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_BANDWIDTH:
+            if (comp->type == COMP_NOISE_SOURCE && value > 0) {
+                comp->props.noise_source.bandwidth = value;
                 applied = true;
             }
             break;

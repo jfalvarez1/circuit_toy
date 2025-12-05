@@ -103,6 +103,10 @@ void render_ghost_component(RenderContext *ctx, Component *comp);
 void render_short_circuit_highlights(RenderContext *ctx, Circuit *circuit,
                                      int *comp_ids, int comp_count);
 
+// Open circuit highlight (draws blinking yellow rectangles around open current sources)
+void render_open_circuit_highlights(RenderContext *ctx, Circuit *circuit,
+                                    int *comp_ids, int comp_count);
+
 // Wire preview
 void render_wire_preview(RenderContext *ctx, float x1, float y1, float x2, float y2);
 

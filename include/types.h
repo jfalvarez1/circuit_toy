@@ -1,5 +1,9 @@
 /**
  * Circuit Playground - Common Type Definitions
+ *
+ * TODO: Fix LED bar implementation - current/voltage calculations need work
+ * TODO: Fix subcircuit functionality - needs proper implementation
+ * TODO: Fix opamp oscillation models - add GBW dynamics for sustained oscillation
  */
 
 #ifndef TYPES_H
@@ -30,7 +34,7 @@
 #define CANVAS_HEIGHT (WINDOW_HEIGHT - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT)
 
 // Grid settings
-#define GRID_SIZE 20
+#define GRID_SIZE 10
 #define MAX_ZOOM 4.0f
 #define MIN_ZOOM 0.25f
 
@@ -489,6 +493,8 @@ typedef struct {
     float last_sample;            // Last sample for interpolation
     float current_voltage;        // Current output voltage (scaled from audio)
     float peak_level;             // Peak audio level for visualization
+    int actual_freq;              // Actual sample rate obtained
+    uint16_t actual_format;       // Actual audio format obtained
 } MicrophoneState;
 
 // Global microphone state (defined in app.c)

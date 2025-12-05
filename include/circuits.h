@@ -62,6 +62,15 @@ typedef enum {
     CIRCUIT_7805_REG,           // 7805 fixed 5V regulator circuit
     CIRCUIT_LM317_REG,          // LM317 adjustable regulator circuit
     CIRCUIT_TL431_REF,          // TL431 precision shunt reference circuit
+    // RLC Resonant Circuits
+    CIRCUIT_SERIES_RLC,         // Series RLC resonant circuit
+    CIRCUIT_PARALLEL_RLC,       // Parallel RLC (tank) circuit
+    // Measurement & Detection Circuits
+    CIRCUIT_WHEATSTONE,         // Wheatstone bridge
+    CIRCUIT_PEAK_DETECTOR,      // Peak detector with op-amp
+    // Signal Processing Circuits
+    CIRCUIT_CLAMPER,            // Positive clamper (DC restorer)
+    CIRCUIT_PHASE_SHIFT_OSC,    // RC phase shift oscillator
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 

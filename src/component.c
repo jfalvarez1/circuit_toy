@@ -21,7 +21,7 @@ SubCircuitLibrary g_subcircuit_library = {
 };
 
 // Component type information table
-// NOTE: Terminal positions must be multiples of GRID_SIZE (20) for proper grid alignment
+// NOTE: Terminal positions must be multiples of GRID_SIZE (10) for proper grid alignment
 // Array is sized to COMP_TYPE_COUNT to ensure all component types have entries
 static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
     [COMP_NONE] = { "None", "?", 0, {}, 0, 0, {} },
@@ -1512,13 +1512,19 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
     },
 
     [COMP_LED_ARRAY] = {
-        "LED Array", "BAR", 2,
-        {{ -40, 0, "+" }, { 40, 0, "-" }},
-        80, 30,
-        { .led = {
+        "LED Array", "BAR", 9,
+        {{ -70, -30, "1" }, { -50, -30, "2" }, { -30, -30, "3" }, { -10, -30, "4" },
+         { 10, -30, "5" }, { 30, -30, "6" }, { 50, -30, "7" }, { 70, -30, "8" },
+         { 0, 30, "COM" }},
+        160, 60,
+        { .led_array = {
+            .is = 1e-12,  // Saturation current (same as LED)
+            .n = 2.0,     // Ideality factor (same as LED)
             .vf = 2.0,
             .max_current = 0.02,
-            .ideal = true
+            .currents = {0, 0, 0, 0, 0, 0, 0, 0},
+            .failed = {false, false, false, false, false, false, false, false},
+            .color = 1  // Default to green (like classic bar graph displays)
         }}
     },
 
@@ -3481,21 +3487,60 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
 
         case COMP_OPAMP_REAL: {
             // Real op-amp with finite parameters
+            // Standard VCVS model with output saturation (piecewise-linear)
+            // NOTE: Backward Euler integration inherently damps oscillations.
+            // For oscillator circuits, keep the noise perturbation source connected.
             double A_gain = comp->props.opamp.gain;
             double r_in = comp->props.opamp.r_in;
+            double r_out = comp->props.opamp.r_out;
+            double v_max = comp->props.opamp.vmax;
+            double v_min = comp->props.opamp.vmin;
             int volt_idx = num_nodes + comp->voltage_var_idx;
 
             // Input resistance between + and - inputs
             double G_in = 1.0 / r_in;
             STAMP_CONDUCTANCE(n[0], n[1], G_in);
 
-            // VCVS model
-            if (n[2] > 0) {
-                matrix_add(A, volt_idx, n[2]-1, 1);
-                matrix_add(A, n[2]-1, volt_idx, 1);
+            // Check previous output to determine saturation state
+            double v_out_prev = 0;
+            if (prev_solution && n[2] > 0) {
+                v_out_prev = vector_get(prev_solution, n[2]-1);
             }
-            if (n[1] > 0) matrix_add(A, volt_idx, n[1]-1, -A_gain);
-            if (n[0] > 0) matrix_add(A, volt_idx, n[0]-1, A_gain);
+
+            // Determine operating region based on previous output
+            bool saturated_high = (v_out_prev >= v_max * 0.99);
+            bool saturated_low = (v_out_prev <= v_min * 0.99);
+
+            if (saturated_high) {
+                // Positive saturation: output clamped to v_max
+                if (n[2] > 0) {
+                    matrix_add(A, volt_idx, n[2]-1, 1.0);
+                    matrix_add(A, n[2]-1, volt_idx, 1.0);
+                }
+                vector_add(b, volt_idx, v_max);
+            } else if (saturated_low) {
+                // Negative saturation: output clamped to v_min
+                if (n[2] > 0) {
+                    matrix_add(A, volt_idx, n[2]-1, 1.0);
+                    matrix_add(A, n[2]-1, volt_idx, 1.0);
+                }
+                vector_add(b, volt_idx, v_min);
+            } else {
+                // Linear region: V_out = A * (V+ - V-)
+                if (n[2] > 0) {
+                    matrix_add(A, volt_idx, n[2]-1, 1.0);
+                    matrix_add(A, n[2]-1, volt_idx, 1.0);
+                }
+                // n[0] is inverting (-), n[1] is non-inverting (+)
+                if (n[1] > 0) matrix_add(A, volt_idx, n[1]-1, -A_gain);
+                if (n[0] > 0) matrix_add(A, volt_idx, n[0]-1, A_gain);
+            }
+
+            // Output resistance
+            double G_out = 1.0 / r_out;
+            if (n[2] > 0) {
+                matrix_add(A, n[2]-1, n[2]-1, G_out);
+            }
             break;
         }
 
@@ -4253,26 +4298,46 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         }
 
         case COMP_LED_ARRAY: {
-            // LED array: last terminal is common
-            double Is = 1e-20;
-            // Calculate thermal voltage from global environment temperature
+            // LED bar graph array: 8 individual LEDs with common cathode
+            // Terminals 0-7 are anodes, terminal 8 is common cathode
+            // Each segment uses same Shockley diode model as COMP_LED
+            double Is = comp->props.led_array.is;
+            double nn = comp->props.led_array.n;
             double Vt = 8.617e-5 * (g_environment.temperature + 273.15);
-            double nn = 2.0;
             double nVt = nn * Vt;
-            int com = comp->num_terminals - 1;
+            int com = 8;  // Common cathode terminal index
+            double max_I = comp->props.led_array.max_current;
 
-            for (int i = 0; i < comp->num_terminals - 1; i++) {
-                double Vd = 0.6;
+            for (int i = 0; i < 8; i++) {
+                // Skip burned LEDs (open circuit)
+                if (comp->props.led_array.failed[i]) {
+                    comp->props.led_array.currents[i] = 0;
+                    continue;
+                }
+
+                // Calculate diode voltage from previous solution
+                double Vd = 0.6;  // Initial guess
                 if (prev_solution) {
                     double v1 = (n[i] > 0) ? vector_get(prev_solution, n[i]-1) : 0;
                     double v2 = (n[com] > 0) ? vector_get(prev_solution, n[com]-1) : 0;
-                    Vd = CLAMP(v1 - v2, -1, 3);
+                    Vd = CLAMP(v1 - v2, -5*nVt, 40*nVt);
                 }
-                double expTerm = exp(Vd / nVt);
-                double Gd = (Is / nVt) * expTerm + 1e-12;
-                double Id = Is * (expTerm - 1);
-                double Ieq = Id - Gd * Vd;
 
+                // Shockley diode equation with Newton-Raphson companion model
+                double expTerm = exp(Vd / nVt);
+                double Id = Is * (expTerm - 1);
+                double Gd = (Is / nVt) * expTerm + 1e-12;  // Dynamic conductance + GMIN
+                double Ieq = Id - Gd * Vd;  // Equivalent current source
+
+                // Store LED current for glow rendering
+                comp->props.led_array.currents[i] = (Id > 0) ? Id : 0;
+
+                // Check for overcurrent (burning)
+                if (Id > max_I * 2.0 && Id > 0.001) {
+                    comp->props.led_array.failed[i] = true;
+                }
+
+                // Stamp the companion model: conductance + current source
                 STAMP_CONDUCTANCE(n[i], n[com], Gd);
                 if (n[i] > 0) vector_add(b, n[i]-1, -Ieq);
                 if (n[com] > 0) vector_add(b, n[com]-1, Ieq);

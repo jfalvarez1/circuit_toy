@@ -131,6 +131,7 @@ typedef union {
         double wavelength;      // Wavelength (nm) for color
         double current;         // Actual current (calculated)
         bool ideal;             // Ideal mode (fixed Vf drop)
+        int color;              // Color index: 0=Red, 1=Green, 2=Blue, 3=Yellow, 4=Orange, 5=White
     } led;
     // BJT transistor (NPN/PNP) - Gummel-Poon model parameters
     struct {
@@ -205,6 +206,7 @@ typedef union {
         double cmrr;            // Common-mode rejection ratio (dB), default: 90
         bool rail_to_rail;      // Rail-to-rail output capability
         bool ideal;             // Ideal mode (infinite gain, bandwidth, etc.)
+        double prev_output;     // Previous output voltage (for GBW dynamics)
     } opamp;
     // Waveform generators
     struct {
@@ -621,6 +623,17 @@ typedef union {
         uint8_t color;           // LED color (0=red, 1=green, 2=blue, 3=yellow, 4=white)
         bool common_cathode;     // True = common cathode, False = common anode
     } led_matrix;
+
+    // LED Bar Graph Array (8 individual LEDs with common cathode)
+    struct {
+        double is;               // Saturation current (A) - same as LED
+        double n;                // Ideality factor - same as LED
+        double vf;               // Forward voltage per LED (default: 2.0V)
+        double max_current;      // Max forward current per LED (default: 20mA)
+        double currents[8];      // Current through each LED segment
+        bool failed[8];          // Failed (burned) state for each LED
+        int color;               // LED color (0=red, 1=green, 2=blue, 3=yellow, 4=orange, 5=white)
+    } led_array;
 
     // Bus (wire bundle - groups multiple wires together)
     struct {

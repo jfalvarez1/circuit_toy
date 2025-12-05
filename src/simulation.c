@@ -246,6 +246,60 @@ static bool simulation_detect_short_circuit(Simulation *sim) {
     return sim->has_short_circuit;
 }
 
+// Detect open circuit current sources by checking for excessive node voltages
+// An open current source has no path for current, causing voltage to go to infinity
+static bool simulation_detect_open_current_source(Simulation *sim) {
+    if (!sim || !sim->circuit) return false;
+
+    Circuit *circuit = sim->circuit;
+    sim->has_open_circuit = false;
+    sim->open_circuit_count = 0;
+    const double OPEN_VOLTAGE_THRESHOLD = 1e6;  // 1MV indicates open circuit
+
+    // Check all nodes for excessive voltage
+    for (int i = 0; i < circuit->num_nodes; i++) {
+        Node *node = &circuit->nodes[i];
+        if (node->id <= 0) continue;  // Skip invalid/unused nodes
+
+        if (fabs(node->voltage) > OPEN_VOLTAGE_THRESHOLD) {
+            // Excessive voltage - find current sources connected to this node
+            for (int j = 0; j < circuit->num_components; j++) {
+                Component *comp = circuit->components[j];
+                if (!comp) continue;
+
+                bool is_current_source = (comp->type == COMP_DC_CURRENT ||
+                                          comp->type == COMP_AC_CURRENT);
+
+                if (is_current_source && comp->num_terminals >= 2) {
+                    // Check if this current source is connected to the high-voltage node
+                    int n0 = comp->node_ids[0];
+                    int n1 = comp->node_ids[1];
+
+                    if (n0 == node->id || n1 == node->id) {
+                        // Open circuit current source detected!
+                        sim->has_open_circuit = true;
+                        if (sim->open_circuit_count < 8) {
+                            // Check if not already added
+                            bool already_added = false;
+                            for (int k = 0; k < sim->open_circuit_count; k++) {
+                                if (sim->open_circuit_comp_ids[k] == comp->id) {
+                                    already_added = true;
+                                    break;
+                                }
+                            }
+                            if (!already_added) {
+                                sim->open_circuit_comp_ids[sim->open_circuit_count++] = comp->id;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return sim->has_open_circuit;
+}
+
 // Detect excessive current indicating a short circuit (e.g., no resistance in path)
 // Check ammeter readings after simulation converges - current > 100A indicates short
 // Also identify voltage sources connected to high-current ammeters
@@ -472,6 +526,12 @@ bool simulation_dc_analysis(Simulation *sim) {
     // Check for excessive current indicating short circuit (after meter readings updated)
     if (simulation_detect_excessive_current(sim)) {
         simulation_set_error(sim, "Short circuit: excessive current (>100A) detected!");
+        return false;
+    }
+
+    // Check for open circuit current sources (excessive voltage)
+    if (simulation_detect_open_current_source(sim)) {
+        simulation_set_error(sim, "Open circuit: current source has no load path!");
         return false;
     }
 
@@ -946,6 +1006,20 @@ bool simulation_step(Simulation *sim) {
 
         for (int i = 0; i < circuit->num_probes && i < MAX_PROBES; i++) {
             sim->history[hist_idx].values[i] = circuit->probes[i].voltage;
+        }
+
+        // Debug: Log probe values to file (every 1000 samples)
+        static int debug_sample_count = 0;
+        if (circuit->num_probes > 0 && debug_sample_count++ % 1000 == 0) {
+            FILE *debug_log = fopen("probe_debug.log", "a");
+            if (debug_log) {
+                fprintf(debug_log, "t=%.6f", sim->time);
+                for (int i = 0; i < circuit->num_probes && i < MAX_PROBES; i++) {
+                    fprintf(debug_log, " P%d=%.6f", i, circuit->probes[i].voltage);
+                }
+                fprintf(debug_log, "\n");
+                fclose(debug_log);
+            }
         }
 
         if (sim->history_count < MAX_HISTORY) {

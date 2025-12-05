@@ -86,6 +86,11 @@ typedef struct Simulation {
     int short_circuit_comp_ids[8];  // Component IDs involved in short
     int short_circuit_count;        // Number of components in short
 
+    // Open circuit detection (for current sources with no load path)
+    bool has_open_circuit;
+    int open_circuit_comp_ids[8];   // Component IDs with open circuit
+    int open_circuit_count;         // Number of open circuit components
+
     // Frequency response data
     FreqResponsePoint freq_response[MAX_FREQ_POINTS];
     int freq_response_count;
