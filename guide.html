@@ -684,7 +684,7 @@
         <header>
             <h1>Circuit Playground</h1>
             <p class="subtitle">Interactive Circuit Simulator - User Manual</p>
-            <p class="version">Version 3.1.0 - DC Voltage Probing Fix & Application Icon</p>
+            <p class="version">Version 3.2.2 - Switch Isolation Fix</p>
         </header>
 
         <!-- Table of Contents -->
@@ -2404,7 +2404,8 @@ meson compile -C build
 ./build/circuit-playground</code></pre>
 
             <h3>Windows Notes</h3>
-            <p>On Windows, you may need to copy SDL2.dll to the same directory as the executable:</p>
+            <p>The Windows release uses static CRT linking - no VC++ Redistributable installation required. Just extract and run!</p>
+            <p>You may need to copy SDL2.dll to the same directory as the executable:</p>
             <pre><code>copy build\subprojects\SDL2-*\SDL2-*.dll build\</code></pre>
 
             <h3>Project Structure</h3>
@@ -2431,7 +2432,7 @@ meson compile -C build
         <footer>
             <p>Circuit Playground - Interactive Circuit Simulator</p>
             <p style="margin-top: 10px;">Inspired by <a href="https://github.com/The-Powder-Toy/The-Powder-Toy" target="_blank">The Powder Toy</a> and professional SPICE simulators</p>
-            <p style="margin-top: 10px; color: #444;">Version 3.1.0 - User Manual</p>
+            <p style="margin-top: 10px; color: #444;">Version 3.2.2 - User Manual</p>
         </footer>
     </div>
 </body>

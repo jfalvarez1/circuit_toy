@@ -395,7 +395,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         { .switch_spst = {
             .closed = false,        // Default open
             .r_on = 0.01,           // 10 mOhm on-resistance
-            .r_off = 1e9,           // 1 GOhm off-resistance
+            .r_off = 1e15,          // 1 POhm off-resistance (must be >> 1/GMIN for proper isolation)
             .momentary = false,
             .default_closed = false
         }}
@@ -408,7 +408,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         { .switch_spdt = {
             .position = 0,          // Default to A
             .r_on = 0.01,
-            .r_off = 1e9,
+            .r_off = 1e15,          // Must be >> 1/GMIN for proper isolation
             .momentary = false,
             .default_pos = 0
         }}
@@ -421,7 +421,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         { .push_button = {
             .pressed = false,
             .r_on = 0.01,
-            .r_off = 1e9
+            .r_off = 1e15               // Must be >> 1/GMIN for proper isolation
         }}
     },
 
@@ -1563,39 +1563,6 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         }}
     },
 
-    [COMP_SPEAKER] = {
-        "Speaker", "SPK", 2,
-        {{ -40, -10, "+" }, { -40, 10, "-" }},
-        80, 50,
-        { .speaker = {
-            .impedance = 8.0,           // 8 ohm speaker
-            .sensitivity = 90.0,        // 90 dB/W/m
-            .max_power = 1.0,           // 1W max
-            .power_dissipated = 0.0,
-            .voltage = 0.0,
-            .current = 0.0,
-            .frequency = 0.0,
-            .audio_enabled = true,
-            .failed = false
-        }}
-    },
-
-    [COMP_MICROPHONE] = {
-        "Microphone", "MIC", 2,
-        {{ 40, 0, "+" }, { -40, 0, "-" }},
-        80, 40,
-        { .microphone = {
-            .amplitude = 5.0,           // 5V peak output
-            .offset = 2.5,              // 2.5V DC offset (centered)
-            .gain = 1.0,                // Unity gain
-            .r_series = 1000.0,         // 1K output resistance
-            .voltage = 0.0,
-            .peak_level = 0.0,
-            .enabled = true,
-            .ideal = false
-        }}
-    },
-
     // === WIRELESS ===
 
     [COMP_ANTENNA_TX] = {
@@ -1835,11 +1802,6 @@ Component *component_create(ComponentType type, float x, float y) {
             comp->thermal.thermal_mass = 0.02;
             comp->thermal.thermal_resistance = 250.0;
             break;
-        case COMP_SPEAKER:
-            comp->thermal.max_temperature = 120.0;
-            comp->thermal.thermal_mass = 1.0;        // Larger thermal mass
-            comp->thermal.thermal_resistance = 50.0;
-            break;
         default:
             comp->thermal.max_temperature = 150.0;
             comp->thermal.thermal_mass = 0.1;
@@ -1937,13 +1899,39 @@ void component_get_terminal_pos(Component *comp, int terminal_idx, float *x, flo
         dy = info->terminals[terminal_idx].dy;
     }
 
-    // Apply rotation
-    double rad = comp->rotation * M_PI / 180.0;
-    double cos_r = cos(rad);
-    double sin_r = sin(rad);
+    // Apply rotation using integer math for 90-degree increments
+    // This avoids floating-point precision issues with cos/sin
+    float rx, ry;
+    int rot = ((comp->rotation % 360) + 360) % 360;  // Normalize to 0-359
+    switch (rot) {
+        case 0:
+            rx = dx;
+            ry = dy;
+            break;
+        case 90:
+            rx = -dy;
+            ry = dx;
+            break;
+        case 180:
+            rx = -dx;
+            ry = -dy;
+            break;
+        case 270:
+            rx = dy;
+            ry = -dx;
+            break;
+        default: {
+            // Fallback to trig for non-90-degree rotations (shouldn't happen)
+            double rad = comp->rotation * M_PI / 180.0;
+            rx = dx * cos(rad) - dy * sin(rad);
+            ry = dx * sin(rad) + dy * cos(rad);
+            break;
+        }
+    }
 
-    *x = comp->x + dx * cos_r - dy * sin_r;
-    *y = comp->y + dx * sin_r + dy * cos_r;
+    // Round to grid to ensure proper alignment
+    *x = (float)snap_to_grid(comp->x + rx);
+    *y = (float)snap_to_grid(comp->y + ry);
 }
 
 bool component_contains_point(Component *comp, float px, float py) {
@@ -2217,15 +2205,22 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double nVt = nn * Vt;
 
             double Vd = 0.6;
+            double v1_raw = 0, v2_raw = 0;
             if (prev_solution) {
-                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
-                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
-                Vd = CLAMP(v1 - v2, -5*nVt, 40*nVt);
+                v1_raw = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                v2_raw = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+                double Vd_raw = v1_raw - v2_raw;
+                // Use wider clamp range for reverse bias to allow proper blocking
+                // Forward: limit to 40*nVt (~1V) to prevent overflow
+                // Reverse: allow up to -100V for proper blocking behavior
+                Vd = CLAMP(Vd_raw, -100.0, 40*nVt);
             }
 
             double expTerm = exp(Vd / nVt);
             double Id = Is * (expTerm - 1);
+            // Gd is conductance - add minimum conductance to prevent singularities
             double Gd = (Is / nVt) * expTerm;
+            if (Gd < 1e-12) Gd = 1e-12;  // Minimum conductance for stability
             double Ieq = Id - Gd * Vd;
 
             STAMP_CONDUCTANCE(n[0], n[1], Gd);
@@ -4431,85 +4426,6 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
                 comp->props.dc_motor.current = (v1 - v2 - V_bemf) / Req + I_prev * L_a / (Req * dt);
             }
-            break;
-        }
-
-        case COMP_SPEAKER: {
-            // Speaker: Resistive load with audio output
-            // Check if failed (thermal damage)
-            if (comp->thermal.failed || comp->props.speaker.failed) {
-                // Open circuit when failed
-                STAMP_CONDUCTANCE(n[0], n[1], 1e-15);
-                break;
-            }
-
-            double R = comp->props.speaker.impedance;
-            double G = 1.0 / R;
-            STAMP_CONDUCTANCE(n[0], n[1], G);
-
-            // Calculate voltage and current for audio output and power tracking
-            if (prev_solution) {
-                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0] - 1) : 0.0;
-                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1] - 1) : 0.0;
-                double V = v1 - v2;
-                double I = V / R;
-                double P = V * I;  // Power dissipation
-
-                comp->props.speaker.voltage = V;
-                comp->props.speaker.current = I;
-                comp->props.speaker.power_dissipated = fabs(P);
-
-                // Feed voltage to audio buffer if audio is enabled
-                if (comp->props.speaker.audio_enabled && g_audio.enabled) {
-                    // Scale voltage to audio range [-1, 1]
-                    // Assuming typical voltage range of ±10V maps to ±1
-                    float sample = (float)(V / 10.0);
-                    if (sample > 1.0f) sample = 1.0f;
-                    if (sample < -1.0f) sample = -1.0f;
-
-                    // Write to ring buffer
-                    g_audio.buffer[g_audio.write_pos] = sample;
-                    g_audio.write_pos = (g_audio.write_pos + 1) % AUDIO_BUFFER_SIZE;
-                }
-            }
-            break;
-        }
-
-        case COMP_MICROPHONE: {
-            // Microphone: Voltage source driven by audio input from system mic
-            // Acts as a voltage source with value from microphone buffer
-            double R_series = comp->props.microphone.ideal ? 1e-6 : comp->props.microphone.r_series;
-            double G = 1.0 / R_series;
-
-            // Get voltage from microphone input buffer
-            double V_mic = comp->props.microphone.offset;  // DC offset
-
-            if (comp->props.microphone.enabled && g_microphone.initialized && g_microphone.enabled) {
-                // Read sample from microphone buffer
-                float sample = g_microphone.current_voltage;
-
-                // Scale audio sample [-1, 1] to voltage range
-                double amplitude = comp->props.microphone.amplitude;
-                double gain = comp->props.microphone.gain;
-                V_mic = comp->props.microphone.offset + (sample * amplitude * gain);
-
-                // Update peak level for visualization
-                float abs_sample = sample < 0 ? -sample : sample;
-                comp->props.microphone.peak_level = abs_sample;
-            }
-
-            comp->props.microphone.voltage = V_mic;
-
-            // Stamp as voltage source with series resistance
-            // V = V_mic, with series R
-            // I = (V+ - V- - V_mic) / R
-            // Stamp conductance
-            STAMP_CONDUCTANCE(n[0], n[1], G);
-
-            // Stamp current source for voltage
-            double I_eq = V_mic * G;
-            if (n[0] > 0) vector_add(b, n[0] - 1, I_eq);
-            if (n[1] > 0) vector_add(b, n[1] - 1, -I_eq);
             break;
         }
 
