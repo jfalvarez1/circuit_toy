@@ -1,7 +1,6 @@
 /**
  * Circuit Playground - Common Type Definitions
  *
- * TODO: Fix LED bar implementation - current/voltage calculations need work
  * TODO: Fix subcircuit functionality - needs proper implementation
  * TODO: Fix opamp oscillation models - add GBW dynamics for sustained oscillation
  */

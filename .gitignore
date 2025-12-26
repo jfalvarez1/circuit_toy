@@ -28,6 +28,8 @@ node_modules/
 # Debug and temp files
 probe_debug.log
 *.svg
+led_array_diagnostic.py
+LEDARRAY_ANALYSIS.md
 
 # Claude Code
 .claude/
