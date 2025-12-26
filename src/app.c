@@ -10,100 +10,8 @@
 #include "circuits.h"
 #include "analysis.h"
 
-// Global audio state for speaker output
-AudioState g_audio = {0};
-
-// Global microphone state for audio input
-MicrophoneState g_microphone = {0};
-
 // Global wireless state for antenna TX/RX pairs
 WirelessState g_wireless = {0};
-
-// SDL audio callback - called by SDL to get audio samples
-static void audio_callback(void *userdata, Uint8 *stream, int len) {
-    (void)userdata;
-    float *out = (float *)stream;
-    int samples = len / sizeof(float);
-
-    for (int i = 0; i < samples; i++) {
-        if (g_audio.read_pos != g_audio.write_pos) {
-            // Get sample from buffer
-            float sample = g_audio.buffer[g_audio.read_pos];
-            g_audio.read_pos = (g_audio.read_pos + 1) % AUDIO_BUFFER_SIZE;
-
-            // Apply volume and interpolation for smooth output
-            sample = sample * g_audio.volume;
-            g_audio.last_sample = sample;
-            out[i] = sample;
-        } else {
-            // Buffer underrun - output last sample with decay
-            g_audio.last_sample *= 0.99f;
-            out[i] = g_audio.last_sample;
-        }
-    }
-}
-
-// SDL audio capture callback - called by SDL when mic data is available
-static void microphone_callback(void *userdata, Uint8 *stream, int len) {
-    (void)userdata;
-
-    int samples;
-    float sum = 0.0f;
-    float peak = 0.0f;
-
-    // Handle different audio formats
-    if (g_microphone.actual_format == AUDIO_F32SYS || g_microphone.actual_format == AUDIO_F32LSB || g_microphone.actual_format == AUDIO_F32MSB) {
-        // Float format
-        float *in = (float *)stream;
-        samples = len / sizeof(float);
-        if (samples <= 0) return;
-
-        for (int i = 0; i < samples; i++) {
-            float sample = in[i] * g_microphone.gain;
-            if (sample > 1.0f) sample = 1.0f;
-            if (sample < -1.0f) sample = -1.0f;
-            g_microphone.buffer[g_microphone.write_pos] = sample;
-            g_microphone.write_pos = (g_microphone.write_pos + 1) % MIC_BUFFER_SIZE;
-            sum += sample;
-            float abs_sample = sample < 0 ? -sample : sample;
-            if (abs_sample > peak) peak = abs_sample;
-        }
-        g_microphone.last_sample = in[samples - 1] * g_microphone.gain;
-    } else if (g_microphone.actual_format == AUDIO_S16SYS || g_microphone.actual_format == AUDIO_S16LSB || g_microphone.actual_format == AUDIO_S16MSB) {
-        // 16-bit signed format
-        Sint16 *in = (Sint16 *)stream;
-        samples = len / sizeof(Sint16);
-        if (samples <= 0) return;
-
-        for (int i = 0; i < samples; i++) {
-            float sample = (in[i] / 32768.0f) * g_microphone.gain;
-            if (sample > 1.0f) sample = 1.0f;
-            if (sample < -1.0f) sample = -1.0f;
-            g_microphone.buffer[g_microphone.write_pos] = sample;
-            g_microphone.write_pos = (g_microphone.write_pos + 1) % MIC_BUFFER_SIZE;
-            sum += sample;
-            float abs_sample = sample < 0 ? -sample : sample;
-            if (abs_sample > peak) peak = abs_sample;
-        }
-        g_microphone.last_sample = (in[samples - 1] / 32768.0f) * g_microphone.gain;
-    } else {
-        // Unsupported format - just return
-        return;
-    }
-
-    // Calculate average sample for this buffer (for current_voltage)
-    if (samples <= 0) return;
-
-    // Update current voltage (average of buffer)
-    g_microphone.current_voltage = sum / samples;
-
-    // Update peak level with decay
-    if (peak > g_microphone.peak_level) {
-        g_microphone.peak_level = peak;
-    } else {
-        g_microphone.peak_level *= 0.95f;  // Decay
-    }
-}
 
 // Thread data for frequency sweep
 typedef struct {
@@ -200,79 +108,6 @@ bool app_init(App *app) {
         return false;
     }
 
-    // Initialize SDL audio for speaker output
-    {
-        SDL_AudioSpec want, have;
-        SDL_memset(&want, 0, sizeof(want));
-        want.freq = AUDIO_SAMPLE_RATE;
-        want.format = AUDIO_F32SYS;
-        want.channels = 1;
-        want.samples = 512;
-        want.callback = audio_callback;
-        want.userdata = NULL;
-
-        SDL_AudioDeviceID audio_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-        if (audio_dev > 0) {
-            g_audio.initialized = true;
-            g_audio.enabled = true;
-            g_audio.device_id = audio_dev;  // Store for cleanup
-            g_audio.volume = 0.5f;  // 50% volume
-            g_audio.write_pos = 0;
-            g_audio.read_pos = 0;
-            g_audio.last_sample = 0.0f;
-            SDL_PauseAudioDevice(audio_dev, 0);  // Start audio playback
-            printf("Audio initialized: %d Hz, %d channels\n", have.freq, have.channels);
-        } else {
-            g_audio.initialized = false;
-            g_audio.enabled = false;
-            fprintf(stderr, "Audio initialization failed: %s\n", SDL_GetError());
-        }
-    }
-
-    // Initialize SDL audio capture for microphone input
-    {
-        // List available capture devices for debugging
-        int num_capture_devices = SDL_GetNumAudioDevices(1);  // 1 = capture devices
-        printf("Available microphone devices (%d):\n", num_capture_devices);
-        for (int i = 0; i < num_capture_devices; i++) {
-            printf("  [%d] %s\n", i, SDL_GetAudioDeviceName(i, 1));
-        }
-
-        SDL_AudioSpec want, have;
-        SDL_memset(&want, 0, sizeof(want));
-        want.freq = MIC_SAMPLE_RATE;
-        want.format = AUDIO_F32SYS;
-        want.channels = 1;
-        want.samples = 512;
-        want.callback = microphone_callback;
-        want.userdata = NULL;
-
-        // Open default audio device for capture (NULL = default device, 1 = capture mode)
-        // Allow frequency and format changes for better compatibility
-        SDL_AudioDeviceID mic_dev = SDL_OpenAudioDevice(NULL, 1, &want, &have,
-            SDL_AUDIO_ALLOW_FREQUENCY_CHANGE | SDL_AUDIO_ALLOW_FORMAT_CHANGE);
-        if (mic_dev > 0) {
-            g_microphone.initialized = true;
-            g_microphone.enabled = true;
-            g_microphone.device_id = mic_dev;
-            g_microphone.gain = 1.0f;
-            g_microphone.write_pos = 0;
-            g_microphone.read_pos = 0;
-            g_microphone.last_sample = 0.0f;
-            g_microphone.current_voltage = 0.0f;
-            g_microphone.peak_level = 0.0f;
-            g_microphone.actual_freq = have.freq;
-            g_microphone.actual_format = have.format;
-            SDL_PauseAudioDevice(mic_dev, 0);  // Start audio capture
-            printf("Microphone initialized: %d Hz, %d channels, format 0x%04X\n",
-                   have.freq, have.channels, have.format);
-        } else {
-            g_microphone.initialized = false;
-            g_microphone.enabled = false;
-            fprintf(stderr, "Microphone initialization failed: %s\n", SDL_GetError());
-        }
-    }
-
     // Initialize UI
     ui_init(&app->ui);
 
@@ -315,22 +150,6 @@ void app_shutdown(App *app) {
         app->ui.scope_popup_window = NULL;
     }
     app->ui.scope_popped_out = false;
-
-    // Clean up SDL audio device (speaker output)
-    if (g_audio.initialized && g_audio.device_id > 0) {
-        SDL_CloseAudioDevice(g_audio.device_id);
-        g_audio.initialized = false;
-        g_audio.enabled = false;
-        g_audio.device_id = 0;
-    }
-
-    // Clean up SDL audio capture device (microphone input)
-    if (g_microphone.initialized && g_microphone.device_id > 0) {
-        SDL_CloseAudioDevice(g_microphone.device_id);
-        g_microphone.initialized = false;
-        g_microphone.enabled = false;
-        g_microphone.device_id = 0;
-    }
 
     if (app->simulation) {
         simulation_free(app->simulation);
@@ -1322,33 +1141,6 @@ void app_handle_events(App *app) {
                             }
                             app->input.pending_ui_action = UI_ACTION_NONE;
                             break;  // Don't start text edit for toggle
-                        }
-                        // Microphone enabled toggle
-                        else if (prop_type == PROP_MIC_ENABLED) {
-                            if (c->type == COMP_MICROPHONE) {
-                                c->props.microphone.enabled = !c->props.microphone.enabled;
-                                ui_set_status(&app->ui, c->props.microphone.enabled ? "Mic enabled" : "Mic disabled");
-                            }
-                            app->input.pending_ui_action = UI_ACTION_NONE;
-                            break;  // Don't start text edit for toggle
-                        }
-                        // Microphone gain
-                        else if (prop_type == PROP_MIC_GAIN) {
-                            if (c->type == COMP_MICROPHONE) {
-                                snprintf(current_value, sizeof(current_value), "%.1f", c->props.microphone.gain);
-                            }
-                        }
-                        // Microphone amplitude
-                        else if (prop_type == PROP_MIC_AMPLITUDE) {
-                            if (c->type == COMP_MICROPHONE) {
-                                snprintf(current_value, sizeof(current_value), "%.2f", c->props.microphone.amplitude);
-                            }
-                        }
-                        // Microphone DC offset
-                        else if (prop_type == PROP_MIC_OFFSET) {
-                            if (c->type == COMP_MICROPHONE) {
-                                snprintf(current_value, sizeof(current_value), "%.2f", c->props.microphone.offset);
-                            }
                         }
                         // Source internal resistance
                         else if (prop_type == PROP_R_SERIES) {

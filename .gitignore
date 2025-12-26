@@ -24,3 +24,10 @@ node_modules/
 *.dll
 *.so
 *.dylib
+
+# Debug and temp files
+probe_debug.log
+*.svg
+
+# Claude Code
+.claude/

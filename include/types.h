@@ -187,8 +187,6 @@ typedef enum {
     COMP_LED_ARRAY,         // LED bar graph
     COMP_LED_MATRIX,        // 8x8 LED dot matrix display
     COMP_DC_MOTOR,          // DC motor
-    COMP_SPEAKER,           // Audio output
-    COMP_MICROPHONE,        // Audio input (from system mic)
 
     // === WIRELESS ===
     COMP_ANTENNA_TX,        // Transmitter antenna
@@ -448,57 +446,6 @@ typedef struct {
     SmokeParticle smoke[MAX_SMOKE_PARTICLES];  // Smoke particles
     int num_smoke;                // Active smoke particle count
 } ThermalState;
-
-// ============================================================================
-// Audio Output State (for speaker component)
-// ============================================================================
-
-// Audio ring buffer size (power of 2 for efficient modulo)
-#define AUDIO_BUFFER_SIZE 4096
-#define AUDIO_SAMPLE_RATE 44100
-
-// Audio output state
-typedef struct {
-    bool initialized;             // SDL audio initialized
-    bool enabled;                 // Audio output enabled
-    uint32_t device_id;           // SDL audio device ID for cleanup
-    float buffer[AUDIO_BUFFER_SIZE];  // Ring buffer for audio samples
-    int write_pos;                // Write position in buffer
-    int read_pos;                 // Read position in buffer
-    float volume;                 // Master volume (0-1)
-    float last_sample;            // Last sample for interpolation
-    int speaker_node_id;          // Node ID of active speaker (0 if none)
-} AudioState;
-
-// Global audio state (defined in app.c)
-extern AudioState g_audio;
-
-// ============================================================================
-// Microphone Input State (for audio source component)
-// ============================================================================
-
-// Microphone ring buffer size
-#define MIC_BUFFER_SIZE 4096
-#define MIC_SAMPLE_RATE 44100
-
-// Microphone input state
-typedef struct {
-    bool initialized;             // SDL audio capture initialized
-    bool enabled;                 // Microphone input enabled
-    uint32_t device_id;           // SDL audio capture device ID
-    float buffer[MIC_BUFFER_SIZE]; // Ring buffer for captured samples
-    int write_pos;                // Write position in buffer
-    int read_pos;                 // Read position in buffer
-    float gain;                   // Input gain (0-10), default 1.0
-    float last_sample;            // Last sample for interpolation
-    float current_voltage;        // Current output voltage (scaled from audio)
-    float peak_level;             // Peak audio level for visualization
-    int actual_freq;              // Actual sample rate obtained
-    uint16_t actual_format;       // Actual audio format obtained
-} MicrophoneState;
-
-// Global microphone state (defined in app.c)
-extern MicrophoneState g_microphone;
 
 // ============================================================================
 // SUB-CIRCUIT / IC DEFINITION

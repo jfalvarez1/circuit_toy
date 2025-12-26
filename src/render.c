@@ -959,12 +959,6 @@ void render_component(RenderContext *ctx, Component *comp) {
         case COMP_LAMP:
             render_lamp(ctx, comp->x, comp->y, comp->rotation);
             break;
-        case COMP_SPEAKER:
-            render_speaker(ctx, comp->x, comp->y, comp->rotation);
-            break;
-        case COMP_MICROPHONE:
-            render_microphone(ctx, comp->x, comp->y, comp->rotation);
-            break;
         case COMP_ANTENNA_TX:
             render_antenna_tx(ctx, comp->x, comp->y, comp->rotation);
             break;

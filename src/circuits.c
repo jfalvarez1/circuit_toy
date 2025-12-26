@@ -201,7 +201,7 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_WHEATSTONE] = {"Wheatstone Bridge", "Whst", "Wheatstone bridge measurement circuit"},
     [CIRCUIT_PEAK_DETECTOR] = {"Peak Detector", "Peak", "Op-amp peak detector circuit"},
     // Signal Processing Circuits
-    [CIRCUIT_CLAMPER] = {"Pos Clamper", "Clmp", "Positive clamper (DC restorer)"},
+    [CIRCUIT_CLAMPER] = {"Neg Clamper", "Clmp", "Negative clamper (DC restorer)"},
     [CIRCUIT_PHASE_SHIFT_OSC] = {"Phase Shift Osc", "PhOsc", "RC phase shift oscillator (keep noise on)"},
 };
 
@@ -221,7 +221,9 @@ static Component *add_comp(Circuit *circuit, ComponentType type, float x, float 
     return comp;
 }
 
-// Helper to connect two component terminals with a wire
+// Helper to connect two component terminals with L-shaped orthogonal wires
+// Routes: horizontal first (x1 to x2), then vertical (y1 to y2)
+// This ensures all wires are strictly horizontal or vertical (no diagonals)
 static void connect_terminals(Circuit *circuit, Component *c1, int t1, Component *c2, int t2) {
     float x1, y1, x2, y2;
     component_get_terminal_pos(c1, t1, &x1, &y1);
@@ -230,13 +232,25 @@ static void connect_terminals(Circuit *circuit, Component *c1, int t1, Component
     int n1 = circuit_find_or_create_node(circuit, x1, y1, 5.0f);
     int n2 = circuit_find_or_create_node(circuit, x2, y2, 5.0f);
 
-    if (n1 != n2) {
-        circuit_add_wire(circuit, n1, n2);
-    }
-
     // Update node connections for components
     c1->node_ids[t1] = n1;
     c2->node_ids[t2] = n2;
+
+    if (n1 == n2) return;  // Already same node
+
+    // Check if already aligned (horizontal or vertical)
+    float dx = x2 - x1;
+    float dy = y2 - y1;
+    if (fabsf(dx) < 1.0f || fabsf(dy) < 1.0f) {
+        // Already aligned, single wire is orthogonal
+        circuit_add_wire(circuit, n1, n2);
+    } else {
+        // Not aligned - create L-shaped route with corner at (x2, y1)
+        // This goes: horizontal from (x1,y1) to (x2,y1), then vertical to (x2,y2)
+        int corner = circuit_find_or_create_node(circuit, x2, y1, 5.0f);
+        circuit_add_wire(circuit, n1, corner);
+        circuit_add_wire(circuit, corner, n2);
+    }
 }
 
 // Helper to create a node at component terminal
@@ -5997,77 +6011,148 @@ static int place_peak_detector(Circuit *circuit, float x, float y) {
 //                              |
 //                             GND
 static int place_clamper(Circuit *circuit, float x, float y) {
-    // Clamper shifts DC level of AC signal to positive
+    // Clamper (DC Restorer) - shifts AC waveform so negative peaks clamp at -0.7V
+    // Grid-based layout with explicit node placement for clean orthogonal wires
+    //
+    // Layout (all on grid, no diagonal wires):
+    //
+    //     x        x+80      x+140     x+200
+    //     |          |          |         |
+    //  y: [AC+]-----[C]--------[bus]-----[R]
+    //      |                     |         |
+    // y+40:[GND]                [D]        |
+    //                            |         |
+    // y+80:                    [GND]     [GND]
+    //
+    // The bus node connects: cap output, diode cathode, resistor top
 
-    // AC voltage source
-    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 40, 0);
+    // Create explicit grid nodes for clean wiring
+    float grid_y = y;           // Signal line
+    float grid_y2 = y + 40;     // Middle row
+    float grid_y3 = y + 80;     // Ground row
+
+    // === COMPONENTS ===
+
+    // AC voltage source (vertical, rotation 0: + at top, - at bottom)
+    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, grid_y + 20, 0);
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 5.0;
     vsrc->props.ac_voltage.frequency = 1000.0;
 
-    // Ground for source
-    Component *gnd1 = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
+    // Ground for AC source
+    Component *gnd1 = add_comp(circuit, COMP_GROUND, x, grid_y2 + 20, 0);
 
-    // Coupling capacitor (horizontal)
-    Component *cap = add_comp(circuit, COMP_CAPACITOR, x + 100, y, 0);
-    cap->props.capacitor.capacitance = 10e-6;  // 10uF
+    // Coupling capacitor (horizontal, rotation 0)
+    Component *cap = add_comp(circuit, COMP_CAPACITOR, x + 60, grid_y, 0);
+    cap->props.capacitor.capacitance = 1e-6;  // 1uF - small enough for fast charging (τ=C/Gd ~33µs)
 
-    // Clamping diode (vertical, cathode up for positive clamper)
-    Component *diode = add_comp(circuit, COMP_DIODE, x + 180, y + 40, 90);
+    // Clamping diode (vertical) - NEGATIVE clamper topology
+    // Rotation 270: cathode at top (connects to signal bus), anode at bottom (to ground)
+    // When signal goes negative, diode conducts and clamps output to ~-0.3V
+    Component *diode = add_comp(circuit, COMP_DIODE, x + 140, grid_y2, 270);
+    // Increase saturation current for sharper clamping behavior
+    // Default Is=1e-12 is too small - results in soft exponential clamping
+    diode->props.diode.is = 1e-9;  // 1nA - makes diode conduct more strongly
 
-    // Load resistor (vertical)
-    Component *rload = add_comp(circuit, COMP_RESISTOR, x + 260, y + 40, 90);
-    rload->props.resistor.resistance = 10000.0;
+    // Load resistor (vertical, rotation 90: term0 at top)
+    // Higher value reduces loading on capacitor for better clamping
+    Component *rload = add_comp(circuit, COMP_RESISTOR, x + 200, grid_y2, 90);
+    rload->props.resistor.resistance = 100000.0;  // 100k for reduced loading
 
-    // Ground for diode
-    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 180, y + 100, 0);
+    // Grounds for diode and resistor
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 140, grid_y3 + 20, 0);
+    Component *gnd3 = add_comp(circuit, COMP_GROUND, x + 200, grid_y3 + 20, 0);
 
-    // Ground for load
-    Component *gnd3 = add_comp(circuit, COMP_GROUND, x + 260, y + 100, 0);
+    // === WIRING (all straight horizontal or vertical lines) ===
 
-    // Source negative to ground
-    connect_terminals(circuit, vsrc, 1, gnd1, 0);
+    // Get terminal positions and create nodes
+    float tx, ty;
 
-    // Source positive to capacitor
-    connect_terminals(circuit, vsrc, 0, cap, 0);
+    // Node at vsrc+ (should be at grid_y)
+    component_get_terminal_pos(vsrc, 0, &tx, &ty);
+    int n_vsrc_plus = circuit_find_or_create_node(circuit, tx, ty, 5.0f);
+    vsrc->node_ids[0] = n_vsrc_plus;
 
-    // Capacitor output to diode/load junction
-    float cap_out_x, cap_out_y;
-    component_get_terminal_pos(cap, 1, &cap_out_x, &cap_out_y);
+    // Node at vsrc-
+    component_get_terminal_pos(vsrc, 1, &tx, &ty);
+    int n_vsrc_minus = circuit_find_or_create_node(circuit, tx, ty, 5.0f);
+    vsrc->node_ids[1] = n_vsrc_minus;
 
-    float diode_c_x, diode_c_y;  // Cathode (top when rotated 90)
-    float diode_a_x, diode_a_y;  // Anode (bottom when rotated 90)
-    component_get_terminal_pos(diode, 0, &diode_a_x, &diode_a_y);
-    component_get_terminal_pos(diode, 1, &diode_c_x, &diode_c_y);
+    // Node at gnd1
+    component_get_terminal_pos(gnd1, 0, &tx, &ty);
+    int n_gnd1 = circuit_find_or_create_node(circuit, tx, ty, 5.0f);
+    gnd1->node_ids[0] = n_gnd1;
 
-    float rload_top_x, rload_top_y;
-    component_get_terminal_pos(rload, 0, &rload_top_x, &rload_top_y);
+    // Node at cap left
+    component_get_terminal_pos(cap, 0, &tx, &ty);
+    int n_cap_left = circuit_find_or_create_node(circuit, tx, ty, 5.0f);
+    cap->node_ids[0] = n_cap_left;
 
-    // Junction node at cap output height
-    int node_cap_out = circuit_find_or_create_node(circuit, cap_out_x, cap_out_y, 5.0f);
-    cap->node_ids[1] = node_cap_out;
+    // Node at cap right
+    component_get_terminal_pos(cap, 1, &tx, &ty);
+    int n_cap_right = circuit_find_or_create_node(circuit, tx, ty, 5.0f);
+    cap->node_ids[1] = n_cap_right;
 
-    // Connect to diode cathode (top) - horizontal then vertical
-    int node_diode_c = circuit_find_or_create_node(circuit, diode_c_x, diode_c_y, 5.0f);
-    diode->node_ids[1] = node_diode_c;
-    int corner_d = circuit_find_or_create_node(circuit, diode_c_x, cap_out_y, 5.0f);
-    circuit_add_wire(circuit, node_cap_out, corner_d);
-    circuit_add_wire(circuit, corner_d, node_diode_c);
+    // Node at diode anode (bottom for rotation 270 - negative clamper)
+    component_get_terminal_pos(diode, 0, &tx, &ty);
+    int n_diode_anode = circuit_find_or_create_node(circuit, tx, ty, 5.0f);
+    diode->node_ids[0] = n_diode_anode;
 
-    // Connect to load resistor top - horizontal then vertical
-    int node_rload_top = circuit_find_or_create_node(circuit, rload_top_x, rload_top_y, 5.0f);
-    rload->node_ids[0] = node_rload_top;
-    int corner_r = circuit_find_or_create_node(circuit, rload_top_x, cap_out_y, 5.0f);
-    circuit_add_wire(circuit, corner_d, corner_r);
-    circuit_add_wire(circuit, corner_r, node_rload_top);
+    // Node at diode cathode (top for rotation 270 - negative clamper)
+    component_get_terminal_pos(diode, 1, &tx, &ty);
+    int n_diode_cathode = circuit_find_or_create_node(circuit, tx, ty, 5.0f);
+    diode->node_ids[1] = n_diode_cathode;
 
-    // Diode anode to ground
-    connect_terminals(circuit, diode, 0, gnd2, 0);
+    // Node at resistor top
+    component_get_terminal_pos(rload, 0, &tx, &ty);
+    int n_rload_top = circuit_find_or_create_node(circuit, tx, ty, 5.0f);
+    rload->node_ids[0] = n_rload_top;
 
-    // Load resistor to ground
-    connect_terminals(circuit, rload, 1, gnd3, 0);
+    // Node at resistor bottom
+    component_get_terminal_pos(rload, 1, &tx, &ty);
+    int n_rload_bottom = circuit_find_or_create_node(circuit, tx, ty, 5.0f);
+    rload->node_ids[1] = n_rload_bottom;
 
-    return 7;  // vsrc, gnd1, cap, diode, rload, gnd2, gnd3
+    // Nodes at grounds
+    component_get_terminal_pos(gnd2, 0, &tx, &ty);
+    int n_gnd2 = circuit_find_or_create_node(circuit, tx, ty, 5.0f);
+    gnd2->node_ids[0] = n_gnd2;
+
+    component_get_terminal_pos(gnd3, 0, &tx, &ty);
+    int n_gnd3 = circuit_find_or_create_node(circuit, tx, ty, 5.0f);
+    gnd3->node_ids[0] = n_gnd3;
+
+    // Create bus node on signal line (horizontal bus connecting cap, diode, resistor)
+    // Position it at the cap_right x, signal line y
+    component_get_terminal_pos(cap, 1, &tx, &ty);  // Get cap right position
+    int n_bus = circuit_find_or_create_node(circuit, x + 140, grid_y, 5.0f);  // Bus at diode column, signal row
+
+    // === WIRES ===
+
+    // vsrc- to gnd1 (vertical)
+    circuit_add_wire(circuit, n_vsrc_minus, n_gnd1);
+
+    // vsrc+ to cap_left (horizontal - they should be at same y)
+    circuit_add_wire(circuit, n_vsrc_plus, n_cap_left);
+
+    // cap_right to bus (horizontal)
+    circuit_add_wire(circuit, n_cap_right, n_bus);
+
+    // bus to diode_cathode (for negative clamper - diode conducts when signal goes negative)
+    circuit_add_wire(circuit, n_bus, n_diode_cathode);
+
+    // Create another bus node at resistor column for horizontal extension
+    int n_bus2 = circuit_find_or_create_node(circuit, x + 200, grid_y, 5.0f);
+    circuit_add_wire(circuit, n_bus, n_bus2);  // bus to bus2 (horizontal)
+    circuit_add_wire(circuit, n_bus2, n_rload_top);  // bus2 to resistor (vertical)
+
+    // diode_anode to gnd2 (vertical - for negative clamper, anode goes to ground)
+    circuit_add_wire(circuit, n_diode_anode, n_gnd2);
+
+    // rload_bottom to gnd3 (vertical)
+    circuit_add_wire(circuit, n_rload_bottom, n_gnd3);
+
+    return 7;
 }
 
 // RC Phase Shift Oscillator:

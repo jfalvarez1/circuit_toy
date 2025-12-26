@@ -218,6 +218,12 @@ typedef struct InputState {
     Component *dragging_component;
     float drag_start_x, drag_start_y;  // Component position when drag started (for undo)
 
+    // Multi-selection drag state
+    bool is_multi_dragging;                   // Currently dragging multiple components
+    float multi_drag_start_x[64];             // Initial X positions for undo
+    float multi_drag_start_y[64];             // Initial Y positions for undo
+    float multi_drag_ref_x, multi_drag_ref_y; // Reference point (initial mouse position)
+
     // Wire drawing
     bool drawing_wire;
     int wire_start_node;

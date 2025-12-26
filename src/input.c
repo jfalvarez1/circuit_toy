@@ -387,6 +387,15 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                     }
                                 }
 
+                                // Check if this component is in multi_selected array
+                                bool in_multi_selection = false;
+                                for (int i = 0; i < input->multi_selected_count; i++) {
+                                    if (input->multi_selected[i] == comp) {
+                                        in_multi_selection = true;
+                                        break;
+                                    }
+                                }
+
                                 comp->selected = true;
                                 input->selected_component = comp;
                                 // Auto-pause simulation when starting to drag
@@ -394,10 +403,30 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                     input->pending_ui_action = UI_ACTION_PAUSE;
                                     ui_set_status(ui, "Simulation paused - drag component to move");
                                 }
-                                input->is_dragging = true;
-                                input->dragging_component = comp;
-                                input->drag_start_x = comp->x;
-                                input->drag_start_y = comp->y;
+
+                                if (in_multi_selection && input->multi_selected_count > 1) {
+                                    // Start multi-drag: drag all selected components together
+                                    input->is_multi_dragging = true;
+                                    input->is_dragging = false;
+                                    input->dragging_component = comp;  // Reference component
+                                    input->multi_drag_ref_x = wx;
+                                    input->multi_drag_ref_y = wy;
+                                    // Store initial positions for all multi-selected components
+                                    for (int i = 0; i < input->multi_selected_count; i++) {
+                                        if (input->multi_selected[i]) {
+                                            input->multi_drag_start_x[i] = input->multi_selected[i]->x;
+                                            input->multi_drag_start_y[i] = input->multi_selected[i]->y;
+                                        }
+                                    }
+                                } else {
+                                    // Single-drag: clear multi-selection
+                                    input->multi_selected_count = 0;
+                                    input->is_multi_dragging = false;
+                                    input->is_dragging = true;
+                                    input->dragging_component = comp;
+                                    input->drag_start_x = comp->x;
+                                    input->drag_start_y = comp->y;
+                                }
                             } else {
                                 // Check for wire click
                                 int wire_idx = find_wire_at(circuit, wx, wy, 8.0f);
@@ -757,8 +786,21 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     }
                 }
 
+                // Multi-drag completion: push undo for all moved components
+                if (input->is_multi_dragging && input->multi_selected_count > 0) {
+                    for (int i = 0; i < input->multi_selected_count; i++) {
+                        Component *comp = input->multi_selected[i];
+                        if (comp && (comp->x != input->multi_drag_start_x[i] ||
+                                     comp->y != input->multi_drag_start_y[i])) {
+                            circuit_push_undo(circuit, UNDO_MOVE_COMPONENT, comp->id, NULL,
+                                             input->multi_drag_start_x[i], input->multi_drag_start_y[i]);
+                        }
+                    }
+                }
+
                 input->left.down = false;
                 input->is_dragging = false;
+                input->is_multi_dragging = false;
                 input->dragging_component = NULL;
             } else if (button == SDL_BUTTON_MIDDLE) {
                 input->middle.down = false;
@@ -817,7 +859,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             float wx, wy;
             render_screen_to_world(render, x - render->canvas_rect.x, y - render->canvas_rect.y, &wx, &wy);
 
-            // Dragging component
+            // Dragging component (single)
             if (input->is_dragging && input->dragging_component) {
                 float snapped_x = snap_to_grid(wx);
                 float snapped_y = snap_to_grid(wy);
@@ -827,11 +869,69 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 return true;
             }
 
-            // Dragging probe
+            // Multi-drag: move all selected components together
+            if (input->is_multi_dragging && input->multi_selected_count > 0) {
+                // Calculate offset from reference point (snap the offset)
+                float offset_x = snap_to_grid(wx) - snap_to_grid(input->multi_drag_ref_x);
+                float offset_y = snap_to_grid(wy) - snap_to_grid(input->multi_drag_ref_y);
+
+                // Apply offset to all multi-selected components
+                for (int i = 0; i < input->multi_selected_count; i++) {
+                    Component *comp = input->multi_selected[i];
+                    if (comp) {
+                        comp->x = snap_to_grid(input->multi_drag_start_x[i] + offset_x);
+                        comp->y = snap_to_grid(input->multi_drag_start_y[i] + offset_y);
+                        circuit_update_component_nodes(circuit, comp);
+                    }
+                }
+                return true;
+            }
+
+            // Dragging probe - snap to nearby nodes
             if (input->dragging_probe_idx >= 0 && input->dragging_probe_idx < circuit->num_probes) {
                 Probe *probe = &circuit->probes[input->dragging_probe_idx];
-                probe->x = wx;
-                probe->y = wy;
+
+                // Find nearest component terminal within snap distance
+                int best_node_id = -1;
+                float best_dist = 30.0f;  // Snap threshold in world units
+                float best_tx = wx, best_ty = wy;
+
+                for (int c = 0; c < circuit->num_components; c++) {
+                    Component *comp = circuit->components[c];
+                    for (int t = 0; t < comp->num_terminals; t++) {
+                        float tx, ty;
+                        component_get_terminal_pos(comp, t, &tx, &ty);
+                        float dx = tx - wx;
+                        float dy = ty - wy;
+                        float dist = sqrt(dx*dx + dy*dy);
+                        if (dist < best_dist) {
+                            best_dist = dist;
+                            best_node_id = comp->node_ids[t];
+                            best_tx = tx;
+                            best_ty = ty;
+                        }
+                    }
+                }
+
+                // Fallback: check wire junction nodes if no terminal found
+                if (best_node_id < 0) {
+                    Node *node = circuit_find_node_at(circuit, wx, wy, 30);
+                    if (node) {
+                        best_node_id = node->id;
+                        best_tx = node->x;
+                        best_ty = node->y;
+                    }
+                }
+
+                // Snap to node if found, otherwise follow mouse
+                if (best_node_id >= 0) {
+                    probe->x = best_tx;
+                    probe->y = best_ty;
+                    probe->node_id = best_node_id;
+                } else {
+                    probe->x = wx;
+                    probe->y = wy;
+                }
                 return true;
             }
 
@@ -1144,6 +1244,13 @@ void input_handle_key(InputState *input, SDL_Keycode key,
             // I: Toggle current flow arrows
             if (!ctrl) {
                 render->show_current = !render->show_current;
+            }
+            break;
+
+        case SDLK_p:
+            // P: Probe tool
+            if (!ctrl) {
+                input_set_tool(input, TOOL_PROBE);
             }
             break;
 
@@ -2233,28 +2340,6 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             // Toggle underline
             if (comp->type == COMP_TEXT) {
                 comp->props.text.underline = !comp->props.text.underline;
-                applied = true;
-            }
-            break;
-
-        // Microphone parameters
-        case PROP_MIC_GAIN:
-            if (comp->type == COMP_MICROPHONE && value >= 0 && value <= 100) {
-                comp->props.microphone.gain = value;
-                applied = true;
-            }
-            break;
-
-        case PROP_MIC_AMPLITUDE:
-            if (comp->type == COMP_MICROPHONE && value >= 0 && value <= 100) {
-                comp->props.microphone.amplitude = value;
-                applied = true;
-            }
-            break;
-
-        case PROP_MIC_OFFSET:
-            if (comp->type == COMP_MICROPHONE && value >= -100 && value <= 100) {
-                comp->props.microphone.offset = value;
                 applied = true;
             }
             break;

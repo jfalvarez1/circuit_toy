@@ -368,8 +368,6 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_LED_ARRAY, "LEDBar");
     ADD_COMP(COMP_LED_MATRIX, "8x8");
     ADD_COMP(COMP_DC_MOTOR, "Motor");
-    ADD_COMP(COMP_SPEAKER, "Spkr");
-    ADD_COMP(COMP_MICROPHONE, "Mic");
     ADD_COMP(COMP_ANTENNA_TX, "TX");
     ADD_COMP(COMP_ANTENNA_RX, "RX");
 
@@ -423,6 +421,10 @@ void ui_init(UIState *ui) {
     };
     col = 0;
     pal_y += pal_h + 5;
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_FULLWAVE_BRIDGE, "FW Brg", false, false
+    };
+    col++;
     ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_INVERTING_AMP, "Inv", false, false
     };
@@ -616,6 +618,8 @@ void ui_init(UIState *ui) {
     ui->triggered = false;
     ui->trigger_holdoff = 0.001;  // 1ms holdoff
     ui->dragging_trigger_level = false;
+    ui->trigger_position = 0.5;  // Center of screen
+    ui->dragging_trigger_position = false;
 
     // Initialize pop-out oscilloscope window
     ui->scope_popup_window = NULL;
@@ -1097,6 +1101,8 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
 
                 item->bounds.x = 10 + col * 70;
                 item->bounds.y = draw_y;
+                item->bounds.w = 60;
+                item->bounds.h = pal_h;
 
                 int screen_y = draw_y - scroll_offset;
                 if (screen_y + item->bounds.h >= TOOLBAR_HEIGHT && screen_y < ui->window_height - STATUSBAR_HEIGHT) {
@@ -2669,92 +2675,6 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 break;
             }
 
-            case COMP_MICROPHONE: {
-                // Global microphone status - always shows status of system mic
-                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Source:", x + 10, prop_y + 2);
-                if (g_microphone.initialized) {
-                    SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);
-                    ui_draw_text(renderer, "System Mic", x + 100, prop_y + 2);
-                } else {
-                    SDL_SetRenderDrawColor(renderer, 0xff, 0x40, 0x40, 0xff);
-                    ui_draw_text(renderer, "No Device", x + 100, prop_y + 2);
-                }
-                prop_y += 18;
-
-                // Enabled toggle - controls this component's use of mic
-                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Enabled:", x + 10, prop_y + 2);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
-                ui_draw_text(renderer, selected->props.microphone.enabled ? "[On]" : "[Off]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_MIC_ENABLED;
-                ui->num_properties++;
-                prop_y += 18;
-
-                // Audio level meter
-                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Level:", x + 10, prop_y + 2);
-                // Draw level bar
-                int bar_x = x + 100;
-                int bar_w = prop_w - 110;
-                SDL_SetRenderDrawColor(renderer, 0x40, 0x40, 0x40, 0xff);
-                SDL_Rect bar_bg = {bar_x, prop_y + 2, bar_w, 10};
-                SDL_RenderFillRect(renderer, &bar_bg);
-                // Level fill
-                float level = (float)g_microphone.peak_level;
-                if (level > 1.0f) level = 1.0f;
-                int fill_w = (int)(bar_w * level);
-                if (level > 0.8f) {
-                    SDL_SetRenderDrawColor(renderer, 0xff, 0x40, 0x40, 0xff);  // Red - clipping
-                } else if (level > 0.5f) {
-                    SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);  // Orange
-                } else {
-                    SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);       // Green - OK
-                }
-                SDL_Rect bar_fill = {bar_x, prop_y + 2, fill_w, 10};
-                SDL_RenderFillRect(renderer, &bar_fill);
-                prop_y += 18;
-
-                // Gain control
-                bool edit_gain = input && input->editing_property && input->editing_prop_type == PROP_MIC_GAIN;
-                snprintf(buf, sizeof(buf), "%.1fx", selected->props.microphone.gain);
-                draw_property_field(renderer, x + 10, prop_y, prop_w, "Gain:", buf,
-                                   edit_gain, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_MIC_GAIN;
-                ui->num_properties++;
-                prop_y += 18;
-
-                // Amplitude control
-                bool edit_amp = input && input->editing_property && input->editing_prop_type == PROP_MIC_AMPLITUDE;
-                snprintf(buf, sizeof(buf), "%.2f V", selected->props.microphone.amplitude);
-                draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
-                                   edit_amp, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_MIC_AMPLITUDE;
-                ui->num_properties++;
-                prop_y += 18;
-
-                // DC Offset control
-                bool edit_offset = input && input->editing_property && input->editing_prop_type == PROP_MIC_OFFSET;
-                snprintf(buf, sizeof(buf), "%.2f V", selected->props.microphone.offset);
-                draw_property_field(renderer, x + 10, prop_y, prop_w, "DC Offset:", buf,
-                                   edit_offset, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_MIC_OFFSET;
-                ui->num_properties++;
-                prop_y += 18;
-
-                // Output voltage (read-only)
-                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Output:", x + 10, prop_y + 2);
-                SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-                snprintf(buf, sizeof(buf), "%.3f V", selected->props.microphone.voltage);
-                ui_draw_text(renderer, buf, x + 100, prop_y + 2);
-                break;
-            }
-
             default:
                 break;
         }
@@ -3176,12 +3096,23 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             if (need_new_trigger && trig_count > 10) {
                 double level = ui->trigger_level;
 
-                // Search for trigger crossing (look for edge in middle portion of data)
-                // Start from 1/3 into the buffer so we have pre-trigger data
-                int search_start = trig_count / 3;
-                int search_end = trig_count - 10;
+                // Search BACKWARDS from end of buffer to find the MOST RECENT trigger edge
+                // This matches real oscilloscope behavior (Tektronix style)
+                // We need enough samples after the trigger for post-trigger display
+                // trigger_position determines where trigger appears on screen:
+                // - 0.0 = left edge (all post-trigger)
+                // - 0.5 = center (50% pre, 50% post)
+                // - 1.0 = right edge (all pre-trigger)
+                double post_trigger_ratio = 1.0 - ui->trigger_position;
+                int min_post_samples = (int)(time_window / (trig_times[trig_count-1] - trig_times[0]) * trig_count * post_trigger_ratio);
+                if (min_post_samples < 5) min_post_samples = 5;
 
-                for (int i = search_start; i < search_end; i++) {
+                // Search backwards from end - min_post_samples to find most recent trigger
+                int search_end = trig_count - min_post_samples;
+                int search_start = trig_count / 10;  // Don't search too far back
+                if (search_start < 1) search_start = 1;
+
+                for (int i = search_end; i >= search_start; i--) {
                     bool triggered_here = false;
                     double v_prev = trig_values[i - 1];
                     double v_curr = trig_values[i];
@@ -3210,7 +3141,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
                     if (triggered_here) {
                         trigger_idx = i;
-                        break;  // Use first trigger found
+                        break;  // Use most recent trigger found
                     }
                 }
             }
@@ -3219,15 +3150,22 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             bool use_capture = false;
 
             if (trigger_idx >= 0) {
-                // Found a trigger - capture the data
-                ui->scope_last_trigger_time = trig_times[trigger_idx];
+                // Found a trigger - capture the data CENTERED around the trigger point
+                double trigger_time = trig_times[trigger_idx];
+                ui->scope_last_trigger_time = trigger_time;
                 ui->scope_trigger_sample_idx = trigger_idx;
                 ui->triggered = true;
 
-                // Find samples covering the visible time window (+ 50% margin for pre-trigger)
-                double target_time_span = time_window * 1.5;
-                double t_end = trig_times[trig_count - 1];
-                double t_start = t_end - target_time_span;
+                // Calculate time window centered around trigger based on trigger_position
+                // trigger_position is where trigger appears on screen (0.0=left, 0.5=center, 1.0=right)
+                // Pre-trigger time = trigger_position * time_window
+                // Post-trigger time = (1 - trigger_position) * time_window
+                double pre_trigger_time = ui->trigger_position * time_window;
+                double post_trigger_time = (1.0 - ui->trigger_position) * time_window;
+
+                // Add 25% margin for display
+                double t_start = trigger_time - pre_trigger_time * 1.25;
+                double t_end = trigger_time + post_trigger_time * 1.25;
 
                 // Find first sample index at or after t_start
                 int window_start = 0;
@@ -3238,7 +3176,16 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     }
                 }
 
-                int window_samples = trig_count - window_start;
+                // Find last sample index at or before t_end
+                int window_end = trig_count - 1;
+                for (int i = trig_count - 1; i >= 0; i--) {
+                    if (trig_times[i] <= t_end) {
+                        window_end = i;
+                        break;
+                    }
+                }
+
+                int window_samples = window_end - window_start + 1;
 
                 // Only subsample if needed to fit in capture buffer
                 int subsample = 1;
@@ -3255,7 +3202,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 // Capture times with subsampling from window start
                 for (int i = 0; i < ui->scope_capture_count; i++) {
                     int src_idx = window_start + i * subsample;
-                    if (src_idx >= trig_count) src_idx = trig_count - 1;
+                    if (src_idx > window_end) src_idx = window_end;
                     ui->scope_capture_times[i] = trig_times[src_idx];
                 }
 
@@ -3287,9 +3234,9 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 use_capture = true;
             } else {
                 // No trigger found
-                if (ui->trigger_mode == TRIG_AUTO || ui->trigger_mode == TRIG_NORMAL) {
+                if (ui->trigger_mode == TRIG_AUTO) {
                     // AUTO mode: free-run, show latest data without triggering
-                    // NORMAL mode without trigger: also free-run (DC signals never trigger)
+                    // (NORMAL mode should hold last capture, not free-run)
 
                     // Find samples covering the visible time window (+ 50% margin)
                     double target_time_span = time_window * 1.5;
@@ -3372,8 +3319,17 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 // Check if we have enough data to fill the time window
                 // Use 90% threshold to account for sampling granularity
                 if (t_span >= time_window * 0.9) {
-                    // Enough data - anchor to right edge, waveform fills screen
-                    t_reference = t_end - time_window;
+                    // When triggered (NORMAL/SINGLE mode), position waveform so trigger
+                    // appears at the trigger_position (horizontal trigger position)
+                    if (ui->triggered && ui->trigger_mode != TRIG_AUTO &&
+                        ui->scope_last_trigger_time >= t_start && ui->scope_last_trigger_time <= t_end) {
+                        // Position the trigger point at trigger_position on screen
+                        // t_reference is the time at x=0, trigger is at trigger_position
+                        t_reference = ui->scope_last_trigger_time - (ui->trigger_position * time_window);
+                    } else {
+                        // AUTO mode or no valid trigger - anchor to right edge
+                        t_reference = t_end - time_window;
+                    }
                 } else {
                     // Not enough data yet - anchor to left edge
                     // Data starts at x=0 and grows rightward as simulation runs
@@ -3448,8 +3404,9 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
                 // Draw trigger point marker (small T on the waveform)
                 if (trigger_idx >= 0 && ui->trigger_mode != TRIG_AUTO) {
-                    // Show trigger indicator at ~20% from left
-                    int trig_x = r->x + r->w / 5;
+                    // Show trigger indicator at the trigger_position
+                    int trig_x = r->x + (int)(ui->trigger_position * r->w);
+                    trig_x = CLAMP(trig_x, r->x, r->x + r->w);
                     SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);  // Orange
                     // Small downward arrow at top
                     SDL_RenderDrawLine(renderer, trig_x, r->y + 2, trig_x, r->y + 8);
@@ -3475,6 +3432,22 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     SDL_RenderDrawLine(renderer, r->x + r->w - 5, trig_y - 3, r->x + r->w - 2, trig_y);
                     SDL_RenderDrawLine(renderer, r->x + r->w - 5, trig_y + 3, r->x + r->w - 2, trig_y);
                 }
+            }
+
+            // Draw trigger position line (vertical dashed, in cyan)
+            {
+                int trig_pos_x = r->x + (int)(ui->trigger_position * r->w);
+                trig_pos_x = CLAMP(trig_pos_x, r->x, r->x + r->w);
+
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);  // Cyan
+                // Draw dashed vertical line
+                for (int y = r->y; y < r->y + r->h; y += 8) {
+                    SDL_RenderDrawLine(renderer, trig_pos_x, y, trig_pos_x, MIN(y + 4, r->y + r->h));
+                }
+                // Draw trigger position indicator at bottom (down arrow)
+                SDL_RenderDrawLine(renderer, trig_pos_x, r->y + r->h - 8, trig_pos_x, r->y + r->h - 2);
+                SDL_RenderDrawLine(renderer, trig_pos_x - 3, r->y + r->h - 5, trig_pos_x, r->y + r->h - 2);
+                SDL_RenderDrawLine(renderer, trig_pos_x + 3, r->y + r->h - 5, trig_pos_x, r->y + r->h - 2);
             }
 
             // Show trigger status
@@ -5751,10 +5724,27 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             if (point_in_rect(x, y, &mc_panel_rect)) return UI_ACTION_NONE;
         }
 
-        // Handle trigger level dragging - check if click is near trigger indicator
-        // Allow clicking on the right edge arrow OR anywhere along the horizontal trigger line
+        // Handle trigger position and level dragging in scope area
         if (ui->display_mode == SCOPE_MODE_YT && ui->scope_num_channels > 0) {
             Rect *sr = &ui->scope_rect;
+
+            // Check trigger position FIRST (vertical cyan line) - before trigger level
+            // because trigger level detection spans the entire width
+            int trig_pos_x = sr->x + (int)(ui->trigger_position * sr->w);
+            trig_pos_x = CLAMP(trig_pos_x, sr->x, sr->x + sr->w);
+
+            // Check if click is near the trigger position line (entire height, +/- 5 pixels horizontally)
+            // Or on the bottom edge indicator (+/- 8 pixels horizontally)
+            bool on_trig_pos_line = (y >= sr->y && y <= sr->y + sr->h &&
+                                     x >= trig_pos_x - 5 && x <= trig_pos_x + 5);
+            bool on_trig_pos_arrow = (y >= sr->y + sr->h - 15 && y <= sr->y + sr->h &&
+                                      x >= trig_pos_x - 8 && x <= trig_pos_x + 8);
+            if (on_trig_pos_line || on_trig_pos_arrow) {
+                ui->dragging_trigger_position = true;
+                return UI_ACTION_NONE;
+            }
+
+            // Now check trigger level (horizontal yellow line)
             int trig_ch = ui->trigger_channel;
             if (trig_ch < ui->scope_num_channels && ui->scope_channels[trig_ch].enabled) {
                 // Calculate current trigger level Y position
@@ -5830,6 +5820,10 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         // Release trigger level drag
         if (ui->dragging_trigger_level) {
             ui->dragging_trigger_level = false;
+        }
+        // Release trigger position drag
+        if (ui->dragging_trigger_position) {
+            ui->dragging_trigger_position = false;
         }
         // Release speed slider drag
         if (ui->dragging_speed) {
@@ -6078,6 +6072,8 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
 
         // Check circuit template items (adjust y for scroll offset)
+        // Skip if Circuits category is collapsed (bounds are stale)
+        if (!ui->categories[PCAT_CIRCUITS].collapsed) {
         for (int i = 0; i < ui->num_circuit_items; i++) {
             if (point_in_rect(x, adjusted_y, &ui->circuit_items[i].bounds)) {
                 // Verify item is visible (not clipped by scroll)
@@ -6099,6 +6095,7 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
                 return UI_ACTION_SELECT_CIRCUIT + ui->circuit_items[i].circuit_type;
             }
         }
+        }  // end if (!collapsed)
 
         // Check user subcircuit items (adjust y for scroll offset)
         for (int i = 0; i < ui->num_subcircuit_items; i++) {
@@ -6338,6 +6335,15 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         return UI_ACTION_NONE;
     }
 
+    // Handle trigger position dragging
+    if (ui->dragging_trigger_position) {
+        Rect *sr = &ui->scope_rect;
+        // Convert mouse X position to trigger position (0.0 to 1.0)
+        double new_pos = (double)(x - sr->x) / sr->w;
+        ui->trigger_position = CLAMP(new_pos, 0.0, 1.0);
+        return UI_ACTION_NONE;
+    }
+
     // Handle speed slider dragging
     if (ui->dragging_speed) {
         int slider_x = ui->speed_slider.x + 50;
@@ -6435,16 +6441,24 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         }
 
         // Update circuit items hover states (adjust y for scroll offset)
-        for (int i = 0; i < ui->num_circuit_items; i++) {
-            bool in_bounds = point_in_rect(x, adjusted_y, &ui->circuit_items[i].bounds);
-            // Also check if item is visible on screen
-            if (in_bounds) {
-                int item_screen_y = ui->circuit_items[i].bounds.y - ui->palette_scroll_offset;
-                if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->circuit_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
-                    in_bounds = false;  // Item is scrolled out of view
+        // Skip if Circuits category is collapsed (bounds are stale)
+        if (!ui->categories[PCAT_CIRCUITS].collapsed) {
+            for (int i = 0; i < ui->num_circuit_items; i++) {
+                bool in_bounds = point_in_rect(x, adjusted_y, &ui->circuit_items[i].bounds);
+                // Also check if item is visible on screen
+                if (in_bounds) {
+                    int item_screen_y = ui->circuit_items[i].bounds.y - ui->palette_scroll_offset;
+                    if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->circuit_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                        in_bounds = false;  // Item is scrolled out of view
+                    }
                 }
+                ui->circuit_items[i].hovered = in_bounds;
             }
-            ui->circuit_items[i].hovered = in_bounds;
+        } else {
+            // Clear hover states when collapsed
+            for (int i = 0; i < ui->num_circuit_items; i++) {
+                ui->circuit_items[i].hovered = false;
+            }
         }
     }
 
@@ -6670,8 +6684,37 @@ void ui_scope_autoset(UIState *ui, Simulation *sim) {
         }
     }
 
-    // If no signal found, use default settings
+    // If no signal found, check if we have DC (amplitude ~0 but signal present)
+    // For DC signals, global_min ≈ global_max, so we need to scale based on DC level
     if (global_max <= global_min || samples_with_signal == 0) {
+        // Check if we actually have data (DC signal case)
+        if (global_min < 1e9 && global_max > -1e9) {
+            // We have data but no AC content - this is a DC signal
+            // Scale volt/div based on the DC level so the signal fits on screen
+            // The scope shows ±4 divisions from center (8 total), so signal must fit in 4 divs
+            double dc_level = fmax(fabs(global_min), fabs(global_max));
+            if (dc_level > 0.001) {
+                // Find the smallest volt/div that keeps the DC level within 3.5 divisions
+                // (leaving 0.5 division margin from the edge for better visibility)
+                // Formula: dc_level / volt_div <= 3.5, so volt_div >= dc_level / 3.5
+                double min_volt_div = dc_level / 3.5;
+                int volt_idx = 0;
+                for (int i = 0; i < num_volt_divs; i++) {
+                    if (volt_divs[i] >= min_volt_div) {
+                        volt_idx = i;
+                        break;
+                    }
+                    volt_idx = i;
+                }
+                ui->scope_volt_div = volt_divs[volt_idx];
+            } else {
+                ui->scope_volt_div = 1.0;
+            }
+            ui->scope_time_div = 0.001;  // 1ms/div
+            ui->trigger_level = (global_min + global_max) / 2.0;
+            return;
+        }
+        // No data at all - use defaults
         ui->scope_volt_div = 1.0;
         ui->scope_time_div = 0.001;  // 1ms/div
         ui->trigger_level = 0;

@@ -190,7 +190,7 @@ typedef struct {
     int palette_scroll_drag_start_offset; // Scroll offset when drag started
 
     // Circuit template palette
-    CircuitPaletteItem circuit_items[48];
+    CircuitPaletteItem circuit_items[80];  // Must be >= CIRCUIT_TYPE_COUNT
     int num_circuit_items;
     int selected_circuit_type;  // Currently selected circuit template (-1 = none)
     bool placing_circuit;       // True when placing a circuit template
@@ -276,6 +276,8 @@ typedef struct {
     bool triggered;                  // Has triggered (for single-shot)
     double trigger_holdoff;          // Time to wait after trigger before re-arming
     bool dragging_trigger_level;     // Currently dragging trigger level indicator
+    double trigger_position;         // Horizontal trigger position (0.0=left, 1.0=right, 0.5=center)
+    bool dragging_trigger_position;  // Currently dragging trigger position indicator
 
     // Triggered capture state (for stable display)
     // 1000 samples is enough - we subsample history when needed
