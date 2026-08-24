@@ -615,6 +615,7 @@ void ui_init(UIState *ui) {
     ui->cursor2_volt = 0.65;
     ui->scope_cursor_type = 0;
     ui->scope_cursor_active = 1;
+    ui->scope_cursor_linked = false;
     ui->scope_view_t0 = 0.0;
     ui->scope_view_span = 0.0;
     ui->scope_fft_mode = false;
@@ -3687,7 +3688,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 ha = scope_value_at(ui, src, ta, &va);
                 hb = scope_value_at(ui, src, tb, &vb);
             }
-            snprintf(line[nl++], 40, "WAVE CH%d", src + 1);
+            snprintf(line[nl++], 40, "WAVE CH%d%s", src + 1, ui->scope_cursor_linked ? " LINK" : "");
             if (ha) fmt_volt_eng(v1, sizeof v1, va); else snprintf(v1, sizeof v1, "--");
             if (hb) fmt_volt_eng(v2, sizeof v2, vb); else snprintf(v2, sizeof v2, "--");
             snprintf(line[nl++], 40, "a %s %s", t1, v1);
@@ -3736,7 +3737,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             for (int x = r->x; x < r->x + r->w; x += 4) SDL_RenderDrawLine(renderer, x, ay, MIN(x + 2, r->x + r->w), ay);
             SDL_SetRenderDrawColor(renderer, 0xff, 0x00, 0xff, 0xff);
             for (int x = r->x; x < r->x + r->w; x += 4) SDL_RenderDrawLine(renderer, x, by, MIN(x + 2, r->x + r->w), by);
-            snprintf(line[nl++], 40, "SCREEN CH%d", src + 1);
+            snprintf(line[nl++], 40, "SCREEN CH%d%s", src + 1, ui->scope_cursor_linked ? " LINK" : "");
             fmt_volt_eng(v1, sizeof v1, va); fmt_volt_eng(v2, sizeof v2, vb);
             snprintf(line[nl++], 40, "a %s %s", t1, v1);
             snprintf(line[nl++], 40, "b %s %s", t2, v2);
@@ -6522,6 +6523,10 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         normalized_x = CLAMP(normalized_x, 0.0, 1.0);
 
         if (ui->scope_cursor_drag == 1) {
+            if (ui->scope_cursor_linked) {
+                double delta = ui->cursor2_time - ui->cursor1_time;
+                ui->cursor2_time = CLAMP(normalized_x + delta, 0.0, 1.0);
+            }
             ui->cursor1_time = normalized_x;
         } else if (ui->scope_cursor_drag == 2) {
             ui->cursor2_time = normalized_x;

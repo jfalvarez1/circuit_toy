@@ -267,6 +267,7 @@ typedef struct {
     double cursor2_volt;             // Cursor 2 voltage position (0-1 normalized, 0.5 = center)
     int scope_cursor_type;           // 0 = off, 1 = waveform cursors (track the source trace), 2 = screen cursors (H + V bars)
     int scope_cursor_active;         // Last moved cursor: 1 = a, 2 = b (keyboard nudges apply to it)
+    bool scope_cursor_linked;        // Linked (track) mode: moving a moves b with it, keeping the delta
     double scope_view_t0;            // Simulation time at the left edge of the last drawn Y-T window
     double scope_view_span;          // Seconds spanned by the last drawn Y-T window
 

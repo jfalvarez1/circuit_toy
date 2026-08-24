@@ -1098,6 +1098,37 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 return true;
             }
 
+            // Scope cursor keys (only while cursors are on and no text field has focus):
+            //   Left/Right nudge the active cursor 1 px (Shift: 10 px, Ctrl: 0.1 px),
+            //   Tab selects the other cursor, L toggles linked mode, Home brings both on screen.
+            if (ui && ui->scope_cursor_mode && ui->scope_cursor_type > 0) {
+                SDL_Keycode ck = event->key.keysym.sym;
+                SDL_Keymod mods = SDL_GetModState();
+                double w = ui->scope_rect.w > 0 ? ui->scope_rect.w : 1.0;
+                double px = (mods & KMOD_SHIFT) ? 10.0 : (mods & KMOD_CTRL) ? 0.1 : 1.0;
+                double step = px / w;
+                if (ck == SDLK_LEFT || ck == SDLK_RIGHT) {
+                    double d = (ck == SDLK_LEFT) ? -step : step;
+                    double *c = (ui->scope_cursor_active == 2) ? &ui->cursor2_time : &ui->cursor1_time;
+                    *c = CLAMP(*c + d, 0.0, 1.0);
+                    if (ui->scope_cursor_linked && ui->scope_cursor_active == 1)
+                        ui->cursor2_time = CLAMP(ui->cursor2_time + d, 0.0, 1.0);
+                    return true;
+                }
+                if (ck == SDLK_UP || ck == SDLK_DOWN) {
+                    if (ui->scope_cursor_type == 2) {
+                        double h = ui->scope_rect.h > 0 ? ui->scope_rect.h : 1.0;
+                        double d = ((ck == SDLK_UP) ? -px : px) / h;
+                        double *c = (ui->scope_cursor_active == 2) ? &ui->cursor2_volt : &ui->cursor1_volt;
+                        *c = CLAMP(*c + d, 0.0, 1.0);
+                        return true;
+                    }
+                }
+                if (ck == SDLK_TAB) { ui->scope_cursor_active = (ui->scope_cursor_active == 1) ? 2 : 1; return true; }
+                if (ck == SDLK_l && !(mods & KMOD_CTRL)) { ui->scope_cursor_linked = !ui->scope_cursor_linked; return true; }
+                if (ck == SDLK_HOME) { ui->cursor1_time = 0.25; ui->cursor2_time = 0.75; ui->cursor1_volt = 0.35; ui->cursor2_volt = 0.65; return true; }
+            }
+
             // Handle Ctrl+K to open spotlight search
             if (event->key.keysym.sym == SDLK_k && (SDL_GetModState() & KMOD_CTRL) && ui) {
                 ui_spotlight_open(ui);
