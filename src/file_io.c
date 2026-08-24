@@ -72,6 +72,20 @@ bool file_save_circuit(Circuit *circuit, const char *filename) {
         fwrite(&wire->end_node_id, sizeof(int), 1, f);
     }
 
+    // Write probe count
+    fwrite(&circuit->num_probes, sizeof(int), 1, f);
+
+    // Write probes
+    for (int i = 0; i < circuit->num_probes; i++) {
+        Probe *probe = &circuit->probes[i];
+        fwrite(&probe->id, sizeof(int), 1, f);
+        fwrite(&probe->node_id, sizeof(int), 1, f);
+        fwrite(&probe->x, sizeof(float), 1, f);
+        fwrite(&probe->y, sizeof(float), 1, f);
+        fwrite(&probe->channel_num, sizeof(int), 1, f);
+        fwrite(probe->label, 8, 1, f);  // Label is char[8]
+    }
+
     fclose(f);
     return true;
 }
@@ -162,6 +176,30 @@ bool file_load_circuit(Circuit *circuit, const char *filename) {
         wire->id = circuit->next_wire_id++;
     }
 
+    // Read probe count (if available in file)
+    int num_probes = 0;
+    if (fread(&num_probes, sizeof(int), 1, f) == 1 && num_probes > 0 && num_probes < MAX_PROBES) {
+        // Read probes
+        for (int i = 0; i < num_probes; i++) {
+            Probe *probe = &circuit->probes[circuit->num_probes];
+            fread(&probe->id, sizeof(int), 1, f);
+            fread(&probe->node_id, sizeof(int), 1, f);
+            fread(&probe->x, sizeof(float), 1, f);
+            fread(&probe->y, sizeof(float), 1, f);
+            fread(&probe->channel_num, sizeof(int), 1, f);
+            fread(probe->label, 8, 1, f);
+
+            // Set probe color based on channel
+            if (probe->channel_num == 0) probe->color = (Color){0xff, 0xff, 0x00, 0xff};  // Yellow
+            else if (probe->channel_num == 1) probe->color = (Color){0x00, 0xff, 0xff, 0xff};  // Cyan
+            else if (probe->channel_num == 2) probe->color = (Color){0xff, 0x00, 0xff, 0xff};  // Magenta
+            else probe->color = (Color){0xff, 0xff, 0xff, 0xff};  // White
+
+            probe->selected = false;
+            circuit->num_probes++;
+        }
+    }
+
     fclose(f);
     circuit->modified = false;
     return true;
@@ -191,8 +229,62 @@ bool file_export_json(Circuit *circuit, const char *filename) {
         fprintf(f, "      \"x\": %.2f,\n", comp->x);
         fprintf(f, "      \"y\": %.2f,\n", comp->y);
         fprintf(f, "      \"rotation\": %d,\n", comp->rotation);
-        fprintf(f, "      \"label\": \"%s\"\n", comp->label);
-        fprintf(f, "    }%s\n", i < circuit->num_components - 1 ? "," : "");
+        fprintf(f, "      \"label\": \"%s\"", comp->label);
+
+        // Add component-specific properties
+        bool has_props = false;
+        if (comp->type == COMP_RESISTOR) {
+            fprintf(f, ",\n");
+            fprintf(f, "      \"properties\": {\n");
+            fprintf(f, "        \"resistance\": %.6e\n", comp->props.resistor.resistance);
+            fprintf(f, "      }");
+            has_props = true;
+        } else if (comp->type == COMP_CAPACITOR) {
+            fprintf(f, ",\n");
+            fprintf(f, "      \"properties\": {\n");
+            fprintf(f, "        \"capacitance\": %.6e\n", comp->props.capacitor.capacitance);
+            fprintf(f, "      }");
+            has_props = true;
+        } else if (comp->type == COMP_OPAMP || comp->type == COMP_OPAMP_FLIPPED || comp->type == COMP_OPAMP_REAL) {
+            fprintf(f, ",\n");
+            fprintf(f, "      \"properties\": {\n");
+            fprintf(f, "        \"gain\": %.6e,\n", comp->props.opamp.gain);
+            fprintf(f, "        \"gbw\": %.6e,\n", comp->props.opamp.gbw);
+            fprintf(f, "        \"voffset\": %.6e\n", comp->props.opamp.voffset);
+            fprintf(f, "      }");
+            has_props = true;
+        } else if (comp->type == COMP_AC_VOLTAGE) {
+            fprintf(f, ",\n");
+            fprintf(f, "      \"properties\": {\n");
+            fprintf(f, "        \"amplitude\": %.6e,\n", comp->props.ac_voltage.amplitude);
+            fprintf(f, "        \"frequency\": %.6e,\n", comp->props.ac_voltage.frequency);
+            fprintf(f, "        \"offset\": %.6e\n", comp->props.ac_voltage.offset);
+            fprintf(f, "      }");
+            has_props = true;
+        } else if (comp->type == COMP_SPST_SWITCH) {
+            fprintf(f, ",\n");
+            fprintf(f, "      \"properties\": {\n");
+            fprintf(f, "        \"closed\": %s\n", comp->props.switch_spst.closed ? "true" : "false");
+            fprintf(f, "      }");
+            has_props = true;
+        } else if (comp->type == COMP_LED_ARRAY) {
+            fprintf(f, ",\n");
+            fprintf(f, "      \"properties\": {\n");
+            fprintf(f, "        \"color\": %d\n", comp->props.led_array.color);
+            fprintf(f, "      }");
+            has_props = true;
+        } else if (comp->type == COMP_PULSE_SOURCE) {
+            fprintf(f, ",\n");
+            fprintf(f, "      \"properties\": {\n");
+            fprintf(f, "        \"v_low\": %.6e,\n", comp->props.pulse_source.v_low);
+            fprintf(f, "        \"v_high\": %.6e,\n", comp->props.pulse_source.v_high);
+            fprintf(f, "        \"period\": %.6e,\n", comp->props.pulse_source.period);
+            fprintf(f, "        \"pulse_width\": %.6e\n", comp->props.pulse_source.pulse_width);
+            fprintf(f, "      }");
+            has_props = true;
+        }
+
+        fprintf(f, "\n    }%s\n", i < circuit->num_components - 1 ? "," : "");
     }
     fprintf(f, "  ],\n");
 
@@ -214,6 +306,17 @@ bool file_export_json(Circuit *circuit, const char *filename) {
         fprintf(f, "    {\"start\": %d, \"end\": %d}%s\n",
                 wire->start_node_id, wire->end_node_id,
                 i < circuit->num_wires - 1 ? "," : "");
+    }
+    fprintf(f, "  ],\n");
+
+    // Probes
+    fprintf(f, "  \"probes\": [\n");
+    for (int i = 0; i < circuit->num_probes; i++) {
+        Probe *probe = &circuit->probes[i];
+        fprintf(f, "    {\"id\": %d, \"node_id\": %d, \"x\": %.2f, \"y\": %.2f, \"channel\": %d, \"label\": \"%s\"}%s\n",
+                probe->id, probe->node_id, probe->x, probe->y,
+                probe->channel_num, probe->label,
+                i < circuit->num_probes - 1 ? "," : "");
     }
     fprintf(f, "  ]\n");
 
@@ -280,6 +383,94 @@ bool file_import_json(Circuit *circuit, const char *filename) {
                     Component *comp = component_create(type, x, y);
                     if (comp) {
                         comp->rotation = rotation;
+
+                        // Parse component-specific properties
+                        char *props_ptr = strstr(ptr, "\"properties\":");
+                        if (props_ptr) {
+                            // Limit search to this component's object (before next "type": or end)
+                            char *next_comp = strstr(ptr + 1, "\"type\":");
+
+                            if (comp->type == COMP_RESISTOR) {
+                                char *res_ptr = strstr(props_ptr, "\"resistance\":");
+                                if (res_ptr && (!next_comp || res_ptr < next_comp)) {
+                                    double resistance;
+                                    if (sscanf(res_ptr, "\"resistance\": %lf", &resistance) == 1) {
+                                        comp->props.resistor.resistance = resistance;
+                                    }
+                                }
+                            } else if (comp->type == COMP_CAPACITOR) {
+                                char *cap_ptr = strstr(props_ptr, "\"capacitance\":");
+                                if (cap_ptr && (!next_comp || cap_ptr < next_comp)) {
+                                    double capacitance;
+                                    if (sscanf(cap_ptr, "\"capacitance\": %lf", &capacitance) == 1) {
+                                        comp->props.capacitor.capacitance = capacitance;
+                                    }
+                                }
+                            } else if (comp->type == COMP_OPAMP || comp->type == COMP_OPAMP_FLIPPED || comp->type == COMP_OPAMP_REAL) {
+                                char *gain_ptr = strstr(props_ptr, "\"gain\":");
+                                char *gbw_ptr = strstr(props_ptr, "\"gbw\":");
+                                char *voff_ptr = strstr(props_ptr, "\"voffset\":");
+                                if (gain_ptr && (!next_comp || gain_ptr < next_comp)) {
+                                    double gain;
+                                    if (sscanf(gain_ptr, "\"gain\": %lf", &gain) == 1) {
+                                        comp->props.opamp.gain = gain;
+                                    }
+                                }
+                                if (gbw_ptr && (!next_comp || gbw_ptr < next_comp)) {
+                                    double gbw;
+                                    if (sscanf(gbw_ptr, "\"gbw\": %lf", &gbw) == 1) {
+                                        comp->props.opamp.gbw = gbw;
+                                    }
+                                }
+                                if (voff_ptr && (!next_comp || voff_ptr < next_comp)) {
+                                    double voffset;
+                                    if (sscanf(voff_ptr, "\"voffset\": %lf", &voffset) == 1) {
+                                        comp->props.opamp.voffset = voffset;
+                                    }
+                                }
+                            } else if (comp->type == COMP_AC_VOLTAGE) {
+                                char *amp_ptr = strstr(props_ptr, "\"amplitude\":");
+                                char *freq_ptr = strstr(props_ptr, "\"frequency\":");
+                                char *off_ptr = strstr(props_ptr, "\"offset\":");
+                                if (amp_ptr && (!next_comp || amp_ptr < next_comp)) {
+                                    double amplitude;
+                                    if (sscanf(amp_ptr, "\"amplitude\": %lf", &amplitude) == 1) {
+                                        comp->props.ac_voltage.amplitude = amplitude;
+                                    }
+                                }
+                                if (freq_ptr && (!next_comp || freq_ptr < next_comp)) {
+                                    double frequency;
+                                    if (sscanf(freq_ptr, "\"frequency\": %lf", &frequency) == 1) {
+                                        comp->props.ac_voltage.frequency = frequency;
+                                    }
+                                }
+                                if (off_ptr && (!next_comp || off_ptr < next_comp)) {
+                                    double offset;
+                                    if (sscanf(off_ptr, "\"offset\": %lf", &offset) == 1) {
+                                        comp->props.ac_voltage.offset = offset;
+                                    }
+                                }
+                            } else if (comp->type == COMP_SPST_SWITCH) {
+                                char *closed_ptr = strstr(props_ptr, "\"closed\":");
+                                if (closed_ptr && (!next_comp || closed_ptr < next_comp)) {
+                                    if (strstr(closed_ptr, "true")) {
+                                        comp->props.switch_spst.closed = true;
+                                    } else {
+                                        comp->props.switch_spst.closed = false;
+                                    }
+                                }
+                            } else if (comp->type == COMP_LED_ARRAY) {
+                                char *color_ptr = strstr(props_ptr, "\"color\":");
+                                if (color_ptr && (!next_comp || color_ptr < next_comp)) {
+                                    int color;
+                                    if (sscanf(color_ptr, "\"color\": %d", &color) == 1) {
+                                        comp->props.led_array.color = color;
+                                        component_update_led_color(comp);  // Update Vf, Is, etc.
+                                    }
+                                }
+                            }
+                        }
+
                         circuit_add_component(circuit, comp);
                     }
                 }
@@ -328,6 +519,69 @@ bool file_import_json(Circuit *circuit, const char *filename) {
                 char *end_ptr = strstr(ptr, "\"end\":");
                 if (end_ptr && sscanf(end_ptr, "\"end\": %d", &end) == 1) {
                     circuit_add_wire(circuit, start, end);
+                }
+            }
+            ptr++;
+        }
+    }
+
+    // Parse probes
+    ptr = strstr(buffer, "\"probes\"");
+    if (ptr) {
+        while ((ptr = strstr(ptr, "\"id\":")) != NULL) {
+            // Check we're still in probes section, not in components/nodes
+            char *next_section = strstr(ptr + 1, "\"components\"");
+            char *next_nodes = strstr(ptr + 1, "\"nodes\"");
+            char *next_wires = strstr(ptr + 1, "\"wires\"");
+
+            // Simplified check - if we hit closing brace of probes array, stop
+            char *probe_end = strstr(ptr, "]");
+
+            int id, node_id, channel;
+            float x, y;
+            char label[8];
+
+            if (sscanf(ptr, "\"id\": %d", &id) == 1) {
+                char *node_ptr = strstr(ptr, "\"node_id\":");
+                char *x_ptr = strstr(ptr, "\"x\":");
+                char *y_ptr = strstr(ptr, "\"y\":");
+                char *ch_ptr = strstr(ptr, "\"channel\":");
+                char *lbl_ptr = strstr(ptr, "\"label\":");
+
+                if (node_ptr && x_ptr && y_ptr && ch_ptr && lbl_ptr &&
+                    (!probe_end || (node_ptr < probe_end && x_ptr < probe_end))) {
+
+                    if (sscanf(node_ptr, "\"node_id\": %d", &node_id) == 1 &&
+                        sscanf(x_ptr, "\"x\": %f", &x) == 1 &&
+                        sscanf(y_ptr, "\"y\": %f", &y) == 1 &&
+                        sscanf(ch_ptr, "\"channel\": %d", &channel) == 1) {
+
+                        // Parse label string
+                        char *quote1 = strchr(lbl_ptr, '"');
+                        if (quote1) {
+                            quote1++;  // Skip opening quote
+                            char *quote2 = strchr(quote1, '"');
+                            if (quote2) {
+                                int len = quote2 - quote1;
+                                if (len > 7) len = 7;
+                                strncpy(label, quote1, len);
+                                label[len] = '\0';
+
+                                // Add probe to circuit
+                                if (circuit->num_probes < MAX_PROBES) {
+                                    Probe *probe = &circuit->probes[circuit->num_probes++];
+                                    probe->id = id;
+                                    probe->node_id = node_id;
+                                    probe->x = x;
+                                    probe->y = y;
+                                    probe->channel_num = channel;
+                                    strncpy(probe->label, label, 7);
+                                    probe->label[7] = '\0';
+                                    probe->selected = false;
+                                }
+                            }
+                        }
+                    }
                 }
             }
             ptr++;

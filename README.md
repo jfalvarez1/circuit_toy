@@ -338,6 +338,22 @@ meson compile -C build
 ./build/circuit-playground
 ```
 
+## Testing
+
+`tools/template_smoke.c` is a headless regression check built alongside the app
+(`build/tools/template_smoke.exe`). It places every prebuilt circuit, runs the DC operating
+point and a short transient, and reports solver errors, NaN/runaway voltages and the bias
+point of every transistor / op-amp / regulator:
+
+```bash
+build/tools/template_smoke.exe             # 47/47 templates passed
+build/tools/template_smoke.exe --verbose   # + bias voltages per active device
+build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
+```
+
+`TEST_PLAN.md` (feature-by-feature manual plan) and `TEMPLATE_AUDIT.md` (per-template
+hand-calculated expectations and value variations) track the interactive test campaign.
+
 ## Usage Guide
 
 ### Getting Started

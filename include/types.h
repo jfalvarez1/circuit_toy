@@ -212,6 +212,20 @@ typedef enum {
     COMP_TYPE_COUNT
 } ComponentType;
 
+// LED Colors (matches standard 5mm LED specifications)
+typedef enum {
+    LED_COLOR_INFRARED = 0,     // >760nm, Vf=1.4V, Imax=50mA
+    LED_COLOR_RED,              // 620-645nm, Vf=2.0V, Imax=30mA
+    LED_COLOR_ORANGE,           // 600-620nm, Vf=2.1V, Imax=30mA
+    LED_COLOR_YELLOW,           // 585-595nm, Vf=2.1V, Imax=30mA
+    LED_COLOR_GREEN_STANDARD,   // 560-570nm (yellow-green), Vf=2.1V, Imax=30mA
+    LED_COLOR_GREEN_PURE,       // 520-530nm (emerald/InGaN), Vf=3.2V, Imax=30mA
+    LED_COLOR_BLUE,             // 460-475nm, Vf=3.4V, Imax=30mA
+    LED_COLOR_WHITE,            // 2700K-6500K (blue+phosphor), Vf=3.3V, Imax=30mA
+    LED_COLOR_UV,               // <400nm, Vf=3.5V, Imax=30mA
+    LED_COLOR_COUNT
+} LEDColor;
+
 // Oscilloscope trigger modes
 typedef enum {
     TRIG_AUTO = 0,      // Always triggers, free-running if no signal

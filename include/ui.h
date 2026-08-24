@@ -160,6 +160,7 @@ typedef struct {
     Button btn_save;
     Button btn_load;
     Button btn_export_svg;
+    Button btn_screenshot;
 
     // Speed slider
     Rect speed_slider;
@@ -480,6 +481,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode);
 #define UI_ACTION_MC_TOL_UP     38   // Increase MC tolerance
 #define UI_ACTION_MC_TOL_DOWN   39   // Decrease MC tolerance
 #define UI_ACTION_MC_RESET      40   // Reset MC results
+#define UI_ACTION_SCREENSHOT    43   // Capture screenshot of entire window
 #define UI_ACTION_CREATE_SUBCIRCUIT 41   // Create subcircuit from selection (Ctrl+G)
 #define UI_ACTION_EDIT_SUBCIRCUIT   42   // Edit existing subcircuit (right-click in palette)
 #define UI_ACTION_SELECT_TOOL   100  // + tool index

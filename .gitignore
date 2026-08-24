@@ -33,3 +33,18 @@ LEDARRAY_ANALYSIS.md
 
 # Claude Code
 .claude/
+
+# Runtime output / scratch
+*.log
+screenshots/
+circuit.json
+debug_circuit.json
+oscillator_debug.txt
+voltage_debug.txt
+test_output.*
+nul
+
+# Extra build dirs
+build-static/
+build-test/
+release/

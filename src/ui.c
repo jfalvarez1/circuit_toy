@@ -184,6 +184,8 @@ void ui_init(UIState *ui) {
     ui->btn_load = (Button){{btn_x, 10, btn_w, btn_h}, "Load", "Load circuit (Ctrl+O)", false, false, true, false};
     btn_x += btn_w + 10;
     ui->btn_export_svg = (Button){{btn_x, 10, btn_w, btn_h}, "SVG", "Export as SVG", false, false, true, false};
+    btn_x += btn_w + 10;
+    ui->btn_screenshot = (Button){{btn_x, 10, 35, btn_h}, "Scr", "Screenshot (F12)", false, false, true, false};
 
     // Speed slider
     ui->speed_slider = (Rect){btn_x + btn_w + 30, 15, 100, 20};
@@ -892,6 +894,7 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     draw_button(renderer, &ui->btn_save);
     draw_button(renderer, &ui->btn_load);
     draw_button(renderer, &ui->btn_export_svg);
+    draw_button(renderer, &ui->btn_screenshot);
 
     // Speed slider label
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
@@ -2332,33 +2335,24 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
 
             case COMP_LED: {
                 // Color selector (click to cycle through presets)
-                double wl = selected->props.led.wavelength;
-                const char *color_name = "Red";
-                if (wl >= 380 && wl < 440) color_name = "Violet";
-                else if (wl >= 440 && wl < 490) color_name = "Blue";
-                else if (wl >= 490 && wl < 510) color_name = "Cyan";
-                else if (wl >= 510 && wl < 580) color_name = "Green";
-                else if (wl >= 580 && wl < 600) color_name = "Yellow";
-                else if (wl >= 600 && wl < 640) color_name = "Orange";
-                else if (wl >= 640 && wl <= 780) color_name = "Red";
-                else if (wl > 780) color_name = "IR";
-                else if (wl == 0) color_name = "White";
+                const char *color_names[] = {"IR", "Red", "Orange", "Yellow", "Green", "Emerald", "Blue", "White", "UV"};
+                int color_idx = selected->props.led.color % LED_COLOR_COUNT;
 
                 SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
                 ui_draw_text(renderer, "Color:", x + 10, prop_y + 2);
                 // Draw color selector with dropdown indicator
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
-                snprintf(buf, sizeof(buf), "[%s] v", color_name);
+                snprintf(buf, sizeof(buf), "[%s] v", color_names[color_idx]);
                 ui_draw_text(renderer, buf, x + 100, prop_y + 2);
                 ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 ui->properties[ui->num_properties].prop_type = PROP_LED_COLOR;
                 ui->num_properties++;
                 prop_y += 18;
 
-                // Wavelength (read-only, shows actual value)
+                // Forward voltage & wavelength (read-only)
                 SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-                snprintf(buf, sizeof(buf), "(%.0f nm)", wl);
-                ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                snprintf(buf, sizeof(buf), "Vf: %.2fV (%.0fnm)", selected->props.led.vf, selected->props.led.wavelength);
+                ui_draw_text(renderer, buf, x + 10, prop_y + 2);
                 prop_y += 18;
 
                 // Model mode toggle
@@ -2410,8 +2404,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
 
             case COMP_LED_ARRAY: {
                 // LED Array color selector
-                const char *color_names[] = {"Red", "Green", "Blue", "Yellow", "Orange", "White"};
-                int color_idx = selected->props.led_array.color % 6;
+                const char *color_names[] = {"IR", "Red", "Orange", "Yellow", "Green", "Emerald", "Blue", "White", "UV"};
+                int color_idx = selected->props.led_array.color % LED_COLOR_COUNT;
 
                 SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
                 ui_draw_text(renderer, "Color:", x + 10, prop_y + 2);
@@ -5869,6 +5863,9 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_export_svg.bounds) && ui->btn_export_svg.enabled) {
             return UI_ACTION_EXPORT_SVG;
         }
+        if (point_in_rect(x, y, &ui->btn_screenshot.bounds) && ui->btn_screenshot.enabled) {
+            return UI_ACTION_SCREENSHOT;
+        }
 
         // Check time step control buttons
         if (point_in_rect(x, y, &ui->btn_timestep_up.bounds) && ui->btn_timestep_up.enabled) {
@@ -6395,6 +6392,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         ui->btn_save.hovered = point_in_rect(x, y, &ui->btn_save.bounds);
         ui->btn_load.hovered = point_in_rect(x, y, &ui->btn_load.bounds);
         ui->btn_export_svg.hovered = point_in_rect(x, y, &ui->btn_export_svg.bounds);
+        ui->btn_screenshot.hovered = point_in_rect(x, y, &ui->btn_screenshot.bounds);
         ui->btn_timestep_up.hovered = point_in_rect(x, y, &ui->btn_timestep_up.bounds);
         ui->btn_timestep_down.hovered = point_in_rect(x, y, &ui->btn_timestep_down.bounds);
         ui->btn_timestep_auto.hovered = point_in_rect(x, y, &ui->btn_timestep_auto.bounds);

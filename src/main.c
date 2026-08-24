@@ -8,16 +8,18 @@
 #include <SDL.h>
 #include <SDL_main.h>
 #include "app.h"
+#include "file_io.h"
+#include "simulation.h"
 
 int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
 
-    printf("Circuit Playground v1.0.0\n");
+    printf("Circuit Playground v3.2.3\n");
     printf("A circuit simulator inspired by The Powder Toy\n\n");
 
-    // Initialize SDL (including audio for microphone support)
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_AUDIO) < 0) {
+    // Initialize SDL (video + timer; audio subsystem was removed with the microphone feature)
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
         fprintf(stderr, "SDL initialization failed: %s\n", SDL_GetError());
         return 1;
     }

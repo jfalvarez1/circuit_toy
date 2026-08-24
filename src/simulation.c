@@ -44,6 +44,9 @@ static int subcircuit_count_internal_nodes(SubCircuitDef *def) {
 // Equivalent to 1 TΩ resistance to ground
 #define GMIN 1e-12
 
+// Forward declarations
+static void simulation_clamp_opamps(Circuit *circuit, Vector *solution);
+
 Simulation *simulation_create(Circuit *circuit) {
     Simulation *sim = calloc(1, sizeof(Simulation));
     if (!sim) return NULL;
@@ -174,6 +177,14 @@ void simulation_reset(Simulation *sim) {
                     comp->props.battery.charge_state = 1.0;  // Full charge
                     comp->props.battery.charge_coulombs = comp->props.battery.capacity_mah * 3.6;
                     comp->props.battery.discharged = false;
+                    break;
+
+                case COMP_LED_ARRAY:
+                    // Reset LED Array - repair all burned out segments
+                    for (int seg = 0; seg < 8; seg++) {
+                        comp->props.led_array.failed[seg] = false;
+                        comp->props.led_array.currents[seg] = 0.0;
+                    }
                     break;
 
                 default:
@@ -468,9 +479,11 @@ bool simulation_dc_analysis(Simulation *sim) {
         // Use large dt for DC analysis so capacitors → open circuit, inductors → short circuit
         double dc_dt = 1e9;  // Very large dt for steady-state DC behavior
         for (int i = 0; i < circuit->num_components; i++) {
+            // Pass NULL for first iteration so components use initial guess instead of zeros
+            Vector *prev_sol = (iter == 0) ? NULL : solution;
             component_stamp(circuit->components[i], A, b,
                            circuit->node_map, num_nodes,
-                           0, solution, dc_dt);
+                           0, prev_sol, dc_dt);
         }
 
         // Add GMIN (minimum conductance) from each node to ground
@@ -517,6 +530,9 @@ bool simulation_dc_analysis(Simulation *sim) {
 
     sim->solution = solution;
     sim->prev_solution = vector_clone(solution);
+
+    // Apply post-solve clamping as safety net
+    simulation_clamp_opamps(circuit, sim->solution);
 
     // Update circuit voltages and wire currents
     circuit_update_voltages(circuit, solution);
@@ -795,6 +811,60 @@ static void thermal_update_components(Circuit *circuit, double dt, double sim_ti
     }
 }
 
+// Post-solve hard clamping for opamp outputs
+// This clamps opamp outputs to their rail voltages after the solver completes.
+// Unlike soft clamping during matrix assembly, this approach:
+// 1. Lets the solver work without numerical instability
+// 2. Hard clamps outputs regardless of how far they've diverged
+// 3. Works correctly for high-gain positive feedback circuits (oscillators)
+static void simulation_clamp_opamps(Circuit *circuit, Vector *solution) {
+    if (!circuit || !solution) return;
+
+    // Voltage-source auxiliary variables live after all node voltages
+    int num_nodes = circuit->num_matrix_nodes;
+
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+
+        // All VCVS-style op-amp models: ideal, flipped-symbol and realistic
+        if (comp->type != COMP_OPAMP && comp->type != COMP_OPAMP_FLIPPED &&
+            comp->type != COMP_OPAMP_REAL) continue;
+
+        // Output is terminal 2 for every op-amp symbol. node_ids[] holds circuit node IDs;
+        // the solution vector is indexed by matrix index, so map through node_map.
+        int out_id = comp->node_ids[2];
+        if (out_id < 0 || out_id >= MAX_NODES) continue;
+        int out_idx = circuit->node_map[out_id];
+        if (out_idx <= 0) continue;  // Unconnected or ground
+
+        // Get rail voltages from opamp properties
+        double vmax = comp->props.opamp.vmax;
+        double vmin = comp->props.opamp.vmin;
+        if (!(vmax > vmin)) continue;  // Rails not configured
+
+        // Get the opamp's voltage variable index (VCVS auxiliary variable)
+        // This is stored after all nodes in the solution vector
+        int volt_var_idx = num_nodes + comp->voltage_var_idx;
+        if (comp->voltage_var_idx < 0 || volt_var_idx >= solution->size) continue;
+        if (out_idx - 1 >= solution->size) continue;
+
+        double v_out_var = vector_get(solution, out_idx - 1);
+        // Clamp BOTH to the same rail value to keep them consistent
+        double clamped_value = v_out_var;  // Use voltage variable as source of truth
+        if (v_out_var > vmax) {
+            clamped_value = vmax;
+        } else if (v_out_var < vmin) {
+            clamped_value = vmin;
+        }
+
+        // Apply clamping to BOTH the node and the voltage variable
+        if (v_out_var > vmax || v_out_var < vmin) {
+            vector_set(solution, volt_var_idx, clamped_value);
+            vector_set(solution, out_idx - 1, clamped_value);
+        }
+    }
+}
+
 bool simulation_step(Simulation *sim) {
     if (!sim || !sim->circuit) return false;
 
@@ -895,6 +965,11 @@ bool simulation_step(Simulation *sim) {
         // Accept the step
         vector_free(sim->solution);
         sim->solution = trial_solution;
+
+        // Apply post-solve clamping as safety net (valid approach for educational simulators)
+        // This prevents any remaining numerical drift from pushing outputs beyond rails
+        simulation_clamp_opamps(circuit, sim->solution);
+
         break;
     }
 
@@ -1006,20 +1081,6 @@ bool simulation_step(Simulation *sim) {
 
         for (int i = 0; i < circuit->num_probes && i < MAX_PROBES; i++) {
             sim->history[hist_idx].values[i] = circuit->probes[i].voltage;
-        }
-
-        // Debug: Log probe values to file (every 1000 samples)
-        static int debug_sample_count = 0;
-        if (circuit->num_probes > 0 && debug_sample_count++ % 1000 == 0) {
-            FILE *debug_log = fopen("probe_debug.log", "a");
-            if (debug_log) {
-                fprintf(debug_log, "t=%.6f", sim->time);
-                for (int i = 0; i < circuit->num_probes && i < MAX_PROBES; i++) {
-                    fprintf(debug_log, " P%d=%.6f", i, circuit->probes[i].voltage);
-                }
-                fprintf(debug_log, "\n");
-                fclose(debug_log);
-            }
         }
 
         if (sim->history_count < MAX_HISTORY) {

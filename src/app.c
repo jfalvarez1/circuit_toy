@@ -5,6 +5,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#ifdef _WIN32
+#include <direct.h>  // for _mkdir
+#else
+#include <sys/stat.h>  // for mkdir
+#endif
 #include "app.h"
 #include "file_io.h"
 #include "circuits.h"
@@ -123,10 +128,9 @@ bool app_init(App *app) {
     app->show_current = false;
     app->last_frame_time = SDL_GetTicks();
 
-    // Center the view
-    render_reset_view(app->render);
-
     ui_set_status(&app->ui, "Ready - Select a component or tool to begin");
+
+    render_reset_view(app->render);
 
     return true;
 }
@@ -235,6 +239,12 @@ void app_handle_events(App *app) {
         }
     }
 
+    // Handle auto-start simulation for oscillator circuits
+    if (app->input.should_autostart_sim) {
+        app->input.should_autostart_sim = false;
+        app_run_simulation(app);
+    }
+
     // Handle UI actions from button clicks
     if (app->input.pending_ui_action != UI_ACTION_NONE) {
         switch (app->input.pending_ui_action) {
@@ -273,6 +283,54 @@ void app_handle_events(App *app) {
                         printf("Circuit exported to %s\n", filename);
                     } else {
                         printf("Failed to export SVG: %s\n", file_get_error());
+                    }
+                }
+                break;
+            case UI_ACTION_SCREENSHOT:
+                {
+                    // Create screenshots directory
+                    #ifdef _WIN32
+                    _mkdir("screenshots");
+                    #else
+                    mkdir("screenshots", 0755);
+                    #endif
+
+                    // Generate timestamped filename
+                    time_t now = time(NULL);
+                    struct tm *t = localtime(&now);
+                    char filename[256];
+                    snprintf(filename, sizeof(filename), "screenshots/screenshot_%04d%02d%02d_%02d%02d%02d.bmp",
+                        t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
+                        t->tm_hour, t->tm_min, t->tm_sec);
+
+                    // Get window size
+                    int w, h;
+                    SDL_GetRendererOutputSize(app->renderer, &w, &h);
+
+                    // Create surface to hold screenshot
+                    SDL_Surface *surface = SDL_CreateRGBSurface(0, w, h, 32,
+                        0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+
+                    if (surface) {
+                        // Read pixels from renderer
+                        if (SDL_RenderReadPixels(app->renderer, NULL, SDL_PIXELFORMAT_ARGB8888,
+                                                 surface->pixels, surface->pitch) == 0) {
+                            // Save to BMP
+                            if (SDL_SaveBMP(surface, filename) == 0) {
+                                printf("Screenshot saved: %s\n", filename);
+                                ui_set_status(&app->ui, "Screenshot saved!");
+                            } else {
+                                printf("Failed to save BMP: %s\n", SDL_GetError());
+                                ui_set_status(&app->ui, "Screenshot failed!");
+                            }
+                        } else {
+                            printf("Failed to read pixels: %s\n", SDL_GetError());
+                            ui_set_status(&app->ui, "Screenshot failed!");
+                        }
+                        SDL_FreeSurface(surface);
+                    } else {
+                        printf("Failed to create surface: %s\n", SDL_GetError());
+                        ui_set_status(&app->ui, "Screenshot failed!");
                     }
                 }
                 break;
@@ -1004,52 +1062,34 @@ void app_handle_events(App *app) {
                         }
                         // LED parameters
                         else if (prop_type == PROP_LED_COLOR) {
-                            // Color selector - cycle through presets immediately
+                            // Color selector - cycle through LED colors
                             if (c->type == COMP_LED) {
-                                // Cycle through colors: Red->Orange->Yellow->Green->Cyan->Blue->Violet->White->IR->Red
-                                double wl = c->props.led.wavelength;
-                                const char *new_color = "Red";
-                                if (wl >= 640 && wl <= 780) {
-                                    c->props.led.wavelength = 620; c->props.led.vf = 2.0; new_color = "Orange";
-                                } else if (wl >= 600 && wl < 640) {
-                                    c->props.led.wavelength = 590; c->props.led.vf = 2.1; new_color = "Yellow";
-                                } else if (wl >= 580 && wl < 600) {
-                                    c->props.led.wavelength = 550; c->props.led.vf = 2.2; new_color = "Green";
-                                } else if (wl >= 510 && wl < 580) {
-                                    c->props.led.wavelength = 500; c->props.led.vf = 3.0; new_color = "Cyan";
-                                } else if (wl >= 490 && wl < 510) {
-                                    c->props.led.wavelength = 470; c->props.led.vf = 3.2; new_color = "Blue";
-                                } else if (wl >= 440 && wl < 490) {
-                                    c->props.led.wavelength = 420; c->props.led.vf = 2.8; new_color = "Violet";
-                                } else if (wl >= 380 && wl < 440) {
-                                    c->props.led.wavelength = 0; c->props.led.vf = 3.2; new_color = "White";
-                                } else if (wl == 0) {
-                                    c->props.led.wavelength = 850; c->props.led.vf = 1.4;
-                                    c->props.led.max_current = 0.050; new_color = "IR";
-                                } else {
-                                    c->props.led.wavelength = 660; c->props.led.vf = 1.8;
-                                    c->props.led.max_current = 0.020; new_color = "Red";
-                                }
+                                const char *color_names[] = {"IR", "Red", "Orange", "Yellow", "Green", "Emerald", "Blue", "White", "UV"};
+
+                                // Cycle to next color (0-8, 9 total colors)
+                                c->props.led.color = (c->props.led.color + 1) % LED_COLOR_COUNT;
+
+                                // Update all LED parameters based on new color
+                                component_update_led_color(c);
+
                                 char msg[64];
                                 snprintf(msg, sizeof(msg), "LED Color: %s (%.0f nm, Vf=%.1fV)",
-                                         new_color, c->props.led.wavelength, c->props.led.vf);
+                                         color_names[c->props.led.color], c->props.led.wavelength, c->props.led.vf);
                                 ui_set_status(&app->ui, msg);
                             }
                             app->input.pending_ui_action = UI_ACTION_NONE;
                             break;  // Don't start text edit for color selector
                         }
                         else if (prop_type == PROP_LED_ARRAY_COLOR) {
-                            // LED Array color selector - cycle through presets with realistic Vf
+                            // LED Array color selector - cycle through LED colors
                             if (c->type == COMP_LED_ARRAY) {
-                                // Realistic forward voltages per color
-                                // Red: 1.8-2.0V, Orange: 2.0-2.1V, Yellow: 2.0-2.1V
-                                // Green: 2.0-2.2V, Blue: 3.0-3.3V, White: 3.0-3.4V
-                                const char *color_names[] = {"Red", "Green", "Blue", "Yellow", "Orange", "White"};
-                                double color_vf[] = {1.8, 2.1, 3.2, 2.0, 2.0, 3.2};
+                                const char *color_names[] = {"IR", "Red", "Orange", "Yellow", "Green", "Emerald", "Blue", "White", "UV"};
 
-                                // Cycle to next color (0-5)
-                                c->props.led_array.color = (c->props.led_array.color + 1) % 6;
-                                c->props.led_array.vf = color_vf[c->props.led_array.color];
+                                // Cycle to next color (0-8, 9 total colors)
+                                c->props.led_array.color = (c->props.led_array.color + 1) % LED_COLOR_COUNT;
+
+                                // Update all LED parameters based on new color
+                                component_update_led_color(c);
 
                                 char msg[64];
                                 snprintf(msg, sizeof(msg), "LED Array Color: %s (Vf=%.1fV)",
@@ -1535,6 +1575,7 @@ void app_update(App *app) {
                 break;
             }
         }
+
     }
 
     // Update input state with simulation running status
@@ -1606,7 +1647,32 @@ void app_update(App *app) {
             }
 
             // Voltage drop across component (terminal 0 is positive reference)
-            app->ui.hovered_comp_voltage = v0 - v1;
+            // Special handling for LED_ARRAY: use active anode - cathode (terminal 8)
+            if (hovered_comp->type == COMP_LED_ARRAY && hovered_comp->num_terminals >= 9) {
+                // Find first conducting segment for voltage display
+                double anode_voltage = 0;
+                bool found_active = false;
+                for (int seg = 0; seg < 8; seg++) {
+                    if (hovered_comp->props.led_array.currents[seg] > 1e-9) {
+                        if (hovered_comp->node_ids[seg] > 0) {
+                            Node *anode = circuit_get_node(app->circuit, hovered_comp->node_ids[seg]);
+                            if (anode) {
+                                anode_voltage = anode->voltage;
+                                found_active = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                double cathode_voltage = 0;
+                if (hovered_comp->node_ids[8] > 0) {
+                    Node *cathode = circuit_get_node(app->circuit, hovered_comp->node_ids[8]);
+                    if (cathode) cathode_voltage = cathode->voltage;
+                }
+                app->ui.hovered_comp_voltage = found_active ? (anode_voltage - cathode_voltage) : 0;
+            } else {
+                app->ui.hovered_comp_voltage = v0 - v1;
+            }
 
             // Calculate current through component based on type
             double current = 0;
@@ -1946,9 +2012,11 @@ void app_save_circuit(App *app) {
         return;
     }
 
-    if (file_save_circuit(app->circuit, app->current_file)) {
+    // Always use JSON format for easier parsing
+    if (file_export_json(app->circuit, app->current_file)) {
         app->circuit->modified = false;
         ui_set_status(&app->ui, "Circuit saved");
+        printf("Circuit saved to: %s\n", app->current_file);
     } else {
         ui_set_status(&app->ui, file_get_error());
     }
@@ -1956,14 +2024,15 @@ void app_save_circuit(App *app) {
 
 void app_save_circuit_as(App *app) {
     // In a real app, this would show a file dialog
-    // For now, use a default name
-    const char *filename = "circuit.json";
+    // For now, use debug_circuit.json for automated testing
+    const char *filename = "debug_circuit.json";
 
     if (file_export_json(app->circuit, filename)) {
         strncpy(app->current_file, filename, sizeof(app->current_file) - 1);
         app->has_file = true;
         app->circuit->modified = false;
         ui_set_status(&app->ui, "Circuit saved");
+        printf("Circuit saved to: %s\n", filename);
     } else {
         ui_set_status(&app->ui, file_get_error());
     }

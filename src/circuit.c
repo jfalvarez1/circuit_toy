@@ -9,6 +9,9 @@
 #include "circuit.h"
 #include "component.h"  // For COMP_GROUND type check
 
+// Forward declarations
+static double get_mapped_voltage(Circuit *circuit, int node_id);
+
 static int next_node_id = 1;
 static int next_wire_id = 1;
 
@@ -590,66 +593,73 @@ void circuit_update_voltages(Circuit *circuit, Vector *solution) {
                 comp->props.resistor.power_dissipated = (v_diff * v_diff) / R;
             }
         }
-        // Recalculate LED current from final converged solution
-        // For series circuits, find connected resistor and use its current (Ohm's law)
-        // This ensures KCL is satisfied for display purposes
+        // Recalculate LED current from the final converged solution
         else if (comp->type == COMP_LED && comp->num_terminals >= 2) {
             Node *led_n1 = circuit_get_node(circuit, comp->node_ids[0]);
             Node *led_n2 = circuit_get_node(circuit, comp->node_ids[1]);
             double led_current = 0.0;
 
             if (led_n1 && led_n2) {
-                // First, look for a resistor in series (shares exactly one node)
-                bool found_series_resistor = false;
-                for (int j = 0; j < circuit->num_components && !found_series_resistor; j++) {
-                    Component *other = circuit->components[j];
-                    if (other->type == COMP_RESISTOR && other->num_terminals >= 2) {
-                        // Check if resistor shares exactly one node with LED (series connection)
-                        int shared_count = 0;
-                        if (other->node_ids[0] == comp->node_ids[0] ||
-                            other->node_ids[0] == comp->node_ids[1]) shared_count++;
-                        if (other->node_ids[1] == comp->node_ids[0] ||
-                            other->node_ids[1] == comp->node_ids[1]) shared_count++;
+                // Evaluate the same Shockley model the solver stamped, at the converged
+                // node voltages. (Reading the current off "the" series resistor is wrong
+                // whenever more than one branch feeds the LED, e.g. wired-AND outputs.)
+                double Vd = led_n1->voltage - led_n2->voltage;
+                double Is = comp->props.led.is;
+                double n = comp->props.led.n;
+                double Vt = 8.617e-5 * (g_environment.temperature + 273.15);
+                double nVt = n * Vt;
 
-                        if (shared_count == 1) {
-                            // Series connection - use resistor current
-                            Node *r_n1 = circuit_get_node(circuit, other->node_ids[0]);
-                            Node *r_n2 = circuit_get_node(circuit, other->node_ids[1]);
-                            if (r_n1 && r_n2 && other->props.resistor.resistance > 0) {
-                                double v_diff = fabs(r_n1->voltage - r_n2->voltage);
-                                led_current = v_diff / other->props.resistor.resistance;
-                                found_series_resistor = true;
-                            }
-                        }
-                    }
-                }
+                if (Vd < -5 * nVt) Vd = -5 * nVt;
+                if (Vd > 40 * nVt) Vd = 40 * nVt;
 
-                // Fallback to Shockley equation if no series resistor found
-                if (!found_series_resistor) {
-                    double Vd = led_n1->voltage - led_n2->voltage;
-                    double Is = comp->props.led.is;
-                    double n = comp->props.led.n;
-                    double Vt = 0.02569;  // Thermal voltage at 25°C
-                    double nVt = n * Vt;
-
-                    if (Vd < -5 * nVt) Vd = -5 * nVt;
-                    if (Vd > 40 * nVt) Vd = 40 * nVt;
-
-                    double expTerm = exp(Vd / nVt);
-                    double Id = Is * (expTerm - 1);
-                    led_current = Id > 0 ? Id : 0;
-                }
+                double expTerm = exp(Vd / nVt);
+                double Id = Is * (expTerm - 1);
+                led_current = Id > 0 ? Id : 0;
 
                 comp->props.led.current = led_current;
             }
         }
-        // LED_ARRAY: Currents are calculated in component_stamp during MNA solve
-        // This block is kept for any post-solve updates if needed
+        // LED_ARRAY: Calculate currents from FINAL voltages (after MNA solve)
         else if (comp->type == COMP_LED_ARRAY && comp->num_terminals >= 9) {
-            // LED Array currents are already computed and stored during MNA stamping
-            // Just ensure failed segments have zero current
+            int com = 8;  // Common cathode terminal
+            double Is = comp->props.led_array.is;
+            double nn = comp->props.led_array.n;
+            double Vt = 8.617e-5 * (g_environment.temperature + 273.15);
+            double nVt = nn * Vt;
+
             for (int seg = 0; seg < 8; seg++) {
                 if (comp->props.led_array.failed[seg]) {
+                    comp->props.led_array.currents[seg] = 0;
+                    continue;
+                }
+
+                // Get FINAL voltages from solution using the circuit's node voltage directly
+                // The node voltage is already set in circuit_update_voltages() before we get here
+                int anode_id = comp->node_ids[seg];
+                int cathode_id = comp->node_ids[com];
+
+                double v_anode = 0.0;
+                double v_cathode = 0.0;
+
+                // Direct node voltage lookup - nodes already have correct voltages
+                Node *anode_node = circuit_get_node(circuit, anode_id);
+                Node *cathode_node = circuit_get_node(circuit, cathode_id);
+
+                if (anode_node) v_anode = anode_node->voltage;
+                if (cathode_node) v_cathode = cathode_node->voltage;
+
+                double Vd = v_anode - v_cathode;
+
+                // Clamp voltage to prevent overflow
+                if (Vd < -5.0 * nVt) Vd = -5.0 * nVt;
+                if (Vd > 40.0 * nVt) Vd = 40.0 * nVt;
+
+                // Shockley equation with final voltage
+                if (Vd > 0) {
+                    double expTerm = exp(Vd / nVt);
+                    double Id = Is * (expTerm - 1.0);
+                    comp->props.led_array.currents[seg] = (Id > 0) ? Id : 0;
+                } else {
                     comp->props.led_array.currents[seg] = 0;
                 }
             }
@@ -675,7 +685,6 @@ static double get_mapped_voltage(Circuit *circuit, int node_id) {
             return circuit->nodes[i].voltage;
         }
     }
-
     return 0.0;
 }
 

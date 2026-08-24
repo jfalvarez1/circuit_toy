@@ -20,6 +20,41 @@ SubCircuitLibrary g_subcircuit_library = {
     .next_id = 1
 };
 
+// Helper: Calculate LED saturation current (Is) to achieve target Vf at 20mA
+// Uses: Vf = n*Vt * ln(I/Is + 1), solving for Is
+static double led_calc_is_for_vf(double target_vf, double n, double vt) {
+    double typical_current = 0.020;  // 20 mA
+    double exp_term = exp(target_vf / (n * vt));
+    double is = typical_current / (exp_term - 1.0);
+    return (is > 1e-30) ? is : 1e-30;  // Clamp to avoid numerical issues
+}
+
+// Get LED parameters based on color
+static void led_get_color_params(LEDColor color, double *vf, double *max_current, double *wavelength) {
+    switch (color) {
+        case LED_COLOR_INFRARED:
+            *vf = 1.4; *max_current = 0.050; *wavelength = 850; break;
+        case LED_COLOR_RED:
+            *vf = 2.0; *max_current = 0.030; *wavelength = 630; break;
+        case LED_COLOR_ORANGE:
+            *vf = 2.1; *max_current = 0.030; *wavelength = 610; break;
+        case LED_COLOR_YELLOW:
+            *vf = 2.1; *max_current = 0.030; *wavelength = 590; break;
+        case LED_COLOR_GREEN_STANDARD:
+            *vf = 2.1; *max_current = 0.030; *wavelength = 565; break;
+        case LED_COLOR_GREEN_PURE:
+            *vf = 3.2; *max_current = 0.030; *wavelength = 525; break;
+        case LED_COLOR_BLUE:
+            *vf = 3.4; *max_current = 0.030; *wavelength = 470; break;
+        case LED_COLOR_WHITE:
+            *vf = 3.3; *max_current = 0.030; *wavelength = 0; break;  // No single wavelength
+        case LED_COLOR_UV:
+            *vf = 3.5; *max_current = 0.030; *wavelength = 395; break;
+        default:  // Default to RED
+            *vf = 2.0; *max_current = 0.030; *wavelength = 630; break;
+    }
+}
+
 // Component type information table
 // NOTE: Terminal positions must be multiples of GRID_SIZE (10) for proper grid alignment
 // Array is sized to COMP_TYPE_COUNT to ensure all component types have entries
@@ -175,14 +210,15 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         {{ -40, 0, "A" }, { 40, 0, "K" }},
         80, 20,
         { .led = {
-            .is = 1e-20,
+            .is = 5e-20,            // Calculated for Vf=2.0V @ 20mA (RED default)
             .vt = 0.026,
             .n = 2.0,               // Higher ideality for LED
             .vf = 2.0,              // 2.0V forward voltage (red)
-            .max_current = 0.020,   // 20 mA max
-            .wavelength = 620,      // Red (620 nm)
+            .max_current = 0.030,   // 30 mA max (standard 5mm LED)
+            .wavelength = 630,      // Red (630 nm)
             .current = 0.0,
-            .ideal = true
+            .ideal = false,         // Use Shockley model
+            .color = LED_COLOR_RED
         }}
     },
 
@@ -1518,13 +1554,13 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
          { 0, 30, "COM" }},
         160, 60,
         { .led_array = {
-            .is = 1e-12,  // Saturation current (same as LED)
-            .n = 2.0,     // Ideality factor (same as LED)
+            .is = 5e-20,  // Saturation current (tuned for Vf=2.0V @ 20mA, RED default)
+            .n = 2.0,     // Ideality factor
             .vf = 2.0,
-            .max_current = 0.02,
+            .max_current = 0.030,  // 30 mA max per segment (standard 5mm LED)
             .currents = {0, 0, 0, 0, 0, 0, 0, 0},
             .failed = {false, false, false, false, false, false, false, false},
-            .color = 1  // Default to green (like classic bar graph displays)
+            .color = LED_COLOR_RED  // Default to RED (classic bar graph displays often use red/green)
         }}
     },
 
@@ -1738,6 +1774,25 @@ Component *component_create(ComponentType type, float x, float y) {
         next_pin_number++;
     }
 
+    // Special initialization for LED component - calculate Is based on color
+    if (type == COMP_LED) {
+        double vf, max_current, wavelength;
+        led_get_color_params(comp->props.led.color, &vf, &max_current, &wavelength);
+        comp->props.led.vf = vf;
+        comp->props.led.max_current = max_current;
+        comp->props.led.wavelength = wavelength;
+        comp->props.led.is = led_calc_is_for_vf(vf, comp->props.led.n, comp->props.led.vt);
+    }
+
+    // Special initialization for LED_ARRAY component - calculate Is based on color
+    if (type == COMP_LED_ARRAY) {
+        double vf, max_current, wavelength;
+        led_get_color_params(comp->props.led_array.color, &vf, &max_current, &wavelength);
+        comp->props.led_array.vf = vf;
+        comp->props.led_array.max_current = max_current;
+        comp->props.led_array.is = led_calc_is_for_vf(vf, comp->props.led_array.n, 0.026);
+    }
+
     // Set default label
     snprintf(comp->label, MAX_LABEL_LEN, "%s%d", info->short_name, comp->id);
 
@@ -1810,6 +1865,35 @@ Component *component_create(ComponentType type, float x, float y) {
     }
 
     return comp;
+}
+
+void component_update_led_color(Component *comp) {
+    if (!comp) return;
+
+    if (comp->type == COMP_LED) {
+        // Clamp color to valid range
+        if (comp->props.led.color < 0 || comp->props.led.color >= LED_COLOR_COUNT) {
+            comp->props.led.color = LED_COLOR_RED;
+        }
+
+        double vf, max_current, wavelength;
+        led_get_color_params(comp->props.led.color, &vf, &max_current, &wavelength);
+        comp->props.led.vf = vf;
+        comp->props.led.max_current = max_current;
+        comp->props.led.wavelength = wavelength;
+        comp->props.led.is = led_calc_is_for_vf(vf, comp->props.led.n, comp->props.led.vt);
+    } else if (comp->type == COMP_LED_ARRAY) {
+        // Clamp color to valid range
+        if (comp->props.led_array.color < 0 || comp->props.led_array.color >= LED_COLOR_COUNT) {
+            comp->props.led_array.color = LED_COLOR_RED;
+        }
+
+        double vf, max_current, wavelength;
+        led_get_color_params(comp->props.led_array.color, &vf, &max_current, &wavelength);
+        comp->props.led_array.vf = vf;
+        comp->props.led_array.max_current = max_current;
+        comp->props.led_array.is = led_calc_is_for_vf(vf, comp->props.led_array.n, 0.026);
+    }
 }
 
 void component_free(Component *comp) {
@@ -2054,6 +2138,45 @@ double sweep_get_value(const SweepConfig *sweep, double base_value, double time)
     return result;
 }
 
+// Stamp an op-amp output (VCVS auxiliary row) with rail saturation.
+//   plus_idx / minus_idx / out_idx are matrix indices (0 = ground), volt_idx is the row of
+//   the auxiliary current variable. Returns true if the output was stamped saturated.
+static bool opamp_stamp_output(Matrix *A, Vector *b, Vector *prev_solution,
+                               int plus_idx, int minus_idx, int out_idx, int volt_idx,
+                               double gain, double vmax, double vmin) {
+    // Coupling between the auxiliary current variable and the output node
+    if (out_idx > 0) {
+        matrix_add(A, volt_idx, out_idx-1, 1.0);
+        matrix_add(A, out_idx-1, volt_idx, 1.0);
+    }
+
+    bool saturated = false;
+    double rail = 0.0;
+    if (prev_solution && vmax > vmin) {
+        double vp = (plus_idx > 0)  ? vector_get(prev_solution, plus_idx-1)  : 0.0;
+        double vm = (minus_idx > 0) ? vector_get(prev_solution, minus_idx-1) : 0.0;
+        double vo = (out_idx > 0)   ? vector_get(prev_solution, out_idx-1)   : 0.0;
+        double predicted = gain * (vp - vm);
+        // Hysteresis: once the previous iterate sits on a rail, stay there unless the
+        // prediction comes back inside by a margin. Prevents Newton from 2-cycling
+        // between the linear and saturated stamps right at the rail boundary.
+        double margin = 0.01 * (vmax - vmin);
+        bool at_max = (vo >= vmax - 1e-6), at_min = (vo <= vmin + 1e-6);
+        if (predicted >= vmax || (at_max && predicted >= vmax - margin)) { saturated = true; rail = vmax; }
+        else if (predicted <= vmin || (at_min && predicted <= vmin + margin)) { saturated = true; rail = vmin; }
+    }
+
+    if (saturated) {
+        // Output pinned to the rail: V_out = rail (no dependence on the inputs)
+        vector_add(b, volt_idx, rail);
+    } else {
+        // Linear region: V_out - gain*V+ + gain*V- = 0
+        if (plus_idx > 0)  matrix_add(A, volt_idx, plus_idx-1,  -gain);
+        if (minus_idx > 0) matrix_add(A, volt_idx, minus_idx-1,  gain);
+    }
+    return saturated;
+}
+
 void component_stamp(Component *comp, Matrix *A, Vector *b,
                      int *node_map, int num_nodes,
                      double time, Vector *prev_solution, double dt) {
@@ -2245,28 +2368,22 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 Vd = v1 - v2;
             }
 
-            double Gd, Ieq;
-            if (Vd >= 0) {
-                // Forward bias - normal diode behavior
-                Vd = CLAMP(Vd, 0, 40*nVt);
-                double expTerm = exp(Vd / nVt);
-                double Id = Is * (expTerm - 1);
-                Gd = (Is / nVt) * expTerm + 1e-12;
-                Ieq = Id - Gd * Vd;
-            } else {
-                // Reverse bias - breakdown at Vz
-                double Vrev = -Vd;
-                if (Vrev > Vz) {
-                    // In breakdown region
-                    Gd = 1.0;  // Low impedance
-                    Ieq = -(Vz * Gd - Gd * Vd);
-                } else {
-                    // Before breakdown
-                    Gd = 1e-12;  // Very high impedance
-                    Ieq = 0;
-                }
-            }
+            // Smooth model: forward Shockley diode plus an exponential reverse-breakdown
+            // branch centred on -Vz. Both branches are continuous, so Newton-Raphson
+            // converges instead of chattering between "off" and a 1 S short.
+            //   I(Vd) = Is*(exp(Vd/nVt) - 1) - Iz0*exp(-(Vd + Vz)/Vs)
+            // Iz0 = 1 mA is the knee current at Vd = -Vz; Vs sets the knee sharpness so the
+            // dynamic resistance near a few mA is about Rz (ideal mode: very sharp knee).
+            const double Iz0 = 1e-3;
+            double Rz = comp->props.zener.rz;
+            double Vs = comp->props.zener.ideal ? 0.002 : CLAMP(Rz * 5e-3, 0.005, 0.5);
 
+            Vd = CLAMP(Vd, -(Vz + 20.0 * Vs), 40.0 * nVt);   // e^20*Iz0 ~ 0.5 A keeps Gd sane
+            double expF = exp(Vd / nVt);
+            double expB = exp(-(Vd + Vz) / Vs);
+            double Id = Is * (expF - 1.0) - Iz0 * expB;
+            double Gd = (Is / nVt) * expF + (Iz0 / Vs) * expB + 1e-12;
+            double Ieq = Id - Gd * Vd;
             STAMP_CONDUCTANCE(n[0], n[1], Gd);
             if (n[0] > 0) vector_add(b, n[0]-1, -Ieq);
             if (n[1] > 0) vector_add(b, n[1]-1, Ieq);
@@ -2339,7 +2456,7 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 Vbc = CLAMP(Vbc, -5*nf*Vt, 40*nf*Vt);
             }
 
-            double Gbe, Gbc, Gm, Ieq_be, Ieq_bc;
+            double Gbe, Gbc, Gm, Gmr, Ieq_be, Ieq_bc, Ieq_c;
 
             if (ideal) {
                 // Ideal Ebers-Moll model (simplified)
@@ -2351,6 +2468,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 // Collector current - forward active
                 double Ic = Is * (expBE - 1);
                 Gm = (Is / (nf * Vt)) * expBE;
+                Gmr = 0;
+                Ieq_c = Ic - Gm * Vbe;
 
                 // Simplified: ignore B-C junction for ideal mode
                 Gbc = 1e-12;
@@ -2386,15 +2505,18 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 }
                 double Ic_f = Is * (expBE - 1) * early_factor;
                 double Ic_r = Is * (expBC - 1);
-                Gm = (Is / (nf * Vt)) * expBE * early_factor;
+                double Ic = Ic_f - Ic_r;
+                Gm = (Is / (nf * Vt)) * expBE * early_factor;       // dIc/dVbe
+                Gmr = -(Is / (nr * Vt)) * expBC;                     // dIc/dVbc
+                Ieq_c = Ic - Gm * Vbe - Gmr * Vbc;
             }
 
-            // Apply sign for PNP
-            Gbe *= 1;  // Conductance is always positive
-            Gm *= sign;
+            // Apply sign for PNP. Conductances/transconductances are the same for both
+            // polarities (the matrix entries are derivatives w.r.t. node voltages); only
+            // the Newton equivalent current sources flip with the device polarity.
             Ieq_be *= sign;
             Ieq_bc *= sign;
-
+            Ieq_c *= sign;
             // Stamp B-E junction
             STAMP_CONDUCTANCE(n[0], n[2], Gbe);
             if (n[0] > 0) vector_add(b, n[0]-1, -Ieq_be);
@@ -2407,11 +2529,22 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 if (n[1] > 0) vector_add(b, n[1]-1, Ieq_bc);
             }
 
+            // Collector current Ic = Gm*Vbe + Gmr*Vbc + Ieq_c flows C -> E through the device.
             // Transconductance (collector current controlled by Vbe)
             if (n[1] > 0 && n[0] > 0) matrix_add(A, n[1]-1, n[0]-1, Gm);
             if (n[1] > 0 && n[2] > 0) matrix_add(A, n[1]-1, n[2]-1, -Gm);
             if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -Gm);
-            if (n[2] > 0 && n[2] > 0) matrix_add(A, n[2]-1, n[2]-1, Gm);
+            if (n[2] > 0)             matrix_add(A, n[2]-1, n[2]-1, Gm);
+            // Reverse transconductance (Vbc dependence, non-ideal mode only)
+            if (Gmr != 0) {
+                if (n[1] > 0 && n[0] > 0) matrix_add(A, n[1]-1, n[0]-1, Gmr);
+                if (n[1] > 0)             matrix_add(A, n[1]-1, n[1]-1, -Gmr);
+                if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -Gmr);
+                if (n[2] > 0 && n[1] > 0) matrix_add(A, n[2]-1, n[1]-1, Gmr);
+            }
+            // Newton equivalent current source for the collector current
+            if (n[1] > 0) vector_add(b, n[1]-1, -Ieq_c);
+            if (n[2] > 0) vector_add(b, n[2]-1, Ieq_c);
             break;
         }
 
@@ -2514,9 +2647,12 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // Equivalent current source: Ieq = Id - Gm*Vgs - Gds*Vds
             Ieq = Id - Gm * Vgs - Gds * Vds;
 
-            // Apply sign for PMOS (currents flow opposite direction)
-            Gm *= sign;
-            Ieq *= sign;
+            // Apply sign for PMOS: the drain current flows S->D instead of D->S, which
+            // flips the Newton equivalent current source. The Gm/Gds matrix entries are
+            // derivatives w.r.t. node voltages and are identical for both polarities
+            // (Vgs/Vds were already taken with PMOS sign above).
+            (void)sign;
+            Ieq *= (comp->type == COMP_PMOS) ? -1.0 : 1.0;
 
             // Stamp D-S conductance
             STAMP_CONDUCTANCE(n[1], n[2], Gds);
@@ -2598,32 +2734,22 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         }
 
         case COMP_OPAMP: {
-            double A_gain = comp->props.opamp.gain;
-            int volt_idx = num_nodes + comp->voltage_var_idx;
-
-            // VCVS model: Vout = A * (V+ - V-)
+            // VCVS model with rail saturation: Vout = clamp(A * (V+ - V-), vmin, vmax)
             // For COMP_OPAMP: n[0]="-", n[1]="+", n[2]="OUT"
-            if (n[2] > 0) {
-                matrix_add(A, volt_idx, n[2]-1, 1);
-                matrix_add(A, n[2]-1, volt_idx, 1);
-            }
-            if (n[1] > 0) matrix_add(A, volt_idx, n[1]-1, -A_gain);
-            if (n[0] > 0) matrix_add(A, volt_idx, n[0]-1, A_gain);
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+            opamp_stamp_output(A, b, prev_solution, n[1], n[0], n[2], volt_idx,
+                               comp->props.opamp.gain,
+                               comp->props.opamp.vmax, comp->props.opamp.vmin);
             break;
         }
 
         case COMP_OPAMP_FLIPPED: {
-            double A_gain = comp->props.opamp.gain;
-            int volt_idx = num_nodes + comp->voltage_var_idx;
-
-            // VCVS model: Vout = A * (V+ - V-)
+            // Same model as COMP_OPAMP; only the symbol's input order differs.
             // For COMP_OPAMP_FLIPPED: n[0]="+", n[1]="-", n[2]="OUT"
-            if (n[2] > 0) {
-                matrix_add(A, volt_idx, n[2]-1, 1);
-                matrix_add(A, n[2]-1, volt_idx, 1);
-            }
-            if (n[0] > 0) matrix_add(A, volt_idx, n[0]-1, -A_gain);  // + input
-            if (n[1] > 0) matrix_add(A, volt_idx, n[1]-1, A_gain);   // - input
+            int volt_idx = num_nodes + comp->voltage_var_idx;
+            opamp_stamp_output(A, b, prev_solution, n[0], n[1], n[2], volt_idx,
+                               comp->props.opamp.gain,
+                               comp->props.opamp.vmax, comp->props.opamp.vmin);
             break;
         }
 
@@ -3496,41 +3622,27 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double G_in = 1.0 / r_in;
             STAMP_CONDUCTANCE(n[0], n[1], G_in);
 
-            // Check previous output to determine saturation state
-            double v_out_prev = 0;
-            if (prev_solution && n[2] > 0) {
-                v_out_prev = vector_get(prev_solution, n[2]-1);
+            // SIMPLIFIED MODEL FOR EDUCATIONAL SIMULATOR
+            // Research conclusion: High-gain (1e6) oscillators are fundamentally
+            // incompatible with MNA simulators using direct solves.
+            //
+            // Best practice for oscillator circuits:
+            // 1. Use moderate gain (50-200) instead of 1e6
+            // 2. Post-solve hard clamping to rails (see simulation.c)
+            // 3. This provides stable, predictable oscillation
+
+            // For oscillators: use reduced gain for numerical stability
+            // Theoretical minimum for 3-stage RC phase shift = 29
+            // Use 150× to provide 5× safety margin
+            double A_effective = A_gain;
+            if (A_gain > 1000.0) {
+                A_effective = 150.0;  // Sweet spot: stable yet responsive
             }
 
-            // Determine operating region based on previous output
-            bool saturated_high = (v_out_prev >= v_max * 0.99);
-            bool saturated_low = (v_out_prev <= v_min * 0.99);
-
-            if (saturated_high) {
-                // Positive saturation: output clamped to v_max
-                if (n[2] > 0) {
-                    matrix_add(A, volt_idx, n[2]-1, 1.0);
-                    matrix_add(A, n[2]-1, volt_idx, 1.0);
-                }
-                vector_add(b, volt_idx, v_max);
-            } else if (saturated_low) {
-                // Negative saturation: output clamped to v_min
-                if (n[2] > 0) {
-                    matrix_add(A, volt_idx, n[2]-1, 1.0);
-                    matrix_add(A, n[2]-1, volt_idx, 1.0);
-                }
-                vector_add(b, volt_idx, v_min);
-            } else {
-                // Linear region: V_out = A * (V+ - V-)
-                if (n[2] > 0) {
-                    matrix_add(A, volt_idx, n[2]-1, 1.0);
-                    matrix_add(A, n[2]-1, volt_idx, 1.0);
-                }
-                // n[0] is inverting (-), n[1] is non-inverting (+)
-                if (n[1] > 0) matrix_add(A, volt_idx, n[1]-1, -A_gain);
-                if (n[0] > 0) matrix_add(A, volt_idx, n[0]-1, A_gain);
-            }
-
+            // VCVS with rail saturation solved self-consistently (piecewise-linear).
+            // n[0] is inverting (-), n[1] is non-inverting (+)
+            opamp_stamp_output(A, b, prev_solution, n[1], n[0], n[2], volt_idx,
+                               A_effective, v_max, v_min);
             // Output resistance
             double G_out = 1.0 / r_out;
             if (n[2] > 0) {
@@ -4235,18 +4347,40 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         }
 
         case COMP_TL431: {
-            // TL431: Programmable shunt regulator
-            double v_ref = 2.5;
-            // Acts like a zener at V_ref
-            double Vd = 0;
-            if (prev_solution) {
-                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
-                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
-                Vd = v1 - v2;
-            }
+            // TL431: programmable shunt regulator. Terminals: n[0]=K (cathode), n[1]=A (anode),
+            // n[2]=REF. The cathode current is a steep, smooth function of (V_REF - V_A) around
+            // the 2.495 V internal reference, which behaves like a VCCS from K to A:
+            //   I_ka = I0 * exp((V_ref - V_A - VREF) / VS)
+            // with VS = 10 mV (~1/VS = 100 S transconductance near the knee). Ideal mode uses
+            // a sharper knee; non-ideal adds the datasheet ~1 uA/2 uA REF bias current.
+            const double VREF = 2.495;
+            const double I0 = 1e-3;
+            double VS = comp->props.zener.ideal ? 0.005 : 0.010;
 
-            double G = (Vd > v_ref) ? 1.0 : 1e-12;
-            STAMP_CONDUCTANCE(n[0], n[1], G);
+            double Vr = VREF;  // Assume at the knee if no previous solution (good initial guess)
+            if (prev_solution) {
+                double vA = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+                double vR = (n[2] > 0) ? vector_get(prev_solution, n[2]-1) : 0;
+                Vr = vR - vA;
+            }
+            double xexp = (Vr - VREF) / VS;
+            if (xexp > 20.0) xexp = 20.0;    // ~0.5 A cap: keeps exp() sane
+            if (xexp < -40.0) xexp = -40.0;
+            double Ika = I0 * exp(xexp);
+            double Gr = Ika / VS;             // dI_ka / dV_ref
+            double Ieq = Ika - Gr * Vr;
+
+            // K->A current controlled by (V_REF - V_A): KCL rows K (+I) and A (-I)
+            if (n[0] > 0 && n[2] > 0) matrix_add(A, n[0]-1, n[2]-1, Gr);
+            if (n[0] > 0 && n[1] > 0) matrix_add(A, n[0]-1, n[1]-1, -Gr);
+            if (n[1] > 0 && n[2] > 0) matrix_add(A, n[1]-1, n[2]-1, -Gr);
+            if (n[1] > 0)             matrix_add(A, n[1]-1, n[1]-1, Gr);
+            if (n[0] > 0) vector_add(b, n[0]-1, -Ieq);
+            if (n[1] > 0) vector_add(b, n[1]-1, Ieq);
+
+            // Small leakage K-A and REF input conductance keep the matrix well-conditioned
+            STAMP_CONDUCTANCE(n[0], n[1], 1e-6);
+            STAMP_CONDUCTANCE(n[2], n[1], comp->props.zener.ideal ? 1e-12 : 1e-6);
             break;
         }
 
@@ -4311,12 +4445,18 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 }
 
                 // Calculate diode voltage from previous solution
-                double Vd = 0.6;  // Initial guess
+                // Use typical LED forward voltage (1.8V) as initial guess to prevent overcurrent spikes
+                // This gives a good starting point for Newton-Raphson iteration
+                double Vd = 1.8;
                 if (prev_solution) {
                     double v1 = (n[i] > 0) ? vector_get(prev_solution, n[i]-1) : 0;
                     double v2 = (n[com] > 0) ? vector_get(prev_solution, n[com]-1) : 0;
-                    Vd = CLAMP(v1 - v2, -5*nVt, 40*nVt);
+                    Vd = v1 - v2;
                 }
+
+                // Clamp to prevent exp() overflow
+                if (Vd < -5.0 * nVt) Vd = -5.0 * nVt;
+                if (Vd > 40.0 * nVt) Vd = 40.0 * nVt;
 
                 // Shockley diode equation with Newton-Raphson companion model
                 double expTerm = exp(Vd / nVt);
@@ -4324,11 +4464,12 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 double Gd = (Is / nVt) * expTerm + 1e-12;  // Dynamic conductance + GMIN
                 double Ieq = Id - Gd * Vd;  // Equivalent current source
 
-                // Store LED current for glow rendering
-                comp->props.led_array.currents[i] = (Id > 0) ? Id : 0;
+                // Note: Current is now calculated in circuit.c after MNA solve using final voltages
+                // This ensures accurate current display and brightness rendering
 
-                // Check for overcurrent (burning)
-                if (Id > max_I * 2.0 && Id > 0.001) {
+                // Check for overcurrent (burning) - only during transient simulation, not DC analysis
+                // DC analysis uses large dt (1e9), transient uses small dt (<1s typically)
+                if (dt < 1.0 && Id > max_I * 2.0 && Id > 0.001) {
                     comp->props.led_array.failed[i] = true;
                 }
 

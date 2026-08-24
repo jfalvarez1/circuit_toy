@@ -153,6 +153,12 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             snprintf(msg, sizeof(msg), "Placed %s circuit (%d components)", info->name, count);
                             ui_set_status(ui, msg);
                             circuit->modified = true;
+
+                            // Auto-start simulation for oscillator circuits
+                            if (ui->selected_circuit_type == CIRCUIT_PHASE_SHIFT_OSC) {
+                                input->should_autostart_sim = true;
+                                ui_set_status(ui, "Placed oscillator circuit - auto-starting simulation!");
+                            }
                         } else {
                             ui_set_status(ui, "Failed to place circuit");
                         }
@@ -1262,8 +1268,11 @@ void input_handle_key(InputState *input, SDL_Keycode key,
             break;
 
         case SDLK_s:
-            // Select tool (not Ctrl+S which would be save)
-            if (!ctrl) {
+            if (ctrl) {
+                // Ctrl+S: Save circuit
+                input->pending_ui_action = UI_ACTION_SAVE;
+            } else {
+                // S: Select tool
                 input_set_tool(input, TOOL_SELECT);
             }
             break;

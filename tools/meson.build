@@ -6,3 +6,15 @@ ui_editor = executable(
     include_directories: include_directories('..', '../include'),
     install: false
 )
+
+# Headless template smoke test: places every prebuilt circuit, runs DC + transient,
+# reports non-convergence / NaN and prints semiconductor bias points.
+template_smoke = executable(
+    'template_smoke',
+    ['template_smoke.c',
+     '../src/matrix.c', '../src/component.c', '../src/circuit.c', '../src/circuits.c',
+     '../src/simulation.c', '../src/logic.c', '../src/analysis.c', '../src/threadpool.c',
+     '../src/file_io.c'],
+    include_directories: include_directories('..', '../include'),
+    install: false
+)

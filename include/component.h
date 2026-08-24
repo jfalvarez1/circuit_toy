@@ -733,6 +733,9 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
 // Get display value string
 void component_get_value_string(Component *comp, char *buf, size_t buf_size);
 
+// Update LED parameters based on color (for both LED and LED_ARRAY)
+void component_update_led_color(Component *comp);
+
 // Format engineering notation
 void format_engineering(double value, const char *unit, char *buf, size_t buf_size);
 

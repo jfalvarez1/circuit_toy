@@ -256,6 +256,9 @@ typedef struct InputState {
 
     // Simulation state (set by app to prevent editing during simulation)
     bool sim_running;
+
+    // Auto-start flag for oscillator circuits
+    bool should_autostart_sim;
 } InputState;
 
 // Initialize input state

@@ -759,9 +759,11 @@ void render_component(RenderContext *ctx, Component *comp) {
                     }
                     SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
                 } else {
-                    // Normal LED glow
-                    double intensity = fmin(1.0, current / 0.015);  // Full brightness at 15mA
-                    uint8_t alpha = (uint8_t)(intensity * 200);
+                    // Normal LED glow - use max_current for proper scaling
+                    double intensity = fmin(1.0, current / max_current);
+                    // Increase brightness: boost intensity and use higher alpha
+                    intensity = pow(intensity, 0.6);  // Gamma correction for brighter appearance
+                    uint8_t alpha = (uint8_t)(intensity * 240);  // Increased from 200 to 240
 
                     SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_ADD);
                     for (int radius = 20; radius >= 5; radius -= 3) {
@@ -2062,6 +2064,12 @@ void render_opamp(RenderContext *ctx, float x, float y, int rotation) {
     // Draw + symbol for non-inverting input (bottom input at y=+20)
     render_draw_line_rotated(ctx, x, y, -20, 20, -12, 20, rotation);  // horizontal
     render_draw_line_rotated(ctx, x, y, -16, 16, -16, 24, rotation);  // vertical
+
+    // Add "(IDEAL)" label
+    int sx, sy;
+    render_world_to_screen(ctx, x, y - 40, &sx, &sy);
+    Color label_color = {0x80, 0x80, 0x80, 0xff};  // Gray
+    render_draw_text(ctx, "(IDEAL)", sx - 18, sy, label_color);
 }
 
 void render_opamp_flipped(RenderContext *ctx, float x, float y, int rotation) {
@@ -3017,23 +3025,38 @@ void render_darlington_pnp(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_text(ctx, "PNP-D", sx - 15, sy, label_color);
 }
 
-// Real op-amp (with finite gain indicator)
+// Real op-amp (with finite gain and rail voltages)
 void render_opamp_real(RenderContext *ctx, float x, float y, int rotation) {
-    // Same as regular op-amp but with "A" inside
+    // Same triangle as ideal op-amp
     render_draw_line_rotated(ctx, x, y, -25, -30, -25, 30, rotation);
     render_draw_line_rotated(ctx, x, y, -25, -30, 30, 0, rotation);
     render_draw_line_rotated(ctx, x, y, -25, 30, 30, 0, rotation);
+    // Inputs
     render_draw_line_rotated(ctx, x, y, -40, -20, -25, -20, rotation);
     render_draw_line_rotated(ctx, x, y, -40, 20, -25, 20, rotation);
+    // Output
     render_draw_line_rotated(ctx, x, y, 30, 0, 40, 0, rotation);
     // - and + symbols
     render_draw_line_rotated(ctx, x, y, -20, -20, -12, -20, rotation);
     render_draw_line_rotated(ctx, x, y, -20, 20, -12, 20, rotation);
     render_draw_line_rotated(ctx, x, y, -16, 16, -16, 24, rotation);
-    // "A" symbol inside to indicate finite gain
-    render_draw_line_rotated(ctx, x, y, -5, 8, 0, -2, rotation);
-    render_draw_line_rotated(ctx, x, y, 0, -2, 5, 8, rotation);
-    render_draw_line_rotated(ctx, x, y, -2, 4, 2, 4, rotation);
+
+    // Add "(REAL)" label
+    int sx, sy;
+    render_world_to_screen(ctx, x, y - 40, &sx, &sy);
+    Color label_color = {0x80, 0x80, 0x80, 0xff};  // Gray
+    render_draw_text(ctx, "(REAL)", sx - 18, sy, label_color);
+
+    // Add V+ rail indicator at top
+    int vplus_x, vplus_y;
+    render_world_to_screen(ctx, x, y - 50, &vplus_x, &vplus_y);
+    Color rail_color = {0xff, 0x80, 0x00, 0xff};  // Orange
+    render_draw_text(ctx, "V+", vplus_x - 8, vplus_y, rail_color);
+
+    // Add V- rail indicator at bottom
+    int vminus_x, vminus_y;
+    render_world_to_screen(ctx, x, y + 50, &vminus_x, &vminus_y);
+    render_draw_text(ctx, "V-", vminus_x - 8, vminus_y, rail_color);
 }
 
 // OTA (Operational Transconductance Amplifier)
@@ -3970,17 +3993,20 @@ void render_led_array(RenderContext *ctx, float x, float y, int rotation,
     render_draw_line_rotated(ctx, x, y, 78, 22, -78, 22, rotation);    // Bottom
     render_draw_line_rotated(ctx, x, y, -78, 22, -78, -22, rotation);  // Left
 
-    // Get LED color based on color_idx
+    // Map LEDColor enum to RGB colors (matches standard LED specifications)
     Color led_colors[] = {
-        {0xff, 0x00, 0x00, 0xff},  // 0: Red
-        {0x00, 0xff, 0x00, 0xff},  // 1: Green
-        {0x00, 0x00, 0xff, 0xff},  // 2: Blue
-        {0xff, 0xff, 0x00, 0xff},  // 3: Yellow
-        {0xff, 0xa5, 0x00, 0xff},  // 4: Orange
-        {0xff, 0xff, 0xff, 0xff},  // 5: White
+        {0x8B, 0x00, 0x00, 0xff},  // LED_COLOR_INFRARED: dark red (not visible, shown as dim red)
+        {0xff, 0x00, 0x00, 0xff},  // LED_COLOR_RED: bright red (630nm)
+        {0xff, 0xa5, 0x00, 0xff},  // LED_COLOR_ORANGE: orange (610nm)
+        {0xff, 0xff, 0x00, 0xff},  // LED_COLOR_YELLOW: yellow (590nm)
+        {0x00, 0xff, 0x00, 0xff},  // LED_COLOR_GREEN_STANDARD: yellow-green (565nm)
+        {0x00, 0xff, 0x80, 0xff},  // LED_COLOR_GREEN_PURE: emerald green (525nm)
+        {0x00, 0x00, 0xff, 0xff},  // LED_COLOR_BLUE: blue (470nm)
+        {0xff, 0xff, 0xff, 0xff},  // LED_COLOR_WHITE: white (blue + phosphor)
+        {0x94, 0x00, 0xd3, 0xff},  // LED_COLOR_UV: violet (395nm, near UV)
     };
     int num_colors = sizeof(led_colors) / sizeof(led_colors[0]);
-    Color lit_color = led_colors[color_idx % num_colors];
+    Color lit_color = led_colors[(color_idx >= 0 && color_idx < num_colors) ? color_idx : 1];  // Default to RED
 
     // LED segments (8 bars) - each with independent state
     for (int i = 0; i < 8; i++) {
@@ -4017,7 +4043,10 @@ void render_led_array(RenderContext *ctx, float x, float y, int rotation,
             // Calculate brightness based on current
             float brightness = (float)(led_current / max_current);
             if (brightness > 1.0f) brightness = 1.0f;
-            if (brightness < 0.3f) brightness = 0.3f;
+
+            // Apply gamma correction for perceptual brightness (increased brightness)
+            brightness = powf(brightness, 0.6f);  // Gamma 0.6 correction (brighter than 0.5)
+            brightness = fminf(brightness * 1.3f, 1.0f);  // 30% brightness boost
 
             Uint8 r = (Uint8)(lit_color.r * brightness);
             Uint8 g = (Uint8)(lit_color.g * brightness);
