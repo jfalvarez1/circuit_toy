@@ -174,8 +174,10 @@ Load complete circuit configurations instantly from the Circuits menu:
 
 Full-featured virtual oscilloscope with:
 - **8 Channels** - Connect multiple voltage probes
-- **Adjustable Scales** - Time/div (1µs to 1s), Volts/div (1mV to 100V)
-- **Time-Based Display** - Intelligent sample selection based on visible time window, ensuring smooth waveforms at all time/div settings
+- **Adjustable Scales** - Time/div (10 ns to 100 s), Volts/div (1mV to 100V)
+- **Time step follows the scope** - changing time/div re-maps the simulation step to ~50 samples per division (never coarser than the signal-accuracy step); the dt +/- buttons still override until the next time/div change
+- **Stacked view** - `Stack` button gives every channel its own band with its own zero line and CHn tag, so identical signals can be told apart; toggles back to overlay
+- **Time-Based Display** - History decimation follows the visible time window (20 x time/div is kept), so the trace is smooth at every time/div setting
 - **Voltage Scale Labels** - Y-axis shows voltage marks dynamically based on V/div setting
 - **Trigger System** (Tektronix-style)
   - Auto, Normal, Single-shot modes
@@ -229,10 +231,10 @@ Simulate real-world environmental conditions:
 
 ### Current Flow Visualization
 
-- **Animated particles** - Cyan dots flow along wires showing current direction
+- **Animated particles** - Cyan dots flow along wires and through components; size, speed and direction come from the exact solver currents (per-terminal currents plus a per-net wire flow solve), so a series path shows identical dots on wires, capacitors and resistors alike
 - **Conventional current** - Particles follow conventional current flow (positive to negative)
 - **BFS path tracing** - Current flows from voltage/current source positive terminals to ground nodes
-- **Series wire uniformity** - All wires in series show the same animation speed
+- **Series wire uniformity** - All wires in series carry the same current; parallel branches split by their real currents; ground symbols absorb the return
 - **Ground path completion** - Current properly flows to ground terminal wires
 - **Voltage source handling** - Correct current direction on wires connected to voltage sources
 - **Dual source handling** - When two voltage sources meet, current flows toward lower voltage

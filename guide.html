@@ -1914,7 +1914,7 @@
                 </thead>
                 <tbody>
                     <tr><td><strong>V/div ▲▼</strong></td><td>Adjust vertical scale (volts per division). Uses 1-2-5 sequence.</td></tr>
-                    <tr><td><strong>T/div ▲▼</strong></td><td>Adjust horizontal scale (time per division). Uses 1-2-5 sequence.</td></tr>
+                    <tr><td><strong>T/div ▲▼</strong></td><td>Adjust horizontal scale (time per division), 10 ns to 100 s in a 1-2-5 sequence. Changing it also re-maps the simulation time step to about 50 samples per division (never coarser than the accuracy step for the fastest source); the dt buttons still override until the next time/div change.</td></tr>
                     <tr><td><strong>Trig Mode</strong></td><td>Toggle trigger mode: Auto, Normal, or Single shot.</td></tr>
                     <tr><td><strong>Trig Edge</strong></td><td>Select trigger edge: Rising, Falling, or Both.</td></tr>
                     <tr><td><strong>Trig CH</strong></td><td>Select which channel to trigger on.</td></tr>
@@ -1922,6 +1922,7 @@
                     <tr><td><strong>MODE</strong></td><td>Toggle between Y-T (normal) and X-Y (Lissajous) display modes.</td></tr>
                     <tr><td><strong>CUR</strong></td><td>Toggle measurement cursors (two vertical lines for time measurement).</td></tr>
                     <tr><td><strong>FFT</strong></td><td>Toggle FFT spectrum display (frequency domain view).</td></tr>
+                    <tr><td><strong>Stack</strong></td><td>Stacked view: each enabled channel gets its own horizontal band with its own zero line, 8 divisions and a CHn tag in the channel colour, so identical signals can be told apart. Press again for the normal overlay view. Works in the pop-out window too.</td></tr>
                     <tr><td><strong>PopOut</strong></td><td>Detach oscilloscope to a separate resizable window for larger display.</td></tr>
                 </tbody>
             </table>
