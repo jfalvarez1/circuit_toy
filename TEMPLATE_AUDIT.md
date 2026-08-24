@@ -53,6 +53,44 @@ with ideal rectifier diodes → ringing.
 
 ---
 
+### Second pass 2026-08-24 (probe oracle `--probe-test`, 42/42)
+Engine: inductor companion had the memory term with the wrong sign (every inductor looked
+~30x too large - RL filters and RLC were wrong); capacitors now use theta-method (0.6)
+trapezoidal integration, op-amp rail flip-flop falls back to the linear stamp (Wien no
+longer latches at a rail), the real op-amp no longer silently caps its gain at 150.
+Templates: Schmitt input biased at the 6 V reference (it could never cross it); instr amp
+input wire had landed on op1's inverting terminal; precision rectifier rebuilt with the
+textbook two-op-amp absolute-value topology (out = -|Vin|); phase-shift oscillator moved
+to +/-5 V rails (single-supply DC feedback latched it) and Rf 33k; every template now
+carries an on-canvas "how it works / PROBE" note.
+
+### OPEN schematic-geometry items (`--geom-test`: crossings and wires through bodies)
+```
+[WARN] geom  Common Emitter               diag=0 cross=0 through=1 touch=0 through:Q104
+[WARN] geom  Source Follower              diag=0 cross=0 through=1 touch=0 through:M142
+[WARN] geom  Two-Stage Amp                diag=0 cross=0 through=2 touch=0 through:Q159 through:Q167
+[WARN] geom  Differential Pair            diag=0 cross=0 through=4 touch=0 through:Q181 through:R183 through:Q182 through:R183
+[WARN] geom  Current Mirror               diag=0 cross=0 through=4 touch=0 through:Q197 through:Q197 through:Q198 through:Q198
+[WARN] geom  Push-Pull                    diag=0 cross=1 through=5 touch=0 through:Q210 cross@(-90,25) through:Q211 through:Q210 through:Q211 through:Q211
+[WARN] geom  CMOS Inverter                diag=0 cross=0 through=4 touch=0 through:M223 through:M223 through:M224 through:M224
+[WARN] geom  Summing Amp                  diag=0 cross=2 through=0 touch=0 cross@(-30,45) cross@(50,45)
+[WARN] geom  Comparator                   diag=0 cross=1 through=1 touch=0 cross@(-50,50) through:R271
+[WARN] geom  Center-Tap Rect              diag=0 cross=1 through=0 touch=0 cross@(205,85)
+[WARN] geom  AC-DC Supply                 diag=0 cross=1 through=0 touch=0 cross@(342,108)
+[WARN] geom  US 120V-12V                  diag=0 cross=1 through=0 touch=0 cross@(342,108)
+[WARN] geom  Difference Amp               diag=0 cross=0 through=2 touch=0 through:V338 through:~V342
+[WARN] geom  Transimpedance               diag=0 cross=0 through=1 touch=0 through:V358
+[WARN] geom  Instr. Amp                   diag=0 cross=2 through=0 touch=0 cross@(190,-75) cross@(240,-35)
+[WARN] geom  Sallen-Key LP                diag=0 cross=0 through=4 touch=0 through:V392 through:~V396 through:C400 through:C401
+[WARN] geom  Active Bandpass              diag=0 cross=0 through=2 touch=0 through:V410 through:~V414
+[WARN] geom  Notch Filter                 diag=0 cross=0 through=3 touch=0 through:C431 through:R434 through:R434
+[WARN] geom  Wien Oscillator              diag=0 cross=0 through=1 touch=0 through:V444
+[WARN] geom  Current Source               diag=0 cross=0 through=1 touch=0 through:R476
+[WARN] geom  Window Comp                  diag=0 cross=1 through=4 touch=0 cross@(180,-140) through:R488 through:V484 through:R488 through:R488
+[WARN] geom  Schmitt Trigger              diag=0 cross=0 through=3 touch=0 through:V503 through:R513 through:R512
+[WARN] geom  LM317 Adj Reg                diag=0 cross=0 through=4 touch=0 through:R568 through:R568 through:R568 through:R568
+```
+
 ## Basic
 
 ### 1. Voltage Divider — 10 V, R1=10k, R2=10k

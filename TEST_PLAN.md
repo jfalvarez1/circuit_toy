@@ -21,6 +21,10 @@ and note: build hash, steps, expected vs actual, stderr excerpt.
 | 0.3 | `[P]` Debug leftovers in the working tree | Removed 2026-08-24: all `[DC ANALYSIS]`/`[SOLVER]`/`[CLAMP]`/LED-array prints, the `probe_debug.log` and `oscillator_debug.txt` writers, and the `debug_circuit.json` auto-load block |
 | 0.4 | `[P]` Repo hygiene | Stray `nul`, debug logs and scratch scripts deleted; `.gitignore` covers `*.log`, `screenshots/`, `circuit.json` |
 | 0.6 | `[ ]` Headless regression: `build\tools\template_smoke.exe` (add `--verbose` for bias points, `--nodes` for net mapping) | Prints `47/47 templates passed`; run after every engine change |
+| 0.7 | `[ ]` `template_smoke --probe-test` | 42/42: every template's designated output node matches the hand calculation (DC level, amplitude, peak or mean) |
+| 0.8 | `[ ]` `template_smoke --osc-test` (also `--osc-dt 5e-6`) | Wien ~1.56 kHz and phase-shift ~6.0 kHz really oscillate, at dt from 100 ns to 5 us |
+| 0.9 | `[ ]` `template_smoke --geom-test` | Schematic audit: 0 diagonal wires anywhere; remaining crossings / wires-through-bodies are listed per template (see TEMPLATE_AUDIT open items) |
+| 0.10 | `[ ]` `template_smoke --flow-test`, `--scope-test` | 47/47 and 8/8 |
 | 0.5 | `[ ]` Window resize to min size / maximized / 4K | Panels reflow, no overlapping text, neon border tracks edges |
 
 ---

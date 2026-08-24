@@ -351,7 +351,16 @@ point of every transistor / op-amp / regulator:
 build/tools/template_smoke.exe             # 47/47 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
+build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation
+build/tools/template_smoke.exe --osc-test        # oscillators really oscillate (add --osc-dt 5e-6)
+build/tools/template_smoke.exe --flow-test       # current-flow display: KCL, conservation, series uniformity
+build/tools/template_smoke.exe --geom-test       # schematic audit: diagonals, crossings, wires through bodies
+build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
+build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
 ```
+
+Every example circuit carries an on-canvas note explaining how it works, the governing
+equation, and a **PROBE:** line saying where to put the scope probes and what to expect.
 
 `TEST_PLAN.md` (feature-by-feature manual plan) and `TEMPLATE_AUDIT.md` (per-template
 hand-calculated expectations and value variations) track the interactive test campaign.
