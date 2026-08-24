@@ -4376,8 +4376,8 @@ static int place_wien_oscillator(Circuit *circuit, float x, float y) {
     c1->node_ids[1] = c1_right_node;
 
     // Feedback path from C1 to non-inverting input (wrap around)
-    int corner_fb1 = circuit_find_or_create_node(circuit, c1_right_x, y + 200, 5.0f);
-    int corner_fb2 = circuit_find_or_create_node(circuit, x + 80, y + 200, 5.0f);
+    int corner_fb1 = circuit_find_or_create_node(circuit, c1_right_x, y + 300, 5.0f);
+    int corner_fb2 = circuit_find_or_create_node(circuit, x + 80, y + 300, 5.0f);
     int corner_fb3 = circuit_find_or_create_node(circuit, x + 80, opamp_noninv_y, 5.0f);
     circuit_add_wire(circuit, c1_right_node, corner_fb1);
     circuit_add_wire(circuit, corner_fb1, corner_fb2);
@@ -4945,7 +4945,7 @@ static int place_zener_ref(Circuit *circuit, float x, float y) {
     float rs_top_x, rs_top_y;
     component_get_terminal_pos(rs, 0, &rs_top_x, &rs_top_y);
 
-    wire_L_shape(circuit, vcc_pos_x, vcc_pos_y, rs_top_x, rs_top_y, true);
+    wire_L_shape(circuit, vcc_pos_x, vcc_pos_y, rs_top_x, rs_top_y, false);
 
     // Rs to Zener junction and load
     float rs_bot_x, rs_bot_y;

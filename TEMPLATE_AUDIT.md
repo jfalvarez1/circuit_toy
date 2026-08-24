@@ -358,7 +358,7 @@ clipping expectations below hold.
 | 26 | Integrator | | | | | | | |
 | 27 | Differentiator | | | | | | | |
 | 28 | Comparator | | | | | | | |
-| 29 | Window Comparator | | | | | | | |
+| 29 | Window Comparator | | | | | | | OPEN (visual): input/pull-up wires drawn through Vref, R1, gnd3 bodies — needs re-route (feed input from a bus at x+200, rail at y-200) |
 | 30 | Schmitt Trigger | | | | | | | |
 | 31 | Precision Rectifier | | | | | | | |
 | 32 | Peak Detector | | | | | | | |
@@ -371,7 +371,7 @@ clipping expectations below hold.
 | 39 | Common Source | | | | | | | gate divider added |
 | 40 | Common Drain | | | | | | | gate divider added |
 | 41 | Multistage Amp | | | | | | | |
-| 42 | Differential Pair | | | | | | | direct-coupled, 6 V bias |
+| 42 | Differential Pair | | | | | | | direct-coupled, 6 V bias. OPEN (visual): Rc2/emitter wires overlap Q2 terminals, emitter bus crosses RE body — needs re-layout (Q2 rot 0 at x+180, RE lower) |
 | 43 | Current Mirror | | | | | | | |
 | 44 | Push-Pull | | | | | | | |
 | 45 | CMOS Inverter | | | | | | | |
