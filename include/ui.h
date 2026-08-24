@@ -274,6 +274,8 @@ typedef struct {
     // FFT display state
     bool scope_fft_mode;             // FFT display active
     bool scope_stacked;              // Stacked view: each channel in its own horizontal band
+    int scope_extra_w;               // Extra scope width extending left over the canvas (user resize)
+    bool scope_user_sized;           // User dragged the scope edges: layout keeps the custom size
 
     // Trigger settings
     TriggerMode trigger_mode;        // Auto, Normal, Single

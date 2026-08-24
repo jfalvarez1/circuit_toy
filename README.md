@@ -275,7 +275,7 @@ Create reusable subcircuits from your designs:
 - **Wire routing** - Click to start wire, click again to route
 - **Property editor** - Right panel for adjusting component values
 - **Engineering notation** - Supports k, M, G, m, µ, n, p suffixes
-- **Resizable panels** - Drag edges to resize oscilloscope and properties
+- **Resizable panels** - Drag the scope's top edge (taller, may cover the properties list) or left edge (wider, out over the canvas up to the palette); the properties panel edge resizes too
 - **Scrollable scope controls** - Mouse wheel scrolls oscilloscope buttons when window is small
 - **Status bar** - Shows simulation time, voltmeter/ammeter readings, Lux/Temp sliders, node count, component count
 - **Live measurements** - Voltmeter (VM) and Ammeter (AM) readings displayed in status bar

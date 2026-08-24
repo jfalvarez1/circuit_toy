@@ -5818,7 +5818,14 @@ static int place_peak_detector(Circuit *circuit, float x, float y) {
     Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 60, 0);
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 5.0;
-    vsrc->props.ac_voltage.frequency = 100.0;
+    vsrc->props.ac_voltage.frequency = 1000.0;   // 1 kHz carrier
+    // Amplitude sweeps 1 V -> 5 V -> 1 V every second (bidirectional, repeating)
+    vsrc->props.ac_voltage.amplitude_sweep.enabled = true;
+    vsrc->props.ac_voltage.amplitude_sweep.start_value = 1.0;
+    vsrc->props.ac_voltage.amplitude_sweep.end_value = 5.0;
+    vsrc->props.ac_voltage.amplitude_sweep.sweep_time = 0.5;
+    vsrc->props.ac_voltage.amplitude_sweep.repeat = true;
+    vsrc->props.ac_voltage.amplitude_sweep.bidirectional = true;
 
     // Ground for source
     Component *gnd1 = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
@@ -5831,10 +5838,14 @@ static int place_peak_detector(Circuit *circuit, float x, float y) {
 
     // Hold capacitor (vertical)
     Component *cap = add_comp(circuit, COMP_CAPACITOR, x + 320, y + 60, 90);
-    cap->props.capacitor.capacitance = 10e-6;  // 10uF
+    cap->props.capacitor.capacitance = 1e-6;   // 1 uF (R*C with the bleed = 47 ms)
 
     // Ground for capacitor
     Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 320, y + 140, 0);
+    // Bleed resistor so the held peak decays and the output follows a falling envelope
+    Component *rbleed = add_comp(circuit, COMP_RESISTOR, x + 380, y + 60, 90);
+    rbleed->props.resistor.resistance = 47000.0;
+    Component *gnd3 = add_comp(circuit, COMP_GROUND, x + 380, y + 140, 0);
 
     // Get terminal positions
     float vsrc_pos_x, vsrc_pos_y, vsrc_neg_x, vsrc_neg_y;
@@ -5899,8 +5910,10 @@ static int place_peak_detector(Circuit *circuit, float x, float y) {
 
     // Capacitor to ground
     connect_terminals(circuit, cap, 1, gnd2, 0);
+    connect_terminals(circuit, cap, 0, rbleed, 0);
+    connect_terminals(circuit, rbleed, 1, gnd3, 0);
 
-    return 6;  // vsrc, gnd1, opamp, diode, cap, gnd2
+    return 8;  // vsrc, gnd1, opamp, diode, cap, gnd2, rbleed, gnd3
 }
 
 // =============================================================================
@@ -5940,6 +5953,13 @@ static int place_clamper(Circuit *circuit, float x, float y) {
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 5.0;
     vsrc->props.ac_voltage.frequency = 1000.0;
+    // Amplitude sweeps 1 V -> 5 V -> 1 V every second (bidirectional, repeating)
+    vsrc->props.ac_voltage.amplitude_sweep.enabled = true;
+    vsrc->props.ac_voltage.amplitude_sweep.start_value = 1.0;
+    vsrc->props.ac_voltage.amplitude_sweep.end_value = 5.0;
+    vsrc->props.ac_voltage.amplitude_sweep.sweep_time = 0.5;
+    vsrc->props.ac_voltage.amplitude_sweep.repeat = true;
+    vsrc->props.ac_voltage.amplitude_sweep.bidirectional = true;
 
     // Ground for AC source
     Component *gnd1 = add_comp(circuit, COMP_GROUND, x, grid_y2 + 20, 0);
@@ -6315,8 +6335,8 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_SERIES_RLC] = {"SERIES RLC: at resonance f0 = 1/(2*pi*sqrt(L*C)) = 159 Hz the reactances", "cancel and only R limits the current (50 mA). Q = sqrt(L/C)/R = 0.1 here;", "lower R to 1 ohm and the capacitor voltage magnifies to 50 V.", "PROBE: the L-C junction (across C). Expect 0.5 Vpk at 159 Hz; R=1 -> 50 Vpk."},
     [CIRCUIT_PARALLEL_RLC] = {"PARALLEL RLC (TANK): at f0 = 159 Hz the tank impedance is maximum, so", "almost the whole source voltage appears across it. Q = R*sqrt(C/L) = 100:", "shift the source a few Hz and the output collapses.", "PROBE: the tank top (any top point - one net) vs source +. Expect ~5 Vpk at f0."},
     [CIRCUIT_WHEATSTONE] = {"WHEATSTONE BRIDGE: two dividers side by side. With R4 = 1.1k the right", "midpoint sits at 5.24 V vs 5.00 V on the left - a 0.24 V imbalance that", "measures the unknown resistor. Set R4 = 1k and the bridge nulls.", "PROBE: both bridge midpoints. Expect 5.00 V and 5.24 V (0.24 V imbalance)."},
-    [CIRCUIT_PEAK_DETECTOR] = {"PEAK DETECTOR: the op-amp charges C through the diode whenever Vin", "exceeds the stored voltage; when Vin falls the diode blocks and C holds", "the peak (5 V). No bleed resistor, so it holds forever - add one to", "make it follow a falling envelope.", "PROBE: input sine and the cap node. Expect the cap to sit at the 5 V peak."},
-    [CIRCUIT_CLAMPER] = {"CLAMPER (DC RESTORER): the cap charges to the negative peak through the", "diode, then acts as a 5 V battery in series with the signal. The whole", "sine is shifted so its bottom sits at ~-0.7 V. R*C >> period keeps it.", "PROBE: input (+/-5 V) and the cap-diode node: same sine, shifted to -0.7..9.3 V."},
+    [CIRCUIT_PEAK_DETECTOR] = {"PEAK DETECTOR: the op-amp charges C through the diode whenever Vin", "exceeds the stored voltage; when Vin falls the diode blocks and C holds the", "peak. The 47k bleed (R*C = 47 ms) lets it decay, so the output rides the", "envelope of the 1 kHz carrier whose amplitude sweeps 1 V -> 5 V -> 1 V each second.", "PROBE: input and the cap node at 50 ms/div: the cap traces the envelope 1..5 V."},
+    [CIRCUIT_CLAMPER] = {"CLAMPER (DC RESTORER): the cap charges to the negative peak through the", "diode, then acts as a 5 V battery in series with the signal. The whole", "sine is shifted so its bottom sits at ~-0.7 V. R*C >> period keeps it.", "PROBE: input and the cap-diode node at 50 ms/div: bottom pinned at -0.7 V, top follows 2A."},
     [CIRCUIT_PHASE_SHIFT_OSC] = {"RC PHASE-SHIFT OSCILLATOR: three RC sections each shift 60 deg at", "f = 1/(2*pi*sqrt(6)*R*C) = 6.5 kHz, totalling 180 deg; the inverting", "amplifier adds the other 180 deg. Gain must exceed 29 (Rf/R = 33 here).", "Split +/-5 V rails limit the swing; a pulse through Ck starts it.", "PROBE: op-amp OUT. Expect ~6.5 kHz clipped sine, +/-5 V. Set dt 1 us."},
 };
 

@@ -355,8 +355,8 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_TL431_REF,        COMP_TL431,     0, 0, "dc",  2.5,   0.02, 2e-3, "2.495 V reference" },
     { CIRCUIT_SERIES_RLC,       COMP_CAPACITOR, 0, 0, "amp", 0.5,   0.25, 80e-3, "Q*Vin at f0" },
     { CIRCUIT_WHEATSTONE,       COMP_RESISTOR,  3, 0, "dc",  5.238, 0.02, 2e-3, "10*1100/2100" },
-    { CIRCUIT_PEAK_DETECTOR,    COMP_CAPACITOR, 0, 0, "dc",  5.0,   0.05, 30e-3, "holds the 5 V peak" },
-    { CIRCUIT_CLAMPER,          COMP_DIODE,     0, 1, "max", 9.3,   0.10, 10e-3, "shifted sine top: 2*5 - 0.7" },
+    { CIRCUIT_PEAK_DETECTOR,    COMP_CAPACITOR, 0, 0, "dc",  4.3,   0.20, 0.5,   "envelope 4..5 V near the top of the sweep" },
+    { CIRCUIT_CLAMPER,          COMP_DIODE,     0, 1, "max", 9.3,   0.12, 0.5,   "shifted sine top at full amplitude: 2*5 - 0.7" },
 };
 
 static Component *find_comp(Circuit *c, ComponentType ct, int ord) {

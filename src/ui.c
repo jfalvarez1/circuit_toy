@@ -620,6 +620,8 @@ void ui_init(UIState *ui) {
     ui->scope_view_span = 0.0;
     ui->scope_fft_mode = false;
     ui->scope_stacked = false;
+    ui->scope_extra_w = 0;
+    ui->scope_user_sized = false;
 
     // Initialize trigger settings
     ui->trigger_mode = TRIG_AUTO;
@@ -3766,6 +3768,12 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     // Border (scope bezel)
     SDL_SetRenderDrawColor(renderer, 0x40, 0x40, 0x40, 0xff);
     SDL_RenderDrawRect(renderer, &bg);
+    // Resize grip: the top and left edges can be dragged (top-left corner ticks)
+    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x90, 0xff);
+    for (int k = 0; k < 3; k++) {
+        SDL_RenderDrawLine(renderer, r->x + 2, r->y + 4 + k * 4, r->x + 8, r->y + 4 + k * 4);
+        SDL_RenderDrawLine(renderer, r->x + 4 + k * 4, r->y + 2, r->x + 4 + k * 4, r->y + 8);
+    }
     SDL_Rect outer = {r->x - 1, r->y - 1, r->w + 2, r->h + 2};
     SDL_RenderDrawRect(renderer, &outer);
 
@@ -6386,10 +6394,13 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
             int bottom = ui->scope_rect.y + ui->scope_rect.h;
             int new_height = bottom - new_y;
 
-            // Minimum and maximum height constraints
-            if (new_height >= 100 && new_height <= 500 && new_y >= TOOLBAR_HEIGHT + 200) {
+            // Height: anything from 100 px up to the space between the toolbar and the
+            // control rows at the bottom (the scope may cover the properties list)
+            int max_height = ui->window_height - STATUSBAR_HEIGHT - TOOLBAR_HEIGHT - 140;
+            if (new_height >= 100 && new_height <= max_height && new_y >= TOOLBAR_HEIGHT + 30) {
                 ui->scope_rect.y = new_y;
                 ui->scope_rect.h = new_height;
+                ui->scope_user_sized = true;
             }
         } else if (ui->scope_resize_edge == 1) {
             // Resizing left edge - changes width and x position
@@ -6397,10 +6408,13 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
             int right = ui->scope_rect.x + ui->scope_rect.w;
             int new_width = right - new_x;
 
-            // Minimum and maximum width constraints
-            if (new_width >= 150 && new_width <= 400 && new_x >= ui->window_width - ui->properties_width) {
+            // Width: the scope may grow leftwards over the canvas (up to the palette)
+            if (new_width >= 150 && new_x >= PALETTE_WIDTH + 20) {
                 ui->scope_rect.x = new_x;
                 ui->scope_rect.w = new_width;
+                int panel_x = ui->window_width - ui->properties_width + 10;
+                ui->scope_extra_w = (panel_x - new_x > 0) ? (panel_x - new_x) : 0;
+                ui->scope_user_sized = true;
             }
         }
         return UI_ACTION_NONE;
@@ -6607,8 +6621,8 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         if (new_width >= 180 && new_width <= 450) {
             ui->properties_width = new_width;
             // Also update scope position to stay within panel
-            ui->scope_rect.x = ui->window_width - ui->properties_width + 10;
-            ui->scope_rect.w = ui->properties_width - 20;  // Fit scope width to panel
+            ui->scope_rect.x = ui->window_width - ui->properties_width + 10 - ui->scope_extra_w;
+            ui->scope_rect.w = ui->properties_width - 20 + ui->scope_extra_w;
         }
         return UI_ACTION_NONE;
     }
@@ -6754,11 +6768,16 @@ void ui_update_layout(UIState *ui) {
         ui->palette_scroll_offset = 0;
     }
 
-    // Update oscilloscope position (anchored to right side, vertically positioned based on height)
-    ui->scope_rect.x = ui->window_width - ui->properties_width + 10;
+    // Update oscilloscope position (anchored to the right panel; a user-resized scope may
+    // extend left over the canvas by scope_extra_w and may cover the properties list)
+    if (ui->scope_extra_w > ui->window_width - ui->properties_width - PALETTE_WIDTH - 30)
+        ui->scope_extra_w = ui->window_width - ui->properties_width - PALETTE_WIDTH - 30;
+    if (ui->scope_extra_w < 0) ui->scope_extra_w = 0;
+    ui->scope_rect.x = ui->window_width - ui->properties_width + 10 - ui->scope_extra_w;
+    ui->scope_rect.w = ui->properties_width - 20 + ui->scope_extra_w;
 
-    // Ensure scope is positioned below properties content
-    int min_scope_y = TOOLBAR_HEIGHT + ui->properties_content_height + 25;
+    // Ensure scope is positioned below properties content (unless the user sized it)
+    int min_scope_y = ui->scope_user_sized ? TOOLBAR_HEIGHT + 30 : TOOLBAR_HEIGHT + ui->properties_content_height + 25;
     if (ui->scope_rect.y < min_scope_y) {
         ui->scope_rect.y = min_scope_y;
     }

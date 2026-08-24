@@ -142,7 +142,9 @@ bool input_handle_event(InputState *input, SDL_Event *event,
 
             // Check if in canvas area (use dynamic canvas bounds)
             if (x < render->canvas_rect.x || x >= render->canvas_rect.x + render->canvas_rect.w ||
-                y < render->canvas_rect.y || y >= render->canvas_rect.y + render->canvas_rect.h) {
+                y < render->canvas_rect.y || y >= render->canvas_rect.y + render->canvas_rect.h ||
+                (ui && x >= ui->scope_rect.x - 6 && x < ui->scope_rect.x + ui->scope_rect.w &&
+                 y >= ui->scope_rect.y - 6 && y < ui->scope_rect.y + ui->scope_rect.h + 100)) {
                 return false;
             }
 
@@ -885,7 +887,9 @@ bool input_handle_event(InputState *input, SDL_Event *event,
 
             // Check if in canvas area (use dynamic canvas bounds)
             if (x < render->canvas_rect.x || x >= render->canvas_rect.x + render->canvas_rect.w ||
-                y < render->canvas_rect.y || y >= render->canvas_rect.y + render->canvas_rect.h) {
+                y < render->canvas_rect.y || y >= render->canvas_rect.y + render->canvas_rect.h ||
+                (ui && x >= ui->scope_rect.x - 6 && x < ui->scope_rect.x + ui->scope_rect.w &&
+                 y >= ui->scope_rect.y - 6 && y < ui->scope_rect.y + ui->scope_rect.h + 100)) {
                 return false;
             }
 
