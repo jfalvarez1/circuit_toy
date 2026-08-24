@@ -55,6 +55,7 @@ Simulation *simulation_create(Circuit *circuit) {
     sim->state = SIM_STOPPED;
     sim->time = 0;
     sim->time_step = DEFAULT_TIME_STEP;
+    sim->history_target_span = 0.1;  // until the scope says otherwise
     sim->speed = 1.0;
 
     // Initialize adaptive time-stepping (disabled by default - needs more tuning)
@@ -865,6 +866,51 @@ static void simulation_clamp_opamps(Circuit *circuit, Vector *solution) {
     }
 }
 
+// Decimation factor that makes MAX_HISTORY samples cover history_target_span, limited so the
+// fastest fixed-frequency source still gets >= 20 recorded samples per cycle.
+static int simulation_compute_decimation(Simulation *sim) {
+    Circuit *circuit = sim->circuit;
+    double raw_span = MAX_HISTORY * sim->time_step;
+    int factor = 1;
+    if (sim->history_target_span > raw_span && sim->time_step > 0) {
+        factor = (int)ceil(sim->history_target_span / raw_span);
+        if (factor < 1) factor = 1;
+        if (factor > 1000000) factor = 1000000;
+    }
+
+    double max_freq = 0;
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *c = circuit->components[i];
+        if (!c) continue;
+        double freq = 0;
+        switch (c->type) {
+            case COMP_AC_VOLTAGE: freq = c->props.ac_voltage.frequency; break;
+            case COMP_SQUARE_WAVE: freq = c->props.square_wave.frequency; break;
+            case COMP_TRIANGLE_WAVE: freq = c->props.triangle_wave.frequency; break;
+            case COMP_SAWTOOTH_WAVE: freq = c->props.sawtooth_wave.frequency; break;
+            default: break;
+        }
+        if (freq > max_freq) max_freq = freq;
+    }
+    if (max_freq > 0) {
+        double max_effective_dt = (1.0 / max_freq) / 20.0;
+        int max_decimate = (int)(max_effective_dt / sim->time_step);
+        if (max_decimate < 1) max_decimate = 1;
+        if (factor > max_decimate) factor = max_decimate;
+    }
+    return factor;
+}
+
+void simulation_set_history_span(Simulation *sim, double span_seconds) {
+    if (!sim || !sim->circuit || span_seconds <= 0) return;
+    if (fabs(span_seconds - sim->history_target_span) < 1e-15) return;
+    sim->history_target_span = span_seconds;
+    if (sim->history_decimate_factor > 0 && sim->time_step >= 1e-9 &&
+        simulation_compute_decimation(sim) != sim->history_decimate_factor) {
+        sim->history_decimate_factor = 0;   // recompute (and reset history) on the next step
+    }
+}
+
 bool simulation_step(Simulation *sim) {
     if (!sim || !sim->circuit) return false;
 
@@ -1009,58 +1055,14 @@ bool simulation_step(Simulation *sim) {
     // 3. DAC: Drive logic outputs to analog nodes
     logic_drive_outputs(sim, circuit);
 
-    // Adaptive decimation for history recording - calculated ONCE when dt becomes valid
-    // Changing decimation mid-run causes inconsistent sample spacing and distorted waveforms
-    // history_decimate_factor == 0 means "not yet calculated"
-    // Note: time_step can be as small as 100ns (1e-7), so use a lower threshold
+    // History decimation: keep MAX_HISTORY samples spanning what the scope wants to show
+    // (sim->history_target_span), but never fewer than ~20 samples per cycle of the fastest
+    // fixed-frequency source. Recomputed only when the factor is invalidated (0), because
+    // changing decimation mid-run makes sample spacing inconsistent.
     if (sim->history_decimate_factor == 0 && sim->time_step >= 1e-9) {
-        // Goal: ensure history covers enough time for typical scope time windows
-        // while maintaining enough samples per cycle for waveform visibility
-        // With 10000 history slots and 100ns time_step, raw span = 1ms
-        // Target 100ms of history (enough for 10ms/div scope setting with margin)
-        // This ensures the scope fills quickly after reset
-        double target_history_span = 0.1;  // 100ms of history
-        double current_history_span = MAX_HISTORY * sim->time_step;
+        sim->history_decimate_factor = simulation_compute_decimation(sim);
 
-        int new_decimate_factor = 1;
-        if (current_history_span < target_history_span && sim->time_step > 0) {
-            new_decimate_factor = (int)ceil(target_history_span / current_history_span);
-            if (new_decimate_factor < 1) new_decimate_factor = 1;
-            if (new_decimate_factor > 100) new_decimate_factor = 100;  // Max 100x decimation
-        }
-
-        // IMPORTANT: Limit decimation to preserve waveform shape
-        // Need at least 20 samples per cycle of highest frequency signal
-        double max_freq = 0;
-        for (int i = 0; i < circuit->num_components; i++) {
-            Component *c = circuit->components[i];
-            if (!c) continue;
-            double freq = 0;
-            switch (c->type) {
-                case COMP_AC_VOLTAGE: freq = c->props.ac_voltage.frequency; break;
-                case COMP_SQUARE_WAVE: freq = c->props.square_wave.frequency; break;
-                case COMP_TRIANGLE_WAVE: freq = c->props.triangle_wave.frequency; break;
-                case COMP_SAWTOOTH_WAVE: freq = c->props.sawtooth_wave.frequency; break;
-                default: break;
-            }
-            if (freq > max_freq) max_freq = freq;
-        }
-
-        if (max_freq > 0) {
-            double period = 1.0 / max_freq;
-            double min_samples_per_cycle = 20.0;
-            double max_effective_dt = period / min_samples_per_cycle;
-            int max_decimate = (int)(max_effective_dt / sim->time_step);
-            if (max_decimate < 1) max_decimate = 1;
-            if (new_decimate_factor > max_decimate) {
-                new_decimate_factor = max_decimate;
-            }
-        }
-
-        sim->history_decimate_factor = new_decimate_factor;
-
-        // Reset history when decimation is first calculated
-        // This ensures we don't have stale samples from before proper dt was set
+        // Reset history so all stored samples share one spacing
         sim->history_count = 0;
         sim->history_start = 0;
         sim->history_decimate_counter = 0;

@@ -2761,8 +2761,12 @@ static void format_time_value(char *buf, size_t size, double val) {
         snprintf(buf, size, "%.0fms", val * 1000);
     } else if (val >= 0.0001) {
         snprintf(buf, size, "%.0fus", val * 1000000);
-    } else {
+    } else if (val >= 1e-6) {
         snprintf(buf, size, "%.1fus", val * 1000000);
+    } else if (val >= 1e-7) {
+        snprintf(buf, size, "%.0fns", val * 1e9);
+    } else {
+        snprintf(buf, size, "%.0fns", val * 1e9);
     }
 }
 

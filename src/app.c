@@ -370,6 +370,7 @@ void app_handle_events(App *app) {
                 // Increase time/div using 1-2-5 sequence
                 {
                     static const double time_steps[] = {
+                        10e-9, 20e-9, 50e-9, 100e-9, 200e-9, 500e-9,
                         1e-6, 2e-6, 5e-6, 10e-6, 20e-6, 50e-6,
                         100e-6, 200e-6, 500e-6,
                         1e-3, 2e-3, 5e-3, 10e-3, 20e-3, 50e-3,
@@ -391,6 +392,7 @@ void app_handle_events(App *app) {
                 // Decrease time/div using 1-2-5 sequence
                 {
                     static const double time_steps[] = {
+                        10e-9, 20e-9, 50e-9, 100e-9, 200e-9, 500e-9,
                         1e-6, 2e-6, 5e-6, 10e-6, 20e-6, 50e-6,
                         100e-6, 200e-6, 500e-6,
                         1e-3, 2e-3, 5e-3, 10e-3, 20e-3, 50e-3,
@@ -1560,6 +1562,14 @@ void app_update(App *app) {
                 app->analysis.monte_carlo.num_runs);
             ui_set_status(&app->ui, msg);
         }
+    }
+
+    // The recorder keeps MAX_HISTORY samples; ask it to span 2x the visible scope window so
+    // the trigger search has slack, but never less than the raw (undecimated) span.
+    {
+        double want = 20.0 * app->ui.scope_time_div;
+        double raw = MAX_HISTORY * app->simulation->time_step;
+        simulation_set_history_span(app->simulation, want > raw ? want : raw);
     }
 
     // Run simulation if active

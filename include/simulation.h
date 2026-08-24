@@ -76,6 +76,7 @@ typedef struct Simulation {
     // Adaptive decimation for history (ensures history covers long time spans)
     int history_decimate_counter;   // Counter for decimation
     int history_decimate_factor;    // Current decimation factor (record every Nth sample)
+    double history_target_span;     // Seconds of history the scope wants to see (drives decimation)
 
     // Error message
     char error_msg[256];
@@ -126,6 +127,9 @@ bool simulation_step(Simulation *sim);
 // Set simulation parameters
 void simulation_set_speed(Simulation *sim, double speed);
 void simulation_set_time_step(Simulation *sim, double dt);
+// Tell the recorder how many seconds of history the display needs (e.g. 20 x time/div).
+// Decimation is re-derived; history is only reset if the factor actually changes.
+void simulation_set_history_span(Simulation *sim, double span_seconds);
 
 // Auto-adjust time step based on circuit's highest frequency signal
 // Returns the new time step that ensures adequate sampling (at least 50 samples/cycle)
