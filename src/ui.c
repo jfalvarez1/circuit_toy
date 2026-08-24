@@ -611,6 +611,12 @@ void ui_init(UIState *ui) {
     ui->scope_cursor_drag = 0;
     ui->cursor1_time = 0.25;
     ui->cursor2_time = 0.75;
+    ui->cursor1_volt = 0.35;
+    ui->cursor2_volt = 0.65;
+    ui->scope_cursor_type = 0;
+    ui->scope_cursor_active = 1;
+    ui->scope_view_t0 = 0.0;
+    ui->scope_view_span = 0.0;
     ui->scope_fft_mode = false;
     ui->scope_stacked = false;
 
@@ -2773,6 +2779,80 @@ static void format_time_value(char *buf, size_t size, double val) {
     }
 }
 
+// Engineering-style readouts for the cursor box (3 significant digits, signed)
+static void fmt_time_eng(char *buf, size_t size, double t) {
+    double a = fabs(t);
+    if (a >= 1.0)        snprintf(buf, size, "%.3gs", t);
+    else if (a >= 1e-3)  snprintf(buf, size, "%.3gms", t * 1e3);
+    else if (a >= 1e-6)  snprintf(buf, size, "%.3gus", t * 1e6);
+    else                 snprintf(buf, size, "%.3gns", t * 1e9);
+}
+static void fmt_volt_eng(char *buf, size_t size, double v) {
+    double a = fabs(v);
+    if (a >= 1.0)        snprintf(buf, size, "%.3gV", v);
+    else if (a >= 1e-3)  snprintf(buf, size, "%.3gmV", v * 1e3);
+    else if (a >= 1e-6)  snprintf(buf, size, "%.3guV", v * 1e6);
+    else                 snprintf(buf, size, "0V");
+}
+static void fmt_freq_eng(char *buf, size_t size, double f) {
+    if (f >= 1e6)        snprintf(buf, size, "%.3gMHz", f / 1e6);
+    else if (f >= 1e3)   snprintf(buf, size, "%.3gkHz", f / 1e3);
+    else                 snprintf(buf, size, "%.3gHz", f);
+}
+
+// Linear interpolation of the captured trace of channel ch at absolute time t.
+// Returns false when t is outside the captured span.
+static bool scope_value_at(UIState *ui, int ch, double t, double *out) {
+    int n = ui->scope_capture_count;
+    if (ch < 0 || ch >= MAX_PROBES || n < 2) return false;
+    if (t < ui->scope_capture_times[0] || t > ui->scope_capture_times[n - 1]) return false;
+    int lo = 0, hi = n - 1;
+    while (hi - lo > 1) {
+        int mid = (lo + hi) / 2;
+        if (ui->scope_capture_times[mid] <= t) lo = mid; else hi = mid;
+    }
+    double t0 = ui->scope_capture_times[lo], t1 = ui->scope_capture_times[hi];
+    double v0 = ui->scope_capture_values[ch][lo], v1 = ui->scope_capture_values[ch][hi];
+    double f = (t1 > t0) ? (t - t0) / (t1 - t0) : 0.0;
+    *out = v0 + (v1 - v0) * f;
+    return true;
+}
+
+// Gated measurements of channel ch between absolute times ta..tb (Tek "gate to cursors")
+static bool scope_gated_stats(UIState *ui, int ch, double ta, double tb,
+                              double *vmin, double *vmax, double *vmean, double *vrms) {
+    if (ta > tb) { double t = ta; ta = tb; tb = t; }
+    int n = ui->scope_capture_count, cnt = 0;
+    double mn = 1e300, mx = -1e300, sum = 0, sq = 0;
+    for (int i = 0; i < n; i++) {
+        double t = ui->scope_capture_times[i];
+        if (t < ta || t > tb) continue;
+        double v = ui->scope_capture_values[ch][i];
+        if (v < mn) mn = v; if (v > mx) mx = v; sum += v; sq += v * v; cnt++;
+    }
+    if (cnt < 2) return false;
+    *vmin = mn; *vmax = mx; *vmean = sum / cnt; *vrms = sqrt(sq / cnt);
+    return true;
+}
+
+// Band geometry of channel ch (matches the Y-T plotting code, incl. stacked view)
+static void scope_channel_frame(UIState *ui, Rect *r, int ch, int *top, int *h, int *center, double *scale) {
+    *top = r->y; *h = r->h; *center = r->y + r->h / 2;
+    *scale = (r->h / 8.0) / ui->scope_volt_div;
+    if (!ui->scope_stacked) return;
+    int n_en = 0, idx = 0;
+    for (int c = 0; c < ui->scope_num_channels && c < MAX_PROBES; c++) {
+        if (!ui->scope_channels[c].enabled) continue;
+        if (c == ch) idx = n_en;
+        n_en++;
+    }
+    if (n_en < 2) return;
+    *top = r->y + (idx * r->h) / n_en;
+    *h = r->y + ((idx + 1) * r->h) / n_en - *top;
+    *center = *top + *h / 2;
+    *scale = (*h / 8.0) / ui->scope_volt_div;
+}
+
 static void format_volt_value(char *buf, size_t size, double val) {
     if (val >= 1.0) {
         snprintf(buf, size, "%.0fV", val);
@@ -3337,6 +3417,10 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     t_reference = t_start;
                 }
 
+                // Remember the drawn window so cursor readouts map screen -> time
+                ui->scope_view_t0 = t_reference;
+                ui->scope_view_span = display_time_span;
+
                 // Stacked view: give every enabled channel its own horizontal band with its
                 // own zero line and 8 divisions, so identical signals can be told apart.
                 int n_enabled = 0;
@@ -3558,67 +3642,123 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         }
     }
 
-    // Draw measurement cursors if enabled (Y-T mode only)
-    if (ui->scope_cursor_mode && ui->display_mode == SCOPE_MODE_YT) {
-        // Cursor 1 (cyan dashed line)
-        int cursor1_x = r->x + (int)(ui->cursor1_time * r->w);
+    // Measurement cursors (Y-T mode only)
+    //   type 1  waveform cursors: two time cursors that read the source trace (a, b, delta,
+    //           1/dt, dV/dt) plus gated Vpp / mean / RMS between them
+    //   type 2  screen cursors: independent vertical (time) and horizontal (amplitude) bars
+    if (ui->scope_cursor_mode && ui->scope_cursor_type > 0 && ui->display_mode == SCOPE_MODE_YT) {
+        bool wave = (ui->scope_cursor_type == 1);
+        int src = ui->trigger_channel;
+        if (src < 0 || src >= ui->scope_num_channels || !ui->scope_channels[src].enabled) {
+            src = -1;
+            for (int c = 0; c < ui->scope_num_channels && c < MAX_PROBES; c++)
+                if (ui->scope_channels[c].enabled) { src = c; break; }
+        }
+        int f_top, f_h, f_center; double f_scale;
+        scope_channel_frame(ui, r, src >= 0 ? src : 0, &f_top, &f_h, &f_center, &f_scale);
+        double src_offset = (src >= 0) ? ui->scope_channels[src].offset : 0.0;
+
+        // --- vertical (time) cursors a and b ---
+        int ax = r->x + (int)(ui->cursor1_time * r->w);
+        int bx = r->x + (int)(ui->cursor2_time * r->w);
         SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);
-        for (int y = r->y; y < r->y + r->h; y += 4) {
-            SDL_RenderDrawLine(renderer, cursor1_x, y, cursor1_x, MIN(y + 2, r->y + r->h));
-        }
-        // Label
-        ui_draw_text(renderer, "C1", cursor1_x - 6, r->y + 2);
-
-        // Cursor 2 (magenta dashed line)
-        int cursor2_x = r->x + (int)(ui->cursor2_time * r->w);
+        for (int y = r->y; y < r->y + r->h; y += 4)
+            SDL_RenderDrawLine(renderer, ax, y, ax, MIN(y + 2, r->y + r->h));
+        ui_draw_text(renderer, ui->scope_cursor_active == 1 ? "a*" : "a", ax - 5, r->y + 2);
         SDL_SetRenderDrawColor(renderer, 0xff, 0x00, 0xff, 0xff);
-        for (int y = r->y; y < r->y + r->h; y += 4) {
-            SDL_RenderDrawLine(renderer, cursor2_x, y, cursor2_x, MIN(y + 2, r->y + r->h));
-        }
-        // Label
-        ui_draw_text(renderer, "C2", cursor2_x - 6, r->y + 2);
+        for (int y = r->y; y < r->y + r->h; y += 4)
+            SDL_RenderDrawLine(renderer, bx, y, bx, MIN(y + 2, r->y + r->h));
+        ui_draw_text(renderer, ui->scope_cursor_active == 2 ? "b*" : "b", bx - 5, r->y + 2);
 
-        // Show delta time and frequency between cursors
-        if (sim && sim->time_step > 0) {
-            double time_window = 10.0 * ui->scope_time_div;
-            double t1 = ui->cursor1_time * time_window;
-            double t2 = ui->cursor2_time * time_window;
-            double dt = fabs(t2 - t1);
-            double freq = dt > 0 ? 1.0 / dt : 0;
+        double span = ui->scope_view_span > 0 ? ui->scope_view_span : 10.0 * ui->scope_time_div;
+        double ta = ui->scope_view_t0 + ui->cursor1_time * span;
+        double tb = ui->scope_view_t0 + ui->cursor2_time * span;
+        double dt = tb - ta;
 
-            // Display cursor measurements in a box at top-right
-            int meas_x = r->x + r->w - 90;
-            int meas_y = r->y + 5;
+        // --- readout box (top-right) ---
+        char line[16][40]; int nl = 0;
+        char t1[24], t2[24], v1[24], v2[24];
+        fmt_time_eng(t1, sizeof t1, ta - ui->scope_view_t0);
+        fmt_time_eng(t2, sizeof t2, tb - ui->scope_view_t0);
+        double va = 0, vb = 0; bool ha = false, hb = false;
 
-            SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xc0);
-            SDL_Rect meas_bg = {meas_x - 5, meas_y - 2, 90, 45};
-            SDL_RenderFillRect(renderer, &meas_bg);
-            SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
-            SDL_RenderDrawRect(renderer, &meas_bg);
-
-            SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-            if (dt < 0.001) {
-                snprintf(buf, sizeof(buf), "dt:%.1fus", dt * 1e6);
-            } else if (dt < 1.0) {
-                snprintf(buf, sizeof(buf), "dt:%.2fms", dt * 1000);
-            } else {
-                snprintf(buf, sizeof(buf), "dt:%.3fs", dt);
+        if (wave) {
+            if (src >= 0) {
+                ha = scope_value_at(ui, src, ta, &va);
+                hb = scope_value_at(ui, src, tb, &vb);
             }
-            ui_draw_text(renderer, buf, meas_x, meas_y);
-            meas_y += 12;
-
-            if (freq > 0) {
-                if (freq >= 1000) {
-                    snprintf(buf, sizeof(buf), "f:%.2fkHz", freq / 1000);
-                } else {
-                    snprintf(buf, sizeof(buf), "f:%.1fHz", freq);
+            snprintf(line[nl++], 40, "WAVE CH%d", src + 1);
+            if (ha) fmt_volt_eng(v1, sizeof v1, va); else snprintf(v1, sizeof v1, "--");
+            if (hb) fmt_volt_eng(v2, sizeof v2, vb); else snprintf(v2, sizeof v2, "--");
+            snprintf(line[nl++], 40, "a %s %s", t1, v1);
+            snprintf(line[nl++], 40, "b %s %s", t2, v2);
+            char dts[24]; fmt_time_eng(dts, sizeof dts, dt);
+            snprintf(line[nl++], 40, "dt %s", dts);
+            if (fabs(dt) > 0) { char fs[24]; fmt_freq_eng(fs, sizeof fs, 1.0 / fabs(dt)); snprintf(line[nl++], 40, "1/dt %s", fs); }
+            if (ha && hb) {
+                char dv[24]; fmt_volt_eng(dv, sizeof dv, vb - va);
+                snprintf(line[nl++], 40, "dV %s", dv);
+                if (fabs(dt) > 0) {
+                    double slope = (vb - va) / dt;
+                    if (fabs(slope) >= 1e3) snprintf(line[nl++], 40, "dV/dt %.3gV/ms", slope / 1e3);
+                    else snprintf(line[nl++], 40, "dV/dt %.3gV/s", slope);
                 }
-                ui_draw_text(renderer, buf, meas_x, meas_y);
-                meas_y += 12;
             }
+            double gmin, gmax, gmean, grms;
+            if (src >= 0 && scope_gated_stats(ui, src, ta, tb, &gmin, &gmax, &gmean, &grms)) {
+                char b1[24], b2[24], b3[24];
+                fmt_volt_eng(b1, sizeof b1, gmax - gmin); fmt_volt_eng(b2, sizeof b2, gmean); fmt_volt_eng(b3, sizeof b3, grms);
+                snprintf(line[nl++], 40, "gated a-b:");
+                snprintf(line[nl++], 40, " Vpp %s", b1);
+                snprintf(line[nl++], 40, " mean %s", b2);
+                snprintf(line[nl++], 40, " rms %s", b3);
+            }
+            // Markers on the trace at the cursor positions
+            if (ha) {
+                int y = f_center - (int)((va + src_offset) * f_scale);
+                y = CLAMP(y, f_top, f_top + f_h);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);
+                SDL_Rect m = {ax - 3, y - 3, 7, 7}; SDL_RenderDrawRect(renderer, &m);
+            }
+            if (hb) {
+                int y = f_center - (int)((vb + src_offset) * f_scale);
+                y = CLAMP(y, f_top, f_top + f_h);
+                SDL_SetRenderDrawColor(renderer, 0xff, 0x00, 0xff, 0xff);
+                SDL_Rect m = {bx - 3, y - 3, 7, 7}; SDL_RenderDrawRect(renderer, &m);
+            }
+        } else {
+            // Screen cursors: horizontal amplitude bars read in the source channel's frame
+            int ay = f_top + (int)(ui->cursor1_volt * f_h);
+            int by = f_top + (int)(ui->cursor2_volt * f_h);
+            va = (f_center - ay) / f_scale - src_offset;
+            vb = (f_center - by) / f_scale - src_offset;
+            SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);
+            for (int x = r->x; x < r->x + r->w; x += 4) SDL_RenderDrawLine(renderer, x, ay, MIN(x + 2, r->x + r->w), ay);
+            SDL_SetRenderDrawColor(renderer, 0xff, 0x00, 0xff, 0xff);
+            for (int x = r->x; x < r->x + r->w; x += 4) SDL_RenderDrawLine(renderer, x, by, MIN(x + 2, r->x + r->w), by);
+            snprintf(line[nl++], 40, "SCREEN CH%d", src + 1);
+            fmt_volt_eng(v1, sizeof v1, va); fmt_volt_eng(v2, sizeof v2, vb);
+            snprintf(line[nl++], 40, "a %s %s", t1, v1);
+            snprintf(line[nl++], 40, "b %s %s", t2, v2);
+            char dts[24], dv[24]; fmt_time_eng(dts, sizeof dts, dt); fmt_volt_eng(dv, sizeof dv, vb - va);
+            snprintf(line[nl++], 40, "dt %s  dV %s", dts, dv);
+            if (fabs(dt) > 0) { char fs[24]; fmt_freq_eng(fs, sizeof fs, 1.0 / fabs(dt)); snprintf(line[nl++], 40, "1/dt %s", fs); }
+        }
 
-            snprintf(buf, sizeof(buf), "1/dt");
-            ui_draw_text(renderer, buf, meas_x, meas_y);
+        int box_w = 150, box_h = nl * 12 + 6;
+        int meas_x = r->x + r->w - box_w - 4;
+        int meas_y = r->y + 14;
+        SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xc0);
+        SDL_Rect meas_bg = {meas_x - 3, meas_y - 3, box_w, box_h};
+        SDL_RenderFillRect(renderer, &meas_bg);
+        SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
+        SDL_RenderDrawRect(renderer, &meas_bg);
+        for (int i = 0; i < nl; i++) {
+            if (i == 0) SDL_SetRenderDrawColor(renderer, 0xff, 0xc0, 0x40, 0xff);
+            else if (line[i][0] == 'a') SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);
+            else if (line[i][0] == 'b') SDL_SetRenderDrawColor(renderer, 0xff, 0x60, 0xff, 0xff);
+            else SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+            ui_draw_text(renderer, line[i], meas_x, meas_y + i * 12);
         }
     }
 
@@ -5828,21 +5968,35 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             Rect *sr = &ui->scope_rect;
             if (x >= sr->x && x <= sr->x + sr->w &&
                 y >= sr->y && y <= sr->y + sr->h) {
-                // Clicked inside scope area - position cursor
+                // Clicked inside scope area - grab the nearest cursor bar
                 double normalized_x = (double)(x - sr->x) / sr->w;
                 normalized_x = CLAMP(normalized_x, 0.0, 1.0);
+                double normalized_y = (double)(y - sr->y) / sr->h;
+                normalized_y = CLAMP(normalized_y, 0.0, 1.0);
 
-                // Determine which cursor to move (closest one, or alternate)
-                double dist1 = fabs(normalized_x - ui->cursor1_time);
-                double dist2 = fabs(normalized_x - ui->cursor2_time);
-
-                if (dist1 <= dist2) {
-                    ui->cursor1_time = normalized_x;
-                    ui->scope_cursor_drag = 1;
-                } else {
-                    ui->cursor2_time = normalized_x;
-                    ui->scope_cursor_drag = 2;
+                double d1 = fabs(normalized_x - ui->cursor1_time) * sr->w;
+                double d2 = fabs(normalized_x - ui->cursor2_time) * sr->w;
+                int pick = (d1 <= d2) ? 1 : 2;
+                double dbest = (d1 <= d2) ? d1 : d2;
+                if (ui->scope_cursor_type == 2) {
+                    // Horizontal bars live in the source channel's band; compare in pixels
+                    int f_top, f_h, f_center; double f_scale;
+                    int src = ui->trigger_channel;
+                    if (src < 0 || src >= ui->scope_num_channels) src = 0;
+                    scope_channel_frame(ui, sr, src, &f_top, &f_h, &f_center, &f_scale);
+                    double d3 = fabs((double)y - (f_top + ui->cursor1_volt * f_h));
+                    double d4 = fabs((double)y - (f_top + ui->cursor2_volt * f_h));
+                    if (d3 < dbest) { pick = 3; dbest = d3; }
+                    if (d4 < dbest) { pick = 4; dbest = d4; }
+                    if (pick >= 3) {
+                        double fy = CLAMP((double)(y - f_top) / f_h, 0.0, 1.0);
+                        if (pick == 3) ui->cursor1_volt = fy; else ui->cursor2_volt = fy;
+                    }
                 }
+                if (pick == 1) ui->cursor1_time = normalized_x;
+                else if (pick == 2) ui->cursor2_time = normalized_x;
+                ui->scope_cursor_drag = pick;
+                ui->scope_cursor_active = (pick == 1 || pick == 3) ? 1 : 2;
                 return UI_ACTION_NONE;
             }
         }
@@ -6369,8 +6523,15 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
 
         if (ui->scope_cursor_drag == 1) {
             ui->cursor1_time = normalized_x;
-        } else {
+        } else if (ui->scope_cursor_drag == 2) {
             ui->cursor2_time = normalized_x;
+        } else {
+            int f_top, f_h, f_center; double f_scale;
+            int src = ui->trigger_channel;
+            if (src < 0 || src >= ui->scope_num_channels) src = 0;
+            scope_channel_frame(ui, sr, src, &f_top, &f_h, &f_center, &f_scale);
+            double fy = CLAMP((double)(y - f_top) / f_h, 0.0, 1.0);
+            if (ui->scope_cursor_drag == 3) ui->cursor1_volt = fy; else ui->cursor2_volt = fy;
         }
         return UI_ACTION_NONE;
     }

@@ -189,7 +189,7 @@ Full-featured virtual oscilloscope with:
 - **Display Modes**
   - Y-T (voltage vs time)
   - X-Y (Lissajous patterns)
-- **Measurement Cursors** - Time and voltage cursors with delta display
+- **Measurement Cursors** (Tektronix-style) - `CUR` cycles Off → Waveform → Screen. Waveform cursors a/b ride the source (trigger-channel) trace and read t, V, Δt, 1/Δt, ΔV and dV/dt, plus gated Vpp / mean / RMS between the cursors; Screen cursors add independent horizontal amplitude bars. Drag any bar; the active cursor is marked `*`
 - **Waveform Measurements** - Vpp, Vrms, Vavg, frequency, period, duty cycle
 - **FFT Analysis** - Frequency spectrum view with THD and SNR
 - **Math Channels** - Combine probe signals with operations:

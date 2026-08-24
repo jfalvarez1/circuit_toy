@@ -564,10 +564,13 @@ void app_handle_events(App *app) {
                 break;
 
             case UI_ACTION_CURSOR_TOGGLE:
-                // Toggle measurement cursors
-                app->ui.scope_cursor_mode = !app->ui.scope_cursor_mode;
-                if (app->ui.scope_cursor_mode) {
-                    ui_set_status(&app->ui, "Cursors ON - Click in scope to position");
+                // Cycle cursors: Off -> Waveform (a/b track the source trace) -> Screen (H+V bars) -> Off
+                app->ui.scope_cursor_type = (app->ui.scope_cursor_type + 1) % 3;
+                app->ui.scope_cursor_mode = (app->ui.scope_cursor_type != 0);
+                if (app->ui.scope_cursor_type == 1) {
+                    ui_set_status(&app->ui, "Waveform cursors: drag a/b; readout shows t, V, dt, 1/dt, dV/dt and gated Vpp/mean/rms (source = trigger channel)");
+                } else if (app->ui.scope_cursor_type == 2) {
+                    ui_set_status(&app->ui, "Screen cursors: drag the vertical (time) or horizontal (amplitude) bars");
                 } else {
                     ui_set_status(&app->ui, "Cursors OFF");
                 }
