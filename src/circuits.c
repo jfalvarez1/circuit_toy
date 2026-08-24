@@ -3998,7 +3998,7 @@ static int place_bandpass_active(Circuit *circuit, float x, float y) {
     r1->props.resistor.resistance = 10000.0;
 
     // Feedback capacitor C1 (input to inverting)
-    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 240, y - 40, 0);
+    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 60, y + 20, 0);   // series input cap: (20,20)-(100,20), right end = R1 left
     c1->props.capacitor.capacitance = 10e-9;
 
     // Feedback resistor R2 (inverting to output)
@@ -4030,11 +4030,15 @@ static int place_bandpass_active(Circuit *circuit, float x, float y) {
     component_get_terminal_pos(r1, 0, &r1_left_x, &r1_left_y);
 
     int vsrc_node = circuit_find_or_create_node(circuit, vsrc_pos_x, vsrc_pos_y, 5.0f);
-    int vsrc_corner = circuit_find_or_create_node(circuit, vsrc_pos_x, r1_left_y, 5.0f);
+    // source -> (x+20) -> C1 -> R1 -> inverting input (C1 right end sits on R1's left end)
+    int vsrc_corner = circuit_find_or_create_node(circuit, x + 20, vsrc_pos_y, 5.0f);
+    int c1_left_node = circuit_find_or_create_node(circuit, x + 20, r1_left_y, 5.0f);
     int r1_left_node = circuit_find_or_create_node(circuit, r1_left_x, r1_left_y, 5.0f);
     wire_ortho(circuit, vsrc_node, vsrc_corner);
-    wire_ortho(circuit, vsrc_corner, r1_left_node);
+    wire_ortho(circuit, vsrc_corner, c1_left_node);
     vsrc->node_ids[0] = vsrc_node;
+    c1->node_ids[0] = c1_left_node;
+    c1->node_ids[1] = r1_left_node;
     r1->node_ids[0] = r1_left_node;
 
     // R1 to junction (inverting input area)
@@ -4059,11 +4063,6 @@ static int place_bandpass_active(Circuit *circuit, float x, float y) {
     float c1_right_x, c1_right_y;
     component_get_terminal_pos(c1, 1, &c1_right_x, &c1_right_y);
 
-    int corner1 = circuit_find_or_create_node(circuit, r1_right_x, c1_left_y, 5.0f);
-    int c1_left_node = circuit_find_or_create_node(circuit, c1_left_x, c1_left_y, 5.0f);
-    wire_ortho(circuit, inv_junc, corner1);
-    wire_ortho(circuit, corner1, c1_left_node);
-    c1->node_ids[0] = c1_left_node;
 
     // R2 and C2 from junction up to feedback level
     float r2_left_x, r2_left_y;
@@ -4123,11 +4122,6 @@ static int place_bandpass_active(Circuit *circuit, float x, float y) {
     wire_ortho(circuit, corner6, c2_right_node);
     c2->node_ids[1] = c2_right_node;
 
-    int c1_right_node = circuit_find_or_create_node(circuit, c1_right_x, c1_right_y, 5.0f);
-    int corner7 = circuit_find_or_create_node(circuit, opamp_out_x + 20, c1_right_y, 5.0f);
-    wire_ortho(circuit, corner6, corner7);
-    wire_ortho(circuit, corner7, c1_right_node);
-    c1->node_ids[1] = c1_right_node;
 
     // Output to load resistor
     int rload_top_node = circuit_find_or_create_node(circuit, rload_top_x, rload_top_y, 5.0f);
@@ -4141,13 +4135,13 @@ static int place_bandpass_active(Circuit *circuit, float x, float y) {
 
 // Twin-T Notch Filter (60Hz rejection)
 static int place_notch_filter(Circuit *circuit, float x, float y) {
-    // AC source
-    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 40, 0);
+    // Twin-T: T1 = R - R with 2C to ground from its middle, T2 = C - C with R/2 to ground
+    // from its middle; both T outputs join. The two paths cancel exactly at
+    // f0 = 1/(2*pi*R*C) = 60 Hz (R = 26.5k, C = 100n). Source sweeps 10-300 Hz.
+    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 40, 0);              // +(0,0) -(0,80)
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 1.0;
-    vsrc->props.ac_voltage.frequency = 60.0; // 60Hz notch
-    // Frequency sweep 10 Hz -> 300 Hz (log, 4 s each way, repeating) so the filter's
-    // pass/stop behaviour is visible live; the readout under the source shows f.
+    vsrc->props.ac_voltage.frequency = 60.0;
     vsrc->props.ac_voltage.frequency_sweep.enabled = true;
     vsrc->props.ac_voltage.frequency_sweep.mode = SWEEP_LOG;
     vsrc->props.ac_voltage.frequency_sweep.start_value = 10;
@@ -4155,150 +4149,53 @@ static int place_notch_filter(Circuit *circuit, float x, float y) {
     vsrc->props.ac_voltage.frequency_sweep.sweep_time = 4;
     vsrc->props.ac_voltage.frequency_sweep.repeat = true;
     vsrc->props.ac_voltage.frequency_sweep.bidirectional = true;
-
     Component *gnd1 = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
-
-    // Twin-T network: R-C-R path on top, C-R-C path on bottom
-    // Top path: R1-C1-R2
-    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 100, y - 40, 0);
-    r1->props.resistor.resistance = 26525.0; // For 60Hz notch
-
-    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 200, y - 40, 0);
-    c1->props.capacitor.capacitance = 100e-9;
-
-    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 300, y - 40, 0);
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 100, y - 40, 0);            // (60,-40)-(140,-40)
+    r1->props.resistor.resistance = 26525.0;
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 220, y - 40, 0);            // (180,-40)-(260,-40)
     r2->props.resistor.resistance = 26525.0;
-
-    // Bottom path: C2-R3-C3
-    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 100, y + 40, 0);
+    Component *ca = add_comp(circuit, COMP_CAPACITOR, x + 160, y, 90);               // (160,-40)-(160,40)  2C
+    ca->props.capacitor.capacitance = 200e-9;
+    Component *gnd_a = add_comp(circuit, COMP_GROUND, x + 160, y + 60, 0);           // terminal (160,40)
+    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 100, y + 100, 0);          // (60,100)-(140,100)
     c2->props.capacitor.capacitance = 100e-9;
-
-    Component *r3 = add_comp(circuit, COMP_RESISTOR, x + 200, y + 40, 0);
-    r3->props.resistor.resistance = 13262.0; // Half of R1/R2
-
-    Component *c3 = add_comp(circuit, COMP_CAPACITOR, x + 300, y + 40, 0);
+    Component *c3 = add_comp(circuit, COMP_CAPACITOR, x + 220, y + 100, 0);          // (180,100)-(260,100)
     c3->props.capacitor.capacitance = 100e-9;
-
-    // Center connection to ground (through R4 for adjustable Q)
-    Component *r4 = add_comp(circuit, COMP_RESISTOR, x + 200, y + 100, 90);
-    r4->props.resistor.resistance = 10000.0;
-
-    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 200, y + 160, 0);
-
-    // Load resistor (10kΩ standard output load)
-    Component *rload = add_comp(circuit, COMP_RESISTOR, x + 400, y + 40, 90);
+    Component *rb = add_comp(circuit, COMP_RESISTOR, x + 160, y + 160, 90);          // (160,120)-(160,200)  R/2
+    rb->props.resistor.resistance = 13262.0;
+    Component *gnd_b = add_comp(circuit, COMP_GROUND, x + 160, y + 220, 0);          // terminal (160,200)
+    Component *rload = add_comp(circuit, COMP_RESISTOR, x + 340, y + 140, 90);       // (340,100)-(340,180)
     rload->props.resistor.resistance = 10000.0;
+    Component *gnd_l = add_comp(circuit, COMP_GROUND, x + 340, y + 200, 0);          // terminal (340,180)
+    Component *label = add_comp(circuit, COMP_TEXT, x + 80, y - 100, 0);
+    strncpy(label->props.text.text, "Twin-T Notch (60 Hz)", sizeof(label->props.text.text)-1);
+    label->props.text.font_size = 2;
 
-    Component *gnd3 = add_comp(circuit, COMP_GROUND, x + 400, y + 100, 0);
-
-    // Connect source to ground
+#define NN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define NW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
     connect_terminals(circuit, vsrc, 1, gnd1, 0);
-
-    // R4 to ground
-    connect_terminals(circuit, r4, 1, gnd2, 0);
-
-    // Rload to ground
-    connect_terminals(circuit, rload, 1, gnd3, 0);
-
-    // Input junction
-    float vsrc_pos_x, vsrc_pos_y;
-    component_get_terminal_pos(vsrc, 0, &vsrc_pos_x, &vsrc_pos_y);
-
-    int input_junc = circuit_find_or_create_node(circuit, x + 60, y, 5.0f);
-
-    // Source to input junction
-    int vsrc_node = circuit_find_or_create_node(circuit, vsrc_pos_x, vsrc_pos_y, 5.0f);
-    int corner1 = circuit_find_or_create_node(circuit, vsrc_pos_x, y, 5.0f);
-    circuit_add_wire(circuit, vsrc_node, corner1);
-    circuit_add_wire(circuit, corner1, input_junc);
-    vsrc->node_ids[0] = vsrc_node;
-
-    // Input to top path (R1)
-    float r1_left_x, r1_left_y;
-    component_get_terminal_pos(r1, 0, &r1_left_x, &r1_left_y);
-    int r1_left_node = circuit_find_or_create_node(circuit, r1_left_x, r1_left_y, 5.0f);
-    int corner2 = circuit_find_or_create_node(circuit, x + 60, r1_left_y, 5.0f);
-    circuit_add_wire(circuit, input_junc, corner2);
-    circuit_add_wire(circuit, corner2, r1_left_node);
-    r1->node_ids[0] = r1_left_node;
-
-    // Input to bottom path (C2)
-    float c2_left_x, c2_left_y;
-    component_get_terminal_pos(c2, 0, &c2_left_x, &c2_left_y);
-    int c2_left_node = circuit_find_or_create_node(circuit, c2_left_x, c2_left_y, 5.0f);
-    int corner3 = circuit_find_or_create_node(circuit, x + 60, c2_left_y, 5.0f);
-    circuit_add_wire(circuit, input_junc, corner3);
-    circuit_add_wire(circuit, corner3, c2_left_node);
-    c2->node_ids[0] = c2_left_node;
-
-    // Top path connections
-    connect_terminals(circuit, r1, 1, c1, 0);
-    connect_terminals(circuit, c1, 1, r2, 0);
-
-    // Bottom path connections
-    connect_terminals(circuit, c2, 1, r3, 0);
-    connect_terminals(circuit, r3, 1, c3, 0);
-
-    // Center junction (C1-R2 junction and R3 center to R4)
-    float c1_right_x, c1_right_y;
-    component_get_terminal_pos(c1, 1, &c1_right_x, &c1_right_y);
-    float r3_left_x, r3_left_y;
-    component_get_terminal_pos(r3, 0, &r3_left_x, &r3_left_y);
-    float r3_right_x, r3_right_y;
-    component_get_terminal_pos(r3, 1, &r3_right_x, &r3_right_y);
-    float r4_top_x, r4_top_y;
-    component_get_terminal_pos(r4, 0, &r4_top_x, &r4_top_y);
-
-    // Connect R3 center (average of left/right) to R4 and C1 junction
-    // Actually, Twin-T: C1-R2 junction connects to R3 midpoint, which goes to ground via R4
-    // Let's connect C1 right to R4 top
-    int c1_right_node = circuit_find_or_create_node(circuit, c1_right_x, c1_right_y, 5.0f);
-    int r4_top_node = circuit_find_or_create_node(circuit, r4_top_x, r4_top_y, 5.0f);
-    int center_junc = circuit_find_or_create_node(circuit, r4_top_x, c1_right_y, 5.0f);
-    circuit_add_wire(circuit, c1_right_node, center_junc);
-    circuit_add_wire(circuit, center_junc, r4_top_node);
-    c1->node_ids[1] = c1_right_node;
-    r4->node_ids[0] = r4_top_node;
-
-    // R3 right (which is same as C3 left junction) connects to center too
-    int r3_right_node = circuit_find_or_create_node(circuit, r3_right_x, r3_right_y, 5.0f);
-    int corner4 = circuit_find_or_create_node(circuit, r4_top_x, r3_right_y, 5.0f);
-    circuit_add_wire(circuit, r3_right_node, corner4);
-    circuit_add_wire(circuit, corner4, r4_top_node);
-    r3->node_ids[1] = r3_right_node;
-
-    // Output junction
-    int output_junc = circuit_find_or_create_node(circuit, x + 360, y, 5.0f);
-
-    // R2 right to output
-    float r2_right_x, r2_right_y;
-    component_get_terminal_pos(r2, 1, &r2_right_x, &r2_right_y);
-    int r2_right_node = circuit_find_or_create_node(circuit, r2_right_x, r2_right_y, 5.0f);
-    int corner5 = circuit_find_or_create_node(circuit, x + 360, r2_right_y, 5.0f);
-    circuit_add_wire(circuit, r2_right_node, corner5);
-    circuit_add_wire(circuit, corner5, output_junc);
-    r2->node_ids[1] = r2_right_node;
-
-    // C3 right to output
-    float c3_right_x, c3_right_y;
-    component_get_terminal_pos(c3, 1, &c3_right_x, &c3_right_y);
-    int c3_right_node = circuit_find_or_create_node(circuit, c3_right_x, c3_right_y, 5.0f);
-    int corner6 = circuit_find_or_create_node(circuit, x + 360, c3_right_y, 5.0f);
-    circuit_add_wire(circuit, c3_right_node, corner6);
-    circuit_add_wire(circuit, corner6, output_junc);
-    c3->node_ids[1] = c3_right_node;
-
-    // Output to load
-    float rload_top_x, rload_top_y;
-    component_get_terminal_pos(rload, 0, &rload_top_x, &rload_top_y);
-    int rload_top_node = circuit_find_or_create_node(circuit, rload_top_x, rload_top_y, 5.0f);
-    circuit_add_wire(circuit, output_junc, rload_top_node);
-    rload->node_ids[0] = rload_top_node;
-
-    return 12;
+    connect_terminals(circuit, ca, 1, gnd_a, 0);
+    connect_terminals(circuit, rb, 1, gnd_b, 0);
+    connect_terminals(circuit, rload, 1, gnd_l, 0);
+    // input junction at (60,0) feeds both T's
+    int vin = NN(x, y), j_in = NN(x + 60, y), r1l = NN(x + 60, y - 40), c2l = NN(x + 60, y + 100);
+    NW(vin, j_in); NW(j_in, r1l); NW(j_in, c2l);
+    // T1 middle (160,-40): R1 right, R2 left, Ca top
+    int A = NN(x + 160, y - 40), r1r = NN(x + 140, y - 40), r2l = NN(x + 180, y - 40);
+    NW(r1r, A); NW(A, r2l);
+    // T2 middle (160,100): C2 right, C3 left, Rb top
+    int B = NN(x + 160, y + 100), c2r = NN(x + 140, y + 100), c3l = NN(x + 180, y + 100), rbt = NN(x + 160, y + 120);
+    NW(c2r, B); NW(B, c3l); NW(B, rbt);
+    // outputs join at x+300 and drive the load
+    int r2r = NN(x + 260, y - 40), c3r = NN(x + 260, y + 100), o_t = NN(x + 300, y - 40), o_b = NN(x + 300, y + 100), ld = NN(x + 340, y + 100);
+    NW(r2r, o_t); NW(o_t, o_b); NW(c3r, o_b); NW(o_b, ld);
+    r1->node_ids[0] = r1l; r1->node_ids[1] = r1r; r2->node_ids[0] = r2l; r2->node_ids[1] = r2r;
+    ca->node_ids[0] = A; c2->node_ids[0] = c2l; c2->node_ids[1] = c2r; c3->node_ids[0] = c3l; c3->node_ids[1] = c3r;
+    rb->node_ids[0] = rbt; rload->node_ids[0] = ld; vsrc->node_ids[0] = vin;
+#undef NN
+#undef NW
+    return 13;
 }
-
-// Wien Bridge Oscillator
 static int place_wien_oscillator(Circuit *circuit, float x, float y) {
     // Wien bridge with op-amp and amplitude limiting
     // Oscillation frequency: f = 1/(2*pi*R*C)
@@ -5601,8 +5498,8 @@ static int place_series_rlc(Circuit *circuit, float x, float y) {
     // Frequency sweep 50 Hz -> 500 Hz (log, 3 s each way): the resonance at 159 Hz shows as a peak
     vsrc->props.ac_voltage.frequency_sweep.enabled = true;
     vsrc->props.ac_voltage.frequency_sweep.mode = SWEEP_LOG;
-    vsrc->props.ac_voltage.frequency_sweep.start_value = 50;
-    vsrc->props.ac_voltage.frequency_sweep.end_value = 500;
+    vsrc->props.ac_voltage.frequency_sweep.start_value = 30;
+    vsrc->props.ac_voltage.frequency_sweep.end_value = 800;
     vsrc->props.ac_voltage.frequency_sweep.sweep_time = 3;
     vsrc->props.ac_voltage.frequency_sweep.repeat = true;
     vsrc->props.ac_voltage.frequency_sweep.bidirectional = true;
@@ -5612,7 +5509,7 @@ static int place_series_rlc(Circuit *circuit, float x, float y) {
 
     // Resistor horizontal at y (x+60 to x+140)
     Component *res = add_comp(circuit, COMP_RESISTOR, x + 100, y, 0);
-    res->props.resistor.resistance = 10.0;   // Q = sqrt(L/C)/R = 1: Vc peaks at Q*Vin = 5 V on resonance
+    res->props.resistor.resistance = 3.3;   // Q = sqrt(L/C)/R = 3: Vc peaks at 3*Vin = 15 V on resonance
 
     // Inductor horizontal at y (x+180 to x+260)
     Component *ind = add_comp(circuit, COMP_INDUCTOR, x + 220, y, 0);
@@ -5650,123 +5547,48 @@ static int place_series_rlc(Circuit *circuit, float x, float y) {
 //                           +-------+
 // f0 = 1/(2*pi*sqrt(LC)) = 159Hz
 static int place_parallel_rlc(Circuit *circuit, float x, float y) {
-    // Layout: Source on left, parallel R-L-C with common top and bottom rails
-
-    // AC voltage source
-    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 60, 0);
+    // Source drives the tank through R (1k). Tank impedance peaks at f0 = 1/(2*pi*sqrt(LC))
+    // = 159 Hz, so the tank voltage is near the full source voltage there and small
+    // elsewhere (Q = R*sqrt(C/L) = 100 with R = 1k). The source sweeps 30-800 Hz.
+    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 60, 0);             // +(0,20) -(0,100)
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 5.0;
     vsrc->props.ac_voltage.frequency = 159.0;
-    // Frequency sweep 50 Hz -> 500 Hz (log, 3 s each way): the resonance at 159 Hz shows as a peak
     vsrc->props.ac_voltage.frequency_sweep.enabled = true;
     vsrc->props.ac_voltage.frequency_sweep.mode = SWEEP_LOG;
-    vsrc->props.ac_voltage.frequency_sweep.start_value = 50;
-    vsrc->props.ac_voltage.frequency_sweep.end_value = 500;
+    vsrc->props.ac_voltage.frequency_sweep.start_value = 30;
+    vsrc->props.ac_voltage.frequency_sweep.end_value = 800;
     vsrc->props.ac_voltage.frequency_sweep.sweep_time = 3;
     vsrc->props.ac_voltage.frequency_sweep.repeat = true;
     vsrc->props.ac_voltage.frequency_sweep.bidirectional = true;
-
-    // Ground for source
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
-
-    // Resistor vertical at x+100
-    Component *res = add_comp(circuit, COMP_RESISTOR, x + 100, y + 60, 90);
+    Component *res = add_comp(circuit, COMP_RESISTOR, x + 100, y + 20, 0);           // (60,20)-(140,20)
     res->props.resistor.resistance = 1000.0;
+    Component *ind = add_comp(circuit, COMP_INDUCTOR, x + 180, y + 60, 90);          // (180,20)-(180,100)
+    ind->props.inductor.inductance = 10e-3;
+    Component *cap = add_comp(circuit, COMP_CAPACITOR, x + 260, y + 60, 90);         // (260,20)-(260,100)
+    cap->props.capacitor.capacitance = 100e-6;
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 260, y + 140, 0);           // terminal (260,120)
+    Component *label = add_comp(circuit, COMP_TEXT, x + 60, y - 40, 0);
+    strncpy(label->props.text.text, "Parallel RLC (tank)", sizeof(label->props.text.text)-1);
+    label->props.text.font_size = 2;
 
-    // Inductor vertical at x+180
-    Component *ind = add_comp(circuit, COMP_INDUCTOR, x + 180, y + 60, 90);
-    ind->props.inductor.inductance = 10e-3;  // 10mH
-
-    // Capacitor vertical at x+260
-    Component *cap = add_comp(circuit, COMP_CAPACITOR, x + 260, y + 60, 90);
-    cap->props.capacitor.capacitance = 100e-6;  // 100uF
-
-    // Create nodes at terminal positions
-    float vsrc_pos_x, vsrc_pos_y, vsrc_neg_x, vsrc_neg_y;
-    component_get_terminal_pos(vsrc, 0, &vsrc_pos_x, &vsrc_pos_y);  // + at top
-    component_get_terminal_pos(vsrc, 1, &vsrc_neg_x, &vsrc_neg_y);  // - at bottom
-
-    float res_top_x, res_top_y, res_bot_x, res_bot_y;
-    component_get_terminal_pos(res, 0, &res_top_x, &res_top_y);
-    component_get_terminal_pos(res, 1, &res_bot_x, &res_bot_y);
-
-    float ind_top_x, ind_top_y, ind_bot_x, ind_bot_y;
-    component_get_terminal_pos(ind, 0, &ind_top_x, &ind_top_y);
-    component_get_terminal_pos(ind, 1, &ind_bot_x, &ind_bot_y);
-
-    float cap_top_x, cap_top_y, cap_bot_x, cap_bot_y;
-    component_get_terminal_pos(cap, 0, &cap_top_x, &cap_top_y);
-    component_get_terminal_pos(cap, 1, &cap_bot_x, &cap_bot_y);
-
-    // Source negative to ground
     connect_terminals(circuit, vsrc, 1, gnd, 0);
-
-    // Top rail: vsrc+ -> res top -> ind top -> cap top
-    // Horizontal wire at y=20 (vsrc_pos_y)
-    int node_vsrc_pos = circuit_find_or_create_node(circuit, vsrc_pos_x, vsrc_pos_y, 5.0f);
-    vsrc->node_ids[0] = node_vsrc_pos;
-
-    // Wire from source to resistor top (horizontal at top rail y)
-    int node_res_top = circuit_find_or_create_node(circuit, res_top_x, res_top_y, 5.0f);
-    res->node_ids[0] = node_res_top;
-
-    // L-shape from source to resistor: up then right
-    int corner1 = circuit_find_or_create_node(circuit, vsrc_pos_x, res_top_y, 5.0f);
-    circuit_add_wire(circuit, node_vsrc_pos, corner1);
-    circuit_add_wire(circuit, corner1, node_res_top);
-
-    // Wire from resistor top to inductor top (horizontal)
-    int node_ind_top = circuit_find_or_create_node(circuit, ind_top_x, ind_top_y, 5.0f);
-    ind->node_ids[0] = node_ind_top;
-    circuit_add_wire(circuit, node_res_top, node_ind_top);
-
-    // Wire from inductor top to capacitor top (horizontal)
-    int node_cap_top = circuit_find_or_create_node(circuit, cap_top_x, cap_top_y, 5.0f);
-    cap->node_ids[0] = node_cap_top;
-    circuit_add_wire(circuit, node_ind_top, node_cap_top);
-
-    // Bottom rail: res bot -> ind bot -> cap bot -> gnd
-    int node_res_bot = circuit_find_or_create_node(circuit, res_bot_x, res_bot_y, 5.0f);
-    res->node_ids[1] = node_res_bot;
-
-    int node_ind_bot = circuit_find_or_create_node(circuit, ind_bot_x, ind_bot_y, 5.0f);
-    ind->node_ids[1] = node_ind_bot;
-    circuit_add_wire(circuit, node_res_bot, node_ind_bot);
-
-    int node_cap_bot = circuit_find_or_create_node(circuit, cap_bot_x, cap_bot_y, 5.0f);
-    cap->node_ids[1] = node_cap_bot;
-    circuit_add_wire(circuit, node_ind_bot, node_cap_bot);
-
-    // Connect bottom rail to ground (via source negative)
-    float gnd_x, gnd_y_pos;
-    component_get_terminal_pos(gnd, 0, &gnd_x, &gnd_y_pos);
-    int node_gnd = circuit_find_or_create_node(circuit, gnd_x, gnd_y_pos, 5.0f);
-    gnd->node_ids[0] = node_gnd;
-
-    // Connect res_bot to source negative line
-    int node_vsrc_neg = circuit_find_or_create_node(circuit, vsrc_neg_x, vsrc_neg_y, 5.0f);
-    vsrc->node_ids[1] = node_vsrc_neg;
-    int corner2 = circuit_find_or_create_node(circuit, res_bot_x, vsrc_neg_y, 5.0f);
-    circuit_add_wire(circuit, node_res_bot, corner2);
-    circuit_add_wire(circuit, corner2, node_vsrc_neg);
-
-    return 6;
+    connect_terminals(circuit, vsrc, 0, res, 0);          // (0,20) -> (60,20)
+    int tank = circuit_find_or_create_node(circuit, x + 180, y + 20, 5.0f);
+    int r_r = circuit_find_or_create_node(circuit, x + 140, y + 20, 5.0f);
+    int c_t = circuit_find_or_create_node(circuit, x + 260, y + 20, 5.0f);
+    circuit_add_wire(circuit, r_r, tank);
+    circuit_add_wire(circuit, tank, c_t);
+    int l_b = circuit_find_or_create_node(circuit, x + 180, y + 100, 5.0f);
+    int c_b = circuit_find_or_create_node(circuit, x + 260, y + 100, 5.0f);
+    int g2 = circuit_find_or_create_node(circuit, x + 260, y + 120, 5.0f);
+    circuit_add_wire(circuit, l_b, c_b);
+    circuit_add_wire(circuit, c_b, g2);
+    res->node_ids[1] = r_r; ind->node_ids[0] = tank; ind->node_ids[1] = l_b;
+    cap->node_ids[0] = c_t; cap->node_ids[1] = c_b; gnd2->node_ids[0] = g2;
+    return 7;
 }
-
-// =============================================================================
-// MEASUREMENT & DETECTION CIRCUITS
-// =============================================================================
-
-// Wheatstone Bridge:
-//        +Vcc
-//         |
-//    +---[R1]---+---[R2]---+
-//    |          |          |
-//   Vin        Vo         Vin
-//    |          |          |
-//    +---[R3]---+---[R4]---+
-//         |
-//        GND
 static int place_wheatstone_bridge(Circuit *circuit, float x, float y) {
     // Layout: DC source on left, diamond of resistors
 
@@ -6405,7 +6227,7 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_INSTR_AMP] = {"INSTRUMENTATION AMPLIFIER: two input buffers share gain resistor Rg", "(gain 1 + 2R/Rg = 21), then a difference amp subtracts. Very high input", "impedance on both inputs and excellent common-mode rejection.", "PROBE: the final op-amp OUT. Expect ~2.1 Vpk (gain 21) on a -1 V offset."},
     [CIRCUIT_SALLEN_KEY_LP] = {"SALLEN-KEY LOW-PASS: a 2nd-order active filter - two RC sections with the", "op-amp bootstrapping the first cap for a sharper knee. fc = 1/(2*pi*R*C)", "= 1.59 kHz, rolls off 40 dB/decade. Try the Bode tool.", "PROBE: auto-placed. Source sweeps 100 Hz-20 kHz: 2nd-order roll-off above 1.59 kHz."},
     [CIRCUIT_BANDPASS_ACTIVE] = {"ACTIVE BAND-PASS: a high-pass RC into the op-amp and a low-pass RC in the", "feedback. Only frequencies near f0 = 1/(2*pi*R*C) = 1.59 kHz pass;", "sweep the source or use the Bode tool to see the peak.", "PROBE: auto-placed. Source sweeps 100 Hz-20 kHz: output peaks near 1.6 kHz."},
-    [CIRCUIT_NOTCH_FILTER] = {"TWIN-T NOTCH: two T networks (R-R-C and C-C-R/2) whose outputs cancel", "exactly at f = 1/(2*pi*R*C) = 60 Hz. Everything else passes. The classic", "hum filter - detune one resistor and the notch fills in.", "PROBE: auto-placed. Source sweeps 10-300 Hz: output vanishes as f passes 60 Hz."},
+    [CIRCUIT_NOTCH_FILTER] = {"TWIN-T NOTCH: two T networks (R-R-C and C-C-R/2) whose outputs cancel", "exactly at f = 1/(2*pi*R*C) = 60 Hz. Everything else passes. The classic", "hum filter - detune one resistor and the notch fills in.", "PROBE: auto-placed on the source and the load. Sweeping 10-300 Hz the output vanishes at 60 Hz."},
     [CIRCUIT_WIEN_OSCILLATOR] = {"WIEN BRIDGE OSCILLATOR: the series/parallel RC network has zero phase", "shift and 1/3 gain at f = 1/(2*pi*R*C) = 1.59 kHz; the amplifier gives", "a little over 3x, so that frequency builds up until the rails limit it.", "A tiny pulse kicks it off (an ideal loop at exactly 0 V never starts).", "PROBE: op-amp OUT. Expect a 1.6 kHz sine growing to the +/-15 V rails."},
     [CIRCUIT_CURRENT_SOURCE] = {"CONSTANT-CURRENT SOURCE: the divider fixes the base at 2.16 V, so the", "emitter sits at 1.46 V and Re sets I = 3.1 mA. The collector delivers", "that current to any load up to the compliance limit - change Rload and", "the current stays put.", "PROBE: the load top node. Expect 3.1 V (3.1 mA x 1k); change Rload -> V scales."},
     [CIRCUIT_WINDOW_COMP] = {"WINDOW COMPARATOR: two comparators check Vin against 3.33 V and 1.67 V", "from a 3-resistor divider. Both outputs go high only inside the window;", "the summing resistors light the LED only then. Move Vin outside to test.", "PROBE: both comparator outputs (+15 V inside window). LED on at 2.5 V input."},
@@ -6415,9 +6237,9 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_7805_REG] = {"7805 REGULATOR: 9 V in, 5.00 V out regardless of load or small input", "changes. Needs at least ~7 V in (dropout). The small caps stabilise it.", "Try: lower Vin to 6 V and watch the output follow.", "PROBE: OUT pin node. Expect a flat 5.00 V. Drop Vin below 7 V to see dropout."},
     [CIRCUIT_LM317_REG] = {"LM317 ADJUSTABLE REGULATOR: it keeps 1.25 V between OUT and ADJ, so", "Vout = 1.25 * (1 + R2/R1) = 1.25 * (1 + 720/240) = 5.0 V. Change R2 to", "set any voltage up to the input minus dropout.", "PROBE: OUT node. Expect 5.0 V. Change R2 (720) to 1.2k -> 7.5 V."},
     [CIRCUIT_TL431_REF] = {"TL431 SHUNT REFERENCE: with REF tied to the cathode it regulates its", "own cathode at 2.50 V, shunting whatever current Rs supplies beyond", "the load. A programmable zener - add a divider on REF for other voltages.", "PROBE: the cathode node. Expect a flat 2.50 V."},
-    [CIRCUIT_SERIES_RLC] = {"SERIES RLC: at resonance f0 = 1/(2*pi*sqrt(L*C)) = 159 Hz the reactances", "cancel and only R (10 ohm) limits the current: 0.5 A. Q = sqrt(L/C)/R = 1, so", "the capacitor voltage magnifies to Q*Vin = 5 V right at f0 and falls either side.", "PROBE: auto-placed on the source and across C. Source sweeps 50-500 Hz: Vc peaks at 159 Hz."},
+    [CIRCUIT_SERIES_RLC] = {"SERIES RLC: at resonance f0 = 1/(2*pi*sqrt(L*C)) = 159 Hz the reactances", "cancel and only R (3.3 ohm) limits the current: 1.5 A. Q = sqrt(L/C)/R = 3, so", "the capacitor voltage magnifies to Q*Vin = 15 V right at f0 and falls either side.", "PROBE: auto-placed on the source and across C. Source sweeps 30-800 Hz: Vc peaks at 159 Hz."},
     [CIRCUIT_PARALLEL_RLC] = {"PARALLEL RLC (TANK): at f0 = 159 Hz the tank impedance is maximum, so", "almost the whole source voltage appears across it. Q = R*sqrt(C/L) = 100:", "shift the source a few Hz and the output collapses.", "PROBE: auto-placed: source vs the tank (one net across the top). Sweeping 50-500 Hz, the",
- "tank voltage is tiny off-resonance and rises to the full 5 V only around 159 Hz."},
+ "tank voltage is tiny off-resonance and rises toward the full 5 V only around 159 Hz."},
     [CIRCUIT_WHEATSTONE] = {"WHEATSTONE BRIDGE: two dividers side by side. With R4 = 1.1k the right", "midpoint sits at 5.24 V vs 5.00 V on the left - a 0.24 V imbalance that", "measures the unknown resistor. Set R4 = 1k and the bridge nulls.", "PROBE: both bridge midpoints. Expect 5.00 V and 5.24 V (0.24 V imbalance)."},
     [CIRCUIT_PEAK_DETECTOR] = {"PEAK DETECTOR: the op-amp charges C through the diode whenever Vin", "exceeds the stored voltage; when Vin falls the diode blocks and C holds the", "peak. The 47k bleed (R*C = 47 ms) lets it decay, so the output rides the", "envelope of the 1 kHz carrier whose amplitude sweeps 1 V -> 5 V -> 1 V each second.", "PROBE: input and the cap node at 50 ms/div: the cap traces the envelope 1..5 V."},
     [CIRCUIT_CLAMPER] = {"CLAMPER (DC RESTORER): the cap charges to the negative peak through the", "diode, then acts as a 5 V battery in series with the signal. The whole", "sine is shifted so its bottom sits at ~-0.7 V. R*C >> period keeps it.", "PROBE: input and the cap-diode node at 50 ms/div: bottom pinned at -0.7 V, top follows 2A."},
@@ -6458,7 +6280,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_INSTR_AMP]        = { COMP_OPAMP, 2, 2 },
     [CIRCUIT_SALLEN_KEY_LP]    = { COMP_OPAMP, 0, 2 },
     [CIRCUIT_BANDPASS_ACTIVE]  = { COMP_OPAMP, 0, 2 },
-    [CIRCUIT_NOTCH_FILTER]     = { COMP_RESISTOR, 4, 1 },
+    [CIRCUIT_NOTCH_FILTER]     = { COMP_RESISTOR, 3, 0 },
     [CIRCUIT_WIEN_OSCILLATOR]  = { COMP_OPAMP, 0, 2 },
     [CIRCUIT_CURRENT_SOURCE]   = { COMP_NPN_BJT, 0, 1 },
     [CIRCUIT_WINDOW_COMP]      = { COMP_LED, 0, 0 },
@@ -6509,9 +6331,72 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_AC_DC_AMERICAN] = 5.0, [CIRCUIT_CENTERTAP_RECT] = 2.0, [CIRCUIT_HALFWAVE_RECT] = 2.0,
 };
 
+// Demonstration contract per template (see DemoKind in circuits.h)
+static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
+    [CIRCUIT_RC_LOWPASS]       = { DEMO_LOWPASS, 1591.5 },
+    [CIRCUIT_RC_HIGHPASS]      = { DEMO_HIGHPASS, 1591.5 },
+    [CIRCUIT_RL_LOWPASS]       = { DEMO_LOWPASS, 1591.5 },
+    [CIRCUIT_RL_HIGHPASS]      = { DEMO_HIGHPASS, 1591.5 },
+    [CIRCUIT_VOLTAGE_DIVIDER]  = { DEMO_DC, 0 },
+    [CIRCUIT_INVERTING_AMP]    = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_NONINVERTING_AMP] = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_VOLTAGE_FOLLOWER] = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_HALFWAVE_RECT]    = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_LED_WITH_RESISTOR]= { DEMO_DC, 0 },
+    [CIRCUIT_COMMON_EMITTER]   = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_COMMON_SOURCE]    = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_COMMON_DRAIN]     = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_MULTISTAGE_AMP]   = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_DIFFERENTIAL_PAIR]= { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_CURRENT_MIRROR]   = { DEMO_DC, 0 },
+    [CIRCUIT_PUSH_PULL]        = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_CMOS_INVERTER]    = { DEMO_SWITCH, 1000 },
+    [CIRCUIT_INTEGRATOR]       = { DEMO_WAVEFORM, 100 },
+    [CIRCUIT_DIFFERENTIATOR]   = { DEMO_WAVEFORM, 100 },
+    [CIRCUIT_SUMMING_AMP]      = { DEMO_DC, 0 },
+    [CIRCUIT_COMPARATOR]       = { DEMO_SWITCH, 100 },
+    [CIRCUIT_FULLWAVE_BRIDGE]  = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_CENTERTAP_RECT]   = { DEMO_DC, 0 },
+    [CIRCUIT_AC_DC_SUPPLY]     = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_AC_DC_AMERICAN]   = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_DIFFERENCE_AMP]   = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_TRANSIMPEDANCE]   = { DEMO_DC, 0 },
+    [CIRCUIT_INSTR_AMP]        = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_SALLEN_KEY_LP]    = { DEMO_LOWPASS, 1591.5 },
+    [CIRCUIT_BANDPASS_ACTIVE]  = { DEMO_BANDPASS, 1591.5 },
+    [CIRCUIT_NOTCH_FILTER]     = { DEMO_NOTCH, 60 },
+    [CIRCUIT_WIEN_OSCILLATOR]  = { DEMO_OSC, 1591.5 },
+    [CIRCUIT_CURRENT_SOURCE]   = { DEMO_DC, 0 },
+    [CIRCUIT_WINDOW_COMP]      = { DEMO_DC, 0 },
+    [CIRCUIT_HYSTERESIS_COMP]  = { DEMO_SWITCH, 100 },
+    [CIRCUIT_ZENER_REF]        = { DEMO_DC, 0 },
+    [CIRCUIT_PRECISION_RECT]   = { DEMO_WAVEFORM, 100 },
+    [CIRCUIT_7805_REG]         = { DEMO_DC, 0 },
+    [CIRCUIT_LM317_REG]        = { DEMO_DC, 0 },
+    [CIRCUIT_TL431_REF]        = { DEMO_DC, 0 },
+    [CIRCUIT_SERIES_RLC]       = { DEMO_BANDPASS, 159.15 },
+    [CIRCUIT_PARALLEL_RLC]     = { DEMO_BANDPASS, 159.15 },
+    [CIRCUIT_WHEATSTONE]       = { DEMO_DC, 0 },
+    [CIRCUIT_PEAK_DETECTOR]    = { DEMO_ENVELOPE, 1000 },
+    [CIRCUIT_CLAMPER]          = { DEMO_ENVELOPE, 1000 },
+    [CIRCUIT_PHASE_SHIFT_OSC]  = { DEMO_OSC, 6497 },
+};
+
+const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
+    static const TemplateDemo none = { DEMO_NONE, 0 };
+    if (type <= CIRCUIT_NONE || type >= CIRCUIT_TYPE_COUNT) return &none;
+    return &template_demo[type];
+}
+
 double circuit_template_scope_volt_div(CircuitTemplateType type) {
     if (type <= CIRCUIT_NONE || type >= CIRCUIT_TYPE_COUNT) return 0.0;
     return template_volt_div[type];
+}
+
+bool circuit_template_output_spec(CircuitTemplateType type, ComponentType *ct, int *ord, int *term) {
+    if (type <= CIRCUIT_NONE || type >= CIRCUIT_TYPE_COUNT || !template_output[type].ct) return false;
+    *ct = template_output[type].ct; *ord = template_output[type].ord; *term = template_output[type].term;
+    return true;
 }
 
 double circuit_template_scope_time_div(CircuitTemplateType type) {

@@ -92,4 +92,24 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
 double circuit_template_scope_time_div(CircuitTemplateType type);
 double circuit_template_scope_volt_div(CircuitTemplateType type);
 
+// HARD RULE: every template declares how it demonstrates itself, and template_smoke
+// --demo-test checks that the stimulus actually shows it (see tools/template_smoke.c).
+typedef enum {
+    DEMO_NONE = 0,     // not allowed for a shipped template
+    DEMO_LOWPASS,      // frequency sweep must bracket f_char; output amplitude falls above it
+    DEMO_HIGHPASS,     // ... output amplitude rises above it
+    DEMO_BANDPASS,     // ... output peaks around it (also resonance peaks)
+    DEMO_NOTCH,        // ... output dips around it
+    DEMO_ENVELOPE,     // amplitude sweep: output level follows the input amplitude
+    DEMO_LIMITER,      // amplitude sweep: output stops growing once the input exceeds a level
+    DEMO_WAVEFORM,     // periodic stimulus: output is a clearly varying waveform
+    DEMO_SWITCH,       // comparator-like: output swings rail to rail
+    DEMO_DC,           // steady DC output (value checked by --probe-test)
+    DEMO_OSC           // self-oscillates (checked by --osc-test)
+} DemoKind;
+typedef struct { DemoKind kind; double f_char; } TemplateDemo;
+const TemplateDemo *circuit_template_demo(CircuitTemplateType type);
+// Designated output node of a template (component type / ordinal / terminal); false if none
+bool circuit_template_output_spec(CircuitTemplateType type, ComponentType *ct, int *ord, int *term);
+
 #endif // CIRCUITS_H

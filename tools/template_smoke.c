@@ -15,6 +15,7 @@
  *        template_smoke --osc-test       (oscillator templates really oscillate, at the right frequency)
  *        template_smoke --probe-test     (probe each template's output node, compare with hand calculation)
  *        template_smoke --geom-test      (schematic audit: diagonals, crossings, wires through bodies)
+ *        template_smoke --demo-test      (hard rule: every template declares and demonstrates its behaviour)
  * Exit code is the number of failing templates (0 = all good).
  */
 
@@ -347,7 +348,7 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_TRANSIMPEDANCE,   COMP_OPAMP,     0, 2, "dc",  10.0,  0.03, 2e-3, "1 mA x 10k" },
     { CIRCUIT_INSTR_AMP,        COMP_OPAMP,     2, 2, "amp", 2.1,   0.15, 5e-3, "gain 21 x 0.1 Vpk" },
     { CIRCUIT_SALLEN_KEY_LP,    COMP_OPAMP,     0, 2, "amp", 0.717, 0.15, 8e-3, "2nd order, Q 0.5, 1 kHz" },
-    { CIRCUIT_NOTCH_FILTER,     COMP_RESISTOR,  4, 1, "amp", 0.0,  -0.15, 120e-3, "60 Hz notch: < 0.15 Vpk" },
+    { CIRCUIT_NOTCH_FILTER,     COMP_RESISTOR,  3, 0, "amp", 0.0,  -0.15, 120e-3, "60 Hz notch: < 0.15 Vpk" },
     { CIRCUIT_CURRENT_SOURCE,   COMP_NPN_BJT,   0, 1, "dc",  8.9,   0.10, 5e-3, "12 - 3.1mA*1k" },
     { CIRCUIT_WINDOW_COMP,      COMP_LED,       0, 0, "dc",  1.88,  0.08, 2e-3, "LED on inside window" },
     { CIRCUIT_HYSTERESIS_COMP,  COMP_OPAMP,     0, 2, "amp", 15.0,  0.05, 30e-3, "rail to rail, input 6 +/- 3 V" },
@@ -356,7 +357,7 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_7805_REG,         COMP_7805,      0, 1, "dc",  5.0,   0.02, 2e-3, "fixed 5 V" },
     { CIRCUIT_LM317_REG,        COMP_LM317,     0, 1, "dc",  5.0,   0.03, 2e-3, "1.25(1+720/240)" },
     { CIRCUIT_TL431_REF,        COMP_TL431,     0, 0, "dc",  2.5,   0.02, 2e-3, "2.495 V reference" },
-    { CIRCUIT_SERIES_RLC,       COMP_CAPACITOR, 0, 0, "amp", 5.0,   0.25, 80e-3, "Q*Vin at f0, Q = 1" },
+    { CIRCUIT_SERIES_RLC,       COMP_CAPACITOR, 0, 0, "amp", 15.0,  0.25, 80e-3, "Q*Vin at f0, Q = 3" },
     { CIRCUIT_WHEATSTONE,       COMP_RESISTOR,  3, 0, "dc",  5.238, 0.02, 2e-3, "10*1100/2100" },
     { CIRCUIT_PEAK_DETECTOR,    COMP_CAPACITOR, 0, 0, "dc",  1.75,  0.30, 0.125, "envelope: amplitude 1.75..2 V at t=94..125 ms of the 1->5 V sweep" },
     { CIRCUIT_CLAMPER,          COMP_DIODE,     0, 1, "max", 9.3,   0.12, 0.5,   "shifted sine top at full amplitude: 2*5 - 0.7" },
@@ -554,6 +555,196 @@ static int sweep_check(void) {
     return fails;
 }
 
+/* ---------------------------------------------------------------------------------------
+ * Demo rule: every template must declare a DemoKind, its stimulus must be able to show it,
+ * and the simulated output must actually show it. Frequency kinds run one full up-sweep
+ * and bin the output amplitude by the instantaneous source frequency (log bins +/-25%)
+ * around f_char/4, f_char and 4*f_char; envelope/limiter kinds bin by amplitude progress.
+ * ------------------------------------------------------------------------------------- */
+static Component *first_source(Circuit *c) {
+    static const ComponentType st[] = { COMP_AC_VOLTAGE, COMP_SQUARE_WAVE, COMP_TRIANGLE_WAVE, COMP_PULSE_SOURCE, COMP_DC_CURRENT, COMP_DC_VOLTAGE };
+    for (unsigned k = 0; k < sizeof st / sizeof st[0]; k++) { Component *x = find_comp(c, st[k], 0); if (x) return x; }
+    return NULL;
+}
+static double app_dt_for(Simulation *sim, double f) {
+    double td = 0.3 / f; double dec = pow(10.0, floor(log10(td))); double m = td / dec;
+    td = ((m >= 5) ? 5 : (m >= 2) ? 2 : 1) * dec;
+    return simulation_scope_time_step(sim, td);
+}
+static int demo_test(void) {
+    int fails = 0, total = 0;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        const TemplateDemo *d = circuit_template_demo((CircuitTemplateType)t);
+        const char *name = ti ? ti->name : "?";
+        total++;
+        char why[240] = ""; int ok = 1;
+        Circuit *c = circuit_create();
+        circuit_place_template(c, (CircuitTemplateType)t, 0, 0);
+        Simulation *sim = simulation_create(c);
+        ComponentType oct; int oord, oterm;
+        Component *out = NULL;
+        if (circuit_template_output_spec((CircuitTemplateType)t, &oct, &oord, &oterm)) out = find_comp(c, oct, oord);
+        int out_node = out ? out->node_ids[oterm] : -1;
+        Component *src = first_source(c);
+        const char *kname[] = {"NONE","LOWPASS","HIGHPASS","BANDPASS","NOTCH","ENVELOPE","LIMITER","WAVEFORM","SWITCH","DC","OSC"};
+
+        if (d->kind == DEMO_NONE) { ok = 0; snprintf(why, sizeof why, "no DemoKind declared (hard rule)"); }
+        else if (!out && d->kind != DEMO_OSC) { ok = 0; snprintf(why, sizeof why, "no output probe spec"); }
+
+        if (ok && (d->kind == DEMO_LOWPASS || d->kind == DEMO_HIGHPASS || d->kind == DEMO_BANDPASS || d->kind == DEMO_NOTCH)) {
+            if (!src || src->type != COMP_AC_VOLTAGE || !src->props.ac_voltage.frequency_sweep.enabled) {
+                ok = 0; snprintf(why, sizeof why, "needs a frequency-sweeping AC source");
+            } else {
+                SweepConfig *sw = &src->props.ac_voltage.frequency_sweep;
+                double need_lo = (d->kind == DEMO_NOTCH) ? d->f_char / 3 : d->f_char / 4;
+                double need_hi = (d->kind == DEMO_NOTCH) ? d->f_char * 3 : d->f_char * 4;
+                if (sw->start_value > need_lo || sw->end_value < need_hi) {
+                    ok = 0; snprintf(why, sizeof why, "sweep %g-%g Hz does not bracket f_char %g (need <= %g .. >= %g)",
+                                     sw->start_value, sw->end_value, d->f_char, need_lo, need_hi);
+                }
+                if (ok) {
+                    /* run one up-sweep; bin output amplitude by f(t) */
+                    double fb[3] = { d->f_char / 4, d->f_char, d->f_char * 4 };
+                    if (d->kind == DEMO_NOTCH) { fb[0] = d->f_char / 3; fb[2] = d->f_char * 3; }
+                    double bmin[3] = {1e300,1e300,1e300}, bmax[3] = {-1e300,-1e300,-1e300}; int bn[3] = {0,0,0};
+                    simulation_dc_analysis(sim); simulation_start(sim);
+                    double dt_last = 0; long steps = 0;
+                    while (sim->time < sw->sweep_time && steps < 3000000) {
+                        double f = sweep_get_value(sw, src->props.ac_voltage.frequency, sim->time);
+                        double dt = app_dt_for(sim, f);
+                        if (dt != dt_last) { simulation_set_time_step(sim, dt); dt_last = dt; }
+                        if (!simulation_step(sim)) { ok = 0; snprintf(why, sizeof why, "sim error"); break; }
+                        steps++;
+                        Node *nd = circuit_get_node(c, out_node); double v = nd ? nd->voltage : 0;
+                        for (int b = 0; b < 3; b++) if (f > fb[b] / 1.25 && f < fb[b] * 1.25) { if (v < bmin[b]) bmin[b] = v; if (v > bmax[b]) bmax[b] = v; bn[b]++; }
+                    }
+                    double a[3]; for (int b = 0; b < 3; b++) a[b] = bn[b] > 10 ? (bmax[b] - bmin[b]) / 2 : 0;
+                    int shape = 0;
+                    switch (d->kind) {
+                        case DEMO_LOWPASS:  shape = a[0] > 2.0 * a[2] && a[0] > 0.05; break;
+                        case DEMO_HIGHPASS: shape = a[2] > 2.0 * a[0] && a[2] > 0.05; break;
+                        case DEMO_BANDPASS: shape = a[1] > 1.5 * a[0] && a[1] > 1.5 * a[2] && a[1] > 0.05; break;
+                        case DEMO_NOTCH:    shape = a[1] < 0.5 * a[0] && a[1] < 0.5 * a[2] && a[0] > 0.05; break;
+                        default: break;
+                    }
+                    if (ok && !shape) { ok = 0; snprintf(why, sizeof why, "shape not shown: amp@f/4=%.3g @f=%.3g @4f=%.3g", a[0], a[1], a[2]); }
+                    else if (ok) snprintf(why, sizeof why, "amp@%.3g=%.3g @%.3g=%.3g @%.3g=%.3g", fb[0], a[0], fb[1], a[1], fb[2], a[2]);
+                }
+            }
+        } else if (ok && (d->kind == DEMO_ENVELOPE || d->kind == DEMO_LIMITER)) {
+            if (!src || src->type != COMP_AC_VOLTAGE || !src->props.ac_voltage.amplitude_sweep.enabled) {
+                ok = 0; snprintf(why, sizeof why, "needs an amplitude-sweeping AC source");
+            } else {
+                SweepConfig *sw = &src->props.ac_voltage.amplitude_sweep;
+                double lo_min = 1e300, lo_max = -1e300, hi_min = 1e300, hi_max = -1e300;
+                double in_lo = 0, in_hi = 0;
+                simulation_dc_analysis(sim); simulation_auto_time_step(sim); simulation_start(sim);
+                long steps = 0;
+                while (sim->time < sw->sweep_time && steps < 3000000) {
+                    if (!simulation_step(sim)) { ok = 0; snprintf(why, sizeof why, "sim error"); break; }
+                    steps++;
+                    double prog = sim->time / sw->sweep_time;
+                    Node *nd = circuit_get_node(c, out_node); double v = nd ? nd->voltage : 0;
+                    double amp = sweep_get_value(sw, src->props.ac_voltage.amplitude, sim->time);
+                    if (prog > 0.05 && prog < 0.2)  { if (v < lo_min) lo_min = v; if (v > lo_max) lo_max = v; in_lo = amp; }
+                    if (prog > 0.8 && prog < 0.95)  { if (v < hi_min) hi_min = v; if (v > hi_max) hi_max = v; in_hi = amp; }
+                }
+                double lo = (d->kind == DEMO_ENVELOPE) ? fabs(lo_max) : (lo_max - lo_min) / 2;
+                double hi = (d->kind == DEMO_ENVELOPE) ? fabs(hi_max) : (hi_max - hi_min) / 2;
+                if (ok) {
+                    if (d->kind == DEMO_ENVELOPE) {
+                        if (!(hi > 1.8 * lo && hi > 0.5)) { ok = 0; snprintf(why, sizeof why, "output does not follow the amplitude: %.3g -> %.3g (input %.3g -> %.3g)", lo, hi, in_lo, in_hi); }
+                        else snprintf(why, sizeof why, "output %.3g -> %.3g as input %.3g -> %.3g", lo, hi, in_lo, in_hi);
+                    } else {
+                        /* limiter: tracks the input when small, stops growing when large */
+                        if (!(lo > 0.7 * in_lo && hi < 0.7 * in_hi)) { ok = 0; snprintf(why, sizeof why, "limiting not shown: out %.3g/%.3g vs in %.3g/%.3g", lo, hi, in_lo, in_hi); }
+                        else snprintf(why, sizeof why, "out %.3g/%.3g vs in %.3g/%.3g (clipped)", lo, hi, in_lo, in_hi);
+                    }
+                }
+            }
+        } else if (ok && (d->kind == DEMO_WAVEFORM || d->kind == DEMO_SWITCH || d->kind == DEMO_DC)) {
+            simulation_dc_analysis(sim); simulation_auto_time_step(sim); simulation_start(sim);
+            double run = (d->f_char > 0) ? 6.0 / d->f_char : 0.01; if (run < 0.003) run = 0.003;
+            double mn = 1e300, mx = -1e300, sum = 0; int n = 0; long steps = 0;
+            while (sim->time < run && steps < 3000000) {
+                if (!simulation_step(sim)) { ok = 0; snprintf(why, sizeof why, "sim error"); break; }
+                steps++;
+                if (sim->time > run * 0.5) { Node *nd = circuit_get_node(c, out_node); double v = nd ? nd->voltage : 0; if (v < mn) mn = v; if (v > mx) mx = v; sum += v; n++; }
+            }
+            double amp = (mx - mn) / 2, mean = n ? sum / n : 0;
+            if (ok) {
+                if (d->kind == DEMO_WAVEFORM && !(amp > 0.05)) { ok = 0; snprintf(why, sizeof why, "output barely moves (amp %.3g V)", amp); }
+                else if (d->kind == DEMO_SWITCH && !(amp > 2.0)) { ok = 0; snprintf(why, sizeof why, "output does not swing (amp %.3g V)", amp); }
+                else if (d->kind == DEMO_DC && !(amp < 0.05 * (fabs(mean) + 0.1))) { ok = 0; snprintf(why, sizeof why, "not steady DC: amp %.3g around %.3g", amp, mean); }
+                else snprintf(why, sizeof why, "amp %.3g V, mean %.3g V", amp, mean);
+            }
+        } else if (ok && d->kind == DEMO_OSC) {
+            snprintf(why, sizeof why, "checked by --osc-test");
+        }
+        printf("[%s] demo  %-28s %-9s %s\n", ok ? " OK " : "FAIL", name, kname[d->kind], why);
+        if (!ok) fails++;
+        simulation_free(sim); circuit_free(c);
+    }
+    printf("\n%d/%d demo checks passed\n", total - fails, total);
+    return fails;
+}
+
+/* Frequency-response explorer: run the template's frequency sweep and print, for every
+ * circuit node, the output amplitude in 8 log-spaced frequency bins. Used to pick the right
+ * output node / DemoKind and to see whether a filter actually filters. */
+static int response_explore(const char *filter) {
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti || !strstr(ti->name, filter)) continue;
+        Circuit *c = circuit_create();
+        circuit_place_template(c, (CircuitTemplateType)t, 0, 0);
+        Simulation *sim = simulation_create(c);
+        Component *src = first_source(c);
+        if (!src || src->type != COMP_AC_VOLTAGE || !src->props.ac_voltage.frequency_sweep.enabled) {
+            printf("%s: no frequency-sweeping AC source\n", ti->name); simulation_free(sim); circuit_free(c); continue;
+        }
+        SweepConfig *sw = &src->props.ac_voltage.frequency_sweep;
+        enum { NB = 8 };
+        double fb[NB]; for (int b = 0; b < NB; b++) fb[b] = sw->start_value * pow(sw->end_value / sw->start_value, (b + 0.5) / NB);
+        static double nmin[MAX_NODES][NB], nmax[MAX_NODES][NB];
+        for (int i = 0; i < MAX_NODES; i++) for (int b = 0; b < NB; b++) { nmin[i][b] = 1e300; nmax[i][b] = -1e300; }
+        simulation_dc_analysis(sim); simulation_start(sim);
+        double dt_last = 0; long steps = 0;
+        while (sim->time < sw->sweep_time && steps < 4000000) {
+            double f = sweep_get_value(sw, src->props.ac_voltage.frequency, sim->time);
+            double dt = app_dt_for(sim, f);
+            if (dt != dt_last) { simulation_set_time_step(sim, dt); dt_last = dt; }
+            if (!simulation_step(sim)) break;
+            steps++;
+            int b = -1;
+            for (int k = 0; k < NB; k++) if (f > fb[k] / 1.15 && f < fb[k] * 1.15) b = k;
+            if (b < 0) continue;
+            for (int i = 0; i < c->num_nodes; i++) {
+                int id = c->nodes[i].id; double v = c->nodes[i].voltage;
+                if (v < nmin[id][b]) nmin[id][b] = v; if (v > nmax[id][b]) nmax[id][b] = v;
+            }
+        }
+        printf("%s  (sweep %g-%g Hz)\n      node  owners                         ", ti->name, sw->start_value, sw->end_value);
+        for (int b = 0; b < NB; b++) printf(" %7.0fHz", fb[b]);
+        printf("\n");
+        for (int i = 0; i < c->num_nodes; i++) {
+            int id = c->nodes[i].id;
+            char owners[40] = ""; int seen = 0;
+            for (int j = 0; j < c->num_components && strlen(owners) < 28; j++) {
+                Component *comp = c->components[j];
+                for (int k = 0; k < comp->num_terminals; k++) if (comp->node_ids[k] == id) { snprintf(owners + strlen(owners), sizeof owners - strlen(owners), "%s[%d] ", comp->label, k); seen = 1; }
+            }
+            if (!seen) continue;
+            printf("      n%-4d %-30s", id, owners);
+            for (int b = 0; b < NB; b++) printf(" %9.3f", (nmax[id][b] > nmin[id][b]) ? (nmax[id][b] - nmin[id][b]) / 2 : 0.0);
+            printf("\n");
+        }
+        simulation_free(sim); circuit_free(c);
+    }
+    return 0;
+}
+
 int main(int argc, char **argv) {
     int dc_only = 0, verbose = 0, dump_nodes = 0;
     const char *svg_dir = NULL;
@@ -571,6 +762,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--geom-test")) return geom_test();
         else if (!strcmp(argv[i], "--sweep-check")) return sweep_check();
+        else if (!strcmp(argv[i], "--demo-test")) return demo_test();
+        else if (!strcmp(argv[i], "--response") && i + 1 < argc) return response_explore(argv[++i]);
         else if (!strcmp(argv[i], "--sim-time") && i + 1 < argc) sim_time = atof(argv[++i]);
         else filter = argv[i];
     }
