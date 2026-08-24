@@ -248,6 +248,7 @@ typedef struct {
     Button btn_scope_screenshot;     // Capture scope display
     Button btn_scope_cursor;         // Toggle measurement cursors
     Button btn_scope_fft;            // Toggle FFT view
+    Button btn_scope_stack;          // Toggle stacked (one band per channel) / overlay view
     Button btn_scope_autoset;        // Auto-configure scope settings
     Button btn_scope_popup;          // Pop out oscilloscope to separate window
 
@@ -267,6 +268,8 @@ typedef struct {
 
     // FFT display state
     bool scope_fft_mode;             // FFT display active
+    bool scope_stacked;              // Stacked view: each channel in its own horizontal band
+    bool scope_stacked;              // Stacked view: each channel in its own horizontal band
 
     // Trigger settings
     TriggerMode trigger_mode;        // Auto, Normal, Single
@@ -473,6 +476,8 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode);
 #define UI_ACTION_TIMESTEP_DOWN 30   // Decrease time step
 #define UI_ACTION_TIMESTEP_AUTO 31   // Auto-adjust time step
 #define UI_ACTION_SCOPE_POPUP   32   // Pop out oscilloscope to separate window
+#define UI_ACTION_SCOPE_STACK   33   // Toggle stacked / overlay channel view
+#define UI_ACTION_SCOPE_STACK   33   // Toggle stacked / overlay channel view
 #define UI_ACTION_SPOTLIGHT     33   // Open component spotlight search (Ctrl+K)
 #define UI_ACTION_EXPORT_SVG    34   // Export circuit to SVG file
 #define UI_ACTION_MC_RUN        35   // Start Monte Carlo analysis

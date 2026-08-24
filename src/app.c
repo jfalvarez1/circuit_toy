@@ -573,6 +573,12 @@ void app_handle_events(App *app) {
                 }
                 break;
 
+            case UI_ACTION_SCOPE_STACK:
+                // Toggle stacked (one band per channel) vs overlay view
+                app->ui.scope_stacked = !app->ui.scope_stacked;
+                ui_set_status(&app->ui, app->ui.scope_stacked ? "Scope: stacked view (one band per channel)"
+                                                              : "Scope: overlay view");
+                break;
             case UI_ACTION_FFT_TOGGLE:
                 // Toggle FFT spectrum view
                 app->ui.scope_fft_mode = !app->ui.scope_fft_mode;

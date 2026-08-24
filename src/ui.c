@@ -596,6 +596,8 @@ void ui_init(UIState *ui) {
     scope_btn_x += 38;
     ui->btn_scope_fft = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "FFT", "Toggle FFT spectrum view", false, false, true, false};
     scope_btn_x += 38;
+    ui->btn_scope_stack = (Button){{scope_btn_x, scope_btn_y, 40, scope_btn_h}, "Stack", "Stacked view: one band per channel (toggle overlay)", false, false, true, false};
+    scope_btn_x += 43;
     ui->btn_scope_screenshot = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "CAP", "Capture screenshot (saves scope.bmp)", false, false, true, false};
     scope_btn_x += 38;
     ui->btn_bode = (Button){{scope_btn_x, scope_btn_y, 40, scope_btn_h}, "Bode", "Frequency response plot", false, false, true, false};
@@ -610,6 +612,7 @@ void ui_init(UIState *ui) {
     ui->cursor1_time = 0.25;
     ui->cursor2_time = 0.75;
     ui->scope_fft_mode = false;
+    ui->scope_stacked = false;
 
     // Initialize trigger settings
     ui->trigger_mode = TRIG_AUTO;
@@ -3334,8 +3337,43 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     t_reference = t_start;
                 }
 
+                // Stacked view: give every enabled channel its own horizontal band with its
+                // own zero line and 8 divisions, so identical signals can be told apart.
+                int n_enabled = 0;
+                for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++)
+                    if (ui->scope_channels[ch].enabled) n_enabled++;
+                bool stacked = ui->scope_stacked && n_enabled > 1;
+                int band_index = 0;
+
                 for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
                     if (!ui->scope_channels[ch].enabled) continue;
+
+                    // Per-channel drawing frame (whole scope, or this channel's band)
+                    int band_y = r->y, band_h = r->h;
+                    int ch_center = center_y;
+                    double ch_scale = scale;
+                    if (stacked) {
+                        band_y = r->y + (band_index * r->h) / n_enabled;
+                        band_h = r->y + ((band_index + 1) * r->h) / n_enabled - band_y;
+                        ch_center = band_y + band_h / 2;
+                        ch_scale = (band_h / 8.0) / ui->scope_volt_div;
+                        // Band separator and zero line
+                        if (band_index > 0) {
+                            SDL_SetRenderDrawColor(renderer, 0x50, 0x60, 0x50, 0xff);
+                            SDL_RenderDrawLine(renderer, r->x, band_y, r->x + r->w, band_y);
+                        }
+                        SDL_SetRenderDrawColor(renderer, 0x30, 0x48, 0x30, 0xff);
+                        SDL_RenderDrawLine(renderer, r->x, ch_center, r->x + r->w, ch_center);
+                        // Channel tag in its own colour
+                        char tag[16];
+                        snprintf(tag, sizeof(tag), "CH%d", ch + 1);
+                        SDL_SetRenderDrawColor(renderer,
+                            ui->scope_channels[ch].color.r,
+                            ui->scope_channels[ch].color.g,
+                            ui->scope_channels[ch].color.b, 0xff);
+                        ui_draw_text(renderer, tag, r->x + r->w - 34, band_y + 3);
+                    }
+                    band_index++;
 
                     SDL_SetRenderDrawColor(renderer,
                         ui->scope_channels[ch].color.r,
@@ -3369,8 +3407,8 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     if (is_dc && ui->scope_capture_count >= 2) {
                         // For DC signals, draw a horizontal line at the average voltage
                         // DC signals should ALWAYS span the full visible width since the value is constant
-                        int y_dc = center_y - (int)((v_avg + offset) * scale);
-                        y_dc = CLAMP(y_dc, r->y, r->y + r->h);
+                        int y_dc = ch_center - (int)((v_avg + offset) * ch_scale);
+                        y_dc = CLAMP(y_dc, band_y, band_y + band_h);
 
                         // Always draw DC line across full scope width
                         // DC voltage is constant, so there's no reason to limit the line length
@@ -3382,19 +3420,19 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                             double x_frac2 = (ui->scope_capture_times[i] - t_reference) / display_time_span;
                             int x1 = r->x + (int)(x_frac1 * r->w);
                             int x2 = r->x + (int)(x_frac2 * r->w);
-                            int y1 = center_y - (int)((ui->scope_capture_values[ch][i-1] + offset) * scale);
-                            int y2 = center_y - (int)((ui->scope_capture_values[ch][i] + offset) * scale);
+                            int y1 = ch_center - (int)((ui->scope_capture_values[ch][i-1] + offset) * ch_scale);
+                            int y2 = ch_center - (int)((ui->scope_capture_values[ch][i] + offset) * ch_scale);
                             x1 = CLAMP(x1, r->x, r->x + r->w);
                             x2 = CLAMP(x2, r->x, r->x + r->w);
-                            y1 = CLAMP(y1, r->y, r->y + r->h);
-                            y2 = CLAMP(y2, r->y, r->y + r->h);
+                            y1 = CLAMP(y1, band_y, band_y + band_h);
+                            y2 = CLAMP(y2, band_y, band_y + band_h);
                             SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
                         }
                     }
 
                     // Draw ground reference arrow on left side (channel color)
-                    int gnd_y = center_y - (int)(offset * scale);
-                    gnd_y = CLAMP(gnd_y, r->y + 8, r->y + r->h - 8);
+                    int gnd_y = ch_center - (int)(offset * ch_scale);
+                    gnd_y = CLAMP(gnd_y, band_y + 8, band_y + band_h - 8);
                     SDL_RenderDrawLine(renderer, r->x + 2, gnd_y, r->x + 8, gnd_y);
                     SDL_RenderDrawLine(renderer, r->x + 5, gnd_y - 3, r->x + 8, gnd_y);
                     SDL_RenderDrawLine(renderer, r->x + 5, gnd_y + 3, r->x + 8, gnd_y);
@@ -3417,8 +3455,24 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             if (ui->scope_num_channels > 0) {
                 if (trig_ch < ui->scope_num_channels && ui->scope_channels[trig_ch].enabled) {
                     double trig_offset = ui->scope_channels[trig_ch].offset;
-                    int trig_y = center_y - (int)((ui->trigger_level + trig_offset) * scale);
-                    trig_y = CLAMP(trig_y, r->y, r->y + r->h);
+                    int t_center = center_y, t_top = r->y, t_h = r->h;
+                    double t_scale = scale;
+                    if (ui->scope_stacked) {
+                        int n_en = 0, idx = 0;
+                        for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
+                            if (!ui->scope_channels[ch].enabled) continue;
+                            if (ch == trig_ch) idx = n_en;
+                            n_en++;
+                        }
+                        if (n_en > 1) {
+                            t_top = r->y + (idx * r->h) / n_en;
+                            t_h = r->y + ((idx + 1) * r->h) / n_en - t_top;
+                            t_center = t_top + t_h / 2;
+                            t_scale = (t_h / 8.0) / ui->scope_volt_div;
+                        }
+                    }
+                    int trig_y = t_center - (int)((ui->trigger_level + trig_offset) * t_scale);
+                    trig_y = CLAMP(trig_y, t_top, t_top + t_h);
 
                     SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);  // Orange
                     // Draw dashed line
@@ -3596,6 +3650,10 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     // FFT button with toggle state indicator
     ui->btn_scope_fft.toggled = ui->scope_fft_mode;
     draw_button(renderer, &ui->btn_scope_fft);
+
+    // Stacked / overlay view toggle
+    ui->btn_scope_stack.toggled = ui->scope_stacked;
+    draw_button(renderer, &ui->btn_scope_stack);
 
     // Autoset button
     draw_button(renderer, &ui->btn_scope_autoset);
@@ -5957,6 +6015,9 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_scope_fft.bounds) && ui->btn_scope_fft.enabled) {
             return UI_ACTION_FFT_TOGGLE;
         }
+        if (point_in_rect(x, y, &ui->btn_scope_stack.bounds) && ui->btn_scope_stack.enabled) {
+            return UI_ACTION_SCOPE_STACK;
+        }
         if (point_in_rect(x, y, &ui->btn_scope_autoset.bounds) && ui->btn_scope_autoset.enabled) {
             return UI_ACTION_SCOPE_AUTOSET;
         }
@@ -6416,6 +6477,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
     ui->btn_scope_screenshot.hovered = point_in_rect(x, y, &ui->btn_scope_screenshot.bounds);
     ui->btn_scope_cursor.hovered = point_in_rect(x, y, &ui->btn_scope_cursor.bounds);
     ui->btn_scope_fft.hovered = point_in_rect(x, y, &ui->btn_scope_fft.bounds);
+    ui->btn_scope_stack.hovered = point_in_rect(x, y, &ui->btn_scope_stack.bounds);
     ui->btn_scope_autoset.hovered = point_in_rect(x, y, &ui->btn_scope_autoset.bounds);
     ui->btn_bode.hovered = point_in_rect(x, y, &ui->btn_bode.bounds);
     ui->btn_mc.hovered = point_in_rect(x, y, &ui->btn_mc.bounds);
@@ -6585,6 +6647,7 @@ void ui_update_layout(UIState *ui) {
     PLACE_BTN(&ui->btn_scope_mode, 35);
     PLACE_BTN(&ui->btn_scope_cursor, 35);
     PLACE_BTN(&ui->btn_scope_fft, 35);
+    PLACE_BTN(&ui->btn_scope_stack, 40);
     PLACE_BTN(&ui->btn_scope_screenshot, 35);
     PLACE_BTN(&ui->btn_bode, 40);
     PLACE_BTN(&ui->btn_mc, 25);
@@ -6884,6 +6947,7 @@ ScopeCoordsBackup ui_setup_popup_scope_coords(UIState *ui) {
     backup.btn_mode = ui->btn_scope_mode.bounds;
     backup.btn_cursor = ui->btn_scope_cursor.bounds;
     backup.btn_fft = ui->btn_scope_fft.bounds;
+    backup.btn_stack = ui->btn_scope_stack.bounds;
     backup.btn_screenshot = ui->btn_scope_screenshot.bounds;
     backup.btn_bode = ui->btn_bode.bounds;
     backup.btn_mc = ui->btn_mc.bounds;
@@ -6934,6 +6998,8 @@ ScopeCoordsBackup ui_setup_popup_scope_coords(UIState *ui) {
     scope_btn_x += 38;
     ui->btn_scope_fft.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
     scope_btn_x += 38;
+    ui->btn_scope_stack.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
+    scope_btn_x += 43;
     ui->btn_scope_screenshot.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
     scope_btn_x += 38;
     ui->btn_bode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
@@ -6961,6 +7027,7 @@ void ui_restore_popup_scope_coords(UIState *ui, const ScopeCoordsBackup *backup)
     ui->btn_scope_mode.bounds = backup->btn_mode;
     ui->btn_scope_cursor.bounds = backup->btn_cursor;
     ui->btn_scope_fft.bounds = backup->btn_fft;
+    ui->btn_scope_stack.bounds = backup->btn_stack;
     ui->btn_scope_screenshot.bounds = backup->btn_screenshot;
     ui->btn_bode.bounds = backup->btn_bode;
     ui->btn_mc.bounds = backup->btn_mc;

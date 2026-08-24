@@ -192,6 +192,7 @@ Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.
 | ID | Test | Expected / Watch-for |
 |----|------|----------------------|
 | 4.1 | `[ ]` 8 probes, 8 colors, enable/disable each | Legend matches trace colours; disabled channel hides |
+| 4.1a | `[ ]` **Stack** button (row 3) with 2–8 probes on the *same* node | Overlay: traces coincide. Stacked: one band per enabled channel with its own zero line, CHn tag in channel colour, 8 divisions per band; disabling a channel re-flows the bands; trigger level line drawn in the trigger channel's band; FFT/X-Y unaffected; pop-out window keeps the toggle |
 | 4.2 | `[ ]` V/div 1 mV → 100 V | Y labels update; trace clipped at panel edge, not drawn over labels |
 | 4.3 | `[ ]` Trigger Auto/Normal/Single, rising/falling/both, level slider, source per channel | Stable display; Normal with no crossing → holds last; Single re-arm |
 | 4.4 | `[ ]` Trigger level above signal in Auto | Free-runs; in Normal freezes (no blank) |
