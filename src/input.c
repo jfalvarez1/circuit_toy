@@ -53,6 +53,21 @@ static int find_wire_at(Circuit *circuit, float wx, float wy, float threshold) {
     return -1;
 }
 
+// Index of the probe whose body (tip..handle segment) is within 15 world units of (wx,wy), or -1
+static int probe_hit_index(Circuit *circuit, float wx, float wy) {
+    for (int i = 0; i < circuit->num_probes; i++) {
+        Probe *probe = &circuit->probes[i];
+        float tip_x = probe->x, tip_y = probe->y;
+        float handle_dx = -25, handle_dy = -35;   // same geometry as render.c
+        float len_sq = handle_dx * handle_dx + handle_dy * handle_dy;
+        float t = ((wx - tip_x) * handle_dx + (wy - tip_y) * handle_dy) / len_sq;
+        if (t < 0) t = 0; if (t > 1) t = 1;
+        float cx = tip_x + t * handle_dx, cy = tip_y + t * handle_dy;
+        if ((wx - cx) * (wx - cx) + (wy - cy) * (wy - cy) < 15 * 15) return i;
+    }
+    return -1;
+}
+
 bool input_handle_event(InputState *input, SDL_Event *event,
                         Circuit *circuit, RenderContext *render,
                         UIState *ui) {
@@ -613,6 +628,18 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     }
 
                     case TOOL_PROBE: {
+                        // Clicking an existing probe with the probe tool removes it (toggle),
+                        // so a mis-placed probe does not need a tool change to clean up.
+                        {
+                            int hit = probe_hit_index(circuit, wx, wy);
+                            if (hit >= 0) {
+                                if (input->selected_probe_idx == hit) input->selected_probe_idx = -1;
+                                input->dragging_probe_idx = -1;
+                                circuit_remove_probe(circuit, circuit->probes[hit].id);
+                                ui_set_status(ui, "Probe removed (probe tool toggles; Select tool + Delete also works)");
+                                break;
+                            }
+                        }
                         // First check component terminals using dynamic positions
                         // This is more accurate than stored node positions for subcircuits
                         int best_node_id = -1;
