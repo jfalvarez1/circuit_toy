@@ -767,6 +767,10 @@ static double source_scale(Circuit *c) {
         else if (k->type == COMP_DC_VOLTAGE) a = fabs(k->props.dc_voltage.voltage);
         if (a > m) m = a;
     }
+    for (int i = 0; i < c->num_components; i++) {
+        Component *k = c->components[i];
+        if (k->type == COMP_TRANSFORMER && k->props.transformer.turns_ratio > 1.0) m *= k->props.transformer.turns_ratio;
+    }
     return m;
 }
 
