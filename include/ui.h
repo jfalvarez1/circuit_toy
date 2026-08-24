@@ -71,6 +71,7 @@ typedef enum {
     PCAT_REGULATORS,
     PCAT_DISPLAY,
     PCAT_MEASUREMENT,
+    PCAT_SUBPARTS,      // Pin markers, IC blocks, buses, lamp
     PCAT_CIRCUITS,
     PCAT_SUBCIRCUITS,   // User-defined subcircuits (Ctrl+G)
     PCAT_COUNT

@@ -153,6 +153,7 @@ void ui_init(UIState *ui) {
     ui->categories[PCAT_REGULATORS] = (PaletteCategory){"Regulators", false, 0};
     ui->categories[PCAT_DISPLAY] = (PaletteCategory){"Display", false, 0};
     ui->categories[PCAT_MEASUREMENT] = (PaletteCategory){"Measurement", false, 0};
+    ui->categories[PCAT_SUBPARTS] = (PaletteCategory){"Sub-circuit / Bus", false, 0};
     ui->categories[PCAT_CIRCUITS] = (PaletteCategory){"Circuits", false, 0};
     ui->categories[PCAT_SUBCIRCUITS] = (PaletteCategory){"My Circuits", false, 0};
 
@@ -391,6 +392,25 @@ void ui_init(UIState *ui) {
     #undef ADD_TOOL
     #undef ADD_COMP
     #undef NEW_SECTION
+
+    // Category of every palette item, derived from the ADD_* order above. Both the palette
+    // layout and the hit-test use item->category, so adding an item to a section can never
+    // leave it without a layout (that is how VMeter's startup hit-box ended up under the
+    // sRLC circuit button).
+    {
+        static const struct { int start, end; PaletteCategoryID cat; } ranges[] = {
+            {0, 4, PCAT_TOOLS}, {5, 10, PCAT_SOURCES}, {11, 16, PCAT_WAVEFORMS}, {17, 24, PCAT_PASSIVES},
+            {25, 30, PCAT_DIODES}, {31, 34, PCAT_BJT}, {35, 38, PCAT_FET}, {39, 42, PCAT_THYRISTORS},
+            {43, 46, PCAT_OPAMPS}, {47, 50, PCAT_CONTROLLED}, {51, 56, PCAT_SWITCHES}, {57, 58, PCAT_TRANSFORMERS},
+            {59, 68, PCAT_LOGIC}, {69, 78, PCAT_DIGITAL}, {79, 84, PCAT_MIXED}, {85, 87, PCAT_REGULATORS},
+            {88, 93, PCAT_DISPLAY}, {94, 98, PCAT_SUBPARTS}, {99, 102, PCAT_MEASUREMENT},
+        };
+        for (int i = 0; i < ui->num_palette_items; i++) {
+            ui->palette_items[i].category = PCAT_MEASUREMENT;   // anything past the table lands here
+            for (unsigned k = 0; k < sizeof ranges / sizeof ranges[0]; k++)
+                if (i >= ranges[k].start && i <= ranges[k].end) { ui->palette_items[i].category = ranges[k].cat; break; }
+        }
+    }
 
     // === CIRCUITS SECTION ===
     pal_y += pal_h + 18;
@@ -983,29 +1003,9 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
 
     int scroll_offset = ui->palette_scroll_offset;
 
-    // Section mapping: maps start index to category ID
-    typedef struct { int start_idx; int end_idx; PaletteCategoryID cat_id; } SectionMapping;
-    SectionMapping sections[] = {
-        {0, 4, PCAT_TOOLS},
-        {5, 10, PCAT_SOURCES},
-        {11, 16, PCAT_WAVEFORMS},
-        {17, 24, PCAT_PASSIVES},
-        {25, 30, PCAT_DIODES},
-        {31, 34, PCAT_BJT},
-        {35, 38, PCAT_FET},
-        {39, 42, PCAT_THYRISTORS},
-        {43, 46, PCAT_OPAMPS},
-        {47, 50, PCAT_CONTROLLED},
-        {51, 56, PCAT_SWITCHES},
-        {57, 58, PCAT_TRANSFORMERS},
-        {59, 68, PCAT_LOGIC},
-        {69, 78, PCAT_DIGITAL},
-        {79, 84, PCAT_MIXED},
-        {85, 87, PCAT_REGULATORS},
-        {88, 92, PCAT_DISPLAY},
-        {93, 96, PCAT_MEASUREMENT}
-    };
-    int num_sections = sizeof(sections) / sizeof(sections[0]);
+    // Component sections are the categories in enum order up to (not including) Circuits;
+    // every item is drawn under item->category (see ui_init).
+    int num_sections = (int)PCAT_CIRCUITS;
 
     // Calculate dynamic positions and draw
     int pal_h = 35;  // Item height
@@ -1013,9 +1013,7 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
     int content_height = 4;  // Track total content height
 
     for (int s = 0; s < num_sections; s++) {
-        if (sections[s].start_idx >= ui->num_palette_items) continue;
-
-        PaletteCategoryID cat_id = sections[s].cat_id;
+        PaletteCategoryID cat_id = (PaletteCategoryID)s;
         PaletteCategory *cat = &ui->categories[cat_id];
         bool collapsed = cat->collapsed;
 
@@ -1051,8 +1049,9 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
         if (!collapsed) {
             // Draw items in this section
             int col = 0;
-            for (int i = sections[s].start_idx; i <= sections[s].end_idx && i < ui->num_palette_items; i++) {
+            for (int i = 0; i < ui->num_palette_items; i++) {
                 PaletteItem *item = &ui->palette_items[i];
+                if (item->category != cat_id) continue;
 
                 // Update item bounds to dynamic position
                 item->bounds.x = 10 + col * 70;
@@ -5761,34 +5760,10 @@ static bool point_in_rect(int x, int y, Rect *r) {
 }
 
 static bool is_palette_item_in_collapsed_category(UIState *ui, int item_idx) {
-    // Index ranges for each category (must match the sections array in render_palette)
-    static const struct { int start; int end; PaletteCategoryID cat; } item_categories[] = {
-        {0, 4, PCAT_TOOLS},
-        {5, 10, PCAT_SOURCES},
-        {11, 16, PCAT_WAVEFORMS},
-        {17, 24, PCAT_PASSIVES},
-        {25, 30, PCAT_DIODES},
-        {31, 34, PCAT_BJT},
-        {35, 38, PCAT_FET},
-        {39, 42, PCAT_THYRISTORS},
-        {43, 46, PCAT_OPAMPS},
-        {47, 50, PCAT_CONTROLLED},
-        {51, 56, PCAT_SWITCHES},
-        {57, 58, PCAT_TRANSFORMERS},
-        {59, 68, PCAT_LOGIC},
-        {69, 78, PCAT_DIGITAL},
-        {79, 84, PCAT_MIXED},
-        {85, 87, PCAT_REGULATORS},
-        {88, 92, PCAT_DISPLAY},
-        {93, 96, PCAT_MEASUREMENT}
-    };
-    int num_cats = sizeof(item_categories) / sizeof(item_categories[0]);
-    for (int c = 0; c < num_cats; c++) {
-        if (item_idx >= item_categories[c].start && item_idx <= item_categories[c].end) {
-            return ui->categories[item_categories[c].cat].collapsed;
-        }
-    }
-    return false;
+    if (item_idx < 0 || item_idx >= ui->num_palette_items) return true;
+    PaletteCategoryID cat = ui->palette_items[item_idx].category;
+    if (cat < 0 || cat >= PCAT_COUNT) return true;
+    return ui->categories[cat].collapsed;
 }
 
 int ui_handle_click(UIState *ui, int x, int y, bool is_down) {

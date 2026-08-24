@@ -356,9 +356,9 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_7805_REG,         COMP_7805,      0, 1, "dc",  5.0,   0.02, 2e-3, "fixed 5 V" },
     { CIRCUIT_LM317_REG,        COMP_LM317,     0, 1, "dc",  5.0,   0.03, 2e-3, "1.25(1+720/240)" },
     { CIRCUIT_TL431_REF,        COMP_TL431,     0, 0, "dc",  2.5,   0.02, 2e-3, "2.495 V reference" },
-    { CIRCUIT_SERIES_RLC,       COMP_CAPACITOR, 0, 0, "amp", 0.5,   0.25, 80e-3, "Q*Vin at f0" },
+    { CIRCUIT_SERIES_RLC,       COMP_CAPACITOR, 0, 0, "amp", 5.0,   0.25, 80e-3, "Q*Vin at f0, Q = 1" },
     { CIRCUIT_WHEATSTONE,       COMP_RESISTOR,  3, 0, "dc",  5.238, 0.02, 2e-3, "10*1100/2100" },
-    { CIRCUIT_PEAK_DETECTOR,    COMP_CAPACITOR, 0, 0, "dc",  4.3,   0.20, 0.5,   "envelope 4..5 V near the top of the sweep" },
+    { CIRCUIT_PEAK_DETECTOR,    COMP_CAPACITOR, 0, 0, "dc",  1.75,  0.30, 0.125, "envelope: amplitude 1.75..2 V at t=94..125 ms of the 1->5 V sweep" },
     { CIRCUIT_CLAMPER,          COMP_DIODE,     0, 1, "max", 9.3,   0.12, 0.5,   "shifted sine top at full amplitude: 2*5 - 0.7" },
 };
 

@@ -5598,13 +5598,21 @@ static int place_series_rlc(Circuit *circuit, float x, float y) {
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 5.0;
     vsrc->props.ac_voltage.frequency = 159.0;  // Near resonance
+    // Frequency sweep 50 Hz -> 500 Hz (log, 3 s each way): the resonance at 159 Hz shows as a peak
+    vsrc->props.ac_voltage.frequency_sweep.enabled = true;
+    vsrc->props.ac_voltage.frequency_sweep.mode = SWEEP_LOG;
+    vsrc->props.ac_voltage.frequency_sweep.start_value = 50;
+    vsrc->props.ac_voltage.frequency_sweep.end_value = 500;
+    vsrc->props.ac_voltage.frequency_sweep.sweep_time = 3;
+    vsrc->props.ac_voltage.frequency_sweep.repeat = true;
+    vsrc->props.ac_voltage.frequency_sweep.bidirectional = true;
 
     // Ground for source (at y+100)
     Component *gnd1 = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
 
     // Resistor horizontal at y (x+60 to x+140)
     Component *res = add_comp(circuit, COMP_RESISTOR, x + 100, y, 0);
-    res->props.resistor.resistance = 100.0;
+    res->props.resistor.resistance = 10.0;   // Q = sqrt(L/C)/R = 1: Vc peaks at Q*Vin = 5 V on resonance
 
     // Inductor horizontal at y (x+180 to x+260)
     Component *ind = add_comp(circuit, COMP_INDUCTOR, x + 220, y, 0);
@@ -5649,6 +5657,14 @@ static int place_parallel_rlc(Circuit *circuit, float x, float y) {
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 5.0;
     vsrc->props.ac_voltage.frequency = 159.0;
+    // Frequency sweep 50 Hz -> 500 Hz (log, 3 s each way): the resonance at 159 Hz shows as a peak
+    vsrc->props.ac_voltage.frequency_sweep.enabled = true;
+    vsrc->props.ac_voltage.frequency_sweep.mode = SWEEP_LOG;
+    vsrc->props.ac_voltage.frequency_sweep.start_value = 50;
+    vsrc->props.ac_voltage.frequency_sweep.end_value = 500;
+    vsrc->props.ac_voltage.frequency_sweep.sweep_time = 3;
+    vsrc->props.ac_voltage.frequency_sweep.repeat = true;
+    vsrc->props.ac_voltage.frequency_sweep.bidirectional = true;
 
     // Ground for source
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
@@ -5884,6 +5900,7 @@ static int place_peak_detector(Circuit *circuit, float x, float y) {
     vsrc->props.ac_voltage.frequency = 1000.0;   // 1 kHz carrier
     // Amplitude sweeps 1 V -> 5 V -> 1 V every second (bidirectional, repeating)
     vsrc->props.ac_voltage.amplitude_sweep.enabled = true;
+    vsrc->props.ac_voltage.amplitude_sweep.mode = SWEEP_LINEAR;
     vsrc->props.ac_voltage.amplitude_sweep.start_value = 1.0;
     vsrc->props.ac_voltage.amplitude_sweep.end_value = 5.0;
     vsrc->props.ac_voltage.amplitude_sweep.sweep_time = 0.5;
@@ -6018,6 +6035,7 @@ static int place_clamper(Circuit *circuit, float x, float y) {
     vsrc->props.ac_voltage.frequency = 1000.0;
     // Amplitude sweeps 1 V -> 5 V -> 1 V every second (bidirectional, repeating)
     vsrc->props.ac_voltage.amplitude_sweep.enabled = true;
+    vsrc->props.ac_voltage.amplitude_sweep.mode = SWEEP_LINEAR;
     vsrc->props.ac_voltage.amplitude_sweep.start_value = 1.0;
     vsrc->props.ac_voltage.amplitude_sweep.end_value = 5.0;
     vsrc->props.ac_voltage.amplitude_sweep.sweep_time = 0.5;
@@ -6397,8 +6415,9 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_7805_REG] = {"7805 REGULATOR: 9 V in, 5.00 V out regardless of load or small input", "changes. Needs at least ~7 V in (dropout). The small caps stabilise it.", "Try: lower Vin to 6 V and watch the output follow.", "PROBE: OUT pin node. Expect a flat 5.00 V. Drop Vin below 7 V to see dropout."},
     [CIRCUIT_LM317_REG] = {"LM317 ADJUSTABLE REGULATOR: it keeps 1.25 V between OUT and ADJ, so", "Vout = 1.25 * (1 + R2/R1) = 1.25 * (1 + 720/240) = 5.0 V. Change R2 to", "set any voltage up to the input minus dropout.", "PROBE: OUT node. Expect 5.0 V. Change R2 (720) to 1.2k -> 7.5 V."},
     [CIRCUIT_TL431_REF] = {"TL431 SHUNT REFERENCE: with REF tied to the cathode it regulates its", "own cathode at 2.50 V, shunting whatever current Rs supplies beyond", "the load. A programmable zener - add a divider on REF for other voltages.", "PROBE: the cathode node. Expect a flat 2.50 V."},
-    [CIRCUIT_SERIES_RLC] = {"SERIES RLC: at resonance f0 = 1/(2*pi*sqrt(L*C)) = 159 Hz the reactances", "cancel and only R limits the current (50 mA). Q = sqrt(L/C)/R = 0.1 here;", "lower R to 1 ohm and the capacitor voltage magnifies to 50 V.", "PROBE: the L-C junction (across C). Expect 0.5 Vpk at 159 Hz; R=1 -> 50 Vpk."},
-    [CIRCUIT_PARALLEL_RLC] = {"PARALLEL RLC (TANK): at f0 = 159 Hz the tank impedance is maximum, so", "almost the whole source voltage appears across it. Q = R*sqrt(C/L) = 100:", "shift the source a few Hz and the output collapses.", "PROBE: the tank top (any top point - one net) vs source +. Expect ~5 Vpk at f0."},
+    [CIRCUIT_SERIES_RLC] = {"SERIES RLC: at resonance f0 = 1/(2*pi*sqrt(L*C)) = 159 Hz the reactances", "cancel and only R (10 ohm) limits the current: 0.5 A. Q = sqrt(L/C)/R = 1, so", "the capacitor voltage magnifies to Q*Vin = 5 V right at f0 and falls either side.", "PROBE: auto-placed on the source and across C. Source sweeps 50-500 Hz: Vc peaks at 159 Hz."},
+    [CIRCUIT_PARALLEL_RLC] = {"PARALLEL RLC (TANK): at f0 = 159 Hz the tank impedance is maximum, so", "almost the whole source voltage appears across it. Q = R*sqrt(C/L) = 100:", "shift the source a few Hz and the output collapses.", "PROBE: auto-placed: source vs the tank (one net across the top). Sweeping 50-500 Hz, the",
+ "tank voltage is tiny off-resonance and rises to the full 5 V only around 159 Hz."},
     [CIRCUIT_WHEATSTONE] = {"WHEATSTONE BRIDGE: two dividers side by side. With R4 = 1.1k the right", "midpoint sits at 5.24 V vs 5.00 V on the left - a 0.24 V imbalance that", "measures the unknown resistor. Set R4 = 1k and the bridge nulls.", "PROBE: both bridge midpoints. Expect 5.00 V and 5.24 V (0.24 V imbalance)."},
     [CIRCUIT_PEAK_DETECTOR] = {"PEAK DETECTOR: the op-amp charges C through the diode whenever Vin", "exceeds the stored voltage; when Vin falls the diode blocks and C holds the", "peak. The 47k bleed (R*C = 47 ms) lets it decay, so the output rides the", "envelope of the 1 kHz carrier whose amplitude sweeps 1 V -> 5 V -> 1 V each second.", "PROBE: input and the cap node at 50 ms/div: the cap traces the envelope 1..5 V."},
     [CIRCUIT_CLAMPER] = {"CLAMPER (DC RESTORER): the cap charges to the negative peak through the", "diode, then acts as a 5 V battery in series with the signal. The whole", "sine is shifted so its bottom sits at ~-0.7 V. R*C >> period keeps it.", "PROBE: input and the cap-diode node at 50 ms/div: bottom pinned at -0.7 V, top follows 2A."},
