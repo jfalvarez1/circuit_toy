@@ -623,6 +623,7 @@ static const char* svg_component_name(ComponentType type) {
         case COMP_NMOS: return "NMOS";
         case COMP_PMOS: return "PMOS";
         case COMP_OPAMP: return "Op-Amp";
+        case COMP_OPAMP_REAL: return "Op-Amp (real)";
         case COMP_DC_VOLTAGE: return "DC Voltage Source";
         case COMP_AC_VOLTAGE: return "AC Voltage Source";
         case COMP_GROUND: return "Ground";
@@ -965,6 +966,7 @@ static void svg_render_component(FILE *f, Component *comp) {
             break;
         case COMP_OPAMP:
         case COMP_OPAMP_FLIPPED:
+        case COMP_OPAMP_REAL:
             svg_render_opamp(f, x, y, rot);
             break;
         case COMP_DC_VOLTAGE:
@@ -994,6 +996,22 @@ static void svg_render_component(FILE *f, Component *comp) {
         case COMP_555_TIMER:
             svg_render_generic_ic(f, x, y, rot, "555");
             break;
+        case COMP_TEXT: {
+            // Text annotation: emit the text itself instead of a placeholder box
+            int fs = comp->props.text.font_size;
+            float px = fs <= 1 ? 12.0f : (fs == 2 ? 18.0f : 24.0f);
+            fprintf(f, "    <text x=\"%.1f\" y=\"%.1f\" text-anchor=\"middle\" class=\"label\" font-size=\"%.0f\"%s>",
+                    x, y + px * 0.35f, px, comp->props.text.bold ? " font-weight=\"bold\"" : "");
+            for (const char *c = comp->props.text.text; *c; c++) {
+                if (*c == '<') fputs("&lt;", f);
+                else if (*c == '>') fputs("&gt;", f);
+                else if (*c == '&') fputs("&amp;", f);
+                else fputc(*c, f);
+            }
+            fprintf(f, "</text>\n");
+            fprintf(f, "  </g>\n");
+            return;
+        }
         default:
             // Generic box for unsupported components
             svg_write_line(f, x, y, -20, -20, 20, -20, rot);

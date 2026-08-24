@@ -9,7 +9,7 @@
  *   5. prints the terminal voltages of every transistor and op-amp so bias points
  *      can be checked against TEMPLATE_AUDIT.md by eye.
  *
- * Usage: template_smoke [--dc] [--verbose] [--sim-time SEC] [name-substring]
+ * Usage: template_smoke [--dc] [--verbose] [--nodes] [--svg DIR] [--sim-time SEC] [name-substring]
  * Exit code is the number of failing templates (0 = all good).
  */
 
@@ -23,6 +23,7 @@
 #include "circuit.h"
 #include "circuits.h"
 #include "simulation.h"
+#include "file_io.h"
 
 /* Defined by the UI layer in the real app; the engine only reads it. */
 WirelessState g_wireless = {0};
@@ -87,12 +88,14 @@ static void print_bias(Circuit *c) {
 
 int main(int argc, char **argv) {
     int dc_only = 0, verbose = 0, dump_nodes = 0;
+    const char *svg_dir = NULL;
     double sim_time = 5e-3;
     const char *filter = NULL;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--dc")) dc_only = 1;
         else if (!strcmp(argv[i], "--verbose")) verbose = 1;
         else if (!strcmp(argv[i], "--nodes")) dump_nodes = 1;
+        else if (!strcmp(argv[i], "--svg") && i + 1 < argc) svg_dir = argv[++i];
         else if (!strcmp(argv[i], "--sim-time") && i + 1 < argc) sim_time = atof(argv[++i]);
         else filter = argv[i];
     }
@@ -111,6 +114,15 @@ int main(int argc, char **argv) {
             failures++;
             circuit_free(circuit);
             continue;
+        }
+
+        if (svg_dir) {
+            char path[512], safe[64];
+            int k = 0;
+            for (const char *c = name; *c && k < 60; c++) safe[k++] = (*c == ' ' || *c == '/' || *c == '+') ? '_' : *c;
+            safe[k] = 0;
+            snprintf(path, sizeof path, "%s/%02d_%s.svg", svg_dir, t, safe);
+            if (!file_export_svg(circuit, path)) printf("      (svg export failed: %s)\n", path);
         }
 
         Simulation *sim = simulation_create(circuit);

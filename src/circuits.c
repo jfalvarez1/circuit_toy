@@ -1896,8 +1896,11 @@ static int place_push_pull(Circuit *circuit, float x, float y) {
     vcc->props.dc_voltage.voltage = 12.0;
     // Negative rail: its + terminal feeds the PNP collector node, so -12 V puts that
     // node at -12 V relative to the shared ground.
-    Component *vee = add_comp(circuit, COMP_DC_VOLTAGE, x - 60, y + 120, 0);
+    // Placed between the base drop (x-20) and Q2 so its wire to Q2.C never crosses anything;
+    // it gets its own ground symbol directly below.
+    Component *vee = add_comp(circuit, COMP_DC_VOLTAGE, x + 20, y + 140, 0);
     vee->props.dc_voltage.voltage = -12.0;
+    Component *gnd_vee = add_comp(circuit, COMP_GROUND, x + 20, y + 200, 0);
 
     Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 140, y + 20, 0);
     vin->props.ac_voltage.amplitude = 5.0;
@@ -1965,25 +1968,17 @@ static int place_push_pull(Circuit *circuit, float x, float y) {
     circuit_add_wire(circuit, bus_bot, gnd_node);
     vcc->node_ids[1] = gnd_node;
 
-    // --- Vee+ -> Q2 collector (straight right; crosses the base drop without a junction) ---
+    // --- Vee+ -> Q2 collector: right along y+100, then up into the collector lead ---
     int vee_node = circuit_find_or_create_node(circuit, vee_pos_x, vee_pos_y, 5.0f);
     vee->node_ids[0] = vee_node;
     int c2_node = circuit_find_or_create_node(circuit, coll2_x, coll2_y, 5.0f);
-    if (fabsf(coll2_y - vee_pos_y) < 1.0f) {
-        circuit_add_wire(circuit, vee_node, c2_node);
-    } else {
-        int c2_corner = circuit_find_or_create_node(circuit, coll2_x, vee_pos_y, 5.0f);
-        circuit_add_wire(circuit, vee_node, c2_corner);
-        circuit_add_wire(circuit, c2_corner, c2_node);
-    }
+    int c2_corner = circuit_find_or_create_node(circuit, coll2_x, vee_pos_y, 5.0f);
+    circuit_add_wire(circuit, vee_node, c2_corner);
+    circuit_add_wire(circuit, c2_corner, c2_node);
     q2->node_ids[1] = vee_node;
 
-    // --- Vee- -> ground bus ---
-    int vee_neg_node = circuit_find_or_create_node(circuit, vee_neg_x, vee_neg_y, 5.0f);
-    int bus_vee = circuit_find_or_create_node(circuit, gnd_bus_x, vee_neg_y, 5.0f);
-    circuit_add_wire(circuit, vee_neg_node, bus_vee);
-    circuit_add_wire(circuit, bus_vee, bus_bot);
-    vee->node_ids[1] = gnd_node;
+    // --- Vee- -> its own ground ---
+    connect_terminals(circuit, vee, 1, gnd_vee, 0);
 
     // --- Vin+ -> both bases ---
     // Bus along the input row to a split point, then: straight on to Q1.B; and down,
@@ -1991,7 +1986,7 @@ static int place_push_pull(Circuit *circuit, float x, float y) {
     int base_node = circuit_find_or_create_node(circuit, vin_pos_x, vin_pos_y, 5.0f);
     vin->node_ids[0] = base_node;
     float split_x = x - 20;
-    float under_y = y + 140;
+    float under_y = y + 240;      // below the Vee ground symbol
     float right_x = base2_x + 40;
     int split = circuit_find_or_create_node(circuit, split_x, vin_pos_y, 5.0f);
     int b1_node = circuit_find_or_create_node(circuit, base1_x, base1_y, 5.0f);
@@ -2030,7 +2025,7 @@ static int place_push_pull(Circuit *circuit, float x, float y) {
     rload->node_ids[0] = out_node;
     connect_terminals(circuit, rload, 1, gnd_load, 0);
 
-    return 9;
+    return 10;
 }
 
 // === CMOS INVERTER ===
@@ -6259,154 +6254,105 @@ static int place_clamper(Circuit *circuit, float x, float y) {
 // For N=3: f = 1/(2πRC√6) ≈ 6.5 Hz with R=10kΩ, C=1µF
 // CRITICAL: Minimum gain requirement Av ≥ 29 for 3 stages
 static int place_phase_shift_osc(Circuit *circuit, float x, float y) {
-    // === RC PHASE SHIFT OSCILLATOR ===
-    // Single-supply (0-5V) configuration with DC bias network
+    // Single-supply RC phase-shift oscillator.
     //
-    // Component values for oscillation:
-    // - Rf = 40kΩ (gain = 40 >> 29 minimum required)
-    // - R7, R9, R11 = 1kΩ (equal for symmetric RC network)
-    // - C8, C10, C12 = 10nF (smaller for higher frequency ~6.5kHz)
-    // - Expected frequency: f = 1/(2π√6 RC) ≈ 6.5 kHz
-    // - Pulse: 1V, 0.1ms width, 100s period (startup kick)
-    // - DC Bias: 2.5V via 10kΩ/10kΩ voltage divider (required for single-supply)
-
+    //            Rf 40k
+    //      +----/\/\/\----+
+    //      |              |
+    //  INV o---|\         |   C   C   C
+    //          | >--------+---||--+--||--+--||--+---(back to INV)
+    //  BIAS o--|/             R|   R|   R|      |
+    //                          gnd gnd gnd     Ck--PLS (start-up kick)
+    //
+    // f = 1/(2*pi*sqrt(6)*R*C) = 6.5 kHz for R=1k, C=10n; gain Rf/R = 40 (>= 29 needed).
+    // The + input sits at 2.5 V (10k/10k from 5 V) so the 0..5 V rail op-amp swings
+    // around mid-supply.
     if (!circuit) return 0;
 
-    // === ADD COMPONENTS AT EXACT POSITIONS (from corrected debug_circuit.json) ===
-    // PLS1 - Pulse source
-    Component *pls1 = add_comp(circuit, COMP_PULSE_SOURCE, x - 510, y - 30, 0);
-    pls1->props.pulse_source.v_low = 0.0;
-    pls1->props.pulse_source.v_high = 1.0;           // 1V pulse
-    pls1->props.pulse_source.period = 100.0;
-    pls1->props.pulse_source.pulse_width = 0.0001;   // 0.1ms
+    // --- op-amp and feedback ---
+    Component *u = add_comp(circuit, COMP_OPAMP_REAL, x, y - 20, 0);          // -(-40,-40) +(-40,0) OUT(40,-20)
+    if (!u) return 0;
+    u->props.opamp.gain = 1e6;
+    u->props.opamp.gbw = 10e6;
+    u->props.opamp.vmax = 5.0;
+    u->props.opamp.vmin = 0.0;
+    Component *rf = add_comp(circuit, COMP_RESISTOR, x, y - 120, 0);           // (-40,-120)-(40,-120)
+    rf->props.resistor.resistance = 40000.0;
 
-    // C2 - Coupling capacitor (0.1µF)
-    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x - 440, y - 70, 0);
-    c2->props.capacitor.capacitance = 1e-7;
-
-    // GND3 - Pulse ground
-    Component *gnd3 = add_comp(circuit, COMP_GROUND, x - 510, y + 30, 0);
-
-    // U4 - Opamp
-    Component *u4 = add_comp(circuit, COMP_OPAMP_REAL, x - 200, y - 50, 0);
-    u4->props.opamp.gain = 1e6;
-    u4->props.opamp.gbw = 10e6;
-    u4->props.opamp.vmax = 5.0;
-    u4->props.opamp.vmin = 0.0;
-
-    // === DC BIAS NETWORK FOR SINGLE-SUPPLY OPERATION ===
-    // Voltage divider creates 2.5V bias point at NON(+) input
-    // V5 - +5V source for bias
-    Component *v5 = add_comp(circuit, COMP_DC_VOLTAGE, x - 340, y - 10, 0);
+    // --- 5 V supply and 2.5 V bias divider ---
+    Component *v5 = add_comp(circuit, COMP_DC_VOLTAGE, x - 240, y - 40, 0);   // +(-240,-80) -(-240,0)
     v5->props.dc_voltage.voltage = 5.0;
+    Component *gnd_v = add_comp(circuit, COMP_GROUND, x - 240, y + 20, 0);
+    Component *rb1 = add_comp(circuit, COMP_RESISTOR, x - 160, y - 40, 90);   // (-160,-80)-(-160,0)
+    rb1->props.resistor.resistance = 10000.0;
+    Component *rb2 = add_comp(circuit, COMP_RESISTOR, x - 160, y + 40, 90);   // (-160,0)-(-160,80)
+    rb2->props.resistor.resistance = 10000.0;
+    Component *gnd_b = add_comp(circuit, COMP_GROUND, x - 160, y + 100, 0);
 
-    // GND5 - Voltage divider ground
-    Component *gnd5 = add_comp(circuit, COMP_GROUND, x - 340, y + 50, 0);
+    // --- RC ladder, left to right along y-20, shunt resistors down to ground ---
+    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 120, y - 20, 0);    // (80,-20)-(160,-20)
+    Component *r1 = add_comp(circuit, COMP_RESISTOR,  x + 160, y + 20, 90);   // (160,-20)-(160,60)
+    Component *g1 = add_comp(circuit, COMP_GROUND,    x + 160, y + 80, 0);
+    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 200, y - 20, 0);    // (160,-20)-(240,-20)
+    Component *r2 = add_comp(circuit, COMP_RESISTOR,  x + 240, y + 20, 90);
+    Component *g2 = add_comp(circuit, COMP_GROUND,    x + 240, y + 80, 0);
+    Component *c3 = add_comp(circuit, COMP_CAPACITOR, x + 280, y - 20, 0);    // (240,-20)-(320,-20)
+    Component *r3 = add_comp(circuit, COMP_RESISTOR,  x + 320, y + 20, 90);
+    Component *g3 = add_comp(circuit, COMP_GROUND,    x + 320, y + 80, 0);
+    Component *caps[3] = {c1, c2, c3};
+    Component *res[3] = {r1, r2, r3};
+    for (int i = 0; i < 3; i++) {
+        caps[i]->props.capacitor.capacitance = 1e-8;   // 10 nF
+        res[i]->props.resistor.resistance = 1000.0;    // 1 k
+    }
 
-    // R_BIAS_TOP - Upper half of voltage divider (10kΩ): +5V → BIAS
-    Component *r_bias_top = add_comp(circuit, COMP_RESISTOR, x - 310, y + 10, 90);
-    r_bias_top->props.resistor.resistance = 10000.0;
+    // --- start-up kick: one short pulse through a coupling cap into the ladder end ---
+    Component *ck = add_comp(circuit, COMP_CAPACITOR, x + 360, y - 20, 0);    // (320,-20)-(400,-20)
+    ck->props.capacitor.capacitance = 1e-7;
+    Component *pls = add_comp(circuit, COMP_PULSE_SOURCE, x + 400, y + 20, 0); // +(400,-20) -(400,60)
+    pls->props.pulse_source.v_low = 0.0;
+    pls->props.pulse_source.v_high = 1.0;
+    pls->props.pulse_source.period = 100.0;
+    pls->props.pulse_source.pulse_width = 0.0001;
+    Component *gnd_p = add_comp(circuit, COMP_GROUND, x + 400, y + 80, 0);
 
-    // R_BIAS_BOT - Lower half of voltage divider (10kΩ): BIAS → GND
-    Component *r_bias_bot = add_comp(circuit, COMP_RESISTOR, x - 310, y + 50, 90);
-    r_bias_bot->props.resistor.resistance = 10000.0;
+    Component *label = add_comp(circuit, COMP_TEXT, x + 80, y - 220, 0);
+    strncpy(label->props.text.text, "RC Phase-Shift Oscillator", sizeof(label->props.text.text)-1);
+    label->props.text.font_size = 2;
 
-    // R6 - Feedback resistor (40kΩ as per original)
-    Component *r6 = add_comp(circuit, COMP_RESISTOR, x - 200, y - 150, 0);
-    r6->props.resistor.resistance = 40000.0;
+    // --- terminal-aligned connections (all straight) ---
+    connect_terminals(circuit, v5, 1, gnd_v, 0);
+    connect_terminals(circuit, v5, 0, rb1, 0);          // 5 V rail to divider top
+    connect_terminals(circuit, rb1, 1, rb2, 0);         // bias node
+    connect_terminals(circuit, rb2, 1, gnd_b, 0);
+    connect_terminals(circuit, rb1, 1, u, 1);           // bias -> + input (horizontal at y)
+    connect_terminals(circuit, rf, 0, u, 0);            // Rf left down to - input
+    connect_terminals(circuit, rf, 1, u, 2);            // Rf right down to output
+    connect_terminals(circuit, u, 2, c1, 0);            // output -> ladder
+    for (int i = 0; i < 3; i++) {
+        connect_terminals(circuit, caps[i], 1, res[i], 0);   // ladder node = cap right = R top
+        connect_terminals(circuit, res[i], 1, (Component *[]){g1, g2, g3}[i], 0);
+        if (i < 2) connect_terminals(circuit, res[i], 0, caps[i + 1], 0);
+    }
+    connect_terminals(circuit, r3, 0, ck, 0);           // ladder end -> kick cap
+    connect_terminals(circuit, ck, 1, pls, 0);
+    connect_terminals(circuit, pls, 1, gnd_p, 0);
 
-    // === RC PHASE SHIFT NETWORK (3 symmetric stages) ===
-    // Stage spacing: 150 pixels horizontal
+    // --- ladder end back to the inverting input: up, across the top, down ---
+    float n3_x, n3_y, inv_x, inv_y;
+    component_get_terminal_pos(r3, 0, &n3_x, &n3_y);
+    component_get_terminal_pos(u, 0, &inv_x, &inv_y);
+    int n3 = circuit_find_or_create_node(circuit, n3_x, n3_y, 5.0f);
+    int inv = circuit_find_or_create_node(circuit, inv_x, inv_y, 5.0f);
+    int k1 = circuit_find_or_create_node(circuit, n3_x, y - 160, 5.0f);
+    int k2 = circuit_find_or_create_node(circuit, x - 80, y - 160, 5.0f);
+    int k3 = circuit_find_or_create_node(circuit, x - 80, inv_y, 5.0f);
+    circuit_add_wire(circuit, n3, k1);
+    circuit_add_wire(circuit, k1, k2);
+    circuit_add_wire(circuit, k2, k3);
+    circuit_add_wire(circuit, k3, inv);
 
-    // Stage 0: C12 + R11
-    Component *c12 = add_comp(circuit, COMP_CAPACITOR, x - 360, y + 80, 0);
-    c12->props.capacitor.capacitance = 1e-8;  // 10nF
-    Component *r11 = add_comp(circuit, COMP_RESISTOR, x - 330, y + 120, 90);
-    r11->props.resistor.resistance = 1000.0;
-    Component *gnd14 = add_comp(circuit, COMP_GROUND, x - 330, y + 180, 0);
-
-    // Stage 1: C10 + R9
-    Component *c10 = add_comp(circuit, COMP_CAPACITOR, x - 210, y + 80, 0);
-    c10->props.capacitor.capacitance = 1e-8;  // 10nF
-    Component *r9 = add_comp(circuit, COMP_RESISTOR, x - 180, y + 120, 90);
-    r9->props.resistor.resistance = 1000.0;
-    Component *gnd13 = add_comp(circuit, COMP_GROUND, x - 180, y + 180, 0);
-
-    // Stage 2: C8 + R7
-    Component *c8 = add_comp(circuit, COMP_CAPACITOR, x - 60, y + 80, 0);
-    c8->props.capacitor.capacitance = 1e-8;  // 10nF
-    Component *r7 = add_comp(circuit, COMP_RESISTOR, x - 30, y + 120, 90);
-    r7->props.resistor.resistance = 1000.0;
-    Component *gnd12 = add_comp(circuit, COMP_GROUND, x - 30, y + 180, 0);
-
-    // === GET TERMINAL NODE IDs ===
-    int pls_pos = pls1->node_ids[0];
-    int c2_left = c2->node_ids[0];
-    int c2_right = c2->node_ids[1];
-    int u4_inv = u4->node_ids[0];
-    int u4_non = u4->node_ids[1];
-    int u4_out = u4->node_ids[2];
-    int r6_left = r6->node_ids[0];
-    int r6_right = r6->node_ids[1];
-    int r7_top = r7->node_ids[0];
-    int r7_bot = r7->node_ids[1];
-    int c8_left = c8->node_ids[0];
-    int c8_right = c8->node_ids[1];
-    int r9_top = r9->node_ids[0];
-    int r9_bot = r9->node_ids[1];  // ADDED: needed for grounding R9
-    int c10_left = c10->node_ids[0];
-    int c10_right = c10->node_ids[1];
-    int r11_top = r11->node_ids[0];
-    int r11_bot = r11->node_ids[1];  // ADDED: needed for grounding R11
-    int c12_left = c12->node_ids[0];
-    int c12_right = c12->node_ids[1];
-    int gnd5_node = gnd5->node_ids[0];
-    int gnd12_node = gnd12->node_ids[0];  // ADDED: R7 ground
-    int gnd13_node = gnd13->node_ids[0];  // ADDED: R9 ground
-    int gnd14_node = gnd14->node_ids[0];  // ADDED: R11 ground
-
-    // Bias network node IDs
-    int v5_pos = v5->node_ids[0];
-    int r_bias_top_top = r_bias_top->node_ids[0];
-    int r_bias_top_bot = r_bias_top->node_ids[1];  // This is the 2.5V bias point
-    int r_bias_bot_top = r_bias_bot->node_ids[0];  // This is also the 2.5V bias point
-    int r_bias_bot_bot = r_bias_bot->node_ids[1];
-
-    // Create junction node for OUT → C12 connection
-    int out_junction = circuit_create_node(circuit, x - 10, y - 50);
-
-    // === CREATE WIRES (from corrected debug_circuit.json) ===
-    // Pulse source wiring
-    circuit_add_wire(circuit, pls_pos, c2_left);      // PLS+ → C2 left
-    circuit_add_wire(circuit, c2_right, u4_inv);      // C2 right → INV(-)
-
-    // === DC BIAS NETWORK WIRING ===
-    // Voltage divider: +5V → R_BIAS_TOP → BIAS (2.5V) → R_BIAS_BOT → GND
-    circuit_add_wire(circuit, v5_pos, r_bias_top_top);         // V5+ → R_BIAS_TOP top
-    circuit_add_wire(circuit, r_bias_top_bot, r_bias_bot_top); // R_BIAS_TOP bottom → R_BIAS_BOT top (2.5V bias point)
-    circuit_add_wire(circuit, r_bias_bot_bot, gnd5_node);      // R_BIAS_BOT bottom → GND
-
-    // Connect NON(+) to 2.5V bias point
-    circuit_add_wire(circuit, u4_non, r_bias_top_bot);         // NON(+) → BIAS (2.5V)
-
-    // Feedback resistor: OUT → R6 → INV
-    circuit_add_wire(circuit, u4_out, r6_right);      // OUT → R6 right
-    circuit_add_wire(circuit, r6_left, u4_inv);       // R6 left → INV(-)
-
-    // RC phase shift network: OUT → C12 → R11 (GND) → C10 → R9 (GND) → C8 → R7 (GND) → input
-    circuit_add_wire(circuit, u4_out, out_junction);    // OUT → junction
-    circuit_add_wire(circuit, out_junction, c12_left);  // junction → C12 left
-    circuit_add_wire(circuit, c12_right, r11_top);      // C12 right → R11 top
-    circuit_add_wire(circuit, r11_bot, gnd14_node);     // R11 bottom → GND
-    circuit_add_wire(circuit, r11_top, c10_left);       // R11 top → C10 left
-    circuit_add_wire(circuit, c10_right, r9_top);       // C10 right → R9 top
-    circuit_add_wire(circuit, r9_bot, gnd13_node);      // R9 bottom → GND
-    circuit_add_wire(circuit, r9_top, c8_left);         // R9 top → C8 left
-    circuit_add_wire(circuit, c8_right, r7_top);        // C8 right → R7 top
-    circuit_add_wire(circuit, r7_bot, gnd12_node);      // R7 bottom → GND
-    circuit_add_wire(circuit, r7_top, c2_right);        // R7 top → input (completes loop)
-
-    return 18;  // Total components (14 original + 3 for DC bias + 1 for R7 ground)
+    return 20;
 }
 
 int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, float y) {
