@@ -539,6 +539,9 @@ bool simulation_dc_analysis(Simulation *sim) {
     // Apply post-solve clamping as safety net
     simulation_clamp_opamps(circuit, sim->solution);
 
+    // Capacitors carry no current at the operating point
+    for (int i = 0; i < circuit->num_components; i++) circuit->components[i]->trap_i_prev = 0.0;
+
     // Update circuit voltages, meter readings and the current-flow display
     circuit_update_voltages(circuit, solution);
     circuit_update_meter_readings(circuit);
@@ -569,6 +572,11 @@ static Vector *simulation_solve_step(Simulation *sim, double dt) {
 
     Vector *current_solution = vector_clone(sim->solution);
     if (!current_solution) return NULL;
+
+    for (int i = 0; i < circuit->num_components; i++) {
+        circuit->components[i]->sat_last_rail = 0;
+        circuit->components[i]->sat_flips = 0;
+    }
 
     for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
         Matrix *A = matrix_create(matrix_size, matrix_size);
@@ -960,6 +968,12 @@ void simulation_compute_terminal_currents(Simulation *sim) {
             comp->type == COMP_PIN || comp->type == COMP_SUBCIRCUIT || comp->num_terminals < 2)
             continue;
 
+        if ((comp->type == COMP_CAPACITOR || comp->type == COMP_CAPACITOR_ELEC) && sim->prev_step_solution) {
+            comp->terminal_current[0] = comp->trap_i_prev;
+            comp->terminal_current[1] = -comp->trap_i_prev;
+            continue;
+        }
+
         // Rows this component can touch
         int rows[MAX_TERMINALS + 4]; int nrows = 0;
         for (int t = 0; t < comp->num_terminals; t++) {
@@ -1120,6 +1134,18 @@ bool simulation_step(Simulation *sim) {
         if (sim->prev_step_solution) vector_free(sim->prev_step_solution);
         sim->prev_step_solution = sim->solution;
         sim->solution = trial_solution;
+
+        // Trapezoidal capacitor state: i_new = (2C/dt)(v_new - v_prev) - i_prev
+        for (int i = 0; i < circuit->num_components; i++) {
+            Component *comp = circuit->components[i];
+            if (comp->type != COMP_CAPACITOR && comp->type != COMP_CAPACITOR_ELEC) continue;
+            double C = (comp->type == COMP_CAPACITOR) ? comp->props.capacitor.capacitance
+                                                      : comp->props.capacitor_elec.capacitance;
+            int n0 = circuit->node_map[comp->node_ids[0]], n1 = circuit->node_map[comp->node_ids[1]];
+            double vn = ((n0 > 0) ? vector_get(sim->solution, n0 - 1) : 0) - ((n1 > 0) ? vector_get(sim->solution, n1 - 1) : 0);
+            double vp = ((n0 > 0) ? vector_get(sim->prev_step_solution, n0 - 1) : 0) - ((n1 > 0) ? vector_get(sim->prev_step_solution, n1 - 1) : 0);
+            comp->trap_i_prev = (C / (0.6 * dt)) * (vn - vp) - (0.4 / 0.6) * comp->trap_i_prev;   // theta = 0.6, see capacitor stamp
+        }
 
         // Apply post-solve clamping as safety net (valid approach for educational simulators)
         // This prevents any remaining numerical drift from pushing outputs beyond rails

@@ -2143,7 +2143,7 @@ double sweep_get_value(const SweepConfig *sweep, double base_value, double time)
 // Stamp an op-amp output (VCVS auxiliary row) with rail saturation.
 //   plus_idx / minus_idx / out_idx are matrix indices (0 = ground), volt_idx is the row of
 //   the auxiliary current variable. Returns true if the output was stamped saturated.
-static bool opamp_stamp_output(Matrix *A, Vector *b, Vector *prev_solution,
+static bool opamp_stamp_output(Component *comp, Matrix *A, Vector *b, Vector *prev_solution,
                                int plus_idx, int minus_idx, int out_idx, int volt_idx,
                                double gain, double vmax, double vmin) {
     // Coupling between the auxiliary current variable and the output node
@@ -2166,6 +2166,15 @@ static bool opamp_stamp_output(Matrix *A, Vector *b, Vector *prev_solution,
         bool at_max = (vo >= vmax - 1e-6), at_min = (vo <= vmin + 1e-6);
         if (predicted >= vmax || (at_max && predicted >= vmax - margin)) { saturated = true; rail = vmax; }
         else if (predicted <= vmin || (at_min && predicted <= vmin + margin)) { saturated = true; rail = vmin; }
+
+        // A rail-to-rail flip-flop between Newton iterations means neither rail is a
+        // consistent solution (e.g. a feedback loop whose true answer is in the linear
+        // region). After two flips fall back to the linear stamp for this solve, which
+        // Newton can then converge on.
+        int rail_sign = saturated ? ((rail == vmax) ? 1 : -1) : 0;
+        if (rail_sign != 0 && comp->sat_last_rail != 0 && rail_sign != comp->sat_last_rail) comp->sat_flips++;
+        comp->sat_last_rail = rail_sign;
+        if (comp->sat_flips >= 2) saturated = false;
     }
 
     if (saturated) {
@@ -2280,14 +2289,23 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double C = (comp->type == COMP_CAPACITOR) ?
                        comp->props.capacitor.capacitance :
                        comp->props.capacitor_elec.capacitance;
-            double Geq = C / dt;
+            // Trapezoidal companion (SPICE default): i = (2C/dt)(v - v_prev) - i_prev.
+            // Half the numerical damping of backward Euler, which matters for oscillators.
+            // Backward Euler (Geq = C/dt, Ieq = C v_prev/dt) is kept for the DC operating point,
+            // where there is no previous step.
+            // theta-method: theta = 0.5 is pure trapezoidal (undamped, rings at Nyquist after a
+            // slope discontinuity), theta = 1 is backward Euler (heavily damped). 0.6 kills the
+            // ringing within a few steps while keeping oscillators alive at coarse dt.
+            const double THETA = 0.6;
+            bool trap = (g_stamp_prev_step != NULL);
+            double Geq = trap ? C / (THETA * dt) : C / dt;
             double Ieq = 0;
 
             Vector *mem = g_stamp_prev_step ? g_stamp_prev_step : prev_solution;
             if (mem) {
                 double v1 = (n[0] > 0) ? vector_get(mem, n[0]-1) : 0;
                 double v2 = (n[1] > 0) ? vector_get(mem, n[1]-1) : 0;
-                Ieq = C * (v1 - v2) / dt;
+                Ieq = Geq * (v1 - v2) + (trap ? ((1.0 - THETA) / THETA) * comp->trap_i_prev : 0.0);
             }
 
             STAMP_CONDUCTANCE(n[0], n[1], Geq);
@@ -2307,7 +2325,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             Vector *mem = g_stamp_prev_step ? g_stamp_prev_step : prev_solution;
             if (mem && curr_idx < mem->size) {
                 double Iprev = vector_get(mem, curr_idx);
-                Veq = L * Iprev / dt;
+                // Row: V0 - V1 - Req*I = Veq. Backward Euler gives V0 - V1 = Req*(I - Iprev),
+                // so Veq = -Req*Iprev. (It was +Req*Iprev, which made every inductor fight its
+                // own current and look ~30x too large.)
+                Veq = -L * Iprev / dt;
             }
 
             if (n[0] > 0) {
@@ -2741,7 +2762,7 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // VCVS model with rail saturation: Vout = clamp(A * (V+ - V-), vmin, vmax)
             // For COMP_OPAMP: n[0]="-", n[1]="+", n[2]="OUT"
             int volt_idx = num_nodes + comp->voltage_var_idx;
-            opamp_stamp_output(A, b, prev_solution, n[1], n[0], n[2], volt_idx,
+            opamp_stamp_output(comp, A, b, prev_solution, n[1], n[0], n[2], volt_idx,
                                comp->props.opamp.gain,
                                comp->props.opamp.vmax, comp->props.opamp.vmin);
             break;
@@ -2751,7 +2772,7 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // Same model as COMP_OPAMP; only the symbol's input order differs.
             // For COMP_OPAMP_FLIPPED: n[0]="+", n[1]="-", n[2]="OUT"
             int volt_idx = num_nodes + comp->voltage_var_idx;
-            opamp_stamp_output(A, b, prev_solution, n[0], n[1], n[2], volt_idx,
+            opamp_stamp_output(comp, A, b, prev_solution, n[0], n[1], n[2], volt_idx,
                                comp->props.opamp.gain,
                                comp->props.opamp.vmax, comp->props.opamp.vmin);
             break;
@@ -3638,14 +3659,13 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // For oscillators: use reduced gain for numerical stability
             // Theoretical minimum for 3-stage RC phase shift = 29
             // Use 150× to provide 5× safety margin
+            // Full open-loop gain: rail saturation is solved inside Newton now, so the old
+            // "cap the gain at 150" workaround is no longer needed (it starved oscillators).
             double A_effective = A_gain;
-            if (A_gain > 1000.0) {
-                A_effective = 150.0;  // Sweet spot: stable yet responsive
-            }
 
             // VCVS with rail saturation solved self-consistently (piecewise-linear).
             // n[0] is inverting (-), n[1] is non-inverting (+)
-            opamp_stamp_output(A, b, prev_solution, n[1], n[0], n[2], volt_idx,
+            opamp_stamp_output(comp, A, b, prev_solution, n[1], n[0], n[2], volt_idx,
                                A_effective, v_max, v_min);
             // Output resistance
             double G_out = 1.0 / r_out;

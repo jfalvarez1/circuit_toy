@@ -12,6 +12,9 @@
  * Usage: template_smoke [--dc] [--verbose] [--nodes] [--svg DIR] [--sim-time SEC] [name-substring]
  *        template_smoke --scope-test     (scope time/div <-> dt mapping checks)
  *        template_smoke --flow-test      (current-flow display invariants on all templates)
+ *        template_smoke --osc-test       (oscillator templates really oscillate, at the right frequency)
+ *        template_smoke --probe-test     (probe each template's output node, compare with hand calculation)
+ *        template_smoke --geom-test      (schematic audit: diagonals, crossings, wires through bodies)
  * Exit code is the number of failing templates (0 = all good).
  */
 
@@ -245,6 +248,262 @@ static int flow_test(void) {
     return fails;
 }
 
+/* Oscillator check: run the oscillator templates for a while and count how often the
+ * op-amp output crosses its own mean in the last quarter of the run. A latched or dead
+ * loop gives ~0 crossings; a healthy oscillator gives 2 per period. */
+static double g_osc_dt = 1e-6;
+static int osc_test(void) {
+    struct { CircuitTemplateType t; double run; double f_expect; } cases[] = {
+        { CIRCUIT_WIEN_OSCILLATOR, 0.040, 1591.5 },
+        { CIRCUIT_PHASE_SHIFT_OSC, 0.010, 6497.0 },
+    };
+    int fails = 0;
+    for (unsigned k = 0; k < sizeof cases / sizeof cases[0]; k++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info(cases[k].t);
+        Circuit *c = circuit_create();
+        circuit_place_template(c, cases[k].t, 0, 0);
+        Simulation *sim = simulation_create(c);
+        Component *amp = NULL;
+        for (int i = 0; i < c->num_components; i++) {
+            ComponentType ty = c->components[i]->type;
+            if (ty == COMP_OPAMP || ty == COMP_OPAMP_REAL || ty == COMP_OPAMP_FLIPPED) { amp = c->components[i]; break; }
+        }
+        int ok = amp && simulation_dc_analysis(sim);
+        simulation_set_time_step(sim, g_osc_dt);
+        simulation_start(sim);
+        /* record output in the last quarter */
+        double t_rec = cases[k].run * 0.75;
+        enum { NMAX = 20000 };
+        static double vs[NMAX]; static double ts[NMAX]; int n = 0;
+        while (ok && sim->time < cases[k].run) {
+            if (!simulation_step(sim)) { ok = 0; break; }
+            if (sim->time >= t_rec && n < NMAX) {
+                Node *nd = circuit_get_node(c, amp->node_ids[2]);
+                vs[n] = nd ? nd->voltage : 0; ts[n] = sim->time; n++;
+            }
+        }
+        double mean = 0, vmin = 1e300, vmax = -1e300; int crossings = 0; double f_meas = 0;
+        if (ok && n > 10) {
+            for (int i = 0; i < n; i++) { mean += vs[i]; if (vs[i] < vmin) vmin = vs[i]; if (vs[i] > vmax) vmax = vs[i]; }
+            mean /= n;
+            double t_first = -1, t_last = -1; int rising = 0;
+            double hyst = 0.1 * (vmax - vmin); int below = (vs[0] < mean - hyst);
+            for (int i = 1; i < n; i++) {
+                if (below && vs[i] > mean + hyst) { rising++; if (t_first < 0) t_first = ts[i]; t_last = ts[i]; below = 0; }
+                else if (!below && vs[i] < mean - hyst) below = 1;
+            }
+            crossings = rising;
+            if (rising >= 2) f_meas = (rising - 1) / (t_last - t_first);
+        }
+        int osc = ok && crossings >= 3 && (vmax - vmin) > 0.5;
+        int f_ok = osc && fabs(f_meas - cases[k].f_expect) < 0.25 * cases[k].f_expect;
+        printf("[%s] osc   %-28s swing=%.2fV  rising-crossings=%d  f=%.0fHz (expect ~%.0f)%s\n",
+               (osc && f_ok) ? " OK " : "FAIL", ti ? ti->name : "?", vmax - vmin, crossings, f_meas, cases[k].f_expect,
+               !ok ? "  [sim error]" : !osc ? "  [NOT OSCILLATING: latched or dead loop]" : !f_ok ? "  [frequency off]" : "");
+        if (!(osc && f_ok)) fails++;
+        simulation_free(sim); circuit_free(c);
+    }
+    return fails;
+}
+
+/* ------------------------------------------------------------------------------------
+ * Probe oracle: for each template, probe the designated output node the way a user
+ * would (scope probe on a node) and compare a metric with the hand calculation in
+ * TEMPLATE_AUDIT.md. Node spec = (component type, ordinal among that type, terminal).
+ * Metrics: dc = mean of last quarter; amp = (max-min)/2; max; mean (same as dc).
+ * tol > 0 is relative, tol < 0 is absolute (|tol|).
+ * ---------------------------------------------------------------------------------- */
+typedef struct { CircuitTemplateType t; ComponentType ct; int ord, term; const char *metric; double expect, tol, run; const char *note; } ProbeCase;
+static const ProbeCase probe_cases[] = {
+    { CIRCUIT_RC_LOWPASS,       COMP_CAPACITOR, 0, 0, "amp", 0.846, 0.10, 5e-3, "|H| at 1 kHz, fc 1.59 kHz" },
+    { CIRCUIT_RC_HIGHPASS,      COMP_RESISTOR,  0, 0, "amp", 0.532, 0.10, 5e-3, "|H| at 1 kHz" },
+    { CIRCUIT_RL_LOWPASS,       COMP_RESISTOR,  0, 0, "amp", 0.846, 0.10, 5e-3, "across R" },
+    { CIRCUIT_RL_HIGHPASS,      COMP_INDUCTOR,  0, 0, "amp", 0.532, 0.10, 5e-3, "across L" },
+    { CIRCUIT_VOLTAGE_DIVIDER,  COMP_RESISTOR,  1, 0, "dc",  5.0,   0.02, 2e-3, "10V*10k/20k" },
+    { CIRCUIT_INVERTING_AMP,    COMP_OPAMP,     0, 2, "amp", 5.0,   0.05, 5e-3, "-10 x 0.5 Vpk" },
+    { CIRCUIT_NONINVERTING_AMP, COMP_OPAMP_FLIPPED, 0, 2, "amp", 5.5, 0.05, 5e-3, "11 x 0.5 Vpk" },
+    { CIRCUIT_VOLTAGE_FOLLOWER, COMP_OPAMP,     0, 2, "amp", 1.0,   0.05, 5e-3, "unity" },
+    { CIRCUIT_HALFWAVE_RECT,    COMP_RESISTOR,  0, 0, "max", 4.3,   0.10, 40e-3, "5 - 0.7" },
+    { CIRCUIT_LED_WITH_RESISTOR,COMP_LED,       0, 0, "dc",  1.94,  0.05, 2e-3, "red Vf at 9 mA" },
+    { CIRCUIT_COMMON_EMITTER,   COMP_NPN_BJT,   0, 1, "dc",  9.0,   0.10, 5e-3, "Vc = 12 - 1.4mA*2.2k" },
+    { CIRCUIT_COMMON_SOURCE,    COMP_NMOS,      0, 1, "dc",  6.2,   0.15, 5e-3, "Vd" },
+    { CIRCUIT_COMMON_DRAIN,     COMP_NMOS,      0, 2, "dc",  4.3,   0.15, 5e-3, "Vs = Vg - Vgs" },
+    { CIRCUIT_MULTISTAGE_AMP,   COMP_NPN_BJT,   1, 1, "dc",  5.8,   0.15, 5e-3, "2nd collector" },
+    { CIRCUIT_DIFFERENTIAL_PAIR,COMP_NPN_BJT,   0, 1, "dc",  10.75, 0.05, 5e-3, "12 - 0.27mA*4.7k" },
+    { CIRCUIT_CURRENT_MIRROR,   COMP_NPN_BJT,   1, 1, "dc",  10.9,  0.05, 2e-3, "12 - 1.1mA*1k" },
+    { CIRCUIT_PUSH_PULL,        COMP_RESISTOR,  0, 0, "amp", 4.3,   0.15, 5e-3, "5 Vpk minus Vbe" },
+    { CIRCUIT_CMOS_INVERTER,    COMP_NMOS,      0, 1, "amp", 2.5,   0.10, 5e-3, "0..5 V square" },
+    { CIRCUIT_DIFFERENTIATOR,   COMP_OPAMP,     0, 2, "absmean", 0.4, 0.30, 30e-3, "-RC dV/dt = 1e-3 * 400 V/s (mean |v|, ignores corner spikes)" },
+    { CIRCUIT_SUMMING_AMP,      COMP_OPAMP,     0, 2, "dc",  -6.0,  0.03, 2e-3, "-(1+2+3)" },
+    { CIRCUIT_COMPARATOR,       COMP_OPAMP,     0, 2, "amp", 15.0,  0.05, 30e-3, "rail to rail" },
+    { CIRCUIT_FULLWAVE_BRIDGE,  COMP_CAPACITOR_ELEC, 0, 0, "dc", 10.2, 0.10, 60e-3, "10.6 pk - half ripple" },
+    { CIRCUIT_CENTERTAP_RECT,   COMP_CAPACITOR_ELEC, 0, 0, "dc", 5.2,  0.15, 60e-3, "6 pk - 0.7" },
+    { CIRCUIT_AC_DC_SUPPLY,     COMP_CAPACITOR_ELEC, 0, 0, "dc", 15.0, 0.10, 60e-3, "17 - 1.4 - ripple/2" },
+    { CIRCUIT_AC_DC_AMERICAN,   COMP_CAPACITOR_ELEC, 0, 0, "dc", 15.3, 0.10, 60e-3, "17 - 1.4 - 0.3" },
+    { CIRCUIT_DIFFERENCE_AMP,   COMP_OPAMP,     0, 2, "amp", 1.0,   0.10, 5e-3, "V2 - V1, unity" },
+    { CIRCUIT_TRANSIMPEDANCE,   COMP_OPAMP,     0, 2, "dc",  10.0,  0.03, 2e-3, "1 mA x 10k" },
+    { CIRCUIT_INSTR_AMP,        COMP_OPAMP,     2, 2, "amp", 2.1,   0.15, 5e-3, "gain 21 x 0.1 Vpk" },
+    { CIRCUIT_SALLEN_KEY_LP,    COMP_OPAMP,     0, 2, "amp", 0.717, 0.15, 8e-3, "2nd order, Q 0.5, 1 kHz" },
+    { CIRCUIT_NOTCH_FILTER,     COMP_RESISTOR,  4, 1, "amp", 0.0,  -0.15, 120e-3, "60 Hz notch: < 0.15 Vpk" },
+    { CIRCUIT_CURRENT_SOURCE,   COMP_NPN_BJT,   0, 1, "dc",  8.9,   0.10, 5e-3, "12 - 3.1mA*1k" },
+    { CIRCUIT_WINDOW_COMP,      COMP_LED,       0, 0, "dc",  1.88,  0.08, 2e-3, "LED on inside window" },
+    { CIRCUIT_HYSTERESIS_COMP,  COMP_OPAMP,     0, 2, "amp", 15.0,  0.05, 30e-3, "rail to rail, input 6 +/- 3 V" },
+    { CIRCUIT_ZENER_REF,        COMP_ZENER,     0, 1, "dc",  5.13,  0.05, 2e-3, "Vz + Iz*Rz" },
+    { CIRCUIT_PRECISION_RECT,   COMP_OPAMP,     1, 2, "mean", -0.637, 0.15, 40e-3, "-|sin| average = -2/pi" },
+    { CIRCUIT_7805_REG,         COMP_7805,      0, 1, "dc",  5.0,   0.02, 2e-3, "fixed 5 V" },
+    { CIRCUIT_LM317_REG,        COMP_LM317,     0, 1, "dc",  5.0,   0.03, 2e-3, "1.25(1+720/240)" },
+    { CIRCUIT_TL431_REF,        COMP_TL431,     0, 0, "dc",  2.5,   0.02, 2e-3, "2.495 V reference" },
+    { CIRCUIT_SERIES_RLC,       COMP_CAPACITOR, 0, 0, "amp", 0.5,   0.25, 80e-3, "Q*Vin at f0" },
+    { CIRCUIT_WHEATSTONE,       COMP_RESISTOR,  3, 0, "dc",  5.238, 0.02, 2e-3, "10*1100/2100" },
+    { CIRCUIT_PEAK_DETECTOR,    COMP_CAPACITOR, 0, 0, "dc",  5.0,   0.05, 30e-3, "holds the 5 V peak" },
+    { CIRCUIT_CLAMPER,          COMP_DIODE,     0, 1, "max", 9.3,   0.10, 10e-3, "shifted sine top: 2*5 - 0.7" },
+};
+
+static Component *find_comp(Circuit *c, ComponentType ct, int ord) {
+    int k = 0;
+    for (int i = 0; i < c->num_components; i++)
+        if (c->components[i]->type == ct) { if (k == ord) return c->components[i]; k++; }
+    return NULL;
+}
+
+static int probe_test(void) {
+    int fails = 0, total = 0;
+    for (unsigned k = 0; k < sizeof probe_cases / sizeof probe_cases[0]; k++) {
+        const ProbeCase *pc = &probe_cases[k];
+        const CircuitTemplateInfo *ti = circuit_template_get_info(pc->t);
+        Circuit *c = circuit_create();
+        circuit_place_template(c, pc->t, 0, 0);
+        Simulation *sim = simulation_create(c);
+        total++;
+        Component *comp = find_comp(c, pc->ct, pc->ord);
+        int node_id = comp ? comp->node_ids[pc->term] : -1;
+        int ok = comp && simulation_dc_analysis(sim);
+        simulation_auto_time_step(sim);
+        simulation_start(sim);
+        double t_rec = pc->run * 0.75, mn = 1e300, mx = -1e300, sum = 0, asum = 0; int n = 0;
+        while (ok && sim->time < pc->run) {
+            if (!simulation_step(sim)) { ok = 0; break; }
+            if (sim->time >= t_rec) {
+                Node *nd = circuit_get_node(c, node_id);
+                double v = nd ? nd->voltage : 0;
+                if (v < mn) mn = v; if (v > mx) mx = v; sum += v; asum += fabs(v); n++;
+            }
+        }
+        double got = 0;
+        if (ok && n > 0) {
+            if (!strcmp(pc->metric, "amp")) got = (mx - mn) / 2;
+            else if (!strcmp(pc->metric, "max")) got = mx;
+            else if (!strcmp(pc->metric, "absmean")) got = asum / n;
+            else got = sum / n;
+        }
+        double err = fabs(got - pc->expect);
+        double lim = (pc->tol >= 0) ? pc->tol * fabs(pc->expect) : -pc->tol;
+        int pass = ok && err <= lim;
+        printf("[%s] probe %-28s %-4s %-5s= %9.4f  expect %8.4f (+/-%.3g)  %s%s\n",
+               pass ? " OK " : "FAIL", ti ? ti->name : "?", pc->metric,
+               "", got, pc->expect, lim, pc->note, !ok ? "  [sim error / node not found]" : "");
+        if (!pass) fails++;
+        simulation_free(sim); circuit_free(c);
+    }
+    printf("\n%d/%d probe checks passed\n", total - fails, total);
+    return fails;
+}
+
+/* ------------------------------------------------------------------------------------
+ * Schematic geometry audit: diagonal wires, wire/wire crossings without a junction,
+ * wires running through component bodies, and near-touching terminals of different nets.
+ * ---------------------------------------------------------------------------------- */
+static int seg_intersect(float ax, float ay, float bx, float by, float cx, float cy, float dx, float dy) {
+    /* proper intersection of segments AB and CD (excluding shared endpoints) */
+    float d = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx);
+    if (fabsf(d) < 1e-6f) return 0;
+    float t = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / d;
+    float u = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / d;
+    return t > 0.01f && t < 0.99f && u > 0.01f && u < 0.99f;
+}
+static int seg_hits_box(float ax, float ay, float bx, float by, float x0, float y0, float x1, float y1) {
+    /* axis-aligned segment vs box (boxes are shrunk by the caller) */
+    if (fabsf(ax - bx) < 0.5f) { /* vertical */
+        float ymin = ay < by ? ay : by, ymax = ay < by ? by : ay;
+        return ax > x0 && ax < x1 && ymax > y0 && ymin < y1;
+    }
+    if (fabsf(ay - by) < 0.5f) {
+        float xmin = ax < bx ? ax : bx, xmax = ax < bx ? bx : ax;
+        return ay > y0 && ay < y1 && xmax > x0 && xmin < x1;
+    }
+    return 0;
+}
+
+static int geom_test(void) {
+    int bad_templates = 0, total = 0;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        Circuit *c = circuit_create();
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        total++;
+        int diag = 0, cross = 0, through = 0, touch = 0;
+        char detail[400] = "";
+        /* wire endpoints */
+        for (int w = 0; w < c->num_wires; w++) {
+            Node *a = circuit_get_node(c, c->wires[w].start_node_id), *b = circuit_get_node(c, c->wires[w].end_node_id);
+            if (!a || !b) continue;
+            if (fabsf(a->x - b->x) > 0.5f && fabsf(a->y - b->y) > 0.5f) {
+                diag++;
+                if (strlen(detail) < 300) snprintf(detail + strlen(detail), sizeof detail - strlen(detail), " diag(%.0f,%.0f)-(%.0f,%.0f)", a->x, a->y, b->x, b->y);
+            }
+            for (int w2 = w + 1; w2 < c->num_wires; w2++) {
+                Node *cc = circuit_get_node(c, c->wires[w2].start_node_id), *d = circuit_get_node(c, c->wires[w2].end_node_id);
+                if (!cc || !d) continue;
+                if (seg_intersect(a->x, a->y, b->x, b->y, cc->x, cc->y, d->x, d->y)) {
+                    cross++;
+                    if (strlen(detail) < 300) snprintf(detail + strlen(detail), sizeof detail - strlen(detail), " cross@(%.0f,%.0f)", (a->x + b->x + cc->x + d->x) / 4, (a->y + b->y + cc->y + d->y) / 4);
+                }
+            }
+            /* through a body: skip components that own one of the wire's endpoints */
+            for (int i = 0; i < c->num_components; i++) {
+                Component *comp = c->components[i];
+                if (comp->type == COMP_TEXT || comp->type == COMP_GROUND) continue;
+                int owns = 0;
+                for (int k = 0; k < comp->num_terminals; k++)
+                    if (comp->node_ids[k] == c->wires[w].start_node_id || comp->node_ids[k] == c->wires[w].end_node_id) owns = 1;
+                if (owns) continue;
+                const ComponentTypeInfo *info = component_get_info(comp->type);
+                float hw = (info ? info->width : 40) / 2.0f - 6, hh = (info ? info->height : 40) / 2.0f - 6;
+                if (comp->rotation % 180 != 0) { float tmp = hw; hw = hh; hh = tmp; }
+                if (hw < 4) hw = 4; if (hh < 4) hh = 4;
+                if (seg_hits_box(a->x, a->y, b->x, b->y, comp->x - hw, comp->y - hh, comp->x + hw, comp->y + hh)) {
+                    through++;
+                    if (strlen(detail) < 300) snprintf(detail + strlen(detail), sizeof detail - strlen(detail), " through:%s", comp->label);
+                }
+            }
+        }
+        /* terminals of different nets closer than 12 px (visually ambiguous) */
+        for (int i = 0; i < c->num_components; i++) for (int k = 0; k < c->components[i]->num_terminals; k++) {
+            Component *ca = c->components[i];
+            if (ca->type == COMP_TEXT) continue;
+            float ax, ay; component_get_terminal_pos(ca, k, &ax, &ay);
+            int na = (ca->node_ids[k] >= 0 && ca->node_ids[k] < MAX_NODES) ? c->node_map[ca->node_ids[k]] : -1;
+            for (int j = i + 1; j < c->num_components; j++) for (int m = 0; m < c->components[j]->num_terminals; m++) {
+                Component *cb = c->components[j];
+                if (cb->type == COMP_TEXT) continue;
+                float bx, by; component_get_terminal_pos(cb, m, &bx, &by);
+                int nb = (cb->node_ids[m] >= 0 && cb->node_ids[m] < MAX_NODES) ? c->node_map[cb->node_ids[m]] : -1;
+                float dd = (ax - bx) * (ax - bx) + (ay - by) * (ay - by);
+                if (dd < 12 * 12 && na != nb) {
+                    touch++;
+                    if (strlen(detail) < 300) snprintf(detail + strlen(detail), sizeof detail - strlen(detail), " touch:%s/%s", ca->label, cb->label);
+                }
+            }
+        }
+        int ok = (diag + cross + through + touch) == 0;
+        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d%s\n", ok ? " OK " : "WARN", ti ? ti->name : "?", diag, cross, through, touch, detail);
+        if (!ok) bad_templates++;
+        circuit_free(c);
+    }
+    printf("\n%d/%d templates geometrically clean\n", total - bad_templates, total);
+    return bad_templates;
+}
+
 int main(int argc, char **argv) {
     int dc_only = 0, verbose = 0, dump_nodes = 0;
     const char *svg_dir = NULL;
@@ -257,6 +516,10 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--svg") && i + 1 < argc) svg_dir = argv[++i];
         else if (!strcmp(argv[i], "--scope-test")) return scope_dt_test();
         else if (!strcmp(argv[i], "--flow-test")) return flow_test();
+        else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt = atof(argv[++i]);
+        else if (!strcmp(argv[i], "--osc-test")) return osc_test();
+        else if (!strcmp(argv[i], "--probe-test")) return probe_test();
+        else if (!strcmp(argv[i], "--geom-test")) return geom_test();
         else if (!strcmp(argv[i], "--sim-time") && i + 1 < argc) sim_time = atof(argv[++i]);
         else filter = argv[i];
     }

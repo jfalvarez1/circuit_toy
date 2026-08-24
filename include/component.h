@@ -680,6 +680,9 @@ typedef struct Component {
     int voltage_var_idx;
     bool needs_voltage_var;
     double terminal_current[MAX_TERMINALS];  // Current entering each terminal (A), from the last solve
+    double trap_i_prev;                      // Capacitors: current (terminal 0 -> 1) at the end of the last step (trapezoidal state)
+    int sat_last_rail;                       // Op-amps: rail chosen in the previous Newton iteration (+1/-1/0)
+    int sat_flips;                           // Op-amps: rail flip-flops seen in this solve (>=2 -> use the linear stamp)
 
     // Properties
     ComponentProps props;
