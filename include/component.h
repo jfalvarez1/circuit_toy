@@ -679,6 +679,7 @@ typedef struct Component {
     // For voltage sources/inductors - index of current variable
     int voltage_var_idx;
     bool needs_voltage_var;
+    double terminal_current[MAX_TERMINALS];  // Current entering each terminal (A), from the last solve
 
     // Properties
     ComponentProps props;
@@ -726,6 +727,11 @@ bool component_contains_point(Component *comp, float px, float py);
 int component_get_terminal_at(Component *comp, float px, float py, float threshold);
 
 // Stamp component into MNA matrix
+// Previous *time-step* solution for companion models (capacitor/inductor memory terms).
+// The solver sets this before Newton iteration; prev_solution passed to component_stamp is
+// the current Newton iterate, which must NOT be used as the storage element's memory.
+extern Vector *g_stamp_prev_step;
+
 void component_stamp(Component *comp, Matrix *A, Vector *b,
                      int *node_map, int num_nodes,
                      double time, Vector *prev_solution, double dt);

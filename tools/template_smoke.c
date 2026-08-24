@@ -11,6 +11,7 @@
  *
  * Usage: template_smoke [--dc] [--verbose] [--nodes] [--svg DIR] [--sim-time SEC] [name-substring]
  *        template_smoke --scope-test     (scope time/div <-> dt mapping checks)
+ *        template_smoke --flow-test      (current-flow display invariants on all templates)
  * Exit code is the number of failing templates (0 = all good).
  */
 
@@ -143,6 +144,107 @@ static int scope_dt_test(void) {
     return fails;
 }
 
+/* Current-flow display invariants, checked on every template after a short transient:
+ *  - no NaN/Inf terminal or wire currents
+ *  - two-terminal components conserve charge (I0 + I1 = 0)
+ *  - KCL at every circuit node: wire flow in == component demand out
+ *  - series-only templates (RC/RL filters, divider): every wire carries the same |I|, equal to
+ *    the resistor current, and every wire is "lit" (|I| > 0) while the source is non-zero. */
+static int circuit_node_net(Circuit *c, int id) { return (id >= 0 && id < MAX_NODES) ? c->node_map[id] : -1; }
+
+static int flow_test(void) {
+    int fails = 0, total = 0;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        const char *name = ti ? ti->name : "?";
+        Circuit *c = circuit_create();
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        Simulation *sim = simulation_create(c);
+        total++;
+        int ok = 1; char why[200] = "";
+        if (!simulation_dc_analysis(sim)) { ok = 0; snprintf(why, sizeof why, "DC failed"); }
+        simulation_auto_time_step(sim);
+        simulation_start(sim);
+        /* stop 1/8 period into a 1 kHz cycle (source well away from zero) */
+        double t_end = 0.000125 + 2.0 * sim->time_step;
+        while (ok && sim->time < t_end) if (!simulation_step(sim)) { ok = 0; snprintf(why, sizeof why, "step failed"); }
+        simulation_update_flow_display(sim);
+
+        double imax = 0;
+        for (int i = 0; ok && i < c->num_components; i++) {
+            Component *comp = c->components[i];
+            if (comp->type == COMP_GROUND || comp->type == COMP_TEXT) continue;
+            double sum = 0, amax = 0;
+            for (int k = 0; k < comp->num_terminals; k++) {
+                double v = comp->terminal_current[k];
+                if (isnan(v) || isinf(v)) { ok = 0; snprintf(why, sizeof why, "%s terminal current NaN", comp->label); break; }
+                sum += v; if (fabs(v) > amax) amax = fabs(v); if (fabs(v) > imax) imax = fabs(v);
+            }
+            if (ok && comp->num_terminals == 2 && fabs(sum) > 1e-6 * amax + 1e-9) {
+                ok = 0; snprintf(why, sizeof why, "%s not conserving: I0+I1=%.3g (|I|=%.3g)", comp->label, sum, amax);
+            }
+        }
+        for (int w = 0; ok && w < c->num_wires; w++) {
+            double v = c->wires[w].current;
+            if (isnan(v) || isinf(v)) { ok = 0; snprintf(why, sizeof why, "wire %d current NaN", w); }
+        }
+        /* KCL at each node (skip nodes carrying a ground symbol: they are the sink) */
+        for (int i = 0; ok && i < c->num_nodes; i++) {
+            int id = c->nodes[i].id;
+            int grounded = 0; double demand = 0;
+            for (int j = 0; j < c->num_components; j++) {
+                Component *comp = c->components[j];
+                for (int k = 0; k < comp->num_terminals; k++) if (comp->node_ids[k] == id) {
+                    if (comp->type == COMP_GROUND) grounded = 1; else demand += comp->terminal_current[k];
+                }
+            }
+            if (grounded) continue;
+            double inflow = 0;
+            for (int w = 0; w < c->num_wires; w++) {
+                if (c->wires[w].end_node_id == id) inflow += c->wires[w].current;
+                if (c->wires[w].start_node_id == id) inflow -= c->wires[w].current;
+            }
+            if (fabs(inflow - demand) > 1e-6 * (imax + 1e-9) + 1e-9) {
+                ok = 0; snprintf(why, sizeof why, "KCL at node %d: wires %.4g vs demand %.4g", id, inflow, demand);
+            }
+        }
+        /* Series templates: uniform |I| on every wire, equal to the resistor current */
+        int series = (t == CIRCUIT_RC_LOWPASS || t == CIRCUIT_RC_HIGHPASS || t == CIRCUIT_RL_LOWPASS ||
+                      t == CIRCUIT_RL_HIGHPASS || t == CIRCUIT_VOLTAGE_DIVIDER);
+        if (ok && series) {
+            double ir = 0;
+            for (int j = 0; j < c->num_components; j++)
+                if (c->components[j]->type == COMP_RESISTOR) { ir = fabs(c->components[j]->terminal_current[0]); break; }
+            double wmin = 1e300, wmax = 0;
+            for (int w = 0; w < c->num_wires; w++) { double v = fabs(c->wires[w].current); if (v < wmin) wmin = v; if (v > wmax) wmax = v; }
+            if (ir < 1e-9) { ok = 0; snprintf(why, sizeof why, "resistor current is zero"); }
+            else if (wmin < 1e-9) { ok = 0; snprintf(why, sizeof why, "a series wire carries no current (min %.3g, R %.3g)", wmin, ir); }
+            else if (fabs(wmax - ir) > 1e-6 * ir || fabs(wmin - ir) > 1e-6 * ir) {
+                ok = 0; snprintf(why, sizeof why, "series wires uneven: min %.4g max %.4g resistor %.4g", wmin, wmax, ir);
+            }
+        }
+        printf("[%s] flow  %-28s wires=%-3d max|I|=%.3g %s\n", ok ? " OK " : "FAIL", name, c->num_wires, imax, why);
+        if (!ok && getenv("FLOW_DEBUG")) {
+            for (int i = 0; i < c->num_nodes; i++) {
+                int id = c->nodes[i].id;
+                printf("      node %-3d net m%-3d (%.0f,%.0f) V=%.4f :", id, circuit_node_net(c, id), c->nodes[i].x, c->nodes[i].y, c->nodes[i].voltage);
+                for (int j = 0; j < c->num_components; j++) {
+                    Component *comp = c->components[j];
+                    for (int k = 0; k < comp->num_terminals; k++)
+                        if (comp->node_ids[k] == id) printf(" %s[%d]=%.4g", comp->label, k, comp->terminal_current[k]);
+                }
+                printf("\n");
+            }
+            for (int w = 0; w < c->num_wires; w++)
+                printf("      wire %-3d n%d -> n%d  I=%.4g\n", w, c->wires[w].start_node_id, c->wires[w].end_node_id, c->wires[w].current);
+        }
+        if (!ok) fails++;
+        simulation_free(sim); circuit_free(c);
+    }
+    printf("\n%d/%d flow checks passed\n", total - fails, total);
+    return fails;
+}
+
 int main(int argc, char **argv) {
     int dc_only = 0, verbose = 0, dump_nodes = 0;
     const char *svg_dir = NULL;
@@ -154,6 +256,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--nodes")) dump_nodes = 1;
         else if (!strcmp(argv[i], "--svg") && i + 1 < argc) svg_dir = argv[++i];
         else if (!strcmp(argv[i], "--scope-test")) return scope_dt_test();
+        else if (!strcmp(argv[i], "--flow-test")) return flow_test();
         else if (!strcmp(argv[i], "--sim-time") && i + 1 < argc) sim_time = atof(argv[++i]);
         else filter = argv[i];
     }

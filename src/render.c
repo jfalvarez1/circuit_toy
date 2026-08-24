@@ -1587,93 +1587,15 @@ static void render_component_current_flow(RenderContext *ctx, Component *comp, C
     component_get_terminal_pos(comp, 0, &t0_x, &t0_y);
     component_get_terminal_pos(comp, 1, &t1_x, &t1_y);
 
-    // Get node voltages to determine current direction
-    double v0 = 0.0, v1 = 0.0;
-    if (comp->node_ids[0] >= 0) {
-        for (int i = 0; i < circuit->num_nodes; i++) {
-            if (circuit->nodes[i].id == comp->node_ids[0]) {
-                v0 = circuit->nodes[i].voltage;
-                break;
-            }
-        }
-    }
-    if (comp->node_ids[1] >= 0) {
-        for (int i = 0; i < circuit->num_nodes; i++) {
-            if (circuit->nodes[i].id == comp->node_ids[1]) {
-                v1 = circuit->nodes[i].voltage;
-                break;
-            }
-        }
-    }
-
-    // Estimate current based on component type
-    double current = 0.0;
-    double v_diff = v0 - v1;
-    bool is_source = false;  // Sources have reversed current flow direction
-
-    switch (comp->type) {
-        case COMP_RESISTOR:
-            if (comp->props.resistor.resistance > 0)
-                current = v_diff / comp->props.resistor.resistance;
-            break;
-        case COMP_CAPACITOR:
-        case COMP_CAPACITOR_ELEC:
-            // Capacitor current is proportional to dV/dt, estimate from voltage difference
-            current = v_diff / 1000.0;  // Rough approximation
-            break;
-        case COMP_INDUCTOR:
-            current = comp->props.inductor.current;
-            break;
-        case COMP_DIODE:
-        case COMP_ZENER:
-        case COMP_SCHOTTKY:
-        case COMP_LED:
-            // For diodes, use exponential approximation
-            if (v_diff > 0.3) current = v_diff / 100.0;  // Forward biased
-            break;
-        case COMP_FUSE:
-            if (!comp->props.fuse.blown)
-                current = v_diff / comp->props.fuse.resistance;
-            break;
-        // Voltage and current sources - current EXITS from positive terminal
-        case COMP_DC_VOLTAGE:
-        case COMP_AC_VOLTAGE:
-        case COMP_BATTERY:
-        case COMP_SQUARE_WAVE:
-        case COMP_TRIANGLE_WAVE:
-        case COMP_SAWTOOTH_WAVE:
-        case COMP_NOISE_SOURCE:
-        case COMP_PULSE_SOURCE:
-        case COMP_PWM_SOURCE:
-        case COMP_DC_CURRENT:
-        case COMP_AC_CURRENT:
-            is_source = true;
-            current = v_diff / 100.0;  // Estimate based on typical load
-            if (fabs(current) < 1e-6) current = 0.01;  // Show flow even with small current
-            break;
-        default:
-            // Generic estimation based on voltage difference
-            current = v_diff / 1000.0;
-            break;
-    }
-
+    // Exact current from the solver: terminal_current[0] > 0 means current enters at
+    // terminal 0 and leaves at terminal 1, so particles travel t0 -> t1. Sources therefore
+    // show flow from - to + inside the source automatically.
+    double current = comp->terminal_current[0];
     double abs_current = fabs(current);
+    if (abs_current < 1e-9) return;
 
-    // Threshold for visibility
-    if (abs_current < 1e-6) return;
-
-    // Determine direction:
-    // - Passive components: conventional current flows from high V to low V
-    // - Sources: current enters at negative terminal (t1), flows through source, exits at positive (t0)
-    //   So inside the source, particles flow from t1 (negative) to t0 (positive)
     float from_x, from_y, to_x, to_y;
-    if (is_source) {
-        // For sources: current enters at negative (t1) and exits at positive (t0)
-        // Particles flow FROM negative TO positive inside the source
-        from_x = t1_x; from_y = t1_y;
-        to_x = t0_x; to_y = t0_y;
-    } else if (v0 > v1) {
-        // Passive component: flow from high voltage to low voltage
+    if (current > 0) {
         from_x = t0_x; from_y = t0_y;
         to_x = t1_x; to_y = t1_y;
     } else {
@@ -1700,9 +1622,9 @@ static void render_component_current_flow(RenderContext *ctx, Component *comp, C
     // Use real-time animation_time for smooth motion
     double anim_phase = fmod(ctx->animation_time * speed_factor, 1.0);
 
-    // Particle spacing - about 15 pixels apart for components
-    int num_particles = (int)(len / 15) + 1;
-    if (num_particles > 6) num_particles = 6;
+    // Particle spacing - about 20 pixels apart, same as wires
+    int num_particles = (int)(len / 20) + 1;
+    if (num_particles > 8) num_particles = 8;
     if (num_particles < 1) num_particles = 1;
     float particle_spacing = 1.0f / (num_particles + 1);
 
@@ -1718,16 +1640,16 @@ static void render_component_current_flow(RenderContext *ctx, Component *comp, C
 
         // Draw glowing particle
         render_set_color(ctx, (Color){0x00, 0xff, 0xff, 0x30});
-        render_fill_circle(ctx, particle_x, particle_y, 2.5f);
+        render_fill_circle(ctx, particle_x, particle_y, 3);
 
         render_set_color(ctx, (Color){0x00, 0xff, 0xff, 0x60});
-        render_fill_circle(ctx, particle_x, particle_y, 1.5f);
+        render_fill_circle(ctx, particle_x, particle_y, 2);
 
         render_set_color(ctx, (Color){0x00, intensity, intensity, 0xff});
-        render_fill_circle(ctx, particle_x, particle_y, 1);
+        render_fill_circle(ctx, particle_x, particle_y, 1.5f);
 
         render_set_color(ctx, (Color){0xff, 0xff, 0xff, intensity});
-        render_fill_circle(ctx, particle_x, particle_y, 0.5f);
+        render_fill_circle(ctx, particle_x, particle_y, 0.8f);
     }
 }
 

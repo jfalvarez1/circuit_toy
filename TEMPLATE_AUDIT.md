@@ -361,7 +361,7 @@ clipping expectations below hold.
 | 29 | Window Comparator | | | | | | | OPEN (visual): input/pull-up wires drawn through Vref, R1, gnd3 bodies — needs re-route (feed input from a bus at x+200, rail at y-200) |
 | 30 | Schmitt Trigger | | | | | | | |
 | 31 | Precision Rectifier | | | | | | | |
-| 32 | Peak Detector | | | | | | | |
+| 32 | Peak Detector | | | | | | | OPEN (engine): with the ideal op-amp pinned at +15 V into D+10 µF, Newton does not fully converge each step (diode current at the solved voltages ≠ linearised value). Candidate for pnjlim junction limiting / relative convergence criteria (see docs/RESEARCH_SIMULATORS.md) |
 | 33 | Sallen-Key LP | | | | | | | |
 | 34 | Active Band-Pass | | | | | | | |
 | 35 | Twin-T Notch | | | | | | | |

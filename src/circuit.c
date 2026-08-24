@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <math.h>
 #include "circuit.h"
+#include "matrix.h"
 #include "component.h"  // For COMP_GROUND type check
 
 // Forward declarations
@@ -840,392 +841,108 @@ static double calculate_component_current(Component *comp, double v1, double v2)
 // BFS-based current flow tracing from sources to ground
 // This properly traces current direction through all wires in the path
 void circuit_update_wire_currents(Circuit *circuit) {
+    // Physical wire currents. Each electrical net (matrix node) is a small graph of circuit
+    // nodes joined by zero-resistance wires. The component terminal currents (see
+    // simulation_compute_terminal_currents) are the demands at the nodes; ground symbols
+    // absorb whatever the net does not return. Wire flows are the minimum-norm solution of
+    // the conservation equations (a unit-conductance Laplacian solve), which is exact for
+    // tree-shaped nets (the usual case) and splits evenly across parallel wires.
     if (!circuit) return;
+    for (int w = 0; w < circuit->num_wires; w++) circuit->wires[w].current = 0;
+    if (circuit->num_nodes == 0) return;
 
-    // Reset all wire currents
-    for (int w = 0; w < circuit->num_wires; w++) {
-        circuit->wires[w].current = 0;
-    }
-
-    // Find circuit current magnitude from resistors/components
-    double circuit_current = 0;
-    for (int c = 0; c < circuit->num_components; c++) {
-        Component *comp = circuit->components[c];
-        if (!comp || comp->num_terminals < 2) continue;
-
-        if (comp->type == COMP_RESISTOR || comp->type == COMP_LED ||
-            comp->type == COMP_SPST_SWITCH || comp->type == COMP_PUSH_BUTTON) {
-            Node *n0 = circuit_get_node(circuit, comp->node_ids[0]);
-            Node *n1 = circuit_get_node(circuit, comp->node_ids[1]);
-            if (n0 && n1) {
-                double current = fabs(calculate_component_current(comp, n0->voltage, n1->voltage));
-                if (current > circuit_current) {
-                    circuit_current = current;
-                }
-            }
-        }
-    }
-
-    // If no resistor current found, estimate from voltage source
-    if (circuit_current < 1e-12) {
-        for (int c = 0; c < circuit->num_components; c++) {
-            Component *comp = circuit->components[c];
-            if (!comp) continue;
-            if (comp->type == COMP_DC_VOLTAGE) {
-                circuit_current = fabs(comp->props.dc_voltage.voltage) / 1000.0;
-                break;
-            } else if (comp->type == COMP_AC_VOLTAGE) {
-                circuit_current = fabs(comp->props.ac_voltage.amplitude) / 1000.0;
-                break;
-            }
-        }
-    }
-
-    if (circuit_current < 1e-12) {
-        circuit_current = 0.001;  // Default 1mA for visualization
-    }
-
-    // Find all ground node IDs
-    int ground_nodes[MAX_NODES];
-    int num_ground_nodes = 0;
+    // Which nodes hold ground symbols?
+    static unsigned char has_ground[MAX_NODES];
+    memset(has_ground, 0, sizeof(has_ground));
     for (int c = 0; c < circuit->num_components; c++) {
         Component *comp = circuit->components[c];
         if (comp && comp->type == COMP_GROUND && comp->num_terminals >= 1) {
-            int gnd_node = comp->node_ids[0];
-            if (gnd_node >= 0 && num_ground_nodes < MAX_NODES) {
-                ground_nodes[num_ground_nodes++] = gnd_node;
-            }
+            int id = comp->node_ids[0];
+            if (id >= 0 && id < MAX_NODES) has_ground[id] = 1;
         }
     }
 
-    // Find all voltage/current sources
+    // Demand at every circuit node: current leaving the node into components
+    static double demand[MAX_NODES];
+    memset(demand, 0, sizeof(demand));
     for (int c = 0; c < circuit->num_components; c++) {
         Component *comp = circuit->components[c];
-        if (!comp) continue;
-
-        bool is_source = (comp->type == COMP_DC_VOLTAGE || comp->type == COMP_AC_VOLTAGE ||
-                         comp->type == COMP_DC_CURRENT || comp->type == COMP_BATTERY);
-        if (!is_source || comp->num_terminals < 2) continue;
-
-        // Terminal 0 is positive (+), Terminal 1 is negative (-)
-        int source_pos_node = comp->node_ids[0];
-        int source_neg_node = comp->node_ids[1];
-
-        // BFS from source positive terminal to find all paths to ground
-        // Track: node_id, came_from_wire_idx, direction (+1 = start->end, -1 = end->start)
-        typedef struct {
-            int node_id;
-            int came_from_wire;
-            int direction;  // Direction current would flow on came_from_wire
-        } BFSEntry;
-
-        BFSEntry queue[MAX_WIRES * 2];
-        int visited[MAX_NODES];
-        memset(visited, 0, sizeof(visited));
-
-        int queue_start = 0, queue_end = 0;
-
-        // Start from source positive terminal
-        queue[queue_end++] = (BFSEntry){source_pos_node, -1, 0};
-        visited[source_pos_node] = 1;
-
-        // Check for short circuit: is source negative terminal a ground?
-        bool neg_is_ground = false;
-        for (int g = 0; g < num_ground_nodes; g++) {
-            if (ground_nodes[g] == source_neg_node) {
-                neg_is_ground = true;
-                break;
-            }
+        if (!comp || comp->type == COMP_GROUND) continue;
+        for (int t = 0; t < comp->num_terminals; t++) {
+            int id = comp->node_ids[t];
+            if (id >= 0 && id < MAX_NODES) demand[id] += comp->terminal_current[t];
         }
+    }
 
-        // Also check if any ground component is at the negative node position
-        for (int c2 = 0; c2 < circuit->num_components; c2++) {
-            Component *gnd = circuit->components[c2];
-            if (gnd && gnd->type == COMP_GROUND && gnd->num_terminals >= 1) {
-                Node *gnd_node = circuit_get_node(circuit, gnd->node_ids[0]);
-                Node *neg_node = circuit_get_node(circuit, source_neg_node);
-                if (gnd_node && neg_node) {
-                    float dx = gnd_node->x - neg_node->x;
-                    float dy = gnd_node->y - neg_node->y;
-                    if (dx*dx + dy*dy < 100) {  // Within 10 units
-                        neg_is_ground = true;
-                        break;
-                    }
-                }
-            }
-        }
+    // Solve one connected wire island at a time. A net (matrix node) can consist of several
+    // islands that are only joined through ground symbols; each island must balance on its own.
+    static int local[MAX_NODES];
+    static int island_of[MAX_NODES];
+    for (int i = 0; i < MAX_NODES; i++) island_of[i] = -1;
 
-        // BFS to find all wires on paths to ground
-        while (queue_start < queue_end) {
-            BFSEntry entry = queue[queue_start++];
-            int current_node = entry.node_id;
+    for (int start_i = 0; start_i < circuit->num_nodes; start_i++) {
+        int seed = circuit->nodes[start_i].id;
+        if (seed < 0 || seed >= MAX_NODES || island_of[seed] >= 0) continue;
 
-            // Mark the wire we came from (if any)
-            if (entry.came_from_wire >= 0 && entry.came_from_wire < circuit->num_wires) {
-                Wire *w = &circuit->wires[entry.came_from_wire];
-                // Set current direction (positive = start->end)
-                if (fabs(w->current) < 1e-12) {
-                    w->current = circuit_current * entry.direction;
-                }
-            }
-
-            // Check if we reached ground
-            bool at_ground = false;
-            for (int g = 0; g < num_ground_nodes; g++) {
-                if (ground_nodes[g] == current_node) {
-                    at_ground = true;
-                    break;
-                }
-            }
-
-            // Also check if current node has a ground component
-            Node *cur_node = circuit_get_node(circuit, current_node);
-            if (cur_node && cur_node->is_ground) {
-                at_ground = true;
-            }
-
-            if (at_ground) {
-                // Reached ground - path complete
-                // Continue BFS to find other paths
-                continue;
-            }
-
-            // Explore connected wires
+        // BFS over wires
+        int ids[MAX_NODES]; int k = 0, head = 0;
+        ids[k++] = seed; island_of[seed] = start_i; local[seed] = 0;
+        while (head < k) {
+            int id = ids[head++];
             for (int w = 0; w < circuit->num_wires; w++) {
                 Wire *wire = &circuit->wires[w];
-
-                int next_node = -1;
-                int dir = 0;
-
-                if (wire->start_node_id == current_node) {
-                    next_node = wire->end_node_id;
-                    dir = 1;  // Current flows start->end (positive)
-                } else if (wire->end_node_id == current_node) {
-                    next_node = wire->start_node_id;
-                    dir = -1;  // Current flows end->start (negative)
-                }
-
-                if (next_node >= 0 && next_node < MAX_NODES) {
-                    // Mark this wire with current NOW (when we discover it)
-                    // This ensures wires to already-visited nodes (like ground) get marked
-                    if (fabs(wire->current) < 1e-12) {
-                        wire->current = circuit_current * dir;
-                    }
-
-                    // Only add to queue if not visited (for further exploration)
-                    if (!visited[next_node]) {
-                        visited[next_node] = 1;
-                        queue[queue_end++] = (BFSEntry){next_node, w, dir};
-                    }
-                }
-            }
-
-            // Also explore through components (current flows through components too)
-            for (int c2 = 0; c2 < circuit->num_components; c2++) {
-                Component *other = circuit->components[c2];
-                if (!other || other->num_terminals < 2) continue;
-
-                // Skip ground (it's a destination, not a path)
-                if (other->type == COMP_GROUND) continue;
-
-                // Check if component connects to current node
-                for (int t = 0; t < other->num_terminals; t++) {
-                    if (other->node_ids[t] == current_node) {
-                        // Component connects - find other terminals
-                        for (int t2 = 0; t2 < other->num_terminals; t2++) {
-                            if (t2 != t) {
-                                int next_node = other->node_ids[t2];
-                                if (next_node >= 0 && next_node < MAX_NODES && !visited[next_node]) {
-                                    visited[next_node] = 1;
-                                    // No wire for this hop, but mark node as visited
-                                    queue[queue_end++] = (BFSEntry){next_node, -1, 0};
-                                }
-                            }
-                        }
-                    }
-                }
+                int other = -1;
+                if (wire->start_node_id == id) other = wire->end_node_id;
+                else if (wire->end_node_id == id) other = wire->start_node_id;
+                if (other < 0 || other >= MAX_NODES || island_of[other] >= 0) continue;
+                island_of[other] = start_i;
+                local[other] = k;
+                ids[k++] = other;
             }
         }
-    }
+        if (k < 2) continue;
 
-    // Second pass: propagate to any remaining unset wires based on neighbors
-    // All wires in a series path should have the same current magnitude
-    for (int pass = 0; pass < 10; pass++) {
-        bool changed = false;
+        // Island balance: whatever the components do not return goes into the island's ground
+        // symbols; an island without ground (floating) spreads numerical residue evenly.
+        double total = 0; int n_gnd = 0;
+        for (int i = 0; i < k; i++) { total += demand[ids[i]]; if (has_ground[ids[i]]) n_gnd++; }
+        for (int i = 0; i < k; i++) {
+            if (n_gnd > 0) { if (has_ground[ids[i]]) demand[ids[i]] -= total / n_gnd; }
+            else demand[ids[i]] -= total / k;
+        }
+
+        // Unit-conductance Laplacian with local node 0 as reference
+        int n = k - 1;
+        Matrix *L = matrix_create(n, n);
+        Vector *rhs = vector_create(n);
+        if (!L || !rhs) { matrix_free(L); vector_free(rhs); continue; }
         for (int w = 0; w < circuit->num_wires; w++) {
             Wire *wire = &circuit->wires[w];
-            if (fabs(wire->current) > 1e-12) continue;
-
-            // Look for connected wires with current set
-            for (int w2 = 0; w2 < circuit->num_wires; w2++) {
-                if (w == w2) continue;
-                Wire *other = &circuit->wires[w2];
-                if (fabs(other->current) < 1e-12) continue;
-
-                int shared_node = -1;
-                int dir = 0;
-
-                // Check all 4 ways wires can share a node
-                // The direction is determined by how current should flow through the shared node
-
-                if (wire->start_node_id == other->start_node_id) {
-                    shared_node = wire->start_node_id;
-                    // Other wire: current flows out of start if current > 0 (start->end)
-                    //             current flows into start if current < 0 (end->start)
-                    // This wire should flow in opposite direction from shared node
-                    if (other->current > 0) {
-                        // Other flows away from shared, this should flow toward shared (end->start)
-                        dir = -1;
-                    } else {
-                        // Other flows toward shared, this should flow away (start->end)
-                        dir = 1;
-                    }
-                } else if (wire->start_node_id == other->end_node_id) {
-                    shared_node = wire->start_node_id;
-                    // Other wire: current arrives at end if current > 0, leaves end if current < 0
-                    if (other->current > 0) {
-                        // Other flows into shared, this should flow away (start->end)
-                        dir = 1;
-                    } else {
-                        // Other flows away from shared, this should flow toward (end->start)
-                        dir = -1;
-                    }
-                } else if (wire->end_node_id == other->start_node_id) {
-                    shared_node = wire->end_node_id;
-                    if (other->current > 0) {
-                        // Other flows away from shared, this should flow toward (start->end)
-                        dir = 1;
-                    } else {
-                        // Other flows toward shared, this should flow away (end->start)
-                        dir = -1;
-                    }
-                } else if (wire->end_node_id == other->end_node_id) {
-                    shared_node = wire->end_node_id;
-                    if (other->current > 0) {
-                        // Other flows into shared, this should flow away (end->start)
-                        dir = -1;
-                    } else {
-                        // Other flows away from shared, this should flow toward (start->end)
-                        dir = 1;
-                    }
-                }
-
-                if (shared_node >= 0) {
-                    // Use the same magnitude as the source, preserving uniform speed
-                    wire->current = circuit_current * dir;
-                    changed = true;
-                    break;
-                }
-            }
+            int a = wire->start_node_id, bn = wire->end_node_id;
+            if (a < 0 || a >= MAX_NODES || bn < 0 || bn >= MAX_NODES) continue;
+            if (island_of[a] != start_i || island_of[bn] != start_i) continue;
+            int la = local[a], lb = local[bn];
+            if (la > 0) matrix_add(L, la - 1, la - 1, 1.0);
+            if (lb > 0) matrix_add(L, lb - 1, lb - 1, 1.0);
+            if (la > 0 && lb > 0) { matrix_add(L, la - 1, lb - 1, -1.0); matrix_add(L, lb - 1, la - 1, -1.0); }
         }
-        if (!changed) break;
-    }
-
-    // Third pass: Special cases for voltage source connections
-    // 1. Wire from voltage source negative terminal to ground: current flows TOWARD negative (from ground)
-    // 2. Wire between two voltage sources: current flows toward lower voltage source
-    for (int w = 0; w < circuit->num_wires; w++) {
-        Wire *wire = &circuit->wires[w];
-
-        // Get nodes at wire endpoints
-        int start_id = wire->start_node_id;
-        int end_id = wire->end_node_id;
-        if (start_id < 0 || end_id < 0) continue;
-
-        // Check if start node is a ground
-        bool start_is_ground = false;
-        for (int g = 0; g < num_ground_nodes; g++) {
-            if (ground_nodes[g] == start_id) {
-                start_is_ground = true;
-                break;
+        // Conservation: sum over wires of flow into node = demand  ->  L*phi = -demand
+        for (int i = 1; i < k; i++) vector_set(rhs, i - 1, -demand[ids[i]]);
+        Vector *phi = linear_solve(L, rhs);
+        if (phi) {
+            for (int w = 0; w < circuit->num_wires; w++) {
+                Wire *wire = &circuit->wires[w];
+                int a = wire->start_node_id, bn = wire->end_node_id;
+                if (a < 0 || a >= MAX_NODES || bn < 0 || bn >= MAX_NODES) continue;
+                if (island_of[a] != start_i || island_of[bn] != start_i) continue;
+                double pa = (local[a] > 0) ? vector_get(phi, local[a] - 1) : 0.0;
+                double pb = (local[bn] > 0) ? vector_get(phi, local[bn] - 1) : 0.0;
+                wire->current = pa - pb;   // positive = start -> end
             }
+            vector_free(phi);
         }
-        Node *start_node = circuit_get_node(circuit, start_id);
-        if (start_node && start_node->is_ground) start_is_ground = true;
-
-        // Check if end node is a ground
-        bool end_is_ground = false;
-        for (int g = 0; g < num_ground_nodes; g++) {
-            if (ground_nodes[g] == end_id) {
-                end_is_ground = true;
-                break;
-            }
-        }
-        Node *end_node = circuit_get_node(circuit, end_id);
-        if (end_node && end_node->is_ground) end_is_ground = true;
-
-        // Find voltage sources connected to wire endpoints
-        Component *start_source = NULL;
-        int start_source_terminal = -1;  // 0 = positive, 1 = negative
-        Component *end_source = NULL;
-        int end_source_terminal = -1;
-
-        for (int c = 0; c < circuit->num_components; c++) {
-            Component *comp = circuit->components[c];
-            if (!comp) continue;
-            bool is_vsource = (comp->type == COMP_DC_VOLTAGE || comp->type == COMP_AC_VOLTAGE ||
-                              comp->type == COMP_BATTERY);
-            if (!is_vsource || comp->num_terminals < 2) continue;
-
-            // Check if this source connects to start node
-            if (comp->node_ids[0] == start_id) {
-                start_source = comp;
-                start_source_terminal = 0;  // positive
-            } else if (comp->node_ids[1] == start_id) {
-                start_source = comp;
-                start_source_terminal = 1;  // negative
-            }
-
-            // Check if this source connects to end node
-            if (comp->node_ids[0] == end_id) {
-                end_source = comp;
-                end_source_terminal = 0;  // positive
-            } else if (comp->node_ids[1] == end_id) {
-                end_source = comp;
-                end_source_terminal = 1;  // negative
-            }
-        }
-
-        // Case 1: Wire from voltage source negative terminal to ground
-        // Current should flow from ground toward negative terminal (into the source)
-        if (start_source && start_source_terminal == 1 && end_is_ground) {
-            // Start is negative terminal, end is ground
-            // Current flows end->start (negative direction)
-            wire->current = -circuit_current;
-        } else if (end_source && end_source_terminal == 1 && start_is_ground) {
-            // End is negative terminal, start is ground
-            // Current flows start->end (positive direction)
-            wire->current = circuit_current;
-        }
-
-        // Case 2: Wire between two voltage sources - current flows toward lower voltage
-        if (start_source && end_source && start_source != end_source) {
-            // Get voltages
-            double start_voltage = 0, end_voltage = 0;
-            if (start_source->type == COMP_DC_VOLTAGE) {
-                start_voltage = start_source->props.dc_voltage.voltage;
-            } else if (start_source->type == COMP_AC_VOLTAGE) {
-                start_voltage = start_source->props.ac_voltage.amplitude;
-            } else if (start_source->type == COMP_BATTERY) {
-                start_voltage = start_source->props.battery.nominal_voltage;
-            }
-            if (end_source->type == COMP_DC_VOLTAGE) {
-                end_voltage = end_source->props.dc_voltage.voltage;
-            } else if (end_source->type == COMP_AC_VOLTAGE) {
-                end_voltage = end_source->props.ac_voltage.amplitude;
-            } else if (end_source->type == COMP_BATTERY) {
-                end_voltage = end_source->props.battery.nominal_voltage;
-            }
-
-            // Current flows toward lower voltage (into lower voltage source)
-            if (start_voltage > end_voltage) {
-                // Current flows start->end (toward lower voltage at end)
-                wire->current = circuit_current;
-            } else if (end_voltage > start_voltage) {
-                // Current flows end->start (toward lower voltage at start)
-                wire->current = -circuit_current;
-            }
-        }
+        matrix_free(L);
+        vector_free(rhs);
     }
 }
 

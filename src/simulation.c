@@ -118,6 +118,10 @@ void simulation_reset(Simulation *sim) {
     if (sim->prev_solution) {
         vector_free(sim->prev_solution);
         sim->prev_solution = NULL;
+        if (sim->prev_step_solution) vector_free(sim->prev_step_solution);
+        sim->prev_step_solution = NULL;
+        if (sim->last_linearization) vector_free(sim->last_linearization);
+        sim->last_linearization = NULL;
     }
     if (sim->saved_solution) {
         vector_free(sim->saved_solution);
@@ -535,10 +539,10 @@ bool simulation_dc_analysis(Simulation *sim) {
     // Apply post-solve clamping as safety net
     simulation_clamp_opamps(circuit, sim->solution);
 
-    // Update circuit voltages and wire currents
+    // Update circuit voltages, meter readings and the current-flow display
     circuit_update_voltages(circuit, solution);
-    circuit_update_wire_currents(circuit);
     circuit_update_meter_readings(circuit);
+    simulation_update_flow_display(sim);
 
     // Check for excessive current indicating short circuit (after meter readings updated)
     if (simulation_detect_excessive_current(sim)) {
@@ -618,7 +622,10 @@ static Vector *simulation_solve_step(Simulation *sim, double dt) {
             if (diff > max_diff) max_diff = diff;
         }
 
-        vector_free(current_solution);
+        // Keep the linearization point of this solve: the display-side terminal currents
+        // are evaluated there so they satisfy KCL exactly for the solved voltages.
+        if (sim->last_linearization) vector_free(sim->last_linearization);
+        sim->last_linearization = current_solution;
         current_solution = new_solution;
 
         if (max_diff < CONVERGENCE_TOL) {
@@ -911,6 +918,105 @@ void simulation_set_history_span(Simulation *sim, double span_seconds) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Current-flow display support
+// ---------------------------------------------------------------------------
+
+static void clear_row(Matrix *A, Vector *b, int row) {
+    if (row < 0 || row >= A->rows) return;
+    for (int j = 0; j < A->cols; j++) matrix_set(A, row, j, 0.0);
+    vector_set(b, row, 0.0);
+}
+
+// Re-stamp each component alone at the converged solution and read its KCL residual:
+//   r = A_k * x - b_k  ->  r[node row] = current leaving that node into the component.
+// Storage elements use prev_step_solution as their memory, so the capacitor current is the
+// true C*dv/dt of the last step. Aux (voltage-source) rows are ignored; a single grounded
+// terminal gets the negated sum of the others (charge conservation).
+void simulation_compute_terminal_currents(Simulation *sim) {
+    if (!sim || !sim->circuit || !sim->solution) return;
+    Circuit *circuit = sim->circuit;
+    int M = sim->solution_size;
+    int num_nodes = circuit->num_matrix_nodes;
+    if (M <= 0 || sim->solution->size != M) return;
+
+    Matrix *A = matrix_create(M, M);
+    Vector *b = vector_create(M);
+    if (!A || !b) { matrix_free(A); vector_free(b); return; }
+
+    int num_volt_vars = 0;
+    for (int i = 0; i < circuit->num_components; i++)
+        if (circuit->components[i]->needs_voltage_var) num_volt_vars++;
+    g_subcircuit_internal_node_offset = num_nodes + num_volt_vars;
+
+    double dt = (sim->dt_actual > 0) ? sim->dt_actual : sim->time_step;
+    if (!sim->prev_step_solution) dt = 1e9;      // DC operating point: storage elements idle
+    g_stamp_prev_step = sim->prev_step_solution;
+
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+        for (int t = 0; t < MAX_TERMINALS; t++) comp->terminal_current[t] = 0.0;
+        if (comp->type == COMP_GROUND || comp->type == COMP_TEXT || comp->type == COMP_LABEL ||
+            comp->type == COMP_PIN || comp->type == COMP_SUBCIRCUIT || comp->num_terminals < 2)
+            continue;
+
+        // Rows this component can touch
+        int rows[MAX_TERMINALS + 4]; int nrows = 0;
+        for (int t = 0; t < comp->num_terminals; t++) {
+            int id = comp->node_ids[t];
+            int idx = (id >= 0 && id < MAX_NODES) ? circuit->node_map[id] : 0;
+            if (idx > 0) rows[nrows++] = idx - 1;
+        }
+        if (comp->needs_voltage_var)
+            for (int k = 0; k < 4; k++) {
+                int r = num_nodes + comp->voltage_var_idx + k;
+                if (r < M) rows[nrows++] = r;
+            }
+        for (int k = 0; k < nrows; k++) clear_row(A, b, rows[k]);
+
+        Vector *lin = (sim->last_linearization && sim->last_linearization->size == M)
+                      ? sim->last_linearization : sim->solution;
+        component_stamp(comp, A, b, circuit->node_map, num_nodes, sim->time, lin, dt);
+
+        int ground_t = -1, ground_count = 0; double sum = 0.0;
+        for (int t = 0; t < comp->num_terminals; t++) {
+            int id = comp->node_ids[t];
+            int idx = (id >= 0 && id < MAX_NODES) ? circuit->node_map[id] : 0;
+            if (idx <= 0) { ground_t = t; ground_count++; continue; }
+            // Terminals tied to the same matrix node (e.g. diode-connected BJT) share one row:
+            // the row residual is the total current into the device from that node, so credit
+            // it to the first such terminal only.
+            int dup = 0;
+            for (int u = 0; u < t; u++) {
+                int id2 = comp->node_ids[u];
+                int idx2 = (id2 >= 0 && id2 < MAX_NODES) ? circuit->node_map[id2] : 0;
+                if (idx2 == idx) { dup = 1; break; }
+            }
+            if (dup) continue;
+            double r = -vector_get(b, idx - 1);
+            for (int j = 0; j < M; j++) {
+                double a = matrix_get(A, idx - 1, j);
+                if (a != 0.0) r += a * vector_get(sim->solution, j);
+            }
+            comp->terminal_current[t] = r;
+            sum += r;
+        }
+        if (ground_count == 1) comp->terminal_current[ground_t] = -sum;
+
+        for (int k = 0; k < nrows; k++) clear_row(A, b, rows[k]);
+    }
+
+    g_stamp_prev_step = NULL;
+    matrix_free(A);
+    vector_free(b);
+}
+
+void simulation_update_flow_display(Simulation *sim) {
+    if (!sim || !sim->circuit) return;
+    simulation_compute_terminal_currents(sim);
+    circuit_update_wire_currents(sim->circuit);
+}
+
 bool simulation_step(Simulation *sim) {
     if (!sim || !sim->circuit) return false;
 
@@ -945,7 +1051,9 @@ bool simulation_step(Simulation *sim) {
         sim->saved_solution = vector_clone(sim->solution);
 
         // Attempt a solve with current dt
+        g_stamp_prev_step = sim->solution;   // memory terms: previous accepted step
         Vector *trial_solution = simulation_solve_step(sim, dt);
+        g_stamp_prev_step = NULL;
 
         if (!trial_solution) {
             // Solver failed - halve dt and retry
@@ -1008,8 +1116,9 @@ bool simulation_step(Simulation *sim) {
             dt_new = fmin(dt_new, sim->dt_target * ADAPTIVE_MAX_FACTOR * 2.0);
         }
 
-        // Accept the step
-        vector_free(sim->solution);
+        // Accept the step; keep the old solution as the previous-step state
+        if (sim->prev_step_solution) vector_free(sim->prev_step_solution);
+        sim->prev_step_solution = sim->solution;
         sim->solution = trial_solution;
 
         // Apply post-solve clamping as safety net (valid approach for educational simulators)
@@ -1039,9 +1148,8 @@ bool simulation_step(Simulation *sim) {
 
     sim->time += dt;
 
-    // Update circuit voltages, wire currents, and meter readings
+    // Update circuit voltages and meter readings (wire flow display is refreshed per frame)
     circuit_update_voltages(circuit, sim->solution);
-    circuit_update_wire_currents(circuit);
     circuit_update_meter_readings(circuit);
 
     // Update thermal state for all components (magic smoke simulation)

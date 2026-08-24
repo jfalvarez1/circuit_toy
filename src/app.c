@@ -1607,6 +1607,8 @@ void app_update(App *app) {
                 break;
             }
         }
+        // Refresh terminal currents and wire flows once per frame for the animation
+        simulation_update_flow_display(app->simulation);
 
     }
 

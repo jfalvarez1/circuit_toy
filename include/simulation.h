@@ -62,6 +62,8 @@ typedef struct Simulation {
     // Solution vectors
     Vector *solution;
     Vector *prev_solution;
+    Vector *prev_step_solution;     // Converged solution of the previous accepted time step
+    Vector *last_linearization;     // Newton iterate the final linear solve was linearized at
     int solution_size;
 
     // Convergence tracking
@@ -127,6 +129,11 @@ bool simulation_step(Simulation *sim);
 // Set simulation parameters
 void simulation_set_speed(Simulation *sim, double speed);
 void simulation_set_time_step(Simulation *sim, double dt);
+
+// Display-side current flow: exact per-terminal currents for every component (from the
+// last converged solution) and a per-net flow solve for the wires. Call once per frame.
+void simulation_compute_terminal_currents(Simulation *sim);
+void simulation_update_flow_display(Simulation *sim);
 // Tell the recorder how many seconds of history the display needs (e.g. 20 x time/div).
 // Decimation is re-derived; history is only reset if the factor actually changes.
 void simulation_set_history_span(Simulation *sim, double span_seconds);

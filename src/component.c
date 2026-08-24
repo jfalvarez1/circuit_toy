@@ -9,6 +9,8 @@
 #include "component.h"
 
 // Global environment state (affects LDR and thermistor components)
+Vector *g_stamp_prev_step = NULL;
+
 EnvironmentState g_environment = {
     .light_level = 0.5,     // Default: medium light (0.0=dark to 1.0=bright)
     .temperature = 25.0     // Default: room temperature (°C)
@@ -2281,9 +2283,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double Geq = C / dt;
             double Ieq = 0;
 
-            if (prev_solution) {
-                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
-                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+            Vector *mem = g_stamp_prev_step ? g_stamp_prev_step : prev_solution;
+            if (mem) {
+                double v1 = (n[0] > 0) ? vector_get(mem, n[0]-1) : 0;
+                double v2 = (n[1] > 0) ? vector_get(mem, n[1]-1) : 0;
                 Ieq = C * (v1 - v2) / dt;
             }
 
@@ -2301,8 +2304,9 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double Veq = 0;
             int curr_idx = num_nodes + comp->voltage_var_idx;
 
-            if (prev_solution && curr_idx < prev_solution->size) {
-                double Iprev = vector_get(prev_solution, curr_idx);
+            Vector *mem = g_stamp_prev_step ? g_stamp_prev_step : prev_solution;
+            if (mem && curr_idx < mem->size) {
+                double Iprev = vector_get(mem, curr_idx);
                 Veq = L * Iprev / dt;
             }
 

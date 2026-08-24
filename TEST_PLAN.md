@@ -231,6 +231,10 @@ Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.
 | 6.3 | `[ ]` Two sources facing each other | Flow toward lower V |
 | 6.4 | `[ ]` AC source | Particles reverse each half-cycle |
 | 6.5 | `[ ]` Zoom/pan while animating | Particles stay on wires |
+| 6.6 | `[ ]` **Automated:** `template_smoke --flow-test` | All 47 templates: no NaN, two-terminal components conserve charge, KCL holds at every node between wire flows and terminal currents, series templates (RC/RL filters, divider) show identical \|I\| on every wire equal to the resistor current |
+| 6.7 | `[ ]` RC High-Pass running, current view on | Particles flow on **every** wire including both resistor leads and the ground return; dot size/speed identical on wire, capacitor body and resistor body; direction reverses each half-cycle |
+| 6.8 | `[ ]` Parallel branches (divider with a 2nd resistor across R2) | Branch particle speed/brightness differ by current; junction dot in = out |
+| 6.9 | `[ ]` Sources | Inside a source particles run − → + (out of the + terminal); a reverse-connected second source shows the flow reversal |
 
 ---
 
