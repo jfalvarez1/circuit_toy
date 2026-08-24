@@ -1627,14 +1627,32 @@ void app_update(App *app) {
 
     // One-shot V/div from the measured signal range (after a template auto-starts)
     if (app->ui.scope_auto_vdiv_pending && app->simulation->state == SIM_RUNNING &&
-        app->simulation->history_count >= 400) {
+        app->simulation->history_count >= 200) {
         static double t_buf[MAX_HISTORY], v_buf[MAX_HISTORY];
-        double vmax = 0;
+        double vmax = 0, span = 0;
         for (int pi = 0; pi < app->circuit->num_probes && pi < MAX_PROBES; pi++) {
             int n = simulation_get_history(app->simulation, pi, t_buf, v_buf, MAX_HISTORY);
-            for (int i = n / 2; i < n; i++) if (fabs(v_buf[i]) > vmax) vmax = fabs(v_buf[i]);
+            if (n > 1) span = t_buf[n - 1] - t_buf[0];
+            for (int i = 0; i < n; i++) if (fabs(v_buf[i]) > vmax) vmax = fabs(v_buf[i]);
         }
-        if (vmax > 1e-6) {
+        // Sources: never choose a scale that clips the drive signal itself
+        for (int i = 0; i < app->circuit->num_components; i++) {
+            Component *c = app->circuit->components[i];
+            double a = 0;
+            if (c->type == COMP_AC_VOLTAGE) {
+                double amp = c->props.ac_voltage.amplitude;
+                if (c->props.ac_voltage.amplitude_sweep.enabled) {
+                    double e = c->props.ac_voltage.amplitude_sweep.end_value, st = c->props.ac_voltage.amplitude_sweep.start_value;
+                    amp = (e > st) ? e : st;
+                }
+                a = fabs(amp) + fabs(c->props.ac_voltage.offset);
+            } else if (c->type == COMP_DC_VOLTAGE) a = fabs(c->props.dc_voltage.voltage);
+            else if (c->type == COMP_SQUARE_WAVE) a = fabs(c->props.square_wave.amplitude) + fabs(c->props.square_wave.offset);
+            else if (c->type == COMP_TRIANGLE_WAVE) a = fabs(c->props.triangle_wave.amplitude);
+            if (a > vmax) vmax = a;
+        }
+        // Wait until the history covers a full screen (so a slow signal has shown its peak)
+        if (span >= 10.0 * app->ui.scope_time_div || app->simulation->time > 0.25) {
             double ideal = vmax * 1.15 / 4.0;          // fill ~4 of the 4 divisions above/below centre
             double decade = pow(10.0, floor(log10(ideal)));
             double m = ideal / decade;
@@ -1643,9 +1661,10 @@ void app_update(App *app) {
             if (vd < 0.001) vd = 0.001;
             if (vd > 100.0) vd = 100.0;
             app->ui.scope_volt_div = vd;
+            app->ui.scope_auto_vdiv_pending = false;
         }
-        app->ui.scope_auto_vdiv_pending = false;
     }
+    app->ui.sim_realtime_ratio = app->sim_realtime_ratio;
 
     // Keep dt in step with the scope's time/div (only acts when time/div changed)
     app_sync_time_step_to_scope(app);
@@ -1661,16 +1680,29 @@ void app_update(App *app) {
     // Run simulation if active
     if (app->simulation->state == SIM_RUNNING) {
         // Calculate steps based on speed
-        int steps = (int)(delta_time * app->simulation->speed * 1000);
-        steps = CLAMP(steps, 1, 1000);
-
-        for (int i = 0; i < steps; i++) {
+        // Real-time target: advance sim time by delta_time * speed, i.e. (delta_time*speed/dt)
+        // steps, but never spend more than ~12 ms of wall clock per frame so the UI stays
+        // responsive when dt is tiny. (The old code ran a fixed 1000 steps per wall second,
+        // which at dt = 200 ns meant 0.2 ms of circuit time per real second.)
+        double dt_now = app->simulation->time_step > 0 ? app->simulation->time_step : 1e-6;
+        double want = (double)delta_time * app->simulation->speed / dt_now;
+        long target = (long)(want + app->sim_step_carry);
+        if (target < 1) target = 1;
+        app->sim_step_carry = want + app->sim_step_carry - (double)target;
+        if (app->sim_step_carry < 0) app->sim_step_carry = 0;
+        if (app->sim_step_carry > 1e6) app->sim_step_carry = 0;
+        Uint64 t0 = SDL_GetPerformanceCounter(), budget = SDL_GetPerformanceFrequency() * 12 / 1000;
+        long done = 0;
+        for (long i = 0; i < target; i++) {
             if (!simulation_step(app->simulation)) {
                 simulation_pause(app->simulation);
                 ui_set_status(&app->ui, simulation_get_error(app->simulation));
                 break;
             }
+            done++;
+            if ((done & 63) == 0 && SDL_GetPerformanceCounter() - t0 > budget) break;   // out of time this frame
         }
+        app->sim_realtime_ratio = (target > 0) ? (double)done / (double)target : 1.0;
         // Refresh terminal currents and wire flows once per frame for the animation
         simulation_update_flow_display(app->simulation);
 

@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
 
 #include "types.h"
 #include "component.h"
@@ -97,12 +98,14 @@ static int scope_dt_test(void) {
     int fails = 0;
     Circuit *c = circuit_create();
     circuit_place_template(c, CIRCUIT_RC_LOWPASS, 0, 0);   /* 1 kHz source -> accuracy dt 10 us (100 samples/period) */
+    for (int i = 0; i < c->num_components; i++)
+        if (c->components[i]->type == COMP_AC_VOLTAGE) c->components[i]->props.ac_voltage.frequency_sweep.enabled = false;
     Simulation *sim = simulation_create(c);
     struct { double time_div, want; const char *why; } cases[] = {
-        { 1e-3,   1e-5,  "1 ms/div: display 20 us, accuracy-limited to 10 us" },
-        { 100e-6, 2e-6,  "100 us/div: 2 us (50 samples/div)" },
-        { 1e-6,   20e-9, "1 us/div: 20 ns" },
-        { 10e-9,  1e-9,  "10 ns/div: wants 0.2 ns -> clamped to MIN_TIME_STEP" },
+        { 1e-3,   1e-5,  "1 ms/div: display 50 us, accuracy-limited to 10 us" },
+        { 100e-6, 5e-6,  "100 us/div: 5 us (20 samples/div)" },
+        { 1e-6,   50e-9, "1 us/div: 50 ns" },
+        { 10e-9,  1e-9,  "10 ns/div: wants 0.5 ns -> clamped to MIN_TIME_STEP" },
         { 100.0,  1e-5,  "100 s/div: display 2 s but accuracy (10 us) wins" },
     };
     for (unsigned i = 0; i < sizeof cases / sizeof cases[0]; i++) {
@@ -507,6 +510,50 @@ static int geom_test(void) {
     return bad_templates;
 }
 
+/* Frequency-sweep check: run the RC low-pass (100 Hz -> 20 kHz log sweep, 3 s) to t_end with
+ * the app's own dt rule, measure the input frequency over the last 5 ms from zero crossings,
+ * and compare with sweep_get_value(). Also reports steps/s so the real-time budget is visible. */
+static int sweep_check(void) {
+    double t_ends[] = { 0.3, 0.9, 1.5 };
+    int fails = 0;
+    for (unsigned k = 0; k < sizeof t_ends / sizeof t_ends[0]; k++) {
+        Circuit *c = circuit_create();
+        circuit_place_template(c, CIRCUIT_RC_LOWPASS, 0, 0);
+        Simulation *sim = simulation_create(c);
+        Component *src = NULL;
+        for (int i = 0; i < c->num_components; i++) if (c->components[i]->type == COMP_AC_VOLTAGE) src = c->components[i];
+        simulation_dc_analysis(sim);
+        simulation_start(sim);
+        double f_end = sweep_get_value(&src->props.ac_voltage.frequency_sweep, src->props.ac_voltage.frequency, t_ends[k]);
+        double t_end = t_ends[k], t_rec = t_end - 6.0 / f_end;   /* ~6 periods of the end frequency */
+        enum { NM = 400000 }; static double vs[NM], ts[NM]; int n = 0;
+        long steps = 0; double dt_last = 0;
+        clock_t c0 = clock();
+        while (sim->time < t_end) {
+            /* mimic the app: dt from the scope rule, re-synced each 1-2-5 change of the tracked time/div */
+            double f = sweep_get_value(&src->props.ac_voltage.frequency_sweep, src->props.ac_voltage.frequency, sim->time);
+            double td = 0.3 / f; double dec = pow(10.0, floor(log10(td))); double m = td / dec;
+            td = ((m >= 5) ? 5 : (m >= 2) ? 2 : 1) * dec;
+            double dt = simulation_scope_time_step(sim, td);
+            if (dt != dt_last) { simulation_set_time_step(sim, dt); dt_last = dt; }
+            if (!simulation_step(sim)) break;
+            steps++;
+            if (sim->time >= t_rec && n < NM) { Node *nd = circuit_get_node(c, src->node_ids[0]); vs[n] = nd ? nd->voltage : 0; ts[n] = sim->time; n++; }
+        }
+        double secs = (double)(clock() - c0) / CLOCKS_PER_SEC;
+        int rising = 0; double tf = -1, tl = -1;
+        for (int i = 1; i < n; i++) if (vs[i-1] < 0 && vs[i] >= 0) { rising++; if (tf < 0) tf = ts[i]; tl = ts[i]; }
+        double f_meas = (rising >= 2) ? (rising - 1) / (tl - tf) : 0;
+        double f_law = sweep_get_value(&src->props.ac_voltage.frequency_sweep, src->props.ac_voltage.frequency, t_end - 3.0 / f_end);
+        int ok = fabs(f_meas - f_law) < 0.08 * f_law;
+        printf("[%s] sweep t=%.2fs: measured %.0f Hz, law %.0f Hz, dt=%.3g, %ld steps in %.2fs (%.0f ksteps/s, %.2fx real time)\n",
+               ok ? " OK " : "FAIL", t_end, f_meas, f_law, dt_last, steps, secs, steps / secs / 1e3, secs > 0 ? t_end / secs : 0);
+        if (!ok) fails++;
+        simulation_free(sim); circuit_free(c);
+    }
+    return fails;
+}
+
 int main(int argc, char **argv) {
     int dc_only = 0, verbose = 0, dump_nodes = 0;
     const char *svg_dir = NULL;
@@ -523,6 +570,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--geom-test")) return geom_test();
+        else if (!strcmp(argv[i], "--sweep-check")) return sweep_check();
         else if (!strcmp(argv[i], "--sim-time") && i + 1 < argc) sim_time = atof(argv[++i]);
         else filter = argv[i];
     }

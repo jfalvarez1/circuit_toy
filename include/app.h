@@ -34,6 +34,8 @@ typedef struct {
     bool show_voltages;
     bool show_current;
     double synced_time_div;      // scope time/div the sim dt was last matched to (0 = never)
+    double sim_step_carry;       // fractional steps carried between frames
+    double sim_realtime_ratio;   // fraction of the real-time step target achieved last frame
 
     // Current file
     char current_file[256];

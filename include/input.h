@@ -214,6 +214,7 @@ typedef struct InputState {
 
     // Interaction state
     bool is_panning;
+    bool scope_panning;          // Middle-drag over the scope: pan time (horizontal) / offset (vertical)
     bool is_dragging;
     Component *dragging_component;
     float drag_start_x, drag_start_y;  // Component position when drag started (for undo)

@@ -53,6 +53,13 @@ static int find_wire_at(Circuit *circuit, float wx, float wy, float threshold) {
     return -1;
 }
 
+// Is (x,y) on the oscilloscope screen (graticule area, main window)?
+static bool point_in_scope_screen(UIState *ui, int x, int y) {
+    if (!ui || ui->scope_popped_out) return false;
+    return x >= ui->scope_rect.x && x < ui->scope_rect.x + ui->scope_rect.w &&
+           y >= ui->scope_rect.y && y < ui->scope_rect.y + ui->scope_rect.h;
+}
+
 // Index of the probe whose body (tip..handle segment) is within 15 world units of (wx,wy), or -1
 static int probe_hit_index(Circuit *circuit, float wx, float wy) {
     for (int i = 0; i < circuit->num_probes; i++) {
@@ -695,7 +702,11 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 input->middle.down = true;
                 input->middle.start_x = x;
                 input->middle.start_y = y;
-                input->is_panning = true;
+                if (ui && point_in_scope_screen(ui, x, y)) {
+                    input->scope_panning = true;     // pan the scope, not the canvas
+                } else {
+                    input->is_panning = true;
+                }
             } else if (event->button.button == SDL_BUTTON_RIGHT) {
                 // Check if right-click is on a subcircuit palette item (to edit)
                 int action = ui_handle_right_click(ui, x, y);
@@ -850,6 +861,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             } else if (button == SDL_BUTTON_MIDDLE) {
                 input->middle.down = false;
                 input->is_panning = false;
+                input->scope_panning = false;
             }
 
             // Check if button up is from popup scope window
@@ -883,6 +895,26 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             if (is_popup_motion) {
                 ui_restore_popup_scope_coords(ui, &backup_motion);
                 return true;  // Consume popup window motion events
+            }
+
+            // Scope pan (middle-drag over the scope): horizontal moves the trigger position
+            // (time window), vertical shifts every enabled channel's offset
+            if (input->scope_panning && ui) {
+                int dx = x - input->middle.start_x;
+                int dy = y - input->middle.start_y;
+                if (ui->scope_rect.w > 0) {
+                    ui->trigger_position += (double)dx / ui->scope_rect.w;
+                    ui->trigger_position = CLAMP(ui->trigger_position, 0.0, 1.0);
+                }
+                if (ui->scope_rect.h > 0 && ui->scope_volt_div > 0) {
+                    double scale = (ui->scope_rect.h / 8.0) / ui->scope_volt_div;   // px per volt
+                    for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++)
+                        if (ui->scope_channels[ch].enabled) ui->scope_channels[ch].offset -= dy / scale;
+                }
+                ui->scope_capture_valid = false;
+                input->middle.start_x = x;
+                input->middle.start_y = y;
+                return true;
             }
 
             // Panning
@@ -1010,6 +1042,19 @@ bool input_handle_event(InputState *input, SDL_Event *event,
         case SDL_MOUSEWHEEL: {
             int x = input->mouse_x;
             int y = input->mouse_y;
+
+            // Wheel over the scope screen: zoom time/div (Shift+wheel: V/div). Zooming in
+            // manually releases sweep tracking so the user's choice sticks.
+            if (ui && point_in_scope_screen(ui, x, y)) {
+                bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+                if (shift) {
+                    input->pending_ui_action = (event->wheel.y > 0) ? UI_ACTION_SCOPE_VOLT_DOWN : UI_ACTION_SCOPE_VOLT_UP;
+                } else {
+                    input->pending_ui_action = (event->wheel.y > 0) ? UI_ACTION_SCOPE_TIME_DOWN : UI_ACTION_SCOPE_TIME_UP;
+                    ui->scope_track_sweep = false;
+                }
+                return true;
+            }
 
             // Check if mouse is in palette area (left sidebar) - scroll palette
             if (ui_point_in_palette(ui, x, y)) {

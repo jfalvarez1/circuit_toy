@@ -2238,7 +2238,13 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             amp = sweep_get_value(&comp->props.ac_voltage.amplitude_sweep, amp, time);
             freq = sweep_get_value(&comp->props.ac_voltage.frequency_sweep, freq, time);
 
-            double V = amp * sin(2 * M_PI * freq * time + phase) + offset;
+            // A swept frequency must be integrated into phase (phi += 2*pi*f*dt per step, see
+            // simulation_step); sin(2*pi*f(t)*t) would chirp at f + t*df/dt instead of f.
+            double V;
+            if (comp->props.ac_voltage.frequency_sweep.enabled)
+                V = amp * sin(comp->sweep_phase + phase) + offset;
+            else
+                V = amp * sin(2 * M_PI * freq * time + phase) + offset;
             int volt_idx = num_nodes + comp->voltage_var_idx;
 
             if (n[0] > 0) {

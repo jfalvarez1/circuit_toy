@@ -277,6 +277,7 @@ typedef struct {
     bool scope_stacked;              // Stacked view: each channel in its own horizontal band
     bool scope_track_sweep;          // Auto time/div: ~3 cycles of the sweeping source per screen
     bool scope_auto_vdiv_pending;    // One-shot: pick V/div from the measured probe range once data exists
+    double sim_realtime_ratio;       // Achieved fraction of real time last frame (shown next to speed)
     int scope_extra_w;               // Extra scope width extending left over the canvas (user resize)
     bool scope_user_sized;           // User dragged the scope edges: layout keeps the custom size
 

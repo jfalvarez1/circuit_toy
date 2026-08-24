@@ -539,8 +539,11 @@ bool simulation_dc_analysis(Simulation *sim) {
     // Apply post-solve clamping as safety net
     simulation_clamp_opamps(circuit, sim->solution);
 
-    // Capacitors carry no current at the operating point
-    for (int i = 0; i < circuit->num_components; i++) circuit->components[i]->trap_i_prev = 0.0;
+    // Capacitors carry no current at the operating point; swept sources restart their phase
+    for (int i = 0; i < circuit->num_components; i++) {
+        circuit->components[i]->trap_i_prev = 0.0;
+        circuit->components[i]->sweep_phase = 0.0;
+    }
 
     // Update circuit voltages, meter readings and the current-flow display
     circuit_update_voltages(circuit, solution);
@@ -1141,6 +1144,17 @@ bool simulation_step(Simulation *sim) {
         sim->prev_step_solution = sim->solution;
         sim->solution = trial_solution;
 
+        // Swept sources: advance the accumulated phase by the instantaneous frequency
+        for (int i = 0; i < circuit->num_components; i++) {
+            Component *comp = circuit->components[i];
+            if (comp->type == COMP_AC_VOLTAGE && comp->props.ac_voltage.frequency_sweep.enabled) {
+                double f = sweep_get_value(&comp->props.ac_voltage.frequency_sweep,
+                                           comp->props.ac_voltage.frequency, sim->time);
+                comp->sweep_phase += 2.0 * M_PI * f * dt;
+                if (comp->sweep_phase > 1e6) comp->sweep_phase = fmod(comp->sweep_phase, 2.0 * M_PI);
+            }
+        }
+
         // Trapezoidal capacitor state: i_new = (2C/dt)(v_new - v_prev) - i_prev
         for (int i = 0; i < circuit->num_components; i++) {
             Component *comp = circuit->components[i];
@@ -1298,10 +1312,9 @@ double simulation_accuracy_time_step(Simulation *sim) {
             case COMP_AC_VOLTAGE:
                 freq = c->props.ac_voltage.frequency;
                 if (c->props.ac_voltage.frequency_sweep.enabled) {
-                    double f1 = c->props.ac_voltage.frequency_sweep.start_value;
-                    double f2 = c->props.ac_voltage.frequency_sweep.end_value;
-                    if (f1 > freq) freq = f1;
-                    if (f2 > freq) freq = f2;
+                    // Instantaneous sweep frequency: dt follows the sweep (re-synced whenever
+                    // the tracked time/div steps), instead of paying for the top end all the time
+                    freq = sweep_get_value(&c->props.ac_voltage.frequency_sweep, freq, sim->time);
                 }
                 break;
             case COMP_SQUARE_WAVE:
@@ -1329,16 +1342,13 @@ double simulation_accuracy_time_step(Simulation *sim) {
         double period = 1.0 / max_freq;
 
         // Use progressively more samples at higher frequencies for smooth curves
+        // With theta-trapezoidal integration 100 samples per period keeps the amplitude and
+        // phase error well under 1%; the old 200-300 tiers only made high-frequency
+        // circuits crawl in real time.
         if (max_freq <= 100) {
-            dt = period / 50.0;   // 50 samples/period for very low frequencies
-        } else if (max_freq <= 1000) {
-            dt = period / 100.0;  // 100 samples/period for 100Hz-1kHz
-        } else if (max_freq <= 10000) {
-            dt = period / 200.0;  // 200 samples/period for 1kHz-10kHz (fixes triangular appearance)
-        } else if (max_freq <= 100000) {
-            dt = period / 200.0;  // 200 samples/period for 10kHz-100kHz
+            dt = period / 50.0;
         } else {
-            dt = period / 300.0;  // 300 samples/period for >100kHz
+            dt = period / 100.0;
         }
     } else {
         // No AC signals, use default time step
@@ -1358,7 +1368,7 @@ double simulation_auto_time_step(Simulation *sim) {
 
 double simulation_scope_time_step(Simulation *sim, double scope_time_div) {
     if (!sim || scope_time_div <= 0) return DEFAULT_TIME_STEP;
-    double display_dt = scope_time_div / 50.0;         // ~50 samples per division
+    double display_dt = scope_time_div / 20.0;         // ~20 samples per division (200 per screen)
     double accuracy_dt = simulation_accuracy_time_step(sim);
     double dt = display_dt < accuracy_dt ? display_dt : accuracy_dt;
     dt = CLAMP(dt, MIN_TIME_STEP, MAX_TIME_STEP);
