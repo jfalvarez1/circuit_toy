@@ -618,6 +618,8 @@ void ui_init(UIState *ui) {
     ui->scope_cursor_type = 0;
     ui->scope_cursor_active = 1;
     ui->scope_cursor_linked = false;
+    ui->cursor_a_channel = -1;
+    ui->cursor_b_channel = -1;
     ui->scope_view_t0 = 0.0;
     ui->scope_view_span = 0.0;
     ui->scope_fft_mode = false;
@@ -3654,15 +3656,23 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     //   type 2  screen cursors: independent vertical (time) and horizontal (amplitude) bars
     if (ui->scope_cursor_mode && ui->scope_cursor_type > 0 && ui->display_mode == SCOPE_MODE_YT) {
         bool wave = (ui->scope_cursor_type == 1);
-        int src = ui->trigger_channel;
+        // Source channels: cursor a defaults to the trigger channel, b to a's channel;
+        // keys 1-8 (with cursors on) bind the active cursor to a channel.
+        int src = ui->cursor_a_channel;
+        if (src < 0 || src >= ui->scope_num_channels || !ui->scope_channels[src].enabled) src = ui->trigger_channel;
         if (src < 0 || src >= ui->scope_num_channels || !ui->scope_channels[src].enabled) {
             src = -1;
             for (int c = 0; c < ui->scope_num_channels && c < MAX_PROBES; c++)
                 if (ui->scope_channels[c].enabled) { src = c; break; }
         }
+        int src_b = ui->cursor_b_channel;
+        if (src_b < 0 || src_b >= ui->scope_num_channels || !ui->scope_channels[src_b].enabled) src_b = src;
         int f_top, f_h, f_center; double f_scale;
         scope_channel_frame(ui, r, src >= 0 ? src : 0, &f_top, &f_h, &f_center, &f_scale);
         double src_offset = (src >= 0) ? ui->scope_channels[src].offset : 0.0;
+        int fb_top, fb_h, fb_center; double fb_scale;
+        scope_channel_frame(ui, r, src_b >= 0 ? src_b : 0, &fb_top, &fb_h, &fb_center, &fb_scale);
+        double srcb_offset = (src_b >= 0) ? ui->scope_channels[src_b].offset : 0.0;
 
         // --- vertical (time) cursors a and b ---
         int ax = r->x + (int)(ui->cursor1_time * r->w);
@@ -3670,11 +3680,19 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);
         for (int y = r->y; y < r->y + r->h; y += 4)
             SDL_RenderDrawLine(renderer, ax, y, ax, MIN(y + 2, r->y + r->h));
-        ui_draw_text(renderer, ui->scope_cursor_active == 1 ? "a*" : "a", ax - 5, r->y + 2);
+        {
+            char tag[12]; snprintf(tag, sizeof tag, "a%s%d", ui->scope_cursor_active == 1 ? "*" : ":", src + 1);
+            if (src >= 0) SDL_SetRenderDrawColor(renderer, ui->scope_channels[src].color.r, ui->scope_channels[src].color.g, ui->scope_channels[src].color.b, 0xff);
+            ui_draw_text(renderer, tag, ax - 8, r->y + 2);
+        }
         SDL_SetRenderDrawColor(renderer, 0xff, 0x00, 0xff, 0xff);
         for (int y = r->y; y < r->y + r->h; y += 4)
             SDL_RenderDrawLine(renderer, bx, y, bx, MIN(y + 2, r->y + r->h));
-        ui_draw_text(renderer, ui->scope_cursor_active == 2 ? "b*" : "b", bx - 5, r->y + 2);
+        {
+            char tag[12]; snprintf(tag, sizeof tag, "b%s%d", ui->scope_cursor_active == 2 ? "*" : ":", src_b + 1);
+            if (src_b >= 0) SDL_SetRenderDrawColor(renderer, ui->scope_channels[src_b].color.r, ui->scope_channels[src_b].color.g, ui->scope_channels[src_b].color.b, 0xff);
+            ui_draw_text(renderer, tag, bx - 8, r->y + 2);
+        }
 
         double span = ui->scope_view_span > 0 ? ui->scope_view_span : 10.0 * ui->scope_time_div;
         double ta = ui->scope_view_t0 + ui->cursor1_time * span;
@@ -3689,11 +3707,10 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         double va = 0, vb = 0; bool ha = false, hb = false;
 
         if (wave) {
-            if (src >= 0) {
-                ha = scope_value_at(ui, src, ta, &va);
-                hb = scope_value_at(ui, src, tb, &vb);
-            }
-            snprintf(line[nl++], 40, "WAVE CH%d%s", src + 1, ui->scope_cursor_linked ? " LINK" : "");
+            if (src >= 0) ha = scope_value_at(ui, src, ta, &va);
+            if (src_b >= 0) hb = scope_value_at(ui, src_b, tb, &vb);
+            if (src_b != src) snprintf(line[nl++], 40, "WAVE a:CH%d b:CH%d%s", src + 1, src_b + 1, ui->scope_cursor_linked ? " LNK" : "");
+            else snprintf(line[nl++], 40, "WAVE CH%d%s", src + 1, ui->scope_cursor_linked ? " LINK" : "");
             if (ha) fmt_volt_eng(v1, sizeof v1, va); else snprintf(v1, sizeof v1, "--");
             if (hb) fmt_volt_eng(v2, sizeof v2, vb); else snprintf(v2, sizeof v2, "--");
             snprintf(line[nl++], 40, "a %s %s", t1, v1);
@@ -3727,22 +3744,23 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 SDL_Rect m = {ax - 3, y - 3, 7, 7}; SDL_RenderDrawRect(renderer, &m);
             }
             if (hb) {
-                int y = f_center - (int)((vb + src_offset) * f_scale);
-                y = CLAMP(y, f_top, f_top + f_h);
+                int y = fb_center - (int)((vb + srcb_offset) * fb_scale);
+                y = CLAMP(y, fb_top, fb_top + fb_h);
                 SDL_SetRenderDrawColor(renderer, 0xff, 0x00, 0xff, 0xff);
                 SDL_Rect m = {bx - 3, y - 3, 7, 7}; SDL_RenderDrawRect(renderer, &m);
             }
         } else {
             // Screen cursors: horizontal amplitude bars read in the source channel's frame
             int ay = f_top + (int)(ui->cursor1_volt * f_h);
-            int by = f_top + (int)(ui->cursor2_volt * f_h);
+            int by = fb_top + (int)(ui->cursor2_volt * fb_h);
             va = (f_center - ay) / f_scale - src_offset;
-            vb = (f_center - by) / f_scale - src_offset;
+            vb = (fb_center - by) / fb_scale - srcb_offset;
             SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xff, 0xff);
             for (int x = r->x; x < r->x + r->w; x += 4) SDL_RenderDrawLine(renderer, x, ay, MIN(x + 2, r->x + r->w), ay);
             SDL_SetRenderDrawColor(renderer, 0xff, 0x00, 0xff, 0xff);
             for (int x = r->x; x < r->x + r->w; x += 4) SDL_RenderDrawLine(renderer, x, by, MIN(x + 2, r->x + r->w), by);
-            snprintf(line[nl++], 40, "SCREEN CH%d%s", src + 1, ui->scope_cursor_linked ? " LINK" : "");
+            if (src_b != src) snprintf(line[nl++], 40, "SCRN a:CH%d b:CH%d%s", src + 1, src_b + 1, ui->scope_cursor_linked ? " LNK" : "");
+            else snprintf(line[nl++], 40, "SCREEN CH%d%s", src + 1, ui->scope_cursor_linked ? " LINK" : "");
             fmt_volt_eng(v1, sizeof v1, va); fmt_volt_eng(v2, sizeof v2, vb);
             snprintf(line[nl++], 40, "a %s %s", t1, v1);
             snprintf(line[nl++], 40, "b %s %s", t2, v2);
@@ -5995,17 +6013,19 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
                 if (ui->scope_cursor_type == 2) {
                     // Horizontal bars live in the source channel's band; compare in pixels
                     int f_top, f_h, f_center; double f_scale;
-                    int src = ui->trigger_channel;
+                    int src = (ui->cursor_a_channel >= 0) ? ui->cursor_a_channel : ui->trigger_channel;
                     if (src < 0 || src >= ui->scope_num_channels) src = 0;
+                    int src_b = (ui->cursor_b_channel >= 0) ? ui->cursor_b_channel : src;
+                    if (src_b < 0 || src_b >= ui->scope_num_channels) src_b = src;
                     scope_channel_frame(ui, sr, src, &f_top, &f_h, &f_center, &f_scale);
+                    int fb_top, fb_h, fb_center; double fb_scale;
+                    scope_channel_frame(ui, sr, src_b, &fb_top, &fb_h, &fb_center, &fb_scale);
                     double d3 = fabs((double)y - (f_top + ui->cursor1_volt * f_h));
-                    double d4 = fabs((double)y - (f_top + ui->cursor2_volt * f_h));
+                    double d4 = fabs((double)y - (fb_top + ui->cursor2_volt * fb_h));
                     if (d3 < dbest) { pick = 3; dbest = d3; }
                     if (d4 < dbest) { pick = 4; dbest = d4; }
-                    if (pick >= 3) {
-                        double fy = CLAMP((double)(y - f_top) / f_h, 0.0, 1.0);
-                        if (pick == 3) ui->cursor1_volt = fy; else ui->cursor2_volt = fy;
-                    }
+                    if (pick == 3) ui->cursor1_volt = CLAMP((double)(y - f_top) / f_h, 0.0, 1.0);
+                    if (pick == 4) ui->cursor2_volt = CLAMP((double)(y - fb_top) / fb_h, 0.0, 1.0);
                 }
                 if (pick == 1) ui->cursor1_time = normalized_x;
                 else if (pick == 2) ui->cursor2_time = normalized_x;
@@ -6554,8 +6574,9 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
             ui->cursor2_time = normalized_x;
         } else {
             int f_top, f_h, f_center; double f_scale;
-            int src = ui->trigger_channel;
+            int src = (ui->cursor_a_channel >= 0) ? ui->cursor_a_channel : ui->trigger_channel;
             if (src < 0 || src >= ui->scope_num_channels) src = 0;
+            if (ui->scope_cursor_drag == 4 && ui->cursor_b_channel >= 0 && ui->cursor_b_channel < ui->scope_num_channels) src = ui->cursor_b_channel;
             scope_channel_frame(ui, sr, src, &f_top, &f_h, &f_center, &f_scale);
             double fy = CLAMP((double)(y - f_top) / f_h, 0.0, 1.0);
             if (ui->scope_cursor_drag == 3) ui->cursor1_volt = fy; else ui->cursor2_volt = fy;

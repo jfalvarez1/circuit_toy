@@ -1211,6 +1211,15 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     }
                 }
                 if (ck == SDLK_TAB) { ui->scope_cursor_active = (ui->scope_cursor_active == 1) ? 2 : 1; return true; }
+                if (ck >= SDLK_1 && ck <= SDLK_8) {
+                    // Bind the active cursor to channel N (1-8); 0 restores the default (trigger channel)
+                    int chn = ck - SDLK_1;
+                    if (chn < ui->scope_num_channels) {
+                        if (ui->scope_cursor_active == 2) ui->cursor_b_channel = chn; else ui->cursor_a_channel = chn;
+                    }
+                    return true;
+                }
+                if (ck == SDLK_0) { ui->cursor_a_channel = -1; ui->cursor_b_channel = -1; return true; }
                 if (ck == SDLK_l && !(mods & KMOD_CTRL)) { ui->scope_cursor_linked = !ui->scope_cursor_linked; return true; }
                 if (ck == SDLK_HOME) { ui->cursor1_time = 0.25; ui->cursor2_time = 0.75; ui->cursor1_volt = 0.35; ui->cursor2_volt = 0.65; return true; }
             }
