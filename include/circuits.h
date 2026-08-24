@@ -90,5 +90,6 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
 
 // Suggested scope time/div for a template (0 = no preference)
 double circuit_template_scope_time_div(CircuitTemplateType type);
+double circuit_template_scope_volt_div(CircuitTemplateType type);
 
 #endif // CIRCUITS_H

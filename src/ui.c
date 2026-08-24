@@ -598,6 +598,8 @@ void ui_init(UIState *ui) {
     scope_btn_x += 38;
     ui->btn_scope_stack = (Button){{scope_btn_x, scope_btn_y, 40, scope_btn_h}, "Stack", "Stacked view: one band per channel (toggle overlay)", false, false, true, false};
     scope_btn_x += 43;
+    ui->btn_scope_track = (Button){{scope_btn_x, scope_btn_y, 32, scope_btn_h}, "Trk", "Track a sweeping source: time/div follows its frequency (~3 cycles per screen)", false, false, true, false};
+    scope_btn_x += 35;
     ui->btn_scope_screenshot = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "CAP", "Capture screenshot (saves scope.bmp)", false, false, true, false};
     scope_btn_x += 38;
     ui->btn_bode = (Button){{scope_btn_x, scope_btn_y, 40, scope_btn_h}, "Bode", "Frequency response plot", false, false, true, false};
@@ -620,6 +622,7 @@ void ui_init(UIState *ui) {
     ui->scope_view_span = 0.0;
     ui->scope_fft_mode = false;
     ui->scope_stacked = false;
+    ui->scope_track_sweep = false;
     ui->scope_extra_w = 0;
     ui->scope_user_sized = false;
 
@@ -3803,6 +3806,8 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     // Stacked / overlay view toggle
     ui->btn_scope_stack.toggled = ui->scope_stacked;
     draw_button(renderer, &ui->btn_scope_stack);
+    ui->btn_scope_track.toggled = ui->scope_track_sweep;
+    draw_button(renderer, &ui->btn_scope_track);
 
     // Autoset button
     draw_button(renderer, &ui->btn_scope_autoset);
@@ -6181,6 +6186,9 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_scope_stack.bounds) && ui->btn_scope_stack.enabled) {
             return UI_ACTION_SCOPE_STACK;
         }
+        if (point_in_rect(x, y, &ui->btn_scope_track.bounds) && ui->btn_scope_track.enabled) {
+            return UI_ACTION_SCOPE_TRACK;
+        }
         if (point_in_rect(x, y, &ui->btn_scope_autoset.bounds) && ui->btn_scope_autoset.enabled) {
             return UI_ACTION_SCOPE_AUTOSET;
         }
@@ -6658,6 +6666,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
     ui->btn_scope_cursor.hovered = point_in_rect(x, y, &ui->btn_scope_cursor.bounds);
     ui->btn_scope_fft.hovered = point_in_rect(x, y, &ui->btn_scope_fft.bounds);
     ui->btn_scope_stack.hovered = point_in_rect(x, y, &ui->btn_scope_stack.bounds);
+    ui->btn_scope_track.hovered = point_in_rect(x, y, &ui->btn_scope_track.bounds);
     ui->btn_scope_autoset.hovered = point_in_rect(x, y, &ui->btn_scope_autoset.bounds);
     ui->btn_bode.hovered = point_in_rect(x, y, &ui->btn_bode.bounds);
     ui->btn_mc.hovered = point_in_rect(x, y, &ui->btn_mc.bounds);
@@ -6833,6 +6842,7 @@ void ui_update_layout(UIState *ui) {
     PLACE_BTN(&ui->btn_scope_cursor, 35);
     PLACE_BTN(&ui->btn_scope_fft, 35);
     PLACE_BTN(&ui->btn_scope_stack, 40);
+    PLACE_BTN(&ui->btn_scope_track, 32);
     PLACE_BTN(&ui->btn_scope_screenshot, 35);
     PLACE_BTN(&ui->btn_bode, 40);
     PLACE_BTN(&ui->btn_mc, 25);
@@ -7133,6 +7143,7 @@ ScopeCoordsBackup ui_setup_popup_scope_coords(UIState *ui) {
     backup.btn_cursor = ui->btn_scope_cursor.bounds;
     backup.btn_fft = ui->btn_scope_fft.bounds;
     backup.btn_stack = ui->btn_scope_stack.bounds;
+    backup.btn_track = ui->btn_scope_track.bounds;
     backup.btn_screenshot = ui->btn_scope_screenshot.bounds;
     backup.btn_bode = ui->btn_bode.bounds;
     backup.btn_mc = ui->btn_mc.bounds;
@@ -7185,6 +7196,8 @@ ScopeCoordsBackup ui_setup_popup_scope_coords(UIState *ui) {
     scope_btn_x += 38;
     ui->btn_scope_stack.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
     scope_btn_x += 43;
+    ui->btn_scope_track.bounds = (Rect){scope_btn_x, scope_btn_y, 32, scope_btn_h};
+    scope_btn_x += 35;
     ui->btn_scope_screenshot.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
     scope_btn_x += 38;
     ui->btn_bode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
@@ -7213,6 +7226,7 @@ void ui_restore_popup_scope_coords(UIState *ui, const ScopeCoordsBackup *backup)
     ui->btn_scope_cursor.bounds = backup->btn_cursor;
     ui->btn_scope_fft.bounds = backup->btn_fft;
     ui->btn_scope_stack.bounds = backup->btn_stack;
+    ui->btn_scope_track.bounds = backup->btn_track;
     ui->btn_scope_screenshot.bounds = backup->btn_screenshot;
     ui->btn_bode.bounds = backup->btn_bode;
     ui->btn_mc.bounds = backup->btn_mc;

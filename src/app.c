@@ -576,6 +576,12 @@ void app_handle_events(App *app) {
                 }
                 break;
 
+            case UI_ACTION_SCOPE_TRACK:
+                app->ui.scope_track_sweep = !app->ui.scope_track_sweep;
+                ui_set_status(&app->ui, app->ui.scope_track_sweep
+                    ? "Scope: time/div tracks the sweeping source (~3 cycles per screen)"
+                    : "Scope: time/div tracking off");
+                break;
             case UI_ACTION_SCOPE_STACK:
                 // Toggle stacked (one band per channel) vs overlay view
                 app->ui.scope_stacked = !app->ui.scope_stacked;
@@ -1590,6 +1596,55 @@ void app_update(App *app) {
                 app->analysis.monte_carlo.num_runs);
             ui_set_status(&app->ui, msg);
         }
+    }
+
+    // Sweep tracking: follow the fastest sweeping source so ~3 cycles fill the screen.
+    // Only re-snaps when the ideal 1-2-5 value changes, so the display does not flicker.
+    if (app->ui.scope_track_sweep && app->simulation->state == SIM_RUNNING) {
+        double fmax = 0;
+        for (int i = 0; i < app->circuit->num_components; i++) {
+            Component *c = app->circuit->components[i];
+            if (c->type == COMP_AC_VOLTAGE && c->props.ac_voltage.frequency_sweep.enabled) {
+                double f = sweep_get_value(&c->props.ac_voltage.frequency_sweep,
+                                           c->props.ac_voltage.frequency, app->simulation->time);
+                if (f > fmax) fmax = f;
+            }
+        }
+        if (fmax > 0) {
+            double ideal = 0.3 / fmax;                  // 3 cycles across 10 divisions
+            double decade = pow(10.0, floor(log10(ideal)));
+            double m = ideal / decade;
+            double snapped = (m >= 5.0) ? 5.0 : (m >= 2.0) ? 2.0 : 1.0;
+            double td = snapped * decade;
+            if (td < 10e-9) td = 10e-9;
+            if (td > 100.0) td = 100.0;
+            if (fabs(td - app->ui.scope_time_div) > 1e-12 * td) {
+                app->ui.scope_time_div = td;
+                app->ui.scope_capture_valid = false;
+            }
+        }
+    }
+
+    // One-shot V/div from the measured signal range (after a template auto-starts)
+    if (app->ui.scope_auto_vdiv_pending && app->simulation->state == SIM_RUNNING &&
+        app->simulation->history_count >= 400) {
+        static double t_buf[MAX_HISTORY], v_buf[MAX_HISTORY];
+        double vmax = 0;
+        for (int pi = 0; pi < app->circuit->num_probes && pi < MAX_PROBES; pi++) {
+            int n = simulation_get_history(app->simulation, pi, t_buf, v_buf, MAX_HISTORY);
+            for (int i = n / 2; i < n; i++) if (fabs(v_buf[i]) > vmax) vmax = fabs(v_buf[i]);
+        }
+        if (vmax > 1e-6) {
+            double ideal = vmax * 1.15 / 4.0;          // fill ~4 of the 4 divisions above/below centre
+            double decade = pow(10.0, floor(log10(ideal)));
+            double m = ideal / decade;
+            double snapped = (m > 5.0) ? 10.0 : (m > 2.0) ? 5.0 : (m > 1.0) ? 2.0 : 1.0;
+            double vd = snapped * decade;
+            if (vd < 0.001) vd = 0.001;
+            if (vd > 100.0) vd = 100.0;
+            app->ui.scope_volt_div = vd;
+        }
+        app->ui.scope_auto_vdiv_pending = false;
     }
 
     // Keep dt in step with the scope's time/div (only acts when time/div changed)

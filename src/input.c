@@ -174,6 +174,15 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             // Scope preset for this template, then auto-start so the probes show it working
                             double td = circuit_template_scope_time_div(ui->selected_circuit_type);
                             if (td > 0) { ui->scope_time_div = td; ui->scope_capture_valid = false; }
+                            double vd = circuit_template_scope_volt_div(ui->selected_circuit_type);
+                            if (vd > 0) ui->scope_volt_div = vd;
+                            ui->scope_auto_vdiv_pending = true;   // refine from real data once it flows
+                            // Templates with a frequency-sweeping source get sweep tracking on
+                            ui->scope_track_sweep = false;
+                            for (int i = 0; i < circuit->num_components; i++) {
+                                Component *cc = circuit->components[i];
+                                if (cc->type == COMP_AC_VOLTAGE && cc->props.ac_voltage.frequency_sweep.enabled) ui->scope_track_sweep = true;
+                            }
                             input->should_autostart_sim = true;
                             snprintf(msg, sizeof(msg), "Placed %s: probes on input/output, running - read the note under the circuit", info->name);
                             ui_set_status(ui, msg);

@@ -6477,6 +6477,24 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_CLAMPER] = 50e-3, [CIRCUIT_PHASE_SHIFT_OSC] = 50e-6,
 };
 
+// Scope volts/div preset (0 = leave as is)
+static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
+    [CIRCUIT_RC_LOWPASS] = 0.5, [CIRCUIT_RC_HIGHPASS] = 0.5, [CIRCUIT_RL_LOWPASS] = 0.5, [CIRCUIT_RL_HIGHPASS] = 0.5,
+    [CIRCUIT_SALLEN_KEY_LP] = 0.5, [CIRCUIT_BANDPASS_ACTIVE] = 0.5, [CIRCUIT_NOTCH_FILTER] = 0.5,
+    [CIRCUIT_VOLTAGE_FOLLOWER] = 0.5, [CIRCUIT_INVERTING_AMP] = 2.0, [CIRCUIT_NONINVERTING_AMP] = 2.0,
+    [CIRCUIT_DIFFERENTIATOR] = 0.5, [CIRCUIT_INSTR_AMP] = 1.0, [CIRCUIT_DIFFERENCE_AMP] = 0.5,
+    [CIRCUIT_PRECISION_RECT] = 0.5, [CIRCUIT_PEAK_DETECTOR] = 2.0, [CIRCUIT_CLAMPER] = 5.0,
+    [CIRCUIT_COMPARATOR] = 5.0, [CIRCUIT_HYSTERESIS_COMP] = 5.0, [CIRCUIT_WIEN_OSCILLATOR] = 5.0,
+    [CIRCUIT_PHASE_SHIFT_OSC] = 2.0, [CIRCUIT_CMOS_INVERTER] = 2.0, [CIRCUIT_SERIES_RLC] = 2.0,
+    [CIRCUIT_PARALLEL_RLC] = 2.0, [CIRCUIT_FULLWAVE_BRIDGE] = 5.0, [CIRCUIT_AC_DC_SUPPLY] = 5.0,
+    [CIRCUIT_AC_DC_AMERICAN] = 5.0, [CIRCUIT_CENTERTAP_RECT] = 2.0, [CIRCUIT_HALFWAVE_RECT] = 2.0,
+};
+
+double circuit_template_scope_volt_div(CircuitTemplateType type) {
+    if (type <= CIRCUIT_NONE || type >= CIRCUIT_TYPE_COUNT) return 0.0;
+    return template_volt_div[type];
+}
+
 double circuit_template_scope_time_div(CircuitTemplateType type) {
     if (type <= CIRCUIT_NONE || type >= CIRCUIT_TYPE_COUNT) return 0.0;
     return template_time_div[type];
