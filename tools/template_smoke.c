@@ -375,6 +375,9 @@ static int probe_test(void) {
         circuit_place_template(c, pc->t, 0, 0);
         Simulation *sim = simulation_create(c);
         total++;
+        /* The oracle checks the static frequency; the demo frequency sweeps stay off here */
+        for (int i = 0; i < c->num_components; i++)
+            if (c->components[i]->type == COMP_AC_VOLTAGE) c->components[i]->props.ac_voltage.frequency_sweep.enabled = false;
         Component *comp = find_comp(c, pc->ct, pc->ord);
         int node_id = comp ? comp->node_ids[pc->term] : -1;
         int ok = comp && simulation_dc_analysis(sim);

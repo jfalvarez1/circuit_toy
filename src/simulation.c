@@ -899,7 +899,13 @@ static int simulation_compute_decimation(Simulation *sim) {
         if (!c) continue;
         double freq = 0;
         switch (c->type) {
-            case COMP_AC_VOLTAGE: freq = c->props.ac_voltage.frequency; break;
+            case COMP_AC_VOLTAGE:
+                freq = c->props.ac_voltage.frequency;
+                if (c->props.ac_voltage.frequency_sweep.enabled) {
+                    if (c->props.ac_voltage.frequency_sweep.start_value > freq) freq = c->props.ac_voltage.frequency_sweep.start_value;
+                    if (c->props.ac_voltage.frequency_sweep.end_value > freq) freq = c->props.ac_voltage.frequency_sweep.end_value;
+                }
+                break;
             case COMP_SQUARE_WAVE: freq = c->props.square_wave.frequency; break;
             case COMP_TRIANGLE_WAVE: freq = c->props.triangle_wave.frequency; break;
             case COMP_SAWTOOTH_WAVE: freq = c->props.sawtooth_wave.frequency; break;
@@ -1291,6 +1297,12 @@ double simulation_accuracy_time_step(Simulation *sim) {
         switch (c->type) {
             case COMP_AC_VOLTAGE:
                 freq = c->props.ac_voltage.frequency;
+                if (c->props.ac_voltage.frequency_sweep.enabled) {
+                    double f1 = c->props.ac_voltage.frequency_sweep.start_value;
+                    double f2 = c->props.ac_voltage.frequency_sweep.end_value;
+                    if (f1 > freq) freq = f1;
+                    if (f2 > freq) freq = f2;
+                }
                 break;
             case COMP_SQUARE_WAVE:
                 freq = c->props.square_wave.frequency;

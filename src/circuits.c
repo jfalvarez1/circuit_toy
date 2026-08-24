@@ -316,6 +316,15 @@ static int place_rc_lowpass(Circuit *circuit, float x, float y) {
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 1.0;
     vsrc->props.ac_voltage.frequency = 1000.0;
+    // Frequency sweep 100 Hz -> 20000 Hz (log, 3 s each way, repeating) so the filter's
+    // pass/stop behaviour is visible live; the readout under the source shows f.
+    vsrc->props.ac_voltage.frequency_sweep.enabled = true;
+    vsrc->props.ac_voltage.frequency_sweep.mode = SWEEP_LOG;
+    vsrc->props.ac_voltage.frequency_sweep.start_value = 100;
+    vsrc->props.ac_voltage.frequency_sweep.end_value = 20000;
+    vsrc->props.ac_voltage.frequency_sweep.sweep_time = 3;
+    vsrc->props.ac_voltage.frequency_sweep.repeat = true;
+    vsrc->props.ac_voltage.frequency_sweep.bidirectional = true;
 
     // Ground for source (- terminal at y+80, ground terminal at y+100-20=y+80)
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
@@ -358,6 +367,15 @@ static int place_rc_highpass(Circuit *circuit, float x, float y) {
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 1.0;
     vsrc->props.ac_voltage.frequency = 1000.0;
+    // Frequency sweep 100 Hz -> 20000 Hz (log, 3 s each way, repeating) so the filter's
+    // pass/stop behaviour is visible live; the readout under the source shows f.
+    vsrc->props.ac_voltage.frequency_sweep.enabled = true;
+    vsrc->props.ac_voltage.frequency_sweep.mode = SWEEP_LOG;
+    vsrc->props.ac_voltage.frequency_sweep.start_value = 100;
+    vsrc->props.ac_voltage.frequency_sweep.end_value = 20000;
+    vsrc->props.ac_voltage.frequency_sweep.sweep_time = 3;
+    vsrc->props.ac_voltage.frequency_sweep.repeat = true;
+    vsrc->props.ac_voltage.frequency_sweep.bidirectional = true;
 
     // Ground for source
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
@@ -397,6 +415,15 @@ static int place_rl_lowpass(Circuit *circuit, float x, float y) {
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 1.0;
     vsrc->props.ac_voltage.frequency = 1000.0;
+    // Frequency sweep 100 Hz -> 20000 Hz (log, 3 s each way, repeating) so the filter's
+    // pass/stop behaviour is visible live; the readout under the source shows f.
+    vsrc->props.ac_voltage.frequency_sweep.enabled = true;
+    vsrc->props.ac_voltage.frequency_sweep.mode = SWEEP_LOG;
+    vsrc->props.ac_voltage.frequency_sweep.start_value = 100;
+    vsrc->props.ac_voltage.frequency_sweep.end_value = 20000;
+    vsrc->props.ac_voltage.frequency_sweep.sweep_time = 3;
+    vsrc->props.ac_voltage.frequency_sweep.repeat = true;
+    vsrc->props.ac_voltage.frequency_sweep.bidirectional = true;
 
     // Ground for source
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
@@ -429,6 +456,15 @@ static int place_rl_highpass(Circuit *circuit, float x, float y) {
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 1.0;
     vsrc->props.ac_voltage.frequency = 1000.0;
+    // Frequency sweep 100 Hz -> 20000 Hz (log, 3 s each way, repeating) so the filter's
+    // pass/stop behaviour is visible live; the readout under the source shows f.
+    vsrc->props.ac_voltage.frequency_sweep.enabled = true;
+    vsrc->props.ac_voltage.frequency_sweep.mode = SWEEP_LOG;
+    vsrc->props.ac_voltage.frequency_sweep.start_value = 100;
+    vsrc->props.ac_voltage.frequency_sweep.end_value = 20000;
+    vsrc->props.ac_voltage.frequency_sweep.sweep_time = 3;
+    vsrc->props.ac_voltage.frequency_sweep.repeat = true;
+    vsrc->props.ac_voltage.frequency_sweep.bidirectional = true;
 
     // Ground for source
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
@@ -3766,6 +3802,15 @@ static int place_sallen_key_lp(Circuit *circuit, float x, float y) {
     Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 40, 0);
     vsrc->props.ac_voltage.amplitude = 1.0;
     vsrc->props.ac_voltage.frequency = 1000.0;
+    // Frequency sweep 100 Hz -> 20000 Hz (log, 3 s each way, repeating) so the filter's
+    // pass/stop behaviour is visible live; the readout under the source shows f.
+    vsrc->props.ac_voltage.frequency_sweep.enabled = true;
+    vsrc->props.ac_voltage.frequency_sweep.mode = SWEEP_LOG;
+    vsrc->props.ac_voltage.frequency_sweep.start_value = 100;
+    vsrc->props.ac_voltage.frequency_sweep.end_value = 20000;
+    vsrc->props.ac_voltage.frequency_sweep.sweep_time = 3;
+    vsrc->props.ac_voltage.frequency_sweep.repeat = true;
+    vsrc->props.ac_voltage.frequency_sweep.bidirectional = true;
     Component *gnd1 = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
     connect_terminals(circuit, vsrc, 1, gnd1, 0);
 
@@ -3935,6 +3980,15 @@ static int place_bandpass_active(Circuit *circuit, float x, float y) {
     Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 40, 0);
     vsrc->props.ac_voltage.amplitude = 1.0;
     vsrc->props.ac_voltage.frequency = 1000.0;
+    // Frequency sweep 100 Hz -> 20000 Hz (log, 3 s each way, repeating) so the filter's
+    // pass/stop behaviour is visible live; the readout under the source shows f.
+    vsrc->props.ac_voltage.frequency_sweep.enabled = true;
+    vsrc->props.ac_voltage.frequency_sweep.mode = SWEEP_LOG;
+    vsrc->props.ac_voltage.frequency_sweep.start_value = 100;
+    vsrc->props.ac_voltage.frequency_sweep.end_value = 20000;
+    vsrc->props.ac_voltage.frequency_sweep.sweep_time = 3;
+    vsrc->props.ac_voltage.frequency_sweep.repeat = true;
+    vsrc->props.ac_voltage.frequency_sweep.bidirectional = true;
     Component *gnd1 = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
     connect_terminals(circuit, vsrc, 1, gnd1, 0);
 
@@ -4092,6 +4146,15 @@ static int place_notch_filter(Circuit *circuit, float x, float y) {
     if (!vsrc) return 0;
     vsrc->props.ac_voltage.amplitude = 1.0;
     vsrc->props.ac_voltage.frequency = 60.0; // 60Hz notch
+    // Frequency sweep 10 Hz -> 300 Hz (log, 4 s each way, repeating) so the filter's
+    // pass/stop behaviour is visible live; the readout under the source shows f.
+    vsrc->props.ac_voltage.frequency_sweep.enabled = true;
+    vsrc->props.ac_voltage.frequency_sweep.mode = SWEEP_LOG;
+    vsrc->props.ac_voltage.frequency_sweep.start_value = 10;
+    vsrc->props.ac_voltage.frequency_sweep.end_value = 300;
+    vsrc->props.ac_voltage.frequency_sweep.sweep_time = 4;
+    vsrc->props.ac_voltage.frequency_sweep.repeat = true;
+    vsrc->props.ac_voltage.frequency_sweep.bidirectional = true;
 
     Component *gnd1 = add_comp(circuit, COMP_GROUND, x, y + 100, 0);
 
@@ -6291,10 +6354,12 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
 
 // One-paragraph "how it works" note placed under every example circuit.
 static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
-    [CIRCUIT_RC_LOWPASS] = {"RC LOW-PASS FILTER: R in series, C to ground. The cap cannot change", "voltage instantly, so fast wiggles are shorted away and slow ones pass.", "Corner fc = 1/(2*pi*R*C) = 1.59 kHz here; at fc the output is 0.707x and", "lags 45 deg. Try: raise the source frequency 10x and watch Vout shrink.", "PROBE: source + (input) and the R-C junction (output). Expect 0.85 Vpk lagging."},
-    [CIRCUIT_RC_HIGHPASS] = {"RC HIGH-PASS FILTER: C in series, R to ground. The cap blocks DC and slow", "changes but passes fast ones. fc = 1/(2*pi*R*C) = 1.59 kHz; below fc the", "output falls 20 dB/decade and leads the input in phase.", "Try: add a DC offset to the source - the output stays centred on 0 V.", "PROBE: input and the C-R junction. Expect 0.53 Vpk, leading the input by 58 deg."},
-    [CIRCUIT_RL_LOWPASS] = {"RL LOW-PASS: L in series, R to ground. An inductor resists changes in", "current, so high-frequency current (and the drop across R) is small.", "fc = R/(2*pi*L) = 1.59 kHz. Same response shape as the RC low-pass.", "PROBE: input and the L-R junction (across R). Expect 0.85 Vpk."},
-    [CIRCUIT_RL_HIGHPASS] = {"RL HIGH-PASS: R in series, L to ground. At low frequency the inductor is", "a short and pulls the output to 0; at high frequency it is open and the", "output follows the input. fc = R/(2*pi*L) = 1.59 kHz.", "PROBE: input and the R-L junction (across L). Expect 0.53 Vpk."},
+    [CIRCUIT_RC_LOWPASS] = {"RC LOW-PASS FILTER: R in series, C to ground. The cap cannot change", "voltage instantly, so fast wiggles are shorted away and slow ones pass.", "Corner fc = 1/(2*pi*R*C) = 1.59 kHz here; at fc the output is 0.707x and", "lags 45 deg. Try: raise the source frequency 10x and watch Vout shrink.", "PROBE: auto-placed on input and output. The source sweeps 100 Hz-20 kHz: Vout is full",
+ "below 1.59 kHz and shrinks above it. Read f under the source; use 200 us/div."},
+    [CIRCUIT_RC_HIGHPASS] = {"RC HIGH-PASS FILTER: C in series, R to ground. The cap blocks DC and slow", "changes but passes fast ones. fc = 1/(2*pi*R*C) = 1.59 kHz; below fc the", "output falls 20 dB/decade and leads the input in phase.", "Try: add a DC offset to the source - the output stays centred on 0 V.", "PROBE: auto-placed. Source sweeps 100 Hz-20 kHz: Vout is tiny at 100 Hz and grows",
+ "to the full input above 1.59 kHz. Read f under the source; use 200 us/div."},
+    [CIRCUIT_RL_LOWPASS] = {"RL LOW-PASS: L in series, R to ground. An inductor resists changes in", "current, so high-frequency current (and the drop across R) is small.", "fc = R/(2*pi*L) = 1.59 kHz. Same response shape as the RC low-pass.", "PROBE: auto-placed. Source sweeps 100 Hz-20 kHz: output falls past 1.59 kHz."},
+    [CIRCUIT_RL_HIGHPASS] = {"RL HIGH-PASS: R in series, L to ground. At low frequency the inductor is", "a short and pulls the output to 0; at high frequency it is open and the", "output follows the input. fc = R/(2*pi*L) = 1.59 kHz.", "PROBE: auto-placed. Source sweeps 100 Hz-20 kHz: output rises past 1.59 kHz."},
     [CIRCUIT_VOLTAGE_DIVIDER] = {"VOLTAGE DIVIDER: two resistors in series share the supply in proportion", "to their resistance: Vout = Vin * R2/(R1+R2) = 10 V * 10k/20k = 5 V.", "Same current (0.5 mA) flows through both. Loading the output with a third", "resistor lowers Vout - that is why dividers are for references, not power.", "PROBE: the R1-R2 junction. Expect a flat 5.00 V line (use the VM readout too)."},
     [CIRCUIT_INVERTING_AMP] = {"INVERTING AMPLIFIER: the op-amp holds its - input at the + input (0 V, a", "'virtual ground'). Input current Vin/Rin must flow through Rf, so", "Vout = -Rf/Rin * Vin = -10x. Output is 5 Vpk and 180 deg out of phase.", "Try: Rf = 100k -> gain 100 and the output clips at the +/-15 V rails.", "PROBE: input (0.5 Vpk) and op-amp OUT. Expect 5 Vpk, inverted."},
     [CIRCUIT_NONINVERTING_AMP] = {"NON-INVERTING AMPLIFIER: feedback divider Rg/Rf returns a fraction of", "Vout to the - input; the op-amp drives Vout until that equals Vin.", "Gain = 1 + Rf/Rg = 11, in phase, very high input impedance.", "PROBE: input (0.5 Vpk) and op-amp OUT. Expect 5.5 Vpk, in phase."},
@@ -6320,9 +6385,9 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_DIFFERENCE_AMP] = {"DIFFERENCE AMPLIFIER: four equal resistors make Vout = V2 - V1. Anything", "common to both inputs cancels; only the difference is amplified (x1).", "Try: mismatch one resistor to 11k and see common-mode leak through.", "PROBE: OUT. Expect the 1 Vpk sine shifted by the 0.5 V DC input."},
     [CIRCUIT_TRANSIMPEDANCE] = {"TRANSIMPEDANCE AMPLIFIER: converts a current into a voltage. The input", "current cannot enter the op-amp, so it all flows through Rf:", "Vout = -I * Rf = 1 mA * 10k = 10 V. Used with photodiodes.", "PROBE: OUT. Expect a flat 10 V (1 mA x 10k). Change the current source."},
     [CIRCUIT_INSTR_AMP] = {"INSTRUMENTATION AMPLIFIER: two input buffers share gain resistor Rg", "(gain 1 + 2R/Rg = 21), then a difference amp subtracts. Very high input", "impedance on both inputs and excellent common-mode rejection.", "PROBE: the final op-amp OUT. Expect ~2.1 Vpk (gain 21) on a -1 V offset."},
-    [CIRCUIT_SALLEN_KEY_LP] = {"SALLEN-KEY LOW-PASS: a 2nd-order active filter - two RC sections with the", "op-amp bootstrapping the first cap for a sharper knee. fc = 1/(2*pi*R*C)", "= 1.59 kHz, rolls off 40 dB/decade. Try the Bode tool.", "PROBE: input and OUT. Expect 0.72 Vpk at 1 kHz; try 5 kHz -> almost gone."},
-    [CIRCUIT_BANDPASS_ACTIVE] = {"ACTIVE BAND-PASS: a high-pass RC into the op-amp and a low-pass RC in the", "feedback. Only frequencies near f0 = 1/(2*pi*R*C) = 1.59 kHz pass;", "sweep the source or use the Bode tool to see the peak.", "PROBE: input and OUT, then sweep the source 200 Hz -> 10 kHz for the peak."},
-    [CIRCUIT_NOTCH_FILTER] = {"TWIN-T NOTCH: two T networks (R-R-C and C-C-R/2) whose outputs cancel", "exactly at f = 1/(2*pi*R*C) = 60 Hz. Everything else passes. The classic", "hum filter - detune one resistor and the notch fills in.", "PROBE: input (1 Vpk 60 Hz) and OUT: nearly zero. Set 30 Hz: it passes."},
+    [CIRCUIT_SALLEN_KEY_LP] = {"SALLEN-KEY LOW-PASS: a 2nd-order active filter - two RC sections with the", "op-amp bootstrapping the first cap for a sharper knee. fc = 1/(2*pi*R*C)", "= 1.59 kHz, rolls off 40 dB/decade. Try the Bode tool.", "PROBE: auto-placed. Source sweeps 100 Hz-20 kHz: 2nd-order roll-off above 1.59 kHz."},
+    [CIRCUIT_BANDPASS_ACTIVE] = {"ACTIVE BAND-PASS: a high-pass RC into the op-amp and a low-pass RC in the", "feedback. Only frequencies near f0 = 1/(2*pi*R*C) = 1.59 kHz pass;", "sweep the source or use the Bode tool to see the peak.", "PROBE: auto-placed. Source sweeps 100 Hz-20 kHz: output peaks near 1.6 kHz."},
+    [CIRCUIT_NOTCH_FILTER] = {"TWIN-T NOTCH: two T networks (R-R-C and C-C-R/2) whose outputs cancel", "exactly at f = 1/(2*pi*R*C) = 60 Hz. Everything else passes. The classic", "hum filter - detune one resistor and the notch fills in.", "PROBE: auto-placed. Source sweeps 10-300 Hz: output vanishes as f passes 60 Hz."},
     [CIRCUIT_WIEN_OSCILLATOR] = {"WIEN BRIDGE OSCILLATOR: the series/parallel RC network has zero phase", "shift and 1/3 gain at f = 1/(2*pi*R*C) = 1.59 kHz; the amplifier gives", "a little over 3x, so that frequency builds up until the rails limit it.", "A tiny pulse kicks it off (an ideal loop at exactly 0 V never starts).", "PROBE: op-amp OUT. Expect a 1.6 kHz sine growing to the +/-15 V rails."},
     [CIRCUIT_CURRENT_SOURCE] = {"CONSTANT-CURRENT SOURCE: the divider fixes the base at 2.16 V, so the", "emitter sits at 1.46 V and Re sets I = 3.1 mA. The collector delivers", "that current to any load up to the compliance limit - change Rload and", "the current stays put.", "PROBE: the load top node. Expect 3.1 V (3.1 mA x 1k); change Rload -> V scales."},
     [CIRCUIT_WINDOW_COMP] = {"WINDOW COMPARATOR: two comparators check Vin against 3.33 V and 1.67 V", "from a 3-resistor divider. Both outputs go high only inside the window;", "the summing resistors light the LED only then. Move Vin outside to test.", "PROBE: both comparator outputs (+15 V inside window). LED on at 2.5 V input."},
@@ -6339,6 +6404,99 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_CLAMPER] = {"CLAMPER (DC RESTORER): the cap charges to the negative peak through the", "diode, then acts as a 5 V battery in series with the signal. The whole", "sine is shifted so its bottom sits at ~-0.7 V. R*C >> period keeps it.", "PROBE: input and the cap-diode node at 50 ms/div: bottom pinned at -0.7 V, top follows 2A."},
     [CIRCUIT_PHASE_SHIFT_OSC] = {"RC PHASE-SHIFT OSCILLATOR: three RC sections each shift 60 deg at", "f = 1/(2*pi*sqrt(6)*R*C) = 6.5 kHz, totalling 180 deg; the inverting", "amplifier adds the other 180 deg. Gain must exceed 29 (Rf/R = 33 here).", "Split +/-5 V rails limit the swing; a pulse through Ck starts it.", "PROBE: op-amp OUT. Expect ~6.5 kHz clipped sine, +/-5 V. Set dt 1 us."},
 };
+
+// Output node to probe for each template (component type, ordinal among that type, terminal)
+typedef struct { ComponentType ct; int ord, term; } TemplateProbeSpec;
+static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
+    [CIRCUIT_RC_LOWPASS]       = { COMP_CAPACITOR, 0, 0 },
+    [CIRCUIT_RC_HIGHPASS]      = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_RL_LOWPASS]       = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_RL_HIGHPASS]      = { COMP_INDUCTOR, 0, 0 },
+    [CIRCUIT_VOLTAGE_DIVIDER]  = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_INVERTING_AMP]    = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_NONINVERTING_AMP] = { COMP_OPAMP_FLIPPED, 0, 2 },
+    [CIRCUIT_VOLTAGE_FOLLOWER] = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_HALFWAVE_RECT]    = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_LED_WITH_RESISTOR]= { COMP_LED, 0, 0 },
+    [CIRCUIT_COMMON_EMITTER]   = { COMP_NPN_BJT, 0, 1 },
+    [CIRCUIT_COMMON_SOURCE]    = { COMP_NMOS, 0, 1 },
+    [CIRCUIT_COMMON_DRAIN]     = { COMP_NMOS, 0, 2 },
+    [CIRCUIT_MULTISTAGE_AMP]   = { COMP_NPN_BJT, 1, 1 },
+    [CIRCUIT_DIFFERENTIAL_PAIR]= { COMP_NPN_BJT, 0, 1 },
+    [CIRCUIT_CURRENT_MIRROR]   = { COMP_NPN_BJT, 1, 1 },
+    [CIRCUIT_PUSH_PULL]        = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_CMOS_INVERTER]    = { COMP_NMOS, 0, 1 },
+    [CIRCUIT_INTEGRATOR]       = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_DIFFERENTIATOR]   = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_SUMMING_AMP]      = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_COMPARATOR]       = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_FULLWAVE_BRIDGE]  = { COMP_CAPACITOR_ELEC, 0, 0 },
+    [CIRCUIT_CENTERTAP_RECT]   = { COMP_CAPACITOR_ELEC, 0, 0 },
+    [CIRCUIT_AC_DC_SUPPLY]     = { COMP_CAPACITOR_ELEC, 0, 0 },
+    [CIRCUIT_AC_DC_AMERICAN]   = { COMP_CAPACITOR_ELEC, 0, 0 },
+    [CIRCUIT_DIFFERENCE_AMP]   = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_TRANSIMPEDANCE]   = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_INSTR_AMP]        = { COMP_OPAMP, 2, 2 },
+    [CIRCUIT_SALLEN_KEY_LP]    = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_BANDPASS_ACTIVE]  = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_NOTCH_FILTER]     = { COMP_RESISTOR, 4, 1 },
+    [CIRCUIT_WIEN_OSCILLATOR]  = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_CURRENT_SOURCE]   = { COMP_NPN_BJT, 0, 1 },
+    [CIRCUIT_WINDOW_COMP]      = { COMP_LED, 0, 0 },
+    [CIRCUIT_HYSTERESIS_COMP]  = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_ZENER_REF]        = { COMP_ZENER, 0, 1 },
+    [CIRCUIT_PRECISION_RECT]   = { COMP_OPAMP, 1, 2 },
+    [CIRCUIT_7805_REG]         = { COMP_7805, 0, 1 },
+    [CIRCUIT_LM317_REG]        = { COMP_LM317, 0, 1 },
+    [CIRCUIT_TL431_REF]        = { COMP_TL431, 0, 0 },
+    [CIRCUIT_SERIES_RLC]       = { COMP_CAPACITOR, 0, 0 },
+    [CIRCUIT_PARALLEL_RLC]     = { COMP_INDUCTOR, 0, 0 },
+    [CIRCUIT_WHEATSTONE]       = { COMP_RESISTOR, 3, 0 },
+    [CIRCUIT_PEAK_DETECTOR]    = { COMP_CAPACITOR, 0, 0 },
+    [CIRCUIT_CLAMPER]          = { COMP_DIODE, 0, 1 },
+    [CIRCUIT_PHASE_SHIFT_OSC]  = { COMP_OPAMP_REAL, 0, 2 },
+};
+
+// Scope time/div that shows the interesting behaviour of each template
+static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
+    [CIRCUIT_RC_LOWPASS] = 200e-6, [CIRCUIT_RC_HIGHPASS] = 200e-6, [CIRCUIT_RL_LOWPASS] = 200e-6,
+    [CIRCUIT_RL_HIGHPASS] = 200e-6, [CIRCUIT_VOLTAGE_DIVIDER] = 1e-3, [CIRCUIT_INVERTING_AMP] = 200e-6,
+    [CIRCUIT_NONINVERTING_AMP] = 200e-6, [CIRCUIT_VOLTAGE_FOLLOWER] = 200e-6, [CIRCUIT_HALFWAVE_RECT] = 5e-3,
+    [CIRCUIT_LED_WITH_RESISTOR] = 1e-3, [CIRCUIT_COMMON_EMITTER] = 200e-6, [CIRCUIT_COMMON_SOURCE] = 200e-6,
+    [CIRCUIT_COMMON_DRAIN] = 200e-6, [CIRCUIT_MULTISTAGE_AMP] = 200e-6, [CIRCUIT_DIFFERENTIAL_PAIR] = 200e-6,
+    [CIRCUIT_CURRENT_MIRROR] = 1e-3, [CIRCUIT_PUSH_PULL] = 200e-6, [CIRCUIT_CMOS_INVERTER] = 200e-6,
+    [CIRCUIT_INTEGRATOR] = 2e-3, [CIRCUIT_DIFFERENTIATOR] = 2e-3, [CIRCUIT_SUMMING_AMP] = 1e-3,
+    [CIRCUIT_COMPARATOR] = 2e-3, [CIRCUIT_FULLWAVE_BRIDGE] = 5e-3, [CIRCUIT_CENTERTAP_RECT] = 5e-3,
+    [CIRCUIT_AC_DC_SUPPLY] = 5e-3, [CIRCUIT_AC_DC_AMERICAN] = 5e-3, [CIRCUIT_DIFFERENCE_AMP] = 200e-6,
+    [CIRCUIT_TRANSIMPEDANCE] = 1e-3, [CIRCUIT_INSTR_AMP] = 200e-6, [CIRCUIT_SALLEN_KEY_LP] = 200e-6,
+    [CIRCUIT_BANDPASS_ACTIVE] = 200e-6, [CIRCUIT_NOTCH_FILTER] = 5e-3, [CIRCUIT_WIEN_OSCILLATOR] = 500e-6,
+    [CIRCUIT_CURRENT_SOURCE] = 1e-3, [CIRCUIT_WINDOW_COMP] = 1e-3, [CIRCUIT_HYSTERESIS_COMP] = 2e-3,
+    [CIRCUIT_ZENER_REF] = 1e-3, [CIRCUIT_PRECISION_RECT] = 2e-3, [CIRCUIT_7805_REG] = 1e-3,
+    [CIRCUIT_LM317_REG] = 1e-3, [CIRCUIT_TL431_REF] = 1e-3, [CIRCUIT_SERIES_RLC] = 2e-3,
+    [CIRCUIT_PARALLEL_RLC] = 2e-3, [CIRCUIT_WHEATSTONE] = 1e-3, [CIRCUIT_PEAK_DETECTOR] = 50e-3,
+    [CIRCUIT_CLAMPER] = 50e-3, [CIRCUIT_PHASE_SHIFT_OSC] = 50e-6,
+};
+
+double circuit_template_scope_time_div(CircuitTemplateType type) {
+    if (type <= CIRCUIT_NONE || type >= CIRCUIT_TYPE_COUNT) return 0.0;
+    return template_time_div[type];
+}
+
+static Component *nth_of_type(Circuit *circuit, int first, ComponentType ct, int ord) {
+    int k = 0;
+    for (int i = first; i < circuit->num_components; i++)
+        if (circuit->components[i]->type == ct) { if (k == ord) return circuit->components[i]; k++; }
+    return NULL;
+}
+
+static void probe_component_terminal(Circuit *circuit, Component *c, int term) {
+    if (!c || term < 0 || term >= c->num_terminals) return;
+    Node *n = circuit_get_node(circuit, c->node_ids[term]);
+    if (!n) return;
+    for (int i = 0; i < circuit->num_probes; i++)
+        if (circuit->probes[i].node_id == n->id) return;   // already probed
+    circuit_add_probe(circuit, n->id, n->x, n->y);
+}
 
 int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, float y) {
     if (!circuit) return 0;
@@ -6365,6 +6523,21 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
         if (n->y > max_y && n->y < max_y + 200 && n->x > min_x - 200) max_y = n->y;
     }
     if (min_x > 1e8f) { min_x = x - 100; max_y = y + 200; }
+
+    // Auto-place probes: CH1 on the input source (+ terminal), CH2 on the output node,
+    // so the scope shows the circuit working the moment it is run.
+    {
+        static const ComponentType src_types[] = { COMP_AC_VOLTAGE, COMP_SQUARE_WAVE, COMP_TRIANGLE_WAVE,
+                                                   COMP_PULSE_SOURCE, COMP_DC_CURRENT, COMP_DC_VOLTAGE };
+        Component *src = NULL;
+        for (unsigned k = 0; k < sizeof src_types / sizeof src_types[0] && !src; k++)
+            src = nth_of_type(circuit, first, src_types[k], 0);
+        const TemplateProbeSpec *spec = &template_output[type];
+        Component *out = spec->ct ? nth_of_type(circuit, first, spec->ct, spec->ord) : NULL;
+        bool osc = (type == CIRCUIT_WIEN_OSCILLATOR || type == CIRCUIT_PHASE_SHIFT_OSC);
+        if (src && !osc) probe_component_terminal(circuit, src, 0);
+        if (out) probe_component_terminal(circuit, out, spec->term);
+    }
 
     float ty = max_y + 60.0f;
     for (int l = 0; l < 6 && template_notes[type][l]; l++) {

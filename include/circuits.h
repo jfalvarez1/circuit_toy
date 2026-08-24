@@ -88,4 +88,7 @@ const CircuitTemplateInfo *circuit_template_get_info(CircuitTemplateType type);
 // Returns number of components added, or 0 on failure
 int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, float y);
 
+// Suggested scope time/div for a template (0 = no preference)
+double circuit_template_scope_time_div(CircuitTemplateType type);
+
 #endif // CIRCUITS_H

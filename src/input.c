@@ -171,11 +171,12 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             ui_set_status(ui, msg);
                             circuit->modified = true;
 
-                            // Auto-start simulation for oscillator circuits
-                            if (ui->selected_circuit_type == CIRCUIT_PHASE_SHIFT_OSC) {
-                                input->should_autostart_sim = true;
-                                ui_set_status(ui, "Placed oscillator circuit - auto-starting simulation!");
-                            }
+                            // Scope preset for this template, then auto-start so the probes show it working
+                            double td = circuit_template_scope_time_div(ui->selected_circuit_type);
+                            if (td > 0) { ui->scope_time_div = td; ui->scope_capture_valid = false; }
+                            input->should_autostart_sim = true;
+                            snprintf(msg, sizeof(msg), "Placed %s: probes on input/output, running - read the note under the circuit", info->name);
+                            ui_set_status(ui, msg);
                         } else {
                             ui_set_status(ui, "Failed to place circuit");
                         }

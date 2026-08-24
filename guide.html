@@ -1729,6 +1729,7 @@
                 <div class="component-card">
                     <h4>Voltage Divider</h4>
                     <p>Two resistors in series create an output voltage that's a fraction of the input. <code>Vout = Vin × R2/(R1+R2)</code>. Fundamental for biasing and level shifting.</p>
+            <p><strong>What happens on load:</strong> the template is placed with a "how it works / PROBE" note underneath, probes are put on its input (CH1) and output (CH2), the scope's time/div is preset to show the interesting behaviour, and the simulation starts. Filter templates drive a frequency-sweeping source (100 Hz - 20 kHz, log, back and forth every 3 s; the notch sweeps 10-300 Hz) and the peak detector / clamper an amplitude-sweeping one; the <em>f=</em> / <em>A=</em> readout under the source shows the instantaneous value. Sweeps are ordinary source properties - select the source to change or disable them.</p>
                 </div>
                 <div class="component-card">
                     <h4>LED + Resistor</h4>

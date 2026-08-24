@@ -361,6 +361,11 @@ build/tools/template_smoke.exe --svg screenshots/templates   # export every temp
 
 Every example circuit carries an on-canvas note explaining how it works, the governing
 equation, and a **PROBE:** line saying where to put the scope probes and what to expect.
+Loading a template also places probes on its input and output, presets the scope time/div
+and starts the simulation, so the scope shows the circuit working immediately. The filter
+examples (RC/RL, Sallen-Key, band-pass, notch) drive a **frequency-sweeping** source and the
+peak detector / clamper an **amplitude-sweeping** one; a live `f=` / `A=` readout under the
+source shows the instantaneous value.
 
 `TEST_PLAN.md` (feature-by-feature manual plan) and `TEMPLATE_AUDIT.md` (per-template
 hand-calculated expectations and value variations) track the interactive test campaign.

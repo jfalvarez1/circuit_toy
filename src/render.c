@@ -671,6 +671,26 @@ void render_component(RenderContext *ctx, Component *comp) {
             break;
         case COMP_AC_VOLTAGE:
             render_voltage_source(ctx, comp->x, comp->y, comp->rotation, true);
+            // Live readout of a sweeping source: instantaneous frequency / amplitude
+            if (comp->props.ac_voltage.frequency_sweep.enabled || comp->props.ac_voltage.amplitude_sweep.enabled) {
+                int sx, sy;
+                render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+                char rd[48];
+                if (comp->props.ac_voltage.frequency_sweep.enabled) {
+                    double f = sweep_get_value(&comp->props.ac_voltage.frequency_sweep,
+                                               comp->props.ac_voltage.frequency, ctx->sim_time);
+                    if (f >= 1e6) snprintf(rd, sizeof rd, "f=%.2fMHz", f / 1e6);
+                    else if (f >= 1e3) snprintf(rd, sizeof rd, "f=%.2fkHz", f / 1e3);
+                    else snprintf(rd, sizeof rd, "f=%.1fHz", f);
+                    render_draw_text_small(ctx, rd, sx - 30, sy + 46, COLOR_ACCENT);
+                }
+                if (comp->props.ac_voltage.amplitude_sweep.enabled) {
+                    double a = sweep_get_value(&comp->props.ac_voltage.amplitude_sweep,
+                                               comp->props.ac_voltage.amplitude, ctx->sim_time);
+                    snprintf(rd, sizeof rd, "A=%.2fV", a);
+                    render_draw_text_small(ctx, rd, sx - 30, sy + (comp->props.ac_voltage.frequency_sweep.enabled ? 58 : 46), COLOR_ACCENT);
+                }
+            }
             break;
         case COMP_DC_CURRENT:
             render_current_source(ctx, comp->x, comp->y, comp->rotation);
