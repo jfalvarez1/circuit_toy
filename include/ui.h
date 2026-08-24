@@ -269,7 +269,6 @@ typedef struct {
     // FFT display state
     bool scope_fft_mode;             // FFT display active
     bool scope_stacked;              // Stacked view: each channel in its own horizontal band
-    bool scope_stacked;              // Stacked view: each channel in its own horizontal band
 
     // Trigger settings
     TriggerMode trigger_mode;        // Auto, Normal, Single
@@ -477,7 +476,6 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode);
 #define UI_ACTION_TIMESTEP_AUTO 31   // Auto-adjust time step
 #define UI_ACTION_SCOPE_POPUP   32   // Pop out oscilloscope to separate window
 #define UI_ACTION_SCOPE_STACK   33   // Toggle stacked / overlay channel view
-#define UI_ACTION_SCOPE_STACK   33   // Toggle stacked / overlay channel view
 #define UI_ACTION_SPOTLIGHT     33   // Open component spotlight search (Ctrl+K)
 #define UI_ACTION_EXPORT_SVG    34   // Export circuit to SVG file
 #define UI_ACTION_MC_RUN        35   // Start Monte Carlo analysis
@@ -536,7 +534,7 @@ typedef struct {
     Rect btn_volt_up, btn_volt_down, btn_time_up, btn_time_down;
     Rect btn_autoset, btn_trig_mode, btn_trig_edge, btn_trig_ch;
     Rect btn_trig_up, btn_trig_down, btn_mode, btn_cursor;
-    Rect btn_fft, btn_screenshot, btn_bode, btn_mc;
+    Rect btn_fft, btn_stack, btn_screenshot, btn_bode, btn_mc;
 } ScopeCoordsBackup;
 
 // Setup popup scope coordinates for input handling
