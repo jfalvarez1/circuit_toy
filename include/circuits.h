@@ -71,6 +71,12 @@ typedef enum {
     // Signal Processing Circuits
     CIRCUIT_CLAMPER,            // Positive clamper (DC restorer)
     CIRCUIT_PHASE_SHIFT_OSC,    // RC phase shift oscillator
+    CIRCUIT_RC_BANDPASS,
+    CIRCUIT_LC_LOWPASS,
+    CIRCUIT_ZENER_CLIPPER,
+    CIRCUIT_VOLTAGE_DOUBLER,
+    CIRCUIT_RELAXATION_OSC,
+    CIRCUIT_HALFWAVE_FILTERED,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 

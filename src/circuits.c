@@ -203,6 +203,13 @@ static const CircuitTemplateInfo template_info[] = {
     // Signal Processing Circuits
     [CIRCUIT_CLAMPER] = {"Neg Clamper", "Clmp", "Negative clamper (DC restorer)"},
     [CIRCUIT_PHASE_SHIFT_OSC] = {"Phase Shift Osc", "PhOsc", "RC phase shift oscillator (keep noise on)"},
+    [CIRCUIT_RC_BANDPASS] = {"RC Band-Pass", "RC BP", "Passive RC high-pass into low-pass"},
+    [CIRCUIT_LC_LOWPASS] = {"LC Low-Pass", "LC LP", "2nd-order LC low-pass with load"},
+    [CIRCUIT_ZENER_CLIPPER] = {"Zener Clipper", "ZClip", "Back-to-back zeners limit the swing"},
+    [CIRCUIT_VOLTAGE_DOUBLER] = {"Voltage Doubler", "Dblr", "Villard/Greinacher diode-capacitor doubler"},
+    [CIRCUIT_RELAXATION_OSC] = {"Relaxation Osc", "RelOsc", "Op-amp Schmitt + RC relaxation oscillator"},
+    [CIRCUIT_HALFWAVE_FILTERED] = {"HW Rect + Cap", "HW+C", "Half-wave rectifier with smoothing capacitor"},
+
 };
 
 const CircuitTemplateInfo *circuit_template_get_info(CircuitTemplateType type) {
@@ -6187,6 +6194,12 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
             return place_clamper(circuit, x, y);
         case CIRCUIT_PHASE_SHIFT_OSC:
             return place_phase_shift_osc(circuit, x, y);
+        case CIRCUIT_RC_BANDPASS:      return place_rc_bandpass(circuit, x, y);
+        case CIRCUIT_LC_LOWPASS:       return place_lc_lowpass(circuit, x, y);
+        case CIRCUIT_ZENER_CLIPPER:    return place_zener_clipper(circuit, x, y);
+        case CIRCUIT_VOLTAGE_DOUBLER:  return place_voltage_doubler(circuit, x, y);
+        case CIRCUIT_RELAXATION_OSC:   return place_relaxation_osc(circuit, x, y);
+        case CIRCUIT_HALFWAVE_FILTERED:return place_halfwave_filtered(circuit, x, y);
         default:
             return 0;
     }
@@ -6244,7 +6257,216 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_PEAK_DETECTOR] = {"PEAK DETECTOR: the op-amp charges C through the diode whenever Vin", "exceeds the stored voltage; when Vin falls the diode blocks and C holds the", "peak. The 47k bleed (R*C = 47 ms) lets it decay, so the output rides the", "envelope of the 1 kHz carrier whose amplitude sweeps 1 V -> 5 V -> 1 V each second.", "PROBE: input and the cap node at 50 ms/div: the cap traces the envelope 1..5 V."},
     [CIRCUIT_CLAMPER] = {"CLAMPER (DC RESTORER): the cap charges to the negative peak through the", "diode, then acts as a 5 V battery in series with the signal. The whole", "sine is shifted so its bottom sits at ~-0.7 V. R*C >> period keeps it.", "PROBE: input and the cap-diode node at 50 ms/div: bottom pinned at -0.7 V, top follows 2A."},
     [CIRCUIT_PHASE_SHIFT_OSC] = {"RC PHASE-SHIFT OSCILLATOR: three RC sections each shift 60 deg at", "f = 1/(2*pi*sqrt(6)*R*C) = 6.5 kHz, totalling 180 deg; the inverting", "amplifier adds the other 180 deg. Gain must exceed 29 (Rf/R = 33 here).", "Split +/-5 V rails limit the swing; a pulse through Ck starts it.", "PROBE: op-amp OUT. Expect ~6.5 kHz clipped sine, +/-5 V. Set dt 1 us."},
+    [CIRCUIT_RC_BANDPASS] = {"RC BAND-PASS: C1/R1 form a high-pass (fc1 = 1/(2*pi*R1*C1) = 800 Hz), then R2/C2", "a low-pass (fc2 = 3.2 kHz). Only the band between passes; the response peaks near", "sqrt(fc1*fc2) = 1.6 kHz at about 0.8x and falls 20 dB/decade on both sides.", "PROBE: auto-placed. Source sweeps 100 Hz-20 kHz: output rises, peaks ~1.6 kHz, falls."},
+    [CIRCUIT_LC_LOWPASS] = {"LC LOW-PASS: series L, shunt C, load R. Second order: f0 = 1/(2*pi*sqrt(LC)) =", "1.59 kHz and it rolls off 40 dB/decade above f0 (twice as steep as RC). The load", "sets the damping: Q = R*sqrt(C/L) = 1 here, so only a slight peak near f0.", "PROBE: auto-placed. Sweep 100 Hz-20 kHz: flat, slight hump at 1.6 kHz, then steep fall."},
+    [CIRCUIT_ZENER_CLIPPER] = {"ZENER CLIPPER: two 5.1 V zeners back to back. Below ~5.8 V neither conducts and", "the output follows the input; above it one zener breaks down while the other is", "forward biased, clamping the output at +/-(Vz + 0.7). R limits the zener current.", "PROBE: auto-placed. Amplitude sweeps 1-10 V: the tops flatten once the input passes 5.8 V."},
+    [CIRCUIT_VOLTAGE_DOUBLER] = {"VOLTAGE DOUBLER: on negative half-cycles D1 charges C1 to Vpk (clamper); on positive", "ones the clamped waveform swings to 2*Vpk and D2 charges C2 to it (peak detector).", "Vout = 2*Vpk - 2*0.7 V. Each extra diode/cap stage adds another Vpk (Cockcroft-Walton).", "PROBE: auto-placed on source and C2. Amplitude sweeps 1-5 V: output tracks 2*A - 1.4."},
+    [CIRCUIT_RELAXATION_OSC] = {"RELAXATION OSCILLATOR: the op-amp is a Schmitt trigger (R1/R2 feed half of Vout", "to +). C charges through R toward the rail until V(C) crosses the threshold, the", "output flips and C charges the other way. f = 1/(2RC*ln((1+b)/(1-b))) = 455 Hz.", "PROBE: auto-placed on OUT (square, +/-15 V). Also probe C: a triangle-ish exponential."},
+    [CIRCUIT_HALFWAVE_FILTERED] = {"HALF-WAVE + SMOOTHING CAP: the diode charges C to the peak; between peaks the", "load drains it, giving a sawtooth ripple dV = I/(f*C) = (Vdc/R)/(60*100u) ~ 1.5 V.", "Bigger C or lighter load -> less ripple; this is the simplest DC supply.", "PROBE: auto-placed on the cap. Amplitude sweeps 2-10 V: DC follows Vpk - 0.7 with ripple."},
 };
+
+
+// ---------------------------------------------------------------------------------------
+// Additional teaching circuits (2026-08). All use straight, terminal-aligned wiring.
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+
+static void set_freq_sweep(Component *v, double f0, double f1, double t) {
+    v->props.ac_voltage.frequency_sweep.enabled = true;
+    v->props.ac_voltage.frequency_sweep.mode = SWEEP_LOG;
+    v->props.ac_voltage.frequency_sweep.start_value = f0;
+    v->props.ac_voltage.frequency_sweep.end_value = f1;
+    v->props.ac_voltage.frequency_sweep.sweep_time = t;
+    v->props.ac_voltage.frequency_sweep.repeat = true;
+    v->props.ac_voltage.frequency_sweep.bidirectional = true;
+}
+static void set_amp_sweep(Component *v, double a0, double a1, double t) {
+    v->props.ac_voltage.amplitude_sweep.enabled = true;
+    v->props.ac_voltage.amplitude_sweep.mode = SWEEP_LINEAR;
+    v->props.ac_voltage.amplitude_sweep.start_value = a0;
+    v->props.ac_voltage.amplitude_sweep.end_value = a1;
+    v->props.ac_voltage.amplitude_sweep.sweep_time = t;
+    v->props.ac_voltage.amplitude_sweep.repeat = true;
+    v->props.ac_voltage.amplitude_sweep.bidirectional = true;
+}
+static Component *add_label(Circuit *circuit, float x, float y, const char *text) {
+    Component *l = add_comp(circuit, COMP_TEXT, x, y, 0);
+    if (l) { strncpy(l->props.text.text, text, sizeof(l->props.text.text)-1); l->props.text.font_size = 2; }
+    return l;
+}
+
+// RC band-pass: C1/R1 high-pass (fc 800 Hz) followed by R2/C2 low-pass (fc 3.2 kHz)
+static int place_rc_bandpass(Circuit *circuit, float x, float y) {
+    Component *v = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 60, 0);            // +(0,20) -(0,100)
+    if (!v) return 0;
+    v->props.ac_voltage.amplitude = 1.0; v->props.ac_voltage.frequency = 1600.0;
+    set_freq_sweep(v, 100, 20000, 3);
+    Component *g0 = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 60, y + 20, 0);        // (20,20)-(100,20)
+    c1->props.capacitor.capacitance = 200e-9;
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 100, y + 60, 90);       // (100,20)-(100,100)
+    r1->props.resistor.resistance = 1000.0;
+    Component *g1 = add_comp(circuit, COMP_GROUND, x + 100, y + 120, 0);
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 160, y + 20, 0);        // (120,20)-(200,20)
+    r2->props.resistor.resistance = 10000.0;
+    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 200, y + 60, 90);      // (200,20)-(200,100)
+    c2->props.capacitor.capacitance = 5e-9;
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 200, y + 120, 0);
+    add_label(circuit, x + 40, y - 40, "RC Band-Pass");
+    connect_terminals(circuit, v, 1, g0, 0);
+    connect_terminals(circuit, v, 0, c1, 0);
+    connect_terminals(circuit, r1, 1, g1, 0);
+    connect_terminals(circuit, c2, 1, g2, 0);
+    int n1 = TN(x + 100, y + 20), r2l = TN(x + 120, y + 20), n2 = TN(x + 200, y + 20);
+    TW(n1, r2l);
+    c1->node_ids[1] = n1; r1->node_ids[0] = n1; r2->node_ids[0] = r2l; r2->node_ids[1] = n2; c2->node_ids[0] = n2;
+    return 9;
+}
+
+// LC low-pass: L series, C shunt, R load. f0 = 1/(2*pi*sqrt(LC)) = 1.59 kHz, Q = R*sqrt(C/L) = 1
+static int place_lc_lowpass(Circuit *circuit, float x, float y) {
+    Component *v = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 60, 0);
+    if (!v) return 0;
+    v->props.ac_voltage.amplitude = 1.0; v->props.ac_voltage.frequency = 1000.0;
+    set_freq_sweep(v, 100, 20000, 3);
+    Component *g0 = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    Component *l = add_comp(circuit, COMP_INDUCTOR, x + 60, y + 20, 0);          // (20,20)-(100,20)
+    l->props.inductor.inductance = 10e-3;
+    Component *c = add_comp(circuit, COMP_CAPACITOR, x + 100, y + 60, 90);       // (100,20)-(100,100)
+    c->props.capacitor.capacitance = 1e-6;
+    Component *g1 = add_comp(circuit, COMP_GROUND, x + 100, y + 120, 0);
+    Component *r = add_comp(circuit, COMP_RESISTOR, x + 180, y + 60, 90);        // (180,20)-(180,100)
+    r->props.resistor.resistance = 100.0;
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 180, y + 120, 0);
+    add_label(circuit, x + 30, y - 40, "LC Low-Pass (2nd order)");
+    connect_terminals(circuit, v, 1, g0, 0);
+    connect_terminals(circuit, v, 0, l, 0);
+    connect_terminals(circuit, c, 1, g1, 0);
+    connect_terminals(circuit, r, 1, g2, 0);
+    int n1 = TN(x + 100, y + 20), rt = TN(x + 180, y + 20);
+    TW(n1, rt);
+    l->node_ids[1] = n1; c->node_ids[0] = n1; r->node_ids[0] = rt;
+    return 8;
+}
+
+// Zener clipper: 1k series, two 5.1 V zeners back to back clamp at about +/-5.8 V
+static int place_zener_clipper(Circuit *circuit, float x, float y) {
+    Component *v = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 60, 0);
+    if (!v) return 0;
+    v->props.ac_voltage.amplitude = 10.0; v->props.ac_voltage.frequency = 1000.0;
+    set_amp_sweep(v, 1.0, 10.0, 1.0);
+    Component *g0 = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    Component *r = add_comp(circuit, COMP_RESISTOR, x + 60, y + 20, 0);          // (20,20)-(100,20)
+    r->props.resistor.resistance = 1000.0;
+    Component *z1 = add_comp(circuit, COMP_ZENER, x + 100, y + 60, 270);         // K top (100,20), A bottom (100,100)
+    z1->props.zener.vz = 5.1;
+    Component *z2 = add_comp(circuit, COMP_ZENER, x + 100, y + 140, 90);         // A top (100,100), K bottom (100,180)
+    z2->props.zener.vz = 5.1;
+    Component *g1 = add_comp(circuit, COMP_GROUND, x + 100, y + 200, 0);         // terminal (100,180)
+    add_label(circuit, x + 30, y - 40, "Zener Clipper (limiter)");
+    connect_terminals(circuit, v, 1, g0, 0);
+    connect_terminals(circuit, v, 0, r, 0);
+    int n = TN(x + 100, y + 20), mid = TN(x + 100, y + 100), gb = TN(x + 100, y + 180);
+    r->node_ids[1] = n; z1->node_ids[1] = n; z1->node_ids[0] = mid; z2->node_ids[0] = mid; z2->node_ids[1] = gb; g1->node_ids[0] = gb;
+    return 7;
+}
+
+// Voltage doubler (Villard/Greinacher): C1 + D1 clamp, D2 + C2 peak detect -> ~2*Vpk - 1.4 V
+static int place_voltage_doubler(Circuit *circuit, float x, float y) {
+    Component *v = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 60, 0);
+    if (!v) return 0;
+    v->props.ac_voltage.amplitude = 5.0; v->props.ac_voltage.frequency = 1000.0;
+    set_amp_sweep(v, 1.0, 5.0, 1.0);
+    Component *g0 = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 60, y + 20, 0);        // (20,20)-(100,20)
+    c1->props.capacitor.capacitance = 1e-6;
+    Component *d1 = add_comp(circuit, COMP_DIODE, x + 100, y + 60, 270);         // K top (100,20), A bottom (100,100)
+    Component *g1 = add_comp(circuit, COMP_GROUND, x + 100, y + 120, 0);         // terminal (100,100)
+    Component *d2 = add_comp(circuit, COMP_DIODE, x + 160, y + 20, 0);           // A (120,20), K (200,20)
+    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 200, y + 60, 90);      // (200,20)-(200,100)
+    c2->props.capacitor.capacitance = 1e-6;
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 200, y + 120, 0);
+    Component *r = add_comp(circuit, COMP_RESISTOR, x + 280, y + 60, 90);        // (280,20)-(280,100)
+    r->props.resistor.resistance = 100000.0;
+    Component *g3 = add_comp(circuit, COMP_GROUND, x + 280, y + 120, 0);
+    add_label(circuit, x + 40, y - 40, "Voltage Doubler");
+    connect_terminals(circuit, v, 1, g0, 0);
+    connect_terminals(circuit, v, 0, c1, 0);
+    connect_terminals(circuit, d1, 0, g1, 0);
+    connect_terminals(circuit, c2, 1, g2, 0);
+    connect_terminals(circuit, r, 1, g3, 0);
+    int A = TN(x + 100, y + 20), d2a = TN(x + 120, y + 20), out = TN(x + 200, y + 20), rt = TN(x + 280, y + 20);
+    TW(A, d2a); TW(out, rt);
+    c1->node_ids[1] = A; d1->node_ids[1] = A; d2->node_ids[0] = d2a; d2->node_ids[1] = out; c2->node_ids[0] = out; r->node_ids[0] = rt;
+    return 11;
+}
+
+// Op-amp relaxation oscillator: Schmitt trigger (beta = 0.5) charging C through R
+// f = 1/(2*R*C*ln((1+beta)/(1-beta))) = 1/(2*1e-3*ln3) = 455 Hz
+static int place_relaxation_osc(Circuit *circuit, float x, float y) {
+    Component *u = add_comp(circuit, COMP_OPAMP, x + 200, y + 40, 0);           // -(160,20) +(160,60) out(240,40)
+    if (!u) return 0;
+    u->props.opamp.ideal = true;
+    Component *rc = add_comp(circuit, COMP_RESISTOR, x + 200, y - 40, 0);        // (160,-40)-(240,-40)
+    rc->props.resistor.resistance = 10000.0;
+    Component *c = add_comp(circuit, COMP_CAPACITOR, x + 120, y + 60, 90);       // (120,20)-(120,100)
+    c->props.capacitor.capacitance = 100e-9;
+    Component *gc = add_comp(circuit, COMP_GROUND, x + 120, y + 120, 0);
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 300, y + 80, 90);       // (300,40)-(300,120)
+    r1->props.resistor.resistance = 10000.0;
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 140, y + 160, 90);      // (140,120)-(140,200)
+    r2->props.resistor.resistance = 10000.0;
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 140, y + 220, 0);
+    Component *kick = add_comp(circuit, COMP_PULSE_SOURCE, x + 60, y + 180, 0);  // +(60,140) -(60,220): tiny start-up nudge on C
+    kick->props.pulse_source.v_low = 0.0; kick->props.pulse_source.v_high = 0.1;
+    kick->props.pulse_source.pulse_width = 20e-6; kick->props.pulse_source.period = 100.0;
+    Component *rk = add_comp(circuit, COMP_RESISTOR, x + 60, y + 100, 90);       // (60,60)-(60,140)
+    rk->props.resistor.resistance = 100000.0;
+    Component *gk = add_comp(circuit, COMP_GROUND, x + 60, y + 240, 0);          // terminal (60,220)
+    add_label(circuit, x + 100, y - 100, "Relaxation Oscillator (455 Hz)");
+    connect_terminals(circuit, c, 1, gc, 0);
+    connect_terminals(circuit, r2, 1, g2, 0);
+    connect_terminals(circuit, kick, 1, gk, 0);
+    connect_terminals(circuit, rk, 1, kick, 0);
+    int inv = TN(x + 160, y + 20), ct = TN(x + 120, y + 20), rkt = TN(x + 60, y + 60), rkc = TN(x + 60, y + 20);
+    TW(inv, ct); TW(ct, rkc); TW(rkc, rkt);
+    int out = TN(x + 240, y + 40), oc = TN(x + 260, y + 40), ou = TN(x + 260, y - 40), rcr = TN(x + 240, y - 40), rcl = TN(x + 160, y - 40);
+    TW(out, oc); TW(oc, ou); TW(ou, rcr); TW(rcl, inv);
+    int r1t = TN(x + 300, y + 40), r1b = TN(x + 300, y + 120), pl = TN(x + 140, y + 120), pc = TN(x + 140, y + 60), ni = TN(x + 160, y + 60);
+    TW(oc, r1t); TW(r1b, pl); TW(pl, pc); TW(pc, ni);
+    u->node_ids[0] = inv; u->node_ids[1] = ni; u->node_ids[2] = out;
+    rc->node_ids[0] = rcl; rc->node_ids[1] = rcr; c->node_ids[0] = ct; r1->node_ids[0] = r1t; r1->node_ids[1] = r1b; r2->node_ids[0] = pl;
+    rk->node_ids[0] = rkt;
+    return 11;
+}
+
+// Half-wave rectifier with smoothing capacitor: DC ~ Vpk - 0.7 with ripple I/(f*C)
+static int place_halfwave_filtered(Circuit *circuit, float x, float y) {
+    Component *v = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 60, 0);
+    if (!v) return 0;
+    v->props.ac_voltage.amplitude = 10.0; v->props.ac_voltage.frequency = 60.0;
+    set_amp_sweep(v, 2.0, 10.0, 1.0);
+    Component *g0 = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    Component *d = add_comp(circuit, COMP_DIODE, x + 60, y + 20, 0);             // A (20,20), K (100,20)
+    Component *c = add_comp(circuit, COMP_CAPACITOR, x + 100, y + 60, 90);       // (100,20)-(100,100)
+    c->props.capacitor.capacitance = 100e-6;
+    Component *g1 = add_comp(circuit, COMP_GROUND, x + 100, y + 120, 0);
+    Component *r = add_comp(circuit, COMP_RESISTOR, x + 180, y + 60, 90);        // (180,20)-(180,100)
+    r->props.resistor.resistance = 1000.0;
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 180, y + 120, 0);
+    add_label(circuit, x + 20, y - 40, "Half-Wave Rectifier + Smoothing Cap");
+    connect_terminals(circuit, v, 1, g0, 0);
+    connect_terminals(circuit, v, 0, d, 0);
+    connect_terminals(circuit, c, 1, g1, 0);
+    connect_terminals(circuit, r, 1, g2, 0);
+    int n = TN(x + 100, y + 20), rt = TN(x + 180, y + 20);
+    TW(n, rt);
+    d->node_ids[1] = n; c->node_ids[0] = n; r->node_ids[0] = rt;
+    return 8;
+}
+#undef TN
+#undef TW
 
 // Output node to probe for each template (component type, ordinal among that type, terminal)
 typedef struct { ComponentType ct; int ord, term; } TemplateProbeSpec;
@@ -6296,6 +6518,12 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_PEAK_DETECTOR]    = { COMP_CAPACITOR, 0, 0 },
     [CIRCUIT_CLAMPER]          = { COMP_DIODE, 0, 1 },
     [CIRCUIT_PHASE_SHIFT_OSC]  = { COMP_OPAMP_REAL, 0, 2 },
+    [CIRCUIT_RC_BANDPASS]      = { COMP_CAPACITOR, 1, 0 },
+    [CIRCUIT_LC_LOWPASS]       = { COMP_CAPACITOR, 0, 0 },
+    [CIRCUIT_ZENER_CLIPPER]    = { COMP_RESISTOR, 0, 1 },
+    [CIRCUIT_VOLTAGE_DOUBLER]  = { COMP_CAPACITOR, 1, 0 },
+    [CIRCUIT_RELAXATION_OSC]   = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_HALFWAVE_FILTERED]= { COMP_CAPACITOR, 0, 0 },
 };
 
 // Scope time/div that shows the interesting behaviour of each template
@@ -6316,6 +6544,8 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_LM317_REG] = 1e-3, [CIRCUIT_TL431_REF] = 1e-3, [CIRCUIT_SERIES_RLC] = 2e-3,
     [CIRCUIT_PARALLEL_RLC] = 2e-3, [CIRCUIT_WHEATSTONE] = 1e-3, [CIRCUIT_PEAK_DETECTOR] = 50e-3,
     [CIRCUIT_CLAMPER] = 50e-3, [CIRCUIT_PHASE_SHIFT_OSC] = 50e-6,
+    [CIRCUIT_RC_BANDPASS] = 200e-6, [CIRCUIT_LC_LOWPASS] = 200e-6, [CIRCUIT_ZENER_CLIPPER] = 50e-3,
+    [CIRCUIT_VOLTAGE_DOUBLER] = 50e-3, [CIRCUIT_RELAXATION_OSC] = 1e-3, [CIRCUIT_HALFWAVE_FILTERED] = 50e-3,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -6329,6 +6559,8 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_PHASE_SHIFT_OSC] = 2.0, [CIRCUIT_CMOS_INVERTER] = 2.0, [CIRCUIT_SERIES_RLC] = 2.0,
     [CIRCUIT_PARALLEL_RLC] = 2.0, [CIRCUIT_FULLWAVE_BRIDGE] = 5.0, [CIRCUIT_AC_DC_SUPPLY] = 5.0,
     [CIRCUIT_AC_DC_AMERICAN] = 5.0, [CIRCUIT_CENTERTAP_RECT] = 2.0, [CIRCUIT_HALFWAVE_RECT] = 2.0,
+    [CIRCUIT_RC_BANDPASS] = 0.5, [CIRCUIT_LC_LOWPASS] = 0.5, [CIRCUIT_ZENER_CLIPPER] = 5.0,
+    [CIRCUIT_VOLTAGE_DOUBLER] = 2.0, [CIRCUIT_RELAXATION_OSC] = 5.0, [CIRCUIT_HALFWAVE_FILTERED] = 5.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -6380,6 +6612,12 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_PEAK_DETECTOR]    = { DEMO_ENVELOPE, 1000 },
     [CIRCUIT_CLAMPER]          = { DEMO_ENVELOPE, 1000 },
     [CIRCUIT_PHASE_SHIFT_OSC]  = { DEMO_OSC, 6497 },
+    [CIRCUIT_RC_BANDPASS]      = { DEMO_BANDPASS, 1600 },
+    [CIRCUIT_LC_LOWPASS]       = { DEMO_LOWPASS, 1591.5 },
+    [CIRCUIT_ZENER_CLIPPER]    = { DEMO_LIMITER, 1000 },
+    [CIRCUIT_VOLTAGE_DOUBLER]  = { DEMO_ENVELOPE, 1000 },
+    [CIRCUIT_RELAXATION_OSC]   = { DEMO_OSC, 455 },
+    [CIRCUIT_HALFWAVE_FILTERED]= { DEMO_ENVELOPE, 60 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {

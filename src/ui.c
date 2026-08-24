@@ -550,6 +550,36 @@ void ui_init(UIState *ui) {
     ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_PHASE_SHIFT_OSC, "PhOsc", false, false
     };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_RC_BANDPASS, "RC BP", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_LC_LOWPASS, "LC LP", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_ZENER_CLIPPER, "ZClip", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_VOLTAGE_DOUBLER, "Dblr", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_RELAXATION_OSC, "RelOsc", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_HALFWAVE_FILTERED, "HW+C", false, false
+    };
 
     // Calculate palette content height (from toolbar to last item + padding)
     ui->palette_content_height = pal_y + pal_h + 10 - TOOLBAR_HEIGHT;
