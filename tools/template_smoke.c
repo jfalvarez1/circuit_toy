@@ -10,6 +10,7 @@
  *      can be checked against TEMPLATE_AUDIT.md by eye.
  *
  * Usage: template_smoke [--dc] [--verbose] [--nodes] [--svg DIR] [--sim-time SEC] [name-substring]
+ *        template_smoke --scope-test     (scope time/div <-> dt mapping checks)
  * Exit code is the number of failing templates (0 = all good).
  */
 
@@ -86,6 +87,62 @@ static void print_bias(Circuit *c) {
     }
 }
 
+/* Scope <-> dt mapping self-test: in-sync mapping, out-of-sync (manual dt kept when
+ * time/div is unchanged), and both clamp limits. Returns number of failed checks. */
+static int scope_dt_test(void) {
+    int fails = 0;
+    Circuit *c = circuit_create();
+    circuit_place_template(c, CIRCUIT_RC_LOWPASS, 0, 0);   /* 1 kHz source -> accuracy dt 10 us (100 samples/period) */
+    Simulation *sim = simulation_create(c);
+    struct { double time_div, want; const char *why; } cases[] = {
+        { 1e-3,   1e-5,  "1 ms/div: display 20 us, accuracy-limited to 10 us" },
+        { 100e-6, 2e-6,  "100 us/div: 2 us (50 samples/div)" },
+        { 1e-6,   20e-9, "1 us/div: 20 ns" },
+        { 10e-9,  1e-9,  "10 ns/div: wants 0.2 ns -> clamped to MIN_TIME_STEP" },
+        { 100.0,  1e-5,  "100 s/div: display 2 s but accuracy (10 us) wins" },
+    };
+    for (unsigned i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        double got = simulation_scope_time_step(sim, cases[i].time_div);
+        int ok = fabs(got - cases[i].want) <= 1e-12 + 1e-6 * cases[i].want;
+        printf("[%s] scope-dt  time/div=%-8.3g -> dt=%-8.3g (want %-8.3g) %s\n",
+               ok ? " OK " : "FAIL", cases[i].time_div, got, cases[i].want, cases[i].why);
+        if (!ok) fails++;
+    }
+    /* Upper clamp needs a circuit with no fast source: a bare resistive divider */
+    Circuit *c2 = circuit_create();
+    circuit_place_template(c2, CIRCUIT_VOLTAGE_DIVIDER, 0, 0);
+    Simulation *sim2 = simulation_create(c2);
+    {
+        double got = simulation_scope_time_step(sim2, 100.0);
+        int ok = fabs(got - 1e-7) < 1e-12;   /* no AC source: accuracy step = DEFAULT 100 ns */
+        printf("[%s] scope-dt  DC circuit 100 s/div -> dt=%.3g (want 1e-07: default accuracy step)\n",
+               ok ? " OK " : "FAIL", got);
+        if (!ok) fails++;
+    }
+    /* Out-of-sync: a manual dt survives while time/div is unchanged; set_time_step re-derives
+       decimation only when dt really changes */
+    simulation_set_time_step(sim, 1e-3);
+    sim->history_decimate_factor = 7;
+    simulation_set_time_step(sim, 1e-3);
+    int keep = (sim->time_step == 1e-3 && sim->history_decimate_factor == 7);
+    simulation_set_time_step(sim, 2e-6);
+    int reset = (sim->time_step == 2e-6 && sim->history_decimate_factor == 0);
+    printf("[%s] scope-dt  manual dt kept when unchanged; decimation reset only on real change\n",
+           (keep && reset) ? " OK " : "FAIL");
+    if (!(keep && reset)) fails++;
+    /* Lower clamp on the setter itself */
+    simulation_set_time_step(sim, 1e-12);
+    int lo = sim->time_step == MIN_TIME_STEP;
+    simulation_set_time_step(sim, 1.0);
+    int hi = sim->time_step == MAX_TIME_STEP;
+    printf("[%s] scope-dt  set_time_step clamps to [%.0e, %.0e]\n", (lo && hi) ? " OK " : "FAIL",
+           MIN_TIME_STEP, MAX_TIME_STEP);
+    if (!(lo && hi)) fails++;
+    simulation_free(sim); circuit_free(c);
+    simulation_free(sim2); circuit_free(c2);
+    return fails;
+}
+
 int main(int argc, char **argv) {
     int dc_only = 0, verbose = 0, dump_nodes = 0;
     const char *svg_dir = NULL;
@@ -96,6 +153,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--verbose")) verbose = 1;
         else if (!strcmp(argv[i], "--nodes")) dump_nodes = 1;
         else if (!strcmp(argv[i], "--svg") && i + 1 < argc) svg_dir = argv[++i];
+        else if (!strcmp(argv[i], "--scope-test")) return scope_dt_test();
         else if (!strcmp(argv[i], "--sim-time") && i + 1 < argc) sim_time = atof(argv[++i]);
         else filter = argv[i];
     }

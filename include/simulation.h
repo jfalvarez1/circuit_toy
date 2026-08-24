@@ -134,6 +134,12 @@ void simulation_set_history_span(Simulation *sim, double span_seconds);
 // Auto-adjust time step based on circuit's highest frequency signal
 // Returns the new time step that ensures adequate sampling (at least 50 samples/cycle)
 double simulation_auto_time_step(Simulation *sim);
+// Pure variants (no side effects):
+//  - accuracy step: what auto would pick from the fastest fixed-frequency source
+//  - scope step: dt that gives ~50 samples per scope division, never coarser than the
+//    accuracy step, snapped down to the 1-2-5 series, clamped to [MIN,MAX]_TIME_STEP
+double simulation_accuracy_time_step(Simulation *sim);
+double simulation_scope_time_step(Simulation *sim, double scope_time_div);
 
 // Adaptive time-stepping control
 void simulation_enable_adaptive(Simulation *sim, bool enable);

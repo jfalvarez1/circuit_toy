@@ -1103,7 +1103,12 @@ void simulation_set_speed(Simulation *sim, double speed) {
 
 void simulation_set_time_step(Simulation *sim, double dt) {
     if (sim) {
-        sim->time_step = CLAMP(dt, MIN_TIME_STEP, MAX_TIME_STEP);
+        double new_dt = CLAMP(dt, MIN_TIME_STEP, MAX_TIME_STEP);
+        if (new_dt != sim->time_step) {
+            // Sample spacing changes: re-derive history decimation on the next step
+            sim->history_decimate_factor = 0;
+        }
+        sim->time_step = new_dt;
         // Also update target for adaptive stepping
         sim->dt_target = sim->time_step;
         sim->dt_actual = sim->time_step;
@@ -1138,7 +1143,7 @@ double simulation_get_error_estimate(Simulation *sim) {
     return sim ? sim->error_estimate : 0.0;
 }
 
-double simulation_auto_time_step(Simulation *sim) {
+double simulation_accuracy_time_step(Simulation *sim) {
     if (!sim || !sim->circuit) return DEFAULT_TIME_STEP;
 
     // Find the highest frequency signal in the circuit
@@ -1195,10 +1200,28 @@ double simulation_auto_time_step(Simulation *sim) {
     }
 
     // Clamp to valid range
-    dt = CLAMP(dt, MIN_TIME_STEP, MAX_TIME_STEP);
-    sim->time_step = dt;
+    return CLAMP(dt, MIN_TIME_STEP, MAX_TIME_STEP);
+}
 
+double simulation_auto_time_step(Simulation *sim) {
+    if (!sim || !sim->circuit) return DEFAULT_TIME_STEP;
+    double dt = simulation_accuracy_time_step(sim);
+    simulation_set_time_step(sim, dt);
     return dt;
+}
+
+double simulation_scope_time_step(Simulation *sim, double scope_time_div) {
+    if (!sim || scope_time_div <= 0) return DEFAULT_TIME_STEP;
+    double display_dt = scope_time_div / 50.0;         // ~50 samples per division
+    double accuracy_dt = simulation_accuracy_time_step(sim);
+    double dt = display_dt < accuracy_dt ? display_dt : accuracy_dt;
+    dt = CLAMP(dt, MIN_TIME_STEP, MAX_TIME_STEP);
+
+    // Snap down to the 1-2-5 series (stays >= MIN_TIME_STEP because MIN is itself 1e-9)
+    double decade = pow(10.0, floor(log10(dt)));
+    double m = dt / decade;
+    double snapped = (m >= 5.0) ? 5.0 : (m >= 2.0) ? 2.0 : 1.0;
+    return CLAMP(snapped * decade, MIN_TIME_STEP, MAX_TIME_STEP);
 }
 
 double simulation_get_node_voltage(Simulation *sim, int node_id) {

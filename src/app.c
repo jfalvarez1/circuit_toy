@@ -3,6 +3,7 @@
  */
 
 #include <stdio.h>
+#include <math.h>
 #include <string.h>
 #include <time.h>
 #ifdef _WIN32
@@ -1482,6 +1483,24 @@ void app_handle_events(App *app) {
     ui_update_scope_channels(&app->ui, app->circuit);
 }
 
+// Match the simulation time step to the scope's time/div.
+// Target ~50 samples per division (so a 10-division sweep has ~500 points), never coarser
+// than the signal-accuracy step from simulation_auto_time_step(), snapped down to the
+// 1-2-5 series and clamped to [MIN_TIME_STEP, MAX_TIME_STEP]. Runs only when time/div
+// changes, so the manual dt buttons still work in between.
+static void app_sync_time_step_to_scope(App *app) {
+    if (!app || !app->simulation) return;
+    double time_div = app->ui.scope_time_div;
+    if (time_div <= 0 || time_div == app->synced_time_div) return;
+    app->synced_time_div = time_div;
+
+    double dt = simulation_scope_time_step(app->simulation, time_div);
+    simulation_set_time_step(app->simulation, dt);
+    char msg[96];
+    snprintf(msg, sizeof(msg), "Time step matched to scope: dt = %.3g s", dt);
+    ui_set_status(&app->ui, msg);
+}
+
 void app_update(App *app) {
     uint32_t current_time = SDL_GetTicks();
     float delta_time = (current_time - app->last_frame_time) / 1000.0f;
@@ -1563,6 +1582,9 @@ void app_update(App *app) {
             ui_set_status(&app->ui, msg);
         }
     }
+
+    // Keep dt in step with the scope's time/div (only acts when time/div changed)
+    app_sync_time_step_to_scope(app);
 
     // The recorder keeps MAX_HISTORY samples; ask it to span 2x the visible scope window so
     // the trigger search has slack, but never less than the raw (undecimated) span.

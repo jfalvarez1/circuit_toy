@@ -33,6 +33,7 @@ typedef struct {
     bool running;
     bool show_voltages;
     bool show_current;
+    double synced_time_div;      // scope time/div the sim dt was last matched to (0 = never)
 
     // Current file
     char current_file[256];
