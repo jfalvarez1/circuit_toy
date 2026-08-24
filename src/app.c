@@ -340,7 +340,8 @@ void app_handle_events(App *app) {
                 {
                     static const double volt_steps[] = {
                         0.001, 0.002, 0.005, 0.01, 0.02, 0.05,
-                        0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0
+                        0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0,
+                        200.0, 500.0, 1e3, 2e3, 5e3, 10e3, 20e3, 50e3, 100e3, 200e3, 500e3
                     };
                     int n = sizeof(volt_steps) / sizeof(volt_steps[0]);
                     for (int i = 0; i < n - 1; i++) {
@@ -356,7 +357,8 @@ void app_handle_events(App *app) {
                 {
                     static const double volt_steps[] = {
                         0.001, 0.002, 0.005, 0.01, 0.02, 0.05,
-                        0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0
+                        0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0,
+                        200.0, 500.0, 1e3, 2e3, 5e3, 10e3, 20e3, 50e3, 100e3, 200e3, 500e3
                     };
                     int n = sizeof(volt_steps) / sizeof(volt_steps[0]);
                     for (int i = n - 1; i > 0; i--) {
@@ -1659,7 +1661,7 @@ void app_update(App *app) {
             double snapped = (m > 5.0) ? 10.0 : (m > 2.0) ? 5.0 : (m > 1.0) ? 2.0 : 1.0;
             double vd = snapped * decade;
             if (vd < 0.001) vd = 0.001;
-            if (vd > 100.0) vd = 100.0;
+            if (vd > 500e3) vd = 500e3;
             app->ui.scope_volt_div = vd;
             app->ui.scope_auto_vdiv_pending = false;
         }

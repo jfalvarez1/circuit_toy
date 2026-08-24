@@ -366,6 +366,13 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_LC_LOWPASS,       COMP_CAPACITOR, 0, 0, "amp", 1.15,  0.15, 8e-3,  "2nd order, Q = 1, at 1 kHz" },
     { CIRCUIT_VOLTAGE_DOUBLER,  COMP_CAPACITOR, 1, 0, "dc",  7.4,   0.15, 1.0,   "2*A - 1.4 at A ~ 4.4 V (late in the 1->5 V sweep)" },
     { CIRCUIT_HALFWAVE_FILTERED,COMP_CAPACITOR, 0, 0, "dc",  8.0,   0.15, 1.0,   "Vpk - 0.7 - ripple/2 late in the 2->10 V sweep" },
+    { CIRCUIT_HV_345_LINE,      COMP_RESISTOR,  1, 0, "amp", 264.0e3, 0.05, 60e-3, "186.7 kV rms at the 600 MW load (-6.3 %)" },
+    { CIRCUIT_HV_138_LINE_VAR,  COMP_RESISTOR,  1, 0, "amp", 105.0e3, 0.06, 60e-3, "74.3 kV rms with pf 0.9 load, cap bank open (-6.7 %)" },
+    { CIRCUIT_MV_FEEDER,        COMP_RESISTOR,  1, 0, "amp", 9.86e3,  0.04, 60e-3, "6,973 V rms at the feeder end (-3.2 %)" },
+    { CIRCUIT_POLE_XFMR,        COMP_RESISTOR,  0, 0, "amp", 339.4,   0.04, 60e-3, "240 V rms service (ideal transformer)" },
+    { CIRCUIT_GEN_GSU,          COMP_RESISTOR,  0, 0, "amp", 279.4e3, 0.04, 60e-3, "345 kV bus behind X'' referred (25 ohm) at unity pf" },
+    { CIRCUIT_GRID_CHAIN,       COMP_RESISTOR,  3, 0, "amp", 339.4,   0.04, 60e-3, "house at 239 V rms (lines unloaded by one house)" },
+    { CIRCUIT_FERRANTI_LINE,    COMP_RESISTOR,  1, 0, "amp", 309.6e3, 0.05, 80e-3, "open-end rise +9.9 % (reactor switch open)" },
 };
 
 static Component *find_comp(Circuit *c, ComponentType ct, int ord) {
@@ -750,6 +757,19 @@ static int response_explore(const char *filter) {
     return 0;
 }
 
+/* Largest source amplitude in the circuit: the runaway threshold scales with it so that
+ * the kV power-system templates are judged against their own source, not an absolute 1 kV. */
+static double source_scale(Circuit *c) {
+    double m = 0;
+    for (int i = 0; i < c->num_components; i++) {
+        Component *k = c->components[i]; double a = 0;
+        if (k->type == COMP_AC_VOLTAGE) a = fabs(k->props.ac_voltage.amplitude) + fabs(k->props.ac_voltage.offset);
+        else if (k->type == COMP_DC_VOLTAGE) a = fabs(k->props.dc_voltage.voltage);
+        if (a > m) m = a;
+    }
+    return m;
+}
+
 int main(int argc, char **argv) {
     int dc_only = 0, verbose = 0, dump_nodes = 0;
     const char *svg_dir = NULL;
@@ -846,7 +866,7 @@ int main(int argc, char **argv) {
             check_voltages(circuit, &max_abs);
             if (max_abs > run_max) run_max = max_abs;
             max_abs = run_max;
-            if (ok && max_abs > 1000.0) {
+            if (ok && max_abs > fmax(1000.0, 2.5 * source_scale(circuit))) {
                 ok = 0;
                 snprintf(why, sizeof why, "runaway: max|V| = %.3g V", max_abs);
             }

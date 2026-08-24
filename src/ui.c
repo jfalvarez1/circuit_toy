@@ -580,6 +580,41 @@ void ui_init(UIState *ui) {
     ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_HALFWAVE_FILTERED, "HW+C", false, false
     };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_HV_345_LINE, "345kV", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_HV_138_LINE_VAR, "138kV", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_MV_FEEDER, "Feedr", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_POLE_XFMR, "Pole", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_GEN_GSU, "GenSU", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_GRID_CHAIN, "Grid", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_FERRANTI_LINE, "Ferr", false, false
+    };
 
     // Calculate palette content height (from toolbar to last item + padding)
     ui->palette_content_height = pal_y + pal_h + 10 - TOOLBAR_HEIGHT;
@@ -2891,7 +2926,11 @@ static void scope_channel_frame(UIState *ui, Rect *r, int ch, int *top, int *h, 
 }
 
 static void format_volt_value(char *buf, size_t size, double val) {
-    if (val >= 1.0) {
+    if (val >= 1e6) {
+        snprintf(buf, size, "%.3gMV", val / 1e6);
+    } else if (val >= 1e3) {
+        snprintf(buf, size, "%.3gkV", val / 1e3);
+    } else if (val >= 1.0) {
         snprintf(buf, size, "%.0fV", val);
     } else if (val >= 0.1) {
         snprintf(buf, size, "%.0fmV", val * 1000);
@@ -3061,6 +3100,8 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         char vlabel[16];
         if (fabs(voltage) < 0.001) {
             snprintf(vlabel, sizeof(vlabel), "0V");
+        } else if (fabs(ui->scope_volt_div) >= 1e3) {
+            snprintf(vlabel, sizeof(vlabel), "%+.3gkV", voltage / 1e3);
         } else if (fabs(ui->scope_volt_div) >= 1.0) {
             snprintf(vlabel, sizeof(vlabel), "%+.0fV", voltage);
         } else if (fabs(ui->scope_volt_div) >= 0.1) {
@@ -6904,7 +6945,7 @@ void ui_scope_autoset(UIState *ui, Simulation *sim) {
     if (!ui || !sim || ui->scope_num_channels == 0) return;
 
     // Standard volt/div and time/div values (1-2-5 sequence)
-    static const double volt_divs[] = {0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0};
+    static const double volt_divs[] = {0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1e3, 2e3, 5e3, 10e3, 20e3, 50e3, 100e3, 200e3, 500e3};
     static const int num_volt_divs = sizeof(volt_divs) / sizeof(volt_divs[0]);
     static const double time_divs[] = {1e-9, 2e-9, 5e-9, 10e-9, 20e-9, 50e-9, 100e-9, 200e-9, 500e-9,
                                        1e-6, 2e-6, 5e-6, 10e-6, 20e-6, 50e-6, 100e-6, 200e-6, 500e-6,

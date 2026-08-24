@@ -1816,7 +1816,8 @@ Component *component_create(ComponentType type, float x, float y) {
                                type == COMP_FM_SOURCE ||
                                type == COMP_BATTERY ||
                                type == COMP_PULSE_SOURCE ||
-                               type == COMP_PWM_SOURCE);
+                               type == COMP_PWM_SOURCE ||
+                               type == COMP_TRANSFORMER);
 
     // Initialize thermal state for components that can fail
     comp->thermal.temperature = 25.0;           // Room temperature
@@ -2947,55 +2948,33 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         }
 
         case COMP_TRANSFORMER: {
-            // Transformer model using VCVS (voltage-controlled voltage source) approach
-            // Terminals: P1 (n[0]), P2 (n[1]), S1 (n[2]), S2 (n[3])
-            // Relationship: V_secondary = N * V_primary
-            // where N = turns_ratio = N_secondary / N_primary
+            // Ideal transformer with one auxiliary variable i_s (current entering S1 and
+            // leaving S2 through the secondary winding):
+            //   V_s1 - V_s2 = N (V_p1 - V_p2)          (aux row)
+            //   I_p1 = -N i_s, I_p2 = +N i_s           (power balance: V_p I_p + V_s I_s = 0)
+            // Terminals: P1 (n[0]), P2 (n[1]), S1 (n[2]), S2 (n[3]); N = N_sec / N_pri.
+            // Non-ideal mode adds the winding resistances referred to the secondary and a
+            // finite magnetizing branch; ideal mode keeps only a tiny magnetizing conductance.
             double N = comp->props.transformer.turns_ratio;
-
-            if (comp->props.transformer.ideal) {
-                // Ideal transformer using VCVS with series resistance
-                // V_s = N * V_p, modeled as current source that enforces voltage relationship
-                // I = G_src * (V_s1 - V_s2 - N * (V_p1 - V_p2))
-                double R_src = 1.0;  // 1 ohm series resistance for numerical stability
-                double G_src = 1.0 / R_src;
-
-                // Primary magnetizing resistance (high value for low magnetizing current)
-                double R_mag = 10000.0;
-                double G_mag = 1.0 / R_mag;
-                STAMP_CONDUCTANCE(n[0], n[1], G_mag);
-
-                // Secondary: VCVS that makes V_s = N * V_p
-                // Stamp conductance between S1-S2
-                STAMP_CONDUCTANCE(n[2], n[3], G_src);
-
-                // Add VCCS terms: secondary voltage follows primary voltage
-                if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -G_src * N);
-                if (n[2] > 0 && n[1] > 0) matrix_add(A, n[2]-1, n[1]-1, G_src * N);
-                if (n[3] > 0 && n[0] > 0) matrix_add(A, n[3]-1, n[0]-1, G_src * N);
-                if (n[3] > 0 && n[1] > 0) matrix_add(A, n[3]-1, n[1]-1, -G_src * N);
-            } else {
-                // Non-ideal transformer with winding resistances
-                double R_p = comp->props.transformer.r_primary;
-                double R_s = comp->props.transformer.r_secondary;
-                double R_src = 1.0;  // Additional source resistance
-                double G_src = 1.0 / R_src;
-
-                // Primary winding resistance
-                double G_p = 1.0 / R_p;
-                STAMP_CONDUCTANCE(n[0], n[1], G_p);
-
-                // Secondary: winding resistance + VCVS
-                double G_s = 1.0 / R_s;
-                STAMP_CONDUCTANCE(n[2], n[3], G_s);
-                STAMP_CONDUCTANCE(n[2], n[3], G_src);
-
-                // VCCS terms for voltage coupling
-                if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -G_src * N);
-                if (n[2] > 0 && n[1] > 0) matrix_add(A, n[2]-1, n[1]-1, G_src * N);
-                if (n[3] > 0 && n[0] > 0) matrix_add(A, n[3]-1, n[0]-1, G_src * N);
-                if (n[3] > 0 && n[1] > 0) matrix_add(A, n[3]-1, n[1]-1, -G_src * N);
+            int k = num_nodes + comp->voltage_var_idx;
+            double R_ref = 0.0, G_mag = 1e-9;
+            if (!comp->props.transformer.ideal) {
+                R_ref = comp->props.transformer.r_secondary + N * N * comp->props.transformer.r_primary;
+                G_mag = 1e-6;
             }
+            // aux row: V_s1 - V_s2 - N V_p1 + N V_p2 - R_ref i_s = 0
+            if (n[2] > 0) matrix_add(A, k, n[2]-1, 1.0);
+            if (n[3] > 0) matrix_add(A, k, n[3]-1, -1.0);
+            if (n[0] > 0) matrix_add(A, k, n[0]-1, -N);
+            if (n[1] > 0) matrix_add(A, k, n[1]-1, N);
+            matrix_add(A, k, k, -R_ref - 1e-9);
+            // secondary KCL: i_s leaves S1 into the device, returns at S2
+            if (n[2] > 0) matrix_add(A, n[2]-1, k, 1.0);
+            if (n[3] > 0) matrix_add(A, n[3]-1, k, -1.0);
+            // primary KCL: reflected current -N i_s leaves P1, +N i_s leaves P2
+            if (n[0] > 0) matrix_add(A, n[0]-1, k, -N);
+            if (n[1] > 0) matrix_add(A, n[1]-1, k, N);
+            STAMP_CONDUCTANCE(n[0], n[1], G_mag);
             break;
         }
 

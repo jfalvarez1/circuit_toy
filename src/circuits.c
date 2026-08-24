@@ -209,6 +209,14 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_VOLTAGE_DOUBLER] = {"Voltage Doubler", "Dblr", "Villard/Greinacher diode-capacitor doubler"},
     [CIRCUIT_RELAXATION_OSC] = {"Relaxation Osc", "RelOsc", "Op-amp Schmitt + RC relaxation oscillator"},
     [CIRCUIT_HALFWAVE_FILTERED] = {"HW Rect + Cap", "HW+C", "Half-wave rectifier with smoothing capacitor"},
+    [CIRCUIT_HV_345_LINE] = {"345 kV Line", "345kV", "100-mile 345 kV line, 600 MW load (per-phase)"},
+    [CIRCUIT_HV_138_LINE_VAR] = {"138 kV Line + VAR", "138kV", "30-mile 138 kV line, lagging load, switchable cap bank"},
+    [CIRCUIT_MV_FEEDER] = {"12.47 kV Feeder", "Feedr", "5-mile distribution feeder, 1 MW per phase"},
+    [CIRCUIT_POLE_XFMR] = {"Pole Xfmr 120/240", "Pole", "7.2 kV to 240 V service transformer with a house load"},
+    [CIRCUIT_GEN_GSU] = {"Generator + GSU", "GenSU", "18 kV generator, step-up to 345 kV, 600 MW"},
+    [CIRCUIT_GRID_CHAIN] = {"Grid: 18 kV to 240 V", "Grid", "Generator to house through every voltage level"},
+    [CIRCUIT_FERRANTI_LINE] = {"Ferranti (open line)", "Ferr", "200-mile 345 kV pi line, open end, switchable reactor"},
+
 
 };
 
@@ -6200,6 +6208,13 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_VOLTAGE_DOUBLER:  return place_voltage_doubler(circuit, x, y);
         case CIRCUIT_RELAXATION_OSC:   return place_relaxation_osc(circuit, x, y);
         case CIRCUIT_HALFWAVE_FILTERED:return place_halfwave_filtered(circuit, x, y);
+        case CIRCUIT_HV_345_LINE:      return place_hv_345_line(circuit, x, y);
+        case CIRCUIT_HV_138_LINE_VAR:  return place_hv_138_line_var(circuit, x, y);
+        case CIRCUIT_MV_FEEDER:        return place_mv_feeder(circuit, x, y);
+        case CIRCUIT_POLE_XFMR:        return place_pole_xfmr(circuit, x, y);
+        case CIRCUIT_GEN_GSU:          return place_gen_gsu(circuit, x, y);
+        case CIRCUIT_GRID_CHAIN:       return place_grid_chain(circuit, x, y);
+        case CIRCUIT_FERRANTI_LINE:    return place_ferranti_line(circuit, x, y);
         default:
             return 0;
     }
@@ -6263,6 +6278,13 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_VOLTAGE_DOUBLER] = {"VOLTAGE DOUBLER: on negative half-cycles D1 charges C1 to Vpk (clamper); on positive", "ones the clamped waveform swings to 2*Vpk and D2 charges C2 to it (peak detector).", "Vout = 2*Vpk - 2*0.7 V. Each extra diode/cap stage adds another Vpk (Cockcroft-Walton).", "PROBE: auto-placed on source and C2. Amplitude sweeps 1-5 V: output tracks 2*A - 1.4."},
     [CIRCUIT_RELAXATION_OSC] = {"RELAXATION OSCILLATOR: the op-amp is a Schmitt trigger (R1/R2 feed half of Vout", "to +). C charges through R toward the rail until V(C) crosses the threshold, the", "output flips and C charges the other way. f = 1/(2RC*ln((1+b)/(1-b))) = 455 Hz.", "PROBE: auto-placed on OUT (square, +/-15 V). Also probe C: a triangle-ish exponential."},
     [CIRCUIT_HALFWAVE_FILTERED] = {"HALF-WAVE + SMOOTHING CAP: the diode charges C to the peak; between peaks the", "load drains it, giving a sawtooth ripple dV = I/(f*C) = (Vdc/R)/(60*100u) ~ 1.5 V.", "Bigger C or lighter load -> less ripple; this is the simplest DC supply.", "PROBE: auto-placed on the cap. Amplitude sweeps 2-10 V: DC follows Vpk - 0.7 with ripple."},
+    [CIRCUIT_HV_345_LINE] = {"345 kV TRANSMISSION LINE (ERCOT/CREZ class): single-phase equivalent of 100 miles of", "twin-Drake conductor: R = 0.06 ohm/mi, X = 0.55 ohm/mi -> 6 ohm + 145.9 mH. Source is the", "phase-to-neutral peak 345k/sqrt3*sqrt2 = 281.7 kV; the 198.4 ohm load draws 600 MW (3-ph).", "Expect I = 941 A rms, load 186.7 kV rms (264 kVpk): a 6.3 % drop, mostly I*X, lagging.", "PROBE: auto-placed at both ends. Compare amplitudes (281.7 vs 264 kVpk) and the phase lag."},
+    [CIRCUIT_HV_138_LINE_VAR] = {"138 kV LINE + VAR SUPPORT: 30 miles of single Drake (3.9 ohm + 57.3 mH) feeding 90 MW at", "power factor 0.9 lagging (171.5 ohm + 0.22 H). The reactive current through the line X", "drops the bus to about 74 kV rms (-6.7 %). Close SW: the 6.1 uF capacitor bank supplies", "the load's VARs locally and the bus recovers to ~78 kV. This is what substation cap banks do.", "PROBE: auto-placed on the source and the load bus. Toggle SW while running (100 kV/div)."},
+    [CIRCUIT_MV_FEEDER] = {"12.47 kV DISTRIBUTION FEEDER: 7.2 kV phase-to-neutral (10.18 kVpk), 5 miles of 1/0 ACSR", "(1.53 ohm + 8.22 mH), 1 MW per phase (51.84 ohm). Expect 134.5 A, 6,973 V rms at the end", "(-3.2 %). Utilities keep feeders within +/-5 % (ANSI C84.1) with regulators and cap banks.", "PROBE: auto-placed. The far end sits ~3 % below the substation; add load to see it sag."},
+    [CIRCUIT_POLE_XFMR] = {"POLE TRANSFORMER: 7.2 kV feeder phase to a 240 V service (turns ratio 30:1). A 25 kVA", "can serves a few houses; this one feeds a 5 kW load (11.5 ohm). The secondary is really", "center-tapped (two 120 V halves); here it is drawn as the full 240 V winding.", "Current scales the other way: 20.8 A on the house side is only 0.7 A on the 7.2 kV side.", "PROBE: auto-placed on the 7.2 kV side and the 240 V side (100 V/div vs 5 kV/div!)."},
+    [CIRCUIT_GEN_GSU] = {"GENERATOR + GSU: an 18 kV (line-to-line) machine, 14.7 kVpk per phase, with X'' = 0.15 pu", "on 700 MVA (0.184 mH) behind its terminals. The generator step-up transformer (1:19.17)", "lifts it to the 345 kV bus, which feeds 600 MW (198.4 ohm per phase).", "Referred to 345 kV the machine reactance is 25 ohm; at unity pf the bus stays within 1 %.", "PROBE: auto-placed on the 18 kV terminals and the 345 kV bus - note the 19x scale change."},
+    [CIRCUIT_GRID_CHAIN] = {"WHOLE GRID IN ONE LINE: generator 18 kV -> GSU -> 100 mi of 345 kV -> 345/138 kV auto", "-> 30 mi of 138 kV -> 138/12.47 kV substation -> 5 mi feeder -> pole transformer -> a house.", "Each transformer trades voltage for current; each line drops I*Z. With only this one house", "the lines are unloaded, so the 240 V end sits at ~239 V; scale the loads up to see the sag.", "PROBE: probe any bus: 14.7 kVpk, 282 kVpk, 113 kVpk, 10.2 kVpk, 339 Vpk left to right."},
+    [CIRCUIT_FERRANTI_LINE] = {"FERRANTI EFFECT: a long unloaded line is a capacitor; its charging current flowing through", "the series inductance RAISES the receiving-end voltage. 200 mi of 345 kV as a pi section:", "12 ohm + 291.8 mH with 2.12 uF at each end, open end (10 Mohm). Expect +9.9 % (309.6 kVpk).", "Close SW to connect a 3.54 H shunt reactor: it absorbs the charging VARs and cancels the rise.", "PROBE: auto-placed on both ends. The far end is HIGHER than the source until SW closes."},
 };
 
 
@@ -6468,6 +6490,221 @@ static int place_halfwave_filtered(Circuit *circuit, float x, float y) {
 #undef TN
 #undef TW
 
+
+// ---------------------------------------------------------------------------------------
+// Power-system examples (Texas / ERCOT numbers, single-phase equivalent, 60 Hz).
+// Sources are peak phase-to-neutral voltages; lines are series R-L; loads are resistors
+// sized from MW per phase. See docs/RESEARCH_TEXAS_GRID.md for the derivations.
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+
+// source -> R -> L -> node -> load, all on one row: returns the load node id
+static int chain_rl_load(Circuit *circuit, float x, float y, Component *src, double R, double L, double Rload,
+                         Component **r_out, Component **l_out, Component **load_out) {
+    Component *r = add_comp(circuit, COMP_RESISTOR, x + 80, y + 20, 0);           // (40,20)-(120,20)
+    r->props.resistor.resistance = R;
+    Component *l = add_comp(circuit, COMP_INDUCTOR, x + 180, y + 20, 0);          // (140,20)-(220,20)
+    l->props.inductor.inductance = L;
+    Component *ld = add_comp(circuit, COMP_RESISTOR, x + 280, y + 60, 90);        // (280,20)-(280,100)
+    ld->props.resistor.resistance = Rload;
+    Component *g = add_comp(circuit, COMP_GROUND, x + 280, y + 120, 0);
+    connect_terminals(circuit, src, 0, r, 0);
+    connect_terminals(circuit, r, 1, l, 0);
+    connect_terminals(circuit, ld, 1, g, 0);
+    int n = TN(x + 280, y + 20), lr = TN(x + 220, y + 20);
+    TW(lr, n);
+    l->node_ids[1] = lr; ld->node_ids[0] = n;
+    if (r_out) *r_out = r; if (l_out) *l_out = l; if (load_out) *load_out = ld;
+    return n;
+}
+
+static Component *ac_source(Circuit *circuit, float x, float y, double vpk) {
+    Component *v = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 60, 0);              // +(0,20) -(0,100)
+    if (!v) return NULL;
+    v->props.ac_voltage.amplitude = vpk; v->props.ac_voltage.frequency = 60.0;
+    Component *g = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    connect_terminals(circuit, v, 1, g, 0);
+    return v;
+}
+
+// 345 kV, 100 mi twin-Drake, 600 MW at unity pf: Vpk 281.7 kV, R 6, L 145.9 mH, Rload 198.4
+static int place_hv_345_line(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 281700.0); if (!v) return 0;
+    chain_rl_load(circuit, x, y, v, 6.0, 145.9e-3, 198.4, NULL, NULL, NULL);
+    add_label(circuit, x + 20, y - 40, "345 kV line, 100 mi, 600 MW");
+    return 6;
+}
+
+// 138 kV, 30 mi single Drake, 90 MW at pf 0.9 lag; switchable 6.1 uF (per phase) cap bank
+static int place_hv_138_line_var(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 112700.0); if (!v) return 0;
+    Component *r = add_comp(circuit, COMP_RESISTOR, x + 80, y + 20, 0);           // (40,20)-(120,20)
+    r->props.resistor.resistance = 3.9;
+    Component *l = add_comp(circuit, COMP_INDUCTOR, x + 180, y + 20, 0);          // (140,20)-(220,20)
+    l->props.inductor.inductance = 57.3e-3;
+    Component *ld = add_comp(circuit, COMP_RESISTOR, x + 280, y + 60, 90);        // (280,20)-(280,100)
+    ld->props.resistor.resistance = 171.5;
+    Component *xl = add_comp(circuit, COMP_INDUCTOR, x + 280, y + 140, 90);       // (280,100)-(280,180)
+    xl->props.inductor.inductance = 0.22;
+    Component *g = add_comp(circuit, COMP_GROUND, x + 280, y + 200, 0);
+    Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 380, y + 60, 90);     // (380,20)-(380,100)
+    sw->props.switch_spst.closed = false;
+    Component *cb = add_comp(circuit, COMP_CAPACITOR, x + 380, y + 140, 90);     // (380,100)-(380,180)
+    cb->props.capacitor.capacitance = 6.1e-6;
+    Component *gc = add_comp(circuit, COMP_GROUND, x + 380, y + 200, 0);
+    connect_terminals(circuit, v, 0, r, 0);
+    connect_terminals(circuit, r, 1, l, 0);
+    connect_terminals(circuit, xl, 1, g, 0);
+    connect_terminals(circuit, cb, 1, gc, 0);
+    int lr = TN(x + 220, y + 20), n = TN(x + 280, y + 20), swt = TN(x + 380, y + 20);
+    TW(lr, n); TW(n, swt);
+    int mid = TN(x + 280, y + 100), swb = TN(x + 380, y + 100);
+    l->node_ids[1] = lr; ld->node_ids[0] = n; ld->node_ids[1] = mid; xl->node_ids[0] = mid;
+    sw->node_ids[0] = swt; sw->node_ids[1] = swb; cb->node_ids[0] = swb;
+    add_label(circuit, x + 20, y - 40, "138 kV line, 30 mi, 90 MW pf 0.9 - close SW for the cap bank");
+    return 11;
+}
+
+// 12.47 kV feeder (7.2 kV L-N), 5 mi, 1 MW per phase: Vpk 10.18 kV, R 1.53, L 8.22 mH, Rload 51.84
+static int place_mv_feeder(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 10182.0); if (!v) return 0;
+    chain_rl_load(circuit, x, y, v, 1.53, 8.22e-3, 51.84, NULL, NULL, NULL);
+    add_label(circuit, x + 20, y - 40, "12.47 kV feeder, 5 mi, 1 MW/phase");
+    return 6;
+}
+
+// Pole transformer 7.2 kV -> 240 V (N = 1/30), 5 kW house load (11.52 ohm)
+static int place_pole_xfmr(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 10182.0); if (!v) return 0;
+    Component *t = add_comp(circuit, COMP_TRANSFORMER, x + 150, y + 20, 0);      // P1(100,0) P2(100,40) S1(200,0) S2(200,40)
+    t->props.transformer.turns_ratio = 1.0 / 30.0;
+    Component *gp = add_comp(circuit, COMP_GROUND, x + 100, y + 80, 0);          // terminal (100,60)
+    Component *house = add_comp(circuit, COMP_RESISTOR, x + 280, y + 60, 90);    // (280,20)-(280,100)
+    house->props.resistor.resistance = 11.52;
+    Component *gs = add_comp(circuit, COMP_GROUND, x + 200, y + 80, 0);          // S2 (200,40) -> (200,60)
+    Component *gh = add_comp(circuit, COMP_GROUND, x + 280, y + 120, 0);
+    add_label(circuit, x + 20, y - 40, "Pole transformer 7.2 kV : 240 V, 5 kW house");
+    int vp = TN(x, y + 20), p1 = TN(x + 100, y), c1 = TN(x + 60, y + 20), c2 = TN(x + 60, y);
+    TW(vp, c1); TW(c1, c2); TW(c2, p1);
+    int p2 = TN(x + 100, y + 40), gpt = TN(x + 100, y + 60);
+    TW(p2, gpt);
+    int s1 = TN(x + 200, y), ht = TN(x + 280, y + 20), hc = TN(x + 280, y);
+    TW(s1, hc); TW(hc, ht);
+    int s2 = TN(x + 200, y + 40), gst = TN(x + 200, y + 60);
+    TW(s2, gst);
+    connect_terminals(circuit, house, 1, gh, 0);
+    t->node_ids[0] = p1; t->node_ids[1] = p2; t->node_ids[2] = s1; t->node_ids[3] = s2;
+    gp->node_ids[0] = gpt; gs->node_ids[0] = gst; house->node_ids[0] = ht; v->node_ids[0] = vp;
+    return 7;
+}
+
+// Generator (18 kV L-L -> 14.7 kV pk L-N) with X'' = 0.15 pu on 700 MVA, GSU 1:19.17 to 345 kV, 600 MW
+static int place_gen_gsu(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 14697.0); if (!v) return 0;
+    Component *xd = add_comp(circuit, COMP_INDUCTOR, x + 60, y + 20, 0);         // (20,20)-(100,20)
+    xd->props.inductor.inductance = 0.184e-3;
+    Component *t = add_comp(circuit, COMP_TRANSFORMER, x + 190, y + 20, 0);      // P1(140,0) P2(140,40) S1(240,0) S2(240,40)
+    t->props.transformer.turns_ratio = 19.17;
+    Component *gp = add_comp(circuit, COMP_GROUND, x + 140, y + 80, 0);
+    Component *gs = add_comp(circuit, COMP_GROUND, x + 240, y + 80, 0);
+    Component *ld = add_comp(circuit, COMP_RESISTOR, x + 320, y + 60, 90);       // (320,20)-(320,100)
+    ld->props.resistor.resistance = 198.4;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 320, y + 120, 0);
+    add_label(circuit, x + 20, y - 40, "Generator 18 kV + GSU -> 345 kV bus, 600 MW");
+    connect_terminals(circuit, v, 0, xd, 0);
+    int xr = TN(x + 100, y + 20), c = TN(x + 120, y + 20), c2 = TN(x + 120, y), p1 = TN(x + 140, y);
+    TW(xr, c); TW(c, c2); TW(c2, p1);
+    int p2 = TN(x + 140, y + 40), gpt = TN(x + 140, y + 60); TW(p2, gpt);
+    int s1 = TN(x + 240, y), lc = TN(x + 320, y), lt = TN(x + 320, y + 20); TW(s1, lc); TW(lc, lt);
+    int s2 = TN(x + 240, y + 40), gst = TN(x + 240, y + 60); TW(s2, gst);
+    connect_terminals(circuit, ld, 1, gl, 0);
+    xd->node_ids[1] = xr; t->node_ids[0] = p1; t->node_ids[1] = p2; t->node_ids[2] = s1; t->node_ids[3] = s2;
+    gp->node_ids[0] = gpt; gs->node_ids[0] = gst; ld->node_ids[0] = lt;
+    return 8;
+}
+
+// Full chain: gen -> GSU -> 345 kV line -> 345/138 -> 138 kV line -> 138/12.47 -> feeder -> pole -> house
+static int place_grid_chain(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 14697.0); if (!v) return 0;
+    float cx = x;                   // running x of the "bus" node on row y
+    int bus = TN(x, y + 20);
+    int count = 2;
+    // helper lambdas as macros
+#define SERIES_RL(RR, LL) do { \
+        Component *r_ = add_comp(circuit, COMP_RESISTOR, cx + 60, y + 20, 0); r_->props.resistor.resistance = (RR); \
+        Component *l_ = add_comp(circuit, COMP_INDUCTOR, cx + 140, y + 20, 0); l_->props.inductor.inductance = (LL); \
+        int a_ = TN(cx + 20, y + 20); TW(bus, a_); r_->node_ids[0] = a_; \
+        int m_ = TN(cx + 100, y + 20); r_->node_ids[1] = m_; l_->node_ids[0] = m_; \
+        bus = TN(cx + 180, y + 20); l_->node_ids[1] = bus; cx += 180; count += 2; } while (0)
+#define XFMR(NN) do { \
+        Component *t_ = add_comp(circuit, COMP_TRANSFORMER, cx + 90, y + 20, 0); t_->props.transformer.turns_ratio = (NN); \
+        int p1_ = TN(cx + 40, y), c1_ = TN(cx + 20, y + 20), c2_ = TN(cx + 20, y); TW(bus, c1_); TW(c1_, c2_); TW(c2_, p1_); \
+        int p2_ = TN(cx + 40, y + 40), gp_ = TN(cx + 40, y + 60); TW(p2_, gp_); \
+        Component *g1_ = add_comp(circuit, COMP_GROUND, cx + 40, y + 80, 0); g1_->node_ids[0] = gp_; \
+        int s1_ = TN(cx + 140, y), s2_ = TN(cx + 140, y + 40), gs_ = TN(cx + 140, y + 60); TW(s2_, gs_); \
+        Component *g2_ = add_comp(circuit, COMP_GROUND, cx + 140, y + 80, 0); g2_->node_ids[0] = gs_; \
+        int o1_ = TN(cx + 160, y), o2_ = TN(cx + 160, y + 20); TW(s1_, o1_); TW(o1_, o2_); \
+        t_->node_ids[0] = p1_; t_->node_ids[1] = p2_; t_->node_ids[2] = s1_; t_->node_ids[3] = s2_; \
+        bus = o2_; cx += 160; count += 3; } while (0)
+    XFMR(19.17);                       // GSU 18 kV -> 345 kV
+    SERIES_RL(6.0, 145.9e-3);          // 345 kV, 100 mi
+    XFMR(0.4);                         // 345/138 kV autotransformer
+    SERIES_RL(3.9, 57.3e-3);           // 138 kV, 30 mi
+    XFMR(1.0 / 11.07);                 // 138 kV -> 12.47 kV (7.2 kV L-N)
+    SERIES_RL(1.53, 8.22e-3);          // 5-mile feeder
+    XFMR(1.0 / 30.0);                  // pole transformer -> 240 V
+#undef SERIES_RL
+#undef XFMR
+    Component *house = add_comp(circuit, COMP_RESISTOR, cx + 40, y + 60, 90);    // (cx+40,20)-(cx+40,100)
+    house->props.resistor.resistance = 11.52;
+    Component *gh = add_comp(circuit, COMP_GROUND, cx + 40, y + 120, 0);
+    int ht = TN(cx + 40, y + 20); TW(bus, ht); house->node_ids[0] = ht;
+    connect_terminals(circuit, house, 1, gh, 0);
+    add_label(circuit, x + 200, y - 60, "Grid chain: generator -> 345 kV -> 138 kV -> 12.47 kV -> 240 V house");
+    return count + 2;
+}
+
+// Ferranti effect: 200-mi 345 kV line as a pi section, open at the far end (10 MOhm), with a
+// switchable 3.54 H shunt reactor. Receiving end rises to about +9.9 %.
+static int place_ferranti_line(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 281700.0); if (!v) return 0;
+    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 40, y + 80, 90);        // (40,40)-(40,120)
+    c1->props.capacitor.capacitance = 2.12e-6;
+    Component *g1 = add_comp(circuit, COMP_GROUND, x + 40, y + 140, 0);
+    Component *r = add_comp(circuit, COMP_RESISTOR, x + 120, y + 20, 0);         // (80,20)-(160,20)
+    r->props.resistor.resistance = 12.0;
+    Component *l = add_comp(circuit, COMP_INDUCTOR, x + 220, y + 20, 0);         // (180,20)-(260,20)
+    l->props.inductor.inductance = 291.8e-3;
+    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 300, y + 80, 90);      // (300,40)-(300,120)
+    c2->props.capacitor.capacitance = 2.12e-6;
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 300, y + 140, 0);
+    Component *open_load = add_comp(circuit, COMP_RESISTOR, x + 380, y + 60, 90); // (380,20)-(380,100)
+    open_load->props.resistor.resistance = 1e7;
+    Component *g3 = add_comp(circuit, COMP_GROUND, x + 380, y + 120, 0);
+    Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 460, y + 60, 90);    // (460,20)-(460,100)
+    sw->props.switch_spst.closed = false;
+    Component *xr = add_comp(circuit, COMP_INDUCTOR, x + 460, y + 140, 90);      // (460,100)-(460,180)
+    xr->props.inductor.inductance = 3.54;
+    Component *g4 = add_comp(circuit, COMP_GROUND, x + 460, y + 200, 0);
+    add_label(circuit, x + 20, y - 40, "Ferranti rise: 345 kV, 200 mi, open end - close SW for the shunt reactor");
+    int vp = TN(x, y + 20), c1t = TN(x + 40, y + 40), c1c = TN(x + 40, y + 20), rl = TN(x + 80, y + 20);
+    TW(vp, c1c); TW(c1c, c1t); TW(c1c, rl);
+    connect_terminals(circuit, c1, 1, g1, 0);
+    connect_terminals(circuit, r, 1, l, 0);
+    int lr = TN(x + 260, y + 20), c2c = TN(x + 300, y + 20), c2t = TN(x + 300, y + 40), ot = TN(x + 380, y + 20), swt = TN(x + 460, y + 20);
+    TW(lr, c2c); TW(c2c, c2t); TW(c2c, ot); TW(ot, swt);
+    connect_terminals(circuit, c2, 1, g2, 0);
+    connect_terminals(circuit, open_load, 1, g3, 0);
+    connect_terminals(circuit, xr, 1, g4, 0);
+    int swb = TN(x + 460, y + 100);
+    r->node_ids[0] = rl; l->node_ids[1] = lr; c1->node_ids[0] = c1t; c2->node_ids[0] = c2t; open_load->node_ids[0] = ot;
+    sw->node_ids[0] = swt; sw->node_ids[1] = swb; xr->node_ids[0] = swb; v->node_ids[0] = vp;
+    return 14;
+}
+#undef TN
+#undef TW
+
 // Output node to probe for each template (component type, ordinal among that type, terminal)
 typedef struct { ComponentType ct; int ord, term; } TemplateProbeSpec;
 static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
@@ -6524,6 +6761,13 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_VOLTAGE_DOUBLER]  = { COMP_CAPACITOR, 1, 0 },
     [CIRCUIT_RELAXATION_OSC]   = { COMP_OPAMP, 0, 2 },
     [CIRCUIT_HALFWAVE_FILTERED]= { COMP_CAPACITOR, 0, 0 },
+    [CIRCUIT_HV_345_LINE]      = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_HV_138_LINE_VAR]  = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_MV_FEEDER]        = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_POLE_XFMR]        = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_GEN_GSU]          = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_GRID_CHAIN]       = { COMP_RESISTOR, 3, 0 },
+    [CIRCUIT_FERRANTI_LINE]    = { COMP_RESISTOR, 1, 0 },
 };
 
 // Scope time/div that shows the interesting behaviour of each template
@@ -6546,6 +6790,8 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_CLAMPER] = 50e-3, [CIRCUIT_PHASE_SHIFT_OSC] = 50e-6,
     [CIRCUIT_RC_BANDPASS] = 200e-6, [CIRCUIT_LC_LOWPASS] = 200e-6, [CIRCUIT_ZENER_CLIPPER] = 50e-3,
     [CIRCUIT_VOLTAGE_DOUBLER] = 50e-3, [CIRCUIT_RELAXATION_OSC] = 1e-3, [CIRCUIT_HALFWAVE_FILTERED] = 50e-3,
+    [CIRCUIT_HV_345_LINE] = 5e-3, [CIRCUIT_HV_138_LINE_VAR] = 5e-3, [CIRCUIT_MV_FEEDER] = 5e-3, [CIRCUIT_POLE_XFMR] = 5e-3,
+    [CIRCUIT_GEN_GSU] = 5e-3, [CIRCUIT_GRID_CHAIN] = 5e-3, [CIRCUIT_FERRANTI_LINE] = 5e-3,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -6561,6 +6807,8 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_AC_DC_AMERICAN] = 5.0, [CIRCUIT_CENTERTAP_RECT] = 2.0, [CIRCUIT_HALFWAVE_RECT] = 2.0,
     [CIRCUIT_RC_BANDPASS] = 0.5, [CIRCUIT_LC_LOWPASS] = 0.5, [CIRCUIT_ZENER_CLIPPER] = 5.0,
     [CIRCUIT_VOLTAGE_DOUBLER] = 2.0, [CIRCUIT_RELAXATION_OSC] = 5.0, [CIRCUIT_HALFWAVE_FILTERED] = 5.0,
+    [CIRCUIT_HV_345_LINE] = 100e3, [CIRCUIT_HV_138_LINE_VAR] = 50e3, [CIRCUIT_MV_FEEDER] = 5e3, [CIRCUIT_POLE_XFMR] = 100.0,
+    [CIRCUIT_GEN_GSU] = 100e3, [CIRCUIT_GRID_CHAIN] = 100.0, [CIRCUIT_FERRANTI_LINE] = 100e3,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -6618,6 +6866,13 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_VOLTAGE_DOUBLER]  = { DEMO_ENVELOPE, 1000 },
     [CIRCUIT_RELAXATION_OSC]   = { DEMO_OSC, 455 },
     [CIRCUIT_HALFWAVE_FILTERED]= { DEMO_ENVELOPE, 60 },
+    [CIRCUIT_HV_345_LINE]      = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_HV_138_LINE_VAR]  = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_MV_FEEDER]        = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_POLE_XFMR]        = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_GEN_GSU]          = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_GRID_CHAIN]       = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_FERRANTI_LINE]    = { DEMO_WAVEFORM, 60 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
