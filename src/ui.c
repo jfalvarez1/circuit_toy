@@ -3384,8 +3384,20 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             bool use_capture = false;
 
             if (trigger_idx >= 0) {
-                // Found a trigger - capture the data CENTERED around the trigger point
+                // Found a trigger - capture the data CENTERED around the trigger point.
+                // Interpolate the crossing between the two straddling samples: with 15-20 samples
+                // per division a sample-quantised trigger point jitters the whole trace by up to
+                // one step every refresh.
                 double trigger_time = trig_times[trigger_idx];
+                {
+                    double v0 = trig_values[trigger_idx - 1], v1 = trig_values[trigger_idx];
+                    double t0 = trig_times[trigger_idx - 1], t1 = trig_times[trigger_idx];
+                    if (v1 != v0) {
+                        double fr = (ui->trigger_level - v0) / (v1 - v0);
+                        if (fr < 0) fr = 0; if (fr > 1) fr = 1;
+                        trigger_time = t0 + fr * (t1 - t0);
+                    }
+                }
                 ui->scope_last_trigger_time = trigger_time;
                 ui->scope_trigger_sample_idx = trigger_idx;
                 ui->triggered = true;
@@ -3555,7 +3567,9 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 if (t_span >= time_window * 0.9) {
                     // When triggered (NORMAL/SINGLE mode), position waveform so trigger
                     // appears at the trigger_position (horizontal trigger position)
-                    if (ui->triggered && ui->trigger_mode != TRIG_AUTO &&
+                    // AUTO mode included: a found trigger anchors the trace; only when none was
+                    // found does AUTO free-run (that is what AUTO means on a real scope)
+                    if (ui->triggered && trigger_idx >= 0 &&
                         ui->scope_last_trigger_time >= t_start && ui->scope_last_trigger_time <= t_end) {
                         // Position the trigger point at trigger_position on screen
                         // t_reference is the time at x=0, trigger is at trigger_position

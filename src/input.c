@@ -1345,6 +1345,10 @@ void input_handle_key(InputState *input, SDL_Keycode key,
     bool shift = input->shift_down;
 
     switch (key) {
+        case SDLK_F2:
+            render->show_values = !render->show_values;   // component value labels on the canvas
+            break;
+
         case SDLK_ESCAPE:
             input_cancel_action(input);
             input_set_tool(input, TOOL_SELECT);

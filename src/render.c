@@ -12,6 +12,47 @@
 void render_fuse(RenderContext *ctx, float x, float y, int rotation, bool blown, double heat_level);
 void render_crystal(RenderContext *ctx, float x, float y, int rotation);
 void render_spark_gap(RenderContext *ctx, float x, float y, int rotation);
+// Value label next to a component: R / C / L / source volts / line miles / transformer ratio ...
+static void render_component_value(RenderContext *ctx, Component *comp) {
+    char buf[64] = "";
+    switch (comp->type) {
+        case COMP_GROUND: case COMP_TEXT: case COMP_LABEL: case COMP_PIN: case COMP_SUBCIRCUIT:
+        case COMP_VOLTMETER: case COMP_AMMETER: case COMP_WATTMETER: case COMP_TEST_POINT:
+        case COMP_NOT_GATE: case COMP_AND_GATE: case COMP_OR_GATE: case COMP_NAND_GATE: case COMP_NOR_GATE: case COMP_XOR_GATE: case COMP_XNOR_GATE:
+        case COMP_OPAMP: case COMP_OPAMP_FLIPPED: case COMP_SPST_SWITCH: case COMP_SPDT_SWITCH: case COMP_DPDT_SWITCH: case COMP_ANALOG_SWITCH:
+        case COMP_DIODE: case COMP_SCHOTTKY: case COMP_NPN_BJT: case COMP_PNP_BJT: case COMP_NMOS: case COMP_PMOS:
+            return;
+        case COMP_TRANSFORMER: case COMP_TRANSFORMER_CT:
+            snprintf(buf, sizeof buf, "1:%.4g", comp->props.transformer.turns_ratio);
+            break;
+        case COMP_TLINE: {
+            double R, L, C; tline_params(comp, &R, &L, &C);
+            snprintf(buf, sizeof buf, "%.4g mi  %.3g+j%.3g", comp->props.tline.length_mi, R, 2 * M_PI * 60 * L);
+            break;
+        }
+        case COMP_SOURCE_3PH:
+            snprintf(buf, sizeof buf, "3ph %.4g kV L-L", comp->props.source_3ph.v_peak / 1.41421356 * 1.7320508 / 1e3);
+            break;
+        case COMP_AC_VOLTAGE: {
+            char v[24]; format_engineering(comp->props.ac_voltage.amplitude, "V", v, sizeof v);
+            snprintf(buf, sizeof buf, "%spk %.4gHz", v, comp->props.ac_voltage.frequency);
+            break;
+        }
+        case COMP_ZENER: snprintf(buf, sizeof buf, "%.3gV", comp->props.zener.vz); break;
+        default:
+            component_get_value_string(comp, buf, sizeof buf);
+            break;
+    }
+    if (!buf[0]) return;
+    const ComponentTypeInfo *info = component_get_info(comp->type);
+    int rot = ((comp->rotation % 360) + 360) % 360;
+    float w = info ? info->width : 60, h = info ? info->height : 40;
+    float lx, ly;
+    if (rot == 90 || rot == 270) { lx = comp->x + h / 2 + 4; ly = comp->y - 5; }      // vertical part: label to the right
+    else                         { lx = comp->x - w / 2 + 4; ly = comp->y + h / 2 + 3; } // horizontal: label below
+    int sx, sy; render_world_to_screen(ctx, lx, ly, &sx, &sy);
+    render_draw_text_small(ctx, buf, sx, sy, (Color){0xa0, 0xb4, 0xc8, 0xff});
+}
 static void render_volt_str(char *out, size_t n, double v) {
     if (fabs(v) >= 1000.0) snprintf(out, n, "%.4gkV", v / 1e3);
     else snprintf(out, n, "%.2fV", v);
@@ -1715,6 +1756,7 @@ void render_circuit(RenderContext *ctx, Circuit *circuit) {
     // Draw components
     for (int i = 0; i < circuit->num_components; i++) {
         render_component(ctx, circuit->components[i]);
+        if (ctx->show_values) render_component_value(ctx, circuit->components[i]);
     }
 
     // Draw current flow animation through components (after components so particles appear on top)

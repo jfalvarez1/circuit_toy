@@ -126,6 +126,7 @@ bool app_init(App *app) {
 
     // Set initial state
     app->running = true;
+    app->render->show_values = true;
     app->show_voltages = false;
     app->show_current = false;
     app->last_frame_time = SDL_GetTicks();

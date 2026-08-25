@@ -7963,7 +7963,7 @@ static Component *three_phase_fanout(Circuit *circuit, float x, float y, double 
     g->node_ids[0] = a; g->node_ids[1] = b; g->node_ids[2] = c; g->node_ids[3] = nn; gn->node_ids[0] = nn;
     int a1 = TN(x + 120, y + 40), a2 = TN(x + 120, ry[0]), a3 = TN(x + 160, ry[0]); TW(a, a1); TW(a1, a2); TW(a2, a3);
     int b1 = TN(x + 140, y + 60), b2 = TN(x + 140, ry[1]), b3 = TN(x + 160, ry[1]); TW(b, b1); TW(b1, b2); TW(b2, b3);
-    int c1 = TN(x + 160, y + 80), c2 = TN(x + 160, ry[2]), c3 = c2; TW(c, c1); TW(c1, c2);   // 20 px from B's vertical (nodes merge within 10 px)
+    int c1 = TN(x + 120, y + 80), c2 = TN(x + 120, ry[2]), c3 = TN(x + 160, ry[2]); TW(c, c1); TW(c1, c2); TW(c2, c3);   // x+160,y+80 is transformer B's P2
     out[0] = a3; out[1] = b3; out[2] = c3;
     return g;
 }

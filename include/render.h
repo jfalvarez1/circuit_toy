@@ -25,6 +25,7 @@ typedef struct {
     // Options
     bool show_grid;
     bool show_voltages;
+    bool show_values;   // component value labels (F2)
     bool show_current;
     bool snap_to_grid;
     bool show_heatmap;  // Thermal heatmap overlay mode
