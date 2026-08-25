@@ -122,8 +122,8 @@ static int scope_dt_test(void) {
     Simulation *sim2 = simulation_create(c2);
     {
         double got = simulation_scope_time_step(sim2, 100.0);
-        int ok = fabs(got - 1e-7) < 1e-12;   /* no AC source: accuracy step = DEFAULT 100 ns */
-        printf("[%s] scope-dt  DC circuit 100 s/div -> dt=%.3g (want 1e-07: default accuracy step)\n",
+        int ok = fabs(got - 0.01) < 1e-12;   /* no periodic source: the scope rule alone, clamped to MAX_TIME_STEP */
+        printf("[%s] scope-dt  DC circuit 100 s/div -> dt=%.3g (want 0.01: no periodic source, scope rule + clamp)\n",
                ok ? " OK " : "FAIL", got);
         if (!ok) fails++;
     }
