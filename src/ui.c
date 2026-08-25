@@ -3618,8 +3618,8 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 }
 
                 // Draw trigger point marker (small T on the waveform)
-                if (trigger_idx >= 0 && ui->trigger_mode != TRIG_AUTO) {
-                    // Show trigger indicator at the trigger_position
+                if (trigger_idx >= 0) {
+                    // Show trigger indicator at the trigger_position (AUTO too: it tells you the level worked)
                     int trig_x = r->x + (int)(ui->trigger_position * r->w);
                     trig_x = CLAMP(trig_x, r->x, r->x + r->w);
                     SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);  // Orange
@@ -3948,6 +3948,21 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x00, 0xff);
     format_volt_value(buf, sizeof(buf), ui->scope_volt_div);
     ui_draw_text(renderer, buf, r->x + 160, info_y);
+
+    // Trigger readout: channel, level, edge, mode
+    {
+        static const char *modes[] = { "AUTO", "NORM", "SNGL" };
+        static const char *edges[] = { "/", "\\", "X" };
+        char lv[24];
+        if (fabs(ui->trigger_level) >= 1000) snprintf(lv, sizeof lv, "%.3gkV", ui->trigger_level / 1e3);
+        else if (fabs(ui->trigger_level) < 0.1 && ui->trigger_level != 0) snprintf(lv, sizeof lv, "%.0fmV", ui->trigger_level * 1e3);
+        else snprintf(lv, sizeof lv, "%.2fV", ui->trigger_level);
+        SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+        ui_draw_text(renderer, "TRIG", r->x + 230, info_y);
+        SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);
+        snprintf(buf, sizeof(buf), "CH%d %s %s %s", ui->trigger_channel + 1, lv, edges[ui->trigger_edge % 3], modes[ui->trigger_mode % 3]);
+        ui_draw_text(renderer, buf, r->x + 270, info_y);
+    }
 
     // Channel info with voltage readings
     info_y += 15;

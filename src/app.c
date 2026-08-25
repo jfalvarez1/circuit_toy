@@ -441,13 +441,22 @@ void app_handle_events(App *app) {
                                        SCOPE_MODE_XY : SCOPE_MODE_YT;
                 break;
             case UI_ACTION_SCOPE_TRIG_UP:
-                // Increase trigger level by 0.1V (or scaled by volts/div)
-                app->ui.trigger_level += app->ui.scope_volt_div * 0.2;
+            case UI_ACTION_SCOPE_TRIG_DOWN: {
+                // One fifth of a division per click, kept inside the visible +/-4 divisions
+                double step = app->ui.scope_volt_div * 0.2;
+                double lim = 4.0 * app->ui.scope_volt_div;
+                app->ui.trigger_level += (app->input.pending_ui_action == UI_ACTION_SCOPE_TRIG_UP) ? step : -step;
+                if (app->ui.trigger_level > lim) app->ui.trigger_level = lim;
+                if (app->ui.trigger_level < -lim) app->ui.trigger_level = -lim;
+                app->ui.scope_capture_valid = false;   // re-trigger at the new level right away
+                char msg[96], vs[32];
+                if (fabs(app->ui.trigger_level) >= 1000) snprintf(vs, sizeof vs, "%.4g kV", app->ui.trigger_level / 1e3);
+                else if (fabs(app->ui.trigger_level) < 0.1 && app->ui.trigger_level != 0) snprintf(vs, sizeof vs, "%.1f mV", app->ui.trigger_level * 1e3);
+                else snprintf(vs, sizeof vs, "%.2f V", app->ui.trigger_level);
+                snprintf(msg, sizeof msg, "Trigger level %s on CH%d (drag the orange line to set it directly)", vs, app->ui.trigger_channel + 1);
+                ui_set_status(&app->ui, msg);
                 break;
-            case UI_ACTION_SCOPE_TRIG_DOWN:
-                // Decrease trigger level by 0.1V (or scaled by volts/div)
-                app->ui.trigger_level -= app->ui.scope_volt_div * 0.2;
-                break;
+            }
             case UI_ACTION_SCOPE_SCREENSHOT:
                 // Capture oscilloscope display as BMP
                 {
@@ -1640,10 +1649,16 @@ void app_update(App *app) {
         app->simulation->history_count >= 200) {
         static double t_buf[MAX_HISTORY], v_buf[MAX_HISTORY];
         double vmax = 0, span = 0;
+        double ch_min[MAX_PROBES], ch_max[MAX_PROBES]; int nprobes = 0;
         for (int pi = 0; pi < app->circuit->num_probes && pi < MAX_PROBES; pi++) {
             int n = simulation_get_history(app->simulation, pi, t_buf, v_buf, MAX_HISTORY);
+            ch_min[pi] = 1e300; ch_max[pi] = -1e300; nprobes = pi + 1;
             if (n > 1) span = t_buf[n - 1] - t_buf[0];
-            for (int i = 0; i < n; i++) if (fabs(v_buf[i]) > vmax) vmax = fabs(v_buf[i]);
+            for (int i = 0; i < n; i++) {
+                if (fabs(v_buf[i]) > vmax) vmax = fabs(v_buf[i]);
+                if (v_buf[i] < ch_min[pi]) ch_min[pi] = v_buf[i];
+                if (v_buf[i] > ch_max[pi]) ch_max[pi] = v_buf[i];
+            }
         }
         // Sources: never choose a scale that clips the drive signal itself
         for (int i = 0; i < app->circuit->num_components; i++) {
@@ -1672,6 +1687,24 @@ void app_update(App *app) {
             if (vd > 500e3) vd = 500e3;
             app->ui.scope_volt_div = vd;
             app->ui.scope_auto_vdiv_pending = false;
+            // Trigger from real data: a 0 V level never fires on rectified / pulsed / DC-offset
+            // outputs, so the display free-runs and jitters. Prefer the current trigger channel
+            // if it actually swings, else the channel with the largest swing; level = mid-range.
+            {
+                int best = -1; double best_swing = 0;
+                for (int pi = 0; pi < nprobes; pi++) {
+                    if (ch_max[pi] < ch_min[pi]) continue;
+                    double sw = ch_max[pi] - ch_min[pi];
+                    if (sw > best_swing) { best_swing = sw; best = pi; }
+                }
+                int tc = app->ui.trigger_channel;
+                if (tc >= 0 && tc < nprobes && ch_max[tc] >= ch_min[tc] && (ch_max[tc] - ch_min[tc]) > 0.1 * best_swing && (ch_max[tc] - ch_min[tc]) > 1e-6) best = tc;
+                if (best >= 0 && best_swing > 1e-6) {
+                    app->ui.trigger_channel = best;
+                    app->ui.trigger_level = 0.5 * (ch_min[best] + ch_max[best]);
+                    app->ui.scope_capture_valid = false;
+                }
+            }
         }
     }
     app->ui.sim_realtime_ratio = app->sim_realtime_ratio;
