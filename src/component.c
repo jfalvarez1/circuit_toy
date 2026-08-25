@@ -121,6 +121,22 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         }}
     },
 
+    [COMP_LOAD_HP] = {
+        "HP Load", "R", 2,
+        {{ -40, 0, "1" }, { 40, 0, "2" }},
+        80, 20,
+        { .resistor = {
+            .resistance = 1000.0,
+            .tolerance = 5.0,
+            .power_rating = 1e12,
+            .power_dissipated = 0.0,
+            .temp_coeff = 100.0,    // 100 ppm/°C (typical for carbon film)
+            .temp = 25.0,           // Room temperature
+            .ideal = true,
+            .high_power = true
+        }}
+    },
+
     [COMP_CAPACITOR] = {
         "Capacitor", "C", 2,
         {{ -40, 0, "1" }, { 40, 0, "2" }},
@@ -1822,7 +1838,7 @@ Component *component_create(ComponentType type, float x, float y) {
     const ComponentTypeInfo *info = component_get_info(type);
 
     comp->id = next_component_id++;
-    comp->type = type;
+    comp->type = (type == COMP_LOAD_HP) ? COMP_RESISTOR : type;   // HP load is a resistor flavour
     comp->x = x;
     comp->y = y;
     comp->rotation = 0;
@@ -1904,7 +1920,7 @@ Component *component_create(ComponentType type, float x, float y) {
     // Component-specific thermal parameters
     switch (type) {
         case COMP_RESISTOR:
-            comp->thermal.max_temperature = 155.0;   // Typical resistor max temp
+            comp->thermal.max_temperature = comp->props.resistor.high_power ? 0.0 : 155.0;   // HP loads: no thermal limit
             comp->thermal.thermal_mass = 0.1;        // Small thermal mass
             comp->thermal.thermal_resistance = 100.0; // °C/W to ambient
             break;

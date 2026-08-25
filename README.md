@@ -252,6 +252,10 @@ New components make this possible:
   when the current stays below the hold level; arcs are drawn while it conducts.
 - **Toroid** - Tesla-coil topload whose capacitance follows its outer/tube diameter (Bert Pool
   formula); corona streaks appear above ~50 kV.
+- **HP load** (`R_HP`) - a resistor drawn as a box with no thermal limit, for loads, line and fault
+  resistors that dissipate kilowatts to megawatts; the power-system and Tesla templates use it
+  automatically (small sense resistors keep the normal part and its overload warning). Its label
+  shows the real dissipation (e.g. `198 Ohm 221 MW`).
 - **3-phase source** - a generator / grid block with A, B, C at 0 / -120 / +120 degrees and a common
   neutral, per-phase series R and L (a machine's X''); the Power Plant and Transmission Substation
   templates are built from it.
@@ -524,6 +528,15 @@ build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
 build/tools/template_smoke.exe --response "RC BP"   # amplitude vs frequency of every node during the sweep
 build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
 build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template in the palette)
+```
+
+The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
+which produced the images in this README):
+
+```bash
+build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
+build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
+build/circuit-playground.exe --help
 ```
 
 The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,

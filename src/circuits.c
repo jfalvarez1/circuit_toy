@@ -8382,6 +8382,23 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
     }
     if (min_x > 1e8f) { min_x = x - 100; max_y = y + 200; }
 
+    // Power-system / high-voltage templates: their loads, line and fault resistors dissipate kW-MW.
+    // Make them high-power loads (box symbol, no thermal warning); small sense resistors (< 5 ohm:
+    // CT burdens, R_d) keep the normal resistor so a real overload still shows.
+    {
+        const CircuitTemplateInfo *tinfo = circuit_template_get_info(type);
+        if (tinfo && (tinfo->group == TG_POWER_SYSTEMS || tinfo->group == TG_HIGH_VOLTAGE)) {
+            for (int i = first; i < circuit->num_components; i++) {
+                Component *c = circuit->components[i];
+                if (c->type == COMP_RESISTOR && c->props.resistor.resistance >= 5.0) {
+                    c->props.resistor.high_power = true;
+                    c->props.resistor.power_rating = 1e12;
+                    c->thermal.max_temperature = 0.0;
+                }
+            }
+        }
+    }
+
     // Auto-place probes: CH1 on the input source (+ terminal), CH2 on the output node,
     // so the scope shows the circuit working the moment it is run.
     {

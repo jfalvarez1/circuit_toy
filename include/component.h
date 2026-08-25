@@ -53,6 +53,7 @@ typedef union {
         double resistance;      // Resistance (Ohm)
         double tolerance;       // Tolerance (%)
         double power_rating;    // Max power dissipation (W)
+        bool high_power;        // HP load: box symbol, no thermal warning (power-system loads, fault resistors)
         double power_dissipated; // Current power dissipation (W)
         double temp_coeff;      // Temperature coefficient (ppm/°C), default: 100
         double temp;            // Operating temperature (°C), default: 25

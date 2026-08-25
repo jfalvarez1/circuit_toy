@@ -12,6 +12,7 @@
 void render_fuse(RenderContext *ctx, float x, float y, int rotation, bool blown, double heat_level);
 void render_crystal(RenderContext *ctx, float x, float y, int rotation);
 void render_spark_gap(RenderContext *ctx, float x, float y, int rotation);
+void render_load_hp(RenderContext *ctx, float x, float y, int rotation);
 // Value label next to a component: R / C / L / source volts / line miles / transformer ratio ...
 static void render_component_value(RenderContext *ctx, Component *comp) {
     char buf[64] = "";
@@ -42,6 +43,10 @@ static void render_component_value(RenderContext *ctx, Component *comp) {
         default:
             component_get_value_string(comp, buf, sizeof buf);
             break;
+    }
+    if (comp->type == COMP_RESISTOR && comp->props.resistor.high_power && comp->props.resistor.power_dissipated > 0) {
+        char pw[24]; format_engineering(comp->props.resistor.power_dissipated, "W", pw, sizeof pw);
+        size_t n = strlen(buf); snprintf(buf + n, sizeof buf - n, "  %s", pw);   // show the real dissipation instead of a warning
     }
     if (!buf[0]) return;
     const ComponentTypeInfo *info = component_get_info(comp->type);
@@ -745,6 +750,7 @@ void render_component(RenderContext *ctx, Component *comp) {
             render_current_source(ctx, comp->x, comp->y, comp->rotation);
             break;
         case COMP_RESISTOR:
+            if (comp->props.resistor.high_power) { render_load_hp(ctx, comp->x, comp->y, comp->rotation); break; }
             // Color based on power dissipation vs rating
             if (!comp->selected && !comp->highlighted) {
                 double pwr_ratio = comp->props.resistor.power_dissipated / comp->props.resistor.power_rating;
@@ -1865,6 +1871,22 @@ void render_current_source(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_line_rotated(ctx, x, y, 0, 10, 0, -10, rotation);
     render_draw_line_rotated(ctx, x, y, -5, -5, 0, -10, rotation);
     render_draw_line_rotated(ctx, x, y, 5, -5, 0, -10, rotation);
+}
+
+// High-power load: IEC box symbol with a bold outline (no thermal colouring)
+void render_load_hp(RenderContext *ctx, float x, float y, int rotation) {
+    render_draw_line_rotated(ctx, x, y, -40, 0, -28, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 28, 0, 40, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, -28, -9, 28, -9, rotation);
+    render_draw_line_rotated(ctx, x, y, -28, 9, 28, 9, rotation);
+    render_draw_line_rotated(ctx, x, y, -28, -9, -28, 9, rotation);
+    render_draw_line_rotated(ctx, x, y, 28, -9, 28, 9, rotation);
+    render_draw_line_rotated(ctx, x, y, -28, -8, 28, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -28, 8, 28, 8, rotation);
+    // diagonal hatch = "load"
+    render_draw_line_rotated(ctx, x, y, -20, 8, -12, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, -4, 8, 4, -8, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, 8, 20, -8, rotation);
 }
 
 void render_resistor(RenderContext *ctx, float x, float y, int rotation) {

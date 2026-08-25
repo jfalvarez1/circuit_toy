@@ -267,6 +267,7 @@ void ui_init(UIState *ui) {
     // === PASSIVES SECTION (index 17) ===
     NEW_SECTION(PCAT_PASSIVES);
     ADD_COMP(COMP_RESISTOR, "R");
+    ADD_COMP(COMP_LOAD_HP, "R_HP");
     ADD_COMP(COMP_CAPACITOR, "C");
     ADD_COMP(COMP_CAPACITOR_ELEC, "Elec");
     ADD_COMP(COMP_INDUCTOR, "L");
@@ -1713,7 +1714,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 if (pwr_ratio > 1.0) SDL_SetRenderDrawColor(renderer, 0xff, 0x40, 0x40, 0xff);
                 else if (pwr_ratio > 0.8) SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);
                 else SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
-                snprintf(buf, sizeof(buf), "%.2fW/%.2fW", selected->props.resistor.power_dissipated, selected->props.resistor.power_rating);
+                if (selected->props.resistor.high_power) { char pw[24]; format_engineering(selected->props.resistor.power_dissipated, "W", pw, sizeof pw); snprintf(buf, sizeof(buf), "%s (HP load, no limit)", pw); }
+                else snprintf(buf, sizeof(buf), "%.2fW/%.2fW", selected->props.resistor.power_dissipated, selected->props.resistor.power_rating);
                 ui_draw_text(renderer, buf, x + 100, prop_y + 2);
                 break;
             }

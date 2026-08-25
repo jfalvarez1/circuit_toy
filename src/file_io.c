@@ -236,7 +236,8 @@ bool file_export_json(Circuit *circuit, const char *filename) {
         if (comp->type == COMP_RESISTOR) {
             fprintf(f, ",\n");
             fprintf(f, "      \"properties\": {\n");
-            fprintf(f, "        \"resistance\": %.6e\n", comp->props.resistor.resistance);
+            fprintf(f, "        \"resistance\": %.6e,\n", comp->props.resistor.resistance);
+            fprintf(f, "        \"high_power\": %d\n", comp->props.resistor.high_power ? 1 : 0);
             fprintf(f, "      }");
             has_props = true;
         } else if (comp->type == COMP_CAPACITOR) {
@@ -430,6 +431,11 @@ bool file_import_json(Circuit *circuit, const char *filename) {
                                     double resistance;
                                     if (sscanf(res_ptr, "\"resistance\": %lf", &resistance) == 1) {
                                         comp->props.resistor.resistance = resistance;
+                                    }
+                                    char *hp_ptr = strstr(props_ptr, "\"high_power\":");
+                                    if (hp_ptr && (!next_comp || hp_ptr < next_comp)) {
+                                        int hp = 0;
+                                        if (sscanf(hp_ptr + 13, " %d", &hp) == 1 && hp) { comp->props.resistor.high_power = true; comp->props.resistor.power_rating = 1e12; comp->thermal.max_temperature = 0.0; }
                                     }
                                 }
                             } else if (comp->type == COMP_SOURCE_3PH) {
