@@ -142,85 +142,85 @@
 
 // Circuit template info table
 static const CircuitTemplateInfo template_info[] = {
-    [CIRCUIT_NONE] = {"None", "None", "No circuit"},
-    [CIRCUIT_RC_LOWPASS] = {"RC Low Pass", "LP", "RC low-pass filter (fc=1.6kHz)"},
-    [CIRCUIT_RC_HIGHPASS] = {"RC High Pass", "HP", "RC high-pass filter (fc=1.6kHz)"},
-    [CIRCUIT_RL_LOWPASS] = {"RL Low Pass", "RL-LP", "RL low-pass filter"},
-    [CIRCUIT_RL_HIGHPASS] = {"RL High Pass", "RL-HP", "RL high-pass filter"},
-    [CIRCUIT_VOLTAGE_DIVIDER] = {"Voltage Divider", "Div", "Resistive voltage divider (1:1)"},
-    [CIRCUIT_INVERTING_AMP] = {"Inverting Amp", "Inv", "Inverting op-amp (gain=-10)"},
-    [CIRCUIT_NONINVERTING_AMP] = {"Non-Inv Amp", "NonI", "Non-inverting op-amp (gain=11)"},
-    [CIRCUIT_VOLTAGE_FOLLOWER] = {"Voltage Follower", "Fol", "Unity gain buffer"},
-    [CIRCUIT_HALFWAVE_RECT] = {"Half-Wave Rect", "HW", "Half-wave rectifier"},
-    [CIRCUIT_LED_WITH_RESISTOR] = {"LED + Resistor", "LED", "LED with current limiting resistor"},
+    [CIRCUIT_NONE] = {"None", "None", "No circuit", TG_BASICS},
+    [CIRCUIT_RC_LOWPASS] = {"RC Low Pass", "LP", "RC low-pass filter (fc=1.6kHz)", TG_FILTERS},
+    [CIRCUIT_RC_HIGHPASS] = {"RC High Pass", "HP", "RC high-pass filter (fc=1.6kHz)", TG_FILTERS},
+    [CIRCUIT_RL_LOWPASS] = {"RL Low Pass", "RL-LP", "RL low-pass filter", TG_FILTERS},
+    [CIRCUIT_RL_HIGHPASS] = {"RL High Pass", "RL-HP", "RL high-pass filter", TG_FILTERS},
+    [CIRCUIT_VOLTAGE_DIVIDER] = {"Voltage Divider", "Div", "Resistive voltage divider (1:1)", TG_BASICS},
+    [CIRCUIT_INVERTING_AMP] = {"Inverting Amp", "Inv", "Inverting op-amp (gain=-10)", TG_OPAMPS},
+    [CIRCUIT_NONINVERTING_AMP] = {"Non-Inv Amp", "NonI", "Non-inverting op-amp (gain=11)", TG_OPAMPS},
+    [CIRCUIT_VOLTAGE_FOLLOWER] = {"Voltage Follower", "Fol", "Unity gain buffer", TG_OPAMPS},
+    [CIRCUIT_HALFWAVE_RECT] = {"Half-Wave Rect", "HW", "Half-wave rectifier", TG_POWER_SUPPLY},
+    [CIRCUIT_LED_WITH_RESISTOR] = {"LED + Resistor", "LED", "LED with current limiting resistor", TG_BASICS},
     // Transistor amplifiers
-    [CIRCUIT_COMMON_EMITTER] = {"Common Emitter", "CE", "BJT common-emitter amplifier"},
-    [CIRCUIT_COMMON_SOURCE] = {"Common Source", "CS", "MOSFET common-source amplifier"},
-    [CIRCUIT_COMMON_DRAIN] = {"Source Follower", "SF", "MOSFET source follower (common-drain)"},
-    [CIRCUIT_MULTISTAGE_AMP] = {"Two-Stage Amp", "2Stg", "Two-stage BJT amplifier"},
+    [CIRCUIT_COMMON_EMITTER] = {"Common Emitter", "CE", "BJT common-emitter amplifier", TG_TRANSISTORS},
+    [CIRCUIT_COMMON_SOURCE] = {"Common Source", "CS", "MOSFET common-source amplifier", TG_TRANSISTORS},
+    [CIRCUIT_COMMON_DRAIN] = {"Source Follower", "SF", "MOSFET source follower (common-drain)", TG_TRANSISTORS},
+    [CIRCUIT_MULTISTAGE_AMP] = {"Two-Stage Amp", "2Stg", "Two-stage BJT amplifier", TG_TRANSISTORS},
     // Additional transistor circuits
-    [CIRCUIT_DIFFERENTIAL_PAIR] = {"Differential Pair", "Diff", "BJT differential amplifier"},
-    [CIRCUIT_CURRENT_MIRROR] = {"Current Mirror", "CMir", "BJT current mirror"},
-    [CIRCUIT_PUSH_PULL] = {"Push-Pull", "PP", "Complementary push-pull output stage"},
-    [CIRCUIT_CMOS_INVERTER] = {"CMOS Inverter", "CMOS", "CMOS logic inverter"},
+    [CIRCUIT_DIFFERENTIAL_PAIR] = {"Differential Pair", "Diff", "BJT differential amplifier", TG_TRANSISTORS},
+    [CIRCUIT_CURRENT_MIRROR] = {"Current Mirror", "CMir", "BJT current mirror", TG_TRANSISTORS},
+    [CIRCUIT_PUSH_PULL] = {"Push-Pull", "PP", "Complementary push-pull output stage", TG_TRANSISTORS},
+    [CIRCUIT_CMOS_INVERTER] = {"CMOS Inverter", "CMOS", "CMOS logic inverter", TG_DIGITAL},
     // Additional op-amp circuits
-    [CIRCUIT_INTEGRATOR] = {"Integrator", "Int", "Op-amp integrator circuit"},
-    [CIRCUIT_DIFFERENTIATOR] = {"Differentiator", "Dif", "Op-amp differentiator circuit"},
-    [CIRCUIT_SUMMING_AMP] = {"Summing Amp", "Sum", "Inverting summing amplifier"},
-    [CIRCUIT_COMPARATOR] = {"Comparator", "Cmp", "Op-amp voltage comparator"},
+    [CIRCUIT_INTEGRATOR] = {"Integrator", "Int", "Op-amp integrator circuit", TG_OPAMPS},
+    [CIRCUIT_DIFFERENTIATOR] = {"Differentiator", "Dif", "Op-amp differentiator circuit", TG_OPAMPS},
+    [CIRCUIT_SUMMING_AMP] = {"Summing Amp", "Sum", "Inverting summing amplifier", TG_OPAMPS},
+    [CIRCUIT_COMPARATOR] = {"Comparator", "Cmp", "Op-amp voltage comparator", TG_OPAMPS},
     // Power supply / rectifier circuits
-    [CIRCUIT_FULLWAVE_BRIDGE] = {"Bridge Rectifier", "Brdg", "Full-wave bridge rectifier with filter"},
-    [CIRCUIT_CENTERTAP_RECT] = {"Center-Tap Rect", "CTap", "Center-tap transformer rectifier"},
-    [CIRCUIT_AC_DC_SUPPLY] = {"AC-DC Supply", "ACDC", "Complete AC to DC power supply"},
-    [CIRCUIT_AC_DC_AMERICAN] = {"US 120V-12V", "US12", "American 120V/60Hz to 12V DC"},
+    [CIRCUIT_FULLWAVE_BRIDGE] = {"Bridge Rectifier", "Brdg", "Full-wave bridge rectifier with filter", TG_POWER_SUPPLY},
+    [CIRCUIT_CENTERTAP_RECT] = {"Center-Tap Rect", "CTap", "Center-tap transformer rectifier", TG_POWER_SUPPLY},
+    [CIRCUIT_AC_DC_SUPPLY] = {"AC-DC Supply", "ACDC", "Complete AC to DC power supply", TG_POWER_SUPPLY},
+    [CIRCUIT_AC_DC_AMERICAN] = {"US 120V-12V", "US12", "American 120V/60Hz to 12V DC", TG_POWER_SUPPLY},
     // TI Analog Circuits - Amplifiers
-    [CIRCUIT_DIFFERENCE_AMP] = {"Difference Amp", "Diff", "Op-amp difference amplifier (subtractor)"},
-    [CIRCUIT_TRANSIMPEDANCE] = {"Transimpedance", "TIA", "Transimpedance amplifier (I to V)"},
-    [CIRCUIT_INSTR_AMP] = {"Instr. Amp", "Inst", "Three op-amp instrumentation amplifier"},
+    [CIRCUIT_DIFFERENCE_AMP] = {"Difference Amp", "DifA", "Op-amp difference amplifier (subtractor)", TG_OPAMPS},
+    [CIRCUIT_TRANSIMPEDANCE] = {"Transimpedance", "TIA", "Transimpedance amplifier (I to V)", TG_OPAMPS},
+    [CIRCUIT_INSTR_AMP] = {"Instr. Amp", "Inst", "Three op-amp instrumentation amplifier", TG_OPAMPS},
     // TI Analog Circuits - Filters
-    [CIRCUIT_SALLEN_KEY_LP] = {"Sallen-Key LP", "S-K", "2nd order Sallen-Key low pass filter"},
-    [CIRCUIT_BANDPASS_ACTIVE] = {"Active Bandpass", "BPF", "Active band pass filter"},
-    [CIRCUIT_NOTCH_FILTER] = {"Notch Filter", "Notc", "Twin-T 60Hz notch filter"},
+    [CIRCUIT_SALLEN_KEY_LP] = {"Sallen-Key LP", "S-K", "2nd order Sallen-Key low pass filter", TG_FILTERS},
+    [CIRCUIT_BANDPASS_ACTIVE] = {"Active Bandpass", "BPF", "Active band pass filter", TG_FILTERS},
+    [CIRCUIT_NOTCH_FILTER] = {"Notch Filter", "Notc", "Twin-T 60Hz notch filter", TG_FILTERS},
     // TI Analog Circuits - Signal Sources
-    [CIRCUIT_WIEN_OSCILLATOR] = {"Wien Oscillator", "Wien", "Wien bridge sine wave oscillator"},
-    [CIRCUIT_CURRENT_SOURCE] = {"Current Source", "Isrc", "BJT constant current source"},
+    [CIRCUIT_WIEN_OSCILLATOR] = {"Wien Oscillator", "Wien", "Wien bridge sine wave oscillator", TG_OSCILLATORS},
+    [CIRCUIT_CURRENT_SOURCE] = {"Current Source", "Isrc", "BJT constant current source", TG_TRANSISTORS},
     // TI Analog Circuits - Comparators/Detection
-    [CIRCUIT_WINDOW_COMP] = {"Window Comp", "WCmp", "Window comparator (OV/UV detection)"},
-    [CIRCUIT_HYSTERESIS_COMP] = {"Schmitt Trigger", "Schm", "Comparator with hysteresis"},
+    [CIRCUIT_WINDOW_COMP] = {"Window Comp", "WCmp", "Window comparator (OV/UV detection)", TG_OPAMPS},
+    [CIRCUIT_HYSTERESIS_COMP] = {"Schmitt Trigger", "Schm", "Comparator with hysteresis", TG_OPAMPS},
     // TI Analog Circuits - Power/Voltage
-    [CIRCUIT_ZENER_REF] = {"Zener Reference", "Zref", "Zener diode voltage reference"},
-    [CIRCUIT_PRECISION_RECT] = {"Precision Rect", "PRec", "Precision full-wave rectifier"},
+    [CIRCUIT_ZENER_REF] = {"Zener Reference", "Zref", "Zener diode voltage reference", TG_POWER_SUPPLY},
+    [CIRCUIT_PRECISION_RECT] = {"Precision Rect", "PRec", "Precision full-wave rectifier", TG_POWER_SUPPLY},
     // Voltage Regulator Circuits
-    [CIRCUIT_7805_REG] = {"7805 Regulator", "7805", "7805 fixed 5V regulator with filtering"},
-    [CIRCUIT_LM317_REG] = {"LM317 Adj Reg", "317", "LM317 adjustable regulator with voltage set"},
-    [CIRCUIT_TL431_REF] = {"TL431 Reference", "431", "TL431 precision shunt reference"},
+    [CIRCUIT_7805_REG] = {"7805 Regulator", "7805", "7805 fixed 5V regulator with filtering", TG_POWER_SUPPLY},
+    [CIRCUIT_LM317_REG] = {"LM317 Adj Reg", "317", "LM317 adjustable regulator with voltage set", TG_POWER_SUPPLY},
+    [CIRCUIT_TL431_REF] = {"TL431 Reference", "431", "TL431 precision shunt reference", TG_POWER_SUPPLY},
     // RLC Resonant Circuits
-    [CIRCUIT_SERIES_RLC] = {"Series RLC", "sRLC", "Series RLC resonant circuit"},
-    [CIRCUIT_PARALLEL_RLC] = {"Parallel RLC", "pRLC", "Parallel RLC (tank) circuit"},
+    [CIRCUIT_SERIES_RLC] = {"Series RLC", "sRLC", "Series RLC resonant circuit", TG_BASICS},
+    [CIRCUIT_PARALLEL_RLC] = {"Parallel RLC", "pRLC", "Parallel RLC (tank) circuit", TG_BASICS},
     // Measurement & Detection Circuits
-    [CIRCUIT_WHEATSTONE] = {"Wheatstone Bridge", "Whst", "Wheatstone bridge measurement circuit"},
-    [CIRCUIT_PEAK_DETECTOR] = {"Peak Detector", "Peak", "Op-amp peak detector circuit"},
+    [CIRCUIT_WHEATSTONE] = {"Wheatstone Bridge", "Whst", "Wheatstone bridge measurement circuit", TG_BASICS},
+    [CIRCUIT_PEAK_DETECTOR] = {"Peak Detector", "Peak", "Op-amp peak detector circuit", TG_OPAMPS},
     // Signal Processing Circuits
-    [CIRCUIT_CLAMPER] = {"Neg Clamper", "Clmp", "Negative clamper (DC restorer)"},
-    [CIRCUIT_PHASE_SHIFT_OSC] = {"Phase Shift Osc", "PhOsc", "RC phase shift oscillator (keep noise on)"},
-    [CIRCUIT_RC_BANDPASS] = {"RC Band-Pass", "RC BP", "Passive RC high-pass into low-pass"},
-    [CIRCUIT_LC_LOWPASS] = {"LC Low-Pass", "LC LP", "2nd-order LC low-pass with load"},
-    [CIRCUIT_ZENER_CLIPPER] = {"Zener Clipper", "ZClip", "Back-to-back zeners limit the swing"},
-    [CIRCUIT_VOLTAGE_DOUBLER] = {"Voltage Doubler", "Dblr", "Villard/Greinacher diode-capacitor doubler"},
-    [CIRCUIT_RELAXATION_OSC] = {"Relaxation Osc", "RelOsc", "Op-amp Schmitt + RC relaxation oscillator"},
-    [CIRCUIT_HALFWAVE_FILTERED] = {"HW Rect + Cap", "HW+C", "Half-wave rectifier with smoothing capacitor"},
-    [CIRCUIT_HV_345_LINE] = {"345 kV Line", "345kV", "100-mile 345 kV line, 600 MW load (per-phase)"},
-    [CIRCUIT_HV_138_LINE_VAR] = {"138 kV Line + VAR", "138kV", "30-mile 138 kV line, lagging load, switchable cap bank"},
-    [CIRCUIT_MV_FEEDER] = {"12.47 kV Feeder", "Feedr", "5-mile distribution feeder, 1 MW per phase"},
-    [CIRCUIT_POLE_XFMR] = {"Pole Xfmr 120/240", "Pole", "7.2 kV to 240 V service transformer with a house load"},
-    [CIRCUIT_GEN_GSU] = {"Generator + GSU", "GenSU", "18 kV generator, step-up to 345 kV, 600 MW"},
-    [CIRCUIT_GRID_CHAIN] = {"Grid: 18 kV to 240 V", "Grid", "Generator to house through every voltage level"},
-    [CIRCUIT_FERRANTI_LINE] = {"Ferranti (open line)", "Ferr", "200-mile 345 kV pi line, open end, switchable reactor"},
-    [CIRCUIT_LINE_MODEL_LADDER] = {"Line Model Ladder", "Ladder", "Same line as R, R-L and pi: compare the load buses"},
-    [CIRCUIT_DC_LINE_DROP] = {"Line Drop Basics", "Drop", "Battery, wire resistance, load: the simplest voltage drop"},
-    [CIRCUIT_TESLA_COIL] = {"Tesla Coil", "Tesla", "Spark-gap Tesla coil, 4x13 in toroid, streamer to a rod"},
-    [CIRCUIT_TESLA_COIL_BIG] = {"Tesla Coil (big top)", "TeslaB", "Retuned for an 8x24 in toroid: more energy, longer arc"},
-    [CIRCUIT_TESLA_COIL_DETUNED] = {"Tesla Coil (detuned)", "TeslaX", "Big toroid but the primary was not retuned: weak output"},
+    [CIRCUIT_CLAMPER] = {"Neg Clamper", "Clmp", "Negative clamper (DC restorer)", TG_POWER_SUPPLY},
+    [CIRCUIT_PHASE_SHIFT_OSC] = {"Phase Shift Osc", "PhOsc", "RC phase shift oscillator (keep noise on)", TG_OSCILLATORS},
+    [CIRCUIT_RC_BANDPASS] = {"RC Band-Pass", "RC BP", "Passive RC high-pass into low-pass", TG_FILTERS},
+    [CIRCUIT_LC_LOWPASS] = {"LC Low-Pass", "LC LP", "2nd-order LC low-pass with load", TG_FILTERS},
+    [CIRCUIT_ZENER_CLIPPER] = {"Zener Clipper", "ZClip", "Back-to-back zeners limit the swing", TG_POWER_SUPPLY},
+    [CIRCUIT_VOLTAGE_DOUBLER] = {"Voltage Doubler", "Dblr", "Villard/Greinacher diode-capacitor doubler", TG_POWER_SUPPLY},
+    [CIRCUIT_RELAXATION_OSC] = {"Relaxation Osc", "RelOsc", "Op-amp Schmitt + RC relaxation oscillator", TG_OSCILLATORS},
+    [CIRCUIT_HALFWAVE_FILTERED] = {"HW Rect + Cap", "HW+C", "Half-wave rectifier with smoothing capacitor", TG_POWER_SUPPLY},
+    [CIRCUIT_HV_345_LINE] = {"345 kV Line", "345kV", "100-mile 345 kV line, 600 MW load (per-phase)", TG_POWER_SYSTEMS},
+    [CIRCUIT_HV_138_LINE_VAR] = {"138 kV Line + VAR", "138kV", "30-mile 138 kV line, lagging load, switchable cap bank", TG_POWER_SYSTEMS},
+    [CIRCUIT_MV_FEEDER] = {"12.47 kV Feeder", "Feedr", "5-mile distribution feeder, 1 MW per phase", TG_POWER_SYSTEMS},
+    [CIRCUIT_POLE_XFMR] = {"Pole Xfmr 120/240", "Pole", "7.2 kV to 240 V service transformer with a house load", TG_POWER_SYSTEMS},
+    [CIRCUIT_GEN_GSU] = {"Generator + GSU", "GenSU", "18 kV generator, step-up to 345 kV, 600 MW", TG_POWER_SYSTEMS},
+    [CIRCUIT_GRID_CHAIN] = {"Grid: 18 kV to 240 V", "Grid", "Generator to house through every voltage level", TG_POWER_SYSTEMS},
+    [CIRCUIT_FERRANTI_LINE] = {"Ferranti (open line)", "Ferr", "200-mile 345 kV pi line, open end, switchable reactor", TG_POWER_SYSTEMS},
+    [CIRCUIT_LINE_MODEL_LADDER] = {"Line Model Ladder", "Ladder", "Same line as R, R-L and pi: compare the load buses", TG_POWER_SYSTEMS},
+    [CIRCUIT_DC_LINE_DROP] = {"Line Drop Basics", "Drop", "Battery, wire resistance, load: the simplest voltage drop", TG_BASICS},
+    [CIRCUIT_TESLA_COIL] = {"Tesla Coil", "Tesla", "Spark-gap Tesla coil, 4x13 in toroid, streamer to a rod", TG_HIGH_VOLTAGE},
+    [CIRCUIT_TESLA_COIL_BIG] = {"Tesla Coil (big top)", "TeslaB", "Retuned for an 8x24 in toroid: more energy, longer arc", TG_HIGH_VOLTAGE},
+    [CIRCUIT_TESLA_COIL_DETUNED] = {"Tesla Coil (detuned)", "TeslaX", "Big toroid but the primary was not retuned: weak output", TG_HIGH_VOLTAGE},
 
 
 
@@ -6330,7 +6330,7 @@ static void set_amp_sweep(Component *v, double a0, double a1, double t) {
 }
 static Component *add_label(Circuit *circuit, float x, float y, const char *text) {
     Component *l = add_comp(circuit, COMP_TEXT, x, y, 0);
-    if (l) { strncpy(l->props.text.text, text, sizeof(l->props.text.text)-1); l->props.text.font_size = 2; }
+    if (l) { strncpy(l->props.text.text, text, sizeof(l->props.text.text)-1); l->props.text.font_size = 1; }
     return l;
 }
 
@@ -7109,4 +7109,11 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
         count++;
     }
     return count;
+}
+
+const char *circuit_template_group_name(TemplateGroup g) {
+    static const char *names[TG_COUNT] = {
+        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage"
+    };
+    return (g >= 0 && g < TG_COUNT) ? names[g] : "?";
 }

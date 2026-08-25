@@ -92,12 +92,29 @@ typedef enum {
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 
+// Palette grouping of the templates (the Circuits palette is generated from this)
+typedef enum {
+    TG_BASICS = 0,      // dividers, RLC, Ohm's law
+    TG_FILTERS,         // passive and active filters
+    TG_OPAMPS,          // op-amp building blocks
+    TG_TRANSISTORS,     // BJT / MOSFET stages
+    TG_OSCILLATORS,
+    TG_POWER_SUPPLY,    // rectifiers, regulators, clampers, references
+    TG_DIGITAL,         // logic-level circuits
+    TG_POWER_SYSTEMS,   // transmission / distribution examples
+    TG_HIGH_VOLTAGE,    // Tesla coils
+    TG_COUNT
+} TemplateGroup;
+
 // Circuit template info
 typedef struct {
     const char *name;
     const char *short_name;
     const char *description;
+    TemplateGroup group;
 } CircuitTemplateInfo;
+
+const char *circuit_template_group_name(TemplateGroup g);
 
 // Get info for circuit template type
 const CircuitTemplateInfo *circuit_template_get_info(CircuitTemplateType type);

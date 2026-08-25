@@ -11,6 +11,7 @@
 #include "simulation.h"
 #include "render.h"
 #include "ui.h"
+#include "circuits.h"
 #include "input.h"
 #include "analysis.h"
 #include "threadpool.h"
@@ -31,6 +32,14 @@ typedef struct {
 
     // Application state
     bool running;
+
+    // Command-line automation (screenshots / GIF frames without touching the user's window)
+    char cli_shot_path[260];     // --shot FILE.bmp  : save the window at frame cli_shot_frame
+    int  cli_shot_frame;
+    char cli_record_dir[260];    // --record DIR N EVERY : save N frames, one every EVERY frames
+    int  cli_record_frames, cli_record_every, cli_recorded;
+    bool cli_exit;               // --exit : quit once the shot / recording is done
+    int  cli_frame;              // frames rendered since start
     bool show_voltages;
     bool show_current;
     double synced_time_div;      // scope time/div the sim dt was last matched to (0 = never)
@@ -57,6 +66,10 @@ typedef struct {
 
 // Initialize application
 bool app_init(App *app);
+// Place a template at the canvas centre with its scope presets and auto-start (used by --template)
+bool app_place_template_centered(App *app, CircuitTemplateType type);
+// Save the current window contents as a BMP (used by --shot / --record)
+bool app_save_window_bmp(App *app, const char *path);
 
 // Shutdown application
 void app_shutdown(App *app);

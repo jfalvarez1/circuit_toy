@@ -1,4 +1,4 @@
-# Prebuilt Circuit Template Audit (47 templates)
+# Prebuilt Circuit Template Audit (65 templates)
 
 Companion to `TEST_PLAN.md` §8. Every template gets the same five passes; the per-template
 block adds the hand-calculated nominal, the **value variations** to try, and specific traps.
@@ -6,7 +6,7 @@ block adds the hand-calculated nominal, the **value variations** to try, and spe
 Values below were extracted from `src/circuits.c` `place_*` builders on 2026-08-24 — if a
 template's BOM changes, update its block.
 
-### Fixes applied 2026-08-24 (headless smoke test now reports 47/47)
+### Fixes applied 2026-08-24 (headless smoke test now reports 47/47; 65/65 after the 18 templates added later the same day, see the added section)
 Engine: BJT stamp was missing the collector Newton equivalent current and flipped the PNP
 transconductance sign (every BJT template ran away to MV); PMOS had the same sign bug (CMOS
 inverter); zener breakdown and TL431 were hard switches that chattered (now smooth models);
@@ -64,7 +64,7 @@ textbook two-op-amp absolute-value topology (out = -|Vin|); phase-shift oscillat
 to +/-5 V rails (single-supply DC feedback latched it) and Rf 33k; every template now
 carries an on-canvas "how it works / PROBE" note.
 
-### OPEN schematic-geometry items (`--geom-test`: crossings and wires through bodies)
+### OPEN schematic-geometry items (`--geom-test`: crossings and wires through bodies; 43/65 clean — all 18 added templates are clean)
 ```
 [WARN] geom  Common Emitter               diag=0 cross=0 through=1 touch=0 through:Q104
 [WARN] geom  Source Follower              diag=0 cross=0 through=1 touch=0 through:M142
@@ -364,6 +364,154 @@ clipping expectations below hold.
 
 ---
 
+## Added 2026-08-24 (18 templates: #48–#65)
+
+Every block below carries the **demo contract** (`template_demo[]` DemoKind + f_char checked by
+`--demo-test`), the **auto-probe** (`template_output[]`) with the scope presets
+(`template_time_div[]` / `template_volt_div[]`), and the **oracle** number from
+`tools/template_smoke.c` `probe_cases[]` (tolerance and sample time in brackets). Geometry:
+all 18 are clean under `--geom-test` (0 diagonal, 0 crossings, 0 wires through bodies) —
+the WARN list above is unchanged. Power-system oracles come from `docs/RESEARCH_TEXAS_GRID.md`
+(ERCOT/CREZ 345 kV, 138 kV, 12.47 kV feeder) and `docs/RESEARCH_AEP_PC.md`.
+
+## Passive filters & diode circuits (added)
+
+### 48. RC Band-Pass — 1 Vpk sweep 100 Hz–20 kHz, C1=200n, R1=1k (HP fc1 = 796 Hz), R2=10k, C2=5n (LP fc2 = 3.18 kHz)
+- **Demo:** `DEMO_BANDPASS`, f_char 1600 Hz. Probe: C2 (output). Presets 200 µs/div, 0.5 V/div.
+- **N:** peak near √(fc1·fc2) = 1.59 kHz; |H| ≈ 0.79 there (the 10k/1k stage separation costs the 1/(1+R1/R2) loading). Oracle: **0.79 Vpk** at 1.6 kHz (±15 %, sampled 6 ms).
+- **V:** C1→2µ ⇒ fc1 80 Hz, peak flattens to ~0.9 across 100 Hz–3 kHz · C2→50n ⇒ fc2 318 Hz < fc1 ⇒ peak drops to ~0.2 (overlapping skirts) · R2→1k ⇒ HP stage loaded 2:1, peak ≈ 0.45 · disable the sweep and set f = 796 / 1590 / 3180 Hz ⇒ −3 dB / peak / −3 dB.
+- **M:** M3 cap ESR negligible; set C2 ESR = 1k ⇒ HF floor ≈ 1k/11k.
+- **T:** `Trk` steps time/div with the sweep; aliasing expected past 10 kHz at dt 10 µs.
+
+### 49. LC Low-Pass — 1 Vpk sweep 100 Hz–20 kHz, L=10m series, C=1µ shunt, R=100 load ⇒ f0 = 1591.5 Hz, Q = R√(C/L) = 1
+- **Demo:** `DEMO_LOWPASS`, f_char 1591.5 Hz. Probe: C (output). Presets 200 µs/div, 0.5 V/div.
+- **N:** 2nd order: |H(1 kHz)| = 1/√((1−0.395)² + 0.628²) = 1.15 (slight peak below f0); −40 dB/dec above. Oracle: **1.15 Vpk** at 1 kHz (±15 %, 8 ms).
+- **V:** R→1k ⇒ Q = 10, resonant peak ≈ 10 Vpk at f0 (scope 2 V/div) · R→10 ⇒ Q 0.1, over-damped, looks first-order · L→100m ⇒ f0 503 Hz · C→100n ⇒ f0 5.03 kHz.
+- **M:** M1 inductor DCR 0.1 Ω + cap ESR reduce the Q=10 peak to ~9 — visible; M0 ideal at R→1k with sweep parked on f0 must not grow unbounded.
+- **Trap:** ideal L in series with ideal source at t=0 with source phase 90° ⇒ step into L; must not spike.
+
+### 50. Zener Clipper — 10 Vpk 1 kHz, amplitude sweep 1–10 V, R=1k, 2× Zener 5.1 V back-to-back
+- **Demo:** `DEMO_LIMITER`, f_char 1000 Hz (output stops growing once the input passes the clamp). Probe: node between R and the zener pair (`COMP_RESISTOR` 0, terminal 1). Presets 50 ms/div, 5 V/div. No `probe_cases[]` oracle (checked by the limiter contract).
+- **N:** clamp at ±(Vz + Vf) = ±5.8 V; below 5.8 Vpk the output follows the input, at 10 Vpk the tops flatten and the zener current is (10−5.8)/1k = 4.2 mA.
+- **V:** Vz→3.3 ⇒ clamp ±4.0 · remove one zener (short it) ⇒ asymmetric: +5.1 / −0.7 · R→100 ⇒ 42 mA, Rz·I visible slope on the flat top · R→100k ⇒ clamp still ±5.8 but the source sees almost no load.
+- **M:** M2 real zener: knee is soft (smooth breakdown model) so the corner rounds; ideal: hard corner. Compare at 6–7 Vpk where the difference is largest.
+
+### 51. Voltage Doubler — 5 Vpk 1 kHz, amplitude sweep 1–5 V, D1/D2, C1=C2=1µ, R load 100k
+- **Demo:** `DEMO_ENVELOPE`, f_char 1000 Hz. Probe: source (CH1) and C2 (CH2). Presets 50 ms/div, 2 V/div.
+- **N:** Vout = 2·Vpk − 2·0.7. Oracle: **7.4 V DC** at t = 1.0 s (±15 %) where the sweep is at A ≈ 4.4 V.
+- **V:** disable the sweep, A = 5 ⇒ 8.6 V · R→1k ⇒ heavy load: ripple I/(fC) = 8.6m/(1k·1µ) ≈ 8 V, output collapses to ~3 V · C→10µ ⇒ ripple 10× smaller, slower rise (τ = RC = 1 s) · add a third D/C stage ⇒ 3·Vpk − 2.1 (Cockcroft-Walton).
+- **M:** M2 real diode: Vf ≈ 0.55 at these µA currents ⇒ output ≈ 0.3 V higher than ideal.
+- **T:** rise time ≈ 5·RC = 0.5 s — at 50 ms/div you see the charge-up staircase.
+
+### 52. Relaxation Osc — ideal op-amp ±15 V, R=10k, C=100n, R1=R2=10k (β = 0.5), 0.1 V/20 µs start-up pulse via 100k
+- **Demo:** `DEMO_OSC`, f_char 455 Hz (also in `--osc-test` at 40 ms window). Probe: op-amp OUT. Presets 1 ms/div, 5 V/div.
+- **N:** f = 1/(2RC·ln((1+β)/(1−β))) = 1/(2·1 ms·ln 3) = **455 Hz**, square ±15 V; the C node is an exponential "triangle" between ±7.5 V.
+- **V:** R→100k ⇒ 45.5 Hz · C→10n ⇒ 4.55 kHz (dt auto should follow) · R2→1k (β = 0.09) ⇒ f rises to 2.7 kHz and the triangle shrinks to ±1.4 V · R1→1k (β = 0.91) ⇒ 164 Hz.
+- **M:** M4 real op-amp: slew rate rounds the edges, rails drop to ±14; f changes a few %. M0 ideal: exact.
+- **Trap:** without the 100k kick an ideal op-amp sits at the metastable 0 V point — verify the pulse source restarts the oscillation after Reset.
+
+### 53. HW Rect + Cap — 10 Vpk 60 Hz, amplitude sweep 2–10 V, D, C=100µ, R=1k
+- **Demo:** `DEMO_ENVELOPE`, f_char 60 Hz. Probe: C (output). Presets 50 ms/div, 5 V/div.
+- **N:** Vdc ≈ Vpk − 0.7 − ripple/2, ripple = I/(fC) = 9.3m/(60·100µ) = 1.55 V. Oracle: **8.0 V DC** at t = 1.0 s (±15 %) late in the sweep.
+- **V:** C→10µ ⇒ ripple 15 V ⇒ output is nearly the raw half-wave · R→100 ⇒ ripple 15 V at full amplitude · C→1000µ ⇒ ripple 0.15 V · f→50 Hz ⇒ ripple ×1.2.
+- **M:** M3 electrolytic ESR: the diode's current pulse produces a small step at each peak.
+- **T:** at 50 ms/div the sawtooth is visible; at 5 ms/div count 60 Hz (not 120 Hz — half-wave).
+
+---
+
+## Power systems (added; 60 Hz, single-phase equivalents, phase-to-neutral peaks)
+
+Source values are 60 Hz phase-to-neutral peaks: 345 kV → 281.7 kVpk, 138 kV → 112.7 kVpk,
+12.47 kV → 10.18 kVpk, 18 kV → 14.7 kVpk. Lines are `COMP_TLINE` (length_mi × R/mi, X/mi,
+B µS/mi; model 0 = R, 1 = R-L, 2 = nominal π). Transformers are ideal (V ratio N, current 1/N,
+reflected). Load buses are probed on the load resistor (`COMP_RESISTOR` 0, terminal 0).
+
+### 54. 345 kV Line — 281.7 kVpk, 100 mi twin Drake (R 0.06 Ω/mi, X 0.55 Ω/mi ⇒ 6 Ω + 145.9 mH), load 198.4 Ω (600 MW 3-φ)
+- **Demo:** `DEMO_WAVEFORM`, 60 Hz. Probe: both ends. Presets 5 ms/div, 100 kV/div.
+- **N:** I = 941 A rms; load 186.7 kV rms = **264 kVpk** (−6.3 %, mostly I·X, lagging). Oracle 264.0e3 (±5 %, 60 ms).
+- **V:** length→200 mi ⇒ drop ~13 % · length→0.001 mi ⇒ load = source · model→0 (R only) ⇒ 0.03 % drop, no phase lag · model→2 (π) ⇒ +0.5 % charging rise · load→99 Ω (1200 MW) ⇒ ~13 % drop; load→10 MΩ ⇒ open line, no drop (Ferranti only with π model).
+- **M:** all ideal already; the line's R is the only loss. Add an ideal 0 Ω load ⇒ fault current 281.7k/|6 + j55| = 5.1 kA pk, must stay finite.
+- **T:** dt auto picks ~100 µs; 5 ms/div shows 1.2 cycles — set 20 ms/div for the phase-lag comparison.
+
+### 55. 138 kV Line + VAR — 112.7 kVpk, 30 mi single Drake (3.9 Ω + 57.3 mH), load 171.5 Ω + 0.22 H (90 MW, pf 0.9 lag), SW → 6.1 µF cap bank
+- **Demo:** `DEMO_WAVEFORM`, 60 Hz. Probe: source and load bus. Presets 5 ms/div, 50 kV/div.
+- **N:** switch open: 74.3 kV rms = **105 kVpk** (−6.7 %). Oracle 105.0e3 (±6 %, 60 ms). Switch closed: bus recovers to ~78 kV rms (110 kVpk), phase lag shrinks.
+- **V:** **toggle SW while running** — amplitude steps up within one cycle, no transient blow-up · cap bank→12 µF ⇒ over-compensated, bus above 80 kV (leading) · load L→0 (unity pf) ⇒ only 3 % drop · length→60 mi ⇒ −13 % open, cap bank recovers ~7 points.
+- **M:** ideal switch closing an ideal C onto a bus with a series L: expect a damped ring at the cap/line resonance (√ of 57 mH·6.1 µF ⇒ 270 Hz) — plausible, not NaN.
+
+### 56. 12.47 kV Feeder — 10.18 kVpk, 5 mi 1/0 ACSR (1.53 Ω + 8.22 mH), load 51.84 Ω (1 MW/phase)
+- **Demo:** `DEMO_WAVEFORM`, 60 Hz. Probe: substation and feeder end. Presets 5 ms/div, 5 kV/div.
+- **N:** I = 134.5 A; end 6,973 V rms = **9.86 kVpk** (−3.2 %). Oracle 9.86e3 (±4 %, 60 ms). Inside ANSI C84.1 ±5 %.
+- **V:** load→26 Ω (2 MW) ⇒ −6.4 %, out of band · length→10 mi ⇒ −6.3 % · add a 2nd load resistor mid-line (rebuild as two 2.5 mi lines) ⇒ two-step profile · model→0 ⇒ 2.9 % (R dominates on a distribution feeder, unlike #54).
+- **M:** n/a (ideal passives).
+
+### 57. Pole Xfmr 120/240 — 7.2 kV feeder phase (10.18 kVpk), ideal xfmr N = 1/30, 240 V service, load 11.5 Ω (5 kW)
+- **Demo:** `DEMO_WAVEFORM`, 60 Hz. Probe: 7.2 kV side (CH1, 5 kV/div manually) and 240 V side (CH2). Presets 5 ms/div, 100 V/div.
+- **N:** 240 V rms = **339.4 Vpk**; 20.8 A rms on the house side, 0.69 A on the 7.2 kV side (ideal transformer: reflected current = I·N; the current view should show the 30:1 density change). Oracle 339.4 (±4 %, 60 ms).
+- **V:** N→1/60 ⇒ 120 V · load→1.15 Ω (50 kW, 2× the can's rating) ⇒ still 240 V (ideal xfmr, no leakage) — document that sag needs a feeder in front (see #59) · N→30 (reversed) ⇒ 216 kV: scope must autoset to 100 kV/div, no overflow · load→open (10 MΩ) ⇒ 240 V, primary current ≈ 0.
+- **M:** ideal transformer only. The realistic-transformer knobs (leakage) are gone — note in the block if they return.
+
+### 58. Generator + GSU — 18 kV machine (14.7 kVpk), X'' 0.15 pu on 700 MVA (0.184 mH), GSU N = 19.17, 345 kV bus, load 198.4 Ω (600 MW)
+- **Demo:** `DEMO_WAVEFORM`, 60 Hz. Probe: 18 kV terminals (CH1) and 345 kV bus (CH2) — 19× scale change. Presets 5 ms/div, 100 kV/div.
+- **N:** referred X'' = 0.184 mH·19.17² ⇒ 25 Ω at 345 kV; at unity pf the bus is 281.7k·198.4/|198.4 + j25| = **279.4 kVpk** (−0.8 %). Oracle 279.4e3 (±4 %, 60 ms).
+- **V:** load→99 Ω ⇒ −3 % · make the load lagging (add 0.5 H in series) ⇒ drop grows (the I·X of the machine now aligns with V) · X''→0.5 pu (0.61 mH) ⇒ −8 % · N→1 ⇒ 14.7 kVpk bus, 200× the current.
+- **Trap:** ideal source + ideal L + ideal transformer: DC op point must not leave a current in the 0.184 mH.
+
+### 59. Grid: 18 kV to 240 V — gen 18 kV → GSU 19.17 → 100 mi 345 kV → auto 345/138 (N 0.4) → 30 mi 138 kV → 138/12.47 (N 0.0903) → 5 mi feeder → pole xfmr (1/30) → house 11.5 Ω
+- **Demo:** `DEMO_WAVEFORM`, 60 Hz. Probe: the house. Presets 5 ms/div, 100 V/div. Also probe every bus: 14.7 kVpk, 282, 113, 10.2 kVpk, 339 Vpk left to right.
+- **N:** one house does not load the lines: house = 239 V rms = **339.4 Vpk** (−0.4 %). Oracle 339.4 (±4 %, 60 ms).
+- **V:** scale the house to a town: load→11.5 mΩ (5 MW) ⇒ the 12.47 kV feeder and 138 kV line sag several % and the house sees ~225 V · scale further to 0.115 mΩ (500 MW) ⇒ the 345 kV drop of #54 appears at the house (~5 %) · set the 345 kV line model→2 ⇒ +0.5 % Ferranti rise propagates to the house · edit any length live ⇒ house amplitude steps.
+- **T:** 7 transformers/lines in one loop; dt auto ~100 µs. Watch for the solver's condition number: 18 kV and 240 V nodes in one matrix (10⁵ dynamic range in V, 10⁴ in Ω) — any drift in the 240 V node is a scaling bug.
+
+### 60. Ferranti (open line) — 281.7 kVpk, 200 mi 345 kV as π: 12 Ω + 291.8 mH, 2.12 µF each end, open end (10 MΩ), SW → 3.54 H shunt reactor
+- **Demo:** `DEMO_WAVEFORM`, 60 Hz. Probe: both ends — far end is HIGHER than the source. Presets 5 ms/div, 100 kV/div.
+- **N:** receiving end 1/(1 − ω²LC) with C = 2.12 µF, L = 291.8 mH ⇒ +9.9 % = **309.6 kVpk**. Oracle 309.6e3 (±5 %, 80 ms). Switch closed: the 3.54 H reactor (X = 1.33 kΩ) absorbs the far-end charging VARs ⇒ rise cancels (≈ 282 kVpk).
+- **V:** **toggle SW while running** — rise collapses within a cycle; no ring-up · length→400 mi ⇒ +50 % (ω²LC → 0.33) — a real line this long is compensated · reactor→1 H ⇒ over-compensated, far end below the source · model→1 (R-L) ⇒ no C, rise vanishes (this is the point of the ladder, #64) · load the far end with 198 Ω ⇒ the rise turns into the −13 % drop.
+- **Trap:** the switch closes an ideal 3.54 H across a charged 2.12 µF: L-C resonance at 58 Hz ≈ line frequency — a slow beat is expected, divergence is not.
+
+### 64. Line Model Ladder — 112.7 kVpk source, three 30 mi 138 kV lines (0.13 Ω/mi, 0.72 Ω/mi, 6 µS/mi) into equal 90 MW loads; row 1 model 0 (R), row 2 model 1 (R-L), row 3 model 2 (π)
+- **Demo:** `DEMO_WAVEFORM`, 60 Hz. Probe: row 2 load (`COMP_RESISTOR` 1). Presets 5 ms/div, 50 kV/div.
+- **N:** row 1 (R only): 112.7·211.6/215.5 = **110.7 kVpk** · row 2 (R-L): **110.1 kVpk** (77.84 kV rms, oracle B in RESEARCH_TEXAS_GRID) · row 3 (π): **110.5 kVpk** (R-L plus a little charging rise). Oracles ±3 %, 60 ms; three `probe_cases[]` entries (resistor 0/1/2).
+- **V:** click a line: length→100 mi ⇒ all three rows drop, row 3 rises relative to row 2 · X/mi→0 on row 2 ⇒ equals row 1 · B→60 µS/mi on row 3 ⇒ Ferranti visible even loaded · model→2 on row 1 ⇒ identical to row 3.
+- **M:** n/a. **T:** all three loads share a source — the rows are independent (no coupling), verify by opening one load (10 MΩ).
+
+### 65. Line Drop Basics — 12 V DC, wire R = 1 Ω, load 10 Ω
+- **Demo:** `DEMO_DC`. Probe: load (`COMP_RESISTOR` 1). Presets 1 ms/div, 5 V/div.
+- **N:** I = 12/11 = 1.09 A; load **10.909 V**; wire burns 1.19 W. Oracle 10.909 (±2 %, 5 ms).
+- **V:** wire→2 Ω (double length) ⇒ 10.0 V · wire→0 ⇒ 12 V (zero-ohm resistor must not break the solve) · load→1 Ω ⇒ 6 V, wire burns 36 W · V→0 ⇒ 0 V.
+- **M:** M1 source Rint adds to the wire; the wattmeter/ammeter reading must agree with V/R.
+
+---
+
+## Tesla coils (added; spark gap, toroid, coupled T-model)
+
+Common to #61–#63 (`place_tesla`): NST = 170 Vpk 60 Hz through 10 Ω, ideal xfmr N = 75 ⇒ 12.75 kVpk
+(9 kV rms), 56 kΩ referred (τ = 1.4 ms into 25 nF). Primary gap `COMP_SPARK_GAP` 3.2 mm ⇒ breakdown
+3 kV/mm × 3.2 = 9.6 kV, r_on 1 Ω, hold 20 A, quench 1 µs. L1 = 29 µH, L2 = 30 mH, k = 0.2, T-model
+(L1(1−k), k·L1, ideal 1:√(L2/L1) = 32, L2(1−k)), 2 Ω primary loss, 50 Ω secondary loss, 10 pF
+secondary self-C, `COMP_TOROID` D×d inches (Bert Pool: C = (1.2781 − d/D)·2.8·√(π(D−d)d/4) pF),
+streamer rod gap r_on 200 kΩ, hold 50 mA. Presets 20 µs/div, 100 kV/div. `DEMO_OSC` at the
+secondary frequency; `--tesla-test` runs 20 ms at 100 ns and counts gap firings, streamer firings,
+toroid peak and the ring frequency in the 60 µs after the first firing (±20 %).
+
+### 61. Tesla Coil — C1 = 25 nF, toroid 4×13 in (14.5 pF), rod gap 40 mm
+- **N:** f1 = 1/(2π√(29µ·25n)) = **186 kHz**; secondary 30 mH with 24.5 pF ⇒ 186 kHz (tuned). E = ½·25n·9.6k² = 1.15 J per bang; toroid ≥ **115 kV** (tesla_test vtop_min), streamer fires (≥1), gap fires ≥ 2 in 20 ms (every 8.3 ms half-cycle of the NST).
+- **V:** gap→2 mm ⇒ 6 kV breakdown ⇒ bangs earlier in the NST cycle, more of them, less energy each (0.45 J) ⇒ lower toroid peak · gap→5 mm (15 kV > 12.75 kVpk) ⇒ never fires, C1 just follows the NST · C1→38n ⇒ primary at 152 kHz, detuned from the 186 kHz secondary (see #63 logic) · k→0.05 ⇒ slow energy transfer, many more ring cycles before the peak · toroid D/d→24×8 ⇒ this becomes #63.
+- **M:** ideal everything except the 2 Ω / 50 Ω losses. quench_time→100 µs ⇒ the gap stays on through the whole burst (no "quench"), energy sloshes primary↔secondary with a beat.
+- **T:** dt must be ≤ 100 ns (186 kHz ⇒ 54 samples/cycle); at dt 1 µs the ring aliases and the peak reads low. 20 µs/div shows one burst; 5 ms/div shows the 8.3 ms firing cadence.
+
+### 62. Tesla Coil (big top) — C1 = 38 nF, toroid 8×24 in (26.5 pF), rod gap 45 mm
+- **N:** secondary 30 mH with 36.5 pF ⇒ **152 kHz**; primary retuned 29 µH·38 nF ⇒ 152 kHz. E = 1.75 J per bang; toroid ≥ **130 kV** (vtop_min), streamer jumps 45 mm (135 kV) ≥ 1.
+- **V:** edit the toroid D/d live and watch C and the ring frequency move · rod gap→60 mm (180 kV) ⇒ streamer never fires, toroid peak rises slightly (no streamer load) · C1→25n ⇒ detuned upward to 186 kHz.
+- **Trap:** the streamer gap's 200 kΩ r_on across 26.5 pF: τ = 5 µs — a firing must decay the toroid, not instantly short it.
+
+### 63. Tesla Coil (detuned) — C1 = 18 nF, toroid 8×24 in, rod gap 40 mm
+- **N:** primary 29 µH·18 nF ⇒ **220 kHz**, secondary 152 kHz (45 % apart). Energy sloshes back; toroid peak must be **< 75 % of #62** (tesla_test pass rule) and the 40 mm rod (120 kV) never fires (rod_min 0). The ring frequency measured on the toroid is still ~152 kHz (the secondary's own resonance) — the test expects 152e3.
+- **V:** fix it: C1→38n ⇒ becomes #62 · or toroid→4×13 in ⇒ secondary 186 kHz, still detuned from 220 kHz · C1→10n ⇒ 295 kHz, even worse · the sweep-free way to see tuning: step C1 18→25→30→38 nF while running and watch the envelope grow.
+- **T:** as #61.
+
+---
+
 ## Result log
 
 | # | Template | L | N | V | M | T | S | Notes / issue link |
@@ -415,5 +563,23 @@ clipping expectations below hold.
 | 45 | CMOS Inverter | | | | | | | |
 | 46 | Constant Current Src | | | | | | | |
 | 47 | Clamper | | | | | | | |
+| 48 | RC Band-Pass | | | | | | | |
+| 49 | LC Low-Pass | | | | | | | |
+| 50 | Zener Clipper | | | | | | | |
+| 51 | Voltage Doubler | | | | | | | |
+| 52 | Relaxation Osc | | | | | | | |
+| 53 | HW Rect + Cap | | | | | | | |
+| 54 | 345 kV Line | | | | | | | |
+| 55 | 138 kV Line + VAR | | | | | | | toggle cap bank live |
+| 56 | 12.47 kV Feeder | | | | | | | |
+| 57 | Pole Xfmr 120/240 | | | | | | | |
+| 58 | Generator + GSU | | | | | | | |
+| 59 | Grid: 18 kV to 240 V | | | | | | | |
+| 60 | Ferranti (open line) | | | | | | | toggle reactor live |
+| 61 | Tesla Coil | | | | | | | `--tesla-test` |
+| 62 | Tesla Coil (big top) | | | | | | | `--tesla-test` |
+| 63 | Tesla Coil (detuned) | | | | | | | `--tesla-test` (peak < 75 % of #62) |
+| 64 | Line Model Ladder | | | | | | | 3 probe oracles |
+| 65 | Line Drop Basics | | | | | | | |
 
-(47 blocks = the 47 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`.)
+(65 blocks = the 65 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`; #48-#65 follow the enum order after `CIRCUIT_PHASE_SHIFT_OSC`.)

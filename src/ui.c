@@ -4,6 +4,9 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
+
+static void ui_volt_readout(char *out, size_t n, double v);   // defined with the scope layout helpers
 #include <math.h>
 #include "ui.h"
 #include "input.h"
@@ -212,22 +215,24 @@ void ui_init(UIState *ui) {
     int pal_h = 35;
     int col = 0;
 
-    // Helper macro to add a palette item
+    // Helper macros to add a palette item. Every item records the category it was added
+    // under (cur_cat), so the layout and hit-test never depend on list positions.
+    PaletteCategoryID cur_cat = PCAT_TOOLS;
     #define ADD_TOOL(tool, lbl) do { \
         ui->palette_items[ui->num_palette_items++] = (PaletteItem){ \
-            {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, tool, true, lbl, false, (tool == TOOL_SELECT) \
+            {10 + col*70, pal_y, 60, pal_h}, COMP_NONE, tool, true, lbl, false, (tool == TOOL_SELECT), cur_cat \
         }; \
         col++; if (col >= 2) { col = 0; pal_y += pal_h + 3; } \
     } while(0)
 
     #define ADD_COMP(comp, lbl) do { \
         ui->palette_items[ui->num_palette_items++] = (PaletteItem){ \
-            {10 + col*70, pal_y, 60, pal_h}, comp, TOOL_COMPONENT, false, lbl, false, false \
+            {10 + col*70, pal_y, 60, pal_h}, comp, TOOL_COMPONENT, false, lbl, false, false, cur_cat \
         }; \
         col++; if (col >= 2) { col = 0; pal_y += pal_h + 3; } \
     } while(0)
 
-    #define NEW_SECTION() do { col = 0; pal_y += pal_h + 15; } while(0)
+    #define NEW_SECTION(cat) do { col = 0; pal_y += pal_h + 15; cur_cat = (cat); } while(0)
 
     // === TOOLS SECTION (index 0) ===
     pal_y += 4;
@@ -238,7 +243,7 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_TEXT, "Text");
 
     // === SOURCES SECTION (index 5) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_SOURCES);
     ADD_COMP(COMP_GROUND, "GND");
     ADD_COMP(COMP_DC_VOLTAGE, "DC V");
     ADD_COMP(COMP_AC_VOLTAGE, "AC V");
@@ -247,7 +252,7 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_CLOCK, "Clock");
 
     // === WAVEFORMS SECTION (index 11) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_WAVEFORMS);
     ADD_COMP(COMP_SQUARE_WAVE, "Square");
     ADD_COMP(COMP_TRIANGLE_WAVE, "Tri");
     ADD_COMP(COMP_SAWTOOTH_WAVE, "Saw");
@@ -256,7 +261,7 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_PWM_SOURCE, "PWM");
 
     // === PASSIVES SECTION (index 17) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_PASSIVES);
     ADD_COMP(COMP_RESISTOR, "R");
     ADD_COMP(COMP_CAPACITOR, "C");
     ADD_COMP(COMP_CAPACITOR_ELEC, "Elec");
@@ -270,7 +275,7 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_TLINE, "TLine");
 
     // === DIODES SECTION (index 25) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_DIODES);
     ADD_COMP(COMP_DIODE, "Diode");
     ADD_COMP(COMP_ZENER, "Zener");
     ADD_COMP(COMP_SCHOTTKY, "Schky");
@@ -279,42 +284,42 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_PHOTODIODE, "Photo");
 
     // === TRANSISTORS - BJT SECTION (index 31) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_BJT);
     ADD_COMP(COMP_NPN_BJT, "NPN");
     ADD_COMP(COMP_PNP_BJT, "PNP");
     ADD_COMP(COMP_NPN_DARLINGTON, "NPN-D");
     ADD_COMP(COMP_PNP_DARLINGTON, "PNP-D");
 
     // === TRANSISTORS - FET SECTION (index 35) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_FET);
     ADD_COMP(COMP_NMOS, "NMOS");
     ADD_COMP(COMP_PMOS, "PMOS");
     ADD_COMP(COMP_NJFET, "NJFET");
     ADD_COMP(COMP_PJFET, "PJFET");
 
     // === THYRISTORS SECTION (index 39) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_THYRISTORS);
     ADD_COMP(COMP_SCR, "SCR");
     ADD_COMP(COMP_DIAC, "DIAC");
     ADD_COMP(COMP_TRIAC, "TRIAC");
     ADD_COMP(COMP_UJT, "UJT");
 
     // === OP-AMPS & AMPLIFIERS SECTION (index 43) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_OPAMPS);
     ADD_COMP(COMP_OPAMP, "OpAmp");
     ADD_COMP(COMP_OPAMP_FLIPPED, "OpFlip");
     ADD_COMP(COMP_OPAMP_REAL, "OpReal");
     ADD_COMP(COMP_OTA, "OTA");
 
     // === CONTROLLED SOURCES SECTION (index 47) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_CONTROLLED);
     ADD_COMP(COMP_VCVS, "VCVS");
     ADD_COMP(COMP_VCCS, "VCCS");
     ADD_COMP(COMP_CCVS, "CCVS");
     ADD_COMP(COMP_CCCS, "CCCS");
 
     // === SWITCHES SECTION (index 51) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_SWITCHES);
     ADD_COMP(COMP_SPST_SWITCH, "SPST");
     ADD_COMP(COMP_SPDT_SWITCH, "SPDT");
     ADD_COMP(COMP_DPDT_SWITCH, "DPDT");
@@ -323,12 +328,12 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_ANALOG_SWITCH, "AnaSw");
 
     // === TRANSFORMERS SECTION (index 57) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_TRANSFORMERS);
     ADD_COMP(COMP_TRANSFORMER, "Xfmr");
     ADD_COMP(COMP_TRANSFORMER_CT, "XfmrCT");
 
     // === LOGIC GATES SECTION (index 59) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_LOGIC);
     ADD_COMP(COMP_LOGIC_INPUT, "LogIn");
     ADD_COMP(COMP_LOGIC_OUTPUT, "LogOut");
     ADD_COMP(COMP_NOT_GATE, "NOT");
@@ -341,7 +346,7 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_BUFFER, "Buffer");
 
     // === DIGITAL ICS SECTION (index 69) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_DIGITAL);
     ADD_COMP(COMP_D_FLIPFLOP, "D-FF");
     ADD_COMP(COMP_JK_FLIPFLOP, "JK-FF");
     ADD_COMP(COMP_T_FLIPFLOP, "T-FF");
@@ -354,7 +359,7 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_BCD_DECODER, "BCD");
 
     // === MIXED SIGNAL SECTION (index 79) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_MIXED);
     ADD_COMP(COMP_DAC, "DAC");
     ADD_COMP(COMP_ADC, "ADC");
     ADD_COMP(COMP_VCO, "VCO");
@@ -363,13 +368,13 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_OPTOCOUPLER, "Opto");
 
     // === VOLTAGE REGULATORS SECTION (index 85) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_REGULATORS);
     ADD_COMP(COMP_LM317, "LM317");
     ADD_COMP(COMP_7805, "7805");
     ADD_COMP(COMP_TL431, "TL431");
 
     // === DISPLAY/OUTPUT SECTION (index 88) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_DISPLAY);
     ADD_COMP(COMP_7SEG_DISPLAY, "7Seg");
     ADD_COMP(COMP_LED_ARRAY, "LEDBar");
     ADD_COMP(COMP_LED_MATRIX, "8x8");
@@ -378,7 +383,7 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_ANTENNA_RX, "RX");
 
     // === SUB-CIRCUITS SECTION ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_SUBPARTS);
     ADD_COMP(COMP_PIN, "Pin");
     ADD_COMP(COMP_SUBCIRCUIT, "IC");
     ADD_COMP(COMP_BUS, "Bus");
@@ -386,7 +391,7 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_LAMP, "Lamp");
 
     // === MEASUREMENT SECTION (index 93) ===
-    NEW_SECTION();
+    NEW_SECTION(PCAT_MEASUREMENT);
     ADD_COMP(COMP_VOLTMETER, "VMeter");
     ADD_COMP(COMP_AMMETER, "AMeter");
     ADD_COMP(COMP_WATTMETER, "WMeter");
@@ -395,25 +400,6 @@ void ui_init(UIState *ui) {
     #undef ADD_TOOL
     #undef ADD_COMP
     #undef NEW_SECTION
-
-    // Category of every palette item, derived from the ADD_* order above. Both the palette
-    // layout and the hit-test use item->category, so adding an item to a section can never
-    // leave it without a layout (that is how VMeter's startup hit-box ended up under the
-    // sRLC circuit button).
-    {
-        static const struct { int start, end; PaletteCategoryID cat; } ranges[] = {
-            {0, 4, PCAT_TOOLS}, {5, 10, PCAT_SOURCES}, {11, 16, PCAT_WAVEFORMS}, {17, 27, PCAT_PASSIVES},
-            {28, 33, PCAT_DIODES}, {34, 37, PCAT_BJT}, {38, 41, PCAT_FET}, {42, 45, PCAT_THYRISTORS},
-            {46, 49, PCAT_OPAMPS}, {50, 53, PCAT_CONTROLLED}, {54, 59, PCAT_SWITCHES}, {60, 61, PCAT_TRANSFORMERS},
-            {62, 71, PCAT_LOGIC}, {72, 81, PCAT_DIGITAL}, {82, 87, PCAT_MIXED}, {88, 90, PCAT_REGULATORS},
-            {91, 96, PCAT_DISPLAY}, {97, 101, PCAT_SUBPARTS}, {102, 105, PCAT_MEASUREMENT},
-        };
-        for (int i = 0; i < ui->num_palette_items; i++) {
-            ui->palette_items[i].category = PCAT_MEASUREMENT;   // anything past the table lands here
-            for (unsigned k = 0; k < sizeof ranges / sizeof ranges[0]; k++)
-                if (i >= ranges[k].start && i <= ranges[k].end) { ui->palette_items[i].category = ranges[k].cat; break; }
-        }
-    }
 
     // === CIRCUITS SECTION ===
     pal_y += pal_h + 18;
@@ -428,226 +414,24 @@ void ui_init(UIState *ui) {
     ui->placing_subcircuit = false;
     ui->subcircuit_editing_def_id = -1;  // -1 = creating new
 
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_RC_LOWPASS, "RC LP", false, false
-    };
-    col++;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_RC_HIGHPASS, "RC HP", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_VOLTAGE_DIVIDER, "V Div", false, false
-    };
-    col++;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_HALFWAVE_RECT, "HW Rec", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_FULLWAVE_BRIDGE, "FW Brg", false, false
-    };
-    col++;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_INVERTING_AMP, "Inv", false, false
-    };
-    col++;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_NONINVERTING_AMP, "NonI", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_VOLTAGE_FOLLOWER, "Follw", false, false
-    };
-    col++;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_LED_WITH_RESISTOR, "LED+R", false, false
-    };
-    // Transistor amplifiers
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_COMMON_EMITTER, "CE", false, false
-    };
-    col++;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_COMMON_SOURCE, "CS", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_COMMON_DRAIN, "SF", false, false
-    };
-    col++;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_MULTISTAGE_AMP, "2Stg", false, false
-    };
-    // Additional transistor circuits
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_DIFFERENTIAL_PAIR, "Diff", false, false
-    };
-    col++;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_CURRENT_MIRROR, "CMir", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_PUSH_PULL, "PP", false, false
-    };
-    col++;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_CMOS_INVERTER, "CMOS", false, false
-    };
-    // Additional op-amp circuits
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_INTEGRATOR, "Intg", false, false
-    };
-    col++;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_DIFFERENTIATOR, "Difr", false, false
-    };
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_SUMMING_AMP, "Sum", false, false
-    };
-    col++;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_COMPARATOR, "Cmp", false, false
-    };
-    // RLC Resonant Circuits
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_SERIES_RLC, "sRLC", false, false
-    };
-    col++;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_PARALLEL_RLC, "pRLC", false, false
-    };
-    // Measurement & Detection Circuits
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_WHEATSTONE, "Whst", false, false
-    };
-    col++;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_PEAK_DETECTOR, "Peak", false, false
-    };
-    // Signal Processing Circuits
-    col = 0;
-    pal_y += pal_h + 5;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_CLAMPER, "Clmp", false, false
-    };
-    col++;
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_PHASE_SHIFT_OSC, "PhOsc", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_RC_BANDPASS, "RC BP", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_LC_LOWPASS, "LC LP", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_ZENER_CLIPPER, "ZClip", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_VOLTAGE_DOUBLER, "Dblr", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_RELAXATION_OSC, "RelOsc", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_HALFWAVE_FILTERED, "HW+C", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_HV_345_LINE, "345kV", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_HV_138_LINE_VAR, "138kV", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_MV_FEEDER, "Feedr", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_POLE_XFMR, "Pole", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_GEN_GSU, "GenSU", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_GRID_CHAIN, "Grid", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_FERRANTI_LINE, "Ferr", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_TESLA_COIL, "Tesla", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_TESLA_COIL_BIG, "TeslaB", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_TESLA_COIL_DETUNED, "TeslaX", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_LINE_MODEL_LADDER, "Ladder", false, false
-    };
-    col++;
-    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
-    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
-        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_DC_LINE_DROP, "Drop", false, false
-    };
+    // The Circuits palette is generated from circuits.c: every template appears, grouped by
+    // TemplateGroup, labelled with its short_name. Bounds are laid out in ui_render_palette.
+    for (int g = 0; g < TG_COUNT; g++) {
+        for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+            const CircuitTemplateInfo *info = circuit_template_get_info((CircuitTemplateType)t);
+            if (!info || (int)info->group != g) continue;
+            if (ui->num_circuit_items >= (int)(sizeof ui->circuit_items / sizeof ui->circuit_items[0])) break;
+            ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+                {0, 0, 60, pal_h}, t, info->short_name, false, false, g
+            };
+        }
+    }
+    (void)col;
 
     // Calculate palette content height (from toolbar to last item + padding)
     ui->palette_content_height = pal_y + pal_h + 10 - TOOLBAR_HEIGHT;
     ui->palette_scroll_offset = 0;
-    ui->palette_visible_height = WINDOW_HEIGHT - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
+    ui->palette_visible_height = WINDOW_HEIGHT - TOOLBAR_HEIGHT - PALETTE_TOP_H - STATUSBAR_HEIGHT;
     ui->palette_scrolling = false;
 
     // Oscilloscope settings - larger default size for better visibility
@@ -720,6 +504,10 @@ void ui_init(UIState *ui) {
     ui->btn_mc = (Button){{scope_btn_x, scope_btn_y, 25, scope_btn_h}, "MC", "Monte Carlo statistical analysis", false, false, true, false};
     scope_btn_x += 28;
     ui->btn_scope_popup = (Button){{scope_btn_x, scope_btn_y, 50, scope_btn_h}, "PopOut", "Pop out oscilloscope to separate window", false, false, true, false};
+    ui->btn_scope_tab[0] = (Button){{0, 0, 0, 0}, "Display", "Y-T/X-Y mode, capture", false, false, true, false};
+    ui->btn_scope_tab[1] = (Button){{0, 0, 0, 0}, "Trigger", "Trigger mode, edge, source, level", false, false, true, false};
+    ui->btn_scope_tab[2] = (Button){{0, 0, 0, 0}, "Analysis", "FFT, Bode plot, Monte Carlo", false, false, true, false};
+    ui->scope_ctl_tab = 0;
 
     // Initialize cursor state
     ui->scope_cursor_mode = false;
@@ -842,6 +630,7 @@ void ui_update(UIState *ui, Circuit *circuit, Simulation *sim) {
 }
 
 static void draw_button(SDL_Renderer *r, Button *btn) {
+    if (btn->bounds.w <= 0 || btn->bounds.h <= 0) return;   // hidden (inactive scope tab)
     // Background - synthwave colors
     if (btn->pressed) {
         SDL_SetRenderDrawColor(r, SYNTH_PINK, 0xff);
@@ -1084,14 +873,68 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     SDL_RenderDrawLine(renderer, 0, TOOLBAR_HEIGHT - 1, ui->window_width, TOOLBAR_HEIGHT - 1);
 }
 
+// Case-insensitive substring match of the palette filter against a label (empty filter = match)
+static bool palette_filter_match(const UIState *ui, const char *label, const char *label2) {
+    if (!ui->palette_filter[0]) return true;
+    char f[32], l[96];
+    size_t i;
+    for (i = 0; ui->palette_filter[i] && i < sizeof f - 1; i++) f[i] = (char)tolower((unsigned char)ui->palette_filter[i]);
+    f[i] = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        const char *src = pass ? label2 : label;
+        if (!src) continue;
+        for (i = 0; src[i] && i < sizeof l - 1; i++) l[i] = (char)tolower((unsigned char)src[i]);
+        l[i] = 0;
+        if (strstr(l, f)) return true;
+    }
+    return false;
+}
+
+// Tab strip + filter box at the top of the left panel
+static void draw_palette_tabs(UIState *ui, SDL_Renderer *renderer) {
+    const char *names[LTAB_COUNT] = { "Parts", "Circuits" };
+    int tab_w = (PALETTE_WIDTH - 14) / LTAB_COUNT;
+    for (int t = 0; t < LTAB_COUNT; t++) {
+        SDL_Rect r = { 2 + t * (tab_w + 2), TOOLBAR_HEIGHT + 3, tab_w, 18 };
+        bool active = (ui->left_tab == t);
+        SDL_SetRenderDrawColor(renderer, active ? 0x40 : 0x14, active ? 0x20 : 0x0c, active ? 0x60 : 0x24, 0xff);
+        SDL_RenderFillRect(renderer, &r);
+        SDL_SetRenderDrawColor(renderer, active ? SYNTH_CYAN : SYNTH_BORDER, 0xff);
+        SDL_RenderDrawRect(renderer, &r);
+        if (active) SDL_RenderDrawLine(renderer, r.x, r.y + r.h - 1, r.x + r.w - 1, r.y + r.h - 1);
+        int tx = r.x + (r.w - (int)strlen(names[t]) * 6) / 2;
+        SDL_SetRenderDrawColor(renderer, active ? SYNTH_CYAN : SYNTH_TEXT_DIM, 0xff);
+        ui_draw_text(renderer, names[t], tx, r.y + 5);
+    }
+    // filter box
+    SDL_Rect box = { 4, TOOLBAR_HEIGHT + 24, PALETTE_WIDTH - 18, 17 };
+    SDL_SetRenderDrawColor(renderer, 0x0c, 0x08, 0x18, 0xff);
+    SDL_RenderFillRect(renderer, &box);
+    SDL_SetRenderDrawColor(renderer, ui->palette_filter_active ? SYNTH_CYAN : SYNTH_BORDER, 0xff);
+    SDL_RenderDrawRect(renderer, &box);
+    if (ui->palette_filter[0]) {
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
+        ui_draw_text(renderer, ui->palette_filter, box.x + 4, box.y + 4);
+        if (ui->palette_filter_active && (SDL_GetTicks() / 500) % 2 == 0) {
+            int cx = box.x + 4 + (int)strlen(ui->palette_filter) * 6;
+            SDL_RenderDrawLine(renderer, cx, box.y + 3, cx, box.y + 13);
+        }
+    } else {
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
+        ui_draw_text(renderer, ui->palette_filter_active ? "type to filter" : "filter...", box.x + 4, box.y + 4);
+    }
+}
+
 void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
     // Palette background - synthwave dark
     SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
     SDL_Rect palette = {0, TOOLBAR_HEIGHT, PALETTE_WIDTH, ui->window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT};
     SDL_RenderFillRect(renderer, &palette);
 
-    // Set clipping rect for palette content (excluding scrollbar area)
-    SDL_Rect clip = {0, TOOLBAR_HEIGHT, PALETTE_WIDTH - 10, ui->window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT};
+    draw_palette_tabs(ui, renderer);
+
+    // Set clipping rect for palette content (below the tab strip, excluding scrollbar area)
+    SDL_Rect clip = {0, TOOLBAR_HEIGHT + PALETTE_TOP_H, PALETTE_WIDTH - 10, ui->window_height - TOOLBAR_HEIGHT - PALETTE_TOP_H - STATUSBAR_HEIGHT};
     SDL_RenderSetClipRect(renderer, &clip);
 
     int scroll_offset = ui->palette_scroll_offset;
@@ -1102,10 +945,10 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
 
     // Calculate dynamic positions and draw
     int pal_h = 35;  // Item height
-    int draw_y = TOOLBAR_HEIGHT + 4;  // Starting y position (content coords, not screen)
+    int draw_y = TOOLBAR_HEIGHT + PALETTE_TOP_H + 4;  // Starting y position (content coords, not screen)
     int content_height = 4;  // Track total content height
 
-    for (int s = 0; s < num_sections; s++) {
+    for (int s = 0; s < num_sections && ui->left_tab == LTAB_PARTS; s++) {
         PaletteCategoryID cat_id = (PaletteCategoryID)s;
         PaletteCategory *cat = &ui->categories[cat_id];
         bool collapsed = cat->collapsed;
@@ -1145,6 +988,11 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
             for (int i = 0; i < ui->num_palette_items; i++) {
                 PaletteItem *item = &ui->palette_items[i];
                 if (item->category != cat_id) continue;
+                if (!palette_filter_match(ui, item->label, item->is_tool ? NULL : component_get_info(item->comp_type)->name)) {
+                    item->bounds.w = 0;   // filtered out: unreachable by hit-test
+                    continue;
+                }
+                item->bounds.w = 60;
 
                 // Update item bounds to dynamic position
                 item->bounds.x = 10 + col * 70;
@@ -1181,7 +1029,7 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
 
     // Circuits section
     PaletteCategory *circuits_cat = &ui->categories[PCAT_CIRCUITS];
-    if (ui->num_circuit_items > 0) {
+    if (ui->left_tab == LTAB_CIRCUITS && ui->num_circuit_items > 0) {
         circuits_cat->header_y = draw_y;
 
         int header_screen_y = draw_y - scroll_offset;
@@ -1207,9 +1055,31 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
         content_height += 14;
 
         if (!circuits_cat->collapsed) {
-            int col = 0;
+            int col = 0, cur_group = -1;
+            for (int g = 0; g < 16; g++) ui->circuit_group_header_y[g] = 0;
             for (int i = 0; i < ui->num_circuit_items; i++) {
                 CircuitPaletteItem *item = &ui->circuit_items[i];
+
+                if (item->group != cur_group) {
+                    // group sub-header (click to collapse the group)
+                    if (col > 0) { draw_y += pal_h + 5; content_height += pal_h + 5; col = 0; }
+                    cur_group = item->group;
+                    ui->circuit_group_header_y[cur_group] = draw_y;
+                    int hy = draw_y - scroll_offset;
+                    if (hy >= TOOLBAR_HEIGHT - 12 && hy < ui->window_height - STATUSBAR_HEIGHT) {
+                        SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+                        char hdr[48];
+                        snprintf(hdr, sizeof hdr, "%s %s", ui->circuit_group_collapsed[cur_group] ? ">" : "v",
+                                 circuit_template_group_name((TemplateGroup)cur_group));
+                        ui_draw_text(renderer, hdr, 14, hy);
+                    }
+                    draw_y += 13; content_height += 13;
+                }
+                if (ui->circuit_group_collapsed[cur_group]) { item->bounds.w = 0; item->bounds.h = 0; continue; }
+                {
+                    const CircuitTemplateInfo *tinfo = circuit_template_get_info((CircuitTemplateType)item->circuit_type);
+                    if (!palette_filter_match(ui, item->label, tinfo ? tinfo->name : NULL)) { item->bounds.w = 0; item->bounds.h = 0; continue; }
+                }
 
                 item->bounds.x = 10 + col * 70;
                 item->bounds.y = draw_y;
@@ -1259,7 +1129,7 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
         }
     }
 
-    if (ui->num_subcircuit_items > 0) {
+    if (ui->left_tab == LTAB_CIRCUITS && ui->num_subcircuit_items > 0) {
         subcircuits_cat->header_y = draw_y;
 
         int header_screen_y = draw_y - scroll_offset;
@@ -1380,7 +1250,7 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
     // Draw scrollbar if content exceeds visible area
     if (ui->palette_content_height > ui->palette_visible_height) {
         int scrollbar_x = PALETTE_WIDTH - 8;
-        int scrollbar_track_y = TOOLBAR_HEIGHT + 2;
+        int scrollbar_track_y = TOOLBAR_HEIGHT + PALETTE_TOP_H + 2;
         int scrollbar_track_h = ui->palette_visible_height - 4;
 
         // Draw track (darker background) - synthwave dark
@@ -4000,6 +3870,10 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     draw_button(renderer, &ui->btn_scope_volt_down);
     draw_button(renderer, &ui->btn_scope_time_up);
     draw_button(renderer, &ui->btn_scope_time_down);
+    for (int t = 0; t < 3; t++) {
+        ui->btn_scope_tab[t].toggled = (ui->scope_ctl_tab == t);
+        draw_button(renderer, &ui->btn_scope_tab[t]);
+    }
 
     // Draw trigger control buttons (second row)
     draw_button(renderer, &ui->btn_scope_trig_mode);
@@ -4039,7 +3913,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
     // Display settings panel below buttons (TIME/VOLTS info, channel readings, measurements)
     // Buttons are positioned BEFORE this section (scope -> buttons -> info -> measurements)
-    int info_y = r->y + r->h + 100 - ui->scope_controls_scroll;
+    int info_y = ui->scope_buttons_bottom + 8;   // just below the last button row (already scrolled)
 
     // Time/div with label
     SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
@@ -4071,7 +3945,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             voltage = sim->circuit->probes[ch].voltage;
         }
 
-        snprintf(buf, sizeof(buf), "CH%d:%.2fV", ch + 1, voltage);
+        { char vs[32]; ui_volt_readout(vs, sizeof vs, voltage); snprintf(buf, sizeof(buf), "CH%d:%s", ch + 1, vs); }
         ui_draw_text(renderer, buf, r->x + ch * 80, info_y);
     }
 
@@ -4118,7 +3992,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             if (m->v_pp < 1.0) {
                 snprintf(buf, sizeof(buf), "Vpp:%.0fmV", m->v_pp * 1000);
             } else {
-                snprintf(buf, sizeof(buf), "Vpp:%.2fV", m->v_pp);
+                { char vs[32]; ui_volt_readout(vs, sizeof vs, m->v_pp); snprintf(buf, sizeof(buf), "Vpp:%s", vs); }
             }
             ui_draw_text(renderer, buf, col1_x, line_y);
             line_y += 11;
@@ -4126,7 +4000,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             if (m->v_rms < 1.0) {
                 snprintf(buf, sizeof(buf), "Vrms:%.0fmV", m->v_rms * 1000);
             } else {
-                snprintf(buf, sizeof(buf), "Vrms:%.2fV", m->v_rms);
+                { char vs[32]; ui_volt_readout(vs, sizeof vs, m->v_rms); snprintf(buf, sizeof(buf), "Vrms:%s", vs); }
             }
             ui_draw_text(renderer, buf, col1_x, line_y);
             line_y += 11;
@@ -4134,7 +4008,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             if (fabs(m->v_avg) < 1.0) {
                 snprintf(buf, sizeof(buf), "Vavg:%.0fmV", m->v_avg * 1000);
             } else {
-                snprintf(buf, sizeof(buf), "Vavg:%.2fV", m->v_avg);
+                { char vs[32]; ui_volt_readout(vs, sizeof vs, m->v_avg); snprintf(buf, sizeof(buf), "Vavg:%s", vs); }
             }
             ui_draw_text(renderer, buf, col1_x, line_y);
 
@@ -6337,6 +6211,9 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
 
         // Check oscilloscope control buttons
+        for (int t = 0; t < 3; t++) {
+            if (point_in_rect(x, y, &ui->btn_scope_tab[t].bounds)) { ui->scope_ctl_tab = t; return UI_ACTION_NONE; }
+        }
         if (point_in_rect(x, y, &ui->btn_scope_volt_up.bounds) && ui->btn_scope_volt_up.enabled) {
             return UI_ACTION_SCOPE_VOLT_UP;
         }
@@ -6403,10 +6280,27 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             }
         }
 
+        // Tab strip and filter box at the top of the left panel
+        if (x >= 0 && x < PALETTE_WIDTH && y >= TOOLBAR_HEIGHT && y < TOOLBAR_HEIGHT + PALETTE_TOP_H) {
+            if (y < TOOLBAR_HEIGHT + 23) {
+                int tab = (x < PALETTE_WIDTH / 2) ? LTAB_PARTS : LTAB_CIRCUITS;
+                if (tab != ui->left_tab) {
+                    ui->palette_scroll_per_tab[ui->left_tab] = ui->palette_scroll_offset;
+                    ui->left_tab = tab;
+                    ui->palette_scroll_offset = ui->palette_scroll_per_tab[tab];
+                }
+                ui->palette_filter_active = false;
+            } else {
+                ui->palette_filter_active = true;
+            }
+            return UI_ACTION_NONE;
+        }
+        ui->palette_filter_active = false;
+
         // Check palette scrollbar click (scrollbar is at x = PALETTE_WIDTH - 8, width 6)
         if (ui->palette_content_height > ui->palette_visible_height) {
             int scrollbar_x = PALETTE_WIDTH - 8;
-            int scrollbar_track_y = TOOLBAR_HEIGHT + 2;
+            int scrollbar_track_y = TOOLBAR_HEIGHT + PALETTE_TOP_H + 2;
             int scrollbar_track_h = ui->palette_visible_height - 4;
 
             // Check if clicking on scrollbar track area
@@ -6450,10 +6344,12 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
 
         // Check palette category headers for collapse/expand (must be in palette area)
-        if (x >= 0 && x < PALETTE_WIDTH - 10 && y >= TOOLBAR_HEIGHT && y < ui->window_height - STATUSBAR_HEIGHT) {
+        if (x >= 0 && x < PALETTE_WIDTH - 10 && y >= TOOLBAR_HEIGHT + PALETTE_TOP_H && y < ui->window_height - STATUSBAR_HEIGHT) {
             int content_y = y + ui->palette_scroll_offset;  // Convert screen y to content y
-            // Check all categories for header clicks
+            // Check the active tab's categories for header clicks
             for (int cat = 0; cat < PCAT_COUNT; cat++) {
+                bool on_tab = (ui->left_tab == LTAB_PARTS) ? (cat < PCAT_CIRCUITS) : (cat >= PCAT_CIRCUITS);
+                if (!on_tab) continue;
                 PaletteCategory *category = &ui->categories[cat];
                 // Header_y is in content coords, header is 14 pixels tall
                 if (content_y >= category->header_y && content_y < category->header_y + 14) {
@@ -6466,15 +6362,15 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
 
         // Check palette items (adjust y for scroll offset)
         int adjusted_y = y + ui->palette_scroll_offset;
-        for (int i = 0; i < ui->num_palette_items; i++) {
-            // Skip items in collapsed categories (their bounds are stale)
-            if (is_palette_item_in_collapsed_category(ui, i)) {
+        for (int i = 0; i < ui->num_palette_items && ui->left_tab == LTAB_PARTS; i++) {
+            // Skip items in collapsed categories (their bounds are stale) and filtered-out items
+            if (is_palette_item_in_collapsed_category(ui, i) || ui->palette_items[i].bounds.w <= 0) {
                 continue;
             }
             if (point_in_rect(x, adjusted_y, &ui->palette_items[i].bounds)) {
                 // Verify item is visible (not clipped by scroll)
                 int item_screen_y = ui->palette_items[i].bounds.y - ui->palette_scroll_offset;
-                if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->palette_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                if (item_screen_y < TOOLBAR_HEIGHT + PALETTE_TOP_H - 8 || item_screen_y + ui->palette_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
                     continue;  // Item is scrolled out of view
                 }
                 // Deselect all palette and circuit items
@@ -6499,8 +6395,19 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
 
         // Check circuit template items (adjust y for scroll offset)
         // Skip if Circuits category is collapsed (bounds are stale)
-        if (!ui->categories[PCAT_CIRCUITS].collapsed) {
+        if (ui->left_tab == LTAB_CIRCUITS && !ui->categories[PCAT_CIRCUITS].collapsed) {
+        for (int g = 0; g < TG_COUNT; g++) {
+            if (ui->circuit_group_header_y[g] <= 0) continue;
+            Rect hr = {10, ui->circuit_group_header_y[g], 140, 13};
+            int hy = hr.y - ui->palette_scroll_offset;
+            if (hy < TOOLBAR_HEIGHT - 12 || hy > ui->window_height - STATUSBAR_HEIGHT) continue;
+            if (point_in_rect(x, adjusted_y, &hr)) {
+                ui->circuit_group_collapsed[g] = !ui->circuit_group_collapsed[g];
+                return UI_ACTION_NONE;
+            }
+        }
         for (int i = 0; i < ui->num_circuit_items; i++) {
+            if (ui->circuit_items[i].bounds.w <= 0) continue;   // collapsed group
             if (point_in_rect(x, adjusted_y, &ui->circuit_items[i].bounds)) {
                 // Verify item is visible (not clipped by scroll)
                 int item_screen_y = ui->circuit_items[i].bounds.y - ui->palette_scroll_offset;
@@ -6524,7 +6431,7 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }  // end if (!collapsed)
 
         // Check user subcircuit items (adjust y for scroll offset)
-        for (int i = 0; i < ui->num_subcircuit_items; i++) {
+        for (int i = 0; i < ui->num_subcircuit_items && ui->left_tab == LTAB_CIRCUITS; i++) {
             if (point_in_rect(x, adjusted_y, &ui->subcircuit_items[i].bounds)) {
                 // Verify item is visible (not clipped by scroll)
                 int item_screen_y = ui->subcircuit_items[i].bounds.y - ui->palette_scroll_offset;
@@ -6880,7 +6787,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
             // Also check if item is visible on screen
             if (in_bounds) {
                 int item_screen_y = ui->palette_items[i].bounds.y - ui->palette_scroll_offset;
-                if (item_screen_y < TOOLBAR_HEIGHT || item_screen_y + ui->palette_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
+                if (item_screen_y < TOOLBAR_HEIGHT + PALETTE_TOP_H - 8 || item_screen_y + ui->palette_items[i].bounds.h > ui->window_height - STATUSBAR_HEIGHT) {
                     in_bounds = false;  // Item is scrolled out of view
                 }
             }
@@ -6955,11 +6862,60 @@ void ui_update_scope_channels(UIState *ui, Circuit *circuit) {
     }
 }
 
+static void scope_button_list(UIState *ui, Button *out[SCOPE_BTN_N]) {
+    Button *l[SCOPE_BTN_N] = {
+        &ui->btn_scope_volt_up, &ui->btn_scope_volt_down, &ui->btn_scope_time_up, &ui->btn_scope_time_down,
+        &ui->btn_scope_autoset, &ui->btn_scope_cursor, &ui->btn_scope_stack, &ui->btn_scope_track, &ui->btn_scope_popup,
+        &ui->btn_scope_tab[0], &ui->btn_scope_tab[1], &ui->btn_scope_tab[2],
+        &ui->btn_scope_mode, &ui->btn_scope_screenshot,
+        &ui->btn_scope_trig_mode, &ui->btn_scope_trig_edge, &ui->btn_scope_trig_ch, &ui->btn_scope_trig_up, &ui->btn_scope_trig_down,
+        &ui->btn_scope_fft,
+    };
+    memcpy(out, l, sizeof l);
+}
+
+// Voltage readout with kV/mV scaling (scope channel and measurement rows)
+static void ui_volt_readout(char *out, size_t n, double v) {
+    if (fabs(v) >= 1000.0) snprintf(out, n, "%.4gkV", v / 1e3);
+    else if (fabs(v) < 0.1 && v != 0.0) snprintf(out, n, "%.1fmV", v * 1e3);
+    else snprintf(out, n, "%.2fV", v);
+}
+
+void ui_layout_scope_buttons(UIState *ui, int x0, int y0, int max_x) {
+    const int h = 22, gap = 3, row = 26;
+    int x = x0, y = y0;
+    #define PUT(btn, w) do { \
+        if (x + (w) > max_x && x > x0) { y += row; x = x0; } \
+        (btn)->bounds = (Rect){x, y, (w), h}; x += (w) + gap; } while (0)
+    #define HIDE(btn) ((btn)->bounds = (Rect){0, 0, 0, 0})
+    // primary row: the controls used every minute
+    PUT(&ui->btn_scope_volt_up, 30); PUT(&ui->btn_scope_volt_down, 30); x += 4;
+    PUT(&ui->btn_scope_time_up, 30); PUT(&ui->btn_scope_time_down, 30); x += 4;
+    PUT(&ui->btn_scope_autoset, 52); x += 4;
+    PUT(&ui->btn_scope_cursor, 34); PUT(&ui->btn_scope_stack, 40); PUT(&ui->btn_scope_track, 30); PUT(&ui->btn_scope_popup, 46);
+    // tab strip
+    y += row; x = x0;
+    for (int t = 0; t < 3; t++) PUT(&ui->btn_scope_tab[t], 62);
+    // active tab row; everything else is hidden (zero bounds never hit-test or draw)
+    y += row; x = x0;
+    HIDE(&ui->btn_scope_mode); HIDE(&ui->btn_scope_screenshot);
+    HIDE(&ui->btn_scope_trig_mode); HIDE(&ui->btn_scope_trig_edge); HIDE(&ui->btn_scope_trig_ch); HIDE(&ui->btn_scope_trig_up); HIDE(&ui->btn_scope_trig_down);
+    HIDE(&ui->btn_scope_fft); HIDE(&ui->btn_bode); HIDE(&ui->btn_mc);
+    switch (ui->scope_ctl_tab) {
+        case 0: PUT(&ui->btn_scope_mode, 40); PUT(&ui->btn_scope_screenshot, 40); break;
+        case 1: PUT(&ui->btn_scope_trig_mode, 45); PUT(&ui->btn_scope_trig_edge, 28); PUT(&ui->btn_scope_trig_ch, 35); PUT(&ui->btn_scope_trig_up, 24); PUT(&ui->btn_scope_trig_down, 24); break;
+        default: PUT(&ui->btn_scope_fft, 35); PUT(&ui->btn_bode, 40); PUT(&ui->btn_mc, 25); break;
+    }
+    #undef PUT
+    #undef HIDE
+    ui->scope_buttons_bottom = y + h;
+}
+
 void ui_update_layout(UIState *ui) {
     if (!ui) return;
 
     // Update palette visible height
-    ui->palette_visible_height = ui->window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
+    ui->palette_visible_height = ui->window_height - TOOLBAR_HEIGHT - PALETTE_TOP_H - STATUSBAR_HEIGHT;
 
     // Clamp scroll offset to valid range
     int max_scroll = ui->palette_content_height - ui->palette_visible_height;
@@ -6991,58 +6947,11 @@ void ui_update_layout(UIState *ui) {
         ui->scope_rect.y = max_scope_y;
     }
 
-    // Update oscilloscope control buttons - dynamic row layout with wrapping
-    // Buttons are positioned immediately below scope, BEFORE the measurements section
-    int scope_btn_y = ui->scope_rect.y + ui->scope_rect.h + 5 - ui->scope_controls_scroll;
-    int scope_btn_w = 32, scope_btn_h = 22;
-    int scope_btn_start_x = ui->scope_rect.x;  // Left edge of scope area
-    int scope_btn_max_x = ui->scope_rect.x + ui->scope_rect.w;  // Right edge of scope area
-    int scope_btn_x = scope_btn_start_x;
-    int row_spacing = scope_btn_h + 4;
-    int btn_spacing = 3;
-
-    // Helper macro for placing buttons with auto-wrap
-    #define PLACE_BTN(btn, w) do { \
-        if (scope_btn_x + (w) > scope_btn_max_x && scope_btn_x > scope_btn_start_x) { \
-            scope_btn_y += row_spacing; \
-            scope_btn_x = scope_btn_start_x; \
-        } \
-        (btn)->bounds = (Rect){scope_btn_x, scope_btn_y, (w), scope_btn_h}; \
-        scope_btn_x += (w) + btn_spacing; \
-    } while(0)
-
-    // All scope buttons with auto-wrapping
-    PLACE_BTN(&ui->btn_scope_volt_up, scope_btn_w);
-    PLACE_BTN(&ui->btn_scope_volt_down, scope_btn_w);
-    scope_btn_x += 7;  // Extra gap between groups
-    PLACE_BTN(&ui->btn_scope_time_up, scope_btn_w);
-    PLACE_BTN(&ui->btn_scope_time_down, scope_btn_w);
-    scope_btn_x += 7;
-    PLACE_BTN(&ui->btn_scope_autoset, 60);
-
-    // Force new row for trigger controls (visual grouping)
-    scope_btn_y += row_spacing;
-    scope_btn_x = scope_btn_start_x;
-    PLACE_BTN(&ui->btn_scope_trig_mode, 45);
-    PLACE_BTN(&ui->btn_scope_trig_edge, 28);
-    PLACE_BTN(&ui->btn_scope_trig_ch, 35);
-    PLACE_BTN(&ui->btn_scope_trig_up, 24);
-    PLACE_BTN(&ui->btn_scope_trig_down, 24);
-
-    // Force new row for display modes and tools (visual grouping)
-    scope_btn_y += row_spacing;
-    scope_btn_x = scope_btn_start_x;
-    PLACE_BTN(&ui->btn_scope_mode, 35);
-    PLACE_BTN(&ui->btn_scope_cursor, 35);
-    PLACE_BTN(&ui->btn_scope_fft, 35);
-    PLACE_BTN(&ui->btn_scope_stack, 40);
-    PLACE_BTN(&ui->btn_scope_track, 32);
-    PLACE_BTN(&ui->btn_scope_screenshot, 35);
-    PLACE_BTN(&ui->btn_bode, 40);
-    PLACE_BTN(&ui->btn_mc, 25);
-    PLACE_BTN(&ui->btn_scope_popup, 50);
-
-    #undef PLACE_BTN
+    // Scope control buttons (one shared layout for the main and the pop-out window)
+    ui_layout_scope_buttons(ui, ui->scope_rect.x, ui->scope_rect.y + ui->scope_rect.h + 5 - ui->scope_controls_scroll,
+                            ui->scope_rect.x + ui->scope_rect.w);
+    int scope_btn_h = 22;
+    int scope_btn_y = ui->scope_buttons_bottom - scope_btn_h;
 
     // Calculate scope controls content and visible heights for scrolling
     // Content: buttons (3 rows) + info section + measurements
@@ -7051,7 +6960,7 @@ void ui_update_layout(UIState *ui) {
     int buttons_height = buttons_end_y - (ui->scope_rect.y + ui->scope_rect.h + 5);
 
     // Info section: +100 offset, then +15 for channel readings, +18 for measurements, +14 header + 38*channels
-    int info_height = 100 + 15 + 18 + 14 + (ui->scope_num_channels * 38);
+    int info_height = 8 + 15 + 18 + 14 + (ui->scope_num_channels * 38);
 
     // Total content height (from bottom of scope)
     ui->scope_controls_content_height = buttons_height + info_height;
@@ -7315,113 +7224,28 @@ void ui_scope_controls_scroll(UIState *ui, int direction) {
     if (ui->scope_controls_scroll > max_scroll) ui->scope_controls_scroll = max_scroll;
 }
 
-// Setup popup scope coordinates for input handling
-// Returns backup of original coordinates
+// Pop-out scope: swap in the popup window's rect and button layout, returning the main
+// window's coordinates so they can be restored after the event / render.
 ScopeCoordsBackup ui_setup_popup_scope_coords(UIState *ui) {
     ScopeCoordsBackup backup = {0};
     if (!ui || !ui->scope_popped_out || !ui->scope_popup_window) return backup;
-
-    // Save original values
+    Button *list[SCOPE_BTN_N];
+    scope_button_list(ui, list);
     backup.scope_rect = ui->scope_rect;
-    backup.btn_volt_up = ui->btn_scope_volt_up.bounds;
-    backup.btn_volt_down = ui->btn_scope_volt_down.bounds;
-    backup.btn_time_up = ui->btn_scope_time_up.bounds;
-    backup.btn_time_down = ui->btn_scope_time_down.bounds;
-    backup.btn_autoset = ui->btn_scope_autoset.bounds;
-    backup.btn_trig_mode = ui->btn_scope_trig_mode.bounds;
-    backup.btn_trig_edge = ui->btn_scope_trig_edge.bounds;
-    backup.btn_trig_ch = ui->btn_scope_trig_ch.bounds;
-    backup.btn_trig_up = ui->btn_scope_trig_up.bounds;
-    backup.btn_trig_down = ui->btn_scope_trig_down.bounds;
-    backup.btn_mode = ui->btn_scope_mode.bounds;
-    backup.btn_cursor = ui->btn_scope_cursor.bounds;
-    backup.btn_fft = ui->btn_scope_fft.bounds;
-    backup.btn_stack = ui->btn_scope_stack.bounds;
-    backup.btn_track = ui->btn_scope_track.bounds;
-    backup.btn_screenshot = ui->btn_scope_screenshot.bounds;
-    backup.btn_bode = ui->btn_bode.bounds;
-    backup.btn_mc = ui->btn_mc.bounds;
-
-    // Get popup window size
+    backup.buttons_bottom = ui->scope_buttons_bottom;
+    for (int i = 0; i < SCOPE_BTN_N; i++) backup.b[i] = list[i]->bounds;
     int popup_w, popup_h;
     SDL_GetWindowSize(ui->scope_popup_window, &popup_w, &popup_h);
-
-    // Set popup coordinates (same as in app.c rendering)
     ui->scope_rect = (Rect){10, 30, popup_w - 20, popup_h - 130};
-
-    // Recalculate button positions for popup window
-    int scope_btn_y = ui->scope_rect.y + ui->scope_rect.h + 5;
-    int scope_btn_w = 32, scope_btn_h = 22;
-    int scope_btn_x = ui->scope_rect.x;
-    int row_spacing = scope_btn_h + 4;
-
-    // Row 1: Scale controls
-    ui->btn_scope_volt_up.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
-    scope_btn_x += scope_btn_w + 3;
-    ui->btn_scope_volt_down.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
-    scope_btn_x += scope_btn_w + 10;
-    ui->btn_scope_time_up.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
-    scope_btn_x += scope_btn_w + 3;
-    ui->btn_scope_time_down.bounds = (Rect){scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h};
-    scope_btn_x += scope_btn_w + 10;
-    ui->btn_scope_autoset.bounds = (Rect){scope_btn_x, scope_btn_y, 50, scope_btn_h};
-
-    // Row 2: Trigger controls
-    scope_btn_y += row_spacing;
-    scope_btn_x = ui->scope_rect.x;
-    ui->btn_scope_trig_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 45, scope_btn_h};
-    scope_btn_x += 48;
-    ui->btn_scope_trig_edge.bounds = (Rect){scope_btn_x, scope_btn_y, 28, scope_btn_h};
-    scope_btn_x += 31;
-    ui->btn_scope_trig_ch.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
-    scope_btn_x += 38;
-    ui->btn_scope_trig_up.bounds = (Rect){scope_btn_x, scope_btn_y, 24, scope_btn_h};
-    scope_btn_x += 27;
-    ui->btn_scope_trig_down.bounds = (Rect){scope_btn_x, scope_btn_y, 24, scope_btn_h};
-
-    // Row 3: Display modes and tools
-    scope_btn_y += row_spacing;
-    scope_btn_x = ui->scope_rect.x;
-    ui->btn_scope_mode.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
-    scope_btn_x += 38;
-    ui->btn_scope_cursor.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
-    scope_btn_x += 38;
-    ui->btn_scope_fft.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
-    scope_btn_x += 38;
-    ui->btn_scope_stack.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
-    scope_btn_x += 43;
-    ui->btn_scope_track.bounds = (Rect){scope_btn_x, scope_btn_y, 32, scope_btn_h};
-    scope_btn_x += 35;
-    ui->btn_scope_screenshot.bounds = (Rect){scope_btn_x, scope_btn_y, 35, scope_btn_h};
-    scope_btn_x += 38;
-    ui->btn_bode.bounds = (Rect){scope_btn_x, scope_btn_y, 40, scope_btn_h};
-    scope_btn_x += 43;
-    ui->btn_mc.bounds = (Rect){scope_btn_x, scope_btn_y, 25, scope_btn_h};
-
+    ui_layout_scope_buttons(ui, ui->scope_rect.x, ui->scope_rect.y + ui->scope_rect.h + 5, ui->scope_rect.x + ui->scope_rect.w);
     return backup;
 }
 
-// Restore original scope coordinates from backup
 void ui_restore_popup_scope_coords(UIState *ui, const ScopeCoordsBackup *backup) {
     if (!ui || !backup) return;
-
+    Button *list[SCOPE_BTN_N];
+    scope_button_list(ui, list);
     ui->scope_rect = backup->scope_rect;
-    ui->btn_scope_volt_up.bounds = backup->btn_volt_up;
-    ui->btn_scope_volt_down.bounds = backup->btn_volt_down;
-    ui->btn_scope_time_up.bounds = backup->btn_time_up;
-    ui->btn_scope_time_down.bounds = backup->btn_time_down;
-    ui->btn_scope_autoset.bounds = backup->btn_autoset;
-    ui->btn_scope_trig_mode.bounds = backup->btn_trig_mode;
-    ui->btn_scope_trig_edge.bounds = backup->btn_trig_edge;
-    ui->btn_scope_trig_ch.bounds = backup->btn_trig_ch;
-    ui->btn_scope_trig_up.bounds = backup->btn_trig_up;
-    ui->btn_scope_trig_down.bounds = backup->btn_trig_down;
-    ui->btn_scope_mode.bounds = backup->btn_mode;
-    ui->btn_scope_cursor.bounds = backup->btn_cursor;
-    ui->btn_scope_fft.bounds = backup->btn_fft;
-    ui->btn_scope_stack.bounds = backup->btn_stack;
-    ui->btn_scope_track.bounds = backup->btn_track;
-    ui->btn_scope_screenshot.bounds = backup->btn_screenshot;
-    ui->btn_bode.bounds = backup->btn_bode;
-    ui->btn_mc.bounds = backup->btn_mc;
+    ui->scope_buttons_bottom = backup->buttons_bottom;
+    for (int i = 0; i < SCOPE_BTN_N; i++) list[i]->bounds = backup->b[i];
 }

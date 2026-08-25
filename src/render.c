@@ -12,6 +12,10 @@
 void render_fuse(RenderContext *ctx, float x, float y, int rotation, bool blown, double heat_level);
 void render_crystal(RenderContext *ctx, float x, float y, int rotation);
 void render_spark_gap(RenderContext *ctx, float x, float y, int rotation);
+static void render_volt_str(char *out, size_t n, double v) {
+    if (fabs(v) >= 1000.0) snprintf(out, n, "%.4gkV", v / 1e3);
+    else snprintf(out, n, "%.2fV", v);
+}
 void render_toroid(RenderContext *ctx, Component *comp);
 void render_tline(RenderContext *ctx, Component *comp);
 static void render_arc_between(RenderContext *ctx, float x1, float y1, float x2, float y2, float intensity);
@@ -1024,7 +1028,7 @@ void render_component(RenderContext *ctx, Component *comp) {
             if (fabs(v) >= 1000.0)
                 snprintf(reading_str, sizeof(reading_str), "%.2fkV", v / 1000.0);
             else if (fabs(v) >= 1.0)
-                snprintf(reading_str, sizeof(reading_str), "%.2fV", v);
+                render_volt_str(reading_str, sizeof(reading_str), v);
             else if (fabs(v) >= 0.001)
                 snprintf(reading_str, sizeof(reading_str), "%.2fmV", v * 1000.0);
             else
@@ -1569,7 +1573,7 @@ void render_probe(RenderContext *ctx, Probe *probe, int index) {
 
     // Draw voltage reading near the tip
     char volt_str[16];
-    snprintf(volt_str, sizeof(volt_str), "%.2fV", probe->voltage);
+    render_volt_str(volt_str, sizeof(volt_str), probe->voltage);
     render_world_to_screen(ctx, tip_x + 10, tip_y + 10, &sx, &sy);
     render_draw_text(ctx, volt_str, sx, sy, probe->color);
 }

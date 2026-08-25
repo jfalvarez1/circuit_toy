@@ -7,6 +7,8 @@
 
 #include <SDL.h>
 #include "types.h"
+
+#define PALETTE_TOP_H 44        // tab strip (22) + filter box (22) above the scrolling palette
 #include "circuit.h"
 #include "simulation.h"
 #include "render.h"
@@ -77,6 +79,8 @@ typedef enum {
     PCAT_COUNT
 } PaletteCategoryID;
 
+typedef enum { LTAB_PARTS = 0, LTAB_CIRCUITS = 1, LTAB_COUNT } LeftTab;
+
 // Palette category (collapsible)
 typedef struct {
     const char *name;
@@ -103,6 +107,7 @@ typedef struct {
     const char *label;
     bool hovered;
     bool selected;
+    int group;         // TemplateGroup (palette sub-header)
 } CircuitPaletteItem;
 
 // User subcircuit palette item
@@ -185,6 +190,10 @@ typedef struct {
 
     // Palette scrolling
     int palette_scroll_offset;      // Current scroll offset (pixels from top)
+    int left_tab;                   // LTAB_PARTS or LTAB_CIRCUITS
+    int palette_scroll_per_tab[2];  // remembered scroll of the inactive tab
+    char palette_filter[32];        // type-to-filter text (empty = show everything)
+    bool palette_filter_active;     // filter box has keyboard focus
     int palette_content_height;     // Total height of palette content
     int palette_visible_height;     // Visible height of palette area
     bool palette_scrolling;         // Currently dragging scrollbar
@@ -192,8 +201,10 @@ typedef struct {
     int palette_scroll_drag_start_offset; // Scroll offset when drag started
 
     // Circuit template palette
-    CircuitPaletteItem circuit_items[80];  // Must be >= CIRCUIT_TYPE_COUNT
+    CircuitPaletteItem circuit_items[160];  // generated from circuits.c; must be >= CIRCUIT_TYPE_COUNT
     int num_circuit_items;
+    bool circuit_group_collapsed[16];       // per TemplateGroup
+    int circuit_group_header_y[16];         // content-space y of each group header (0 = not shown)
     int selected_circuit_type;  // Currently selected circuit template (-1 = none)
     bool placing_circuit;       // True when placing a circuit template
 
@@ -253,6 +264,9 @@ typedef struct {
     Button btn_scope_track;          // Toggle time/div tracking of a sweeping source
     Button btn_scope_autoset;        // Auto-configure scope settings
     Button btn_scope_popup;          // Pop out oscilloscope to separate window
+    Button btn_scope_tab[3];         // Display / Trigger / Analysis tab strip under the primary row
+    int scope_ctl_tab;               // active tab (0 Display, 1 Trigger, 2 Analysis)
+    int scope_buttons_bottom;        // screen y just below the last button row (info rows start here)
 
     // Pop-out oscilloscope window
     SDL_Window *scope_popup_window;      // Separate window for oscilloscope
@@ -491,7 +505,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode);
 #define UI_ACTION_SCOPE_POPUP   32   // Pop out oscilloscope to separate window
 #define UI_ACTION_SCOPE_STACK   33   // Toggle stacked / overlay channel view
 #define UI_ACTION_SCOPE_TRACK   1101   // Toggle sweep-tracking time/div
-#define UI_ACTION_SPOTLIGHT     33   // Open component spotlight search (Ctrl+K)
+#define UI_ACTION_SPOTLIGHT     1102 // Open component spotlight search (Ctrl+K)  (was 33: collided with SCOPE_STACK)
 #define UI_ACTION_EXPORT_SVG    34   // Export circuit to SVG file
 #define UI_ACTION_MC_RUN        35   // Start Monte Carlo analysis
 #define UI_ACTION_MC_RUNS_UP    36   // Increase MC runs
@@ -544,13 +558,17 @@ void ui_scope_controls_scroll(UIState *ui, int direction);
 
 // Popup scope coordinate handling for input events
 // Stores saved coordinates for scope rect and buttons
+#define SCOPE_BTN_N 20
 typedef struct {
     Rect scope_rect;
-    Rect btn_volt_up, btn_volt_down, btn_time_up, btn_time_down;
-    Rect btn_autoset, btn_trig_mode, btn_trig_edge, btn_trig_ch;
-    Rect btn_trig_up, btn_trig_down, btn_mode, btn_cursor;
-    Rect btn_fft, btn_stack, btn_track, btn_screenshot, btn_bode, btn_mc;
+    Rect b[SCOPE_BTN_N];
+    int buttons_bottom;
 } ScopeCoordsBackup;
+
+// Lay out every scope control button (primary row, tab strip, active tab row) starting at
+// (x0, y0), wrapping at max_x; sets ui->scope_buttons_bottom. Used for the main window and
+// the pop-out window so there is exactly one layout.
+void ui_layout_scope_buttons(UIState *ui, int x0, int y0, int max_x);
 
 // Setup popup scope coordinates for input handling
 // Returns backup of original coordinates

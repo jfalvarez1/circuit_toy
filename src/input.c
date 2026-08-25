@@ -1170,6 +1170,15 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 return true;
             }
 
+            // Left-panel filter box has focus
+            if (ui && ui->palette_filter_active) {
+                SDL_Keycode key = event->key.keysym.sym;
+                if (key == SDLK_ESCAPE) { ui->palette_filter[0] = 0; ui->palette_filter_active = false; }
+                else if (key == SDLK_RETURN || key == SDLK_KP_ENTER) ui->palette_filter_active = false;
+                else if (key == SDLK_BACKSPACE) { size_t n = strlen(ui->palette_filter); if (n) ui->palette_filter[n - 1] = 0; }
+                return true;
+            }
+
             // If editing a property, handle text editing keys
             if (input->editing_property) {
                 SDL_Keycode key = event->key.keysym.sym;
@@ -1295,6 +1304,14 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             // Handle spotlight text input
             if (ui->show_spotlight) {
                 ui_spotlight_text_input(ui, event->text.text);
+                return true;
+            }
+            // Left-panel filter box
+            if (ui->palette_filter_active) {
+                size_t n = strlen(ui->palette_filter);
+                const char *t = event->text.text;
+                while (*t && n < sizeof ui->palette_filter - 1) ui->palette_filter[n++] = *t++;
+                ui->palette_filter[n] = 0;
                 return true;
             }
             if (input->editing_property) {
