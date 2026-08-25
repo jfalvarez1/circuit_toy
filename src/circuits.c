@@ -3017,7 +3017,7 @@ static int place_ac_dc_supply(Circuit *circuit, float x, float y) {
 
     // Load resistor
     Component *rload = add_comp(circuit, COMP_RESISTOR, x + 570, y + 50, 90);
-    rload->props.resistor.resistance = 100.0;
+    rload->props.resistor.resistance = 100.0; rload->props.resistor.power_rating = 5.0;   // ~2.5 W at 16 V: 5 W load resistor
 
     // Grounds
     Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 500, y + 140, 0);
@@ -3184,7 +3184,7 @@ static int place_ac_dc_american(Circuit *circuit, float x, float y) {
 
     // Load resistor (100 ohm = ~120mA at 12V)
     Component *rload = add_comp(circuit, COMP_RESISTOR, x + 570, y + 50, 90);
-    rload->props.resistor.resistance = 100.0;
+    rload->props.resistor.resistance = 100.0; rload->props.resistor.power_rating = 5.0;   // ~2.5 W at 16 V: 5 W load resistor
 
     // Grounds
     Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 500, y + 140, 0);
@@ -5116,7 +5116,7 @@ static int place_7805_reg(Circuit *circuit, float x, float y) {
 
     // Load resistor (50 ohms for 100mA at 5V)
     Component *rload = add_comp(circuit, COMP_RESISTOR, x + 240, y + 30, 90);
-    rload->props.resistor.resistance = 50.0;
+    rload->props.resistor.resistance = 50.0; rload->props.resistor.power_rating = 1.0;    // 0.5 W at 5 V / 100 mA: 1 W part
 
     Component *gnd_load = add_comp(circuit, COMP_GROUND, x + 240, y + 90, 0);
 
@@ -6830,12 +6830,12 @@ static int place_dc_line_drop(Circuit *circuit, float x, float y) {
     v->props.dc_voltage.voltage = 12.0;
     Component *g0 = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
     Component *rw = add_comp(circuit, COMP_RESISTOR, x + 100, y + 20, 0);               // (60,20)-(140,20) wire
-    rw->props.resistor.resistance = 1.0;
+    rw->props.resistor.resistance = 1.0; rw->props.resistor.power_rating = 5.0;         // 1.2 W in the wire: a 5 W part
     Component *rl = add_comp(circuit, COMP_RESISTOR, x + 200, y + 60, 90);              // (200,20)-(200,100) load
-    rl->props.resistor.resistance = 10.0;
+    rl->props.resistor.resistance = 10.0; rl->props.resistor.power_rating = 25.0;       // 12 W load: 25 W wirewound
     Component *g1 = add_comp(circuit, COMP_GROUND, x + 200, y + 120, 0);
     Component *rw2 = add_comp(circuit, COMP_RESISTOR, x + 100, y + 120, 0);             // (60,120)-(140,120) return wire (drawn, grounded both ends)
-    rw2->props.resistor.resistance = 1.0;
+    rw2->props.resistor.resistance = 1.0; rw2->props.resistor.power_rating = 5.0;
     add_label(circuit, x + 20, y - 40, "Line drop basics: 12 V, 1 ohm wire, 10 ohm load -> 10.9 V (I = 1.09 A)");
     add_label(circuit, x + 30, y + 160, "(return conductor shown for the picture; both ends are the 0 V reference)");
     connect_terminals(circuit, v, 1, g0, 0);
@@ -7739,7 +7739,7 @@ static int place_rc_step(Circuit *circuit, float x, float y) {
 static int place_rl_step(Circuit *circuit, float x, float y) {
     Component *v = square_source(circuit, x, y, 1000.0); if (!v) return 0;
     Component *l = add_comp(circuit, COMP_INDUCTOR, x + 60, y + 20, 0); l->props.inductor.inductance = 10e-3;
-    Component *r = add_comp(circuit, COMP_RESISTOR, x + 220, y + 60, 90); r->props.resistor.resistance = 100.0;
+    Component *r = add_comp(circuit, COMP_RESISTOR, x + 220, y + 60, 90); r->props.resistor.resistance = 100.0; r->props.resistor.power_rating = 0.5;   // 0.25 W peak: 1/2 W part
     series_series_shunt(circuit, x, y, v, l, NULL, r);
     add_label(circuit, x + 20, y - 40, "RL step: tau = L/R = 100 us; the resistor voltage = 100 x i_L rises to 5 V (50 mA), 63 % at tau");
     return 5;
@@ -7907,7 +7907,7 @@ static int place_darlington(Circuit *circuit, float x, float y) {
     Component *rs = hres(circuit, x + 100, y + 60, 100e3);                                 // (60,60)-(140,60)
     Component *q1 = add_comp(circuit, COMP_NPN_BJT, x + 200, y, 0);                       // B(180,0) C(220,-20) E(220,20)
     Component *q2 = add_comp(circuit, COMP_NPN_BJT, x + 280, y + 60, 0);                  // B(260,60) C(300,40) E(300,80)
-    Component *re = vres(circuit, x + 300, y + 120, 100.0);                                // (300,80)-(300,160)
+    Component *re = vres(circuit, x + 300, y + 120, 100.0); re->props.resistor.power_rating = 1.0;   // 46 mA emitter current: 1 W part
     gnd_below(circuit, re, 1, x + 300, y + 180);
     add_label(circuit, x - 40, y - 160, "Darlington follower: R_in ~ beta^2 R_E = 1 M, so a 100k source loses only 9 %; two V_BE drops (4.6 V DC out)");
     int rail0 = TN(x, y - 100), rail1 = TN(x + 220, y - 100), rail2 = TN(x + 300, y - 100), c1 = TN(x + 220, y - 20), c2 = TN(x + 300, y + 40);
@@ -8382,15 +8382,15 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
     }
     if (min_x > 1e8f) { min_x = x - 100; max_y = y + 200; }
 
-    // Power-system / high-voltage templates: their loads, line and fault resistors dissipate kW-MW.
-    // Make them high-power loads (box symbol, no thermal warning); small sense resistors (< 5 ohm:
-    // CT burdens, R_d) keep the normal resistor so a real overload still shows.
+    // Power-system / high-voltage templates: loads, line, fault and even CT-burden resistors
+    // dissipate 100s of W to MW. Make them all high-power loads (box symbol, no thermal warning);
+    // low-voltage templates keep the normal resistor and its overload warning (--burn-test enforces).
     {
         const CircuitTemplateInfo *tinfo = circuit_template_get_info(type);
         if (tinfo && (tinfo->group == TG_POWER_SYSTEMS || tinfo->group == TG_HIGH_VOLTAGE)) {
             for (int i = first; i < circuit->num_components; i++) {
                 Component *c = circuit->components[i];
-                if (c->type == COMP_RESISTOR && c->props.resistor.resistance >= 5.0) {
+                if (c->type == COMP_RESISTOR) {
                     c->props.resistor.high_power = true;
                     c->props.resistor.power_rating = 1e12;
                     c->thermal.max_temperature = 0.0;

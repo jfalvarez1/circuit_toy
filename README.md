@@ -523,11 +523,21 @@ build/tools/template_smoke.exe --osc-test        # oscillators really oscillate 
 build/tools/template_smoke.exe --tesla-test      # spark-gap firings, ring frequency, toroid peak, streamer, tuned vs detuned
 build/tools/template_smoke.exe --param-test      # spark gap / toroid / line / transformer limits vs phasor oracles; scope presets
 build/tools/template_smoke.exe --flow-test       # current-flow display: KCL, conservation, series uniformity
+build/tools/template_smoke.exe --burn-test       # no resistor/LED over its rating (HV templates use R_HP loads)
 build/tools/template_smoke.exe --geom-test       # schematic audit: diagonals, crossings, wires through bodies
 build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
 build/tools/template_smoke.exe --response "RC BP"   # amplitude vs frequency of every node during the sweep
 build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
 build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template in the palette)
+```
+
+The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
+which produced the images in this README):
+
+```bash
+build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
+build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
+build/circuit-playground.exe --help
 ```
 
 The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,

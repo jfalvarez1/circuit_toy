@@ -12,6 +12,7 @@
  * Usage: template_smoke [--dc] [--verbose] [--nodes] [--svg DIR] [--sim-time SEC] [name-substring]
  *        template_smoke --scope-test     (scope time/div <-> dt mapping checks)
  *        template_smoke --flow-test      (current-flow display invariants on all templates)
+ *        template_smoke --burn-test      (no resistor/LED over its rating; HV templates must be clean)
  *        template_smoke --osc-test       (oscillator templates really oscillate, at the right frequency)
  *        template_smoke --probe-test     (probe each template's output node, compare with hand calculation)
  *        template_smoke --geom-test      (schematic audit: diagonals, crossings, wires through bodies)
@@ -1315,6 +1316,58 @@ static int probe_audit(const char *filter) {
     return flagged;
 }
 
+
+/* --burn-test: run every template for 10 scope divisions and report any resistor whose peak
+   dissipation exceeds its rating (the canvas warning icon) or LED over its max current.
+   Non-zero exit if a power-system / high-voltage / Tesla template would show a warning. */
+static int burn_test(void) {
+    int flagged = 0, total = 0, hv_flagged = 0;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        Circuit *c = circuit_create();
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        total++;
+        int n = c->num_components;
+        double *pmax = calloc(n, sizeof *pmax);
+        Simulation *sim = simulation_create(c);
+        int ok = simulation_dc_analysis(sim);
+        double td = circuit_template_scope_time_div((CircuitTemplateType)t);
+        double t_end = td > 0 ? 10 * td : 0.02;
+        if (td > 0) { double dtp = simulation_scope_time_step(sim, td); if (dtp > 0) simulation_set_time_step(sim, dtp); }
+        else simulation_set_time_step(sim, 1e-5);
+        simulation_start(sim);
+        long steps = 0;
+        while (ok && sim->time < t_end && steps < 2000000) {
+            if (!simulation_step(sim)) { ok = 0; break; }
+            steps++;
+            for (int i = 0; i < n; i++) {
+                Component *comp = c->components[i];
+                double v = 0;
+                if (comp->type == COMP_RESISTOR) v = comp->props.resistor.power_dissipated;
+                else if (comp->type == COMP_LED) v = comp->props.led.current;
+                if (v > pmax[i]) pmax[i] = v;
+            }
+        }
+        int hv = ti && (ti->group == TG_POWER_SYSTEMS || ti->group == TG_HIGH_VOLTAGE || strstr(ti->name, "Tesla"));
+        for (int i = 0; i < n; i++) {
+            Component *comp = c->components[i];
+            double ratio = 0;
+            if (comp->type == COMP_RESISTOR && comp->props.resistor.power_rating > 0) ratio = pmax[i] / comp->props.resistor.power_rating;
+            else if (comp->type == COMP_LED && comp->props.led.max_current > 0) ratio = pmax[i] / comp->props.led.max_current;
+            if (ratio > 1.0) {
+                flagged++; if (hv) hv_flagged++;
+                printf("%-4s %-34s %-6s %-14s peak %.3g %s (%.0f%% of rating)%s\n", hv ? "HV" : "", ti ? ti->name : "?",
+                       comp->label, comp->type == COMP_RESISTOR ? "resistor" : "LED", pmax[i],
+                       comp->type == COMP_RESISTOR ? "W" : "A", ratio * 100, ok ? "" : "  [sim failed]");
+            }
+        }
+        if (!ok) printf("     %-34s sim failed at t=%.3g\n", ti ? ti->name : "?", sim->time);
+        free(pmax); simulation_free(sim); circuit_free(c);
+    }
+    printf("burn-test: %d templates, %d overloaded parts (%d in HV/power/Tesla templates)\n", total, flagged, hv_flagged);
+    return hv_flagged ? 1 : 0;
+}
+
 static int series_template(const char *filter, double t_end, int node_id) {
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
@@ -1350,6 +1403,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--svg") && i + 1 < argc) svg_dir = argv[++i];
         else if (!strcmp(argv[i], "--scope-test")) return scope_dt_test();
         else if (!strcmp(argv[i], "--flow-test")) return flow_test();
+        else if (!strcmp(argv[i], "--burn-test")) return burn_test();
         else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt = atof(argv[++i]);
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
