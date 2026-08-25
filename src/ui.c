@@ -14,6 +14,7 @@
 
 static void ui_volt_readout(char *out, size_t n, double v);   // defined with the scope layout helpers
 static void scope_button_list(UIState *ui, Button *out[SCOPE_BTN_N]);
+void ui_update_layout(UIState *ui);
 
 // Simple 8x8 bitmap font (same as render.c)
 static const unsigned char ui_font8x8[95][8] = {
@@ -595,6 +596,9 @@ void ui_init(UIState *ui) {
     ui->monte_carlo_tolerance = 10.0;  // 10% tolerance
 
     strncpy(ui->status_message, "Ready", sizeof(ui->status_message));
+    // Lay everything out once for the initial window size (otherwise the scope buttons keep
+    // their bootstrap positions and the info rows are drawn at y = 0 until the first resize)
+    ui_update_layout(ui);
 }
 
 void ui_update(UIState *ui, Circuit *circuit, Simulation *sim) {
