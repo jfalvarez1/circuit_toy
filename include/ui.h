@@ -242,6 +242,11 @@ typedef struct {
     int properties_width;           // Current width of properties panel
     bool props_resizing;            // Currently resizing properties panel
     int properties_content_height;  // Height of properties content (for dynamic sizing)
+    bool properties_collapsed;      // header-only properties panel (gives the room to the scope)
+    // Hover tooltip (drawn last, after a short delay)
+    char hover_text[160];
+    int hover_x, hover_y;
+    unsigned int hover_since;
     int properties_scroll_offset;   // Current scroll offset for properties panel
     int properties_visible_height;  // Visible height of properties area
     bool properties_scrolling;      // Currently dragging properties scrollbar
@@ -267,6 +272,7 @@ typedef struct {
     Button btn_scope_tab[3];         // Display / Trigger / Analysis tab strip under the primary row
     int scope_ctl_tab;               // active tab (0 Display, 1 Trigger, 2 Analysis)
     int scope_buttons_bottom;        // screen y just below the last button row (info rows start here)
+    int scope_default_h;             // scope height when the user has not resized it (shrinks on small windows)
 
     // Pop-out oscilloscope window
     SDL_Window *scope_popup_window;      // Separate window for oscilloscope
@@ -558,7 +564,7 @@ void ui_scope_controls_scroll(UIState *ui, int direction);
 
 // Popup scope coordinate handling for input events
 // Stores saved coordinates for scope rect and buttons
-#define SCOPE_BTN_N 20
+#define SCOPE_BTN_N 22
 typedef struct {
     Rect scope_rect;
     Rect b[SCOPE_BTN_N];
@@ -569,6 +575,10 @@ typedef struct {
 // (x0, y0), wrapping at max_x; sets ui->scope_buttons_bottom. Used for the main window and
 // the pop-out window so there is exactly one layout.
 void ui_layout_scope_buttons(UIState *ui, int x0, int y0, int max_x);
+// Fill out[] with every scope control button (SCOPE_BTN_N entries)
+void ui_scope_buttons(UIState *ui, Button *out[]);
+// Hover tooltip, drawn after everything else
+void ui_render_tooltip(UIState *ui, SDL_Renderer *renderer);
 
 // Setup popup scope coordinates for input handling
 // Returns backup of original coordinates

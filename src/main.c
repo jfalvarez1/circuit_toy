@@ -12,6 +12,64 @@
 #include "file_io.h"
 #include "simulation.h"
 #include "circuits.h"
+#include "ui.h"
+
+static bool rects_overlap(const Rect *a, const Rect *b) {
+    return a->x < b->x + b->w && b->x < a->x + a->w && a->y < b->y + b->h && b->y < a->y + a->h;
+}
+
+/* Headless UI layout self-check: no SDL window needed. */
+static int layout_test(void) {
+    int fails = 0;
+    UIState *ui = calloc(1, sizeof *ui);
+    ui_init(ui);
+    static const int sizes[][2] = { {1024, 600}, {1280, 720}, {1920, 1080} };
+    for (unsigned k = 0; k < sizeof sizes / sizeof sizes[0]; k++) {
+        ui->window_width = sizes[k][0]; ui->window_height = sizes[k][1];
+        for (int tab = 0; tab < 3; tab++) {
+            ui->scope_ctl_tab = tab;
+            ui_update_layout(ui);
+            Button *b[SCOPE_BTN_N]; ui_scope_buttons(ui, b);
+            int visible = 0;
+            for (int i = 0; i < SCOPE_BTN_N; i++) {
+                if (b[i]->bounds.w <= 0) continue;
+                visible++;
+                if (b[i]->bounds.x < ui->scope_rect.x || b[i]->bounds.x + b[i]->bounds.w > ui->scope_rect.x + ui->scope_rect.w + 2) {
+                    printf("[FAIL] layout %dx%d tab %d: scope button '%s' outside the scope width\n", sizes[k][0], sizes[k][1], tab, b[i]->label); fails++;
+                }
+                for (int j = i + 1; j < SCOPE_BTN_N; j++) {
+                    if (b[j]->bounds.w <= 0) continue;
+                    if (rects_overlap(&b[i]->bounds, &b[j]->bounds)) { printf("[FAIL] layout %dx%d tab %d: '%s' overlaps '%s'\n", sizes[k][0], sizes[k][1], tab, b[i]->label, b[j]->label); fails++; }
+                }
+            }
+            if (ui->scope_buttons_bottom > ui->window_height - STATUSBAR_HEIGHT) { printf("[FAIL] layout %dx%d: scope buttons below the status bar\n", sizes[k][0], sizes[k][1]); fails++; }
+            printf("[ OK ] layout %dx%d tab %d: %d visible scope buttons, none overlap, bottom %d\n", sizes[k][0], sizes[k][1], tab, visible, ui->scope_buttons_bottom);
+        }
+    }
+    /* every template is in the Circuits palette, exactly once */
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        int n = 0;
+        for (int i = 0; i < ui->num_circuit_items; i++) if (ui->circuit_items[i].circuit_type == t) n++;
+        if (n != 1) { const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t); printf("[FAIL] template %s appears %d times in the palette\n", ti ? ti->name : "?", n); fails++; }
+    }
+    printf("[ OK ] %d templates, %d circuit palette items\n", CIRCUIT_TYPE_COUNT - 1, ui->num_circuit_items);
+    /* every part has a category before Circuits, and every part category has at least one item */
+    int per_cat[PCAT_COUNT] = {0};
+    for (int i = 0; i < ui->num_palette_items; i++) {
+        if (ui->palette_items[i].category >= PCAT_CIRCUITS) { printf("[FAIL] palette item '%s' has no part category\n", ui->palette_items[i].label); fails++; }
+        else per_cat[ui->palette_items[i].category]++;
+        if (ui->palette_items[i].label && strlen(ui->palette_items[i].label) > 9) { printf("[FAIL] palette label '%s' too long for a 60 px button\n", ui->palette_items[i].label); fails++; }
+    }
+    for (int c = 0; c < PCAT_CIRCUITS; c++) if (per_cat[c] == 0) { printf("[FAIL] part category %d (%s) is empty\n", c, ui->categories[c].name); fails++; }
+    for (int i = 0; i < ui->num_circuit_items; i++)
+        if (strlen(ui->circuit_items[i].label) > 9) { printf("[FAIL] circuit label '%s' too long\n", ui->circuit_items[i].label); fails++; }
+    /* action id sanity */
+    if (UI_ACTION_SCOPE_STACK == UI_ACTION_SPOTLIGHT || UI_ACTION_SCOPE_TRACK == UI_ACTION_SPOTLIGHT) { printf("[FAIL] UI action id collision\n"); fails++; }
+    printf("[ OK ] %d palette items in %d categories\n", ui->num_palette_items, (int)PCAT_CIRCUITS);
+    printf("%d layout checks failed\n", fails);
+    free(ui);
+    return fails;
+}
 
 static void usage(void) {
     printf("Options:\n"
@@ -22,7 +80,8 @@ static void usage(void) {
            "  --record DIR N EVERY save N frames, one every EVERY frames, as DIR/frame_XXX.bmp\n"
            "  --scroll PX          scroll the left palette by PX pixels (screenshots)\n"
            "  --tab parts|circuits left panel tab\n"
-           "  --exit               quit when the shot / recording is done\n");
+           "  --exit               quit when the shot / recording is done\n"
+           "  --layout-test        headless UI layout self-check (no window)\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -38,6 +97,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--scroll") && i + 1 < argc) cli_scroll = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--tab") && i + 1 < argc) cli_tab = !strcmp(argv[++i], "circuits") ? 1 : 0;
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
+        else if (!strcmp(argv[i], "--layout-test")) return layout_test();
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); usage(); return 2; }
     }
 

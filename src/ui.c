@@ -6,12 +6,14 @@
 #include <string.h>
 #include <ctype.h>
 
-static void ui_volt_readout(char *out, size_t n, double v);   // defined with the scope layout helpers
 #include <math.h>
 #include "ui.h"
 #include "input.h"
 #include "circuits.h"
 #include "analysis.h"
+
+static void ui_volt_readout(char *out, size_t n, double v);   // defined with the scope layout helpers
+static void scope_button_list(UIState *ui, Button *out[SCOPE_BTN_N]);
 
 // Simple 8x8 bitmap font (same as render.c)
 static const unsigned char ui_font8x8[95][8] = {
@@ -436,6 +438,7 @@ void ui_init(UIState *ui) {
 
     // Oscilloscope settings - larger default size for better visibility
     ui->scope_rect = (Rect){WINDOW_WIDTH - ui->properties_width + 10, 250, 330, 300};
+    ui->scope_default_h = ui->scope_rect.h;
     ui->scope_num_channels = 0;
     ui->scope_time_div = 0.001;   // 1ms per division
     ui->scope_volt_div = 1.0;     // 1V per division
@@ -1430,6 +1433,21 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
     // The scope label is drawn 18px above scope_rect, so leave 50px gap to avoid overlap
     int available_height = ui->scope_rect.y - y - 50;
     int panel_height = available_height > 100 ? available_height : 100;  // Minimum 100 but don't exceed available
+    if (ui->properties_collapsed) {
+        // header only: "> Properties (name)"; click it to expand
+        panel_height = 26;
+        ui->properties_visible_height = panel_height;
+        ui->properties_content_height = panel_height;
+        SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
+        SDL_Rect panel = {x, y, ui->properties_width, panel_height};
+        SDL_RenderFillRect(renderer, &panel);
+        SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
+        char hdr[96];
+        snprintf(hdr, sizeof hdr, "> Properties%s%s", selected ? ": " : "", selected ? selected->label : "");
+        ui_draw_text(renderer, hdr, x + 10, y + 8);
+        ui->num_properties = 0;
+        return;
+    }
 
     // Store visible height for scrollbar calculations
     ui->properties_visible_height = panel_height;
@@ -1453,9 +1471,9 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
     int scroll_y = ui->properties_scroll_offset;
     int content_y = y - scroll_y;
 
-    // Title - synthwave pink
+    // Title - synthwave pink (click to collapse)
     SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
-    ui_draw_text(renderer, "Properties", x + 10, content_y + 10);
+    ui_draw_text(renderer, "v Properties", x + 10, content_y + 10);
 
     // Get editing state from input
     bool editing_value = input && input->editing_property && input->editing_prop_type == 1;  // PROP_VALUE
@@ -6272,6 +6290,12 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             return UI_ACTION_SCOPE_POPUP;
         }
 
+        // Properties header: click to collapse / expand
+        {
+            Rect hdr = {ui->window_width - ui->properties_width + 4, TOOLBAR_HEIGHT + 2, ui->properties_width - 16, 24};
+            if (point_in_rect(x, y, &hdr)) { ui->properties_collapsed = !ui->properties_collapsed; return UI_ACTION_NONE; }
+        }
+
         // Check property fields for click-to-edit
         // Each property field stores its prop_type directly
         for (int i = 0; i < ui->num_properties && i < 16; i++) {
@@ -6774,6 +6798,44 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
     ui->btn_scope_popup.hovered = point_in_rect(x, y, &ui->btn_scope_popup.bounds);
     ui->btn_bode_recalc.hovered = ui->show_bode_plot && point_in_rect(x, y, &ui->btn_bode_recalc.bounds);
 
+    // Hover tooltip: whichever button or palette item is under the mouse
+    {
+        const char *tip = NULL;
+        char tipbuf[160];
+        Button *tb[] = { &ui->btn_run, &ui->btn_pause, &ui->btn_step, &ui->btn_reset, &ui->btn_clear, &ui->btn_save, &ui->btn_load,
+                         &ui->btn_export_svg, &ui->btn_screenshot, &ui->btn_timestep_up, &ui->btn_timestep_down, &ui->btn_timestep_auto };
+        for (unsigned i = 0; i < sizeof tb / sizeof tb[0] && !tip; i++)
+            if (!popup_mode && tb[i]->bounds.w > 0 && point_in_rect(x, y, &tb[i]->bounds)) tip = tb[i]->tooltip;
+        Button *sb[SCOPE_BTN_N]; scope_button_list(ui, sb);
+        for (int i = 0; i < SCOPE_BTN_N && !tip; i++)
+            if (sb[i]->bounds.w > 0 && point_in_rect(x, y, &sb[i]->bounds)) tip = sb[i]->tooltip;
+        if (!tip && !popup_mode && x < PALETTE_WIDTH && y >= TOOLBAR_HEIGHT + PALETTE_TOP_H) {
+            int ay = y + ui->palette_scroll_offset;
+            for (int i = 0; i < ui->num_palette_items && !tip && ui->left_tab == LTAB_PARTS; i++) {
+                PaletteItem *it = &ui->palette_items[i];
+                if (it->bounds.w > 0 && !is_palette_item_in_collapsed_category(ui, i) && point_in_rect(x, ay, &it->bounds)) {
+                    if (it->is_tool) tip = it->label;
+                    else { const ComponentTypeInfo *ci = component_get_info(it->comp_type); tip = ci ? ci->name : it->label; }
+                }
+            }
+            for (int i = 0; i < ui->num_circuit_items && !tip && ui->left_tab == LTAB_CIRCUITS; i++) {
+                CircuitPaletteItem *it = &ui->circuit_items[i];
+                if (it->bounds.w > 0 && point_in_rect(x, ay, &it->bounds)) {
+                    const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)it->circuit_type);
+                    if (ti) { snprintf(tipbuf, sizeof tipbuf, "%s - %s", ti->name, ti->description); tip = tipbuf; }
+                }
+            }
+        }
+        if (!tip) {
+            ui->hover_text[0] = 0;
+        } else if (strcmp(tip, ui->hover_text) != 0) {
+            strncpy(ui->hover_text, tip, sizeof ui->hover_text - 1);
+            ui->hover_text[sizeof ui->hover_text - 1] = 0;
+            ui->hover_since = SDL_GetTicks();
+        }
+        ui->hover_x = x; ui->hover_y = y;
+    }
+
     // Update palette hover states (skip if in popup mode)
     if (!popup_mode) {
         int adjusted_y = y + ui->palette_scroll_offset;
@@ -6869,9 +6931,28 @@ static void scope_button_list(UIState *ui, Button *out[SCOPE_BTN_N]) {
         &ui->btn_scope_tab[0], &ui->btn_scope_tab[1], &ui->btn_scope_tab[2],
         &ui->btn_scope_mode, &ui->btn_scope_screenshot,
         &ui->btn_scope_trig_mode, &ui->btn_scope_trig_edge, &ui->btn_scope_trig_ch, &ui->btn_scope_trig_up, &ui->btn_scope_trig_down,
-        &ui->btn_scope_fft,
+        &ui->btn_scope_fft, &ui->btn_bode, &ui->btn_mc,
     };
     memcpy(out, l, sizeof l);
+}
+
+void ui_scope_buttons(UIState *ui, Button *out[]) { scope_button_list(ui, out); }
+
+void ui_render_tooltip(UIState *ui, SDL_Renderer *renderer) {
+    if (!ui->hover_text[0] || SDL_GetTicks() - ui->hover_since < 450) return;
+    int len = (int)strlen(ui->hover_text);
+    int w = len * 6 + 12, h = 18;
+    int tx = ui->hover_x + 14, ty = ui->hover_y + 18;
+    if (tx + w > ui->window_width - 4) tx = ui->window_width - 4 - w;
+    if (ty + h > ui->window_height - 4) ty = ui->hover_y - h - 6;
+    if (tx < 2) tx = 2;
+    SDL_Rect box = {tx, ty, w, h};
+    SDL_SetRenderDrawColor(renderer, 0x10, 0x0a, 0x22, 0xf0);
+    SDL_RenderFillRect(renderer, &box);
+    SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+    SDL_RenderDrawRect(renderer, &box);
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
+    ui_draw_text(renderer, ui->hover_text, tx + 6, ty + 5);
 }
 
 // Voltage readout with kV/mV scaling (scope channel and measurement rows)
@@ -6936,7 +7017,8 @@ void ui_update_layout(UIState *ui) {
     ui->scope_rect.w = ui->properties_width - 20 + ui->scope_extra_w;
 
     // Ensure scope is positioned below properties content (unless the user sized it)
-    int min_scope_y = ui->scope_user_sized ? TOOLBAR_HEIGHT + 30 : TOOLBAR_HEIGHT + ui->properties_content_height + 25;
+    int min_scope_y = (ui->scope_user_sized || ui->properties_collapsed) ? TOOLBAR_HEIGHT + 30 : TOOLBAR_HEIGHT + ui->properties_content_height + 25;
+    if (ui->properties_collapsed && !ui->scope_user_sized) min_scope_y = TOOLBAR_HEIGHT + 60;
     if (ui->scope_rect.y < min_scope_y) {
         ui->scope_rect.y = min_scope_y;
     }
@@ -6945,6 +7027,15 @@ void ui_update_layout(UIState *ui) {
     int max_scope_y = ui->window_height - STATUSBAR_HEIGHT - ui->scope_rect.h - 100;
     if (ui->scope_rect.y > max_scope_y && max_scope_y > min_scope_y) {
         ui->scope_rect.y = max_scope_y;
+    }
+    // Unless the user sized it, the scope shrinks so its three button rows always fit above the status bar
+    if (!ui->scope_user_sized) {
+        int need_below = 5 + 3 * 26 + 8;
+        int max_h = ui->window_height - STATUSBAR_HEIGHT - ui->scope_rect.y - need_below;
+        int h = ui->scope_default_h > 0 ? ui->scope_default_h : ui->scope_rect.h;
+        if (h > max_h) h = max_h;
+        if (h < 120) h = 120;
+        ui->scope_rect.h = h;
     }
 
     // Scope control buttons (one shared layout for the main and the pop-out window)

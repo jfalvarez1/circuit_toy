@@ -2079,6 +2079,7 @@ void app_render(App *app) {
 
     // Render synthwave LED trim on top
     ui_render_neon_trim(&app->ui, r);
+    ui_render_tooltip(&app->ui, r);
 
     // Present main window
     SDL_RenderPresent(r);
