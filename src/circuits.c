@@ -234,6 +234,17 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_FUNCTION_GEN] = {"Function Generator", "FuncGn", "Triangle -> 3-breakpoint diode shaper -> sine; R sets f, thresholds set A", TG_OSCILLATORS},
     [CIRCUIT_COLPITTS] = {"Colpitts (MOSFET)", "Colpit", "LC tank C1-C2 capacitive divider, 712 kHz", TG_OSCILLATORS},
     [CIRCUIT_RING_OSC] = {"Ring Oscillator", "Ring", "Five inverters with RC delay stages, ~145 kHz", TG_OSCILLATORS},
+    [CIRCUIT_HARTLEY] = {"Hartley (MOSFET)", "Hartly", "Tapped-inductor tank L1 + L2 with C: 503 kHz", TG_OSCILLATORS},
+    [CIRCUIT_CLAPP] = {"Clapp (MOSFET)", "Clapp", "Colpitts with a small series cap setting f: 1.744 MHz", TG_OSCILLATORS},
+    [CIRCUIT_THEVENIN] = {"Thevenin Equivalent", "Thev", "Divider + series R seen by a load: Vth 6 V, Rth 2.2 k", TG_BASICS},
+    [CIRCUIT_SUPERPOSITION] = {"Superposition", "Super", "Two voltage sources + a current source: responses add", TG_BASICS},
+    [CIRCUIT_RC_STEP] = {"RC Step Response", "RCstp", "63 % at one time constant, 10-90 % rise = 2.2 tau", TG_TRANSIENTS},
+    [CIRCUIT_RL_STEP] = {"RL Step Response", "RLstp", "Inductor current rises with tau = L/R", TG_TRANSIENTS},
+    [CIRCUIT_RLC_RING] = {"RLC Step (Ringing)", "RLCst", "Underdamped series RLC: 90 % overshoot, 199 us period", TG_TRANSIENTS},
+    [CIRCUIT_RLC_DAMPING] = {"RLC Damping Ladder", "Damp", "Same L, C with R = 20 / 632 / 2000: under, critical, over", TG_TRANSIENTS},
+    [CIRCUIT_OPAMP_SAT] = {"Op-Amp Saturation", "Sat", "Gain -10 clips at the rails; the virtual short is lost", TG_OPAMPS},
+
+
 
 
 
@@ -6258,6 +6269,15 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_FUNCTION_GEN:     return place_function_gen(circuit, x, y);
         case CIRCUIT_COLPITTS:         return place_colpitts(circuit, x, y);
         case CIRCUIT_RING_OSC:         return place_ring_osc(circuit, x, y);
+        case CIRCUIT_HARTLEY:          return place_hartley(circuit, x, y);
+        case CIRCUIT_CLAPP:            return place_clapp(circuit, x, y);
+        case CIRCUIT_THEVENIN:         return place_thevenin(circuit, x, y);
+        case CIRCUIT_SUPERPOSITION:    return place_superposition(circuit, x, y);
+        case CIRCUIT_RC_STEP:          return place_rc_step(circuit, x, y);
+        case CIRCUIT_RL_STEP:          return place_rl_step(circuit, x, y);
+        case CIRCUIT_RLC_RING:         return place_rlc_ring(circuit, x, y);
+        case CIRCUIT_RLC_DAMPING:      return place_rlc_damping(circuit, x, y);
+        case CIRCUIT_OPAMP_SAT:        return place_opamp_sat(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6350,8 +6370,17 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_SCHMITT_BISTABLE] = {"BISTABLE MULTIVIBRATOR (S&S 18.4): positive feedback R1/R2 makes the op-amp a latch. With the", "output at +15 V the + input sits at +7.5 V, so the input must rise ABOVE 7.5 V before the output", "snaps to -15 V; it then has to fall below -7.5 V to snap back. That hysteresis (15 V wide) is", "why a Schmitt trigger ignores noise near the threshold. V_TH = L+ R1/(R1+R2), V_TL = L- R1/(R1+R2).", "Try the X-Y (Y-T button) view: output vs input draws the hysteresis loop.", "PROBE: triangle input and OUT (auto). Two clean edges per input cycle, at +/-7.5 V exactly."},
     [CIRCUIT_TRI_SQUARE_GEN] = {"TRIANGLE / SQUARE GENERATOR (S&S 18.5.2): a non-inverting bistable (thresholds +/-15 R1/R2 =", "+/-7.5 V) drives an integrator; the integrator ramps at 15 V/RC until it reaches a threshold,", "the bistable flips and the ramp reverses. f = R2/(4 R C R1) = 20k/(4 x 10k x 10n x 10k) = 5 kHz.", "Frequency: R or C. Amplitude: R1/R2 (or the supply). The rails cancel out of f: that is the trick.", "A 50 us kick on the bistable input breaks the perfect 0 V equilibrium at start-up.", "PROBE: triangle (auto) and square (extra probe). Stack view shows the square edges at the peaks."},
     [CIRCUIT_FUNCTION_GEN] = {"FUNCTION GENERATOR (S&S 18.8.2): the triangle from the generator above feeds R_in and a", "piecewise-linear diode network. Below 2.6 V nothing conducts (slope 1); above it the 22k branch", "to +2.0 V loads the node (slope 0.69); above 4.3 V the 5.6k branch to +3.7 V (slope 0.31).", "Mirror branches handle the negative half. Three breakpoints turn the triangle into a ~5 V sine", "(THD a few %). Frequency: edit R (10k) or C; amplitude: R2 of the bistable, then re-scale the bias V.", "PROBE: sine output (auto) and triangle (extra). Try the FFT button: 3rd harmonic > 30 dB down."},
-    [CIRCUIT_COLPITTS] = {"COLPITTS (S&S 18.3.1): the tank is L with a capacitive divider C1-C2; the divider feeds back a", "fraction C1/C2 of the drain swing to the gate, so oscillation needs g_m R_tank > C2/C1 (= 1 here).", "f = 1/(2 pi sqrt(L C1C2/(C1+C2))) = 1/(2 pi sqrt(100u x 0.5n)) = 712 kHz. The 1 mH RFC is an open", "circuit at RF but passes the DC drain current; the 10 nF coupling cap keeps 12 V off the gate;", "1M/1M bias the gate at 6 V. Amplitude limits when the MOSFET cuts off each cycle (class C).", "PROBE: drain (auto). 500 ns/div. A 50 ns kick starts it; edit C1 to 2 nF -> 581 kHz."},
+    [CIRCUIT_COLPITTS] = {"COLPITTS (S&S 18.3.1): the tank is L with a capacitive divider C1-C2; the divider feeds back a", "fraction C1/C2 of the drain swing to the gate, so oscillation needs g_m R_tank > C2/C1 (= 1 here).", "f = 1/(2 pi sqrt(L C1C2/(C1+C2))) = 1/(2 pi sqrt(100u x 0.5n)) = 712 kHz. The 1 mH RFC is an open", "circuit at RF but passes the DC drain current; the 10 nF coupling cap keeps 12 V off the gate;", "1M/1M bias the gate at 6 V. Amplitude limits when the MOSFET cuts off each cycle (class C).", "PROBE: drain (auto). 500 ns/div. A 50 ns kick starts it; edit C1 to 2 nF -> 616 kHz."},
     [CIRCUIT_RING_OSC] = {"RING OSCILLATOR: an odd number of inverters in a loop can never settle - each stage inverts,", "so the signal returns inverted and the ring keeps flipping. Period = 2 N t_pd. Real gates delay by", "their own capacitance; here each stage has R 1k / C 1n, and a gate flips when its RC reaches the", "2.5 V threshold: t ~ 0.69 RC = 0.7 us -> f ~ 1/(2 x 5 x 0.7 us) ~ 145 kHz. Edit any C to retune.", "Probe several stages: five squares, each shifted by one fifth of a half period.", "PROBE: last stage (auto). 2 us/div. The 2 us kick pulse on the first RC breaks the symmetry."},
+    [CIRCUIT_HARTLEY] = {"HARTLEY (S&S 18.3.1): the Colpitts with the roles swapped - a tapped inductor (L1 = L2 = 50 uH,", "tap at Vdd = AC ground; L1 is the drain load) and C = 1 nF. f = 1/(2 pi sqrt((L1 + L2) C)) = 503 kHz;", "start-up needs g_m R_tank > L1/L2 (= 1). A 10 nF cap keeps the 6 V gate bias off L2.", "Retune with C; the 1M/1M bias is the same as the Colpitts (no RFC: L1 does that job).", "PROBE: drain (auto), 500 ns/div. Compare the waveform with the Colpitts at the same drive."},
+    [CIRCUIT_CLAPP] = {"CLAPP: a Colpitts whose L has a small series capacitor C3 = 100 pF. The effective tank C is", "1/(1/C1 + 1/C2 + 1/C3) = 83 pF, dominated by C3, so f = 1/(2 pi sqrt(L C3_eff)) = 1.744 MHz and the", "transistor capacitances (which sit across C1, C2) hardly pull the frequency: better stability.", "C1 = C2 = 1 nF swamp the device; the price is a weaker feedback fraction, so g_m must be higher.", "PROBE: drain (auto), 200 ns/div. Change C3 to 47 pF -> 2.4 MHz."},
+    [CIRCUIT_THEVENIN] = {"THEVENIN EQUIVALENT (A&L 3.6): everything left of the load is replaced by V_th (the open-circuit", "voltage, 10 x 3k/(2k+3k) = 6 V) in series with R_th (sources zeroed: 2k||3k + 1k = 2.2k).", "Then V_L = V_th R_L/(R_L + R_th) = 3.0 V, and the load gets the most power when R_L = R_th (4.1 mW).", "Norton: I_N = V_th/R_th = 2.73 mA. Edit R_L: 1k -> 1.875 V, open -> 6 V.", "PROBE: load node (auto): 3.00 V. The battery probe reads 10 V - the divider does the rest."},
+    [CIRCUIT_SUPERPOSITION] = {"SUPERPOSITION (A&L 3.5): with linear elements the node voltage is the sum of each source acting", "alone (voltage sources shorted, current sources opened). 12 V alone: 12 x (4k||4k)/(4k + 4k||4k) = 4 V;", "6 V alone: 2 V; 1 mA alone into 4k||4k||4k = 1.33 V. Total 7.33 V. Zero one source and watch.", "Try it: set the current source to 0 -> 6.00 V; set V1 to 0 -> 3.33 V.", "PROBE: node N (auto). Turn the 1 mA source into an AC source to see the ripple ride on the DC."},
+    [CIRCUIT_RC_STEP] = {"RC STEP RESPONSE (A&L 10.1): V_C = 5 (1 - e^(-t/tau)), tau = RC = 1 ms. At t = tau the capacitor", "has 63 % (3.16 V); at 2.2 tau it passed 90 %; after 5 tau it is settled. Discharge is the mirror.", "Use the cursors: put A on the edge and B where V_C = 3.16 V - the readout says 1.00 ms.", "Double R or C and tau doubles; the 100 Hz square (5 ms half period = 5 tau) just settles.", "PROBE: square input and capacitor (auto)."},
+    [CIRCUIT_RL_STEP] = {"RL STEP RESPONSE (A&L 10.2): the inductor opposes changes in current, so i_L rises as", "(V/R)(1 - e^(-t/tau)) with tau = L/R = 100 us. The resistor voltage IS the current (100 ohm x i_L):", "5 V final = 50 mA, 3.16 V (31.6 mA) at t = tau. The inductor voltage jumps to 5 V then decays.", "Interchange with the RC case: here the CURRENT is the state that cannot jump.", "PROBE: square input and resistor (auto). Probe the L-R junction for the inductor voltage."},
+    [CIRCUIT_RLC_RING] = {"SERIES RLC STEP (A&L 12.2): w0 = 1/sqrt(LC) = 31.6 krad/s (5.03 kHz), alpha = R/2L = 1000/s,", "zeta = alpha/w0 = 0.032 -> underdamped. The capacitor overshoots to 5(1 + e^(-pi zeta/sqrt(1-zeta^2)))", "= 9.5 V and rings at the damped frequency with an envelope tau = 1/alpha = 1 ms (Q = 16).", "Raise R and the ringing dies: 632 ohm is critical, 2k overdamped (see RLC Damping Ladder).", "PROBE: square input and capacitor (auto). Cursors on two peaks: period 199 us."},
+    [CIRCUIT_RLC_DAMPING] = {"DAMPING LADDER (A&L 12.2-12.3): same L = 10 mH, C = 100 nF, three values of R. R = 20 ohm rings", "(zeta 0.03); R = 632 ohm = 2 sqrt(L/C) is critically damped - the fastest rise with no overshoot", "(4.0 V at 3/w0 = 95 us); R = 2k is overdamped: two real roots, the slow one tau = 195 us.", "The rows share the same square input; compare the three capacitor voltages in Stack view.", "PROBE: the critical-row capacitor (auto) plus the underdamped and overdamped rows (extra)."},
+    [CIRCUIT_OPAMP_SAT] = {"OP-AMP SATURATION (S&S 2.8, A&L 15.5): the inverting amplifier wants -10 x 2 Vpk = 20 Vpk, but", "the output can only reach the +/-15 V rails. While clipped the feedback loop is broken: the", "inverting input is no longer a virtual ground - it follows (v_i R2 + v_o R1)/(R1 + R2), 0.45 V at", "the input peak. Clipping starts at |v_i| = 1.5 V; lower the input to 1 V and the sine is clean.", "PROBE: output (auto) and the inverting input (extra probe): watch it leave 0 V while clipped."},
 };
 
 
@@ -7443,24 +7472,28 @@ static int place_function_gen(Circuit *circuit, float x, float y) {
 }
 
 // 18.3.1: common-source Colpitts, L 100 uH, C1 = C2 = 1 nF -> f = 1/(2 pi sqrt(L C1C2/(C1+C2))) = 712 kHz
-static int place_colpitts(Circuit *circuit, float x, float y) {
+static int place_lc_core(Circuit *circuit, float x, float y, int hartley, double cc_val, const char *title) {
     Component *vdd = add_comp(circuit, COMP_DC_VOLTAGE, x + 100, y - 80, 0);    // +(100,-120) -(100,-40)
     if (!vdd) return 0;
     vdd->props.dc_voltage.voltage = 12.0;
     Component *gv = add_comp(circuit, COMP_GROUND, x + 100, y - 20, 0);
     Component *m = add_comp(circuit, COMP_NMOS, x + 200, y + 100, 0);           // G(180,100) D(220,80) S(220,120)
     Component *gs = add_comp(circuit, COMP_GROUND, x + 220, y + 140, 0);
-    Component *rfc = add_comp(circuit, COMP_INDUCTOR, x + 220, y, 90);           // (220,-40)-(220,40)
-    rfc->props.inductor.inductance = 1e-3;
-    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 300, y + 80, 90);      // (300,40)-(300,120)
-    c1->props.capacitor.capacitance = 1e-9;
-    Component *g1 = add_comp(circuit, COMP_GROUND, x + 300, y + 140, 0);
-    Component *l = add_comp(circuit, COMP_INDUCTOR, x + 360, y + 40, 0);         // (320,40)-(400,40)
-    l->props.inductor.inductance = 100e-6;
+    Component *rfc = add_comp(circuit, COMP_INDUCTOR, x + 220, y, 90);           // (220,-40)-(220,40): RFC, or L1 of the Hartley (tap = Vdd = AC ground)
+    rfc->props.inductor.inductance = hartley ? 50e-6 : 1e-3;
+    // tank: Colpitts = C1 (drain-gnd), L (series), C2 (gate-gnd); Hartley = L1, C, L2 (gate side via 10 nF)
+    Component *c1 = NULL, *g1 = NULL;
+    if (!hartley) {
+        c1 = add_comp(circuit, COMP_CAPACITOR, x + 300, y + 80, 90);             // (300,40)-(300,120)
+        c1->props.capacitor.capacitance = 1e-9;
+        g1 = add_comp(circuit, COMP_GROUND, x + 300, y + 140, 0);
+    }
+    Component *l = add_comp(circuit, hartley ? COMP_CAPACITOR : COMP_INDUCTOR, x + 360, y + 40, 0);      // (320,40)-(400,40)
+    if (hartley) l->props.capacitor.capacitance = 1e-9; else l->props.inductor.inductance = 100e-6;
     Component *cc = add_comp(circuit, COMP_CAPACITOR, x + 440, y + 40, 0);       // (400,40)-(480,40)
-    cc->props.capacitor.capacitance = 10e-9;
-    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 100, y + 140, 90);     // (100,100)-(100,180)
-    c2->props.capacitor.capacitance = 1e-9;
+    cc->props.capacitor.capacitance = cc_val;
+    Component *c2 = add_comp(circuit, hartley ? COMP_INDUCTOR : COMP_CAPACITOR, x + 100, y + 140, 90);   // (100,100)-(100,180)
+    if (hartley) c2->props.inductor.inductance = 50e-6; else c2->props.capacitor.capacitance = 1e-9;
     Component *kick = add_comp(circuit, COMP_PULSE_SOURCE, x + 100, y + 220, 0); // +(100,180) -(100,260)
     kick->props.pulse_source.v_low = 0; kick->props.pulse_source.v_high = 0.3; kick->props.pulse_source.pulse_width = 50e-9; kick->props.pulse_source.period = 100.0;
     Component *gk = add_comp(circuit, COMP_GROUND, x + 100, y + 280, 0);
@@ -7469,23 +7502,98 @@ static int place_colpitts(Circuit *circuit, float x, float y) {
     Component *rb = add_comp(circuit, COMP_RESISTOR, x + 60, y + 140, 90);       // (60,100)-(60,180)
     rb->props.resistor.resistance = 1e6;
     Component *gb = add_comp(circuit, COMP_GROUND, x + 60, y + 200, 0);
-    add_label(circuit, x + 20, y - 160, "Colpitts (common source): tank L 100 uH with C1 = C2 = 1 nF -> 712 kHz; 1 mH RFC feeds the drain");
+    add_label(circuit, x + 20, y - 160, title);
     int vp = TN(x + 100, y - 120), rt0 = TN(x + 60, y - 120), rail = TN(x + 220, y - 120), rfct = TN(x + 220, y - 40);
     TW(vp, rt0); TW(vp, rail); TW(rail, rfct);
     int rfcb = TN(x + 220, y + 40), d = TN(x + 220, y + 80), tank = TN(x + 300, y + 40), lt = TN(x + 320, y + 40);
     TW(rfcb, d); TW(rfcb, tank); TW(tank, lt);
     int lr = TN(x + 400, y + 40), ccr = TN(x + 480, y + 40), f1 = TN(x + 480, y + 180), f2 = TN(x + 140, y + 180), f3 = TN(x + 140, y + 100), gate = TN(x + 180, y + 100), gn = TN(x + 100, y + 100), rb0 = TN(x + 60, y + 100), rt1 = TN(x + 60, y - 40);
-    TW(ccr, f1); TW(f1, f2); TW(f2, f3); TW(f3, gate); TW(f3, gn); TW(gn, rb0); TW(rt1, rb0);
+    TW(ccr, f1); TW(f1, f2); TW(f2, f3); TW(f3, gate);
+    if (hartley) {
+        // gate node -> 10 nF -> L2 top (gn): keeps the 6 V bias off the inductor; bias joins the gate at (60,20)
+        Component *cg = add_comp(circuit, COMP_CAPACITOR, x + 100, y + 60, 90);  // (100,20)-(100,100)
+        cg->props.capacitor.capacitance = 10e-9;
+        int cgt = TN(x + 100, y + 20), b1 = TN(x + 140, y + 20), mid = TN(x + 60, y + 20);
+        TW(f3, b1); TW(b1, cgt); TW(rt1, mid); TW(mid, rb0); TW(mid, cgt);
+        cg->node_ids[0] = cgt; cg->node_ids[1] = gn;
+    } else {
+        TW(f3, gn); TW(gn, rb0); TW(rt1, rb0);
+    }
     vdd->node_ids[0] = vp; rt->node_ids[0] = rt0; rt->node_ids[1] = rt1; rfc->node_ids[0] = rfct; rfc->node_ids[1] = rfcb;
-    m->node_ids[0] = gate; m->node_ids[1] = d; c1->node_ids[0] = tank; l->node_ids[0] = lt; l->node_ids[1] = lr; cc->node_ids[0] = lr; cc->node_ids[1] = ccr;
+    m->node_ids[0] = gate; m->node_ids[1] = d; if (c1) c1->node_ids[0] = tank; l->node_ids[0] = lt; l->node_ids[1] = lr; cc->node_ids[0] = lr; cc->node_ids[1] = ccr;
     c2->node_ids[0] = gn; rb->node_ids[0] = rb0;
     int c2b = TN(x + 100, y + 180); c2->node_ids[1] = c2b; kick->node_ids[0] = c2b;
     connect_terminals(circuit, vdd, 1, gv, 0);
     connect_terminals(circuit, m, 2, gs, 0);
-    connect_terminals(circuit, c1, 1, g1, 0);
+    if (c1) connect_terminals(circuit, c1, 1, g1, 0);
     connect_terminals(circuit, kick, 1, gk, 0);
     connect_terminals(circuit, rb, 1, gb, 0);
     return 15;
+}
+static int place_colpitts(Circuit *circuit, float x, float y) {
+    return place_lc_core(circuit, x, y, 0, 10e-9, "Colpitts (common source): tank L 100 uH with C1 = C2 = 1 nF -> 712 kHz; 1 mH RFC feeds the drain");
+}
+static int place_hartley(Circuit *circuit, float x, float y) {
+    return place_lc_core(circuit, x, y, 1, 10e-9, "Hartley (common source): L1 = L2 = 50 uH tapped at ground, C = 1 nF -> 503 kHz");
+}
+static int place_clapp(Circuit *circuit, float x, float y) {
+    return place_lc_core(circuit, x, y, 0, 100e-12, "Clapp: Colpitts with 100 pF in series with L - the small cap sets f = 1.744 MHz");
+}
+
+// Pierce with a "teaching crystal": Ls 100 mH, Cs 25.33 pF (f_s = 100.0 kHz), Rs 200 (Q ~ 314), Cp 1 nF;
+// inverting op-amp stage (gain -100) + 100 ohm drive R + C2 / crystal / C1 pi network. f = f_s (1 + Cs/(2(Cp + C_L))) = 100.63 kHz
+static int place_pierce(Circuit *circuit, float x, float y);   // kept for the crystal work in docs/ROADMAP.md (not in the palette yet)
+static int place_pierce(Circuit *circuit, float x, float y) {
+    Component *u = sat_opamp(circuit, x + 200, y + 40);                          // -(160,20) +(160,60) out(240,40)
+    if (!u) return 0;
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 100, y + 20, 0);        // (60,20)-(140,20)
+    r1->props.resistor.resistance = 10e3;
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 200, y - 40, 0);        // (160,-40)-(240,-40)
+    r2->props.resistor.resistance = 10e6;                                      // gain -1000: the network and the numerical damping eat most of it
+    Component *gp = add_comp(circuit, COMP_GROUND, x + 140, y + 80, 0);         // + input grounded at (140,60)
+    Component *ro = add_comp(circuit, COMP_RESISTOR, x + 320, y + 40, 0);        // (280,40)-(360,40): output R (with C3: the extra pole a real inverter has)
+    ro->props.resistor.resistance = 1e3;
+    Component *c3 = add_comp(circuit, COMP_CAPACITOR, x + 360, y + 80, 90);      // (360,40)-(360,120)
+    c3->props.capacitor.capacitance = 2.2e-9;
+    Component *g3 = add_comp(circuit, COMP_GROUND, x + 360, y + 140, 0);
+    Component *rd = add_comp(circuit, COMP_RESISTOR, x + 400, y + 40, 0);        // (360,40)-(440,40)
+    rd->props.resistor.resistance = 100.0;
+    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 440, y + 80, 90);      // (440,40)-(440,120)
+    c2->props.capacitor.capacitance = 2.2e-9;
+    Component *kick = add_comp(circuit, COMP_PULSE_SOURCE, x + 440, y + 160, 0); // +(440,120) -(440,200): start-up kick under C2
+    kick->props.pulse_source.v_low = 0; kick->props.pulse_source.v_high = 0.5; kick->props.pulse_source.pulse_width = 2e-6; kick->props.pulse_source.period = 100.0;
+    Component *gk = add_comp(circuit, COMP_GROUND, x + 440, y + 220, 0);
+    Component *ls = add_comp(circuit, COMP_INDUCTOR, x + 500, y + 40, 0);        // (460,40)-(540,40)
+    ls->props.inductor.inductance = 100e-3;
+    Component *cs = add_comp(circuit, COMP_CAPACITOR, x + 580, y + 40, 0);       // (540,40)-(620,40)
+    cs->props.capacitor.capacitance = 2.5330e-11;
+    Component *rs = add_comp(circuit, COMP_RESISTOR, x + 660, y + 40, 0);        // (620,40)-(700,40)
+    rs->props.resistor.resistance = 200.0;
+    Component *cp = add_comp(circuit, COMP_CAPACITOR, x + 580, y - 20, 0);       // (540,-20)-(620,-20)
+    cp->props.capacitor.capacitance = 1e-9;
+    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 780, y + 80, 90);      // (780,40)-(780,120)
+    c1->props.capacitor.capacitance = 2.2e-9;
+    Component *g1 = add_comp(circuit, COMP_GROUND, x + 780, y + 140, 0);
+    add_label(circuit, x + 20, y - 100, "Pierce crystal oscillator (teaching crystal, f_s = 100 kHz, Q ~ 300): oscillates only between f_s and f_p");
+    int minus = TN(x + 160, y + 20), r1r = TN(x + 140, y + 20), r1l = TN(x + 60, y + 20), plus = TN(x + 160, y + 60), gpt = TN(x + 140, y + 60);
+    TW(r1r, minus); TW(plus, gpt); gp->node_ids[0] = gpt;
+    int out = TN(x + 240, y + 40), o1 = TN(x + 280, y + 40), o2 = TN(x + 280, y - 40), r2r = TN(x + 240, y - 40), r2l = TN(x + 160, y - 40);
+    TW(out, o1); TW(o1, o2); TW(o2, r2r); TW(r2l, minus);
+    int n3 = TN(x + 360, y + 40), na = TN(x + 440, y + 40), lsl = TN(x + 460, y + 40), rsr = TN(x + 700, y + 40), nb = TN(x + 740, y + 40), c1t = TN(x + 780, y + 40);
+    TW(na, lsl); TW(rsr, nb); TW(nb, c1t);
+    int cpl = TN(x + 540, y - 20), cpr = TN(x + 620, y - 20), a2 = TN(x + 460, y - 20), b2 = TN(x + 740, y - 20);
+    TW(lsl, a2); TW(a2, cpl); TW(cpr, b2); TW(b2, nb);
+    int f1 = TN(x + 740, y + 260), f2 = TN(x + 20, y + 260), f3 = TN(x + 20, y + 20);
+    TW(nb, f1); TW(f1, f2); TW(f2, f3); TW(f3, r1l);
+    u->node_ids[0] = minus; u->node_ids[1] = plus; u->node_ids[2] = out;
+    r1->node_ids[0] = r1l; r1->node_ids[1] = r1r; r2->node_ids[0] = r2l; r2->node_ids[1] = r2r;
+    ro->node_ids[0] = o1; ro->node_ids[1] = n3; c3->node_ids[0] = n3; rd->node_ids[0] = n3; rd->node_ids[1] = na; c2->node_ids[0] = na; int c2b = TN(x + 440, y + 120); c2->node_ids[1] = c2b; kick->node_ids[0] = c2b;
+    ls->node_ids[0] = lsl; int lsr = TN(x + 540, y + 40); ls->node_ids[1] = lsr; cs->node_ids[0] = lsr;
+    int csr = TN(x + 620, y + 40); cs->node_ids[1] = csr; rs->node_ids[0] = csr; rs->node_ids[1] = rsr; cp->node_ids[0] = cpl; cp->node_ids[1] = cpr; c1->node_ids[0] = c1t;
+    connect_terminals(circuit, c3, 1, g3, 0);
+    connect_terminals(circuit, kick, 1, gk, 0);
+    connect_terminals(circuit, c1, 1, g1, 0);
+    return 17;
 }
 
 // ring oscillator: five inverters, each followed by R 1k / C 1 nF -> f ~ 1/(2 N 0.69 RC) ~ 145 kHz
@@ -7518,6 +7626,153 @@ static int place_ring_osc(Circuit *circuit, float x, float y) {
     TW(prev, f1); TW(f1, f2); TW(f2, f3); TW(f3, f4); TW(f4, first_in);
     add_label(circuit, x + 20, y - 80, "Ring oscillator: odd number of inverters; each RC adds ~0.69 RC = 0.7 us -> f ~ 1/(2 x 5 x 0.7 us) ~ 145 kHz");
     return 18;
+}
+#undef TN
+#undef TW
+
+
+// ---------------------------------------------------------------------------------------
+// Textbook basics and transients (Agarwal & Lang ch. 3, 10, 12; Sedra & Smith app. D/E).
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+static Component *square_source(Circuit *circuit, float x, float y, double f) {
+    Component *v = add_comp(circuit, COMP_SQUARE_WAVE, x, y + 60, 0);            // +(0,20) -(0,100)
+    if (!v) return NULL;
+    v->props.square_wave.amplitude = 2.5; v->props.square_wave.offset = 2.5; v->props.square_wave.frequency = f; v->props.square_wave.duty = 0.5;
+    Component *g = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    connect_terminals(circuit, v, 1, g, 0);
+    return v;
+}
+// source(0,20) -> series part A (horizontal at x+60) -> series part B (x+160) -> node (x+220) -> shunt part (vertical) -> gnd
+static int series_series_shunt(Circuit *circuit, float x, float y, Component *src, Component *a, Component *b, Component *sh) {
+    int sp = TN(x, y + 20), al = TN(x + 20, y + 20), ar = TN(x + 100, y + 20), bl = TN(x + 120, y + 20), br = TN(x + 200, y + 20), n = TN(x + 220, y + 20);
+    TW(sp, al); if (b) { TW(ar, bl); TW(br, n); } else TW(ar, n);
+    src->node_ids[0] = sp; a->node_ids[0] = al; a->node_ids[1] = ar;
+    if (b) { b->node_ids[0] = bl; b->node_ids[1] = br; }
+    sh->node_ids[0] = n;
+    Component *g = add_comp(circuit, COMP_GROUND, x + 220, y + 120, 0);
+    connect_terminals(circuit, sh, 1, g, 0);
+    return n;
+}
+
+static int place_thevenin(Circuit *circuit, float x, float y) {
+    Component *v = add_comp(circuit, COMP_DC_VOLTAGE, x, y + 60, 0); if (!v) return 0;   // +(0,20) -(0,100)
+    v->props.dc_voltage.voltage = 10.0;
+    Component *g0 = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 100, y + 60, 90);       // (100,20)-(100,100)
+    r1->props.resistor.resistance = 2e3;
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 100, y + 140, 90);      // (100,100)-(100,180)
+    r2->props.resistor.resistance = 3e3;
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 100, y + 200, 0);
+    Component *r3 = add_comp(circuit, COMP_RESISTOR, x + 160, y + 100, 0);       // (120,100)-(200,100)
+    r3->props.resistor.resistance = 1e3;
+    Component *rl = add_comp(circuit, COMP_RESISTOR, x + 240, y + 140, 90);      // (240,100)-(240,180)
+    rl->props.resistor.resistance = 2.2e3;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 240, y + 200, 0);
+    add_label(circuit, x + 20, y - 40, "Thevenin: V_th = 10 x 3/(2+3) = 6 V, R_th = 2k||3k + 1k = 2.2k -> V_L = 6 x 2.2/4.4 = 3 V");
+    int sp = TN(x, y + 20), r1t = TN(x + 100, y + 20), tap = TN(x + 100, y + 100), r3l = TN(x + 120, y + 100), r3r = TN(x + 200, y + 100), lt = TN(x + 240, y + 100);
+    TW(sp, r1t); TW(tap, r3l); TW(r3r, lt);
+    v->node_ids[0] = sp; r1->node_ids[0] = r1t; r1->node_ids[1] = tap; r2->node_ids[0] = tap; r3->node_ids[0] = r3l; r3->node_ids[1] = r3r; rl->node_ids[0] = lt;
+    connect_terminals(circuit, v, 1, g0, 0);
+    connect_terminals(circuit, r2, 1, g2, 0);
+    connect_terminals(circuit, rl, 1, gl, 0);
+    return 8;
+}
+
+static int place_superposition(Circuit *circuit, float x, float y) {
+    Component *v1 = add_comp(circuit, COMP_DC_VOLTAGE, x, y + 60, 0); if (!v1) return 0;
+    v1->props.dc_voltage.voltage = 12.0;
+    Component *g1 = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 80, y + 20, 0);         // (40,20)-(120,20)
+    r1->props.resistor.resistance = 4e3;
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 240, y + 20, 0);        // (200,20)-(280,20)
+    r2->props.resistor.resistance = 4e3;
+    Component *v2 = add_comp(circuit, COMP_DC_VOLTAGE, x + 320, y + 60, 0);      // +(320,20) -(320,100)
+    v2->props.dc_voltage.voltage = 6.0;
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 320, y + 140, 0);
+    Component *r3 = add_comp(circuit, COMP_RESISTOR, x + 160, y + 60, 90);       // (160,20)-(160,100)
+    r3->props.resistor.resistance = 4e3;
+    Component *g3 = add_comp(circuit, COMP_GROUND, x + 160, y + 120, 0);
+    Component *i1 = add_comp(circuit, COMP_DC_CURRENT, x + 120, y + 100, 180);   // rotated: -(120,60) top, +(120,140) bottom: injects into the node
+    i1->props.dc_current.current = 1e-3;
+    Component *g4 = add_comp(circuit, COMP_GROUND, x + 120, y + 160, 0);
+    add_label(circuit, x + 20, y - 40, "Superposition: V_N = 12/3 + 6/3 + 1 mA x (4k||4k||4k) = 4 + 2 + 1.33 = 7.33 V");
+    int sp = TN(x, y + 20), r1l = TN(x + 40, y + 20), n = TN(x + 120, y + 20), r3t = TN(x + 160, y + 20), r2l = TN(x + 200, y + 20), r2r = TN(x + 280, y + 20), v2p = TN(x + 320, y + 20);
+    TW(sp, r1l); TW(n, r3t); TW(r3t, r2l); TW(r2r, v2p);
+    int it = TN(x + 120, y + 60); TW(n, it);
+    v1->node_ids[0] = sp; r1->node_ids[0] = r1l; r1->node_ids[1] = n; r2->node_ids[0] = r2l; r2->node_ids[1] = r2r; v2->node_ids[0] = v2p;
+    r3->node_ids[0] = r3t; i1->node_ids[1] = it;
+    connect_terminals(circuit, v1, 1, g1, 0);
+    connect_terminals(circuit, v2, 1, g2, 0);
+    connect_terminals(circuit, r3, 1, g3, 0);
+    connect_terminals(circuit, i1, 0, g4, 0);
+    return 10;
+}
+
+static int place_rc_step(Circuit *circuit, float x, float y) {
+    Component *v = square_source(circuit, x, y, 100.0); if (!v) return 0;
+    Component *r = add_comp(circuit, COMP_RESISTOR, x + 60, y + 20, 0); r->props.resistor.resistance = 10e3;
+    Component *c = add_comp(circuit, COMP_CAPACITOR, x + 220, y + 60, 90); c->props.capacitor.capacitance = 100e-9;
+    series_series_shunt(circuit, x, y, v, r, NULL, c);
+    add_label(circuit, x + 20, y - 40, "RC step: tau = RC = 1 ms; V_C(tau) = 63 % of 5 V = 3.16 V; 10-90 % rise = 2.2 tau");
+    return 5;
+}
+static int place_rl_step(Circuit *circuit, float x, float y) {
+    Component *v = square_source(circuit, x, y, 1000.0); if (!v) return 0;
+    Component *l = add_comp(circuit, COMP_INDUCTOR, x + 60, y + 20, 0); l->props.inductor.inductance = 10e-3;
+    Component *r = add_comp(circuit, COMP_RESISTOR, x + 220, y + 60, 90); r->props.resistor.resistance = 100.0;
+    series_series_shunt(circuit, x, y, v, l, NULL, r);
+    add_label(circuit, x + 20, y - 40, "RL step: tau = L/R = 100 us; the resistor voltage = 100 x i_L rises to 5 V (50 mA), 63 % at tau");
+    return 5;
+}
+static int place_rlc_ring(Circuit *circuit, float x, float y) {
+    Component *v = square_source(circuit, x, y, 200.0); if (!v) return 0;
+    Component *r = add_comp(circuit, COMP_RESISTOR, x + 60, y + 20, 0); r->props.resistor.resistance = 20.0;
+    Component *l = add_comp(circuit, COMP_INDUCTOR, x + 160, y + 20, 0); l->props.inductor.inductance = 10e-3;
+    Component *c = add_comp(circuit, COMP_CAPACITOR, x + 220, y + 60, 90); c->props.capacitor.capacitance = 100e-9;
+    series_series_shunt(circuit, x, y, v, r, l, c);
+    add_label(circuit, x + 20, y - 40, "Series RLC step: w0 = 1/sqrt(LC) (5.03 kHz), zeta = R/(2 sqrt(L/C)) = 0.03 -> 90 % overshoot, rings for ~1 ms");
+    return 6;
+}
+static int place_rlc_damping(Circuit *circuit, float x, float y) {
+    static const double rs[3] = { 20.0, 632.0, 2000.0 };
+    static const char *names[3] = { "R = 20: underdamped (zeta 0.03)", "R = 632 = 2 sqrt(L/C): critical", "R = 2k: overdamped (slow root tau 195 us)" };
+    for (int k = 0; k < 3; k++) {
+        float ry = y + k * 140;
+        Component *v = square_source(circuit, x, ry, 200.0); if (!v) return 0;
+        Component *r = add_comp(circuit, COMP_RESISTOR, x + 60, ry + 20, 0); r->props.resistor.resistance = rs[k];
+        Component *l = add_comp(circuit, COMP_INDUCTOR, x + 160, ry + 20, 0); l->props.inductor.inductance = 10e-3;
+        Component *c = add_comp(circuit, COMP_CAPACITOR, x + 220, ry + 60, 90); c->props.capacitor.capacitance = 100e-9;
+        series_series_shunt(circuit, x, ry, v, r, l, c);
+        add_label(circuit, x + 260, ry + 50, names[k]);
+    }
+    add_label(circuit, x + 20, y - 40, "Damping ladder: same L = 10 mH, C = 100 nF; only R changes the shape of the step response");
+    return 18;
+}
+
+static int place_opamp_sat(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 2.0); if (!v) return 0;
+    v->props.ac_voltage.frequency = 1000.0;
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 80, y + 20, 0);         // (40,20)-(120,20)
+    r1->props.resistor.resistance = 10e3;
+    Component *u = add_comp(circuit, COMP_OPAMP, x + 200, y + 40, 0);           // -(160,20) +(160,60) out(240,40)
+    u->props.opamp.ideal = false; u->props.opamp.gain = 1e5;
+    Component *g = add_comp(circuit, COMP_GROUND, x + 140, y + 80, 0);          // + at (160,60) -> (140,60)
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 200, y - 40, 0);        // (160,-40)-(240,-40)
+    r2->props.resistor.resistance = 100e3;
+    Component *rl = add_comp(circuit, COMP_RESISTOR, x + 320, y + 80, 90);       // (320,40)-(320,120)
+    rl->props.resistor.resistance = 10e3;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 320, y + 140, 0);
+    add_label(circuit, x + 20, y - 100, "Op-amp saturation: gain -10 with 2 Vpk in wants +/-20 V but the rails stop it at +/-15 V; the - input leaves 0 V");
+    int sp = TN(x, y + 20), r1l = TN(x + 40, y + 20), minus = TN(x + 160, y + 20), plus = TN(x + 160, y + 60), gt = TN(x + 140, y + 60);
+    TW(sp, r1l); TW(plus, gt);
+    int out = TN(x + 240, y + 40), o1 = TN(x + 280, y + 40), o2 = TN(x + 280, y - 40), r2r = TN(x + 240, y - 40), r2l = TN(x + 160, y - 40), lt = TN(x + 320, y + 40);
+    TW(out, o1); TW(o1, o2); TW(o2, r2r); TW(r2l, minus); TW(o1, lt);
+    v->node_ids[0] = sp; r1->node_ids[0] = r1l; r1->node_ids[1] = minus; u->node_ids[0] = minus; u->node_ids[1] = plus; u->node_ids[2] = out;
+    g->node_ids[0] = gt; r2->node_ids[0] = r2l; r2->node_ids[1] = r2r; rl->node_ids[0] = lt;
+    connect_terminals(circuit, rl, 1, gl, 0);
+    return 8;
 }
 #undef TN
 #undef TW
@@ -7603,6 +7858,15 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_FUNCTION_GEN]     = { COMP_RESISTOR, 3, 1 },   // shaper output
     [CIRCUIT_COLPITTS]         = { COMP_NMOS, 0, 1 },       // drain
     [CIRCUIT_RING_OSC]         = { COMP_NOT_GATE, 4, 1 },
+    [CIRCUIT_HARTLEY]          = { COMP_NMOS, 0, 1 },
+    [CIRCUIT_CLAPP]            = { COMP_NMOS, 0, 1 },
+    [CIRCUIT_THEVENIN]         = { COMP_RESISTOR, 3, 0 },
+    [CIRCUIT_SUPERPOSITION]    = { COMP_RESISTOR, 0, 1 },
+    [CIRCUIT_RC_STEP]          = { COMP_CAPACITOR, 0, 0 },
+    [CIRCUIT_RL_STEP]          = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_RLC_RING]         = { COMP_CAPACITOR, 0, 0 },
+    [CIRCUIT_RLC_DAMPING]      = { COMP_CAPACITOR, 1, 0 },   // critical row
+    [CIRCUIT_OPAMP_SAT]        = { COMP_OPAMP, 0, 2 },
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -7616,6 +7880,8 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_3PH_RECTIFIER]    = { { COMP_DIODE, 5, 0 } },                                   // minus bus
     [CIRCUIT_TRI_SQUARE_GEN]   = { { COMP_OPAMP, 0, 2 } },                                   // square
     [CIRCUIT_FUNCTION_GEN]     = { { COMP_OPAMP, 1, 2 } },                                   // triangle
+    [CIRCUIT_RLC_DAMPING]      = { { COMP_CAPACITOR, 0, 0 }, { COMP_CAPACITOR, 2, 0 } },      // under / over rows
+    [CIRCUIT_OPAMP_SAT]        = { { COMP_OPAMP, 0, 0 } },                                   // inverting input
 };
 
 // Scope time/div that shows the interesting behaviour of each template
@@ -7646,6 +7912,8 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_SIL_LOADING] = 5e-3, [CIRCUIT_SERIES_COMP] = 5e-3, [CIRCUIT_HV_765_LINE] = 5e-3,
     [CIRCUIT_3PH_Y_BALANCED] = 5e-3, [CIRCUIT_3PH_UNBALANCED] = 5e-3, [CIRCUIT_3PH_345_LINE] = 5e-3, [CIRCUIT_3PH_RECTIFIER] = 5e-3,
     [CIRCUIT_SCHMITT_BISTABLE] = 2e-3, [CIRCUIT_TRI_SQUARE_GEN] = 100e-6, [CIRCUIT_FUNCTION_GEN] = 100e-6, [CIRCUIT_COLPITTS] = 500e-9, [CIRCUIT_RING_OSC] = 2e-6,
+    [CIRCUIT_HARTLEY] = 500e-9, [CIRCUIT_CLAPP] = 200e-9,
+    [CIRCUIT_THEVENIN] = 1e-3, [CIRCUIT_SUPERPOSITION] = 1e-3, [CIRCUIT_RC_STEP] = 1e-3, [CIRCUIT_RL_STEP] = 100e-6, [CIRCUIT_RLC_RING] = 50e-6, [CIRCUIT_RLC_DAMPING] = 100e-6, [CIRCUIT_OPAMP_SAT] = 200e-6,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -7669,6 +7937,8 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_SIL_LOADING] = 100e3, [CIRCUIT_SERIES_COMP] = 100e3, [CIRCUIT_HV_765_LINE] = 200e3,
     [CIRCUIT_3PH_Y_BALANCED] = 100.0, [CIRCUIT_3PH_UNBALANCED] = 100.0, [CIRCUIT_3PH_345_LINE] = 100e3, [CIRCUIT_3PH_RECTIFIER] = 50.0,
     [CIRCUIT_SCHMITT_BISTABLE] = 5.0, [CIRCUIT_TRI_SQUARE_GEN] = 5.0, [CIRCUIT_FUNCTION_GEN] = 2.0, [CIRCUIT_COLPITTS] = 5.0, [CIRCUIT_RING_OSC] = 2.0,
+    [CIRCUIT_HARTLEY] = 5.0, [CIRCUIT_CLAPP] = 5.0,
+    [CIRCUIT_THEVENIN] = 2.0, [CIRCUIT_SUPERPOSITION] = 2.0, [CIRCUIT_RC_STEP] = 1.0, [CIRCUIT_RL_STEP] = 1.0, [CIRCUIT_RLC_RING] = 2.0, [CIRCUIT_RLC_DAMPING] = 2.0, [CIRCUIT_OPAMP_SAT] = 5.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -7754,6 +8024,15 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_FUNCTION_GEN]     = { DEMO_OSC, 5000 },
     [CIRCUIT_COLPITTS]         = { DEMO_OSC, 712e3 },
     [CIRCUIT_RING_OSC]         = { DEMO_OSC, 145e3 },
+    [CIRCUIT_HARTLEY]          = { DEMO_OSC, 503292 },
+    [CIRCUIT_CLAPP]            = { DEMO_OSC, 1743455 },
+    [CIRCUIT_THEVENIN]         = { DEMO_DC, 0 },
+    [CIRCUIT_SUPERPOSITION]    = { DEMO_DC, 0 },
+    [CIRCUIT_RC_STEP]          = { DEMO_WAVEFORM, 100 },
+    [CIRCUIT_RL_STEP]          = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_RLC_RING]         = { DEMO_WAVEFORM, 5030 },   // the ring frequency: 6 cycles of ringing in the demo window
+    [CIRCUIT_RLC_DAMPING]      = { DEMO_WAVEFORM, 5030 },
+    [CIRCUIT_OPAMP_SAT]        = { DEMO_WAVEFORM, 1000 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -7854,7 +8133,7 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
 
 const char *circuit_template_group_name(TemplateGroup g) {
     static const char *names[TG_COUNT] = {
-        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage"
+        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients"
     };
     return (g >= 0 && g < TG_COUNT) ? names[g] : "?";
 }

@@ -275,6 +275,8 @@ static int osc_test(void) {
         { CIRCUIT_FUNCTION_GEN, 0.004, 5000.0, 2e-7 },
         { CIRCUIT_COLPITTS, 60e-6, 712e3, 5e-9 },
         { CIRCUIT_RING_OSC, 200e-6, 145e3, 2e-8 },
+        { CIRCUIT_HARTLEY, 80e-6, 503292, 5e-9 },
+        { CIRCUIT_CLAPP, 30e-6, 1743455, 2e-9 },
     };
     int fails = 0;
     for (unsigned k = 0; k < sizeof cases / sizeof cases[0]; k++) {
@@ -402,6 +404,13 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_PC_BREAKER_FAIL,  COMP_AND_GATE,  1, 2, "max", 5.0,     0.05, 0.30,  "BFT high ~200 ms after TRIP (stuck breaker)" },
     { CIRCUIT_SIL_LOADING,      COMP_RESISTOR,  0, 0, "amp", 269254.0, 0.03, 60e-3, "Vr/Vs = 0.956 at SIL (pi oracle)" },
     { CIRCUIT_SERIES_COMP,      COMP_RESISTOR,  0, 0, "amp", 250606.2, 0.04, 60e-3, "Vr/Vs = 0.890 at 2 x SIL with 50 % series cap (pi oracle)" },
+    { CIRCUIT_THEVENIN,         COMP_RESISTOR,  3, 0, "dc",  3.0,   0.01, 5e-3,  "V_th R_L/(R_L + R_th) = 6 x 2.2/4.4" },
+    { CIRCUIT_SUPERPOSITION,    COMP_RESISTOR,  0, 1, "dc",  7.333, 0.01, 5e-3,  "4 + 2 + 1.333 V" },
+    { CIRCUIT_RC_STEP,          COMP_CAPACITOR, 0, 0, "max", 5.0,   0.02, 20e-3, "settles to the 5 V step (5 tau per half period)" },
+    { CIRCUIT_RL_STEP,          COMP_RESISTOR,  0, 0, "max", 5.0,   0.02, 2e-3,  "100 ohm x 50 mA" },
+    { CIRCUIT_RLC_RING,         COMP_CAPACITOR, 0, 0, "max", 9.53,  0.04, 6e-3, "first peak 5(1 + e^(-pi zeta/sqrt(1-zeta^2)))" },
+    { CIRCUIT_RLC_DAMPING,      COMP_CAPACITOR, 1, 0, "max", 5.0,   0.02, 10e-3, "critical damping: no overshoot" },
+    { CIRCUIT_OPAMP_SAT,        COMP_OPAMP,     0, 2, "max", 15.0,  0.03, 3e-3,  "clipped at the +15 V rail" },
     { CIRCUIT_SCHMITT_BISTABLE, COMP_OPAMP,     0, 2, "max", 15.0,  0.05, 30e-3, "bistable output at the rail" },
     { CIRCUIT_TRI_SQUARE_GEN,   COMP_OPAMP,     1, 2, "amp", 7.5,   0.08, 3e-3,  "triangle peak = 15 R1/R2" },
     { CIRCUIT_FUNCTION_GEN,     COMP_RESISTOR,  3, 1, "amp", 4.9,   0.15, 3e-3,  "3-breakpoint sine ~4.9 V peak" },
@@ -435,6 +444,10 @@ static int probe_test(void) {
         int node_id = comp ? comp->node_ids[pc->term] : -1;
         int ok = comp && simulation_dc_analysis(sim);
         simulation_auto_time_step(sim);
+        {   /* never coarser than the template's own scope preset (what the app would use) */
+            double td = circuit_template_scope_time_div(pc->t);
+            if (td > 0) { double dtp = simulation_scope_time_step(sim, td); if (dtp > 0 && dtp < sim->time_step) simulation_set_time_step(sim, dtp); }
+        }
         simulation_start(sim);
         double t_rec = pc->run * 0.75, mn = 1e300, mx = -1e300, sum = 0, asum = 0; int n = 0;
         while (ok && sim->time < pc->run) {

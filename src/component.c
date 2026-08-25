@@ -2379,17 +2379,20 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
 
         case COMP_INDUCTOR: {
             double L = comp->props.inductor.inductance;
-            double Req = L / dt;
-            double Veq = 0;
             int curr_idx = num_nodes + comp->voltage_var_idx;
-
+            // theta method (theta = 0.6, like the capacitor): backward Euler alone damps high-Q
+            // LC resonators by ~(w dt)^2/2 per step, which killed crystal-class circuits.
+            //   theta V_n + (1-theta) V_prev = L (I_n - I_prev)/dt
+            //   -> V_n - (L/(theta dt)) I_n = -K V_prev - (L/(theta dt)) I_prev,  K = (1-theta)/theta
+            const double TH = 0.6, K = (1.0 - TH) / TH;
             Vector *mem = g_stamp_prev_step ? g_stamp_prev_step : prev_solution;
-            if (mem && curr_idx < mem->size) {
+            bool trans = (mem != NULL) && curr_idx < (int)mem->size;
+            double Req = trans ? L / (TH * dt) : L / dt;
+            double Veq = 0;
+            if (trans) {
                 double Iprev = vector_get(mem, curr_idx);
-                // Row: V0 - V1 - Req*I = Veq. Backward Euler gives V0 - V1 = Req*(I - Iprev),
-                // so Veq = -Req*Iprev. (It was +Req*Iprev, which made every inductor fight its
-                // own current and look ~30x too large.)
-                Veq = -L * Iprev / dt;
+                double v0p = (n[0] > 0) ? vector_get(mem, n[0]-1) : 0, v1p = (n[1] > 0) ? vector_get(mem, n[1]-1) : 0;
+                Veq = -K * (v0p - v1p) - Req * Iprev;
             }
 
             if (n[0] > 0) {

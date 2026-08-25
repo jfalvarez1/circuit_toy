@@ -1,4 +1,4 @@
-# Prebuilt Circuit Template Audit (72 templates)
+# Prebuilt Circuit Template Audit (81 templates)
 
 Companion to `TEST_PLAN.md` §8. Every template gets the same five passes; the per-template
 block adds the hand-calculated nominal, the **value variations** to try, and specific traps.
@@ -6,7 +6,7 @@ block adds the hand-calculated nominal, the **value variations** to try, and spe
 Values below were extracted from `src/circuits.c` `place_*` builders on 2026-08-24 — if a
 template's BOM changes, update its block.
 
-### Fixes applied 2026-08-24 (headless smoke test now reports 47/47; 65/65 after the 18 templates added later the same day; 72/72 after the 7 protection & control templates, see the two added sections)
+### Fixes applied 2026-08-24 (headless smoke test now reports 47/47; 65/65 after the 18 templates added later the same day; 72/72 after the 7 protection & control templates; 81/81 after the 4 three-phase and 5 signal-generator templates, see the added sections)
 Engine: BJT stamp was missing the collector Newton equivalent current and flipped the PNP
 transconductance sign (every BJT template ran away to MV); PMOS had the same sign bug (CMOS
 inverter); zener breakdown and TL431 were hard switches that chattered (now smooth models);
@@ -64,7 +64,7 @@ textbook two-op-amp absolute-value topology (out = -|Vin|); phase-shift oscillat
 to +/-5 V rails (single-supply DC feedback latched it) and Rf 33k; every template now
 carries an on-canvas "how it works / PROBE" note.
 
-### OPEN schematic-geometry items (`--geom-test`: crossings and wires through bodies; 50/72 clean — all 18 added templates and the 7 protection & control templates #66–#72 are clean)
+### OPEN schematic-geometry items (`--geom-test`: crossings and wires through bodies; 59/81 clean — all 18 added templates, the 7 protection & control templates #66–#72 and the 9 three-phase / signal-generator templates #73–#81 are clean)
 ```
 [WARN] geom  Common Emitter               diag=0 cross=0 through=1 touch=0 through:Q104
 [WARN] geom  Source Follower              diag=0 cross=0 through=1 touch=0 through:M142
@@ -514,7 +514,7 @@ toroid peak and the ring frequency in the 60 µs after the first firing (±20 %)
 
 ## Protection & control (added; AEP-style practice, `docs/RESEARCH_AEP_PC.md` §5.1–§5.8, 7 templates: #66–#72)
 
-Current status: 72/72 templates, 72/72 `--demo-test`, 66/66 `--probe-test`, 72/72 `--flow-test`,
+Status when this batch landed: 72/72 templates, 72/72 `--demo-test`, 66/66 `--probe-test`, 72/72 `--flow-test`,
 50/72 `--geom-test` clean (all seven below are clean), `--param-test` all OK (now also §4b analog
 switch as a fault switch, r_on 0.01 … 1e6 Ω under a 0/5 V pulse control, and §4c transformer as a
 CT with N = 120 / 400 / 2875 into a 1 Ω burden), `--tesla-test` 3/3, layout-test 0 failures.
@@ -615,6 +615,128 @@ Common building blocks (`src/circuits.c`, above `place_pc_overcurrent`):
 
 ---
 
+## Three-phase (added; 60 Hz, three `COMP_AC_VOLTAGE` sources at 0 / −120 / +120°, 4 templates: #73–#76)
+
+Current status: 81/81 templates, 81/81 `--demo-test`, 73/73 `--probe-test`, 81/81 `--flow-test`,
+59/81 `--geom-test` clean (all nine of #73–#81 are clean), `--osc-test` 7/7 (per-case dt, see the
+signal-generator section), `--param-test` all OK, `--tesla-test` 3/3, knob test 970 runs 0 failed.
+
+Common building blocks (`src/circuits.c`, `ph_source` / `place_3ph_y`):
+- **Phase sources** `ph_source(vpk, deg)`: an `ac_source` with `props.ac_voltage.phase` set to 0, −120,
+  +120 (A-B-C sequence). Swap two phase angles to reverse the sequence.
+- **Y layout**: three rows 140 px apart, source → series line R → load R → neutral bus at x+300 →
+  R_n (1 Ω, rotated 90) → ground. The neutral bus is a real probed node.
+- **Extra probes**: a new `template_extra_probes[type][3]` table adds up to three scope probes on
+  top of the auto probe so *all* phases appear on load — e.g. #73 auto-probes the phase B load
+  (`COMP_RESISTOR` 3) and adds phase C (5) and the neutral (6); the source probe covers phase A.
+  Use the scope **Stack** button to separate them.
+- Sources are phase-to-neutral peaks: 277 V rms → 392 Vpk (480 V line-line), 345 kV → 281.7 kVpk,
+  120 V rms → 170 Vpk (rectifier).
+
+**Traps:** the 10 px node-merge rule applies to the three stacked rows (140 px pitch keeps corners
+clear); the neutral resistor is the *seventh* resistor (ordinal 6) in the Y templates, so probe/oracle
+ordinals shift if a resistor is inserted; an open neutral (1 MΩ) makes the neutral shift ~144 Vpk — set
+the neutral channel to 50 V/div before trying it.
+
+### 73. 3-Phase Y Balanced — 392 Vpk (277 V rms, 480 V L-L) × 3 at 0/−120/+120°, 0.5 Ω line R each, 10 Ω loads, neutral 1 Ω to ground
+- **Demonstrates:** in a balanced Y the three load currents sum to zero at every instant, the neutral carries nothing and the total power is constant (not pulsating). V_LL = √3 · V_LN; phase order A-B-C sets motor direction.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: phase B load (`COMP_RESISTOR` 3, term 0) auto; extras phase C load (5) and neutral (6); the source probe is phase A. Presets 5 ms/div, 100 V/div.
+- **N:** each load = 392 · 10/10.5 = **373.3 Vpk** (`--probe-test` ±3 %, 60 ms), 120° apart; neutral ≈ **0 V** (< 1 V — solver noise only). Load current 37.3 Apk, I_n = 0.
+- **V:** neutral R 1 → **1 mΩ** (solid) and → **1 MΩ** (open): balanced ⇒ nothing changes on any channel (that is the point) · load unbalance: phase C 10 → 40 Ω ⇒ neutral rises to ~10 Vpk and phase C load reads ≈ 386 Vpk (becomes #74) · swap the B and C phase angles (−120 ↔ +120) ⇒ same amplitudes, reversed sequence on the Stack view · line R 0.5 → 5 Ω ⇒ loads 261 Vpk · frequency 60 → 50 Hz ⇒ same amplitudes, 20 ms period.
+- **M:** resistors only — no model matrix; the only "model" is the phase property, which must survive save/load.
+- **T:** dt auto ~100 µs is fine; 5 ms/div shows 1.2 cycles, 2 ms/div to read the 120° spacing (5.56 ms) with cursors.
+
+### 74. 3-Phase Unbalanced — as #73 but loads 10 / 20 / 40 Ω (A / B / C), neutral 1 Ω
+- **Demonstrates:** unequal loads ⇒ I_A + I_B + I_C ≠ 0 and the difference returns through the neutral; with neutral impedance the star point shifts and the lightly loaded phases see *more* than nominal — the "lost neutral" hazard.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: neutral (`COMP_RESISTOR` 6, term 0) auto; extras phase B load (3) and phase C load (5). Presets 5 ms/div, 100 V/div.
+- **N:** phasor: V_n = Σ(V_k/Z_k) / (Σ 1/Z_k + 1/R_n) with Z_k = 10.5, 20.5, 40.5 Ω ⇒ |V_n| = **20.83 Vpk** (`--probe-test` ±5 %, 60 ms), lagging phase A by ≈ 20°. Loads: A ≈ 355 Vpk, B ≈ 387 Vpk, **C ≈ 403 Vpk** (above the 392 V source). I_n ≈ 20.8 Apk.
+- **V:** neutral R → **1 mΩ** (solid neutral) ⇒ V_n ≈ 0.02 V, loads 373 / 382 / 387 Vpk (each phase independent) · neutral R → **1 MΩ** (open neutral) ⇒ V_n ≈ **144 Vpk**, phase C load ≈ 500 Vpk, phase A ≈ 250 Vpk — use 50 V/div on the neutral channel · load C 40 → 10 Ω ⇒ back to #73 (V_n → 0) · load A 10 → 1 Ω ⇒ V_n ≈ 100 Vpk and the neutral R dissipates 5 kW: extreme unbalance · reverse the sequence (swap B/C angles) ⇒ |V_n| unchanged, its phase mirrors.
+- **M:** resistors only. Check the "lost neutral" case does not produce NaN — it is a plain resistive network at any R_n.
+- **T:** as #73. Use the FFT on the neutral: pure 60 Hz (no harmonics — linear loads).
+
+### 75. 3-Phase 345 kV Line — 281.7 kVpk × 3 at 0/−120/+120°, 100 mi twin Drake per phase (`COMP_TLINE` model 1: 6 Ω + 145.9 mH), 198.4 Ω loads (600 MW), neutral 1 Ω
+- **Demonstrates:** the single-phase 345 kV example (#54) done for all three phases: a balanced system is solved per phase and multiplied by three, which is why the other power templates are single-phase equivalents. Unbalancing one load shows zero-sequence current in the neutral.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: phase B load (`COMP_RESISTOR` 1, term 0) auto; extras phase A (0) and phase C (2). Presets 5 ms/div, **100 kV/div**.
+- **N:** every phase drops the same 6.3 % as #54: **264 kVpk** (`--probe-test` ±5 %, 60 ms), 120° apart; neutral ≈ 0.
+- **V:** load C 198.4 → 400 Ω ⇒ phase C ≈ 273 kVpk, neutral ≈ 25 kVpk at 60 Hz · load C → 10 MΩ (open phase) ⇒ neutral ≈ 90 kVpk · neutral R 1 → 1 MΩ with one load unbalanced ⇒ the star point floats and the healthy phases are overvolted (EHV systems are solidly grounded for exactly this reason) · length 100 → 200 mi on one phase only ⇒ that phase drops more, neutral current appears · all loads 198.4 → 99.2 Ω ⇒ 2 × 600 MW, each phase ≈ 0.88.
+- **M:** tline model 1 (R-L) on all three; switch one phase to model 2 (π) and confirm the balanced answer barely moves at 100 mi (#64 shows the difference).
+- **T:** as #54; 200 kV/div if the open-neutral variation is tried.
+
+### 76. 3-Phase 6-Pulse Rect — 170 Vpk (120 V rms) × 3 at 0/−120/+120°, six diodes (upper K → plus bus, lower A → minus bus), neutral grounded, load 100 Ω between the buses
+- **Demonstrates:** the plus bus follows the highest phase and the minus bus the lowest, so V+ − V− = V_LL,pk · cos(0…30°): DC ≈ 1.35 · V_LL,rms = 2.34 · V_LN,rms ≈ 280 V with only 4 % ripple at 6 × 60 = 360 Hz. Each diode conducts 120° per cycle. This is the front end of every VFD and HVDC pole.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: plus bus (`COMP_RESISTOR` 0, term 0) auto; extra minus bus (`COMP_DIODE` 5, term 0); phase A from the source. Presets 5 ms/div, 50 V/div.
+- **N:** plus bus peak = 170 − 0.7 = **169.3 V** (`--probe-test` "max" ±3 %, 60 ms); minus bus mirror −169.3 V; V+ − V− swings 294 · cos 30° − 1.4 ≈ **254 V** to 293 V (mean ≈ 279 V), 360 Hz ripple; load current ≈ 2.8 A; each diode 120° at ≈ 2.8 A.
+- **V:** add 100 µF across the load ⇒ ripple shrinks from ~40 V to a few volts (the cap only bridges the ~30° dip between adjacent line-line peaks, not a full 1/360 s — the single-phase I/(fC) rule badly overestimates it; measure it) · remove one phase source (set amplitude 0) ⇒ the bridge degrades toward single-phase full-wave: 120 Hz ripple, deep 40 % dips · load 100 → 10 Ω ⇒ 28 A, diode drop matters (169.3 → ≈ 168.5) · reverse the sequence (swap B/C angles) ⇒ identical bus waveforms — a rectifier does not care about sequence · frequency 60 → 50 Hz ⇒ 300 Hz ripple.
+- **M:** ideal diodes ⇒ plus bus peak 170.0 exactly; realistic Is = 1e-9 ⇒ 169.3. No NaN when two diodes commutate at the 30° crossover (Newton takes an extra iteration there).
+- **T:** dt auto ~100 µs gives 46 points per ripple period — set 20 µs to resolve the commutation notch; 1 ms/div to count six pulses per 16.7 ms.
+
+---
+
+## Signal generators (added; Sedra & Smith ch. 18, `docs/RESEARCH_OSCILLATORS.md`, 5 templates: #77–#81)
+
+Common building blocks (`src/circuits.c`, `sat_opamp` / `place_tri_square_core`):
+- **Saturating op-amp** `sat_opamp()`: `COMP_OPAMP` with `ideal = false`, gain 1e5, ±15 V rails. The
+  `ideal = true` virtual-short model **cannot** be used in a positive-feedback (bistable) or integrator
+  role — the solver forces V+ = V− and the loop is dead or floats. Every op-amp in #77–#79 is finite-gain.
+- **Kick sources**: a `COMP_PULSE_SOURCE` with `period` 100 s (one-shot) breaks the perfect
+  equilibrium at t = 0: 0.5 V / 50 µs on the bistable input (#78, #79), 0.3 V / 50 ns on the Colpitts
+  gate (#80), 3 V / 2 µs on the first RC of the ring (#81).
+- `--osc-test` now carries a **per-case dt** (0 = the `--osc-dt` default of 1 µs): 200 ns for the
+  5 kHz generators, 5 ns for the 712 kHz Colpitts, 20 ns for the ring, and it takes the output node
+  from the template's `template_output[]` spec instead of "the first op-amp".
+- `--flow-test` exempts behavioural logic gates (#81): KCL is asserted only on the passive nodes.
+
+**Traps discovered while building these:**
+- A **forgotten wire** (R2 of the bistable to the + input) made the triangle generator dead-quiet: the
+  op-amp sat at a rail and nothing rang. `--trace "Triangle/Square Gen" 0.004` found it in one run
+  (the + input node had min = max). Run `--trace` on every new oscillator before hunting in the engine.
+- `ideal = true` op-amps in positive feedback: see above. The finite-gain op-amp integrates fine
+  (gain 1e5 ⇒ 0.001 % droop per cycle).
+- The Colpitts needs dt ≤ 10 ns (period 1.4 µs): the app's auto-dt has no AC source to work from, so
+  the template's preset dt matters; the demo harness forces run/1000 if auto-dt is unusable.
+
+### 77. Bistable (Schmitt) — 10 Vpk 100 Hz triangle in, inverting op-amp (finite gain, ±15 V), R1 = R2 = 10 k from OUT to + and + to ground, 100 k load
+- **Demonstrates:** (S&S 18.4) positive feedback turns the op-amp into a latch. With OUT at +15 V the + input sits at +7.5 V, so the input must exceed +7.5 V to flip to −15 V and then fall below −7.5 V to flip back. V_TH = L+ · R1/(R1 + R2), V_TL = L− · R1/(R1 + R2) — 15 V of hysteresis rejects noise near the threshold.
+- **Demo:** `DEMO_SWITCH`, f_char 100. Probe: OUT (`COMP_OPAMP` 0, term 2) auto; the triangle from the source probe. Presets 2 ms/div, 5 V/div.
+- **N:** OUT = **±15 V** (`--probe-test` "max" 15.0 ±5 %, 30 ms); two edges per input cycle at input = **+7.5 V** (falling edge of OUT) and **−7.5 V** (rising edge), i.e. 2.5 ms apart then 7.5 ms. **X-Y view** (Y-T button, X = triangle, Y = OUT) draws the rectangular hysteresis loop 7.5 V wide, 30 V tall.
+- **V:** **R1 10 → 20 k** (R2 10 k) ⇒ thresholds ±10 V: the 10 V triangle just barely reaches them, output may stop switching (raise the triangle to 12 V) · **R2 10 → 30 k** ⇒ thresholds ±3.75 V, edges 0.75 ms after each zero crossing · triangle 10 → 5 Vpk ⇒ never crosses ±7.5 V ⇒ OUT stays at one rail (the demo contract would fail — expected) · rails ±15 → ±10 V ⇒ thresholds ±5 V · frequency 100 → 1 kHz ⇒ same thresholds, edge timing scales.
+- **M:** set the op-amp `ideal = true` ⇒ **latch dead** (virtual-short model, see the traps); back to `ideal = false`. Gain 1e5 → 1e3 ⇒ thresholds unchanged, the edges get a visible 30 mV slope.
+- **T:** dt auto ~10 µs; 2 ms/div to see the edges, 500 µs/div with cursors to read the 7.5 V crossing on the triangle.
+
+### 78. Triangle/Square Gen — non-inverting bistable (R1 10 k from integrator, R2 20 k from OUT ⇒ thresholds ±15 · R1/R2 = ±7.5 V) driving an inverting integrator (R 10 k, C 10 nF), 0.5 V/50 µs kick
+- **Demonstrates:** (S&S 18.5.2) the integrator ramps at L/RC = 15 V/100 µs = 0.15 V/µs until it hits a bistable threshold, the bistable flips and the ramp reverses. f = R2/(4 R C R1) = 20 k/(4 · 10 k · 10 n · 10 k) = **5 kHz**; the rails cancel out of f. Frequency: R or C; amplitude: R1/R2.
+- **Demo:** `DEMO_OSC`, f_char 5000; `--osc-test` 4 ms window, dt 200 ns, expects 5000 Hz (**measured 5000 Hz**). Probe: triangle (`COMP_OPAMP` 1, term 2) auto; extra square (`COMP_OPAMP` 0, term 2). Presets 100 µs/div, 5 V/div.
+- **N:** triangle **±7.5 V** (`--probe-test` "amp" 7.5 ±8 %, 3 ms), square ±15 V, both at 5.00 kHz; the square edges sit exactly at the triangle peaks (Stack view).
+- **V:** **R 10 → 20 k** ⇒ 2.5 kHz, amplitude unchanged · **C 10 → 4.7 nF** ⇒ 10.6 kHz · **R1 10 → 5 k** ⇒ triangle ±3.75 V and f doubles to 10 kHz (f ∝ R2/R1) · **R2 20 → 40 k** ⇒ ±3.75 V, 10 kHz likewise; R2 → 10 k ⇒ ±15 V thresholds equal the rails, the loop stalls — expected · rails ±15 → ±10 V ⇒ triangle ±5 V, f unchanged (the trick) · apply each **live**: the ramp continues from its current value, no time reset.
+- **M:** both op-amps `ideal = false` gain 1e5. Either one at `ideal = true` ⇒ dead (see the traps; this is the failure the forgotten-wire trace also produced). Gain 1e5 → 1e3 ⇒ f drops ~1 % (finite-gain integrator).
+- **T:** dt must be ≤ 1 µs (200 ns in `--osc-test`); at 5 µs the triangle peaks overshoot the thresholds by one step (≈ 0.75 V) and f reads low — a time-base check, not a model bug. 100 µs/div shows 2 cycles.
+
+### 79. Function Generator — #78 core + R_in 10 k into a 3-breakpoint diode shaper: 22 k to +2.0 V, 5.6 k to +3.7 V, and mirror branches (22 k to −2.0 V, 5.6 k to −3.7 V, diodes reversed)
+- **Demonstrates:** (S&S 18.8.2) piecewise-linear sine shaping. Below |2.6 V| nothing conducts (slope 1); above it the 22 k branch loads the node (slope 22/(10 + 22) = 0.69); above |4.3 V| the 5.6 k branch too (slope 0.31). Three breakpoints per half-cycle turn the ±7.5 V triangle into a **~4.9 V sine** with THD of a few %.
+- **Demo:** `DEMO_OSC`, f_char 5000; `--osc-test` 4 ms, dt 200 ns, 5000 Hz. Probe: shaper output (`COMP_RESISTOR` 3, term 1) auto; extra triangle (`COMP_OPAMP` 1, term 2). Presets 100 µs/div, 2 V/div.
+- **N:** sine **≈ 4.9 Vpk** (`--probe-test` "amp" 4.9 ±15 %, 3 ms) at 5.00 kHz. **FFT**: 3rd harmonic > 30 dB below the fundamental, no even harmonics (symmetric breakpoints).
+- **V:** **R 10 → 20 k** ⇒ 2.5 kHz, shape unchanged (the shaper is amplitude-only) · **C 10 → 4.7 nF** ⇒ 10.6 kHz · **R2 20 → 40 k** (amplitude) ⇒ triangle ±3.75 V ⇒ only the first breakpoint is reached: output ≈ 3.4 Vpk triangle-with-rounded-tops, 3rd harmonic rises to ~−20 dB — then **re-scale the bias sources** (2.0 → 1.0 V, 3.7 → 1.85 V) to restore the sine at half amplitude · bias 3.7 → 5 V ⇒ second breakpoint never reached, pointed peaks · 22 k → 10 k ⇒ over-flattened tops (3rd harmonic phase flips) · set one diode ideal ⇒ that breakpoint moves by 0.6 V, asymmetric output ⇒ even harmonics appear in the FFT.
+- **M:** op-amps as #78. Diodes: all ideal ⇒ breakpoints at exactly ±2.0 / ±3.7 V (slightly lower amplitude ≈ 4.6 V); realistic (Is = 1e-9) ⇒ ±2.6 / ±4.3 V as designed.
+- **T:** as #78. Persistence + FFT at 100 µs/div; the FFT needs ≥ 10 cycles in the record — use 200 µs/div for a clean harmonic readout.
+
+### 80. Colpitts (MOSFET) — 12 V, NMOS common source, tank L 100 µH with C1 = C2 = 1 nF (drain–ground / gate–ground), 1 mH RFC to the drain, 10 nF coupling cap, 1 M/1 M gate bias (6 V), 0.3 V/50 ns kick on the gate
+- **Demonstrates:** (S&S 18.3.1) the capacitive divider feeds C1/C2 of the drain swing back to the gate; oscillation needs g_m R_tank > C2/C1 (= 1 here). f = 1/(2π √(L · C1C2/(C1 + C2))) = 1/(2π √(100 µ · 0.5 n)) = **712 kHz**. The RFC is open at RF but passes the drain DC; amplitude limits by cut-off each cycle (class C).
+- **Demo:** `DEMO_OSC`, f_char 712e3; `--osc-test` 60 µs window, dt 5 ns, expects 712 kHz (**measured 710 kHz**). Probe: drain (`COMP_NMOS` 0, term 1) auto. Presets 500 ns/div, 5 V/div.
+- **N:** drain swings several volts around the 12 V RFC rail (up to ≈ 2 × VDD on a good cycle), **710–712 kHz**; the gate rides on the 6 V bias with a C1/C2 = 1 share of the drain swing.
+- **V:** **C1 1 → 2 nF** ⇒ C_eq = 0.667 nF ⇒ **616 kHz** (the on-canvas note says 581 kHz — that figure corresponds to C_eq = 0.75 nF, i.e. C1 = 3 nF; fix the note text in `template_notes[]` or accept 616) · C1 → 0.5 nF ⇒ C_eq 0.333 nF ⇒ 872 kHz, and the feedback fraction C1/C2 halves — check it still starts · **C2 1 → 2 nF** ⇒ 616 kHz too, but now C2/C1 = 2 needs g_m R_tank > 2 — may fail to start: raise kp or VDD · L 100 → 47 µH ⇒ 1.04 MHz (dt must follow) · RFC 1 mH → 10 µH ⇒ no longer an RF open: the tank is loaded, amplitude collapses · remove the kick (v_high 0) ⇒ starts from numerical noise only, much later.
+- **M:** NMOS is the only nonlinear part — set vth 1.5 → 3 V to lower g_m until it stops (start-up criterion), kp × 10 to see hard class-C limiting (flat-bottomed drain). Ideal inductors/caps.
+- **T:** **dt ≤ 10 ns** (5 ns in `--osc-test`, ~280 points per cycle); at 100 ns the tank is under-sampled and f reads 5 % low; at 1 µs it does not start at all — a time-base check. 500 ns/div shows 3.5 cycles; 20 µs/div for the start-up envelope.
+
+### 81. Ring Oscillator — five `COMP_NOT_GATE` in a loop, each followed by R 1 k / C 1 nF to ground, 3 V/2 µs kick on the first RC
+- **Demonstrates:** an odd number of inverters cannot settle: the signal returns inverted and the ring keeps flipping, period = 2 N t_pd. Here t_pd ≈ 0.69 RC = 0.69 µs (the gate flips when its RC input crosses the 2.5 V threshold) ⇒ f ≈ 1/(2 · 5 · 0.69 µs) ≈ **145 kHz**.
+- **Demo:** `DEMO_OSC`, f_char 145e3; `--osc-test` 200 µs window, dt 20 ns, expects 145 kHz (**measured 139 kHz** — the RC output does not start from exactly 0/5 V each half-cycle, so the effective delay is a little more than 0.69 RC). Probe: last stage output (`COMP_NOT_GATE` 4, term 1) auto. Presets 2 µs/div, 2 V/div.
+- **N:** 0/5 V square at **~139–145 kHz** on every gate output; probe several stages ⇒ five squares each shifted by one fifth of a half-period (0.7 µs); the RC nodes are exponential ramps between the rails.
+- **V:** **per-stage C**: one C 1 → 2 nF ⇒ that stage delays 1.4 µs, period 6.9 → 8.3 µs ⇒ ≈ **120 kHz**; all five C → 2 nF ⇒ ≈ 72 kHz; one C → 0.1 nF ⇒ ≈ 160 kHz (the other four dominate) · one R 1 k → 10 k ⇒ same as C × 10 on that stage ⇒ ≈ 55 kHz · remove one stage (4 inverters, even) ⇒ **latches**, no oscillation — the demo contract fails, expected · add two stages (7) ⇒ ≈ 100 kHz · kick v_high 3 → 0 ⇒ the ring still starts (the gates' initial state is not the metastable 2.5 V) — note whether it does.
+- **M:** gates are behavioural (no terminal currents): the current view shows nothing in/out of them and `--flow-test` checks only the RC nodes; an ammeter on a gate pin reads 0. No ideal/real toggle.
+- **T:** **dt ≤ 50 ns** (20 ns in `--osc-test`); at 1 µs the RC ramps are 1-step staircases and f reads 20 % high. 2 µs/div shows ~2 cycles; 20 µs/div for the start-up.
+
+---
+
 ## Result log
 
 | # | Template | L | N | V | M | T | S | Notes / issue link |
@@ -691,5 +813,14 @@ Common building blocks (`src/circuits.c`, above `place_pc_overcurrent`):
 | 70 | SIL Loading | | | | | | | toggle 2 × SIL live |
 | 71 | Series Compensation | | | | | | | toggle bypass live |
 | 72 | 765 kV Line (AEP) | | | | | | | 200 kV/div |
+| 73 | 3-Phase Y Balanced | | | | | | | Stack view; neutral ≈ 0; try R_n 1 mΩ / 1 MΩ (no change) |
+| 74 | 3-Phase Unbalanced | | | | | | | neutral 20.83 Vpk oracle; R_n 1 mΩ (0 V) / 1 MΩ (~144 V, 50 V/div) |
+| 75 | 3-Phase 345 kV Line | | | | | | | 264 kVpk per phase; unbalance one load for zero-sequence |
+| 76 | 3-Phase 6-Pulse Rect | | | | | | | plus-bus max 169.3 V; 360 Hz ripple; add 100 µF |
+| 77 | Bistable (Schmitt) | | | | | | | X-Y hysteresis loop; R1/R2 set ±7.5 V; `ideal=true` kills it |
+| 78 | Triangle/Square Gen | | | | | | | `--osc-test` 5000 Hz @ dt 200 ns; R/C = f, R1/R2 = amplitude |
+| 79 | Function Generator | | | | | | | FFT: 3rd harmonic > 30 dB down; re-scale bias V after R2 change |
+| 80 | Colpitts (MOSFET) | | | | | | | `--osc-test` 712 kHz @ dt 5 ns (measured 710); C1 → 2 nF = 616 kHz (note says 581 — see block) |
+| 81 | Ring Oscillator | | | | | | | `--osc-test` 145 kHz @ dt 20 ns (measured 139); per-stage C retune; gates have no currents |
 
-(72 blocks = the 72 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`; #48-#65 follow the enum order after `CIRCUIT_PHASE_SHIFT_OSC`, #66-#72 the enum order after `CIRCUIT_DC_LINE_DROP`.)
+(81 blocks = the 81 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`; #48-#65 follow the enum order after `CIRCUIT_PHASE_SHIFT_OSC`, #66-#72 the enum order after `CIRCUIT_DC_LINE_DROP`, #73-#81 the enum order after `CIRCUIT_HV_765_LINE`.)

@@ -105,6 +105,15 @@ typedef enum {
     CIRCUIT_FUNCTION_GEN,
     CIRCUIT_COLPITTS,
     CIRCUIT_RING_OSC,
+    CIRCUIT_HARTLEY,
+    CIRCUIT_CLAPP,
+    CIRCUIT_THEVENIN,
+    CIRCUIT_SUPERPOSITION,
+    CIRCUIT_RC_STEP,
+    CIRCUIT_RL_STEP,
+    CIRCUIT_RLC_RING,
+    CIRCUIT_RLC_DAMPING,
+    CIRCUIT_OPAMP_SAT,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 
@@ -119,6 +128,7 @@ typedef enum {
     TG_DIGITAL,         // logic-level circuits
     TG_POWER_SYSTEMS,   // transmission / distribution examples
     TG_HIGH_VOLTAGE,    // Tesla coils
+    TG_TRANSIENTS,      // step responses (Agarwal & Lang ch. 10/12)
     TG_COUNT
 } TemplateGroup;
 
