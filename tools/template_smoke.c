@@ -849,6 +849,160 @@ static int tesla_test(void) {
     return fails;
 }
 
+/* ---------------------------------------------------------------------------------------
+ * --param-test: parameter limits of the high-voltage components and the template scope
+ * presets. Each case builds a tiny circuit in code, runs it for a few cycles and checks that
+ * the solver stays finite and the behaviour matches the model contract.
+ * ------------------------------------------------------------------------------------- */
+static Component *pt_add(Circuit *c, ComponentType t, float x, float y, int rot) {
+    Component *k = component_create(t, x, y);
+    if (!k) return NULL;
+    k->rotation = rot;
+    circuit_add_component(c, k);
+    return k;
+}
+static int pt_node(Circuit *c, float x, float y) { return circuit_find_or_create_node(c, x, y, 5.0f); }
+/* source (amplitude, freq) -> device (2 terminals) -> load R to ground; returns the load node id */
+static int pt_build_series(Circuit *c, ComponentType dev, double amp, double f, double rload, Component **dev_out, Component **src_out) {
+    Component *v = pt_add(c, COMP_AC_VOLTAGE, 0, 60, 0);
+    v->props.ac_voltage.amplitude = amp; v->props.ac_voltage.frequency = f;
+    Component *g0 = pt_add(c, COMP_GROUND, 0, 140, 0);
+    Component *d = pt_add(c, dev, 100, 20, 0);
+    Component *rl = pt_add(c, COMP_RESISTOR, 200, 60, 90);
+    rl->props.resistor.resistance = rload;
+    Component *g1 = pt_add(c, COMP_GROUND, 200, 120, 0);
+    int a = pt_node(c, 0, 20), b = pt_node(c, 60, 20), cc = pt_node(c, 140, 20), dd = pt_node(c, 200, 20);
+    int gn = pt_node(c, 0, 100), gt = pt_node(c, 0, 120), ln = pt_node(c, 200, 100), lt = pt_node(c, 200, 120);
+    circuit_add_wire(c, a, b); circuit_add_wire(c, cc, dd); circuit_add_wire(c, gn, gt); circuit_add_wire(c, ln, lt);
+    v->node_ids[0] = a; v->node_ids[1] = gn; g0->node_ids[0] = gt;
+    d->node_ids[0] = b; d->node_ids[1] = cc; rl->node_ids[0] = dd; rl->node_ids[1] = ln; g1->node_ids[0] = lt;
+    if (dev_out) *dev_out = d; if (src_out) *src_out = v;
+    return dd;
+}
+/* run t_end at dt; returns 0 on solver error / non-finite; fills amplitude at node */
+static int pt_run(Circuit *c, int node_id, double dt, double t_end, double *amp_out, double *max_abs_out) {
+    Simulation *sim = simulation_create(c);
+    int ok = simulation_dc_analysis(sim);
+    simulation_set_time_step(sim, dt);
+    simulation_start(sim);
+    double vmin = 1e300, vmax = -1e300, max_abs = 0; long steps = 0;
+    while (ok && sim->time < t_end && steps < 3000000) {
+        if (!simulation_step(sim)) { ok = 0; break; }
+        steps++;
+        for (int i = 0; i < c->num_nodes; i++) {
+            double v = c->nodes[i].voltage;
+            if (!isfinite(v)) { ok = 0; break; }
+            if (fabs(v) > max_abs) max_abs = fabs(v);
+        }
+        if (sim->time > t_end * 0.5) {
+            Node *n = circuit_get_node(c, node_id);
+            double v = n ? n->voltage : 0;
+            if (v < vmin) vmin = v; if (v > vmax) vmax = v;
+        }
+    }
+    if (ok && sim->has_error) ok = 0;
+    if (amp_out) *amp_out = (vmax > vmin) ? (vmax - vmin) / 2 : 0;
+    if (max_abs_out) *max_abs_out = max_abs;
+    simulation_free(sim);
+    return ok;
+}
+#define PT_REPORT(pass, fmt, ...) do { printf("[%s] param " fmt "\n", (pass) ? " OK " : "FAIL", __VA_ARGS__); if (!(pass)) fails++; } while (0)
+
+static int param_test(void) {
+    int fails = 0;
+    /* 1. spark gap: fires iff breakdown < source peak (1 kV, 1 kHz, 1 k load) */
+    { double gaps[] = { 0.01, 0.1, 0.3, 0.5, 1.0, 10.0, 1000.0 };
+      for (unsigned i = 0; i < sizeof gaps / sizeof gaps[0]; i++) {
+          Circuit *c = circuit_create(); Component *d; int n = pt_build_series(c, COMP_SPARK_GAP, 1000.0, 1000.0, 1000.0, &d, NULL);
+          d->props.spark_gap.gap_mm = gaps[i];
+          double amp, mx; int ok = pt_run(c, n, 1e-6, 4e-3, &amp, &mx);
+          int should_fire = spark_gap_breakdown(d) < 1000.0;
+          int fired = amp > 100.0;
+          PT_REPORT(ok && fired == should_fire, "spark gap %-7g mm (Vbd %.3g V): load amp %.3g V, %s%s", gaps[i], spark_gap_breakdown(d), amp,
+                    fired ? "fires" : "stays open", ok ? "" : "  [sim error]");
+          circuit_free(c);
+      } }
+    /* 2. toroid: capacitance finite & increases with size; survives extreme shapes in a 100 kV, 1 MOhm circuit */
+    { struct { double D, d; } sh[] = { {0.5, 0.9}, {1, 0.1}, {13, 4}, {24, 8}, {100, 30}, {1000, 1000} };
+      double prev = 0;
+      for (unsigned i = 0; i < sizeof sh / sizeof sh[0]; i++) {
+          Circuit *c = circuit_create();
+          Component *v = pt_add(c, COMP_AC_VOLTAGE, 0, 60, 0); v->props.ac_voltage.amplitude = 100e3; v->props.ac_voltage.frequency = 100e3;
+          Component *g0 = pt_add(c, COMP_GROUND, 0, 140, 0);
+          Component *r = pt_add(c, COMP_RESISTOR, 100, 20, 0); r->props.resistor.resistance = 1e6;
+          Component *t = pt_add(c, COMP_TOROID, 200, -20, 0); t->props.toroid.major_in = sh[i].D; t->props.toroid.minor_in = sh[i].d;
+          int a = pt_node(c, 0, 20), b = pt_node(c, 60, 20), cc = pt_node(c, 140, 20), dd = pt_node(c, 200, 20), gn = pt_node(c, 0, 100), gt = pt_node(c, 0, 120);
+          circuit_add_wire(c, a, b); circuit_add_wire(c, cc, dd); circuit_add_wire(c, gn, gt);
+          v->node_ids[0] = a; v->node_ids[1] = gn; g0->node_ids[0] = gt; r->node_ids[0] = b; r->node_ids[1] = cc; t->node_ids[0] = dd;
+          double C = toroid_capacitance(t), amp, mx; int ok = pt_run(c, dd, 1e-8, 50e-6, &amp, &mx);
+          double expect = 100e3 / sqrt(1 + pow(2 * M_PI * 100e3 * 1e6 * C, 2));
+          int pass = ok && isfinite(C) && C > 0 && C >= prev * 0.999 && fabs(amp - expect) < 0.15 * expect;
+          PT_REPORT(pass, "toroid D=%-5g d=%-5g -> %8.2f pF, RC divider amp %.3g kV (expect %.3g)%s", sh[i].D, sh[i].d, C * 1e12, amp / 1e3, expect / 1e3, ok ? "" : "  [sim error]");
+          prev = C; circuit_free(c);
+      } }
+    /* 3. transmission line: lengths x models at 345 kV into 200 ohm; drop must grow with length, stay finite */
+    { double lens[] = { 0.001, 1, 10, 100, 500, 5000 }; const char *mn[] = { "R", "RL", "pi" };
+      for (int model = 0; model < 3; model++) {
+          double prev_amp = 1e300;
+          for (unsigned i = 0; i < sizeof lens / sizeof lens[0]; i++) {
+              Circuit *c = circuit_create(); Component *d; int n = pt_build_series(c, COMP_TLINE, 281.7e3, 60.0, 200.0, &d, NULL);
+              d->props.tline.length_mi = lens[i]; d->props.tline.model = model;
+              double R, L, Cend; tline_params(d, &R, &L, &Cend);
+              double amp, mx; int ok = pt_run(c, n, 1e-4, 0.1, &amp, &mx);
+              /* phasor oracle for R / RL: |V| = Vs * R_load / |R_load + R + jwL| ; pi adds the far-end C/2 across the load and C/2 across the source */
+              double w = 2 * M_PI * 60, Rl = 200.0, expect;
+              if (model < 2) expect = 281.7e3 * Rl / sqrt(pow(Rl + R, 2) + pow(w * L, 2));
+              else { double Yre = 1 / Rl, Yim = w * Cend; double Zre = Yre / (Yre*Yre + Yim*Yim), Zim = -Yim / (Yre*Yre + Yim*Yim);
+                     double tre = Zre + R, tim = Zim + w * L; expect = 281.7e3 * sqrt(Zre*Zre + Zim*Zim) / sqrt(tre*tre + tim*tim); }
+              int pass = ok && amp > 0 && fabs(amp - expect) < 0.05 * expect && amp <= prev_amp * 1.02;
+              PT_REPORT(pass, "tline %-3s %7g mi: R=%.3g L=%.3gH C/2=%.3gF  load amp %.4g kV (phasor %.4g)%s", mn[model], lens[i], R, L, Cend, amp / 1e3, expect / 1e3, ok ? "" : "  [sim error]");
+              prev_amp = amp; circuit_free(c);
+          } } }
+    /* 4. transformer ratios: V_out = N V_in into a light load */
+    { double Ns[] = { 0.001, 1.0 / 30, 0.4, 1, 19.17, 75, 1000 };
+      for (unsigned i = 0; i < sizeof Ns / sizeof Ns[0]; i++) {
+          Circuit *c = circuit_create();
+          Component *v = pt_add(c, COMP_AC_VOLTAGE, 0, 60, 0); v->props.ac_voltage.amplitude = 100; v->props.ac_voltage.frequency = 60;
+          Component *g0 = pt_add(c, COMP_GROUND, 0, 140, 0);
+          Component *t = pt_add(c, COMP_TRANSFORMER, 150, 20, 0); t->props.transformer.turns_ratio = Ns[i];
+          Component *gp = pt_add(c, COMP_GROUND, 100, 80, 0), *gs = pt_add(c, COMP_GROUND, 200, 80, 0);
+          Component *rl = pt_add(c, COMP_RESISTOR, 280, 60, 90); rl->props.resistor.resistance = 1e4 * Ns[i] * Ns[i] + 1.0;
+          Component *gl = pt_add(c, COMP_GROUND, 280, 120, 0);
+          int a = pt_node(c, 0, 20), p1 = pt_node(c, 100, 0), p2 = pt_node(c, 100, 40), gpt = pt_node(c, 100, 60), s1 = pt_node(c, 200, 0), s2 = pt_node(c, 200, 40), gst = pt_node(c, 200, 60);
+          int lt = pt_node(c, 280, 20), ln = pt_node(c, 280, 100), lg = pt_node(c, 280, 120), gn = pt_node(c, 0, 100), gt = pt_node(c, 0, 120);
+          circuit_add_wire(c, a, p1); circuit_add_wire(c, p2, gpt); circuit_add_wire(c, s1, lt); circuit_add_wire(c, s2, gst); circuit_add_wire(c, ln, lg); circuit_add_wire(c, gn, gt);
+          v->node_ids[0] = a; v->node_ids[1] = gn; g0->node_ids[0] = gt; t->node_ids[0] = p1; t->node_ids[1] = p2; t->node_ids[2] = s1; t->node_ids[3] = s2;
+          gp->node_ids[0] = gpt; gs->node_ids[0] = gst; rl->node_ids[0] = lt; rl->node_ids[1] = ln; gl->node_ids[0] = lg;
+          double amp, mx; int ok = pt_run(c, lt, 1e-4, 0.05, &amp, &mx);
+          double expect = 100 * Ns[i];
+          PT_REPORT(ok && fabs(amp - expect) < 0.02 * expect, "transformer N=%-8g: out amp %.4g V (expect %.4g)%s", Ns[i], amp, expect, ok ? "" : "  [sim error]");
+          circuit_free(c);
+      } }
+    /* 5. template scope presets: on the scope's tables, and the window shows 2..2000 cycles of f_char */
+    { static const double time_divs[] = {1e-9, 2e-9, 5e-9, 10e-9, 20e-9, 50e-9, 100e-9, 200e-9, 500e-9, 1e-6, 2e-6, 5e-6, 10e-6, 20e-6, 50e-6, 100e-6, 200e-6, 500e-6,
+                                         1e-3, 2e-3, 5e-3, 10e-3, 20e-3, 50e-3, 100e-3, 200e-3, 500e-3, 1.0, 2.0, 5.0};
+      static const double volt_divs[] = {0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1e3, 2e3, 5e3, 10e3, 20e3, 50e3, 100e3, 200e3, 500e3};
+      int bad = 0, checked = 0;
+      for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+          const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+          double td = circuit_template_scope_time_div((CircuitTemplateType)t), vd = circuit_template_scope_volt_div((CircuitTemplateType)t);
+          const TemplateDemo *dp = circuit_template_demo((CircuitTemplateType)t); TemplateDemo demo = dp ? *dp : (TemplateDemo){ DEMO_NONE, 0 };
+          int td_ok = td <= 0, vd_ok = vd <= 0;
+          for (unsigned i = 0; i < sizeof time_divs / sizeof time_divs[0]; i++) if (td > 0 && fabs(time_divs[i] - td) < 1e-3 * td) td_ok = 1;
+          for (unsigned i = 0; i < sizeof volt_divs / sizeof volt_divs[0]; i++) if (vd > 0 && fabs(volt_divs[i] - vd) < 1e-3 * vd) vd_ok = 1;
+          int win_ok = 1;
+          if (td > 0 && demo.f_char > 0 && demo.kind != DEMO_DC && demo.kind != DEMO_SWITCH) {
+              double cycles = 20 * td * demo.f_char;          /* history span = 20 divisions */
+              win_ok = cycles >= 1.5 && cycles <= 2000;
+          }
+          checked++;
+          if (!(td_ok && vd_ok && win_ok)) { bad++; printf("[FAIL] param preset %-26s time/div %g (%s) volt/div %g (%s) window %s\n", ti ? ti->name : "?", td, td_ok ? "ok" : "NOT A SCOPE STEP", vd, vd_ok ? "ok" : "NOT A SCOPE STEP", win_ok ? "ok" : "shows <1.5 or >2000 cycles of f_char"); }
+      }
+      PT_REPORT(bad == 0, "scope presets: %d templates checked, %d bad", checked, bad); fails += 0; }
+    printf("%d param checks failed\n", fails);
+    return fails;
+}
+
 int main(int argc, char **argv) {
     int dc_only = 0, verbose = 0, dump_nodes = 0;
     const char *svg_dir = NULL;
@@ -868,6 +1022,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--sweep-check")) return sweep_check();
         else if (!strcmp(argv[i], "--demo-test")) return demo_test();
         else if (!strcmp(argv[i], "--tesla-test")) return tesla_test();
+        else if (!strcmp(argv[i], "--param-test")) return param_test();
         else if (!strcmp(argv[i], "--response") && i + 1 < argc) return response_explore(argv[++i]);
         else if (!strcmp(argv[i], "--sim-time") && i + 1 < argc) sim_time = atof(argv[++i]);
         else filter = argv[i];
