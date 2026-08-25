@@ -3200,26 +3200,32 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
 
         case COMP_CRYSTAL:
         case COMP_TLINE: {
-            // Series R-L through the auxiliary current i (backward Euler for L), shunt C/2 at
-            // each end (backward Euler). Aux row: V1 - V2 - (R + L/dt) i = -(L/dt) i_prev.
+            // Series R-L through the auxiliary current i, shunt C/2 at each end, both with the same
+            // theta method as the capacitor (theta = 0.6: trapezoidal accuracy, slight damping).
+            //   aux row: V - (R + L/(th dt)) i = -((1-th)/th) V_prev + (((1-th)/th) R - L/(th dt)) i_prev
+            //   caps:    i_c = Geq v - Ieq, Geq = C/(th dt), Ieq = Geq v_prev + ((1-th)/th) i_c_prev
             double R, L, Cend;
             tline_params(comp, &R, &L, &Cend);
+            const double TH = 0.6, K = (1.0 - TH) / TH;
             int k = num_nodes + comp->voltage_var_idx;
             Vector *mem = g_stamp_prev_step ? g_stamp_prev_step : prev_solution;
             bool transient = (mem != NULL) && dt > 0;
-            double Lterm = transient ? L / dt : 0.0;
+            double Lterm = transient ? L / (TH * dt) : 0.0;
             double i_prev = (transient && k < (int)mem->size) ? vector_get(mem, k) : 0.0;
+            double v1p = (transient && n[0] > 0) ? vector_get(mem, n[0]-1) : 0.0;
+            double v2p = (transient && n[1] > 0) ? vector_get(mem, n[1]-1) : 0.0;
             if (n[0] > 0) { matrix_add(A, k, n[0]-1, 1.0);  matrix_add(A, n[0]-1, k, 1.0); }
             if (n[1] > 0) { matrix_add(A, k, n[1]-1, -1.0); matrix_add(A, n[1]-1, k, -1.0); }
             matrix_add(A, k, k, -(R + Lterm + 1e-9));
-            vector_add(b, k, -Lterm * i_prev);
+            if (transient) vector_add(b, k, -K * (v1p - v2p) + (K * R - Lterm) * i_prev);
             if (transient && Cend > 0) {
-                double Geq = Cend / dt;
+                double Geq = Cend / (TH * dt);
+                double vp[2] = { v1p, v2p };
                 for (int e = 0; e < 2; e++) {
                     if (n[e] <= 0) continue;
-                    double vprev = vector_get(mem, n[e]-1);
+                    double Ieq = Geq * vp[e] + K * comp->tline_ic_prev[e];
                     matrix_add(A, n[e]-1, n[e]-1, Geq);
-                    vector_add(b, n[e]-1, Geq * vprev);
+                    vector_add(b, n[e]-1, Ieq);
                 }
             }
             break;

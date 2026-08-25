@@ -31,6 +31,13 @@ SHOTS = [
     ("relaxation_osc", "RelOsc", 140, "circuits"),
     ("voltage_doubler", "Dblr", 200, "circuits"),
     ("parts_palette", None, 30, "parts"),
+    ("relay_overcurrent", "50/51", 130, "circuits"),
+    ("relay_differential", "87L", 200, "circuits"),
+    ("relay_distance", "21Z1", 200, "circuits"),
+    ("breaker_failure", "50BF", 300, "circuits"),
+    ("sil_loading", "SIL", 120, "circuits"),
+    ("series_compensation", "SerC", 120, "circuits"),
+    ("line_765kv", "765kV", 120, "circuits"),
 ]
 # name, template, first frame, frames, every
 GIFS = [
@@ -38,6 +45,8 @@ GIFS = [
     ("tesla_coil", "Tesla", 120, 30, 2),
     ("grid_chain", "Grid", 60, 24, 3),
     ("relaxation_osc", "RelOsc", 60, 24, 2),
+    ("relay_differential", "87L", 60, 40, 3),
+    ("breaker_failure", "50BF", 60, 40, 4),
 ]
 
 

@@ -542,6 +542,7 @@ bool simulation_dc_analysis(Simulation *sim) {
     // Capacitors carry no current at the operating point; swept sources restart their phase
     for (int i = 0; i < circuit->num_components; i++) {
         circuit->components[i]->trap_i_prev = 0.0;
+        circuit->components[i]->tline_ic_prev[0] = circuit->components[i]->tline_ic_prev[1] = 0.0;
         if (circuit->components[i]->type == COMP_SPARK_GAP) circuit->components[i]->props.spark_gap.conducting = false;
         circuit->components[i]->sweep_phase = 0.0;
     }
@@ -983,6 +984,14 @@ void simulation_compute_terminal_currents(Simulation *sim) {
             comp->terminal_current[1] = -comp->trap_i_prev;
             continue;
         }
+        if (comp->type == COMP_TLINE && sim->prev_step_solution) {
+            // series current from the auxiliary variable plus the shunt-capacitor current at each end
+            int r = num_nodes + comp->voltage_var_idx;
+            double i_s = (r < M) ? vector_get(sim->solution, r) : 0.0;
+            comp->terminal_current[0] = i_s + comp->tline_ic_prev[0];
+            comp->terminal_current[1] = -i_s + comp->tline_ic_prev[1];
+            continue;
+        }
 
         // Rows this component can touch
         int rows[MAX_TERMINALS + 4]; int nrows = 0;
@@ -1179,6 +1188,20 @@ bool simulation_step(Simulation *sim) {
             if (comp->type != COMP_TOROID) continue;
             int n0 = circuit->node_map[comp->node_ids[0]];
             comp->props.toroid.voltage = (n0 > 0) ? vector_get(sim->solution, n0 - 1) : 0;
+        }
+
+        // Transmission-line shunt capacitor state (theta method, see the TLINE stamp)
+        for (int i = 0; i < circuit->num_components; i++) {
+            Component *comp = circuit->components[i];
+            if (comp->type != COMP_TLINE) continue;
+            double R, L, Cend; tline_params(comp, &R, &L, &Cend);
+            if (Cend <= 0) { comp->tline_ic_prev[0] = comp->tline_ic_prev[1] = 0; continue; }
+            double Geq = Cend / (0.6 * dt);
+            for (int e = 0; e < 2; e++) {
+                int nn = circuit->node_map[comp->node_ids[e]];
+                double vn = (nn > 0) ? vector_get(sim->solution, nn - 1) : 0, vp = (nn > 0) ? vector_get(sim->prev_step_solution, nn - 1) : 0;
+                comp->tline_ic_prev[e] = Geq * (vn - vp) - (0.4 / 0.6) * comp->tline_ic_prev[e];
+            }
         }
 
         // Trapezoidal capacitor state: i_new = (2C/dt)(v_new - v_prev) - i_prev

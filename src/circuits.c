@@ -218,6 +218,14 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_FERRANTI_LINE] = {"Ferranti (open line)", "Ferr", "200-mile 345 kV pi line, open end, switchable reactor", TG_POWER_SYSTEMS},
     [CIRCUIT_LINE_MODEL_LADDER] = {"Line Model Ladder", "Ladder", "Same line as R, R-L and pi: compare the load buses", TG_POWER_SYSTEMS},
     [CIRCUIT_DC_LINE_DROP] = {"Line Drop Basics", "Drop", "Battery, wire resistance, load: the simplest voltage drop", TG_BASICS},
+    [CIRCUIT_PC_OVERCURRENT] = {"CT + 50/51 Overcurrent", "50/51", "CT 600:5, burden, rectify-hold, pickup comparator; pulsed fault", TG_POWER_SYSTEMS},
+    [CIRCUIT_PC_DIFFERENTIAL] = {"87 Line Differential", "87L", "Two CTs in opposition: internal fault trips, through fault does not", TG_POWER_SYSTEMS},
+    [CIRCUIT_PC_DISTANCE] = {"21 Distance Zone 1", "21Z1", "Replica impedance vs VT voltage: reach = 80 % of the line", TG_POWER_SYSTEMS},
+    [CIRCUIT_PC_BREAKER_FAIL] = {"50BF Breaker Failure", "50BF", "TRIP AND current-present starts a 150 ms timer -> BFT", TG_POWER_SYSTEMS},
+    [CIRCUIT_SIL_LOADING] = {"SIL Loading", "SIL", "200 mi 345 kV line at surge impedance load: flat voltage", TG_POWER_SYSTEMS},
+    [CIRCUIT_SERIES_COMP] = {"Series Compensation", "SerC", "50 % series capacitor restores the voltage at 2 x SIL", TG_POWER_SYSTEMS},
+    [CIRCUIT_HV_765_LINE] = {"765 kV Line (AEP)", "765kV", "300 mi six-bundle EHV line at ~2300 MW", TG_POWER_SYSTEMS},
+
     [CIRCUIT_TESLA_COIL] = {"Tesla Coil", "Tesla", "Spark-gap Tesla coil, 4x13 in toroid, streamer to a rod", TG_HIGH_VOLTAGE},
     [CIRCUIT_TESLA_COIL_BIG] = {"Tesla Coil (big top)", "TeslaB", "Retuned for an 8x24 in toroid: more energy, longer arc", TG_HIGH_VOLTAGE},
     [CIRCUIT_TESLA_COIL_DETUNED] = {"Tesla Coil (detuned)", "TeslaX", "Big toroid but the primary was not retuned: weak output", TG_HIGH_VOLTAGE},
@@ -6223,6 +6231,13 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_FERRANTI_LINE:    return place_ferranti_line(circuit, x, y);
         case CIRCUIT_LINE_MODEL_LADDER: return place_line_model_ladder(circuit, x, y);
         case CIRCUIT_DC_LINE_DROP:     return place_dc_line_drop(circuit, x, y);
+        case CIRCUIT_PC_OVERCURRENT:   return place_pc_overcurrent(circuit, x, y);
+        case CIRCUIT_PC_DIFFERENTIAL:  return place_pc_differential(circuit, x, y);
+        case CIRCUIT_PC_DISTANCE:      return place_pc_distance(circuit, x, y);
+        case CIRCUIT_PC_BREAKER_FAIL:  return place_pc_breaker_fail(circuit, x, y);
+        case CIRCUIT_SIL_LOADING:      return place_sil_loading(circuit, x, y);
+        case CIRCUIT_SERIES_COMP:      return place_series_comp(circuit, x, y);
+        case CIRCUIT_HV_765_LINE:      return place_hv_765_line(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6301,6 +6316,13 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_TESLA_COIL_DETUNED] = {"DETUNED COIL: same 8x24 in toroid (secondary at 152 kHz) but the primary has an 18 nF", "cap, ringing at 220 kHz. The two resonators are 45 % apart, so energy sloshes back", "into the primary instead of building up on the toroid: peak voltage is far lower and the", "40 mm rod gap never fires. Tuning the primary (C1 or the tap on L1) is the first thing a", "coiler does. Fix it here: click C1 and set 38 nF, or shrink the toroid to 4x13 in.", "PROBE: auto-placed on the toroid. Compare the envelope with the tuned coils."},
     [CIRCUIT_LINE_MODEL_LADDER] = {"LINE MODEL LADDER: one 138 kV source feeds three copies of a 30-mile line into equal", "90 MW loads. Row 1 keeps only the conductor resistance (R = 0.13 ohm/mi x 30 = 3.9 ohm).", "Row 2 adds the series reactance (X = 0.72 ohm/mi -> 57 mH): the drop grows and lags.", "Row 3 is the nominal pi: 6 uS/mi of charging susceptance as C/2 at each end (Ferranti).", "Click any line: length, R/mi, X/mi, B/mi and the model number are editable properties.", "PROBE: the three load buses (auto probe on row 2). Row 1 ~110.7 kVpk, row 2 ~110.1 kVpk."},
     [CIRCUIT_DC_LINE_DROP] = {"LINE DROP BASICS: the wire is a resistor too. I = V/(R_wire + R_load) = 12/11 = 1.09 A,", "so the load only sees 10.9 V and the wire burns 1.2 W. Longer wire = more ohms (R = rho L/A):", "double the length and the drop doubles. Everything in the power examples is this idea", "plus reactance (X) and charging (B) - open Line Model Ladder to see those added one by one.", "PROBE: auto-placed on the load; also probe the battery to compare 12 V vs 10.9 V."},
+    [CIRCUIT_PC_OVERCURRENT] = {"50/51 OVERCURRENT: the CT (600:5, N = 120) turns 600 A of feeder current into 5 A through the", "1 ohm burden = 7.07 Vpk. Diode + 10 uF hold the peak; the comparator trips above 8 V, i.e. when", "the primary exceeds 738 A rms (the 50 element; hold tau = 100 ms). The fault switch (5.3 ohm)", "closes at t = 40 ms and raises the current to 1200 A: TRIP goes high. AEP feeds every BES", "breaker from redundant A/B relays; a 51 time curve is just a longer RC delay on V_hold.", "PROBE: TRIP is auto-probed; also probe the burden top (7 V -> 14 V) and the pulse source."},
+    [CIRCUIT_PC_DIFFERENTIAL] = {"87 LINE DIFFERENTIAL: the two 120:1 CTs bracket the protected zone and are wired in opposition", "so their secondary currents circulate: with equal current at both ends (load, or a THROUGH fault", "beyond CT2 at t = 240 ms) nothing flows in the 1 ohm differential burden. An INTERNAL fault", "(2 ohm at t = 100 ms) makes I1 = 2828 A but I2 = 257 A: (I1-I2)/120 = 21 A rms -> 30 Vpk on R_d,", "far above the 1 V pickup (hold tau 22 ms). AEP prefers 87L over direct fiber, distance as backup.", "PROBE: TRIP auto-probed; probe R_d (top) to see the two faults treated differently."},
+    [CIRCUIT_PC_DISTANCE] = {"21 DISTANCE, ZONE 1: the relay compares |I| x Z_set (CT 400:1 into a 3.35 ohm replica, equal to", "80 % of the 50-mile line impedance referred through the VT ratio) against |V| from the VT (2875:1).", "|I Z_set| > |V| means the apparent impedance V/I is inside the reach -> TRIP. The 40 % fault", "(t = 100 ms): V_sec 38 V, I Z_set 76 V -> trip. The 100 % fault (t = 240 ms): 52 V vs 42 V -> no trip", "(zone 2, with a 0.3 s timer, covers it). Zone 1 is set short of the far end so it never overreaches.", "PROBE: TRIP auto-probed; also probe the two peak-detector caps (|V| below-left, |I Z| top)."},
+    [CIRCUIT_PC_BREAKER_FAIL] = {"50BF BREAKER FAILURE: when a relay trips a breaker (TRIP pulse at 50 ms) the current must vanish", "within ~5 cycles. START = TRIP AND current-still-present charges C through R (tau = 150 ms); if", "the current is still there when the timer expires, BFT = timer AND current trips the adjacent", "breakers. Here the current pulse stays on (stuck breaker): BFT fires at ~200 ms. Set the 50BF", "pulse width to 83 ms (healthy breaker): C only reaches 5 V of the 7.6 V (0.632 x 12) threshold.", "PROBE: BFT auto-probed; probe the capacitor to see the timer ramp reset when START drops."},
+    [CIRCUIT_SIL_LOADING] = {"SURGE IMPEDANCE LOADING: a line loaded with its characteristic impedance Zc = sqrt(L/C) = 283 ohm", "absorbs exactly the VARs it generates: the voltage profile is flat (Vr/Vs = 0.996 here) and", "the angle is small. P_SIL = V^2/Zc = 345^2/283 = 420 MW. Close SW (2 x SIL, 141 ohm): the line", "now needs VARs it cannot supply and the far end sags to 0.80. St. Clair: ~2 SIL is OK at 100 mi,", "~1 SIL at 300 mi - long lines are limited by voltage and stability, not by conductor heating.", "PROBE: auto-placed on both ends: nearly equal at SIL, 20 % apart after closing SW."},
+    [CIRCUIT_SERIES_COMP] = {"SERIES COMPENSATION: the line reactance X = 120 ohm (200 mi) limits how much power can flow", "before the far end sags. A capacitor with Xc = 60 ohm (44 uF) in the middle cancels half of it:", "at 2 x SIL the receiving end rises from 0.80 to about 0.90. Close SW to bypass the capacitor", "and watch the drop return. AEP uses series caps on long 765/345 kV paths (with protection", "against subsynchronous resonance and MOV bypass on faults).", "PROBE: auto-placed on both ends; the source-side probe barely moves, the load end jumps."},
+    [CIRCUIT_HV_765_LINE] = {"765 kV (AEP's backbone since 1969): 300 miles of six-conductor bundle, R = 0.02, X = 0.53 ohm/mi,", "B = 8.5 uS/mi (bundling lowers X and raises B). Zc = sqrt(0.53/8.5e-6) = 250 ohm, so", "SIL = 765^2/250 = 2340 MW - about 6 x a 345 kV circuit with half the losses per MW. Loaded at", "SIL the 300-mile profile stays flat (0.99). One nominal pi for 300 mi is coarse: for accuracy", "split it into 3 x 100 mi sections (place three TLine parts) - the pi model is exact only per section.", "PROBE: auto-placed on both ends; 200 kV/div. Try 2 x SIL (125 ohm) and 600 mi."},
 };
 
 
@@ -6837,6 +6859,334 @@ static int place_tesla_coil_detuned(Circuit *circuit, float x, float y) { return
 #undef TN
 #undef TW
 
+
+// ---------------------------------------------------------------------------------------
+// Protection & control examples (AEP-style practice, see docs/RESEARCH_AEP_PC.md). Faults
+// are applied by an analog switch driven by a pulse source so every demo runs by itself:
+// pre-fault -> fault -> relay decision on one scope screen.
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+
+// horizontal analog switch at (x,y): IN (x-40,y) OUT (x+40,y) CTL (x,y+20); pulse source below it
+static Component *fault_switch(Circuit *circuit, float x, float y, double delay, double width, double period) {
+    Component *sw = add_comp(circuit, COMP_ANALOG_SWITCH, x, y, 0);
+    sw->props.analog_switch.r_on = 0.3; sw->props.analog_switch.r_off = 1e9; sw->props.analog_switch.v_on = 2.5;
+    Component *pl = add_comp(circuit, COMP_PULSE_SOURCE, x, y + 80, 0);         // +(x,y+40) -(x,y+120)
+    pl->props.pulse_source.v_low = 0; pl->props.pulse_source.v_high = 5.0;
+    pl->props.pulse_source.delay = delay; pl->props.pulse_source.pulse_width = width; pl->props.pulse_source.period = period;
+    Component *g = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    int ctl = TN(x, y + 20), pp = TN(x, y + 40);
+    TW(ctl, pp);
+    sw->node_ids[2] = ctl; pl->node_ids[0] = pp;
+    connect_terminals(circuit, pl, 1, g, 0);
+    return sw;
+}
+// diode -> hold capacitor (10 uF) + bleed (100 k): peak detector from node at (x0,y) to node at (x0+160,y)
+static int peak_hold(Circuit *circuit, float x0, float y, double C, double R) {
+    Component *d = add_comp(circuit, COMP_DIODE, x0 + 60, y, 0);                // (x0+20,y)-(x0+100,y)
+    Component *c = add_comp(circuit, COMP_CAPACITOR, x0 + 100, y + 40, 90);     // (x0+100,y)-(x0+100,y+80)
+    c->props.capacitor.capacitance = C;
+    Component *gc = add_comp(circuit, COMP_GROUND, x0 + 100, y + 100, 0);
+    Component *r = add_comp(circuit, COMP_RESISTOR, x0 + 160, y + 40, 90);      // (x0+160,y)-(x0+160,y+80)
+    r->props.resistor.resistance = R;
+    Component *gr = add_comp(circuit, COMP_GROUND, x0 + 160, y + 100, 0);
+    int a = TN(x0, y), da = TN(x0 + 20, y), k = TN(x0 + 100, y), rt = TN(x0 + 160, y);
+    TW(a, da); TW(k, rt);
+    d->node_ids[0] = da; d->node_ids[1] = k; c->node_ids[0] = k; r->node_ids[0] = rt;
+    connect_terminals(circuit, c, 1, gc, 0);
+    connect_terminals(circuit, r, 1, gr, 0);
+    return rt;
+}
+// ideal op-amp comparator at (x,y): -(x-40,y-20) +(x-40,y+20) out(x+40,y); DC reference vref wired to the - input
+static Component *comparator_with_ref(Circuit *circuit, float x, float y, double vref, int plus_node) {
+    Component *u = add_comp(circuit, COMP_OPAMP, x, y, 0);
+    u->props.opamp.ideal = false;                 // open-loop comparator: finite gain + rails (ideal = virtual short)
+    u->props.opamp.gain = 1e5;
+    Component *v = add_comp(circuit, COMP_DC_VOLTAGE, x + 100, y - 100, 0);      // +(x+100,y-140) -(x+100,y-60)
+    v->props.dc_voltage.voltage = vref;
+    Component *g = add_comp(circuit, COMP_GROUND, x + 100, y - 40, 0);           // terminal (x+100,y-60)
+    int minus = TN(x - 40, y - 20), vp = TN(x + 100, y - 140), c1 = TN(x - 60, y - 140), c2 = TN(x - 60, y - 20);
+    TW(vp, c1); TW(c1, c2); TW(c2, minus);
+    // output load so TRIP is a real node with a wire (100 k to ground, right of the op-amp)
+    Component *rl = add_comp(circuit, COMP_RESISTOR, x + 80, y + 40, 90);        // (x+80,y)-(x+80,y+80)
+    rl->props.resistor.resistance = 100e3;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 80, y + 100, 0);
+    int out = TN(x + 40, y), lt = TN(x + 80, y);
+    TW(out, lt);
+    rl->node_ids[0] = lt;
+    connect_terminals(circuit, rl, 1, gl, 0);
+    u->node_ids[0] = minus; u->node_ids[1] = plus_node; u->node_ids[2] = out;
+    v->node_ids[0] = vp;
+    connect_terminals(circuit, v, 1, g, 0);
+    return u;
+}
+
+// 5.1: 7.97 kV rms feeder, 13.3 ohm load (600 A), CT 600:5 into 1 ohm, rectify-hold, 8 V pickup (738 A)
+static int place_pc_overcurrent(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 11270.0); if (!v) return 0;
+    Component *ct = add_comp(circuit, COMP_TRANSFORMER, x + 150, y + 40, 0);     // P1(100,20) P2(100,60) S1(200,20) S2(200,60)
+    ct->props.transformer.turns_ratio = 120.0;
+    Component *gs2 = add_comp(circuit, COMP_GROUND, x + 200, y + 80, 0);
+    Component *rb = add_comp(circuit, COMP_RESISTOR, x + 260, y + 60, 90);       // burden (260,20)-(260,100)
+    rb->props.resistor.resistance = 1.0;
+    Component *gb = add_comp(circuit, COMP_GROUND, x + 260, y + 120, 0);
+    Component *ld = add_comp(circuit, COMP_RESISTOR, x + 200, y + 180, 90);      // load (200,140)-(200,220)
+    ld->props.resistor.resistance = 13.3;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 200, y + 240, 0);
+    Component *rf = add_comp(circuit, COMP_RESISTOR, x + 300, y + 180, 90);      // fault R (300,140)-(300,220)
+    rf->props.resistor.resistance = 5.0;
+    Component *sw = fault_switch(circuit, x + 340, y + 220, 0.040, 0.060, 0.200); // IN (300,220) OUT (380,220)
+    Component *gsw = add_comp(circuit, COMP_GROUND, x + 380, y + 240, 0);
+    int hold = peak_hold(circuit, x + 260, y + 20, 10e-6, 10e3);                 // tau 100 ms -> (420,20)
+    int plus = TN(x + 560, y + 60), c1 = TN(x + 480, y + 20), c2 = TN(x + 480, y + 60);
+    TW(hold, c1); TW(c1, c2); TW(c2, plus);
+    Component *u = comparator_with_ref(circuit, x + 600, y + 40, 8.0, plus);     // -(560,20) +(560,60) out(640,40)
+    (void)u;
+    add_label(circuit, x + 20, y - 60, "CT + 50/51 overcurrent: 600 A normal, fault 1200 A at t = 40-100 ms (repeats)");
+    add_label(circuit, x + 700, y + 30, "TRIP");
+    // wiring
+    int sp = TN(x, y + 20), p1 = TN(x + 100, y + 20); TW(sp, p1);
+    int p2 = TN(x + 100, y + 60), b0 = TN(x + 100, y + 140), bl = TN(x + 200, y + 140), br = TN(x + 300, y + 140);
+    TW(p2, b0); TW(b0, bl); TW(bl, br);
+    int s1 = TN(x + 200, y + 20), rbt = TN(x + 260, y + 20); TW(s1, rbt);
+    int s2 = TN(x + 200, y + 60);
+    int rfb = TN(x + 300, y + 220), swo = TN(x + 380, y + 220);
+    v->node_ids[0] = sp; ct->node_ids[0] = p1; ct->node_ids[1] = p2; ct->node_ids[2] = s1; ct->node_ids[3] = s2;
+    gs2->node_ids[0] = s2; rb->node_ids[0] = rbt; ld->node_ids[0] = bl; rf->node_ids[0] = br; rf->node_ids[1] = rfb;
+    sw->node_ids[0] = rfb; sw->node_ids[1] = swo; gsw->node_ids[0] = swo;
+    connect_terminals(circuit, rb, 1, gb, 0);
+    connect_terminals(circuit, ld, 1, gl, 0);
+    return 22;
+}
+
+// 5.2: two 120:1 CTs in opposition across a 1 ohm differential burden; internal fault at 40-100 ms,
+// through fault beyond CT2 at 240-300 ms (period 400 ms)
+static int place_pc_differential(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 11270.0); if (!v) return 0;
+    Component *rs = add_comp(circuit, COMP_RESISTOR, x + 60, y + 20, 0);         // (20,20)-(100,20) source R
+    rs->props.resistor.resistance = 1.0;
+    Component *ct1 = add_comp(circuit, COMP_TRANSFORMER, x + 150, y + 40, 0);    // P1(100,20) P2(100,60) S1(200,20) S2(200,60)
+    ct1->props.transformer.turns_ratio = 120.0;
+    Component *ct2 = add_comp(circuit, COMP_TRANSFORMER, x + 470, y + 160, 0);   // P1(420,140) P2(420,180) S1(520,140) S2(520,180)
+    ct2->props.transformer.turns_ratio = 120.0;
+    Component *ld = add_comp(circuit, COMP_RESISTOR, x + 500, y + 280, 90);      // (500,240)-(500,320)
+    ld->props.resistor.resistance = 20.0;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 500, y + 340, 0);
+    Component *rfi = add_comp(circuit, COMP_RESISTOR, x + 250, y + 180, 90);     // internal fault R (250,140)-(250,220)
+    rfi->props.resistor.resistance = 2.0;
+    Component *swi = fault_switch(circuit, x + 290, y + 220, 0.100, 0.060, 0.400); // IN (250,220) OUT (330,220)
+    Component *gi = add_comp(circuit, COMP_GROUND, x + 330, y + 240, 0);
+    Component *rfe = add_comp(circuit, COMP_RESISTOR, x + 600, y + 280, 90);     // external fault R (600,240)-(600,320)
+    rfe->props.resistor.resistance = 2.0;
+    Component *swe = fault_switch(circuit, x + 640, y + 320, 0.240, 0.060, 0.400); // IN (600,320) OUT (680,320)
+    Component *ge = add_comp(circuit, COMP_GROUND, x + 680, y + 340, 0);
+    Component *gb = add_comp(circuit, COMP_GROUND, x + 300, y + 120, 0);         // B node ground, terminal (300,100)
+    Component *rd = add_comp(circuit, COMP_RESISTOR, x + 620, y + 60, 90);       // differential burden (620,20)-(620,100)
+    rd->props.resistor.resistance = 1.0;
+    Component *gd = add_comp(circuit, COMP_GROUND, x + 620, y + 120, 0);
+    int hold = peak_hold(circuit, x + 620, y + 20, 2.2e-6, 10e3);                // tau 22 ms -> (780,20)
+    int plus = TN(x + 860, y + 60), c1 = TN(x + 800, y + 20), c2 = TN(x + 800, y + 60);
+    TW(hold, c1); TW(c1, c2); TW(c2, plus);
+    comparator_with_ref(circuit, x + 900, y + 40, 1.0, plus);                   // -(860,20) +(860,60) out(940,40)
+    add_label(circuit, x + 20, y - 60, "87 line differential: internal fault (100-160 ms) trips, through fault (240-300 ms) does not");
+    add_label(circuit, x + 1000, y + 30, "TRIP");
+    // primary path
+    connect_terminals(circuit, v, 0, rs, 0);
+    int p1 = TN(x + 100, y + 20), p2 = TN(x + 100, y + 60), z0 = TN(x + 100, y + 140), zf = TN(x + 250, y + 140), z1 = TN(x + 420, y + 140);
+    TW(p2, z0); TW(z0, zf); TW(zf, z1);
+    int q2 = TN(x + 420, y + 180), l0 = TN(x + 420, y + 240), lt = TN(x + 500, y + 240), et = TN(x + 600, y + 240);
+    TW(q2, l0); TW(l0, lt); TW(lt, et);
+    rs->node_ids[1] = p1; ct1->node_ids[0] = p1; ct1->node_ids[1] = p2; ct2->node_ids[0] = z1; ct2->node_ids[1] = q2;
+    ld->node_ids[0] = lt; rfi->node_ids[0] = zf; rfe->node_ids[0] = et;
+    int rfib = TN(x + 250, y + 220), swio = TN(x + 330, y + 220); rfi->node_ids[1] = rfib; swi->node_ids[0] = rfib; swi->node_ids[1] = swio; gi->node_ids[0] = swio;
+    int rfeb = TN(x + 600, y + 320), sweo = TN(x + 680, y + 320); rfe->node_ids[1] = rfeb; swe->node_ids[0] = rfeb; swe->node_ids[1] = sweo; ge->node_ids[0] = sweo;
+    connect_terminals(circuit, ld, 1, gl, 0);
+    // secondaries: A = CT1 S1 + CT2 S2 -> R_d ; B = CT1 S2 + CT2 S1 -> ground
+    int s1a = TN(x + 200, y + 20), a1 = TN(x + 560, y + 20), a2 = TN(x + 560, y + 180), s2b = TN(x + 520, y + 180), rdt = TN(x + 620, y + 20);
+    TW(s1a, a1); TW(a1, a2); TW(a2, s2b); TW(a1, rdt);
+    int s2a = TN(x + 200, y + 60), b1 = TN(x + 200, y + 100), b2 = TN(x + 300, y + 100), b3 = TN(x + 540, y + 100), b4 = TN(x + 540, y + 140), s1b = TN(x + 520, y + 140);
+    TW(s2a, b1); TW(b1, b2); TW(b2, b3); TW(b3, b4); TW(b4, s1b);
+    ct1->node_ids[2] = s1a; ct1->node_ids[3] = s2a; ct2->node_ids[2] = s1b; ct2->node_ids[3] = s2b;
+    gb->node_ids[0] = b2; rd->node_ids[0] = rdt;
+    connect_terminals(circuit, rd, 1, gd, 0);
+    return 30;
+}
+
+// 5.3: 345 kV, 50 mi line as 20 + 30 mi, faults at 40 % (t 40-100 ms) and 100 % (t 240-300 ms);
+// VT 2875:1, CT 400:1 into a 3.35 ohm replica (= 80 % reach); trip if |I Z_set| > |V|
+static int place_pc_distance(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 281400.0); if (!v) return 0;
+    Component *ls = add_comp(circuit, COMP_INDUCTOR, x + 60, y + 20, 0);         // (20,20)-(100,20) source X = 10 ohm
+    ls->props.inductor.inductance = 26.5e-3;
+    Component *ct = add_comp(circuit, COMP_TRANSFORMER, x + 150, y + 40, 0);     // P1(100,20) P2(100,60) S1(200,20) S2(200,60)
+    ct->props.transformer.turns_ratio = 400.0;
+    Component *gs2 = add_comp(circuit, COMP_GROUND, x + 200, y + 80, 0);
+    Component *rrep = add_comp(circuit, COMP_RESISTOR, x + 320, y + 60, 90);     // replica (320,20)-(320,100)
+    rrep->props.resistor.resistance = 3.35;
+    Component *grep_ = add_comp(circuit, COMP_GROUND, x + 320, y + 120, 0);
+    int vi = peak_hold(circuit, x + 320, y + 20, 2.2e-6, 10e3);                  // tau 22 ms -> (480,20)
+    Component *vt = add_comp(circuit, COMP_TRANSFORMER, x + 150, y + 220, 180);  // rotated: P1(200,240) P2(200,200) S1(100,240) S2(100,200)
+    vt->props.transformer.turns_ratio = 1.0 / 2875.0;
+    Component *gvt = add_comp(circuit, COMP_GROUND, x + 200, y + 260, 0);        // P1 (200,240)
+    Component *gvs = add_comp(circuit, COMP_GROUND, x + 100, y + 220, 0);        // S2 (100,200)
+    Component *seg1 = add_tline(circuit, x + 340, y + 140, 0, 20.0, 0.06, 0.60, 0.0, 1);   // (300,140)-(380,140)
+    Component *seg2 = add_tline(circuit, x + 520, y + 140, 0, 30.0, 0.06, 0.60, 0.0, 1);   // (480,140)-(560,140)
+    Component *sw1 = fault_switch(circuit, x + 440, y + 200, 0.100, 0.060, 0.400); // IN (400,200) OUT (480,200)
+    Component *g1 = add_comp(circuit, COMP_GROUND, x + 480, y + 220, 0);
+    Component *sw2 = fault_switch(circuit, x + 640, y + 200, 0.240, 0.060, 0.400); // IN (600,200) OUT (680,200)
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 680, y + 220, 0);
+    Component *ld = add_comp(circuit, COMP_RESISTOR, x + 760, y + 180, 90);      // (760,140)-(760,220)
+    ld->props.resistor.resistance = 500.0;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 760, y + 240, 0);
+    // VT secondary peak detector, routed below-left, then a long loop to the comparator's - input at the top
+    int vv = peak_hold(circuit, x + 80, y + 320, 2.2e-6, 10e3);                  // (80,320) -> (240,320)
+    int vsec = TN(x + 100, y + 240), vs1 = TN(x + 40, y + 240), vs2 = TN(x + 40, y + 320), vs3 = TN(x + 80, y + 320);
+    TW(vsec, vs1); TW(vs1, vs2); TW(vs2, vs3);
+    Component *u = add_comp(circuit, COMP_OPAMP, x + 640, y - 40, 0);            // -(600,-60) +(600,-20) out(680,-40)
+    u->props.opamp.ideal = false; u->props.opamp.gain = 1e5;
+    int plus = TN(x + 600, y - 20), i1 = TN(x + 560, y + 20), i2 = TN(x + 560, y - 20);
+    TW(vi, i1); TW(i1, i2); TW(i2, plus);
+    int minus = TN(x + 600, y - 60), m1 = TN(x + 240, y + 460), m2 = TN(x - 60, y + 460), m3 = TN(x - 60, y - 60);
+    TW(vv, m1); TW(m1, m2); TW(m2, m3); TW(m3, minus);
+    int uout = TN(x + 680, y - 40), ult = TN(x + 720, y - 40);
+    TW(uout, ult);
+    Component *url = add_comp(circuit, COMP_RESISTOR, x + 720, y, 90);           // (720,-40)-(720,40)
+    url->props.resistor.resistance = 100e3;
+    Component *ugl = add_comp(circuit, COMP_GROUND, x + 720, y + 60, 0);
+    url->node_ids[0] = ult;
+    connect_terminals(circuit, url, 1, ugl, 0);
+    u->node_ids[0] = minus; u->node_ids[1] = plus; u->node_ids[2] = uout;
+    add_label(circuit, x + 20, y - 120, "21 distance, zone 1 (80 % reach): fault at 40 % trips, fault at 100 % does not");
+    add_label(circuit, x + 740, y - 60, "TRIP");
+    add_label(circuit, x + 330, y - 20, "|I| x Z_set");
+    add_label(circuit, x + 90, y + 290, "|V| (VT)");
+    // wiring
+    connect_terminals(circuit, v, 0, ls, 0);
+    int p1 = TN(x + 100, y + 20), p2 = TN(x + 100, y + 60), r0 = TN(x + 100, y + 140), r1 = TN(x + 200, y + 140), r2 = TN(x + 300, y + 140);
+    TW(p2, r0); TW(r0, r1); TW(r1, r2);
+    int vtp2 = TN(x + 200, y + 200); TW(r1, vtp2);
+    int vtp1 = TN(x + 200, y + 240), vts2 = TN(x + 100, y + 200);
+    ls->node_ids[1] = p1; ct->node_ids[0] = p1; ct->node_ids[1] = p2;
+    vt->node_ids[0] = vtp1; vt->node_ids[1] = vtp2; vt->node_ids[2] = vsec; vt->node_ids[3] = vts2;
+    gvt->node_ids[0] = vtp1; gvs->node_ids[0] = vts2;
+    int s1 = TN(x + 200, y + 20), s2 = TN(x + 200, y + 60), rt = TN(x + 320, y + 20); TW(s1, rt);
+    ct->node_ids[2] = s1; ct->node_ids[3] = s2; gs2->node_ids[0] = s2; rrep->node_ids[0] = rt;
+    connect_terminals(circuit, rrep, 1, grep_, 0);
+    int e1 = TN(x + 380, y + 140), mid = TN(x + 400, y + 140), e2 = TN(x + 480, y + 140), f1 = TN(x + 400, y + 200);
+    TW(e1, mid); TW(mid, e2); TW(mid, f1);
+    seg1->node_ids[0] = r2; seg1->node_ids[1] = e1; seg2->node_ids[0] = e2;
+    int e3 = TN(x + 560, y + 140), end = TN(x + 600, y + 140), f2 = TN(x + 600, y + 200), lt = TN(x + 760, y + 140);
+    TW(e3, end); TW(end, f2); TW(end, lt);
+    seg2->node_ids[1] = e3; ld->node_ids[0] = lt;
+    int o1 = TN(x + 480, y + 200), o2 = TN(x + 680, y + 200);
+    sw1->node_ids[0] = f1; sw1->node_ids[1] = o1; g1->node_ids[0] = o1;
+    sw2->node_ids[0] = f2; sw2->node_ids[1] = o2; g2->node_ids[0] = o2;
+    connect_terminals(circuit, ld, 1, gl, 0);
+    return 34;
+}
+
+// 5.8: breaker failure: START = TRIP AND 50BF -> 150 ms timer -> BFT = timer AND 50BF
+static int place_pc_breaker_fail(Circuit *circuit, float x, float y) {
+    // gate inputs sit at +/-15 px, so gates are placed at y+35 / y+65: their terminals land on the 10 px grid
+    Component *trip = add_comp(circuit, COMP_PULSE_SOURCE, x, y + 60, 0);        // +(0,20) -(0,100)
+    if (!trip) return 0;
+    trip->props.pulse_source.v_low = 0; trip->props.pulse_source.v_high = 5; trip->props.pulse_source.delay = 0.050; trip->props.pulse_source.pulse_width = 0.300; trip->props.pulse_source.period = 0.600;
+    Component *g0 = add_comp(circuit, COMP_GROUND, x, y + 120, 0);
+    Component *cur = add_comp(circuit, COMP_PULSE_SOURCE, x, y + 220, 0);        // +(0,180) -(0,260)
+    cur->props.pulse_source.v_low = 0; cur->props.pulse_source.v_high = 5; cur->props.pulse_source.delay = 0.050; cur->props.pulse_source.pulse_width = 0.300; cur->props.pulse_source.period = 0.600;
+    Component *g1 = add_comp(circuit, COMP_GROUND, x, y + 280, 0);
+    Component *and1 = add_comp(circuit, COMP_AND_GATE, x + 120, y + 35, 0);      // A(80,20) B(80,50) OUT(160,35)->node (160,40)
+    Component *rt = add_comp(circuit, COMP_RESISTOR, x + 220, y + 40, 0);        // (180,40)-(260,40)
+    rt->props.resistor.resistance = 10e3;
+    Component *ct = add_comp(circuit, COMP_CAPACITOR, x + 260, y + 80, 90);      // (260,40)-(260,120)
+    ct->props.capacitor.capacitance = 15e-6;
+    Component *gc = add_comp(circuit, COMP_GROUND, x + 260, y + 140, 0);
+    int plus = TN(x + 360, y + 80), ctop = TN(x + 260, y + 40), c1 = TN(x + 300, y + 40), c2 = TN(x + 300, y + 80);
+    TW(ctop, c1); TW(c1, c2); TW(c2, plus);
+    Component *u = comparator_with_ref(circuit, x + 400, y + 60, 3.16, plus);   // -(360,40) +(360,80) out(440,60), load at (480,60..140)
+    Component *and2 = add_comp(circuit, COMP_AND_GATE, x + 600, y + 65, 0);      // A(560,50) B(560,80) OUT(640,65)->node (640,70)
+    Component *rl = add_comp(circuit, COMP_RESISTOR, x + 700, y + 110, 90);      // (700,70)-(700,150)
+    rl->props.resistor.resistance = 100e3;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 700, y + 170, 0);
+    add_label(circuit, x + 20, y - 40, "50BF: TRIP at 50 ms, breaker current still present -> BFT 150 ms later (stuck breaker)");
+    add_label(circuit, x + 720, y + 60, "BFT");
+    add_label(circuit, x + 20, y + 310, "TRIP (top pulse) and 50BF current detector (bottom pulse); shorten the 50BF pulse to 83 ms for a healthy breaker");
+    // wiring
+    int tp = TN(x, y + 20), ga = TN(x + 80, y + 20); TW(tp, ga);
+    int cp = TN(x, y + 180), b1 = TN(x + 60, y + 180), b2 = TN(x + 60, y + 50), gb = TN(x + 80, y + 50); TW(cp, b1); TW(b1, b2); TW(b2, gb);
+    int o1 = TN(x + 160, y + 40), rl0 = TN(x + 180, y + 40); TW(o1, rl0);
+    trip->node_ids[0] = tp; cur->node_ids[0] = cp;
+    connect_terminals(circuit, trip, 1, g0, 0);
+    connect_terminals(circuit, cur, 1, g1, 0);
+    and1->node_ids[0] = ga; and1->node_ids[1] = gb; and1->node_ids[2] = o1;
+    rt->node_ids[0] = rl0; rt->node_ids[1] = ctop; ct->node_ids[0] = ctop;
+    connect_terminals(circuit, ct, 1, gc, 0);
+    int uo = TN(x + 440, y + 60), j1 = TN(x + 520, y + 60), j2 = TN(x + 520, y + 50), a2a = TN(x + 560, y + 50);
+    TW(uo, j1); TW(j1, j2); TW(j2, a2a);
+    int k1 = TN(x + 540, y + 180), k2 = TN(x + 540, y + 80), a2b = TN(x + 560, y + 80);
+    TW(b1, k1); TW(k1, k2); TW(k2, a2b);
+    (void)u;
+    int bft = TN(x + 640, y + 70), lt = TN(x + 700, y + 70); TW(bft, lt);
+    and2->node_ids[0] = a2a; and2->node_ids[1] = a2b; and2->node_ids[2] = bft;
+    rl->node_ids[0] = lt;
+    connect_terminals(circuit, rl, 1, gl, 0);
+    return 17;
+}
+
+// 5.6: 200 mi 345 kV pi line loaded at SIL (283 ohm); close SW to add a second 283 ohm -> 2 x SIL
+static int place_sil_loading(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 281700.0); if (!v) return 0;
+    Component *tl = add_tline(circuit, x + 130, y + 20, 0, 200.0, 0.06, 0.60, 7.5, 2);   // (90,20)-(170,20)
+    Component *ld = add_comp(circuit, COMP_RESISTOR, x + 280, y + 60, 90);       // (280,20)-(280,100)
+    ld->props.resistor.resistance = 283.0;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 280, y + 120, 0);
+    Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 380, y + 60, 90);    // (380,20)-(380,100)
+    sw->props.switch_spst.closed = false;
+    Component *l2 = add_comp(circuit, COMP_RESISTOR, x + 380, y + 140, 90);      // (380,100)-(380,180)
+    l2->props.resistor.resistance = 283.0;
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 380, y + 200, 0);
+    add_label(circuit, x + 20, y - 40, "SIL loading: 200 mi 345 kV line into Zc = 283 ohm (420 MW) - close SW for 2 x SIL");
+    int sp = TN(x, y + 20), tll = TN(x + 90, y + 20), tlr = TN(x + 170, y + 20), lt = TN(x + 280, y + 20), swt = TN(x + 380, y + 20), swb = TN(x + 380, y + 100);
+    TW(sp, tll); TW(tlr, lt); TW(lt, swt);
+    v->node_ids[0] = sp; tl->node_ids[0] = tll; tl->node_ids[1] = tlr; ld->node_ids[0] = lt; sw->node_ids[0] = swt; sw->node_ids[1] = swb; l2->node_ids[0] = swb;
+    connect_terminals(circuit, ld, 1, gl, 0);
+    connect_terminals(circuit, l2, 1, g2, 0);
+    return 8;
+}
+
+// 5.5: two 100 mi pi sections with a 50 % series capacitor in the middle, 2 x SIL load; SW bypasses the cap
+static int place_series_comp(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 281700.0); if (!v) return 0;
+    Component *t1 = add_tline(circuit, x + 130, y + 20, 0, 100.0, 0.06, 0.60, 7.5, 2);   // (90,20)-(170,20)
+    Component *c = add_comp(circuit, COMP_CAPACITOR, x + 250, y + 20, 0);        // (210,20)-(290,20)
+    c->props.capacitor.capacitance = 4.4210e-05;
+    Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 250, y - 40, 0);     // bypass (210,-40)-(290,-40)
+    sw->props.switch_spst.closed = false;
+    Component *t2 = add_tline(circuit, x + 370, y + 20, 0, 100.0, 0.06, 0.60, 7.5, 2);   // (330,20)-(410,20)
+    Component *ld = add_comp(circuit, COMP_RESISTOR, x + 480, y + 60, 90);       // (480,20)-(480,100)
+    ld->props.resistor.resistance = 141.5;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 480, y + 120, 0);
+    add_label(circuit, x + 20, y - 90, "Series compensation: 50 % of X_line in a capacitor, load 2 x SIL - close SW to bypass it");
+    int sp = TN(x, y + 20), a = TN(x + 90, y + 20), b = TN(x + 170, y + 20), cl = TN(x + 210, y + 20), cr = TN(x + 290, y + 20), d = TN(x + 330, y + 20), e = TN(x + 410, y + 20), lt = TN(x + 480, y + 20);
+    int swl = TN(x + 210, y - 40), swr = TN(x + 290, y - 40);
+    TW(sp, a); TW(b, cl); TW(cr, d); TW(e, lt); TW(cl, swl); TW(cr, swr);
+    v->node_ids[0] = sp; t1->node_ids[0] = a; t1->node_ids[1] = b; c->node_ids[0] = cl; c->node_ids[1] = cr;
+    sw->node_ids[0] = swl; sw->node_ids[1] = swr; t2->node_ids[0] = d; t2->node_ids[1] = e; ld->node_ids[0] = lt;
+    connect_terminals(circuit, ld, 1, gl, 0);
+    return 8;
+}
+
+// AEP 765 kV: 300 mi six-conductor bundle (0.02 + j0.53 ohm/mi, 8.5 uS/mi) at SIL (250 ohm, ~2300 MW)
+static int place_hv_765_line(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 624600.0); if (!v) return 0;
+    chain_line_load(circuit, x, y, v, 300.0, 0.02, 0.53, 8.5, 2, 250.0, NULL, NULL);
+    add_label(circuit, x + 20, y - 40, "765 kV, 300 mi, six-bundle, loaded at SIL (2340 MW)");
+    return 5;
+}
+#undef TN
+#undef TW
+
 // Output node to probe for each template (component type, ordinal among that type, terminal)
 typedef struct { ComponentType ct; int ord, term; } TemplateProbeSpec;
 static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
@@ -6902,6 +7252,13 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_FERRANTI_LINE]    = { COMP_RESISTOR, 0, 0 },
     [CIRCUIT_LINE_MODEL_LADDER] = { COMP_RESISTOR, 1, 0 },
     [CIRCUIT_DC_LINE_DROP]     = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_PC_OVERCURRENT]   = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_PC_DIFFERENTIAL]  = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_PC_DISTANCE]      = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_PC_BREAKER_FAIL]  = { COMP_AND_GATE, 1, 2 },
+    [CIRCUIT_SIL_LOADING]      = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_SERIES_COMP]      = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_HV_765_LINE]      = { COMP_RESISTOR, 0, 0 },
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -6931,6 +7288,8 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_GEN_GSU] = 5e-3, [CIRCUIT_GRID_CHAIN] = 5e-3, [CIRCUIT_FERRANTI_LINE] = 5e-3,
     [CIRCUIT_TESLA_COIL] = 10e-6, [CIRCUIT_TESLA_COIL_BIG] = 10e-6, [CIRCUIT_TESLA_COIL_DETUNED] = 10e-6,
     [CIRCUIT_LINE_MODEL_LADDER] = 5e-3, [CIRCUIT_DC_LINE_DROP] = 1e-3,
+    [CIRCUIT_PC_OVERCURRENT] = 10e-3, [CIRCUIT_PC_DIFFERENTIAL] = 20e-3, [CIRCUIT_PC_DISTANCE] = 20e-3, [CIRCUIT_PC_BREAKER_FAIL] = 20e-3,
+    [CIRCUIT_SIL_LOADING] = 5e-3, [CIRCUIT_SERIES_COMP] = 5e-3, [CIRCUIT_HV_765_LINE] = 5e-3,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -6950,6 +7309,8 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_GEN_GSU] = 100e3, [CIRCUIT_GRID_CHAIN] = 100.0, [CIRCUIT_FERRANTI_LINE] = 100e3,
     [CIRCUIT_TESLA_COIL] = 100e3, [CIRCUIT_TESLA_COIL_BIG] = 100e3, [CIRCUIT_TESLA_COIL_DETUNED] = 100e3,
     [CIRCUIT_LINE_MODEL_LADDER] = 50e3, [CIRCUIT_DC_LINE_DROP] = 5.0,
+    [CIRCUIT_PC_OVERCURRENT] = 5.0, [CIRCUIT_PC_DIFFERENTIAL] = 5.0, [CIRCUIT_PC_DISTANCE] = 5.0, [CIRCUIT_PC_BREAKER_FAIL] = 2.0,
+    [CIRCUIT_SIL_LOADING] = 100e3, [CIRCUIT_SERIES_COMP] = 100e3, [CIRCUIT_HV_765_LINE] = 200e3,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -7019,6 +7380,13 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_TESLA_COIL_DETUNED] = { DEMO_OSC, 152e3 },
     [CIRCUIT_LINE_MODEL_LADDER] = { DEMO_WAVEFORM, 60 },
     [CIRCUIT_DC_LINE_DROP]     = { DEMO_DC, 0 },
+    [CIRCUIT_PC_OVERCURRENT]   = { DEMO_SWITCH, 30 },   // run 6/f = 200 ms: window 100-200 ms sees TRIP drop at 100 ms
+    [CIRCUIT_PC_DIFFERENTIAL]  = { DEMO_SWITCH, 20 },   // 300 ms: window 150-300 sees the release after the 100-160 ms fault
+    [CIRCUIT_PC_DISTANCE]      = { DEMO_SWITCH, 20 },
+    [CIRCUIT_PC_BREAKER_FAIL]  = { DEMO_SWITCH, 5 },    // 1.2 s: BFT pulses at 200-350 ms and 800-950 ms
+    [CIRCUIT_SIL_LOADING]      = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_SERIES_COMP]      = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_HV_765_LINE]      = { DEMO_WAVEFORM, 60 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {

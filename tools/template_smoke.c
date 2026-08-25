@@ -206,6 +206,15 @@ static int flow_test(void) {
                 }
             }
             if (grounded) continue;
+            {   // behavioural logic gates do not report terminal currents: skip their nodes
+                int behavioural = 0;
+                for (int j = 0; j < c->num_components && !behavioural; j++) {
+                    Component *bc = c->components[j];
+                    if (bc->type < COMP_AND_GATE || bc->type > COMP_XNOR_GATE) continue;
+                    for (int k = 0; k < bc->num_terminals; k++) if (bc->node_ids[k] == id) behavioural = 1;
+                }
+                if (behavioural) continue;
+            }
             double inflow = 0;
             for (int w = 0; w < c->num_wires; w++) {
                 if (c->wires[w].end_node_id == id) inflow += c->wires[w].current;
@@ -377,6 +386,15 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_LINE_MODEL_LADDER,COMP_RESISTOR,  1, 0, "amp", 110.1e3, 0.03, 60e-3, "row 2 (R-L): 77.84 kV rms oracle B" },
     { CIRCUIT_LINE_MODEL_LADDER,COMP_RESISTOR,  2, 0, "amp", 110.5e3, 0.03, 60e-3, "row 3 (pi): R-L plus a little charging rise" },
     { CIRCUIT_DC_LINE_DROP,     COMP_RESISTOR,  1, 0, "dc",  10.909,  0.02, 5e-3,  "12 * 10 / 11" },
+    { CIRCUIT_PC_OVERCURRENT,   COMP_RESISTOR,  0, 0, "amp", 7.07,    0.06, 39e-3, "burden 600 A / 120 x 1 ohm, before the fault" },
+    { CIRCUIT_PC_OVERCURRENT,   COMP_OPAMP,     0, 2, "max", 15.0,    0.05, 80e-3, "TRIP high during the 40-100 ms fault" },
+    { CIRCUIT_PC_DIFFERENTIAL,  COMP_RESISTOR,  4, 0, "amp", 30.3,    0.10, 150e-3, "R_d: (2828 - 257) A / 120 x 1 ohm during the internal fault" },
+    { CIRCUIT_PC_DISTANCE,      COMP_TRANSFORMER, 1, 2, "amp", 97.9,  0.06, 39e-3, "VT secondary 281.4 k / 2875 before the faults" },
+    { CIRCUIT_PC_DISTANCE,      COMP_OPAMP,     0, 2, "max", 15.0,    0.05, 150e-3, "TRIP high for the 40 % fault" },
+    { CIRCUIT_PC_BREAKER_FAIL,  COMP_AND_GATE,  1, 2, "max", 5.0,     0.05, 0.30,  "BFT high ~200 ms after TRIP (stuck breaker)" },
+    { CIRCUIT_SIL_LOADING,      COMP_RESISTOR,  0, 0, "amp", 269254.0, 0.03, 60e-3, "Vr/Vs = 0.956 at SIL (pi oracle)" },
+    { CIRCUIT_SERIES_COMP,      COMP_RESISTOR,  0, 0, "amp", 250606.2, 0.04, 60e-3, "Vr/Vs = 0.890 at 2 x SIL with 50 % series cap (pi oracle)" },
+    { CIRCUIT_HV_765_LINE,      COMP_RESISTOR,  0, 0, "amp", 598613.0, 0.04, 60e-3, "Vr/Vs = 0.958 at SIL, 300 mi single pi" },
 };
 
 static Component *find_comp(Circuit *c, ComponentType ct, int ord) {
@@ -680,8 +698,11 @@ static int demo_test(void) {
                 }
             }
         } else if (ok && (d->kind == DEMO_WAVEFORM || d->kind == DEMO_SWITCH || d->kind == DEMO_DC)) {
-            simulation_dc_analysis(sim); simulation_auto_time_step(sim); simulation_start(sim);
+            simulation_dc_analysis(sim); simulation_auto_time_step(sim);
             double run = (d->f_char > 0) ? 6.0 / d->f_char : 0.01; if (run < 0.003) run = 0.003;
+            /* circuits driven only by pulse/logic sources get no useful auto dt: use 1000 steps per run */
+            if (!(sim->time_step > 0) || sim->time_step > run / 200 || sim->time_step < run / 100000) simulation_set_time_step(sim, run / 1000);
+            simulation_start(sim);
             double mn = 1e300, mx = -1e300, sum = 0; int n = 0; long steps = 0;
             while (sim->time < run && steps < 3000000) {
                 if (!simulation_step(sim)) { ok = 0; snprintf(why, sizeof why, "sim error"); break; }
@@ -978,6 +999,52 @@ static int param_test(void) {
           PT_REPORT(ok && fabs(amp - expect) < 0.02 * expect, "transformer N=%-8g: out amp %.4g V (expect %.4g)%s", Ns[i], amp, expect, ok ? "" : "  [sim error]");
           circuit_free(c);
       } }
+    /* 4b. analog switch as a fault switch: control 0 / 5 V, r_on extremes, threshold */
+    { double rons[] = { 0.01, 0.3, 100.0, 1e6 };
+      for (unsigned i = 0; i < sizeof rons / sizeof rons[0]; i++) {
+          Circuit *c = circuit_create();
+          Component *v = pt_add(c, COMP_AC_VOLTAGE, 0, 60, 0); v->props.ac_voltage.amplitude = 10; v->props.ac_voltage.frequency = 60;
+          Component *g0 = pt_add(c, COMP_GROUND, 0, 140, 0);
+          Component *sw = pt_add(c, COMP_ANALOG_SWITCH, 100, 20, 0); sw->props.analog_switch.r_on = rons[i]; sw->props.analog_switch.r_off = 1e9; sw->props.analog_switch.v_on = 2.5;
+          Component *rl = pt_add(c, COMP_RESISTOR, 200, 60, 90); rl->props.resistor.resistance = 100.0;
+          Component *g1 = pt_add(c, COMP_GROUND, 200, 120, 0);
+          Component *pl = pt_add(c, COMP_PULSE_SOURCE, 100, 100, 0); pl->props.pulse_source.v_low = 0; pl->props.pulse_source.v_high = 5; pl->props.pulse_source.delay = 0.02; pl->props.pulse_source.pulse_width = 0.05; pl->props.pulse_source.period = 1.0;
+          Component *g2 = pt_add(c, COMP_GROUND, 100, 160, 0);
+          int a = pt_node(c, 0, 20), b = pt_node(c, 60, 20), cc = pt_node(c, 140, 20), dd = pt_node(c, 200, 20), gn = pt_node(c, 0, 100), gt = pt_node(c, 0, 120);
+          int ln = pt_node(c, 200, 100), lt = pt_node(c, 200, 120), ctl = pt_node(c, 100, 40), pp = pt_node(c, 100, 60), pn = pt_node(c, 100, 140), pg = pt_node(c, 100, 160);
+          circuit_add_wire(c, a, b); circuit_add_wire(c, cc, dd); circuit_add_wire(c, gn, gt); circuit_add_wire(c, ln, lt); circuit_add_wire(c, ctl, pp); circuit_add_wire(c, pn, pg);
+          v->node_ids[0] = a; v->node_ids[1] = gn; g0->node_ids[0] = gt; sw->node_ids[0] = b; sw->node_ids[1] = cc; sw->node_ids[2] = ctl;
+          rl->node_ids[0] = dd; rl->node_ids[1] = ln; g1->node_ids[0] = lt; pl->node_ids[0] = pp; pl->node_ids[1] = pn; g2->node_ids[0] = pg;
+          /* before the pulse (t < 20 ms) the load must be ~0; during it (20-70 ms) ~ 10 * 100/(100 + r_on) */
+          Simulation *sim = simulation_create(c); int ok = simulation_dc_analysis(sim); simulation_set_time_step(sim, 1e-4); simulation_start(sim);
+          double pre = 0, dur = 0; long steps = 0;
+          while (ok && sim->time < 0.06 && steps < 100000) { if (!simulation_step(sim)) { ok = 0; break; } steps++; Node *nd = circuit_get_node(c, dd); double vv = nd ? fabs(nd->voltage) : 0; if (sim->time < 0.02) { if (vv > pre) pre = vv; } else if (vv > dur) dur = vv; }
+          double expect = 10.0 * 100.0 / (100.0 + rons[i]);
+          int pass = ok && pre < 0.01 && fabs(dur - expect) < 0.05 * expect + 0.01;
+          PT_REPORT(pass, "analog switch r_on %-6g: open |V| %.3g, closed %.3g V (expect %.3g)%s", rons[i], pre, dur, expect, ok ? "" : "  [sim error]");
+          simulation_free(sim); circuit_free(c);
+      } }
+    /* 4c. transformer used as a CT: secondary current = primary / N into a 1 ohm burden */
+    { double Ns[] = { 120.0, 400.0, 2875.0 };
+      for (unsigned i = 0; i < sizeof Ns / sizeof Ns[0]; i++) {
+          Circuit *c = circuit_create();
+          Component *v = pt_add(c, COMP_AC_VOLTAGE, 0, 60, 0); v->props.ac_voltage.amplitude = 1000; v->props.ac_voltage.frequency = 60;
+          Component *g0 = pt_add(c, COMP_GROUND, 0, 140, 0);
+          Component *t = pt_add(c, COMP_TRANSFORMER, 150, 40, 0); t->props.transformer.turns_ratio = Ns[i];
+          Component *ld = pt_add(c, COMP_RESISTOR, 100, 140, 90); ld->props.resistor.resistance = 10.0;   /* primary loop: 100 A */
+          Component *gl = pt_add(c, COMP_GROUND, 100, 200, 0);
+          Component *rb = pt_add(c, COMP_RESISTOR, 260, 60, 90); rb->props.resistor.resistance = 1.0;
+          Component *gb = pt_add(c, COMP_GROUND, 260, 120, 0), *gs = pt_add(c, COMP_GROUND, 200, 80, 0);
+          int a = pt_node(c, 0, 20), p1 = pt_node(c, 100, 20), p2 = pt_node(c, 100, 60), lb = pt_node(c, 100, 100), lg = pt_node(c, 100, 180), lgt = pt_node(c, 100, 200);
+          int s1 = pt_node(c, 200, 20), s2 = pt_node(c, 200, 60), rt = pt_node(c, 260, 20), rbb = pt_node(c, 260, 100), rbg = pt_node(c, 260, 120), gn = pt_node(c, 0, 100), gt = pt_node(c, 0, 120);
+          circuit_add_wire(c, a, p1); circuit_add_wire(c, p2, lb); circuit_add_wire(c, lg, lgt); circuit_add_wire(c, s1, rt); circuit_add_wire(c, rbb, rbg); circuit_add_wire(c, gn, gt);
+          v->node_ids[0] = a; v->node_ids[1] = gn; g0->node_ids[0] = gt; t->node_ids[0] = p1; t->node_ids[1] = p2; t->node_ids[2] = s1; t->node_ids[3] = s2; gs->node_ids[0] = s2;
+          ld->node_ids[0] = lb; ld->node_ids[1] = lg; gl->node_ids[0] = lgt; rb->node_ids[0] = rt; rb->node_ids[1] = rbb; gb->node_ids[0] = rbg;
+          double amp, mx; int ok = pt_run(c, rt, 1e-4, 0.05, &amp, &mx);
+          double expect = 100.0 / Ns[i];
+          PT_REPORT(ok && fabs(amp - expect) < 0.03 * expect, "CT N=%-6g: burden %.4g V (expect %.4g = 100 A / N)%s", Ns[i], amp, expect, ok ? "" : "  [sim error]");
+          circuit_free(c);
+      } }
     /* 5. template scope presets: on the scope's tables, and the window shows 2..2000 cycles of f_char */
     { static const double time_divs[] = {1e-9, 2e-9, 5e-9, 10e-9, 20e-9, 50e-9, 100e-9, 200e-9, 500e-9, 1e-6, 2e-6, 5e-6, 10e-6, 20e-6, 50e-6, 100e-6, 200e-6, 500e-6,
                                          1e-3, 2e-3, 5e-3, 10e-3, 20e-3, 50e-3, 100e-3, 200e-3, 500e-3, 1.0, 2.0, 5.0};
@@ -1003,6 +1070,121 @@ static int param_test(void) {
     return fails;
 }
 
+/* --trace NAME T: run a template for T seconds at the app dt and print, for every node,
+ * min / max voltage and the components attached, plus the final state of switches. */
+static int trace_template(const char *filter, double t_end) {
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti || !strstr(ti->name, filter)) continue;
+        Circuit *c = circuit_create();
+        circuit_place_template(c, (CircuitTemplateType)t, 0, 0);
+        Simulation *sim = simulation_create(c);
+        static double vmin[4096], vmax[4096];
+        for (int i = 0; i < 4096; i++) { vmin[i] = 1e300; vmax[i] = -1e300; }
+        int ok = simulation_dc_analysis(sim);
+        double td = circuit_template_scope_time_div((CircuitTemplateType)t);
+        simulation_set_time_step(sim, td > 0 ? td / 20 : 1e-5);
+        simulation_start(sim);
+        long steps = 0;
+        while (ok && sim->time < t_end && steps < 5000000) {
+            if (!simulation_step(sim)) { ok = 0; break; }
+            steps++;
+            for (int i = 0; i < c->num_nodes; i++) { int id = c->nodes[i].id; if (id < 4096) { double v = c->nodes[i].voltage; if (v < vmin[id]) vmin[id] = v; if (v > vmax[id]) vmax[id] = v; } }
+        }
+        printf("%s: %ld steps, dt %.3g, %s\n", ti->name, steps, sim->time_step, ok ? "ok" : simulation_get_error(sim));
+        for (int i = 0; i < c->num_nodes; i++) {
+            int id = c->nodes[i].id; char owners[80] = "";
+            for (int j = 0; j < c->num_components && strlen(owners) < 66; j++) for (int k = 0; k < c->components[j]->num_terminals; k++)
+                if (c->components[j]->node_ids[k] == id) snprintf(owners + strlen(owners), sizeof owners - strlen(owners), "%s[%d] ", c->components[j]->label, k);
+            printf("  n%-4d (%6.0f,%6.0f) %12.4g .. %-12.4g %s\n", id, c->nodes[i].x, c->nodes[i].y, id < 4096 ? vmin[id] : 0.0, id < 4096 ? vmax[id] : 0.0, owners);
+        }
+        simulation_free(sim); circuit_free(c);
+    }
+    return 0;
+}
+
+/* ---------------------------------------------------------------------------------------
+ * --knob-test: every template x every editable value x {0.5, 2}: the circuit must still solve
+ * (DC + a short transient) without solver errors, NaN or runaway. This is the automated
+ * version of "turn every knob and see that nothing breaks".
+ * ------------------------------------------------------------------------------------- */
+static double *knob_value(Component *k, const char **what) {
+    switch (k->type) {
+        case COMP_RESISTOR:       *what = "R";    return &k->props.resistor.resistance;
+        case COMP_CAPACITOR:      *what = "C";    return &k->props.capacitor.capacitance;
+        case COMP_INDUCTOR:       *what = "L";    return &k->props.inductor.inductance;
+        case COMP_AC_VOLTAGE:     *what = "Vac";  return &k->props.ac_voltage.amplitude;
+        case COMP_DC_VOLTAGE:     *what = "Vdc";  return &k->props.dc_voltage.voltage;
+        case COMP_TRANSFORMER:    *what = "N";    return &k->props.transformer.turns_ratio;
+        case COMP_TLINE:          *what = "len";  return &k->props.tline.length_mi;
+        case COMP_SPARK_GAP:      *what = "gap";  return &k->props.spark_gap.gap_mm;
+        case COMP_TOROID:         *what = "D";    return &k->props.toroid.major_in;
+        case COMP_PULSE_SOURCE:   *what = "pw";   return &k->props.pulse_source.pulse_width;
+        case COMP_ANALOG_SWITCH:  *what = "ron";  return &k->props.analog_switch.r_on;
+        case COMP_ZENER:          *what = "Vz";   return &k->props.zener.vz;
+        default: return NULL;
+    }
+}
+static int knob_run(Circuit *c, double t_end, double vlimit, char *why, size_t nwhy) {
+    Simulation *sim = simulation_create(c);
+    int ok = simulation_dc_analysis(sim);
+    if (!ok) { snprintf(why, nwhy, "DC failed: %s", simulation_get_error(sim)); simulation_free(sim); return 0; }
+    simulation_auto_time_step(sim);
+    if (!(sim->time_step > 0) || sim->time_step > t_end / 20 || sim->time_step < t_end / 20000) simulation_set_time_step(sim, t_end / 200);
+    simulation_start(sim);
+    long steps = 0;
+    while (sim->time < t_end && steps < 200000) {
+        if (!simulation_step(sim)) { snprintf(why, nwhy, "step %ld: %s", steps, simulation_get_error(sim)); ok = 0; break; }
+        steps++;
+        for (int i = 0; i < c->num_nodes; i++) {
+            double v = c->nodes[i].voltage;
+            if (!isfinite(v)) { snprintf(why, nwhy, "NaN at node %d", c->nodes[i].id); ok = 0; break; }
+            if (fabs(v) > vlimit) { snprintf(why, nwhy, "runaway %.3g V at node %d", v, c->nodes[i].id); ok = 0; break; }
+        }
+        if (!ok) break;
+    }
+    simulation_free(sim);
+    return ok;
+}
+static int knob_test(const char *filter) {
+    int fails = 0, runs = 0, templates = 0;
+    static const double factors[] = { 0.5, 2.0 };
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti || (filter && !strstr(ti->name, filter))) continue;
+        templates++;
+        Circuit *base = circuit_create();
+        circuit_place_template(base, (CircuitTemplateType)t, 0, 0);
+        double vlimit = fmax(1000.0, 3.0 * source_scale(base)) * 20.0;   /* generous: a x2 knob can double a resonance */
+        const TemplateDemo *d = circuit_template_demo((CircuitTemplateType)t);
+        double t_end = (d && d->f_char > 0) ? 3.0 / d->f_char : 0.01;
+        if (t_end > 0.5) t_end = 0.5;
+        if (t_end < 0.0005) t_end = 0.0005;
+        int nfail_here = 0;
+        for (int i = 0; i < base->num_components; i++) {
+            const char *what = NULL;
+            if (!knob_value(base->components[i], &what)) continue;
+            for (unsigned f = 0; f < sizeof factors / sizeof factors[0]; f++) {
+                Circuit *c = circuit_create();
+                circuit_place_template(c, (CircuitTemplateType)t, 0, 0);
+                const char *w2; double *val = knob_value(c->components[i], &w2);
+                double orig = *val; *val = orig * factors[f];
+                char why[200] = "";
+                runs++;
+                if (!knob_run(c, t_end, vlimit, why, sizeof why)) {
+                    fails++; nfail_here++;
+                    printf("[FAIL] knob  %-26s %s[%d] %s x%.1f (%.4g -> %.4g): %s\n", ti->name, c->components[i]->label, i, what, factors[f], orig, orig * factors[f], why);
+                }
+                circuit_free(c);
+            }
+        }
+        if (!nfail_here) printf("[ OK ] knob  %-26s all values x0.5 / x2 solve (%d knobs)\n", ti->name, base->num_components);
+        circuit_free(base);
+    }
+    printf("%d knob runs over %d templates, %d failed\n", runs, templates, fails);
+    return fails;
+}
+
 int main(int argc, char **argv) {
     int dc_only = 0, verbose = 0, dump_nodes = 0;
     const char *svg_dir = NULL;
@@ -1023,6 +1205,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--demo-test")) return demo_test();
         else if (!strcmp(argv[i], "--tesla-test")) return tesla_test();
         else if (!strcmp(argv[i], "--param-test")) return param_test();
+        else if (!strcmp(argv[i], "--knob-test")) return knob_test(i + 1 < argc ? argv[++i] : NULL);
+        else if (!strcmp(argv[i], "--trace") && i + 2 < argc) { const char *nm = argv[++i]; return trace_template(nm, atof(argv[++i])); }
         else if (!strcmp(argv[i], "--response") && i + 1 < argc) return response_explore(argv[++i]);
         else if (!strcmp(argv[i], "--sim-time") && i + 1 < argc) sim_time = atof(argv[++i]);
         else filter = argv[i];
