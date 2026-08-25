@@ -112,7 +112,7 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-65 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+72 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -196,6 +196,13 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **Grid: 18 kV to 240 V** (`Grid`) - Generator to house through every voltage level
 - **Ferranti (open line)** (`Ferr`) - 200-mile 345 kV pi line, open end, switchable reactor
 - **Line Model Ladder** (`Ladder`) - Same line as R, R-L and pi: compare the load buses
+- **CT + 50/51 Overcurrent** (`50/51`) - CT 600:5, burden, rectify-hold, pickup comparator; pulsed fault
+- **87 Line Differential** (`87L`) - Two CTs in opposition: internal fault trips, through fault does not
+- **21 Distance Zone 1** (`21Z1`) - Replica impedance vs VT voltage: reach = 80 % of the line
+- **50BF Breaker Failure** (`50BF`) - TRIP AND current-present starts a 150 ms timer -> BFT
+- **SIL Loading** (`SIL`) - 200 mi 345 kV line at surge impedance load: flat voltage
+- **Series Compensation** (`SerC`) - 50 % series capacitor restores the voltage at 2 x SIL
+- **765 kV Line (AEP)** (`765kV`) - 300 mi six-bundle EHV line at ~2300 MW
 
 **High voltage**
 - **Tesla Coil** (`Tesla`) - Spark-gap Tesla coil, 4x13 in toroid, streamer to a rod
@@ -231,6 +238,25 @@ New components make this possible:
 Three **Tesla coil** examples (tuned, retuned for a bigger toroid, and deliberately detuned) use an
 NST, a spark gap, the tank capacitor, a k = 0.2 coupled secondary and a streamer gap to a grounded
 rod. The scope V/div range now reaches 500 kV/div with kV labels.
+
+### Protection & Control (AEP practice)
+
+![87 line differential](screenshots/auto/relay_differential.png)
+
+Self-running relay examples built from the same parts (the fault is applied by a pulse-driven analog
+switch, so one scope screen shows pre-fault, fault and the relay decision):
+
+- **CT + 50/51 Overcurrent** - 600:5 CT into a 1 ohm burden, diode peak-hold, comparator pickup at 738 A.
+- **87 Line Differential** - two CTs in opposition across a differential burden: an internal fault trips,
+  a through fault beyond the second CT does not.
+- **21 Distance Zone 1** - replica impedance (|I| x Z_set) against the VT voltage; a fault at 40 % of the
+  line trips, one at 100 % is left to zone 2.
+- **50BF Breaker Failure** - TRIP AND current-present starts a 150 ms timer; a stuck breaker produces BFT.
+- **SIL Loading**, **Series Compensation**, **765 kV Line** - surge-impedance loading (flat profile vs 20 %
+  sag at 2 x SIL), a 50 % series capacitor restoring the far end, and AEP's 765 kV six-bundle backbone.
+
+The design numbers and the utility context (redundant A/B relaying, 87L over fiber, DNP3 / IEC 61850,
+UFLS stages, St. Clair loadability) are collected in `docs/RESEARCH_AEP_PC.md`.
 
 ### Advanced Oscilloscope
 
@@ -361,10 +387,16 @@ Create reusable subcircuits from your designs:
 | ![RC low-pass sweep](screenshots/auto/rc_lowpass_sweep.png) RC low-pass with a 100 Hz-20 kHz sweep and tracking scope | ![Wien oscillator](screenshots/auto/wien_oscillator.png) Wien bridge oscillator |
 | ![Grid chain](screenshots/auto/grid_chain.png) 18 kV generator to a 240 V house | ![Ferranti](screenshots/auto/ferranti.png) Ferranti rise on an open 200-mile line |
 | ![Line model ladder](screenshots/auto/line_model_ladder.png) The same line as R, R-L and pi | ![Relaxation oscillator](screenshots/auto/relaxation_osc.png) Op-amp relaxation oscillator |
+| ![50/51 overcurrent](screenshots/auto/relay_overcurrent.png) CT + 50/51 overcurrent relay | ![21 distance](screenshots/auto/relay_distance.png) 21 distance zone 1 reach |
+| ![50BF](screenshots/auto/breaker_failure.png) 50BF breaker-failure timer | ![765 kV](screenshots/auto/line_765kv.png) AEP 765 kV line at SIL |
 
 ![RC sweep](gifs/auto_rc_lowpass_sweep.gif)
 
 ![Tesla coil](gifs/auto_tesla_coil.gif)
+
+![87 line differential](gifs/auto_relay_differential.gif)
+
+![50BF breaker failure](gifs/auto_breaker_failure.gif)
 
 ## Building
 
@@ -428,10 +460,12 @@ point and a short transient, and reports solver errors, NaN/runaway voltages and
 point of every transistor / op-amp / regulator:
 
 ```bash
-build/tools/template_smoke.exe             # 65/65 templates passed
+build/tools/template_smoke.exe             # 72/72 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
-build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (57 oracles)
+build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (66 oracles)
+build/tools/template_smoke.exe --knob-test       # every template still converges with every value x0.5 and x2
+build/tools/template_smoke.exe --trace "87 " 0.3 # per-node min/max over a run (debugging a template)
 build/tools/template_smoke.exe --demo-test       # every template demonstrates its DemoKind contract
 build/tools/template_smoke.exe --osc-test        # oscillators really oscillate (add --osc-dt 5e-6)
 build/tools/template_smoke.exe --tesla-test      # spark-gap firings, ring frequency, toroid peak, streamer, tuned vs detuned
@@ -442,6 +476,15 @@ build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
 build/tools/template_smoke.exe --response "RC BP"   # amplitude vs frequency of every node during the sweep
 build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
 build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template in the palette)
+```
+
+The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
+which produced the images in this README):
+
+```bash
+build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
+build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
+build/circuit-playground.exe --help
 ```
 
 The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,

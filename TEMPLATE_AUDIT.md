@@ -1,4 +1,4 @@
-# Prebuilt Circuit Template Audit (65 templates)
+# Prebuilt Circuit Template Audit (72 templates)
 
 Companion to `TEST_PLAN.md` §8. Every template gets the same five passes; the per-template
 block adds the hand-calculated nominal, the **value variations** to try, and specific traps.
@@ -6,7 +6,7 @@ block adds the hand-calculated nominal, the **value variations** to try, and spe
 Values below were extracted from `src/circuits.c` `place_*` builders on 2026-08-24 — if a
 template's BOM changes, update its block.
 
-### Fixes applied 2026-08-24 (headless smoke test now reports 47/47; 65/65 after the 18 templates added later the same day, see the added section)
+### Fixes applied 2026-08-24 (headless smoke test now reports 47/47; 65/65 after the 18 templates added later the same day; 72/72 after the 7 protection & control templates, see the two added sections)
 Engine: BJT stamp was missing the collector Newton equivalent current and flipped the PNP
 transconductance sign (every BJT template ran away to MV); PMOS had the same sign bug (CMOS
 inverter); zener breakdown and TL431 were hard switches that chattered (now smooth models);
@@ -64,7 +64,7 @@ textbook two-op-amp absolute-value topology (out = -|Vin|); phase-shift oscillat
 to +/-5 V rails (single-supply DC feedback latched it) and Rf 33k; every template now
 carries an on-canvas "how it works / PROBE" note.
 
-### OPEN schematic-geometry items (`--geom-test`: crossings and wires through bodies; 43/65 clean — all 18 added templates are clean)
+### OPEN schematic-geometry items (`--geom-test`: crossings and wires through bodies; 50/72 clean — all 18 added templates and the 7 protection & control templates #66–#72 are clean)
 ```
 [WARN] geom  Common Emitter               diag=0 cross=0 through=1 touch=0 through:Q104
 [WARN] geom  Source Follower              diag=0 cross=0 through=1 touch=0 through:M142
@@ -512,6 +512,109 @@ toroid peak and the ring frequency in the 60 µs after the first firing (±20 %)
 
 ---
 
+## Protection & control (added; AEP-style practice, `docs/RESEARCH_AEP_PC.md` §5.1–§5.8, 7 templates: #66–#72)
+
+Current status: 72/72 templates, 72/72 `--demo-test`, 66/66 `--probe-test`, 72/72 `--flow-test`,
+50/72 `--geom-test` clean (all seven below are clean), `--param-test` all OK (now also §4b analog
+switch as a fault switch, r_on 0.01 … 1e6 Ω under a 0/5 V pulse control, and §4c transformer as a
+CT with N = 120 / 400 / 2875 into a 1 Ω burden), `--tesla-test` 3/3, layout-test 0 failures.
+
+Common building blocks (`src/circuits.c`, above `place_pc_overcurrent`):
+- **Fault switch** `fault_switch()`: `COMP_ANALOG_SWITCH` (r_on 0.3 Ω, r_off 1 GΩ, v_on 2.5 V) whose
+  CTL pin is driven by a `COMP_PULSE_SOURCE` 0 → 5 V with `delay` / `pulse_width` / `period` set per
+  template. The fault repeats every period, so the demo runs by itself: pre-fault → fault → relay
+  decision on one scope screen. The fault resistance is the series R above the switch plus r_on.
+- **Peak-hold detector** `peak_hold(C, R)`: diode → C to ground, bleed R to ground. Held value ≈ Vpk − 0.7 V
+  (ideal diode: Vpk), decays with τ = RC after the input drops. Hold τ must be **shorter than the
+  demo window** (see the traps) — 10 µF/10 k (τ 100 ms) on 50/51, 2.2 µF/10 k (τ 22 ms) on 87 and 21.
+- **Comparator** `comparator_with_ref(vref)`: `COMP_OPAMP` with `ideal = false`, gain 1e5, ±15 V rails,
+  DC reference on the − input, detector on the + input, 100 k load to ground on the output so
+  TRIP is a real probed node. Output = +15 V (trip) / −15 V (no trip).
+- **Instrument transformers**: ideal `COMP_TRANSFORMER` — CT turns_ratio 120 (600:5) or 400 (2000:5)
+  with one secondary end grounded and a 1 Ω / 3.35 Ω burden; VT turns_ratio 1/2875 (345 kV / 120 V).
+  §4c of `--param-test` confirms secondary current = primary / N into 1 Ω within 3 %.
+- Sources are phase-to-neutral peaks: 13.8 kV → 11.27 kVpk (7.97 kV rms), 345 kV → 281.4/281.7 kVpk
+  (199 kV rms), 765 kV → 624.6 kVpk (441.7 kV rms). Logic high is 5 V (`COMP_PULSE_SOURCE` v_high).
+
+**Traps discovered while building these (apply to any future template):**
+- Component terminal nodes snap to a **10 px grid** and `circuit_find_or_create_node` merges nodes
+  **within 10 px** (5 px radius each side): a wire corner routed 10 px from a terminal silently
+  shorts to it. Keep routing corners ≥ 20 px from any terminal and from other corners (the 87
+  secondary loop and the 21 VT loop were both rebuilt for this; logic gates were placed at y+35 /
+  y+65 so their ±15 px pins land on the grid).
+- `ideal = true` op-amps are a **virtual-short model** (the solver forces V+ = V−) and cannot be used
+  open-loop as comparators — the output just floats to whatever satisfies the constraint. Use
+  `ideal = false` with gain 1e5; the rails then give a clean ±15 V decision.
+- **Hold time constants must be shorter than the demo window.** `--demo-test` for `DEMO_SWITCH`
+  measures the output only over the second half of a 6/f_char run and needs a > 2 V swing; if
+  τ_hold keeps TRIP high past the end of the run the contract fails even though the relay is
+  correct. That is why f_char was set per template (below) and why 87/21 use τ = 22 ms.
+- Behavioural logic gates (`COMP_AND_GATE` …) have **no terminal currents**: the current view shows
+  nothing in/out of the gate, the timer R sees the gate output as an ideal 0/5 V source, and
+  `--flow-test` KCL is checked only on the passive nodes. Do not put an ammeter on a gate pin.
+- The demo harness forces a usable dt for pulse-only circuits (no AC source ⇒ auto-dt has no
+  frequency to work from): if auto dt is 0, > run/200 or < run/100000 it uses run/1000. In the GUI
+  set dt manually (≈ 100 µs) on 50BF if the auto pick looks wrong.
+
+### 66. CT + 50/51 Overcurrent — 11.27 kVpk (7.97 kV rms) 60 Hz, load 13.3 Ω (600 A), CT 120:1 into 1 Ω, hold 10 µF/10 k (τ 100 ms), ref 8.0 V, fault R 5 Ω via analog switch 40–100 ms (period 200 ms)
+- **Demonstrates:** an instantaneous overcurrent (50) element: CT secondary current through a burden gives a voltage proportional to line current, the peak-hold turns it into a DC level, the comparator trips above the pickup. The 51 (time) curve is just a longer RC on V_hold (§5.1: R_t 100 k, C_t 10 µF ⇒ t_trip = τ·ln(V_c/(V_c − 8)): 1.65 s at 900 A, 0.90 s at 1200 A, 0.34 s at 2400 A).
+- **Demo:** `DEMO_SWITCH`, f_char 30 ⇒ run 6/30 = 200 ms; the harness measures the second half (100–200 ms), so it sees TRIP high at 100 ms (end of the fault) and the release when the hold decays through 8 V — f_char 30 was chosen precisely so the 200 ms run contains that drop. Probe: op-amp OUT (TRIP). Presets 10 ms/div, 5 V/div.
+- **N:** normal I1 = 7970/13.3 = 599 A rms ⇒ I2 = 5.0 A ⇒ V_b = 5.0 V rms = **7.07 Vpk**; hold ≈ 6.4 V < 8 V ⇒ TRIP = −15 V. Pickup: V_hold ≥ 8 ⇒ V_b ≥ 8.7 Vpk ⇒ I1 ≥ (8.7/7.07)·600 = **738 A**. During the fault the burden swings well above 8.7 Vpk ⇒ TRIP = **+15 V**. Oracles: burden (`COMP_RESISTOR` 0, term 0) **7.07 Vpk** (±6 %, 39 ms, pre-fault); op-amp OUT **max 15.0 V** (±5 %, 80 ms, during the fault).
+- **Note the fault current:** the builder's R_f is 5 Ω (+0.3 Ω r_on) in parallel with the 13.3 Ω load ⇒ I1 ≈ 599 + 1504 ≈ **2.1 kA rms** (burden ≈ 25 Vpk), not the 1200 A quoted in the on-canvas note / §5.1 (1200 A total would need R_f ≈ 13 Ω). Pickup either way; the hold then needs τ·ln(25/8) ≈ 110 ms after 100 ms to release. If the release ever lands past the demo window, raise R_f to 13 Ω (V_b 14 Vpk ⇒ release ≈ 56 ms after the fault clears).
+- **V:** pulse `delay` 40 → 120 ms ⇒ TRIP moves with it; `pulse_width` 60 → 10 ms ⇒ TRIP still fires (hold catches one peak), release timing unchanged · `period` 200 → 1000 ms ⇒ one fault per second · R_f 5 → 13 → 60 Ω ⇒ 2.1 kA / 1.2 kA / 700 A (700 A is just below pickup: no trip — the sharpest demo of the 738 A setting) · ref 8.0 → 12 V ⇒ pickup 1.1 kA; 8.0 → 5 V ⇒ trips on normal load (V_hold 6.4 V) · CT ratio 120 → 400 ⇒ V_b 2.1 Vpk normal, 7.4 Vpk fault: nothing trips until ref ≈ 6 · hold R 10 k → 100 k ⇒ τ 1 s: TRIP latches through several fault periods (this is the 51 behaviour in the wrong place) · C 10 µF → 1 µF ⇒ τ 10 ms, V_hold ripples at 60 Hz and TRIP chatters near pickup.
+- **M:** M2 real diode: hold ≈ Vpk − 0.7 (6.4 V) vs ideal Vpk (7.07 V) — the ideal diode brings the normal-load hold within 0.9 V of the 8 V pickup; do not lower the reference below 7.5 V with ideal diodes. M4 op-amp is already `ideal=false`; setting it `ideal=true` breaks the comparator (virtual short) — expected, see traps.
+- **T:** 10 ms/div shows 200 ms = one fault period; at 1 ms/div the 60 Hz burden waveform and the diode charging spikes are visible; dt auto (~100 µs) is fine, dt 10 ms aliases the 60 Hz input and the hold reads low.
+
+### 67. 87 Line Differential — 11.27 kVpk, Rs 1 Ω, two CTs 120:1 bracketing the zone, load 20 Ω (380 A), 1 Ω differential burden R_d, hold 2.2 µF/10 k (τ 22 ms), ref 1.0 V; internal fault 2 Ω at 100–160 ms, through fault 2 Ω beyond CT2 at 240–300 ms (period 400 ms)
+- **Demonstrates:** a current-differential zone. The CT secondaries are wired in opposition (A = CT1·S1 + CT2·S2 → R_d, B = CT1·S2 + CT2·S1 → ground) so equal current at both ends circulates and R_d sees I1 − I2. Only a fault *inside* the zone unbalances them.
+- **Demo:** `DEMO_SWITCH`, f_char 20 ⇒ run 300 ms; the harness window (150–300 ms) sees TRIP high after the internal fault (100–160 ms) and the release ≈ 22·ln(30/1) ≈ 75 ms later (~235 ms) — hence τ 22 ms and f_char 20. The through fault at 240–300 ms must leave TRIP low. Probe: op-amp OUT (TRIP). Presets 20 ms/div, 5 V/div.
+- **N:** no fault: I = 7970/21 = 380 A ⇒ 3.16 A in both secondaries, V_d = 0 ⇒ TRIP −15 V. Internal fault: R_par = 2.3 ∥ 20 = 2.06 Ω, I1 = 7970/3.06 ≈ 2.6 kA, I2 ≈ 260 A ⇒ (I1 − I2)/120 ≈ 20 A rms ⇒ **≈ 30 Vpk on R_d** ≫ 1 V ⇒ TRIP +15 V. Oracle: R_d (`COMP_RESISTOR` 4, term 0) **30.3 Vpk** (±10 %, 150 ms — the research value with a 2 Ω bolted fault: (2828 − 257)/120 × 1 Ω × √2). Through fault: ≈ 2.6 kA flows through both CTs, V_d ≈ 0 — no trip.
+- **V:** swap the two `delay` values (internal 240, through 100) ⇒ TRIP appears in the second half instead · R_fi 2 → 20 Ω (high-resistance internal fault) ⇒ V_d ≈ 4 Vpk, still trips; 2 → 200 Ω ⇒ V_d ≈ 0.4 Vpk < 1 V ⇒ **misses** (the sensitivity limit of a plain 87 without slope) · ref 1.0 → 0.1 V and CT2 ratio 120 → 110 (9 % mismatch) ⇒ V_d ≈ 0.4 Vpk on load, ≈ 3 Vpk on the through fault ⇒ false trip — this is why real 87s add a slope (I_op > 0.3·I_restraint) · hold τ 22 → 220 ms ⇒ TRIP stays high into the through fault (looks like a mis-operation, it is only the hold) · R_d 1 → 10 Ω ⇒ V_d ×10 (the CTs are ideal so the burden does not saturate them).
+- **M:** all ideal apart from the diode. Ideal transformers have no magnetising branch, so CT saturation on the through fault (the classic 87 problem) cannot be shown — note it on the canvas if a magnetising L is ever added.
+- **T:** 20 ms/div shows one 400 ms period; 2 ms/div on R_d shows the 60 Hz difference current during the internal fault and its absence during the through fault.
+
+### 68. 21 Distance Zone 1 — 281.4 kVpk (199 kV rms), source j10 Ω (26.5 mH), 50 mi line as 20 mi + 30 mi R-L segments (0.06 + j0.60 Ω/mi ⇒ Z1 = 3 + j30 Ω), load 500 Ω, CT 400:1 into a 3.35 Ω replica, VT 1/2875, holds 2.2 µF/10 k (τ 22 ms); bolted faults at 40 % (100–160 ms) and 100 % (240–300 ms), period 400 ms
+- **Demonstrates:** a zone-1 impedance element. Reach = 0.8·|Z1| = 24.1 Ω primary ⇒ 24.1·400/2875 = **3.35 Ω secondary**; the replica R converts I_sec into |I|·Z_set, the VT gives |V|; TRIP when |I·Z_set| > |V|, i.e. |Z_app| = V/I < reach. The comparator's + input is the |I·Z| hold, the − input is the |V| hold (no DC reference — this template does not use `comparator_with_ref`).
+- **Demo:** `DEMO_SWITCH`, f_char 20 ⇒ run 300 ms, window 150–300 ms: TRIP high at the end of the 40 % fault (160 ms), released ≈ 22 ms·ln(107/54) ≈ 15 ms later; the 100 % fault starts at 240 ms and must not trip. Probe: op-amp OUT (TRIP). Presets 20 ms/div, 5 V/div.
+- **N:** pre-fault: V_sec = 281.4k/2875 = **97.9 Vpk**; I = 199k/|500 + 3 + j40| ≈ 397 A ⇒ I_sec ≈ 1 A ⇒ |I·Z| ≈ 4.7 Vpk ⇒ no trip. 40 % fault (1.2 + j12 Ω plus source j10): I = 199k/|1.2 + j22| = 9.03 kA, V_relay = 108.9 kV ⇒ V_sec 37.9 V rms (53.6 Vpk), V_I = 22.6 A × 3.35 = 75.6 V rms (107 Vpk) ⇒ **trip**. 80 %: 48.98 V vs 48.9 V — the balance point. 100 %: I = 4.96 kA, V_sec 52.0 V, V_I 41.6 V ⇒ **no trip** (zone 2's job, with a 0.3 s timer and 1.25·Z1 reach = 5.24 Ω secondary). Oracles: VT secondary (`COMP_TRANSFORMER` 1, term 2) **97.9 Vpk** (±6 %, 39 ms); op-amp OUT **max 15.0 V** (±5 %, 150 ms).
+- **V:** **move the fault by editing the segment lengths** (keep the sum 50 mi): seg1 20 → 40 mi puts the first fault at 80 % ⇒ marginal, TRIP may flicker (balance point); seg1 20 → 45 mi (90 %) ⇒ no trip on either fault · replica 3.35 → 4.2 Ω (reach 100 %) ⇒ the 100 % fault now trips too — overreach, which is what zone 1 must never do · CT ratio 400 → 200 ⇒ |I·Z| doubles ⇒ effective reach doubles (same overreach) · VT ratio 1/2875 → 1/1437 ⇒ |V| doubles ⇒ reach halves · add fault resistance: put 5 Ω in series with sw1 ⇒ Z_app gains a real part, the 40 % fault still trips; 30 Ω ⇒ |Z_app| ≈ 33 Ω > 24.1 ⇒ misses (resistive-fault underreach) · pulse `delay` on sw1 100 → 240 and sw2 240 → 100 ⇒ the order flips; the second half must then be quiet · hold τ 22 → 220 ms ⇒ the trip from the 40 % fault is still latched when the 100 % fault arrives (false "overreach"; only the hold).
+- **M:** ideal L/transformers; line segments are model 1 (R-L, B = 0) so no charging current disturbs the relay. Set model 2 on seg2 ⇒ ~0.2 % change, invisible.
+- **T:** 20 ms/div; dt auto (~100 µs). The VT-side hold is routed below-left and its 60 Hz ripple is ~10 % at τ 22 ms — the comparator margin at 40 % (107 vs 54 Vpk) is far larger than the ripple.
+
+### 69. 50BF Breaker Failure — TRIP pulse 5 V, delay 50 ms, width 300 ms, period 600 ms; 50BF current-present pulse identical; START = AND(TRIP, 50BF) → 10 k / 15 µF (τ 150 ms) → comparator ref 3.16 V (= 0.632 × 5 V) → BFT = AND(timer, 50BF), 100 k load
+- **Demonstrates:** the breaker-failure timing chain (§5.8): a trip must make the current vanish within ~5 cycles; if TRIP AND current-present persists for a timer interval, BFT trips the adjacent breakers. The research write-up uses 12 V logic / 7.58 V; the builder uses the 5 V pulse sources and scales the reference to 0.632 × 5 = 3.16 V so the timer still expires at exactly one τ.
+- **Demo:** `DEMO_SWITCH`, f_char 5 ⇒ run 1.2 s, window 0.6–1.2 s sees the second BFT pulse (800–950 ms); f_char 5 was chosen so a full 600 ms period plus the next pulse fit the run. Probe: AND gate 1 OUT (BFT). Presets 20 ms/div, 2 V/div. This is the only pulse-only template: the demo harness forces dt = run/1000 (auto-dt has no AC source to key on).
+- **N:** stuck breaker (current pulse stays on): START at 50 ms, C reaches 3.16 V at 50 + 150 = **200 ms**, BFT high 200–350 ms (until the pulses end), repeats at 800–950 ms. Oracle: AND gate 1 OUT (`COMP_AND_GATE` 1, term 2) **max 5.0 V** (±5 %, 0.30 s). Healthy breaker: set the 50BF `pulse_width` 300 → **83 ms** (5 cycles): START drops at 133 ms, C only reaches 5·(1 − e^(−0.083/0.15)) = **2.13 V** < 3.16 ⇒ no BFT (§5.8 quotes 5.1 V vs 7.58 V on 12 V logic — same 42 %).
+- **V:** 50BF width 300 → 83 → 120 → 150 ms ⇒ no BFT / no BFT (2.75 V) / BFT (3.16 V at 200 ms, marginal one-sample pulse) — the margin around 5 cycles · R 10 k → 5 k ⇒ τ 75 ms ⇒ BFT at 125 ms (would misoperate on a healthy 83 ms breaker) · C 15 µF → 30 µF ⇒ τ 300 ms, C reaches only 3.16 V at 350 ms = exactly when the pulses end ⇒ marginal · ref 3.16 → 4.5 V ⇒ C needs 2.3 τ = 345 ms ⇒ marginal · TRIP `delay` 50 → 100 ms with the current pulse unchanged ⇒ START starts 50 ms later, BFT at 250 ms · remove the current pulse (v_high 0) ⇒ no START, no BFT, C stays at 0 · period 600 → 400 ms with width 300 ⇒ only 100 ms off: C does not fully reset (τ 150) and the next BFT arrives early — the reset path is the R back into the gate's 0 V output.
+- **M:** gates are behavioural (no terminal currents, ideal 0/5 V outputs); the comparator's +15 V into the AND input is read as logic high. No ideal/real toggle applies except the op-amp (must stay `ideal=false`).
+- **T:** 20 ms/div shows 400 ms; set 100 ms/div to see two periods. dt auto may be coarse (no AC source): use 100 µs. The capacitor ramp is the best node to probe for the "healthy" case.
+
+### 70. SIL Loading — 281.7 kVpk 60 Hz, 200 mi 345 kV nominal π (0.06 + j0.60 Ω/mi, 7.5 µS/mi ⇒ 12 Ω + 318 mH, 1.99 µF each end), load 283 Ω = Zc; SW adds a second 283 Ω (2 × SIL)
+- **Demonstrates:** surge impedance loading — a line terminated in Zc = √(x/b) = √(0.60/7.5e-6) = 283 Ω generates exactly the VARs it absorbs: flat profile, small angle. P_SIL = 345²/283 = 420 MW. At 2 × SIL the line needs VARs it cannot supply and the far end sags (voltage-limited, St. Clair).
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: load (`COMP_RESISTOR` 0, term 0) plus the source end. Presets 5 ms/div, 100 kV/div.
+- **N:** lossless π oracle at SIL (§5.6): Vr/Vs = 0.996; with R = 12 Ω and the single nominal π the probe oracle is **269.25 kVpk (0.956)** (±3 %, 60 ms). SW closed (141 Ω): Vr/Vs ≈ **0.80** (§5.6: 140.6/175.0 = 0.803). Open end: 1.099 (Ferranti, #60).
+- **V:** **toggle SW while running** ⇒ far end steps 0.956 → 0.80 within a cycle, no growing ring · length 200 → 100 / 300 mi ⇒ at SIL the profile stays ≈ flat regardless (that is the point); at 2 × SIL the 300 mi drop is far worse — trace the St. Clair curve · load 283 → 566 Ω (0.5 SIL) ⇒ far end *rises* above the source (partial Ferranti) · line model 2 → 1 (no C) ⇒ SIL flatness disappears, plain R-L drop even at 283 Ω · B 7.5 → 0 µS/mi ⇒ same.
+- **M:** ideal passives. An ideal SPST switch closing a resistor onto the far-end π capacitor: no transient issues expected (resistive).
+- **T:** one π for 200 mi is coarse (the note on #72 says the same); split into 2 × 100 mi to see the mid-point voltage.
+
+### 71. Series Compensation — 281.7 kVpk, two 100 mi 345 kV π sections (X_line = 120 Ω total), 44.21 µF series capacitor between them (Xc = 60 Ω = 50 % compensation), bypass SW across the cap, load 141.5 Ω (2 × SIL)
+- **Demonstrates:** series capacitors cancel part of the line reactance and restore the voltage / power limit of a long line. AEP uses them on long 765/345 kV paths (with MOV bypass on faults and SSR protection).
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: load (`COMP_RESISTOR` 0, term 0) and the source end. Presets 5 ms/div, 100 kV/div.
+- **N:** with the cap in: Vr/Vs = **0.890 ⇒ 250.6 kVpk** (±4 %, 60 ms, two-π phasor oracle). SW closed (bypass): back to the 2 × SIL drop of #70, ≈ **0.80** (§5.5: open-end rise halves from 1.099 to 1.047 with 50 % compensation — try it with the load at 10 MΩ).
+- **V:** **close SW while running** ⇒ the load end drops 0.89 → 0.80 within a cycle, the source-side probe barely moves · C 44.2 → 22.1 µF (Xc 120 Ω, 100 % compensation) ⇒ far end ≈ source; → 14.7 µF (150 %, over-compensated) ⇒ far end *above* the source and the cap voltage (I·Xc) is huge — real installations stay at 25–70 % · C → 88 µF (25 %) ⇒ ≈ 0.85 · load 141.5 → 283 Ω (SIL) ⇒ ≈ flat with or without the cap · load → 10 MΩ ⇒ Ferranti 1.099 bypassed, 1.047 compensated.
+- **M:** ideal capacitor in series with the ideal inductors of the two π sections: the series L-C (318 mH with 44 µF ⇒ 42 Hz, i.e. 60 Hz·√0.5) is below 60 Hz — a slow ~42 Hz beat after SW opens/closes is the subsynchronous-resonance mechanism in miniature; it must decay (12 Ω of line R), not grow. The bypass switch is ideal: closing it on a charged cap dumps the cap charge as a current spike, finite at r_on.
+- **T:** dt auto ~100 µs; 5 ms/div for amplitude, 50 ms/div to see the ~42 Hz beat after a switch operation.
+
+### 72. 765 kV Line (AEP) — 624.6 kVpk (441.7 kV rms = 765/√3), 300 mi six-conductor bundle as one nominal π (0.02 + j0.53 Ω/mi, 8.5 µS/mi ⇒ 6 Ω + 422 mH, 3.38 µF each end), load 250 Ω = Zc (SIL ≈ 2340 MW)
+- **Demonstrates:** AEP's EHV backbone since 1969: bundling lowers X and raises B, Zc = √(0.53/8.5e-6) = 250 Ω, SIL = 765²/250 = 2340 MW ≈ 6 × a 345 kV circuit at about half the losses per MW. Built with `chain_line_load` (same shape as #54).
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: load (`COMP_RESISTOR` 0, term 0) and the source end. Presets 5 ms/div, **200 kV/div**.
+- **N:** at SIL, single π: Vr/Vs = **0.958 ⇒ 598.6 kVpk** (±4 %, 60 ms). Lossless would be ~0.99: the 6 Ω R and the coarse 300 mi π account for the rest.
+- **V:** load 250 → 125 Ω (2 × SIL, ~4700 MW) ⇒ the drop of #70 reappears at 765 kV scale (~0.8) · length 300 → 600 mi (one π) ⇒ ω²LC → 0.8 (the single π is near its own resonance and overstates everything): **split into 3 × 100 mi** `COMP_TLINE` parts and compare — the ladder of 3 sections sits ~1 % from the single π at 300 mi but diverges at 600 · R 0.02 → 0.06 Ω/mi (345 kV-class conductor) ⇒ losses ×3 · B 8.5 → 7.5 ⇒ Zc 266 Ω, no longer at SIL with 250 Ω · load → 10 MΩ ⇒ Ferranti at 300 mi: 1/(1 − ω²LC) ≈ 1.25 — the reason long 765 kV lines carry shunt reactors (#60).
+- **M:** ideal passives. Scope autoset must reach 200 kV/div without overflow (largest voltage in any template).
+- **T:** as #54; 20 ms/div for the phase-angle comparison between the two ends.
+
+---
+
 ## Result log
 
 | # | Template | L | N | V | M | T | S | Notes / issue link |
@@ -581,5 +684,12 @@ toroid peak and the ring frequency in the 60 µs after the first firing (±20 %)
 | 63 | Tesla Coil (detuned) | | | | | | | `--tesla-test` (peak < 75 % of #62) |
 | 64 | Line Model Ladder | | | | | | | 3 probe oracles |
 | 65 | Line Drop Basics | | | | | | | |
+| 66 | CT + 50/51 Overcurrent | | | | | | | 2 probe oracles; R_f 5 Ω vs the 1200 A note (see block) |
+| 67 | 87 Line Differential | | | | | | | internal vs through fault, R_d oracle |
+| 68 | 21 Distance Zone 1 | | | | | | | 2 probe oracles; move the fault via segment lengths |
+| 69 | 50BF Breaker Failure | | | | | | | pulse-only (forced dt); 83 ms = healthy breaker |
+| 70 | SIL Loading | | | | | | | toggle 2 × SIL live |
+| 71 | Series Compensation | | | | | | | toggle bypass live |
+| 72 | 765 kV Line (AEP) | | | | | | | 200 kV/div |
 
-(65 blocks = the 65 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`; #48-#65 follow the enum order after `CIRCUIT_PHASE_SHIFT_OSC`.)
+(72 blocks = the 72 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`; #48-#65 follow the enum order after `CIRCUIT_PHASE_SHIFT_OSC`, #66-#72 the enum order after `CIRCUIT_DC_LINE_DROP`.)

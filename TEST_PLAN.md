@@ -20,18 +20,19 @@ and note: build hash, steps, expected vs actual, stderr excerpt.
 | 0.2 | `[ ]` Launch, empty canvas, idle 60 s | No stderr spam, stable FPS, no memory growth (Task Manager) |
 | 0.3 | `[P]` Debug leftovers in the working tree | Removed 2026-08-24: all `[DC ANALYSIS]`/`[SOLVER]`/`[CLAMP]`/LED-array prints, the `probe_debug.log` and `oscillator_debug.txt` writers, and the `debug_circuit.json` auto-load block |
 | 0.4 | `[P]` Repo hygiene | Stray `nul`, debug logs and scratch scripts deleted; `.gitignore` covers `*.log`, `screenshots/`, `circuit.json` |
-| 0.6 | `[ ]` Headless regression: `build\tools\template_smoke.exe` (add `--verbose` for bias points, `--nodes` for net mapping) | Prints `65/65 templates passed`; run after every engine change |
-| 0.7 | `[ ]` `template_smoke --probe-test` | 57/57: every template's designated output node matches the hand calculation (DC level, amplitude, peak or mean) — includes the kV power buses and the three Line Model Ladder rows |
+| 0.6 | `[ ]` Headless regression: `build\tools\template_smoke.exe` (add `--verbose` for bias points, `--nodes` for net mapping) | Prints `72/72 templates passed`; run after every engine change |
+| 0.7 | `[ ]` `template_smoke --probe-test` | 66/66: every template's designated output node matches the hand calculation (DC level, amplitude, peak or mean) — includes the kV power buses, the three Line Model Ladder rows and the nine protection & control oracles (burden / R_d / VT secondary amplitudes, TRIP and BFT maxima, SIL / series-comp / 765 kV load ends) |
 | 0.8 | `[ ]` `template_smoke --osc-test` (also `--osc-dt 5e-6`) | Wien ~1.56 kHz, phase-shift ~6.0 kHz and relaxation ~455 Hz really oscillate, at dt from 100 ns to 5 us |
-| 0.9 | `[ ]` `template_smoke --geom-test` | Schematic audit: 0 diagonal wires anywhere; 43/65 clean (all 18 templates added 2026-08-24 are clean); remaining crossings / wires-through-bodies are listed per template (see TEMPLATE_AUDIT open items) |
-| 0.10 | `[ ]` `template_smoke --flow-test`, `--scope-test` | 65/65 and 8/8 |
-| 0.11 | `[ ]` `template_smoke --demo-test` | 65/65: every template honours its `DemoKind` contract (`template_demo[]`: LOWPASS/HIGHPASS/BANDPASS/NOTCH bracket f_char with the sweep, ENVELOPE/LIMITER follow or clamp the amplitude sweep, WAVEFORM varies, SWITCH swings rail to rail, DC is steady, OSC self-starts) |
+| 0.9 | `[ ]` `template_smoke --geom-test` | Schematic audit: 0 diagonal wires anywhere; 50/72 clean (all 18 templates added 2026-08-24 and the 7 protection & control templates are clean); remaining crossings / wires-through-bodies are listed per template (see TEMPLATE_AUDIT open items) |
+| 0.10 | `[ ]` `template_smoke --flow-test`, `--scope-test` | 72/72 and 8/8 (flow: behavioural logic gates have no terminal currents, so KCL is only asserted on passive nodes in 50BF) |
+| 0.11 | `[ ]` `template_smoke --demo-test` | 72/72: every template honours its `DemoKind` contract (`template_demo[]`: LOWPASS/HIGHPASS/BANDPASS/NOTCH bracket f_char with the sweep, ENVELOPE/LIMITER follow or clamp the amplitude sweep, WAVEFORM varies, SWITCH swings rail to rail, DC is steady, OSC self-starts). WAVEFORM/SWITCH/DC run 6/f_char and judge the second half; the harness now **forces a usable dt for pulse-only circuits** (no AC source ⇒ auto-dt unusable: if dt is 0, > run/200 or < run/100000 it uses run/1000 — 50BF is the case that needs it) |
 | 0.12 | `[ ]` `template_smoke --tesla-test` | 3/3 plus the tuned-vs-detuned comparison (§3.10.2) |
-| 0.13 | `[ ]` `template_smoke --param-test` | All `OK`: spark gap, toroid, transmission line, transformer ratio and scope-preset limits (§3.10.1) |
+| 0.13 | `[ ]` `template_smoke --param-test` | All `OK`: spark gap, toroid, transmission line, transformer ratio, **4b analog switch as a fault switch** (r_on 0.01 / 0.3 / 100 / 1e6 Ω, 0/5 V pulse control: load ≈ 0 before the pulse, 10·100/(100 + r_on) during it ±5 %), **4c transformer as a CT** (N = 120 / 400 / 2875, 100 A primary ⇒ 100/N V on a 1 Ω burden ±3 %) and scope-preset limits (§3.10.1) |
 | 0.14 | `[ ]` `template_smoke --response NAME` | Explorer, not pass/fail: prints per-node amplitude in 8 log bins of the template's sweep — use it to choose an output node / DemoKind for a new template |
+| 0.15 | `[ ]` `template_smoke --trace NAME T` | Explorer, not pass/fail: runs the template for T seconds at the app dt and prints, for every node, min / max voltage with the components attached, plus the final state of every switch — the tool for "why does TRIP never drop" / "which node shorted" questions on the relay templates (e.g. `--trace 50/51 0.2`, `--trace 50BF 1.2`) |
 
 Smoke test modes: (none) template load+run · `--demo-test` · `--probe-test` · `--osc-test [--osc-dt X]` · `--flow-test` ·
-`--geom-test` · `--scope-test` · `--sweep-check` · `--tesla-test` · `--param-test` · `--response NAME` ·
+`--geom-test` · `--scope-test` · `--sweep-check` · `--tesla-test` · `--param-test` · `--response NAME` · `--trace NAME T` ·
 flags `--verbose`, `--nodes`, `--svg DIR`, `--dc`, `--sim-time T`, and a bare NAME argument to filter templates.
 | 0.5 | `[ ]` Window resize to min size / maximized / 4K | Panels reflow, no overlapping text, neon border tracks edges |
 
@@ -222,6 +223,8 @@ transmission line = length_mi × (r_per_mi, x_per_mi, b_us_per_mi) with model 0 
 | 3.10.1.7 | `[ ]` Transformer N = 0.001, 1/30, 0.4, 1, 19.17, 75, 1000 with 100 Vpk in and a load of 10k·N² + 1 Ω | Output amplitude = 100·N ±2 % (0.1 V … 100 kV); primary current = N × secondary current (ammeter/current view); no drift in the DC op point |
 | 3.10.1.8 | `[ ]` Transformer GUI: N edited live 30:1 → 1:30 on Pole Xfmr; N = 0; both windings grounded on the same side | Scope autoset climbs to 100 kV/div; N = 0 rejected; a shared ground between windings is legal for the ideal model (no loop error) |
 | 3.10.1.9 | `[ ]` Scope presets of every template (`template_time_div[]`, `template_volt_div[]`) | Each preset is an exact step of the scope's 1‑2‑5 tables (time 1 ns … 5 s, volts 1 mV … 500 kV) and the 20-division window shows 1.5–2000 cycles of the template's f_char (DC/SWITCH templates exempt) |
+| 3.10.1.10 | `[ ]` Analog switch as a fault switch (`--param-test` 4b): 10 Vpk 60 Hz through `COMP_ANALOG_SWITCH` into 100 Ω, control = pulse 0→5 V (delay 20 ms, width 50 ms), r_on = 0.01, 0.3, 100, 1e6 Ω, r_off 1 GΩ, v_on 2.5 V | Load ≈ 0 (< 10 mV) before 20 ms, 10·100/(100 + r_on) ±5 % during the pulse (9.999 / 9.97 / 5.0 / 0.001 V); no NaN at r_on 0.01 across an ideal source; GUI: edit r_on / v_on live on a relay template, TRIP timing unchanged |
+| 3.10.1.11 | `[ ]` Transformer as a CT (`--param-test` 4c): 1 kVpk into 10 Ω (100 A) through the primary, N = 120 / 400 / 2875, secondary grounded on one side into 1 Ω | Burden amplitude = 100/N V ±3 % (0.833 / 0.25 / 0.0348 V); GUI: on 50/51 change the CT ratio 120 → 400 live — burden drops to 2.1 Vpk and the relay stops tripping until the reference is lowered |
 
 #### 3.10.2 Tesla coil (`--tesla-test`, templates #61–#63 in TEMPLATE_AUDIT)
 Runs 20 ms at dt = 100 ns: NST (170 Vpk × 75 through 10 Ω) charges C1, the 3.2 mm gap (9.6 kV) fires, the
@@ -248,6 +251,39 @@ peak and the ring frequency on the toroid in the 60 µs after the first firing.
 | 3.10.3.7 | `[ ]` Line Model Ladder: probe all three load buses (stack), edit row 3's B to 60 µS/mi and row 2's X to 0 | Row 1 110.7, row 2 110.1, row 3 110.5 kVpk; row 3 rises above row 1 with big B; row 2 equals row 1 with X = 0 |
 | 3.10.3.8 | `[ ]` Line Drop Basics: wire 1 → 2 → 0 Ω | 10.909 → 10.0 → 12.0 V; wattmeter on the wire reads 1.19 W → 0.8 W → 0 |
 | 3.10.3.9 | `[ ]` Save/Load each power template (`.ckt` + JSON) | tline length/R/X/B/model, transformer N, switch state, toroid D/d and spark-gap gap/r_on/hold/quench round-trip exactly |
+
+### 3.11 Protection & control examples (new 2026-08-24: templates #66–#72 in TEMPLATE_AUDIT, `docs/RESEARCH_AEP_PC.md` §5)
+
+Automated by `--demo-test` (`DEMO_SWITCH` / `DEMO_WAVEFORM` contracts), `--probe-test` (nine oracles) and
+`--param-test` 4b/4c; `--trace NAME T` is the explorer for these. Building blocks: fault = `COMP_ANALOG_SWITCH`
+(r_on 0.3 Ω) with its control pin on a `COMP_PULSE_SOURCE` (0 → 5 V, `delay` / `pulse_width` / `period`);
+relay = diode peak-hold (C, bleed R ⇒ τ) into an op-amp comparator (`ideal=false`, gain 1e5, ±15 V rails)
+against a DC reference; CTs/VTs are ideal transformers (120, 400, 1/2875). TRIP is +15 V / −15 V; BFT is 0 / 5 V.
+Every manual row is done **(a) before Run and (b) live while running**; nothing may reset time or produce NaN.
+
+| ID | Test | Expected |
+|----|------|----------|
+| 3.11.1 | `[ ]` CT + 50/51: probe TRIP (auto) and the pulse source on CH2, 10 ms/div, 5 V/div | TRIP sits at −15 V, rises to +15 V within a cycle of the pulse going high at 40 ms, stays high past the pulse end (100 ms) while the 10 µF/10 k hold (τ 100 ms) decays through the 8 V reference, drops before the next fault at 240 ms; repeats every 200 ms |
+| 3.11.2 | `[ ]` CT + 50/51: pulse `delay` 40 → 120 ms; `pulse_width` 60 → 10 ms; `period` 200 → 1000 ms | TRIP follows the pulse edge each time; a 10 ms fault still trips (the hold catches one peak) and releases on the same τ; one trip per second at period 1 s; no time reset on any edit |
+| 3.11.3 | `[ ]` CT + 50/51: pickup reference 8.0 → 12 → 5 V | 12 V: pickup 1.1 kA — still trips on the 5 Ω fault (≈ 2.1 kA); 5 V: trips permanently (normal-load hold ≈ 6.4 V > 5); back to 8 V restores the normal/fault split |
+| 3.11.4 | `[ ]` CT + 50/51: fault R 5 → 13 → 60 Ω; CT ratio 120 → 400 | 13 Ω ⇒ ≈ 1.2 kA (the value in the on-canvas note), burden 14 Vpk, trips and releases ≈ 56 ms after the fault; 60 Ω ⇒ ≈ 700 A < 738 A pickup ⇒ **no trip**; N = 400 ⇒ burden 2.1 Vpk normal / 7.4 Vpk fault ⇒ nothing trips until the reference is lowered to ≈ 6 V |
+| 3.11.5 | `[ ]` CT + 50/51: hold τ — R 10 k → 100 k (τ 1 s), C 10 µF → 1 µF (τ 10 ms) | τ 1 s: TRIP latches across several fault periods (release > 1 s); τ 10 ms: hold ripples at 60 Hz, TRIP chatters when the hold is near 8 V, releases within ~20 ms of the fault end |
+| 3.11.6 | `[ ]` 87 Differential: probe TRIP (auto) and the differential burden R_d, 20 ms/div | Internal fault 100–160 ms: R_d ≈ 30 Vpk, TRIP +15 V, released ≈ 75 ms later (τ 22 ms from 30 V to 1 V); through fault 240–300 ms: R_d ≈ 0, TRIP stays −15 V; normal load: R_d ≈ 0 |
+| 3.11.7 | `[ ]` 87 Differential: swap the two pulse delays; internal fault R 2 → 20 → 200 Ω; hold τ 22 → 220 ms | Order flips (trip in the second half only); 20 Ω still trips (≈ 4 Vpk), 200 Ω misses (≈ 0.4 Vpk < 1 V) — plain 87 sensitivity limit; τ 220 ms keeps TRIP high into the through fault (hold only, not a relay error) |
+| 3.11.8 | `[ ]` 87 Differential: CT2 ratio 120 → 110 with reference 1.0 → 0.1 V | 9 % ratio mismatch ⇒ ≈ 0.4 Vpk on R_d at load, ≈ 3 Vpk on the through fault ⇒ **false trip** at 0.1 V reference — the reason real 87s add a restraint slope; restore 120 / 1.0 V and the through fault is quiet again |
+| 3.11.9 | `[ ]` 21 Distance: probe TRIP (auto), the `|I| x Z_set` hold and the `|V| (VT)` hold (stack), 20 ms/div | Pre-fault: VT hold ≈ 98 V, I·Z hold ≈ 5 V, TRIP −15 V. 40 % fault (100–160 ms): I·Z ≈ 107 Vpk vs V ≈ 54 Vpk ⇒ TRIP +15 V, released shortly after 160 ms (τ 22 ms). 100 % fault (240–300 ms): I·Z ≈ 59 vs V ≈ 74 Vpk ⇒ **no trip** |
+| 3.11.10 | `[ ]` 21 Distance: **move the fault by editing the segment lengths** (sum stays 50 mi): seg1 20 → 40 mi, then 45 mi; then seg1 back to 20 and replica R 3.35 → 4.2 Ω | 40 mi (80 %): balance point, TRIP marginal/flickers; 45 mi (90 %): no trip on either fault; replica 4.2 Ω (100 % reach): the far-end fault now trips — zone-1 overreach, which the 80 % setting exists to prevent |
+| 3.11.11 | `[ ]` 21 Distance: CT ratio 400 → 200; VT ratio 1/2875 → 1/1437; 30 Ω in series with the 40 % fault switch | N_CT 200 doubles I·Z ⇒ overreach (100 % fault trips); VT ×2 halves the reach (40 % fault no longer trips); 30 Ω fault resistance ⇒ \|Z_app\| ≈ 33 Ω > 24.1 Ω ⇒ the 40 % fault is missed (resistive underreach) |
+| 3.11.12 | `[ ]` 50BF: probe BFT (auto), the timer capacitor and both pulses, 20 ms/div then 100 ms/div; check dt | Stuck breaker: START at 50 ms, C ramps with τ 150 ms, crosses 3.16 V (0.632 × 5) at 200 ms ⇒ BFT 5 V from 200 to 350 ms, again 800–950 ms; C discharges back through the 10 k into the gate's 0 V output after 350 ms. No AC source ⇒ auto-dt may be coarse: set dt ≈ 100 µs manually if the ramp looks stepped |
+| 3.11.13 | `[ ]` 50BF: **set the 50BF current pulse width to 83 ms** (healthy breaker, 5 cycles), then 120 and 150 ms | 83 ms: START drops at 133 ms, C peaks at 2.13 V < 3.16 ⇒ **no BFT**; 120 ms: 2.75 V, no BFT; 150 ms: 3.16 V exactly at 200 ms ⇒ marginal one-sample BFT (document what the comparator does at the boundary) |
+| 3.11.14 | `[ ]` 50BF: timer R 10 k → 5 k; C 15 → 30 µF; reference 3.16 → 4.5 V; TRIP `delay` 50 → 100 ms | τ 75 ms ⇒ BFT at 125 ms (would misoperate on a healthy breaker); τ 300 ms ⇒ C reaches 3.16 V only at 350 ms ⇒ marginal; 4.5 V needs 2.3 τ = 345 ms ⇒ marginal; TRIP delay 100 ms ⇒ START/BFT shift 50 ms later (BFT at 250 ms) |
+| 3.11.15 | `[ ]` SIL Loading: probe both ends, 5 ms/div, 100 kV/div; **toggle SW live** (2 × SIL) | SIL: far end 269 kVpk (0.956 of 281.7 with R and one π); SW closed: ≈ 0.80 within a cycle, no growing ring; reopen restores 0.956. Length 200 → 300 mi: still ≈ flat at SIL, much worse at 2 × SIL; load 283 → 566 Ω: far end above the source |
+| 3.11.16 | `[ ]` Series Compensation: probe both ends; **close the bypass SW live**; C 44.2 → 22.1 → 14.7 µF | Cap in: load end 0.89 (250.6 kVpk); bypassed: ≈ 0.80; the source-end probe barely moves. 22.1 µF (100 %): far end ≈ source; 14.7 µF (150 %): far end above the source, large cap voltage. A ~42 Hz beat after a switch operation must decay, not grow (series L-C below 60 Hz — SSR in miniature) |
+| 3.11.17 | `[ ]` 765 kV Line: probe both ends at 200 kV/div; load 250 → 125 Ω; length 300 → 600 mi; then rebuild as 3 × 100 mi `COMP_TLINE` parts | SIL: 598.6 kVpk (0.958); 2 × SIL ≈ 0.8; 600 mi as one π is near its own resonance (ω²LC ≈ 0.8) and reads nonsense — the 3-section ladder stays sane; scope autoset reaches 200 kV/div without overflow |
+| 3.11.18 | `[ ]` Model toggles on the relay templates: set the comparator op-amp `ideal=true`; set the hold diode ideal | `ideal=true` op-amp = virtual-short model ⇒ the comparator stops working (output floats) — expected, keep `ideal=false`; ideal diode raises the normal-load hold on 50/51 from 6.4 to 7.07 V (0.9 V from the 8 V pickup) |
+| 3.11.19 | `[ ]` Current view / `--flow-test` on 50BF; ammeter on an AND-gate pin | Behavioural gates have no terminal currents: no particles in/out of the gates, KCL is only asserted on the passive nodes (R/C/comparator); an ammeter on a gate pin reads 0 — document, do not file as a bug |
+| 3.11.20 | `[ ]` Save/Load each of #66–#72 (`.ckt` + JSON) | Analog-switch r_on/r_off/v_on, pulse delay/width/period/levels, op-amp `ideal=false` + gain, DC reference, CT/VT ratios, tline segment lengths and switch states round-trip exactly; TRIP/BFT timing identical after reload |
+| 3.11.21 | `[ ]` `template_smoke --trace "50/51" 0.2`, `--trace 87 0.3`, `--trace 21 0.3`, `--trace 50BF 1.2` | Per-node min/max match the rows above (burden ±7 Vpk normal, TRIP −15…+15, hold peaks, VT secondary ±98 V, BFT 0…5 V); the final switch states are all open (pulse low at the end of the run). Any node whose min/max is a rail on both ends or 0/0 unexpectedly is a merged-node (10 px) suspect |
 
 ---
 
@@ -299,7 +335,7 @@ Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.
 | 6.3 | `[ ]` Two sources facing each other | Flow toward lower V |
 | 6.4 | `[ ]` AC source | Particles reverse each half-cycle |
 | 6.5 | `[ ]` Zoom/pan while animating | Particles stay on wires |
-| 6.6 | `[ ]` **Automated:** `template_smoke --flow-test` | All 65 templates: no NaN, two-terminal components conserve charge, KCL holds at every node between wire flows and terminal currents, series templates (RC/RL filters, divider) show identical \|I\| on every wire equal to the resistor current |
+| 6.6 | `[ ]` **Automated:** `template_smoke --flow-test` | All 72 templates: no NaN, two-terminal components conserve charge, KCL holds at every node between wire flows and terminal currents, series templates (RC/RL filters, divider) show identical \|I\| on every wire equal to the resistor current |
 | 6.7 | `[ ]` RC High-Pass running, current view on | Particles flow on **every** wire including both resistor leads and the ground return; dot size/speed identical on wire, capacitor body and resistor body; direction reverses each half-cycle |
 | 6.8 | `[ ]` Parallel branches (divider with a 2nd resistor across R2) | Branch particle speed/brightness differ by current; junction dot in = out |
 | 6.9 | `[ ]` Sources | Inside a source particles run − → + (out of the + terminal); a reverse-connected second source shows the flow reversal |
@@ -320,7 +356,7 @@ Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.
 
 ---
 
-## 8. Templates (all 65)
+## 8. Templates (all 72)
 
 See **`TEMPLATE_AUDIT.md`** — one block per template with hand-calculated nominal output,
 value variations (applied before run *and* live), the ideal/realistic model matrix (M0–M4),
@@ -333,9 +369,19 @@ Relaxation Osc, HW Rect + Cap, 345 kV Line, 138 kV Line + VAR, 12.47 kV Feeder, 
 120/240, Generator + GSU, Grid: 18 kV to 240 V, Ferranti (open line), Tesla Coil ×3, Line Model
 Ladder, Line Drop Basics. Each ships with a `DemoKind` contract (`--demo-test`), an auto-probe
 and scope presets, an on-canvas note with the equations and a PROBE line, and — where a number
-can be hand-computed — a `probe_cases[]` oracle (`--probe-test`, 57 cases). The Tesla coils are
+can be hand-computed — a `probe_cases[]` oracle (`--probe-test`, 66 cases). The Tesla coils are
 covered by `--tesla-test`, the new components by `--param-test` (§3.10), and the manual
 switch/length checks live in §3.10.3.
+
+Added 2026-08-24, second batch (#66–#72, protection & control, `docs/RESEARCH_AEP_PC.md` §5): CT + 50/51
+Overcurrent, 87 Line Differential, 21 Distance Zone 1, 50BF Breaker Failure, SIL Loading, Series
+Compensation, 765 kV Line (AEP). Faults are applied by a `COMP_ANALOG_SWITCH` driven by a
+`COMP_PULSE_SOURCE` so each demo runs pre-fault → fault → decision unattended; relays are diode
+peak-hold detectors into an `ideal=false` op-amp comparator (gain 1e5, ±15 V rails). Contracts:
+`DEMO_SWITCH` with f_char 30 / 20 / 20 / 5 (so the 6/f_char run contains the TRIP or BFT release),
+`DEMO_WAVEFORM` 60 Hz for the three line templates; nine `probe_cases[]` oracles; manual checks in
+§3.11. Status: 72/72 templates, 72/72 demo, 66/66 probe, 72/72 flow, 50/72 geometry clean (all 7 clean),
+param-test all OK, tesla 3/3, layout-test 0 failures.
 
 ---
 
@@ -367,6 +413,6 @@ switch/length checks live in §3.10.3.
 1. §0 pre-flight — especially decide on the debug prints (0.3), they affect everything.
 2. §1 editing → §2 sim/time-base (foundation for everything else).
 3. §3.6 op-amps + §7 file I/O + §3.9.4 LED array (all touched by the uncommitted diff).
-4. Remaining §3 components (incl. §3.10 HV components / Tesla / power manual checks), §4 scope, §5 analysis, §6, §8 templates, §9, §10.
+4. Remaining §3 components (incl. §3.10 HV components / Tesla / power manual checks and §3.11 protection & control), §4 scope, §5 analysis, §6, §8 templates, §9, §10.
 
 Commit after each section passes so bisecting stays cheap.
