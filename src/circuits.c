@@ -7911,7 +7911,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_SIL_LOADING] = 5e-3, [CIRCUIT_SERIES_COMP] = 5e-3, [CIRCUIT_HV_765_LINE] = 5e-3,
     [CIRCUIT_3PH_Y_BALANCED] = 5e-3, [CIRCUIT_3PH_UNBALANCED] = 5e-3, [CIRCUIT_3PH_345_LINE] = 5e-3, [CIRCUIT_3PH_RECTIFIER] = 5e-3,
     [CIRCUIT_SCHMITT_BISTABLE] = 2e-3, [CIRCUIT_TRI_SQUARE_GEN] = 100e-6, [CIRCUIT_FUNCTION_GEN] = 100e-6, [CIRCUIT_COLPITTS] = 500e-9, [CIRCUIT_RING_OSC] = 2e-6,
-    [CIRCUIT_HARTLEY] = 500e-9, [CIRCUIT_CLAPP] = 200e-9,
+    [CIRCUIT_HARTLEY] = 500e-9, [CIRCUIT_CLAPP] = 100e-9,
     [CIRCUIT_THEVENIN] = 1e-3, [CIRCUIT_SUPERPOSITION] = 1e-3, [CIRCUIT_RC_STEP] = 1e-3, [CIRCUIT_RL_STEP] = 100e-6, [CIRCUIT_RLC_RING] = 50e-6, [CIRCUIT_RLC_DAMPING] = 100e-6, [CIRCUIT_OPAMP_SAT] = 200e-6,
 };
 
@@ -7927,7 +7927,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_PARALLEL_RLC] = 2.0, [CIRCUIT_FULLWAVE_BRIDGE] = 5.0, [CIRCUIT_AC_DC_SUPPLY] = 5.0,
     [CIRCUIT_AC_DC_AMERICAN] = 5.0, [CIRCUIT_CENTERTAP_RECT] = 2.0, [CIRCUIT_HALFWAVE_RECT] = 2.0,
     [CIRCUIT_RC_BANDPASS] = 0.5, [CIRCUIT_LC_LOWPASS] = 0.5, [CIRCUIT_ZENER_CLIPPER] = 5.0,
-    [CIRCUIT_VOLTAGE_DOUBLER] = 2.0, [CIRCUIT_RELAXATION_OSC] = 5.0, [CIRCUIT_HALFWAVE_FILTERED] = 5.0,
+    [CIRCUIT_VOLTAGE_DOUBLER] = 5.0, [CIRCUIT_RELAXATION_OSC] = 5.0, [CIRCUIT_HALFWAVE_FILTERED] = 5.0,
     [CIRCUIT_HV_345_LINE] = 100e3, [CIRCUIT_HV_138_LINE_VAR] = 50e3, [CIRCUIT_MV_FEEDER] = 5e3, [CIRCUIT_POLE_XFMR] = 100.0,
     [CIRCUIT_GEN_GSU] = 100e3, [CIRCUIT_GRID_CHAIN] = 100.0, [CIRCUIT_FERRANTI_LINE] = 100e3,
     [CIRCUIT_TESLA_COIL] = 100e3, [CIRCUIT_TESLA_COIL_BIG] = 100e3, [CIRCUIT_TESLA_COIL_DETUNED] = 100e3,
@@ -7935,9 +7935,9 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_PC_OVERCURRENT] = 5.0, [CIRCUIT_PC_DIFFERENTIAL] = 5.0, [CIRCUIT_PC_DISTANCE] = 5.0, [CIRCUIT_PC_BREAKER_FAIL] = 2.0,
     [CIRCUIT_SIL_LOADING] = 100e3, [CIRCUIT_SERIES_COMP] = 100e3, [CIRCUIT_HV_765_LINE] = 200e3,
     [CIRCUIT_3PH_Y_BALANCED] = 100.0, [CIRCUIT_3PH_UNBALANCED] = 100.0, [CIRCUIT_3PH_345_LINE] = 100e3, [CIRCUIT_3PH_RECTIFIER] = 50.0,
-    [CIRCUIT_SCHMITT_BISTABLE] = 5.0, [CIRCUIT_TRI_SQUARE_GEN] = 5.0, [CIRCUIT_FUNCTION_GEN] = 2.0, [CIRCUIT_COLPITTS] = 5.0, [CIRCUIT_RING_OSC] = 2.0,
-    [CIRCUIT_HARTLEY] = 5.0, [CIRCUIT_CLAPP] = 5.0,
-    [CIRCUIT_THEVENIN] = 2.0, [CIRCUIT_SUPERPOSITION] = 2.0, [CIRCUIT_RC_STEP] = 1.0, [CIRCUIT_RL_STEP] = 1.0, [CIRCUIT_RLC_RING] = 2.0, [CIRCUIT_RLC_DAMPING] = 2.0, [CIRCUIT_OPAMP_SAT] = 5.0,
+    [CIRCUIT_SCHMITT_BISTABLE] = 5.0, [CIRCUIT_TRI_SQUARE_GEN] = 5.0, [CIRCUIT_FUNCTION_GEN] = 2.0, [CIRCUIT_COLPITTS] = 10.0, [CIRCUIT_RING_OSC] = 2.0,
+    [CIRCUIT_HARTLEY] = 10.0, [CIRCUIT_CLAPP] = 5.0,
+    [CIRCUIT_THEVENIN] = 2.0, [CIRCUIT_SUPERPOSITION] = 2.0, [CIRCUIT_RC_STEP] = 2.0, [CIRCUIT_RL_STEP] = 2.0, [CIRCUIT_RLC_RING] = 5.0, [CIRCUIT_RLC_DAMPING] = 5.0, [CIRCUIT_OPAMP_SAT] = 5.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -8109,7 +8109,13 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
         const TemplateProbeSpec *spec = &template_output[type];
         Component *out = spec->ct ? nth_of_type(circuit, first, spec->ct, spec->ord) : NULL;
         bool osc = (type == CIRCUIT_WIEN_OSCILLATOR || type == CIRCUIT_PHASE_SHIFT_OSC);
-        if (src && !osc) probe_component_terminal(circuit, src, 0);
+        if (src && !osc) {
+            // probe the source terminal that is not ground (a rotated current source has its '+' on ground)
+            int st = 0;
+            for (int i = 0; i < circuit->num_components; i++)
+                if (circuit->components[i]->type == COMP_GROUND && circuit->components[i]->node_ids[0] == src->node_ids[0]) st = 1;
+            probe_component_terminal(circuit, src, st);
+        }
         if (out) probe_component_terminal(circuit, out, spec->term);
         for (int e = 0; e < 3; e++) {
             const TemplateProbeSpec *xs = &template_extra_probes[type][e];

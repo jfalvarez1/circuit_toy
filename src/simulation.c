@@ -1376,6 +1376,10 @@ double simulation_accuracy_time_step(Simulation *sim) {
             case COMP_SAWTOOTH_WAVE:
                 freq = c->props.sawtooth_wave.frequency;
                 break;
+            case COMP_PULSE_SOURCE:
+                // repetitive pulses count as a periodic source (start-up kicks with a huge period do not)
+                if (c->props.pulse_source.period > 0 && c->props.pulse_source.period < 10.0) freq = 1.0 / c->props.pulse_source.period;
+                break;
             default:
                 break;
         }
@@ -1401,8 +1405,10 @@ double simulation_accuracy_time_step(Simulation *sim) {
             dt = period / 100.0;
         }
     } else {
-        // No AC signals, use default time step
-        dt = DEFAULT_TIME_STEP;
+        // No periodic source at all (DC, kick-started oscillators): nothing here constrains dt,
+        // so let the scope's time/div rule decide (it used to force the 100 ns default, which
+        // made DC and pulse-only circuits crawl through 2 million steps per screen).
+        dt = MAX_TIME_STEP;
     }
 
     // Clamp to valid range

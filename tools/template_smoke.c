@@ -1213,6 +1213,94 @@ static int knob_test(const char *filter) {
     return fails;
 }
 
+/* ---------------------------------------------------------------------------------------
+ * --probe-audit: what the user will actually see. For every template: the auto-placed probes
+ * (exactly as the app places them), what each one sits on, and the waveform statistics over
+ * one scope screen at the preset time/div and V/div. Flags:
+ *   DUP     two probes on the same node               GND    probe on a ground node
+ *   FLAT    output does not move but a waveform demo   SMALL  output < 0.25 div at the preset V/div
+ *   CLIP    output beyond +/-4 div at the preset V/div (before the one-shot autoscale runs)
+ *   NOOUT   no output probe at all
+ * ------------------------------------------------------------------------------------- */
+static void owners_of(Circuit *c, int id, char *out, size_t n) {
+    out[0] = 0;
+    for (int j = 0; j < c->num_components && strlen(out) < n - 16; j++)
+        for (int k = 0; k < c->components[j]->num_terminals; k++)
+            if (c->components[j]->node_ids[k] == id) snprintf(out + strlen(out), n - strlen(out), "%s[%d] ", c->components[j]->label, k);
+}
+static int node_is_ground(Circuit *c, int id) {
+    for (int j = 0; j < c->num_components; j++)
+        if (c->components[j]->type == COMP_GROUND && c->components[j]->node_ids[0] == id) return 1;
+    return 0;
+}
+static int probe_audit(const char *filter) {
+    int flagged = 0, total = 0;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti || (filter && !strstr(ti->name, filter))) continue;
+        total++;
+        Circuit *c = circuit_create();
+        circuit_place_template(c, (CircuitTemplateType)t, 0, 0);
+        Simulation *sim = simulation_create(c);
+        double td = circuit_template_scope_time_div((CircuitTemplateType)t), vd = circuit_template_scope_volt_div((CircuitTemplateType)t);
+        const TemplateDemo *d = circuit_template_demo((CircuitTemplateType)t);
+        int np = c->num_probes;
+        double pmin[MAX_PROBES], pmax[MAX_PROBES], psum[MAX_PROBES]; long pn = 0;
+        for (int i = 0; i < MAX_PROBES; i++) { pmin[i] = 1e300; pmax[i] = -1e300; psum[i] = 0; }
+        int ok = simulation_dc_analysis(sim);
+        double dt = (td > 0) ? simulation_scope_time_step(sim, td) : 1e-5;
+        simulation_set_time_step(sim, dt);
+        simulation_start(sim);
+        double t_end = (td > 0) ? 20.0 * td : 0.02;    /* one scope screen (history span = 20 divisions) */
+        if (t_end < 0.002 && (!d || d->kind == DEMO_DC || d->f_char < 1000)) t_end = 0.02;
+        /* step-driven circuits: cover at least two periods of the square / pulse source */
+        for (int i = 0; i < c->num_components; i++) {
+            Component *k = c->components[i]; double per = 0;
+            if (k->type == COMP_SQUARE_WAVE && k->props.square_wave.frequency > 0) per = 1.0 / k->props.square_wave.frequency;
+            if (k->type == COMP_PULSE_SOURCE && k->props.pulse_source.period > 0 && k->props.pulse_source.period < 5.0) per = k->props.pulse_source.period;
+            if (per > 0 && t_end < 2 * per) t_end = 2 * per;
+        }
+        long steps = 0;
+        while (ok && sim->time < t_end && steps < 2000000) {
+            if (!simulation_step(sim)) { ok = 0; break; }
+            steps++;
+            if (sim->time < t_end * 0.25) continue;    /* settle */
+            for (int i = 0; i < np && i < MAX_PROBES; i++) {
+                Node *nd = circuit_get_node(c, c->probes[i].node_id);
+                double v = nd ? nd->voltage : 0;
+                if (v < pmin[i]) pmin[i] = v; if (v > pmax[i]) pmax[i] = v; psum[i] += v;
+            }
+            pn++;
+        }
+        char flags[160] = "";
+        if (!ok) strcat(flags, "SIMERR ");
+        if (np < 2 && !(d && d->kind == DEMO_OSC)) strcat(flags, "NOOUT ");
+        for (int i = 0; i < np; i++) {
+            for (int j = 0; j < i; j++) if (c->probes[i].node_id == c->probes[j].node_id) { strcat(flags, "DUP "); break; }
+            if (node_is_ground(c, c->probes[i].node_id)) strcat(flags, "GND ");
+        }
+        /* the output probe is the second one (index 1) unless there is only a source */
+        int oi = (np >= 2) ? 1 : 0;
+        double amp = (np > 0 && pmax[oi] > pmin[oi]) ? (pmax[oi] - pmin[oi]) / 2 : 0;
+        double peak = (np > 0) ? fmax(fabs(pmax[oi]), fabs(pmin[oi])) : 0;
+        int waveform = d && d->kind != DEMO_DC && d->kind != DEMO_NONE;
+        if (ok && np >= 2 && waveform && amp < 1e-4 * fmax(1.0, peak) + 1e-9) strcat(flags, "FLAT ");
+        if (ok && np >= 2 && vd > 0 && waveform && amp > 0 && amp < 0.25 * vd) strcat(flags, "SMALL ");
+        if (ok && np >= 2 && vd > 0 && peak > 4.0 * vd) strcat(flags, "CLIP ");
+        printf("[%s] %-26s td=%-7.3g vd=%-7.3g probes=%d  t=%.4g steps=%ld  %s\n", flags[0] ? "FLAG" : " OK ", ti->name, td, vd, np, sim->time, steps, flags);
+        for (int i = 0; i < np && i < MAX_PROBES; i++) {
+            char own[96]; owners_of(c, c->probes[i].node_id, own, sizeof own);
+            Node *nd = circuit_get_node(c, c->probes[i].node_id);
+            printf("        CH%d n%-4d (%6.0f,%6.0f) %-40s min %10.4g max %10.4g mean %10.4g\n", i + 1, c->probes[i].node_id,
+                   nd ? nd->x : 0, nd ? nd->y : 0, own, pn ? pmin[i] : 0, pn ? pmax[i] : 0, pn ? psum[i] / pn : 0);
+        }
+        if (flags[0]) flagged++;
+        simulation_free(sim); circuit_free(c);
+    }
+    printf("%d/%d templates flagged\n", flagged, total);
+    return flagged;
+}
+
 int main(int argc, char **argv) {
     int dc_only = 0, verbose = 0, dump_nodes = 0;
     const char *svg_dir = NULL;
@@ -1234,6 +1322,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--tesla-test")) return tesla_test();
         else if (!strcmp(argv[i], "--param-test")) return param_test();
         else if (!strcmp(argv[i], "--knob-test")) return knob_test(i + 1 < argc ? argv[++i] : NULL);
+        else if (!strcmp(argv[i], "--probe-audit")) return probe_audit(i + 1 < argc ? argv[++i] : NULL);
         else if (!strcmp(argv[i], "--trace") && i + 2 < argc) { const char *nm = argv[++i]; return trace_template(nm, atof(argv[++i])); }
         else if (!strcmp(argv[i], "--response") && i + 1 < argc) return response_explore(argv[++i]);
         else if (!strcmp(argv[i], "--sim-time") && i + 1 < argc) sim_time = atof(argv[++i]);
