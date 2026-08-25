@@ -1,4 +1,4 @@
-# Prebuilt Circuit Template Audit (90 templates, 10 palette groups)
+# Prebuilt Circuit Template Audit (96 templates, 10 palette groups)
 
 Companion to `TEST_PLAN.md` §8. Every template gets the same five passes; the per-template
 block adds the hand-calculated nominal, the **value variations** to try, and specific traps.
@@ -6,7 +6,7 @@ block adds the hand-calculated nominal, the **value variations** to try, and spe
 Values below were extracted from `src/circuits.c` `place_*` builders on 2026-08-24 — if a
 template's BOM changes, update its block.
 
-### Fixes applied 2026-08-24 (headless smoke test now reports 47/47; 65/65 after the 18 templates added later the same day; 72/72 after the 7 protection & control templates; 81/81 after the 4 three-phase and 5 signal-generator templates; 90/90 after the Hartley / Clapp and the 7 textbook templates #82–#90, see the added sections)
+### Fixes applied 2026-08-24 (headless smoke test now reports 47/47; 65/65 after the 18 templates added later the same day; 72/72 after the 7 protection & control templates; 81/81 after the 4 three-phase and 5 signal-generator templates; 90/90 after the Hartley / Clapp and the 7 textbook templates #82–#90; 96/96 after the tuned / CB / Darlington / SR latch / three-phase plant templates #91–#96, see the added sections)
 Engine: BJT stamp was missing the collector Newton equivalent current and flipped the PNP
 transconductance sign (every BJT template ran away to MV); PMOS had the same sign bug (CMOS
 inverter); zener breakdown and TL431 were hard switches that chattered (now smooth models);
@@ -64,7 +64,7 @@ textbook two-op-amp absolute-value topology (out = -|Vin|); phase-shift oscillat
 to +/-5 V rails (single-supply DC feedback latched it) and Rf 33k; every template now
 carries an on-canvas "how it works / PROBE" note.
 
-### OPEN schematic-geometry items (`--geom-test`: crossings and wires through bodies; 59/81 clean — all 18 added templates, the 7 protection & control templates #66–#72 and the 9 three-phase / signal-generator templates #73–#81 are clean)
+### OPEN schematic-geometry items (`--geom-test`: crossings and wires through bodies; 74/96 clean — all 18 added templates, the 7 protection & control templates #66–#72, the 9 three-phase / signal-generator templates #73–#81, the 9 Hartley / Clapp / textbook templates #82–#90 and the 6 batch-five templates #91–#96 are clean)
 ```
 [WARN] geom  Common Emitter               diag=0 cross=0 through=1 touch=0 through:Q104
 [WARN] geom  Source Follower              diag=0 cross=0 through=1 touch=0 through:M142
@@ -872,6 +872,109 @@ block, no oracle, no `CIRCUIT_*` enum entry until one of those lands.
 
 ---
 
+## Tuned / CB / Darlington amplifiers, SR latch and the three-phase plants (added; S&S 7.3.5, 7.3.7, 15.1.1 and the AEP power-system research; 6 templates: #91–#96)
+
+Current status: 96/96 templates, 96/96 `--demo-test`, 86/86 `--probe-test`, 96/96 `--flow-test`, 74/96 `--geom-test` clean
+(all six of #91–#96 are clean), `--osc-test` 9/9, `--param-test` all OK, `--tesla-test` 3/3, knob test 1182 runs 0 failed,
+`--probe-audit` 10/96 flagged — every flag physically expected (HP outputs SMALL at the start of a sweep, etc.; see the tool note).
+
+Palette: Single-Tuned Amplifier, Common Base and Darlington Follower join **Transistors**; SR Latch (NOR) joins **Digital**;
+Power Plant (3-phase) and Transmission Substation join **Power systems**. Still 10 groups.
+
+Common building blocks (`src/circuits.c`, batch 5):
+- **`dc_rail(x, y, v)` / `vres` / `hres` / `vcap` / `hcap` / `gnd_below`**: 80 px-pitch vertical/horizontal parts with the
+  terminal coordinates written in the comments; the three amplifiers are built from these plus `TN()` (= `circuit_find_or_create_node`
+  at 5 px) and `TW()` wires.
+- **`three_phase_fanout(vpk, l_series, ry[3], out[3])`**: one `COMP_SOURCE_3PH` at (x+60, y+60) with its N terminal grounded, and
+  three L-shaped runs to the row starts at (x+160, ry[k]). Phases A and C drop at x+120, phase B at **x+140** — the 20 px offset is what
+  keeps the three corners from merging (see traps).
+- **`xfmr_row(tx, ry, N, in_node)`**: a `COMP_TRANSFORMER` per phase with P2 and S2 grounded (a bank of three single-phase units, i.e. a
+  grounded-Y / grounded-Y bank); returns the S1 node.
+- **Extra probes**: SR Latch adds Qbar (`COMP_NOR_GATE` 0 out) and R (`COMP_PULSE_SOURCE` 1); the two plants add the phase B and C load
+  buses (`COMP_RESISTOR` 1 and 2) to the auto probe on phase A (`COMP_RESISTOR` 0) — use **Stack**.
+
+### Component note: `COMP_SOURCE_3PH` (three-phase generator block, new with this batch)
+- **Symbol / terminals:** 80 × 80 body, label "G"; A (40, −20), B (40, 0), C (40, 20) on the right, **N (0, 40)** at the bottom. Four terminals,
+  so the terminal-current readout and the flow view treat it like a four-pin part.
+- **Props:** `v_peak` (default 392 V = 277 V rms L-N), `frequency` (60 Hz), `phase` (deg, applies to A; B = phase − 120°, C = phase + 120°,
+  i.e. A-B-C sequence — set `phase` to move all three together; there is no per-phase angle), `r_series` (1 mΩ) and `l_series` (0 H) —
+  one R + L **per phase** between the internal EMF and the terminal; N is the common star point.
+- **MNA:** the block needs **three auxiliary current variables** (one per phase EMF). `component_aux_count()` returns 3 for it and 1 for
+  every other voltage-source-like part; the allocator (`simulation.c` num_volt_vars) and the terminal-current re-stamp iterate over that
+  count. Any new multi-source component must go through the same function or its aux rows will be overwritten.
+- **Engine fix that came with it:** the terminal-current re-stamp evaluated time-dependent sources at `sim->time` *after* the step had
+  advanced (one dt of phase error). Through a 1 mΩ `r_series` that read as a **12 % KCL mismatch** in `--flow-test` on the plant. It now
+  stamps at `sim->time − dt`; every source type benefits (the error was invisible behind ordinary source resistances).
+- **Smoke-tool coverage:** listed among the source types for `--demo-test` amplitude sweeps and `--probe-audit` (`V3ph` knob in the knob
+  test scales `v_peak`). Oscillator templates no longer auto-probe their kick source, so the source probe is always the real input.
+- **Checks:** load Power Plant, probe A/B/C at the block (Stack): three 14.7 kVpk sines 120° apart, N at 0 V; `phase` 0 → 90 shifts all
+  three; `r_series` 1 mΩ → 1 Ω **halves the 345 kV bus** (reflected × 19.17² = 367 Ω against a 198 Ω load — r_series sits on the 18 kV side,
+  keep it in mΩ); `l_series` 0.184 → 0 mH ⇒ the bus rises to ≈ 262 kVpk (line drop only); Save/Load round-trips all five props.
+
+**Traps discovered while building these:**
+- **SR latch S/R swapped:** the first build fed S to the gate whose output is *Q* (so S cleared Q). `--probe-test` "max" on NOR ordinal 1
+  at 0.5 ms read 0 V instead of 5 V. The convention now: **S drives the Qbar gate (NOR 0, A input), R drives the Q gate (NOR 1, B input)**,
+  Q = NOR ordinal 1 output. The on-canvas note states it so the reader can check the wiring.
+- **10 px node merge in the fan-out (again):** with A, B, C all dropping at x+120 the B and C corners merged, shorting phases B and C —
+  the plant ran as a two-phase machine with a plausible-looking waveform. Phase B now drops at x+140.
+- **Phase C onto a grounded P2:** the phase C row start (x+160, y+80) coincided with transformer B's P2 terminal (x+160, ry+40 for a row at
+  y+40) — phase C was grounded through the bank. Rows are now at −100 / 40 / 180 (plant) and −140 / 80 / 300 (substation) so no row
+  corner lands within 10 px of another row's transformer terminals. Any edit to `ry[]` must be re-checked with `--trace`.
+- **Tuned amplifier dt:** a 100 kHz tank swept in 0.5 s needs sub-µs steps for the whole sweep (5 µs/div maps to dt 100 ns). `--probe-test`
+  runs it 200 µs at f0; the app's `Trk` keeps the screen at ~3 cycles across 20–500 kHz.
+- **Probe-audit SMALL flags:** high-pass / band-pass templates start their sweep far below f0, so the first screen's output is < 0.25 div —
+  flagged SMALL by `--probe-audit`, physically right. Read the flags, do not "fix" them.
+
+### 91. Single-Tuned Amplifier — 12 V CE (R1 47 k / R2 10 k, Re 1 k ‖ 10 µF), collector tank L 1 mH ‖ C 2.53 nF ‖ Rq 10 k, 10 nF coupling caps, 100 k load, 10 mVpk in, sweep 20–500 kHz in 0.5 s
+- **Demonstrates:** (S&S 7.5 / radio IF stage) f0 = 1/(2π √(LC)) = 1/(2π √(1 m · 2.53 n)) = **100.06 kHz**; at resonance the tank is just Rq, so A_v = g_m (Rq ‖ RL). Bias: V_B = 12 · 10/57 = 2.1 V, V_E ≈ 1.4 V, I_E 1.4 mA, g_m ≈ 56 mA/V ⇒ A_v ≈ 56 · 9.09 k ≈ **500** (β / V_T dependent, r_o lowers it). Q = Rq/(2π f0 L) = 10 k / 629 = **15.9**, BW = f0/Q ≈ 6.3 kHz. Off resonance L (below) or C (above) shorts the collector and the gain collapses.
+- **Demo:** `DEMO_BANDPASS`, f_char 100060 (sweep 20 k–500 k brackets it). Probe: load (`COMP_RESISTOR` 4, term 0) auto (`--probe-test` "amp" **4.5 V ±50 %**, 200 µs at f0). Presets 5 µs/div, 2 V/div; use `Trk`.
+- **N:** output ≈ **4.5–5 Vpk** (10 mV × ~450–500) for the ~6 kHz around 100 kHz, dropping below 0.5 Vpk by 80 / 125 kHz; phase inverts through resonance (CE stage: 180° at f0). On the sweep the peak is a narrow spike near t = 0.5 · (100 − 20)/(500 − 20) ≈ 83 ms.
+- **V:** **C 2.53 → 10 nF** ⇒ f0 50.3 kHz, Q 8 · L 1 → 4 mH ⇒ 50 kHz, Q 4, BW 12.6 kHz · **Rq 10 k → 1 k** ⇒ Q 1.6, gain ≈ 50, the sweep shows a broad hump · Rq → 100 k ⇒ tank ‖ RL = 50 k, gain limited by r_o (expect ~2–3× not 5×) · remove the emitter bypass cap ⇒ A_v ≈ (Rq ‖ RL) / Re ≈ 9 · sweep off and f = 100.06 / 94 / 106 kHz ⇒ peak / −3 dB / −3 dB · amplitude 10 → 100 mV ⇒ output wants 50 Vpk: clips against the 12 V rail (collector swings ~±10 V around 12 V through the inductor) · each live: the tank rings for ~Q cycles after a step edit.
+- **M:** BJT `ideal` toggle: VAF ⇒ r_o ≈ 70 k across the tank, gain −10 %. Inductor `ideal = false` DCR 5 Ω ⇒ coil Q = 629/5 = 126 ≫ 16, negligible; DCR 50 Ω ⇒ loaded Q halves. Cap ESR irrelevant at 100 kHz. Source Rint 50 Ω into the 10 k base bias: no change.
+- **T:** **dt ≤ 100 ns** (5 µs/div maps to it); at 1 µs (10 points per cycle) f0 reads ~1 % low and the peak ~10 % low; at 10 µs the tank is not resolved (aliased). 5 µs/div shows 5 cycles; 20 ms/div (Trk off) to see the whole sweep envelope.
+
+### 92. Common Base — 12 V, base at 3.75 V (22 k / 10 k, 10 µF bypass), Re 3 k (1 mA), Rc 4.7 k, 10 µF input cap into the emitter, 10 µF output cap, 100 k load, 10 mVpk 10 kHz in
+- **Demonstrates:** (S&S 7.3.5) the base is AC ground; the signal enters the emitter and leaves at the collector **in phase**. R_in = r_e = V_T / I_E = **25 Ω**, A_v = g_m (Rc ‖ RL) = 40 mA/V × 4.49 k ≈ **+180** (188 with Rc alone), no Miller effect. Bias: V_B 3.75 V, V_E 3.05 V, I_E 1.02 mA, V_C = 12 − 4.8 = 7.2 V.
+- **Demo:** `DEMO_WAVEFORM`, f_char 10000. Probe: load (`COMP_RESISTOR` 4, term 0) auto (`--probe-test` "amp" **1.88 V ±30 %**, 1 ms). Presets 20 µs/div, 1 V/div.
+- **N:** output ≈ **1.8–1.9 Vpk**, same polarity as the 10 mV input (compare with the Common Emitter's inversion). Headroom ≈ +4.8 / −4.2 V around 7.2 V.
+- **V:** **source resistance:** put 50 Ω in series with the source ⇒ 25/(25 + 50) ⇒ output 0.63 Vpk (the low R_in *is* the lesson); 600 Ω ⇒ 0.075 Vpk · Rc 4.7 → 2.2 k ⇒ ≈ 88 · **Re 3 → 1.5 k** ⇒ I_E 2 mA, g_m 80 but V_C = 12 − 9.4 = 2.6 V < V_E 3.05 V: **saturated**, output collapses — raise R2 or lower Rc first · amplitude 10 → 100 mV ⇒ wants 18 Vpk, clips at ≈ +4.8 / −4.2 V · f 10 kHz → 100 Hz ⇒ X_C of the 10 µF input cap = 159 Ω ≫ 25 Ω ⇒ gain ÷ 6.5 (the coupling caps must be large *because* R_in is 25 Ω) · remove the base bypass cap ⇒ base sees 6.9 k, gain drops by ~(1 + 6.9 k/(β r_e)) · β 100 → 30 ⇒ α 0.97, gain −3 %, bias shifts a little.
+- **M:** BJT VAF ⇒ r_o in parallel with Rc ‖ RL, gain −5 %. Cap ESR (10 µF, ~0.1 Ω) in series with 25 Ω: −0.4 %. Source Rint: same as the series-R variation above — `ideal = false` with 50 Ω Rint is the realistic 1/3 loss.
+- **T:** dt auto ~400 ns (20 µs/div); at 10 µs (10 points per cycle) amplitude −5 %; at 100 µs aliased. 20 µs/div shows 2 cycles; 200 µs/div for the 100 Hz variation.
+
+### 93. Darlington Follower — 12 V, 100 k source resistor, Q1 → Q2 emitter followers, Re 100 Ω, input 6 V DC + 1 Vpk 1 kHz
+- **Demonstrates:** (S&S 7.3.7) R_in ≈ β1 β2 Re = 100 · 100 · 100 = **1 MΩ**, so a 100 k source loses only 1 M/(1.1 M) ⇒ **0.91 Vpk** out; a single transistor (β Re = 10 k) would pass 0.09 Vpk. DC: two V_BE drops, 6 − 1.3 ≈ 4.7 V minus I_B1 · 100 k (I_E ≈ 46 mA ⇒ I_B1 ≈ 4.6 µA ⇒ 0.46 V) ⇒ **≈ 4.2–4.6 V** at the emitter depending on β. I_E 46 mA through Re: 0.2 W — the Darlington is a *power* follower.
+- **Demo:** `DEMO_WAVEFORM`, f_char 1000. Probe: Re (`COMP_RESISTOR` 1, term 0) auto (`--probe-test` "amp" **0.91 ±12 %**, 5 ms). Presets 200 µs/div, 2 V/div.
+- **N:** output 1 kHz sine of **≈ 0.9 Vpk** on ≈ 4.4 V DC, in phase, no distortion; the input probe (6 V ± 1 V) and output overlap in shape — set the offsets or use Stack.
+- **V:** **source 100 k → 10 k** ⇒ 0.99; → 1 M ⇒ 0.50 (the divider R_in/(R_in + R_s)); → 0 ⇒ 1.00 · **Re 100 → 1 k** ⇒ R_in 10 M, 0.99 · Re → 10 Ω ⇒ R_in 100 k, 0.50 and I_E 0.4 A (heat) · **β 100 → 50 on both** ⇒ R_in 250 k ⇒ 0.71; β → 300 ⇒ 0.99 · single follower: delete Q2, wire Q1's emitter to Re ⇒ 0.09 Vpk · offset 6 → 2 V ⇒ 0.7 V DC out, the negative half cuts off (the emitter cannot go below ~0 with Re to ground) — expected class-A limit · amplitude 1 → 5 Vpk ⇒ still follows (input peaks 11 V, Q1 collector at 12 V).
+- **M:** BJT VAF: none (follower). Source Rint adds to the 100 k: invisible. Re `ideal = false`: none. This template's model matrix is essentially β only — vary β on Q1 and Q2 separately (R_in ≈ β1 β2 Re: either one halves it).
+- **T:** dt auto ~4 µs (200 µs/div); at 100 µs (10 points per cycle) the sine is a polygon but the amplitude reads right. 200 µs/div shows 2 cycles.
+
+### 94. SR Latch (NOR) — two `COMP_NOR_GATE`, S = 0/5 V pulse 50 µs at 0.2 ms into NOR 0 (Qbar gate), R = 50 µs at 0.6 ms into NOR 1 (Q gate), 1 ms period, 100 k load on Q
+- **Demonstrates:** (S&S 15.1.1) S = 1 forces Qbar = 0 ⇒ Q = 1; when S returns to 0 the cross-coupling holds it (memory). R = 1 forces Q = 0. S = R = 1 is forbidden (both outputs 0; the state after release depends on which input drops last). Q is a **0.4 ms-wide pulse every 1 ms** (0.2 → 0.6 ms); Qbar is its complement.
+- **Demo:** `DEMO_SWITCH`, f_char 1000 (6 ms run, second half judged). Probe: Q (`COMP_NOR_GATE` 1, term 2) auto (`--probe-test` "max" **5.0 V ±5 %**, 0.5 ms — the window sees the set state); S source auto; **extra probes** Qbar (`COMP_NOR_GATE` 0, term 2) and R (`COMP_PULSE_SOURCE` 1, term 0). Presets 200 µs/div, 2 V/div; use **Stack** (four channels).
+- **N:** S (50 µs at 0.2 ms), Q rises with S and stays high, R (50 µs at 0.6 ms), Q falls with R; Qbar the complement. Before the first S pulse (t < 0.2 ms) the latch powers up in whatever state the behavioural gates settle to from 0/0 — record it (Q low is the expected outcome; a Q-high start is a benign race, not a bug, as long as the first S/R pair fixes it).
+- **V:** **S/R timing:** R delay 0.6 → 0.3 ms ⇒ Q width 0.1 ms · R delay → 0.1 ms (R before S) ⇒ Q high from 0.2 ms to 1.1 ms, i.e. a 0.9 ms pulse that wraps the period · S and R delays swapped (S 0.6, R 0.2) ⇒ same picture · R delay → 0.2 ms (**overlap**, S = R = 1 for 50 µs) ⇒ both outputs 0 during the overlap, then a race on release: with identical widths the gate evaluation order decides — document, do not "fix" · S width 50 → 5 µs ⇒ still sets (behavioural gates have no minimum pulse width; dt must be ≤ 1 µs to *see* it) · S `v_high` 5 → 1 V ⇒ below the gate threshold ⇒ never sets, Q stays low · period 1 → 2 ms ⇒ Q 0.4 ms every 2 ms · load 100 k → 100 Ω ⇒ no change (behavioural output, no output resistance) · each live: edits take effect on the next pulse; the latch keeps its current state across the edit.
+- **M:** gates are behavioural (no currents — `--flow-test` exempts them, KCL is asserted only at the load). No ideal/real toggle. Pulse source `ideal = false` Rint: none (gate inputs draw no current).
+- **T:** pulse-only circuit ⇒ no AC source for auto-dt; the harness forces run/1000 (§0.11 rule) and the app maps 200 µs/div to ~4 µs, so a 50 µs pulse is ~12 samples. At dt 100 µs the 50 µs pulses can fall between samples — Q would never set: expected, set 200 µs/div or finer. 200 µs/div shows 2 periods.
+
+### 95. Power Plant (3-phase) — `COMP_SOURCE_3PH` 14.7 kVpk (18 kV L-L) 60 Hz, `l_series` 0.184 mH (X'' 0.15 pu on 700 MVA), three GSU `COMP_TRANSFORMER` 1:19.17 (P2/S2 grounded), three 345 kV breakers (`COMP_SPST_SWITCH`, closed), three 100 mi 345 kV lines (`COMP_TLINE` model 1: 0.06 + j0.55 Ω/mi ⇒ 6 + j55 Ω), 198.4 Ω loads (600 MW)
+- **Demonstrates:** the generator → GSU → line → load chain of #58/#59 done per phase with a real three-phase machine. Per phase (phasor): X'' 0.0694 Ω reflected × 19.17² = 25.5 Ω, plus the line 6 + j55 Ω, into 198.4 Ω ⇒ |V_load/V_s| = 198.4 / |204.4 + j80.5| ≈ **0.90 ⇒ ≈ 255–260 kVpk** at the load bus (281.7 kVpk ideal). Three independent grounded-Y circuits: opening one breaker drops that phase only — the other two are unaffected (the bank's neutrals are grounded), but the generator's phase currents no longer sum to zero (N current appears).
+- **Demo:** `DEMO_WAVEFORM`, f_char 60 (100 ms run). Probe: phase A load (`COMP_RESISTOR` 0, term 0) auto (`--probe-test` "amp" **259.6 kVpk ±6 %**, 60 ms); source A auto; **extra probes** phases B and C (`COMP_RESISTOR` 1, 2). Presets 5 ms/div, 100 kV/div; **Stack**.
+- **N:** three 60 Hz sines of **≈ 260 kVpk** 120° apart on the load buses; the source channel is 14.7 kVpk (0.15 div at 100 kV/div — set that channel to 5 kV/div). Load power 3 × 259.6² / (2 · 198.4) ≈ 510 MW (600 MW at nominal 281.7).
+- **V:** **open breaker A** (live) ⇒ the ideal switch opens within a step, phase A load bus 0 V; B and C unchanged; close it again ⇒ back, no transient beyond the line's L/R (55 Ω/6 Ω at 60 Hz ⇒ τ ≈ 24 ms) · **`l_series` 0.184 → 1.84 mH** (X'' 1.5 pu — a weak machine) ⇒ reflected 255 Ω: 198.4 / |204.4 + j310| ≈ 0.53 ⇒ ≈ 150 kVpk · `l_series` → 0 ⇒ ≈ 262 kVpk (line drop only) · **loads 198.4 → 99.2 Ω** (1200 MW) ⇒ 0.75 ⇒ ≈ 211 kVpk · line 100 → 200 mi ⇒ 12 + j110 ⇒ 0.79 ⇒ ≈ 223 kVpk · turns 19.17 → 15 ⇒ 220 kVpk ideal, X'' reflected 15.6 Ω ⇒ ≈ 0.93 × 220 ≈ 205 kVpk · `phase` 0 → 30° ⇒ all three shift; `frequency` 60 → 50 Hz ⇒ reactances × 5/6, bus rises ~1 % · unbalance: load B 198.4 → 400 Ω ⇒ phase B rises to ≈ 271 kVpk, A and C unchanged (no neutral coupling with grounded banks — compare #75 where the loads share a 1 Ω neutral).
+- **M:** transformer `ideal` toggle: leakage adds to the 25.5 Ω; ~10 % impedance on a 700 MVA base ≈ 17 Ω ⇒ bus drops a further ~3 %. Line model 1 → 2 (π, 8 µS/mi ⇒ 0.4 µF per end): slight rise (Ferranti, +1 %). Source `r_series` 1 mΩ → 1 Ω ⇒ reflected 367 Ω ⇒ bus halves — **r_series lives on the 18 kV side; keep it in mΩ**. Switch `ideal = false` r_on 1 Ω: −0.5 %.
+- **T:** dt auto ~100 µs (5 ms/div); at 1 ms (17 points per cycle) amplitude −2 %; at 10 ms aliased. 5 ms/div shows 3 cycles; 50 ms/div for the breaker transient. The terminal-current fix (stamp at t − dt) matters here: `--flow-test` KCL through the 1 mΩ `r_series` read 12 % off before it.
+
+### 96. Transmission Substation — `COMP_SOURCE_3PH` 281.7 kVpk (345 kV grid, `r_series` 1 mΩ, `l_series` 0), three 50 mi 345 kV lines (3 + j27.5 Ω), breakers (closed), 345/138 autotransformers (`COMP_TRANSFORMER` N = 0.4), 30 mi 138 kV feeders (`COMP_TLINE` model 1: 0.13 + j0.72 Ω/mi ⇒ 3.9 + j21.6 Ω), loads 171.5 Ω + 0.22 H (90 MW pf 0.9 lag), switchable 6.1 µF cap banks (`COMP_SPST_SWITCH` rotated 90, open) on the far bus
+- **Demonstrates:** #55 (138 kV line + VAR) per phase behind a 345 kV grid and an autotransformer. Per phase: 112.7 kVpk ideal at the 138 kV bus; the 50 mi line reflected × 0.4² = 0.48 + j4.4 Ω plus the feeder 3.9 + j21.6 Ω into 171.5 + j82.9 Ω (|Z| 190.5 Ω, pf 0.9) ⇒ 112.7 · 190.5 / |175.9 + j108.9| = **103.8 kVpk** (−8 % — the lagging load drags the bus). **Cap bank in:** X_C = 435 Ω cancels the load's j82.9 (Y_load = 4.73 − j2.28 mS, Y_C = +j2.30 mS ⇒ unity pf, Z ≈ 212 Ω) ⇒ 112.7 · 212 / |216 + j26| ≈ **109.6 kVpk (+5.6 %)**.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: phase A feeder bus (`COMP_RESISTOR` 0, term 0) auto (`--probe-test` "amp" **103.0 kVpk ±8 %**, 60 ms, banks open); source A auto; **extra probes** phases B and C (`COMP_RESISTOR` 1, 2). Presets 5 ms/div, 50 kV/div; **Stack**.
+- **N:** three **≈ 103 kVpk** sines 120° apart on the 138 kV feeder buses, lagging the 281.7 kVpk grid channel (set it to 100 kV/div) by ≈ 30°. Close all three cap-bank switches: ≈ 109–110 kVpk, phase lag ≈ 8°.
+- **V:** **close the cap banks one at a time** (live) ⇒ only that phase recovers (+5.6 %) — Stack makes it obvious; the switching transient is a half-cycle bump (the capacitor charges through the feeder L: ring at 1/(2π √(57 mH · 6.1 µF)) ≈ 270 Hz, damped in ~2 cycles) · **open breaker A** ⇒ phase A feeder bus 0 V, B and C unchanged (grounded banks, no neutral coupling) · cap 6.1 → 12.2 µF (over-compensated, leading) ⇒ ≈ 113 kVpk, the bus is *above* nominal — the reason banks are switched by voltage · load L 0.22 → 0 (unity-pf load) ⇒ 112.7 · 171.5 / |175.9 + j26| ≈ 108.7 kVpk, and the cap bank then *raises* it further (leading) · load R 171.5 → 85.7 Ω (180 MW) ⇒ ≈ 89 kVpk, bank brings back ≈ +8 % · auto N 0.4 → 0.36 (tap −10 %) ⇒ everything × 0.9 · feeder 30 → 60 mi ⇒ 7.8 + j43.2 ⇒ ≈ 96 kVpk · `phase` / `frequency` as #95.
+- **M:** transformer `ideal` toggle: leakage j-ohms in series, bus −1–2 %. Line/feeder model 1 → 2 (π): line-charging 8 µS/mi × 50 mi and 6 µS/mi × 30 mi ⇒ +0.5 % (small Ferranti). Switch r_on 1 Ω on the cap branch: none (435 Ω). Capacitor ESR: none. Inductor DCR 5 Ω in the load: pf 0.89, −0.3 %.
+- **T:** as #95: dt auto ~100 µs, 5 ms/div shows 3 cycles; 20 ms/div to watch the bank-switching bump; the 270 Hz ring needs dt ≤ 200 µs to be visible — it is at the preset.
+
+---
+
 ## Result log
 
 | # | Template | L | N | V | M | T | S | Notes / issue link |
@@ -966,5 +1069,11 @@ block, no oracle, no `CIRCUIT_*` enum entry until one of those lands.
 | 88 | RLC Step (Ringing) | | | | | | | 9.53 V first peak oracle at the 50 µs/div preset dt (1 µs); ring period 199 µs by cursors; dt ≤ 2 µs |
 | 89 | RLC Damping Ladder | | | | | | | Stack view, 3 probes; critical row 5.0 V no-overshoot oracle; R 500 ⇒ 1.7 % overshoot (oracle edge) |
 | 90 | Op-Amp Saturation | | | | | | | 15 V clip oracle; extra probe on the − input: 0.45 V pulses while clipped; 1 Vpk ⇒ clean |
+| 91 | Single-Tuned Amplifier | | | | | | | 4.5 V ±50 % oracle at f0 = 100.06 kHz; retune C / L / Rq; dt ≤ 100 ns; SMALL flag at the sweep start is expected |
+| 92 | Common Base | | | | | | | 1.88 V ±30 % oracle, in phase; 50 Ω in series with the source ⇒ 1/3 lost; Re 1.5 k saturates |
+| 93 | Darlington Follower | | | | | | | 0.91 ±12 % oracle; source 10 k / 1 M ⇒ 0.99 / 0.50; delete Q2 ⇒ 0.09; β halved ⇒ 0.71 |
+| 94 | SR Latch (NOR) | | | | | | | Q max 5 V at 0.5 ms oracle (caught the S/R swap); Stack 4 channels; overlap S = R is a documented race; pulse-only dt |
+| 95 | Power Plant (3-phase) | | | | | | | 259.6 kVpk ±6 %; open a breaker live; `l_series` 1.84 mH ⇒ ~150 kV; r_series stays in mΩ (18 kV side); fan-out 20 px trap |
+| 96 | Transmission Substation | | | | | | | 103 kVpk ±8 % banks open; close banks one at a time ⇒ +5.6 % per phase, 270 Hz bump; open a breaker; 12.2 µF over-compensates |
 
-(90 blocks = the 90 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`; #48-#65 follow the enum order after `CIRCUIT_PHASE_SHIFT_OSC`, #66-#72 the enum order after `CIRCUIT_DC_LINE_DROP`, #73-#81 the enum order after `CIRCUIT_HV_765_LINE`, #82-#90 the enum order after `CIRCUIT_RING_OSC`.)
+(96 blocks = the 96 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`; #48-#65 follow the enum order after `CIRCUIT_PHASE_SHIFT_OSC`, #66-#72 the enum order after `CIRCUIT_DC_LINE_DROP`, #73-#81 the enum order after `CIRCUIT_HV_765_LINE`, #82-#90 the enum order after `CIRCUIT_RING_OSC`, #91-#96 the enum order after `CIRCUIT_OPAMP_SAT`.)

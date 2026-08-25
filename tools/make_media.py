@@ -49,6 +49,11 @@ SHOTS = [
     ("damping_ladder", "Damp", 140, "circuits"),
     ("thevenin", "Thev", 60, "circuits"),
     ("opamp_saturation", "Sat", 140, "circuits"),
+    ("power_plant", "Plant", 200, "circuits"),
+    ("substation", "Substn", 200, "circuits"),
+    ("single_tuned_amp", "Tuned", 200, "circuits"),
+    ("sr_latch", "SRlat", 160, "circuits"),
+    ("common_base", "CB", 140, "circuits"),
 ]
 # name, template, first frame, frames, every
 GIFS = [

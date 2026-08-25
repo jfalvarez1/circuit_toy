@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.4.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.4.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.4.1](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.4.1)** (auto-updating from v3.4.0 on)
 
 A native desktop circuit simulator written in C with SDL2, featuring a synthwave-themed interface. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
 
@@ -112,7 +112,7 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-86 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+92 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -165,6 +165,9 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **Current Mirror** (`CMir`) - BJT current mirror
 - **Push-Pull** (`PP`) - Complementary push-pull output stage
 - **Current Source** (`Isrc`) - BJT constant current source
+- **Single-Tuned Amplifier** (`Tuned`) - CE stage with an LC tank load: gain peaks at f0 = 100 kHz
+- **Common Base** (`CB`) - Non-inverting, low input resistance, gain g_m R_C
+- **Darlington Follower** (`Darl`) - beta^2 input resistance: a 100k source still drives 100 ohm
 
 **Oscillators**
 - **Wien Oscillator** (`Wien`) - Wien bridge sine wave oscillator
@@ -196,6 +199,7 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 
 **Digital**
 - **CMOS Inverter** (`CMOS`) - CMOS logic inverter
+- **SR Latch (NOR)** (`SRlat`) - Cross-coupled NOR gates remember S and R pulses
 
 **Power systems (Texas / ERCOT numbers)**
 - **345 kV Line** (`345kV`) - 100-mile 345 kV line, 600 MW load (per-phase)
@@ -217,6 +221,8 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **3-Phase Unbalanced** (`3phUn`) - Unequal Y loads: neutral current and neutral shift
 - **3-Phase 345 kV Line** (`3ph345`) - Three per-phase lines from the 345 kV example
 - **3-Phase 6-Pulse Rect** (`6Pulse`) - Three-phase diode bridge: 360 Hz ripple, 1.35 x V_LL
+- **Power Plant (3-phase)** (`Plant`) - 3-phase generator, GSU bank, breakers, 345 kV line, load
+- **Transmission Substation** (`Substn`) - 345 kV lines, breakers, 345/138 autos, feeders, cap banks
 
 **High voltage**
 - **Tesla Coil** (`Tesla`) - Spark-gap Tesla coil, 4x13 in toroid, streamer to a rod
@@ -246,6 +252,12 @@ New components make this possible:
   when the current stays below the hold level; arcs are drawn while it conducts.
 - **Toroid** - Tesla-coil topload whose capacitance follows its outer/tube diameter (Bert Pool
   formula); corona streaks appear above ~50 kV.
+- **3-phase source** - a generator / grid block with A, B, C at 0 / -120 / +120 degrees and a common
+  neutral, per-phase series R and L (a machine's X''); the Power Plant and Transmission Substation
+  templates are built from it.
+
+Every part shows its value on the canvas (ohms, farads, henries, source volts, line miles and
+impedance, transformer ratio, 3-phase kV); **F2** toggles the labels.
 
 ![Tesla coil](screenshots/auto/tesla_coil.png)
 
@@ -376,6 +388,7 @@ Create reusable subcircuits from your designs:
 - **Compact scope controls** - one primary row (V/T scale, Autoset, cursors, stacked view, sweep tracking, pop-out) plus Display / Trigger / Analysis tabs; the same layout drives the pop-out window
 - **Collapsible properties panel** - click its header to give the room to the scope
 - **Hover tooltips** on every button and palette item
+- **Search anywhere** - Ctrl+K or Ctrl+Space opens Spotlight, `/` jumps into the left-panel filter box; F2 toggles the on-canvas value labels
 - **Collapsible palette categories** - Click to expand/collapse component groups
 - **Grid-based placement** with snap-to-grid (toggle with 'S')
 - **Pan and zoom** - Middle mouse or Shift+drag to pan, scroll to zoom
@@ -418,6 +431,8 @@ command line. Releases are built with `pwsh tools/make_release.ps1 -Publish` (ve
 | ![Colpitts](screenshots/auto/colpitts.png) MOSFET Colpitts at 712 kHz | ![Ring](screenshots/auto/ring_oscillator.png) Five-inverter ring oscillator |
 | ![Hartley](screenshots/auto/hartley.png) Hartley (tapped inductor) | ![RLC ringing](screenshots/auto/rlc_ringing.png) Series RLC step: 90 % overshoot, 199 us ring |
 | ![Damping ladder](screenshots/auto/damping_ladder.png) Under / critical / over-damped on one screen | ![Op-amp saturation](screenshots/auto/opamp_saturation.png) Clipping at the rails and the lost virtual ground |
+| ![Power plant](screenshots/auto/power_plant.png) Three-phase power plant: generator, GSU bank, breakers, lines | ![Substation](screenshots/auto/substation.png) Transmission substation: 345/138 kV autos, feeders, cap banks |
+| ![Single-tuned amplifier](screenshots/auto/single_tuned_amp.png) Single-tuned (LC collector load) amplifier | ![SR latch](screenshots/auto/sr_latch.png) SR latch from cross-coupled NOR gates |
 
 ![Function generator](gifs/auto_function_generator.gif)
 
@@ -493,7 +508,7 @@ point and a short transient, and reports solver errors, NaN/runaway voltages and
 point of every transistor / op-amp / regulator:
 
 ```bash
-build/tools/template_smoke.exe             # 86/86 templates passed
+build/tools/template_smoke.exe             # 92/92 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (66 oracles)
@@ -509,6 +524,15 @@ build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
 build/tools/template_smoke.exe --response "RC BP"   # amplitude vs frequency of every node during the sweep
 build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
 build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template in the palette)
+```
+
+The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
+which produced the images in this README):
+
+```bash
+build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
+build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
+build/circuit-playground.exe --help
 ```
 
 The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
