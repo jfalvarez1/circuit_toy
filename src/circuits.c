@@ -225,6 +225,17 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_SIL_LOADING] = {"SIL Loading", "SIL", "200 mi 345 kV line at surge impedance load: flat voltage", TG_POWER_SYSTEMS},
     [CIRCUIT_SERIES_COMP] = {"Series Compensation", "SerC", "50 % series capacitor restores the voltage at 2 x SIL", TG_POWER_SYSTEMS},
     [CIRCUIT_HV_765_LINE] = {"765 kV Line (AEP)", "765kV", "300 mi six-bundle EHV line at ~2300 MW", TG_POWER_SYSTEMS},
+    [CIRCUIT_3PH_Y_BALANCED] = {"3-Phase Y Balanced", "3phY", "Three 120-degree sources, Y load: neutral carries nothing", TG_POWER_SYSTEMS},
+    [CIRCUIT_3PH_UNBALANCED] = {"3-Phase Unbalanced", "3phUn", "Unequal Y loads: neutral current and neutral shift", TG_POWER_SYSTEMS},
+    [CIRCUIT_3PH_345_LINE] = {"3-Phase 345 kV Line", "3ph345", "Three per-phase lines from the 345 kV example", TG_POWER_SYSTEMS},
+    [CIRCUIT_3PH_RECTIFIER] = {"3-Phase 6-Pulse Rect", "6Pulse", "Three-phase diode bridge: 360 Hz ripple, 1.35 x V_LL", TG_POWER_SYSTEMS},
+    [CIRCUIT_SCHMITT_BISTABLE] = {"Bistable (Schmitt)", "Schmit", "Inverting op-amp bistable: +/-7.5 V thresholds, hysteresis loop", TG_OSCILLATORS},
+    [CIRCUIT_TRI_SQUARE_GEN] = {"Triangle/Square Gen", "TriSq", "Bistable + integrator: 5 kHz triangle and square", TG_OSCILLATORS},
+    [CIRCUIT_FUNCTION_GEN] = {"Function Generator", "FuncGn", "Triangle -> 3-breakpoint diode shaper -> sine; R sets f, thresholds set A", TG_OSCILLATORS},
+    [CIRCUIT_COLPITTS] = {"Colpitts (MOSFET)", "Colpit", "LC tank C1-C2 capacitive divider, 712 kHz", TG_OSCILLATORS},
+    [CIRCUIT_RING_OSC] = {"Ring Oscillator", "Ring", "Five inverters with RC delay stages, ~145 kHz", TG_OSCILLATORS},
+
+
 
     [CIRCUIT_TESLA_COIL] = {"Tesla Coil", "Tesla", "Spark-gap Tesla coil, 4x13 in toroid, streamer to a rod", TG_HIGH_VOLTAGE},
     [CIRCUIT_TESLA_COIL_BIG] = {"Tesla Coil (big top)", "TeslaB", "Retuned for an 8x24 in toroid: more energy, longer arc", TG_HIGH_VOLTAGE},
@@ -6238,6 +6249,15 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_SIL_LOADING:      return place_sil_loading(circuit, x, y);
         case CIRCUIT_SERIES_COMP:      return place_series_comp(circuit, x, y);
         case CIRCUIT_HV_765_LINE:      return place_hv_765_line(circuit, x, y);
+        case CIRCUIT_3PH_Y_BALANCED:   return place_3ph_y_balanced(circuit, x, y);
+        case CIRCUIT_3PH_UNBALANCED:   return place_3ph_unbalanced(circuit, x, y);
+        case CIRCUIT_3PH_345_LINE:     return place_3ph_345_line(circuit, x, y);
+        case CIRCUIT_3PH_RECTIFIER:    return place_3ph_rectifier(circuit, x, y);
+        case CIRCUIT_SCHMITT_BISTABLE: return place_schmitt_bistable(circuit, x, y);
+        case CIRCUIT_TRI_SQUARE_GEN:   return place_tri_square_gen(circuit, x, y);
+        case CIRCUIT_FUNCTION_GEN:     return place_function_gen(circuit, x, y);
+        case CIRCUIT_COLPITTS:         return place_colpitts(circuit, x, y);
+        case CIRCUIT_RING_OSC:         return place_ring_osc(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6323,6 +6343,15 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_SIL_LOADING] = {"SURGE IMPEDANCE LOADING: a line loaded with its characteristic impedance Zc = sqrt(L/C) = 283 ohm", "absorbs exactly the VARs it generates: the voltage profile is flat (Vr/Vs = 0.996 here) and", "the angle is small. P_SIL = V^2/Zc = 345^2/283 = 420 MW. Close SW (2 x SIL, 141 ohm): the line", "now needs VARs it cannot supply and the far end sags to 0.80. St. Clair: ~2 SIL is OK at 100 mi,", "~1 SIL at 300 mi - long lines are limited by voltage and stability, not by conductor heating.", "PROBE: auto-placed on both ends: nearly equal at SIL, 20 % apart after closing SW."},
     [CIRCUIT_SERIES_COMP] = {"SERIES COMPENSATION: the line reactance X = 120 ohm (200 mi) limits how much power can flow", "before the far end sags. A capacitor with Xc = 60 ohm (44 uF) in the middle cancels half of it:", "at 2 x SIL the receiving end rises from 0.80 to about 0.90. Close SW to bypass the capacitor", "and watch the drop return. AEP uses series caps on long 765/345 kV paths (with protection", "against subsynchronous resonance and MOV bypass on faults).", "PROBE: auto-placed on both ends; the source-side probe barely moves, the load end jumps."},
     [CIRCUIT_HV_765_LINE] = {"765 kV (AEP's backbone since 1969): 300 miles of six-conductor bundle, R = 0.02, X = 0.53 ohm/mi,", "B = 8.5 uS/mi (bundling lowers X and raises B). Zc = sqrt(0.53/8.5e-6) = 250 ohm, so", "SIL = 765^2/250 = 2340 MW - about 6 x a 345 kV circuit with half the losses per MW. Loaded at", "SIL the 300-mile profile stays flat (0.99). One nominal pi for 300 mi is coarse: for accuracy", "split it into 3 x 100 mi sections (place three TLine parts) - the pi model is exact only per section.", "PROBE: auto-placed on both ends; 200 kV/div. Try 2 x SIL (125 ohm) and 600 mi."},
+    [CIRCUIT_3PH_Y_BALANCED] = {"THREE-PHASE Y, BALANCED: three equal sources 120 deg apart (277 V rms = 480 V line-line)", "feeding equal loads. The three load currents also sum to zero at every instant, so the neutral", "carries nothing (probe it: ~0 V across the 1 ohm neutral resistor) and the total power is", "constant, not pulsating - that is why motors and generators are three-phase. Line-line", "voltage = sqrt(3) x line-neutral; phase order A-B-C sets the direction a motor turns.", "PROBE: A (source), B and C loads, and the neutral node (~0). Use Stack to separate them."},
+    [CIRCUIT_3PH_UNBALANCED] = {"THREE-PHASE Y, UNBALANCED: loads 10 / 20 / 40 ohm. The phase currents no longer cancel;", "their sum (I_A + I_B + I_C) returns through the neutral. With 1 ohm of neutral impedance the", "neutral point shifts (probe it: tens of volts at 60 Hz) and the lightly loaded phases see a", "higher voltage than the heavily loaded one - the classic 'lost neutral' hazard in a service.", "Set the neutral resistor to 1 mohm (solid neutral) or 1 Mohm (open neutral) and compare.", "PROBE: A (source), B and C load nodes and the neutral. Compare load amplitudes per phase."},
+    [CIRCUIT_3PH_345_LINE] = {"THREE-PHASE 345 kV LINE: the single-phase 345 kV example done for all three phases (100 mi", "of twin Drake per phase, 198.4 ohm per phase = 600 MW). Everything in a balanced system can be", "computed per phase and multiplied by three - the reason the other power examples are", "single-phase equivalents. Each phase drops the same 6.3 % (281.7 -> 264 kVpk) 120 deg apart.", "Unbalance one load and the neutral (1 ohm) shows the zero-sequence current.", "PROBE: load nodes A, B (auto) and C, 100 kV/div; Stack view separates the three phases."},
+    [CIRCUIT_3PH_RECTIFIER] = {"SIX-PULSE RECTIFIER: three phases into a diode bridge. The plus bus always follows the", "highest phase and the minus bus the lowest, so V+ - V- = line-line peak x cos(0..30 deg):", "DC = 1.35 x V_LL(rms) = 2.34 x V_LN(rms) (here ~ 280 V), ripple only 4 % at 6 x 60 = 360 Hz -", "far smoother than single-phase bridges; this is the front end of every VFD and HVDC pole.", "Each diode conducts 120 deg per cycle. Add a capacitor across the load and watch the pulses shrink.", "PROBE: plus bus (auto), minus bus (extra) and phase A. The load sees their difference."},
+    [CIRCUIT_SCHMITT_BISTABLE] = {"BISTABLE MULTIVIBRATOR (S&S 18.4): positive feedback R1/R2 makes the op-amp a latch. With the", "output at +15 V the + input sits at +7.5 V, so the input must rise ABOVE 7.5 V before the output", "snaps to -15 V; it then has to fall below -7.5 V to snap back. That hysteresis (15 V wide) is", "why a Schmitt trigger ignores noise near the threshold. V_TH = L+ R1/(R1+R2), V_TL = L- R1/(R1+R2).", "Try the X-Y (Y-T button) view: output vs input draws the hysteresis loop.", "PROBE: triangle input and OUT (auto). Two clean edges per input cycle, at +/-7.5 V exactly."},
+    [CIRCUIT_TRI_SQUARE_GEN] = {"TRIANGLE / SQUARE GENERATOR (S&S 18.5.2): a non-inverting bistable (thresholds +/-15 R1/R2 =", "+/-7.5 V) drives an integrator; the integrator ramps at 15 V/RC until it reaches a threshold,", "the bistable flips and the ramp reverses. f = R2/(4 R C R1) = 20k/(4 x 10k x 10n x 10k) = 5 kHz.", "Frequency: R or C. Amplitude: R1/R2 (or the supply). The rails cancel out of f: that is the trick.", "A 50 us kick on the bistable input breaks the perfect 0 V equilibrium at start-up.", "PROBE: triangle (auto) and square (extra probe). Stack view shows the square edges at the peaks."},
+    [CIRCUIT_FUNCTION_GEN] = {"FUNCTION GENERATOR (S&S 18.8.2): the triangle from the generator above feeds R_in and a", "piecewise-linear diode network. Below 2.6 V nothing conducts (slope 1); above it the 22k branch", "to +2.0 V loads the node (slope 0.69); above 4.3 V the 5.6k branch to +3.7 V (slope 0.31).", "Mirror branches handle the negative half. Three breakpoints turn the triangle into a ~5 V sine", "(THD a few %). Frequency: edit R (10k) or C; amplitude: R2 of the bistable, then re-scale the bias V.", "PROBE: sine output (auto) and triangle (extra). Try the FFT button: 3rd harmonic > 30 dB down."},
+    [CIRCUIT_COLPITTS] = {"COLPITTS (S&S 18.3.1): the tank is L with a capacitive divider C1-C2; the divider feeds back a", "fraction C1/C2 of the drain swing to the gate, so oscillation needs g_m R_tank > C2/C1 (= 1 here).", "f = 1/(2 pi sqrt(L C1C2/(C1+C2))) = 1/(2 pi sqrt(100u x 0.5n)) = 712 kHz. The 1 mH RFC is an open", "circuit at RF but passes the DC drain current; the 10 nF coupling cap keeps 12 V off the gate;", "1M/1M bias the gate at 6 V. Amplitude limits when the MOSFET cuts off each cycle (class C).", "PROBE: drain (auto). 500 ns/div. A 50 ns kick starts it; edit C1 to 2 nF -> 581 kHz."},
+    [CIRCUIT_RING_OSC] = {"RING OSCILLATOR: an odd number of inverters in a loop can never settle - each stage inverts,", "so the signal returns inverted and the ring keeps flipping. Period = 2 N t_pd. Real gates delay by", "their own capacitance; here each stage has R 1k / C 1n, and a gate flips when its RC reaches the", "2.5 V threshold: t ~ 0.69 RC = 0.7 us -> f ~ 1/(2 x 5 x 0.7 us) ~ 145 kHz. Edit any C to retune.", "Probe several stages: five squares, each shifted by one fifth of a half period.", "PROBE: last stage (auto). 2 us/div. The 2 us kick pulse on the first RC breaks the symmetry."},
 };
 
 
@@ -7187,6 +7216,312 @@ static int place_hv_765_line(Circuit *circuit, float x, float y) {
 #undef TN
 #undef TW
 
+
+// ---------------------------------------------------------------------------------------
+// Three-phase examples: three AC sources at 0 / -120 / +120 degrees, one row per phase.
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+static Component *ph_source(Circuit *circuit, float x, float y, double vpk, double deg) {
+    Component *v = ac_source(circuit, x, y, vpk);
+    if (v) v->props.ac_voltage.phase = deg;
+    return v;
+}
+// rows at y, y+140, y+280: source -> series R -> load R -> neutral bus at x+300 -> R_n -> ground
+static int place_3ph_y(Circuit *circuit, float x, float y, const double *loads, const char *title) {
+    static const double deg[3] = { 0, -120, 120 };
+    int bus_prev = -1;
+    for (int k = 0; k < 3; k++) {
+        float ry = y + k * 140;
+        Component *v = ph_source(circuit, x, ry, 392.0, deg[k]); if (!v) return 0;
+        Component *rl = add_comp(circuit, COMP_RESISTOR, x + 100, ry + 20, 0);   // (60,20)-(140,20)
+        rl->props.resistor.resistance = 0.5;
+        Component *ld = add_comp(circuit, COMP_RESISTOR, x + 220, ry + 20, 0);   // (180,20)-(260,20)
+        ld->props.resistor.resistance = loads[k];
+        int sp = TN(x, ry + 20), a = TN(x + 60, ry + 20), b = TN(x + 140, ry + 20), c = TN(x + 180, ry + 20), d = TN(x + 260, ry + 20), bus = TN(x + 300, ry + 20);
+        TW(sp, a); TW(b, c); TW(d, bus);
+        if (bus_prev >= 0) TW(bus_prev, bus);
+        bus_prev = bus;
+        v->node_ids[0] = sp; rl->node_ids[0] = a; rl->node_ids[1] = b; ld->node_ids[0] = c; ld->node_ids[1] = d;
+    }
+    Component *rn = add_comp(circuit, COMP_RESISTOR, x + 300, y + 340, 90);     // (300,300)-(300,380)
+    rn->props.resistor.resistance = 1.0;
+    Component *gn = add_comp(circuit, COMP_GROUND, x + 300, y + 400, 0);
+    rn->node_ids[0] = bus_prev;
+    connect_terminals(circuit, rn, 1, gn, 0);
+    add_label(circuit, x + 20, y - 40, title);
+    add_label(circuit, x + 320, y + 330, "neutral (1 ohm to ground)");
+    return 11;
+}
+static int place_3ph_y_balanced(Circuit *circuit, float x, float y) {
+    static const double loads[3] = { 10.0, 10.0, 10.0 };
+    return place_3ph_y(circuit, x, y, loads, "Balanced Y: 277 V rms per phase (480 V line-line), 10 ohm loads, 0.5 ohm lines");
+}
+static int place_3ph_unbalanced(Circuit *circuit, float x, float y) {
+    static const double loads[3] = { 10.0, 20.0, 40.0 };
+    return place_3ph_y(circuit, x, y, loads, "Unbalanced Y: loads 10 / 20 / 40 ohm - the neutral carries the difference");
+}
+// three per-phase 345 kV lines (100 mi, R-L) into 198.4 ohm loads, neutral through 1 ohm
+static int place_3ph_345_line(Circuit *circuit, float x, float y) {
+    static const double deg[3] = { 0, -120, 120 };
+    int bus_prev = -1;
+    for (int k = 0; k < 3; k++) {
+        float ry = y + k * 140;
+        Component *v = ph_source(circuit, x, ry, 281700.0, deg[k]); if (!v) return 0;
+        Component *tl = add_tline(circuit, x + 130, ry + 20, 0, 100.0, 0.06, 0.55, 8.0, 1);   // (90,20)-(170,20)
+        Component *ld = add_comp(circuit, COMP_RESISTOR, x + 240, ry + 20, 0);   // (200,20)-(280,20)
+        ld->props.resistor.resistance = 198.4;
+        int sp = TN(x, ry + 20), a = TN(x + 90, ry + 20), b = TN(x + 170, ry + 20), c = TN(x + 200, ry + 20), d = TN(x + 280, ry + 20), bus = TN(x + 320, ry + 20);
+        TW(sp, a); TW(b, c); TW(d, bus);
+        if (bus_prev >= 0) TW(bus_prev, bus);
+        bus_prev = bus;
+        v->node_ids[0] = sp; tl->node_ids[0] = a; tl->node_ids[1] = b; ld->node_ids[0] = c; ld->node_ids[1] = d;
+    }
+    Component *rn = add_comp(circuit, COMP_RESISTOR, x + 320, y + 340, 90);
+    rn->props.resistor.resistance = 1.0;
+    Component *gn = add_comp(circuit, COMP_GROUND, x + 320, y + 400, 0);
+    rn->node_ids[0] = bus_prev;
+    connect_terminals(circuit, rn, 1, gn, 0);
+    add_label(circuit, x + 20, y - 40, "Three-phase 345 kV, 100 mi per phase, 600 MW: every phase drops the same 6 %");
+    return 11;
+}
+// six-pulse bridge: phase columns at x+100/200/300, plus bus y=0, minus bus y=260 (neutral grounded)
+static int place_3ph_rectifier(Circuit *circuit, float x, float y) {
+    static const double deg[3] = { 0, -120, 120 };
+    int plus_prev = -1, minus_prev = -1;
+    for (int k = 0; k < 3; k++) {
+        float cx = x + 100 + k * 100;
+        Component *du = add_comp(circuit, COMP_DIODE, cx, y + 60, 270);          // A (cx,100) K (cx,20)
+        Component *v = add_comp(circuit, COMP_AC_VOLTAGE, cx, y + 160, 0);       // +(cx,120) -(cx,200)
+        if (!v) return 0;
+        v->props.ac_voltage.amplitude = 170.0; v->props.ac_voltage.frequency = 60.0; v->props.ac_voltage.phase = deg[k];
+        Component *g = add_comp(circuit, COMP_GROUND, cx, y + 220, 0);
+        Component *dl = add_comp(circuit, COMP_DIODE, cx + 40, y + 180, 270);    // K (cx+40,140) A (cx+40,220)
+        int kt = TN(cx, y + 20), plus = TN(cx, y), an = TN(cx, y + 100), vp = TN(cx, y + 120);
+        TW(kt, plus); TW(an, vp);
+        int j = TN(cx + 40, y + 120), kl = TN(cx + 40, y + 140), al = TN(cx + 40, y + 220), minus = TN(cx + 40, y + 260);
+        TW(vp, j); TW(j, kl); TW(al, minus);
+        if (plus_prev >= 0) TW(plus_prev, plus);
+        if (minus_prev >= 0) TW(minus_prev, minus);
+        plus_prev = plus; minus_prev = minus;
+        du->node_ids[0] = an; du->node_ids[1] = kt; v->node_ids[0] = vp; dl->node_ids[0] = al; dl->node_ids[1] = kl;
+        connect_terminals(circuit, v, 1, g, 0);
+    }
+    Component *ld = add_comp(circuit, COMP_RESISTOR, x + 440, y + 130, 90);     // (440,90)-(440,170)
+    ld->props.resistor.resistance = 100.0;
+    int p1 = TN(x + 440, y), p2 = TN(x + 440, y + 90), m1 = TN(x + 440, y + 260), m2 = TN(x + 440, y + 170);
+    TW(plus_prev, p1); TW(p1, p2); TW(minus_prev, m1); TW(m1, m2);
+    ld->node_ids[0] = p2; ld->node_ids[1] = m2;
+    add_label(circuit, x + 40, y - 40, "Six-pulse rectifier: 170 Vpk per phase -> plus bus follows the highest phase, minus bus the lowest");
+    add_label(circuit, x + 470, y + 120, "load 100 ohm (V+ - V-)");
+    return 13;
+}
+#undef TN
+#undef TW
+
+
+// ---------------------------------------------------------------------------------------
+// Sedra & Smith ch. 18 signal generators (docs/RESEARCH_OSCILLATORS.md). Bistables use the
+// finite-gain saturating op-amp (ideal = virtual short would not work with positive feedback).
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+static Component *sat_opamp(Circuit *circuit, float x, float y) {
+    Component *u = add_comp(circuit, COMP_OPAMP, x, y, 0);
+    u->props.opamp.ideal = false; u->props.opamp.gain = 1e5;
+    return u;
+}
+// ground the op-amp terminal at (tx,ty) via a wire to (gx,ty) and a ground symbol there
+static void gnd_at(Circuit *circuit, int node, float gx, float gy) {
+    Component *g = add_comp(circuit, COMP_GROUND, gx, gy + 20, 0);
+    int gt = TN(gx, gy);
+    if (gt != node) TW(node, gt);
+    g->node_ids[0] = gt;
+}
+
+// 18.4: inverting bistable, R1 = R2 = 10k -> thresholds +/- 7.5 V, driven by a 10 V 100 Hz triangle
+static int place_schmitt_bistable(Circuit *circuit, float x, float y) {
+    Component *v = add_comp(circuit, COMP_TRIANGLE_WAVE, x, y + 60, 0);         // +(0,20) -(0,100)
+    if (!v) return 0;
+    v->props.triangle_wave.amplitude = 10.0; v->props.triangle_wave.frequency = 100.0;
+    Component *g0 = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    Component *u = sat_opamp(circuit, x + 200, y + 40);                          // -(160,20) +(160,60) out(240,40)
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 220, y + 100, 0);       // (180,100)-(260,100) out -> +
+    r1->props.resistor.resistance = 10e3;
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 120, y + 100, 90);      // (120,60)-(120,140) + -> gnd
+    r2->props.resistor.resistance = 10e3;
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 120, y + 160, 0);
+    Component *rl = add_comp(circuit, COMP_RESISTOR, x + 320, y + 80, 90);       // (320,40)-(320,120) load
+    rl->props.resistor.resistance = 100e3;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 320, y + 140, 0);
+    add_label(circuit, x + 20, y - 40, "Bistable multivibrator (inverting Schmitt): flips at +/-7.5 V, output +/-15 V");
+    int in = TN(x, y + 20), minus = TN(x + 160, y + 20); TW(in, minus);
+    int out = TN(x + 240, y + 40), o1 = TN(x + 280, y + 40), o2 = TN(x + 280, y + 100), r1r = TN(x + 260, y + 100), r1l = TN(x + 180, y + 100), p1 = TN(x + 160, y + 100), plus = TN(x + 160, y + 60), r2t = TN(x + 120, y + 60);
+    TW(out, o1); TW(o1, o2); TW(o2, r1r); TW(r1l, p1); TW(p1, plus); TW(plus, r2t);
+    int lt = TN(x + 320, y + 40); TW(o1, lt);
+    v->node_ids[0] = in; u->node_ids[0] = minus; u->node_ids[1] = plus; u->node_ids[2] = out;
+    r1->node_ids[0] = r1l; r1->node_ids[1] = r1r; r2->node_ids[0] = r2t; rl->node_ids[0] = lt;
+    connect_terminals(circuit, v, 1, g0, 0);
+    connect_terminals(circuit, r2, 1, g2, 0);
+    connect_terminals(circuit, rl, 1, gl, 0);
+    return 9;
+}
+
+// 18.5.2: non-inverting bistable (R1 10k, R2 20k) + inverting integrator (R 10k, C 10 nF): f = R2/(4 R C R1) = 5 kHz
+// returns the integrator output node; *u2_out receives the integrator output node id
+static int place_tri_square_core(Circuit *circuit, float x, float y, int *tri_node) {
+    Component *u1 = sat_opamp(circuit, x + 200, y + 40);                         // -(160,20) +(160,60) out(240,40)
+    if (!u1) return 0;
+    Component *kick = add_comp(circuit, COMP_PULSE_SOURCE, x + 100, y + 20, 90); // rot 90: +(140,20) -(60,20)
+    kick->props.pulse_source.v_low = 0; kick->props.pulse_source.v_high = 0.5; kick->props.pulse_source.pulse_width = 50e-6; kick->props.pulse_source.period = 100.0;
+    Component *gk = add_comp(circuit, COMP_GROUND, x + 60, y + 40, 0);          // terminal (60,20)
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 100, y + 60, 0);        // (60,60)-(140,60) tri -> +
+    r1->props.resistor.resistance = 10e3;
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 220, y + 120, 0);       // (180,120)-(260,120) out -> +
+    r2->props.resistor.resistance = 20e3;
+    Component *r = add_comp(circuit, COMP_RESISTOR, x + 320, y + 120, 0);        // (280,120)-(360,120) out -> integ -
+    r->props.resistor.resistance = 10e3;
+    Component *u2 = sat_opamp(circuit, x + 400, y + 140);                        // -(360,120) +(360,160) out(440,140); finite gain integrates fine
+    Component *c = add_comp(circuit, COMP_CAPACITOR, x + 420, y + 60, 0);        // (380,60)-(460,60)
+    c->props.capacitor.capacitance = 10e-9;
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 340, y + 180, 0);         // integrator + at (360,160) -> (340,160)
+    int minus1 = TN(x + 160, y + 20), kp = TN(x + 140, y + 20), kn = TN(x + 60, y + 20);
+    TW(kp, minus1);
+    kick->node_ids[0] = kp; kick->node_ids[1] = kn; gk->node_ids[0] = kn;
+    int plus1 = TN(x + 160, y + 60), r1r = TN(x + 140, y + 60), r1l = TN(x + 60, y + 60);
+    TW(r1r, plus1);
+    int out1 = TN(x + 240, y + 40), o1 = TN(x + 280, y + 40), o2 = TN(x + 280, y + 120), r2r = TN(x + 260, y + 120), r2l = TN(x + 180, y + 120), p2 = TN(x + 160, y + 120);
+    TW(out1, o1); TW(o1, o2); TW(o2, r2r); TW(r2l, p2); TW(p2, plus1);
+    int minus2 = TN(x + 360, y + 120);
+    int cl = TN(x + 380, y + 60), c1 = TN(x + 360, y + 60), cr = TN(x + 460, y + 60), c2 = TN(x + 480, y + 60), out2 = TN(x + 440, y + 140), o3 = TN(x + 480, y + 140);
+    TW(cl, c1); TW(c1, minus2); TW(cr, c2); TW(c2, o3); TW(out2, o3);
+    int plus2 = TN(x + 360, y + 160), g2t = TN(x + 340, y + 160); TW(plus2, g2t); g2->node_ids[0] = g2t;
+    int f1 = TN(x + 480, y + 220), f2 = TN(x + 60, y + 220); TW(o3, f1); TW(f1, f2); TW(f2, r1l);
+    u1->node_ids[0] = minus1; u1->node_ids[1] = plus1; u1->node_ids[2] = out1;
+    r1->node_ids[0] = r1l; r1->node_ids[1] = r1r; r2->node_ids[0] = r2l; r2->node_ids[1] = r2r; r->node_ids[0] = o2; r->node_ids[1] = minus2;
+    u2->node_ids[0] = minus2; u2->node_ids[1] = plus2; u2->node_ids[2] = out2; c->node_ids[0] = cl; c->node_ids[1] = cr;
+    *tri_node = o3;
+    return 10;
+}
+static int place_tri_square_gen(Circuit *circuit, float x, float y) {
+    int tri; int n = place_tri_square_core(circuit, x, y, &tri);
+    if (!n) return 0;
+    add_label(circuit, x + 20, y - 40, "Triangle / square generator: f = R2 / (4 R C R1) = 5 kHz, triangle +/-7.5 V, square +/-15 V");
+    return n;
+}
+// 18.8.2: + R_in 10k and a 3-breakpoint diode shaper (22k to +/-2.0 V, 5.6k to +/-3.7 V)
+static int place_function_gen(Circuit *circuit, float x, float y) {
+    int tri; int n = place_tri_square_core(circuit, x, y, &tri);
+    if (!n) return 0;
+    Component *rin = add_comp(circuit, COMP_RESISTOR, x + 540, y + 140, 0);      // (500,140)-(580,140)
+    rin->props.resistor.resistance = 10e3;
+    int o3 = TN(x + 480, y + 140), ril = TN(x + 500, y + 140), sn = TN(x + 580, y + 140), s2 = TN(x + 600, y + 140);
+    TW(o3, ril); TW(sn, s2);
+    rin->node_ids[0] = ril; rin->node_ids[1] = sn;
+    struct { double r, vb; int neg; } br[4] = { {22e3, 2.0, 0}, {5.6e3, 3.7, 0}, {22e3, -2.0, 1}, {5.6e3, -3.7, 1} };
+    int prev = s2;
+    for (int k = 0; k < 4; k++) {
+        float bx = x + 600 + k * 60;
+        int top = TN(bx, y + 140);
+        if (k) TW(prev, top);
+        prev = top;
+        Component *rb = add_comp(circuit, COMP_RESISTOR, bx, y + 180, 90);      // (bx,140)-(bx,220)
+        rb->props.resistor.resistance = br[k].r;
+        Component *d = add_comp(circuit, COMP_DIODE, bx, y + 260, br[k].neg ? 270 : 90);   // 90: A top (bx,220) K bottom (bx,300); 270: K top, A bottom
+        Component *vb = add_comp(circuit, COMP_DC_VOLTAGE, bx, y + 340, 0);      // +(bx,300) -(bx,380)
+        vb->props.dc_voltage.voltage = br[k].vb;
+        Component *g = add_comp(circuit, COMP_GROUND, bx, y + 400, 0);
+        int mid = TN(bx, y + 220), bot = TN(bx, y + 300);
+        rb->node_ids[0] = top; rb->node_ids[1] = mid;
+        if (br[k].neg) { d->node_ids[1] = mid; d->node_ids[0] = bot; } else { d->node_ids[0] = mid; d->node_ids[1] = bot; }
+        vb->node_ids[0] = bot;
+        connect_terminals(circuit, vb, 1, g, 0);
+    }
+    add_label(circuit, x + 20, y - 40, "Function generator: triangle -> R_in -> diode breakpoints -> ~5 V sine. Edit R (f) or R2 (amplitude)");
+    add_label(circuit, x + 590, y + 110, "sine out");
+    return n + 13;
+}
+
+// 18.3.1: common-source Colpitts, L 100 uH, C1 = C2 = 1 nF -> f = 1/(2 pi sqrt(L C1C2/(C1+C2))) = 712 kHz
+static int place_colpitts(Circuit *circuit, float x, float y) {
+    Component *vdd = add_comp(circuit, COMP_DC_VOLTAGE, x + 100, y - 80, 0);    // +(100,-120) -(100,-40)
+    if (!vdd) return 0;
+    vdd->props.dc_voltage.voltage = 12.0;
+    Component *gv = add_comp(circuit, COMP_GROUND, x + 100, y - 20, 0);
+    Component *m = add_comp(circuit, COMP_NMOS, x + 200, y + 100, 0);           // G(180,100) D(220,80) S(220,120)
+    Component *gs = add_comp(circuit, COMP_GROUND, x + 220, y + 140, 0);
+    Component *rfc = add_comp(circuit, COMP_INDUCTOR, x + 220, y, 90);           // (220,-40)-(220,40)
+    rfc->props.inductor.inductance = 1e-3;
+    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 300, y + 80, 90);      // (300,40)-(300,120)
+    c1->props.capacitor.capacitance = 1e-9;
+    Component *g1 = add_comp(circuit, COMP_GROUND, x + 300, y + 140, 0);
+    Component *l = add_comp(circuit, COMP_INDUCTOR, x + 360, y + 40, 0);         // (320,40)-(400,40)
+    l->props.inductor.inductance = 100e-6;
+    Component *cc = add_comp(circuit, COMP_CAPACITOR, x + 440, y + 40, 0);       // (400,40)-(480,40)
+    cc->props.capacitor.capacitance = 10e-9;
+    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 100, y + 140, 90);     // (100,100)-(100,180)
+    c2->props.capacitor.capacitance = 1e-9;
+    Component *kick = add_comp(circuit, COMP_PULSE_SOURCE, x + 100, y + 220, 0); // +(100,180) -(100,260)
+    kick->props.pulse_source.v_low = 0; kick->props.pulse_source.v_high = 0.3; kick->props.pulse_source.pulse_width = 50e-9; kick->props.pulse_source.period = 100.0;
+    Component *gk = add_comp(circuit, COMP_GROUND, x + 100, y + 280, 0);
+    Component *rt = add_comp(circuit, COMP_RESISTOR, x + 60, y - 80, 90);        // (60,-120)-(60,-40)
+    rt->props.resistor.resistance = 1e6;
+    Component *rb = add_comp(circuit, COMP_RESISTOR, x + 60, y + 140, 90);       // (60,100)-(60,180)
+    rb->props.resistor.resistance = 1e6;
+    Component *gb = add_comp(circuit, COMP_GROUND, x + 60, y + 200, 0);
+    add_label(circuit, x + 20, y - 160, "Colpitts (common source): tank L 100 uH with C1 = C2 = 1 nF -> 712 kHz; 1 mH RFC feeds the drain");
+    int vp = TN(x + 100, y - 120), rt0 = TN(x + 60, y - 120), rail = TN(x + 220, y - 120), rfct = TN(x + 220, y - 40);
+    TW(vp, rt0); TW(vp, rail); TW(rail, rfct);
+    int rfcb = TN(x + 220, y + 40), d = TN(x + 220, y + 80), tank = TN(x + 300, y + 40), lt = TN(x + 320, y + 40);
+    TW(rfcb, d); TW(rfcb, tank); TW(tank, lt);
+    int lr = TN(x + 400, y + 40), ccr = TN(x + 480, y + 40), f1 = TN(x + 480, y + 180), f2 = TN(x + 140, y + 180), f3 = TN(x + 140, y + 100), gate = TN(x + 180, y + 100), gn = TN(x + 100, y + 100), rb0 = TN(x + 60, y + 100), rt1 = TN(x + 60, y - 40);
+    TW(ccr, f1); TW(f1, f2); TW(f2, f3); TW(f3, gate); TW(f3, gn); TW(gn, rb0); TW(rt1, rb0);
+    vdd->node_ids[0] = vp; rt->node_ids[0] = rt0; rt->node_ids[1] = rt1; rfc->node_ids[0] = rfct; rfc->node_ids[1] = rfcb;
+    m->node_ids[0] = gate; m->node_ids[1] = d; c1->node_ids[0] = tank; l->node_ids[0] = lt; l->node_ids[1] = lr; cc->node_ids[0] = lr; cc->node_ids[1] = ccr;
+    c2->node_ids[0] = gn; rb->node_ids[0] = rb0;
+    int c2b = TN(x + 100, y + 180); c2->node_ids[1] = c2b; kick->node_ids[0] = c2b;
+    connect_terminals(circuit, vdd, 1, gv, 0);
+    connect_terminals(circuit, m, 2, gs, 0);
+    connect_terminals(circuit, c1, 1, g1, 0);
+    connect_terminals(circuit, kick, 1, gk, 0);
+    connect_terminals(circuit, rb, 1, gb, 0);
+    return 15;
+}
+
+// ring oscillator: five inverters, each followed by R 1k / C 1 nF -> f ~ 1/(2 N 0.69 RC) ~ 145 kHz
+static int place_ring_osc(Circuit *circuit, float x, float y) {
+    int first_in = -1, prev = -1, kick_node = -1;
+    for (int k = 0; k < 5; k++) {
+        float gx = x + 100 + k * 160;
+        Component *g = add_comp(circuit, COMP_NOT_GATE, gx, y + 20, 0);         // IN (gx-40,20) OUT (gx+40,20)
+        if (!g) return 0;
+        Component *r = add_comp(circuit, COMP_RESISTOR, gx + 80, y + 20, 0);     // (gx+40,20)-(gx+120,20)
+        r->props.resistor.resistance = 1e3;
+        Component *c = add_comp(circuit, COMP_CAPACITOR, gx + 120, y + 60, 90);  // (gx+120,20)-(gx+120,100)
+        c->props.capacitor.capacitance = 1e-9;
+        int in = TN(gx - 40, y + 20), out = TN(gx + 40, y + 20), nd = TN(gx + 120, y + 20);
+        if (k == 0) first_in = in; else TW(prev, in);
+        g->node_ids[0] = in; g->node_ids[1] = out; r->node_ids[0] = out; r->node_ids[1] = nd; c->node_ids[0] = nd;
+        if (k == 0) {
+            Component *kick = add_comp(circuit, COMP_PULSE_SOURCE, gx + 120, y + 140, 0);   // +(gx+120,100) -(gx+120,180)
+            kick->props.pulse_source.v_low = 0; kick->props.pulse_source.v_high = 3.0; kick->props.pulse_source.pulse_width = 2e-6; kick->props.pulse_source.period = 100.0;
+            Component *gk = add_comp(circuit, COMP_GROUND, gx + 120, y + 200, 0);
+            kick_node = TN(gx + 120, y + 100); c->node_ids[1] = kick_node; kick->node_ids[0] = kick_node;
+            connect_terminals(circuit, kick, 1, gk, 0);
+        } else {
+            Component *gc = add_comp(circuit, COMP_GROUND, gx + 120, y + 120, 0);
+            connect_terminals(circuit, c, 1, gc, 0);
+        }
+        prev = nd;
+    }
+    int f1 = TN(x + 880, y + 20), f2 = TN(x + 880, y - 40), f3 = TN(x + 40, y - 40), f4 = TN(x + 40, y + 20);
+    TW(prev, f1); TW(f1, f2); TW(f2, f3); TW(f3, f4); TW(f4, first_in);
+    add_label(circuit, x + 20, y - 80, "Ring oscillator: odd number of inverters; each RC adds ~0.69 RC = 0.7 us -> f ~ 1/(2 x 5 x 0.7 us) ~ 145 kHz");
+    return 18;
+}
+#undef TN
+#undef TW
+
 // Output node to probe for each template (component type, ordinal among that type, terminal)
 typedef struct { ComponentType ct; int ord, term; } TemplateProbeSpec;
 static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
@@ -7259,9 +7594,28 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_SIL_LOADING]      = { COMP_RESISTOR, 0, 0 },
     [CIRCUIT_SERIES_COMP]      = { COMP_RESISTOR, 0, 0 },
     [CIRCUIT_HV_765_LINE]      = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_3PH_Y_BALANCED]   = { COMP_RESISTOR, 3, 0 },   // phase B load
+    [CIRCUIT_3PH_UNBALANCED]   = { COMP_RESISTOR, 6, 0 },
+    [CIRCUIT_3PH_345_LINE]     = { COMP_RESISTOR, 1, 0 },   // phase B load
+    [CIRCUIT_3PH_RECTIFIER]    = { COMP_RESISTOR, 0, 0 },   // plus bus
+    [CIRCUIT_SCHMITT_BISTABLE] = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_TRI_SQUARE_GEN]   = { COMP_OPAMP, 1, 2 },      // triangle
+    [CIRCUIT_FUNCTION_GEN]     = { COMP_RESISTOR, 3, 1 },   // shaper output
+    [CIRCUIT_COLPITTS]         = { COMP_NMOS, 0, 1 },       // drain
+    [CIRCUIT_RING_OSC]         = { COMP_NOT_GATE, 4, 1 },
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
+};
+
+// Extra probes (up to 3) for templates that need more than input + output on the scope
+static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
+    [CIRCUIT_3PH_Y_BALANCED]   = { { COMP_RESISTOR, 5, 0 }, { COMP_RESISTOR, 6, 0 } },      // phase C load, neutral (A = source probe)
+    [CIRCUIT_3PH_UNBALANCED]   = { { COMP_RESISTOR, 3, 0 }, { COMP_RESISTOR, 5, 0 } },
+    [CIRCUIT_3PH_345_LINE]     = { { COMP_RESISTOR, 0, 0 }, { COMP_RESISTOR, 2, 0 } },      // phase A, C loads
+    [CIRCUIT_3PH_RECTIFIER]    = { { COMP_DIODE, 5, 0 } },                                   // minus bus
+    [CIRCUIT_TRI_SQUARE_GEN]   = { { COMP_OPAMP, 0, 2 } },                                   // square
+    [CIRCUIT_FUNCTION_GEN]     = { { COMP_OPAMP, 1, 2 } },                                   // triangle
 };
 
 // Scope time/div that shows the interesting behaviour of each template
@@ -7290,6 +7644,8 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_LINE_MODEL_LADDER] = 5e-3, [CIRCUIT_DC_LINE_DROP] = 1e-3,
     [CIRCUIT_PC_OVERCURRENT] = 10e-3, [CIRCUIT_PC_DIFFERENTIAL] = 20e-3, [CIRCUIT_PC_DISTANCE] = 20e-3, [CIRCUIT_PC_BREAKER_FAIL] = 20e-3,
     [CIRCUIT_SIL_LOADING] = 5e-3, [CIRCUIT_SERIES_COMP] = 5e-3, [CIRCUIT_HV_765_LINE] = 5e-3,
+    [CIRCUIT_3PH_Y_BALANCED] = 5e-3, [CIRCUIT_3PH_UNBALANCED] = 5e-3, [CIRCUIT_3PH_345_LINE] = 5e-3, [CIRCUIT_3PH_RECTIFIER] = 5e-3,
+    [CIRCUIT_SCHMITT_BISTABLE] = 2e-3, [CIRCUIT_TRI_SQUARE_GEN] = 100e-6, [CIRCUIT_FUNCTION_GEN] = 100e-6, [CIRCUIT_COLPITTS] = 500e-9, [CIRCUIT_RING_OSC] = 2e-6,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -7311,6 +7667,8 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_LINE_MODEL_LADDER] = 50e3, [CIRCUIT_DC_LINE_DROP] = 5.0,
     [CIRCUIT_PC_OVERCURRENT] = 5.0, [CIRCUIT_PC_DIFFERENTIAL] = 5.0, [CIRCUIT_PC_DISTANCE] = 5.0, [CIRCUIT_PC_BREAKER_FAIL] = 2.0,
     [CIRCUIT_SIL_LOADING] = 100e3, [CIRCUIT_SERIES_COMP] = 100e3, [CIRCUIT_HV_765_LINE] = 200e3,
+    [CIRCUIT_3PH_Y_BALANCED] = 100.0, [CIRCUIT_3PH_UNBALANCED] = 100.0, [CIRCUIT_3PH_345_LINE] = 100e3, [CIRCUIT_3PH_RECTIFIER] = 50.0,
+    [CIRCUIT_SCHMITT_BISTABLE] = 5.0, [CIRCUIT_TRI_SQUARE_GEN] = 5.0, [CIRCUIT_FUNCTION_GEN] = 2.0, [CIRCUIT_COLPITTS] = 5.0, [CIRCUIT_RING_OSC] = 2.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -7387,6 +7745,15 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_SIL_LOADING]      = { DEMO_WAVEFORM, 60 },
     [CIRCUIT_SERIES_COMP]      = { DEMO_WAVEFORM, 60 },
     [CIRCUIT_HV_765_LINE]      = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_3PH_Y_BALANCED]   = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_3PH_UNBALANCED]   = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_3PH_345_LINE]     = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_3PH_RECTIFIER]    = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_SCHMITT_BISTABLE] = { DEMO_SWITCH, 100 },
+    [CIRCUIT_TRI_SQUARE_GEN]   = { DEMO_OSC, 5000 },
+    [CIRCUIT_FUNCTION_GEN]     = { DEMO_OSC, 5000 },
+    [CIRCUIT_COLPITTS]         = { DEMO_OSC, 712e3 },
+    [CIRCUIT_RING_OSC]         = { DEMO_OSC, 145e3 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -7466,6 +7833,12 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
         bool osc = (type == CIRCUIT_WIEN_OSCILLATOR || type == CIRCUIT_PHASE_SHIFT_OSC);
         if (src && !osc) probe_component_terminal(circuit, src, 0);
         if (out) probe_component_terminal(circuit, out, spec->term);
+        for (int e = 0; e < 3; e++) {
+            const TemplateProbeSpec *xs = &template_extra_probes[type][e];
+            if (!xs->ct) continue;
+            Component *xc = nth_of_type(circuit, first, xs->ct, xs->ord);
+            if (xc) probe_component_terminal(circuit, xc, xs->term);
+        }
     }
 
     float ty = max_y + 60.0f;

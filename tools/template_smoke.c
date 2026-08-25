@@ -187,7 +187,7 @@ static int flow_test(void) {
                 if (isnan(v) || isinf(v)) { ok = 0; snprintf(why, sizeof why, "%s terminal current NaN", comp->label); break; }
                 sum += v; if (fabs(v) > amax) amax = fabs(v); if (fabs(v) > imax) imax = fabs(v);
             }
-            if (!(comp->type == COMP_TLINE && comp->props.tline.model >= 2) && (ok && comp->num_terminals == 2 && fabs(sum) > 1e-6 * amax + 1e-9)) {   /* pi lines shunt charging current to ground */
+            if (!(comp->type == COMP_TLINE && comp->props.tline.model >= 2) && !(comp->type >= COMP_NOT_GATE && comp->type <= COMP_XNOR_GATE) && (ok && comp->num_terminals == 2 && fabs(sum) > 1e-6 * amax + 1e-9)) {   /* pi lines shunt charging current to ground */
                 ok = 0; snprintf(why, sizeof why, "%s not conserving: I0+I1=%.3g (|I|=%.3g)", comp->label, sum, amax);
             }
         }
@@ -210,7 +210,7 @@ static int flow_test(void) {
                 int behavioural = 0;
                 for (int j = 0; j < c->num_components && !behavioural; j++) {
                     Component *bc = c->components[j];
-                    if (bc->type < COMP_AND_GATE || bc->type > COMP_XNOR_GATE) continue;
+                    if (bc->type < COMP_NOT_GATE || bc->type > COMP_XNOR_GATE) continue;
                     for (int k = 0; k < bc->num_terminals; k++) if (bc->node_ids[k] == id) behavioural = 1;
                 }
                 if (behavioural) continue;
@@ -264,12 +264,17 @@ static int flow_test(void) {
 /* Oscillator check: run the oscillator templates for a while and count how often the
  * op-amp output crosses its own mean in the last quarter of the run. A latched or dead
  * loop gives ~0 crossings; a healthy oscillator gives 2 per period. */
+static Component *find_comp(Circuit *c, ComponentType t, int ord);
 static double g_osc_dt = 1e-6;
 static int osc_test(void) {
-    struct { CircuitTemplateType t; double run; double f_expect; } cases[] = {
-        { CIRCUIT_WIEN_OSCILLATOR, 0.040, 1591.5 },
-        { CIRCUIT_PHASE_SHIFT_OSC, 0.010, 6497.0 },
-        { CIRCUIT_RELAXATION_OSC, 0.040, 455.0 },
+    struct { CircuitTemplateType t; double run; double f_expect; double dt; } cases[] = {
+        { CIRCUIT_WIEN_OSCILLATOR, 0.040, 1591.5, 0 },
+        { CIRCUIT_PHASE_SHIFT_OSC, 0.010, 6497.0, 0 },
+        { CIRCUIT_RELAXATION_OSC, 0.040, 455.0, 0 },
+        { CIRCUIT_TRI_SQUARE_GEN, 0.004, 5000.0, 2e-7 },
+        { CIRCUIT_FUNCTION_GEN, 0.004, 5000.0, 2e-7 },
+        { CIRCUIT_COLPITTS, 60e-6, 712e3, 5e-9 },
+        { CIRCUIT_RING_OSC, 200e-6, 145e3, 2e-8 },
     };
     int fails = 0;
     for (unsigned k = 0; k < sizeof cases / sizeof cases[0]; k++) {
@@ -277,13 +282,16 @@ static int osc_test(void) {
         Circuit *c = circuit_create();
         circuit_place_template(c, cases[k].t, 0, 0);
         Simulation *sim = simulation_create(c);
-        Component *amp = NULL;
-        for (int i = 0; i < c->num_components; i++) {
+        /* output node: the template's probe spec if it has one, else the first op-amp output */
+        Component *amp = NULL; int oterm = 2;
+        { ComponentType oct; int oord;
+          if (circuit_template_output_spec(cases[k].t, &oct, &oord, &oterm) && oct) amp = find_comp(c, oct, oord); else oterm = 2; }
+        for (int i = 0; i < c->num_components && !amp; i++) {
             ComponentType ty = c->components[i]->type;
             if (ty == COMP_OPAMP || ty == COMP_OPAMP_REAL || ty == COMP_OPAMP_FLIPPED) { amp = c->components[i]; break; }
         }
         int ok = amp && simulation_dc_analysis(sim);
-        simulation_set_time_step(sim, g_osc_dt);
+        simulation_set_time_step(sim, cases[k].dt > 0 ? cases[k].dt : g_osc_dt);
         simulation_start(sim);
         /* record output in the last quarter */
         double t_rec = cases[k].run * 0.75;
@@ -292,7 +300,7 @@ static int osc_test(void) {
         while (ok && sim->time < cases[k].run) {
             if (!simulation_step(sim)) { ok = 0; break; }
             if (sim->time >= t_rec && n < NMAX) {
-                Node *nd = circuit_get_node(c, amp->node_ids[2]);
+                Node *nd = circuit_get_node(c, amp->node_ids[oterm]);
                 vs[n] = nd ? nd->voltage : 0; ts[n] = sim->time; n++;
             }
         }
@@ -394,6 +402,13 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_PC_BREAKER_FAIL,  COMP_AND_GATE,  1, 2, "max", 5.0,     0.05, 0.30,  "BFT high ~200 ms after TRIP (stuck breaker)" },
     { CIRCUIT_SIL_LOADING,      COMP_RESISTOR,  0, 0, "amp", 269254.0, 0.03, 60e-3, "Vr/Vs = 0.956 at SIL (pi oracle)" },
     { CIRCUIT_SERIES_COMP,      COMP_RESISTOR,  0, 0, "amp", 250606.2, 0.04, 60e-3, "Vr/Vs = 0.890 at 2 x SIL with 50 % series cap (pi oracle)" },
+    { CIRCUIT_SCHMITT_BISTABLE, COMP_OPAMP,     0, 2, "max", 15.0,  0.05, 30e-3, "bistable output at the rail" },
+    { CIRCUIT_TRI_SQUARE_GEN,   COMP_OPAMP,     1, 2, "amp", 7.5,   0.08, 3e-3,  "triangle peak = 15 R1/R2" },
+    { CIRCUIT_FUNCTION_GEN,     COMP_RESISTOR,  3, 1, "amp", 4.9,   0.15, 3e-3,  "3-breakpoint sine ~4.9 V peak" },
+    { CIRCUIT_3PH_Y_BALANCED,   COMP_RESISTOR,  3, 0, "amp", 373.3, 0.03, 60e-3, "phase B load: 392 x 10 / 10.5 (balanced, neutral at 0)" },
+    { CIRCUIT_3PH_UNBALANCED,   COMP_RESISTOR,  6, 0, "amp", 20.83, 0.05, 60e-3, "neutral shift with 10/20/40 ohm loads and 1 ohm neutral (phasor)" },
+    { CIRCUIT_3PH_345_LINE,     COMP_RESISTOR,  1, 0, "amp", 264.0e3, 0.05, 60e-3, "phase B: same 6.3 % drop as the single-phase example" },
+    { CIRCUIT_3PH_RECTIFIER,    COMP_RESISTOR,  0, 0, "max", 169.3, 0.03, 60e-3, "plus bus peak = 170 - 0.7" },
     { CIRCUIT_HV_765_LINE,      COMP_RESISTOR,  0, 0, "amp", 598613.0, 0.04, 60e-3, "Vr/Vs = 0.958 at SIL, 300 mi single pi" },
 };
 

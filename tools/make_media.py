@@ -38,6 +38,12 @@ SHOTS = [
     ("sil_loading", "SIL", 120, "circuits"),
     ("series_compensation", "SerC", 120, "circuits"),
     ("line_765kv", "765kV", 120, "circuits"),
+    ("three_phase_balanced", "3phY", 120, "circuits"),
+    ("six_pulse_rectifier", "6Pulse", 120, "circuits"),
+    ("triangle_square_gen", "TriSq", 160, "circuits"),
+    ("function_generator", "FuncGn", 160, "circuits"),
+    ("colpitts", "Colpit", 200, "circuits"),
+    ("ring_oscillator", "Ring", 160, "circuits"),
 ]
 # name, template, first frame, frames, every
 GIFS = [
@@ -47,6 +53,8 @@ GIFS = [
     ("relaxation_osc", "RelOsc", 60, 24, 2),
     ("relay_differential", "87L", 60, 40, 3),
     ("breaker_failure", "50BF", 60, 40, 4),
+    ("function_generator", "FuncGn", 60, 30, 2),
+    ("three_phase_balanced", "3phY", 60, 24, 3),
 ]
 
 

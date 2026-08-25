@@ -112,7 +112,7 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-72 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+81 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -167,6 +167,11 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **Wien Oscillator** (`Wien`) - Wien bridge sine wave oscillator
 - **Phase Shift Osc** (`PhOsc`) - RC phase shift oscillator (keep noise on)
 - **Relaxation Osc** (`RelOsc`) - Op-amp Schmitt + RC relaxation oscillator
+- **Bistable (Schmitt)** (`Schmit`) - Inverting op-amp bistable: +/-7.5 V thresholds, hysteresis loop
+- **Triangle/Square Gen** (`TriSq`) - Bistable + integrator: 5 kHz triangle and square
+- **Function Generator** (`FuncGn`) - Triangle -> 3-breakpoint diode shaper -> sine; R sets f, thresholds set A
+- **Colpitts (MOSFET)** (`Colpit`) - LC tank C1-C2 capacitive divider, 712 kHz
+- **Ring Oscillator** (`Ring`) - Five inverters with RC delay stages, ~145 kHz
 
 **Power supplies**
 - **Half-Wave Rect** (`HW`) - Half-wave rectifier
@@ -203,6 +208,10 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **SIL Loading** (`SIL`) - 200 mi 345 kV line at surge impedance load: flat voltage
 - **Series Compensation** (`SerC`) - 50 % series capacitor restores the voltage at 2 x SIL
 - **765 kV Line (AEP)** (`765kV`) - 300 mi six-bundle EHV line at ~2300 MW
+- **3-Phase Y Balanced** (`3phY`) - Three 120-degree sources, Y load: neutral carries nothing
+- **3-Phase Unbalanced** (`3phUn`) - Unequal Y loads: neutral current and neutral shift
+- **3-Phase 345 kV Line** (`3ph345`) - Three per-phase lines from the 345 kV example
+- **3-Phase 6-Pulse Rect** (`6Pulse`) - Three-phase diode bridge: 360 Hz ripple, 1.35 x V_LL
 
 **High voltage**
 - **Tesla Coil** (`Tesla`) - Spark-gap Tesla coil, 4x13 in toroid, streamer to a rod
@@ -389,6 +398,13 @@ Create reusable subcircuits from your designs:
 | ![Line model ladder](screenshots/auto/line_model_ladder.png) The same line as R, R-L and pi | ![Relaxation oscillator](screenshots/auto/relaxation_osc.png) Op-amp relaxation oscillator |
 | ![50/51 overcurrent](screenshots/auto/relay_overcurrent.png) CT + 50/51 overcurrent relay | ![21 distance](screenshots/auto/relay_distance.png) 21 distance zone 1 reach |
 | ![50BF](screenshots/auto/breaker_failure.png) 50BF breaker-failure timer | ![765 kV](screenshots/auto/line_765kv.png) AEP 765 kV line at SIL |
+| ![Three-phase](screenshots/auto/three_phase_balanced.png) Balanced three-phase Y (A, B, C, neutral) | ![6-pulse](screenshots/auto/six_pulse_rectifier.png) Three-phase six-pulse rectifier |
+| ![Triangle/square](screenshots/auto/triangle_square_gen.png) Bistable + integrator triangle/square generator | ![Function generator](screenshots/auto/function_generator.png) Triangle-to-sine diode shaper (function generator) |
+| ![Colpitts](screenshots/auto/colpitts.png) MOSFET Colpitts at 712 kHz | ![Ring](screenshots/auto/ring_oscillator.png) Five-inverter ring oscillator |
+
+![Function generator](gifs/auto_function_generator.gif)
+
+![Three-phase](gifs/auto_three_phase_balanced.gif)
 
 ![RC sweep](gifs/auto_rc_lowpass_sweep.gif)
 
@@ -460,7 +476,7 @@ point and a short transient, and reports solver errors, NaN/runaway voltages and
 point of every transistor / op-amp / regulator:
 
 ```bash
-build/tools/template_smoke.exe             # 72/72 templates passed
+build/tools/template_smoke.exe             # 81/81 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (66 oracles)
@@ -476,6 +492,15 @@ build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
 build/tools/template_smoke.exe --response "RC BP"   # amplitude vs frequency of every node during the sweep
 build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
 build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template in the palette)
+```
+
+The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
+which produced the images in this README):
+
+```bash
+build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
+build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
+build/circuit-playground.exe --help
 ```
 
 The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
