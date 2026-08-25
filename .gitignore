@@ -36,7 +36,9 @@ LEDARRAY_ANALYSIS.md
 
 # Runtime output / scratch
 *.log
-screenshots/
+screenshots/*
+!screenshots/auto/
+screenshots/auto/_*
 circuit.json
 debug_circuit.json
 oscillator_debug.txt
