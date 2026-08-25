@@ -127,6 +127,13 @@ typedef enum {
     PROP_TEXT_ITALIC,             // Italic toggle
     PROP_TEXT_UNDERLINE,          // Underline toggle
 
+    // High voltage
+    PROP_SPARK_GAP_MM,            // Spark gap spacing (mm)
+    PROP_SPARK_GAP_RON,           // Spark gap arc resistance
+    PROP_TOROID_MAJOR,            // Toroid outer diameter (in)
+    PROP_TOROID_MINOR,            // Toroid tube diameter (in)
+    PROP_TLINE_LENGTH, PROP_TLINE_R, PROP_TLINE_X, PROP_TLINE_B, PROP_TLINE_MODEL,   // Transmission line
+
     // Bode plot parameters
     PROP_BODE_FREQ_START,         // Start frequency
     PROP_BODE_FREQ_STOP,          // Stop frequency

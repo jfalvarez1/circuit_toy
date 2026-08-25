@@ -245,6 +245,30 @@ bool file_export_json(Circuit *circuit, const char *filename) {
             fprintf(f, "        \"capacitance\": %.6e\n", comp->props.capacitor.capacitance);
             fprintf(f, "      }");
             has_props = true;
+        } else if (comp->type == COMP_SPARK_GAP) {
+            fprintf(f, ",\n");
+            fprintf(f, "      \"properties\": {\n");
+            fprintf(f, "        \"gap_mm\": %.6e,\n", comp->props.spark_gap.gap_mm);
+            fprintf(f, "        \"r_on\": %.6e\n", comp->props.spark_gap.r_on);
+            fprintf(f, "      }");
+            has_props = true;
+        } else if (comp->type == COMP_TLINE) {
+            fprintf(f, ",\n");
+            fprintf(f, "      \"properties\": {\n");
+            fprintf(f, "        \"length_mi\": %.6e,\n", comp->props.tline.length_mi);
+            fprintf(f, "        \"r_per_mi\": %.6e,\n", comp->props.tline.r_per_mi);
+            fprintf(f, "        \"x_per_mi\": %.6e,\n", comp->props.tline.x_per_mi);
+            fprintf(f, "        \"b_us_per_mi\": %.6e,\n", comp->props.tline.b_us_per_mi);
+            fprintf(f, "        \"model\": %d\n", comp->props.tline.model);
+            fprintf(f, "      }");
+            has_props = true;
+        } else if (comp->type == COMP_TOROID) {
+            fprintf(f, ",\n");
+            fprintf(f, "      \"properties\": {\n");
+            fprintf(f, "        \"major_in\": %.6e,\n", comp->props.toroid.major_in);
+            fprintf(f, "        \"minor_in\": %.6e\n", comp->props.toroid.minor_in);
+            fprintf(f, "      }");
+            has_props = true;
         } else if (comp->type == COMP_OPAMP || comp->type == COMP_OPAMP_FLIPPED || comp->type == COMP_OPAMP_REAL) {
             fprintf(f, ",\n");
             fprintf(f, "      \"properties\": {\n");
@@ -398,6 +422,24 @@ bool file_import_json(Circuit *circuit, const char *filename) {
                                         comp->props.resistor.resistance = resistance;
                                     }
                                 }
+                            } else if (comp->type == COMP_SPARK_GAP || comp->type == COMP_TOROID || comp->type == COMP_TLINE) {
+                                const char *keys[5]; double *dst[5]; int nk = 0; double model_tmp = comp->props.tline.model;
+                                if (comp->type == COMP_SPARK_GAP) {
+                                    keys[0] = "\"gap_mm\":"; keys[1] = "\"r_on\":";
+                                    dst[0] = &comp->props.spark_gap.gap_mm; dst[1] = &comp->props.spark_gap.r_on; nk = 2;
+                                } else if (comp->type == COMP_TOROID) {
+                                    keys[0] = "\"major_in\":"; keys[1] = "\"minor_in\":";
+                                    dst[0] = &comp->props.toroid.major_in; dst[1] = &comp->props.toroid.minor_in; nk = 2;
+                                } else {
+                                    keys[0] = "\"length_mi\":"; keys[1] = "\"r_per_mi\":"; keys[2] = "\"x_per_mi\":"; keys[3] = "\"b_us_per_mi\":"; keys[4] = "\"model\":";
+                                    dst[0] = &comp->props.tline.length_mi; dst[1] = &comp->props.tline.r_per_mi; dst[2] = &comp->props.tline.x_per_mi;
+                                    dst[3] = &comp->props.tline.b_us_per_mi; dst[4] = &model_tmp; nk = 5;
+                                }
+                                for (int k = 0; k < nk; k++) {
+                                    char *kp = strstr(props_ptr, keys[k]);
+                                    if (kp && (!next_comp || kp < next_comp)) { double val; if (sscanf(kp + strlen(keys[k]), " %lf", &val) == 1) *dst[k] = val; }
+                                }
+                                if (comp->type == COMP_TLINE) comp->props.tline.model = (int)model_tmp;
                             } else if (comp->type == COMP_CAPACITOR) {
                                 char *cap_ptr = strstr(props_ptr, "\"capacitance\":");
                                 if (cap_ptr && (!next_comp || cap_ptr < next_comp)) {

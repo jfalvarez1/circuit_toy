@@ -660,6 +660,34 @@ typedef union {
         int def_id;             // Reference to SubCircuitDef in g_subcircuit_library
         char name[32];          // Instance name (e.g., "U1", "IC2")
     } subcircuit;
+    // Spark gap: open until |V| exceeds the breakdown of the air gap (3 kV/mm), then a low
+    // resistance arc that persists until the current has stayed below hold_current for
+    // quench_time. State changes only between accepted steps (see simulation.c).
+    struct {
+        double gap_mm;          // Electrode spacing (mm); breakdown = 3000 V/mm * gap_mm
+        double r_on;            // Arc resistance while conducting (Ohm)
+        double hold_current;    // Arc extinguishes below this current (A) ...
+        double quench_time;     // ... after this long (s)
+        bool conducting;        // Current state (runtime)
+        double last_conduct_time;  // Last time |I| > hold_current (runtime)
+    } spark_gap;
+
+    // Toroid topload: capacitance to ground from the toroid dimensions (Bert Pool formula)
+    struct {
+        double major_in;        // Outer diameter D (inches)
+        double minor_in;        // Tube (cross-section) diameter d (inches)
+        double voltage;         // Terminal voltage after the last accepted step (runtime, for the corona display)
+    } toroid;
+    // Transmission line (single-phase equivalent) built from per-mile data at 60 Hz:
+    //   R = r_per_mi * length, L = x_per_mi * length / (2 pi 60), C_end = b * length / (2 pi 60) / 2
+    // model: 0 = resistance only, 1 = series R-L, 2 = nominal pi (R-L with C/2 shunt at each end)
+    struct {
+        double length_mi;
+        double r_per_mi;        // Ohm per mile
+        double x_per_mi;        // Ohm per mile (inductive reactance at 60 Hz)
+        double b_us_per_mi;     // micro-siemens per mile (shunt charging susceptance at 60 Hz)
+        int model;
+    } tline;
 } ComponentProps;
 
 // Component structure
@@ -723,6 +751,11 @@ void component_rotate(Component *comp);
 
 // Get terminal world positions
 void component_get_terminal_pos(Component *comp, int terminal_idx, float *x, float *y);
+
+// High-voltage helpers
+double toroid_capacitance(const Component *comp);      // Farads, from props.toroid dimensions
+double spark_gap_breakdown(const Component *comp);     // Volts, from props.spark_gap.gap_mm
+void tline_params(const Component *comp, double *R, double *L, double *C_end);   // lumped values from the per-mile data
 
 // Check if point is inside component
 bool component_contains_point(Component *comp, float px, float py);

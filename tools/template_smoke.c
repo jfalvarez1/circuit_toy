@@ -187,7 +187,7 @@ static int flow_test(void) {
                 if (isnan(v) || isinf(v)) { ok = 0; snprintf(why, sizeof why, "%s terminal current NaN", comp->label); break; }
                 sum += v; if (fabs(v) > amax) amax = fabs(v); if (fabs(v) > imax) imax = fabs(v);
             }
-            if (ok && comp->num_terminals == 2 && fabs(sum) > 1e-6 * amax + 1e-9) {
+            if (!(comp->type == COMP_TLINE && comp->props.tline.model >= 2) && (ok && comp->num_terminals == 2 && fabs(sum) > 1e-6 * amax + 1e-9)) {   /* pi lines shunt charging current to ground */
                 ok = 0; snprintf(why, sizeof why, "%s not conserving: I0+I1=%.3g (|I|=%.3g)", comp->label, sum, amax);
             }
         }
@@ -211,7 +211,7 @@ static int flow_test(void) {
                 if (c->wires[w].end_node_id == id) inflow += c->wires[w].current;
                 if (c->wires[w].start_node_id == id) inflow -= c->wires[w].current;
             }
-            if (fabs(inflow - demand) > 1e-6 * (imax + 1e-9) + 1e-9) {
+            if (fabs(inflow - demand) > 1e-6 * (imax + 1e-9) + 1e-8) {   /* 10 nA floor: open spark gaps leak ~nA */
                 ok = 0; snprintf(why, sizeof why, "KCL at node %d: wires %.4g vs demand %.4g", id, inflow, demand);
             }
         }
@@ -366,13 +366,17 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_LC_LOWPASS,       COMP_CAPACITOR, 0, 0, "amp", 1.15,  0.15, 8e-3,  "2nd order, Q = 1, at 1 kHz" },
     { CIRCUIT_VOLTAGE_DOUBLER,  COMP_CAPACITOR, 1, 0, "dc",  7.4,   0.15, 1.0,   "2*A - 1.4 at A ~ 4.4 V (late in the 1->5 V sweep)" },
     { CIRCUIT_HALFWAVE_FILTERED,COMP_CAPACITOR, 0, 0, "dc",  8.0,   0.15, 1.0,   "Vpk - 0.7 - ripple/2 late in the 2->10 V sweep" },
-    { CIRCUIT_HV_345_LINE,      COMP_RESISTOR,  1, 0, "amp", 264.0e3, 0.05, 60e-3, "186.7 kV rms at the 600 MW load (-6.3 %)" },
-    { CIRCUIT_HV_138_LINE_VAR,  COMP_RESISTOR,  1, 0, "amp", 105.0e3, 0.06, 60e-3, "74.3 kV rms with pf 0.9 load, cap bank open (-6.7 %)" },
-    { CIRCUIT_MV_FEEDER,        COMP_RESISTOR,  1, 0, "amp", 9.86e3,  0.04, 60e-3, "6,973 V rms at the feeder end (-3.2 %)" },
+    { CIRCUIT_HV_345_LINE,      COMP_RESISTOR,  0, 0, "amp", 264.0e3, 0.05, 60e-3, "186.7 kV rms at the 600 MW load (-6.3 %)" },
+    { CIRCUIT_HV_138_LINE_VAR,  COMP_RESISTOR,  0, 0, "amp", 105.0e3, 0.06, 60e-3, "74.3 kV rms with pf 0.9 load, cap bank open (-6.7 %)" },
+    { CIRCUIT_MV_FEEDER,        COMP_RESISTOR,  0, 0, "amp", 9.86e3,  0.04, 60e-3, "6,973 V rms at the feeder end (-3.2 %)" },
     { CIRCUIT_POLE_XFMR,        COMP_RESISTOR,  0, 0, "amp", 339.4,   0.04, 60e-3, "240 V rms service (ideal transformer)" },
     { CIRCUIT_GEN_GSU,          COMP_RESISTOR,  0, 0, "amp", 279.4e3, 0.04, 60e-3, "345 kV bus behind X'' referred (25 ohm) at unity pf" },
-    { CIRCUIT_GRID_CHAIN,       COMP_RESISTOR,  3, 0, "amp", 339.4,   0.04, 60e-3, "house at 239 V rms (lines unloaded by one house)" },
-    { CIRCUIT_FERRANTI_LINE,    COMP_RESISTOR,  1, 0, "amp", 309.6e3, 0.05, 80e-3, "open-end rise +9.9 % (reactor switch open)" },
+    { CIRCUIT_GRID_CHAIN,       COMP_RESISTOR,  0, 0, "amp", 339.4,   0.04, 60e-3, "house at 239 V rms (lines unloaded by one house)" },
+    { CIRCUIT_FERRANTI_LINE,    COMP_RESISTOR,  0, 0, "amp", 309.6e3, 0.05, 80e-3, "open-end rise +9.9 % (reactor switch open)" },
+    { CIRCUIT_LINE_MODEL_LADDER,COMP_RESISTOR,  0, 0, "amp", 110.7e3, 0.03, 60e-3, "row 1 (R only): 112.7 * 211.6 / 215.5" },
+    { CIRCUIT_LINE_MODEL_LADDER,COMP_RESISTOR,  1, 0, "amp", 110.1e3, 0.03, 60e-3, "row 2 (R-L): 77.84 kV rms oracle B" },
+    { CIRCUIT_LINE_MODEL_LADDER,COMP_RESISTOR,  2, 0, "amp", 110.5e3, 0.03, 60e-3, "row 3 (pi): R-L plus a little charging rise" },
+    { CIRCUIT_DC_LINE_DROP,     COMP_RESISTOR,  1, 0, "dc",  10.909,  0.02, 5e-3,  "12 * 10 / 11" },
 };
 
 static Component *find_comp(Circuit *c, ComponentType ct, int ord) {
@@ -774,6 +778,77 @@ static double source_scale(Circuit *c) {
     return m;
 }
 
+/* Tesla coil check: run 20 ms at 100 ns, count primary-gap firings, streamer firings, the
+ * toroid peak and the ring frequency right after the first firing. */
+static int tesla_test(void) {
+    struct { CircuitTemplateType t; double f_expect; double vtop_min; int rod_min; } cases[] = {
+        { CIRCUIT_TESLA_COIL,         186e3, 115e3, 1 },
+        { CIRCUIT_TESLA_COIL_BIG,     152e3, 130e3, 1 },
+        { CIRCUIT_TESLA_COIL_DETUNED, 152e3, 0,     0 },
+    };
+    int fails = 0; double vtop_tuned = 0, vtop_detuned = 0;
+    for (unsigned k = 0; k < sizeof cases / sizeof cases[0]; k++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info(cases[k].t);
+        Circuit *c = circuit_create();
+        circuit_place_template(c, cases[k].t, 0, 0);
+        Simulation *sim = simulation_create(c);
+        Component *gap = NULL, *rod = NULL, *top = NULL;
+        for (int i = 0; i < c->num_components; i++) {
+            Component *comp = c->components[i];
+            if (comp->type == COMP_SPARK_GAP) { if (!gap) gap = comp; else rod = comp; }
+            if (comp->type == COMP_TOROID) top = comp;
+        }
+        int ok = gap && rod && top && simulation_dc_analysis(sim);
+        simulation_set_time_step(sim, 100e-9);
+        simulation_start(sim);
+        int fires = 0, rod_fires = 0, was_on = 0, rod_on = 0; double vmax = 0, t_fire = -1;
+        static double dbg_max[512]; memset(dbg_max, 0, sizeof dbg_max);
+        double prev_v = 0; int ring_cross = 0; double t_first_cross = -1, t_last_cross = -1;
+        while (ok && sim->time < 0.020) {
+            if (!simulation_step(sim)) { ok = 0; break; }
+            int on = gap->props.spark_gap.conducting;
+            if (on && !was_on) { fires++; if (t_fire < 0) t_fire = sim->time; }
+            was_on = on;
+            if (getenv("TESLA_DEBUG") && fires >= 1 && fires <= 2 && sim->time < t_fire + 3e-6) {
+                Node *na = circuit_get_node(c, gap->node_ids[0]), *nb = circuit_get_node(c, gap->node_ids[1]);
+                printf("        t=%.3fus on=%d v0=%.1f v1=%.1f gapI=%.3f dt=%.3g\n", sim->time * 1e6, on, na ? na->voltage : 0, nb ? nb->voltage : 0, gap->terminal_current[0], sim->time_step);
+            }
+            int ron = rod->props.spark_gap.conducting;
+            if (ron && !rod_on) rod_fires++;
+            rod_on = ron;
+            double v = top->props.toroid.voltage;
+            if (fabs(v) > vmax) vmax = fabs(v);
+            for (int i = 0; i < c->num_nodes; i++) { int id = c->nodes[i].id; if (id < 512 && fabs(c->nodes[i].voltage) > dbg_max[id]) dbg_max[id] = fabs(c->nodes[i].voltage); }
+            if (t_fire >= 0 && sim->time < t_fire + 60e-6) {
+                if (prev_v <= 0 && v > 0) { ring_cross++; if (t_first_cross < 0) t_first_cross = sim->time; t_last_cross = sim->time; }
+            }
+            prev_v = v;
+        }
+        if (getenv("TESLA_DEBUG")) {
+            for (int i = 0; i < c->num_nodes; i++) {
+                int id = c->nodes[i].id; char owners[64] = "";
+                for (int j = 0; j < c->num_components && strlen(owners) < 50; j++) for (int k2 = 0; k2 < c->components[j]->num_terminals; k2++)
+                    if (c->components[j]->node_ids[k2] == id) snprintf(owners + strlen(owners), sizeof owners - strlen(owners), "%s[%d] ", c->components[j]->label, k2);
+                if (owners[0]) printf("      n%-3d max|V|=%12.3f  %s\n", id, id < 512 ? dbg_max[id] : 0.0, owners);
+            }
+        }
+        double f_meas = (ring_cross >= 2) ? (ring_cross - 1) / (t_last_cross - t_first_cross) : 0;
+        int f_ok = fabs(f_meas - cases[k].f_expect) < 0.2 * cases[k].f_expect;
+        int pass = ok && fires >= 2 && vmax >= cases[k].vtop_min && rod_fires >= cases[k].rod_min && f_ok;
+        if (cases[k].t == CIRCUIT_TESLA_COIL_BIG) vtop_tuned = vmax;
+        if (cases[k].t == CIRCUIT_TESLA_COIL_DETUNED) vtop_detuned = vmax;
+        printf("[%s] tesla %-24s gap fires=%d  streamer fires=%d  Vtop max=%.0f kV  ring f=%.0f kHz (expect ~%.0f)%s\n",
+               pass ? " OK " : "FAIL", ti ? ti->name : "?", fires, rod_fires, vmax / 1e3, f_meas / 1e3, cases[k].f_expect / 1e3,
+               !ok ? "  [sim error]" : "");
+        if (!pass) fails++;
+        simulation_free(sim); circuit_free(c);
+    }
+    if (vtop_detuned > 0 && vtop_detuned > 0.75 * vtop_tuned) { printf("[FAIL] tesla detuned coil should be well below the tuned one (%.0f vs %.0f kV)\n", vtop_detuned / 1e3, vtop_tuned / 1e3); fails++; }
+    else printf("[ OK ] tesla detuned coil peak %.0f kV vs tuned %.0f kV\n", vtop_detuned / 1e3, vtop_tuned / 1e3);
+    printf("%d tesla checks failed\n", fails);
+    return fails;
+}
+
 int main(int argc, char **argv) {
     int dc_only = 0, verbose = 0, dump_nodes = 0;
     const char *svg_dir = NULL;
@@ -792,6 +867,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--geom-test")) return geom_test();
         else if (!strcmp(argv[i], "--sweep-check")) return sweep_check();
         else if (!strcmp(argv[i], "--demo-test")) return demo_test();
+        else if (!strcmp(argv[i], "--tesla-test")) return tesla_test();
         else if (!strcmp(argv[i], "--response") && i + 1 < argc) return response_explore(argv[++i]);
         else if (!strcmp(argv[i], "--sim-time") && i + 1 < argc) sim_time = atof(argv[++i]);
         else filter = argv[i];

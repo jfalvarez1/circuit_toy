@@ -12,6 +12,9 @@
 void render_fuse(RenderContext *ctx, float x, float y, int rotation, bool blown, double heat_level);
 void render_crystal(RenderContext *ctx, float x, float y, int rotation);
 void render_spark_gap(RenderContext *ctx, float x, float y, int rotation);
+void render_toroid(RenderContext *ctx, Component *comp);
+void render_tline(RenderContext *ctx, Component *comp);
+static void render_arc_between(RenderContext *ctx, float x1, float y1, float x2, float y2, float intensity);
 void render_potentiometer(RenderContext *ctx, float x, float y, int rotation);
 void render_photoresistor(RenderContext *ctx, float x, float y, int rotation);
 void render_thermistor(RenderContext *ctx, float x, float y, int rotation);
@@ -899,6 +902,21 @@ void render_component(RenderContext *ctx, Component *comp) {
             break;
         case COMP_SPARK_GAP:
             render_spark_gap(ctx, comp->x, comp->y, comp->rotation);
+            if (comp->props.spark_gap.conducting) {
+                float ax, ay, bx, by;
+                component_get_terminal_pos(comp, 0, &ax, &ay);
+                component_get_terminal_pos(comp, 1, &bx, &by);
+                // arc between the electrode tips (15 px in from each terminal)
+                float dx = bx - ax, dy = by - ay, len = sqrtf(dx*dx + dy*dy);
+                if (len > 1) { dx /= len; dy /= len; }
+                render_arc_between(ctx, ax + dx*15, ay + dy*15, bx - dx*15, by - dy*15, 1.0f);
+            }
+            break;
+        case COMP_TOROID:
+            render_toroid(ctx, comp);
+            break;
+        case COMP_TLINE:
+            render_tline(ctx, comp);
             break;
         case COMP_POTENTIOMETER:
             render_potentiometer(ctx, comp->x, comp->y, comp->rotation);
@@ -2670,6 +2688,103 @@ void render_spark_gap(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_line_rotated(ctx, x, y, 15, 0, 8, 10, rotation);
     render_draw_line_rotated(ctx, x, y, 8, -10, 5, 0, rotation);
     render_draw_line_rotated(ctx, x, y, 8, 10, 5, 0, rotation);
+}
+
+// Jagged lightning polyline with a glow pass; jitter is re-rolled every frame on purpose
+static void render_arc_between(RenderContext *ctx, float x1, float y1, float x2, float y2, float intensity) {
+    float dx = x2 - x1, dy = y2 - y1, len = sqrtf(dx*dx + dy*dy);
+    if (len < 2) return;
+    float nx = -dy / len, ny = dx / len;
+    int segs = (int)(len / 6) + 3; if (segs > 24) segs = 24;
+    float px = x1, py = y1;
+    float amp = fminf(len * 0.18f, 14.0f) * intensity;
+    for (int pass = 0; pass < 2; pass++) {
+        render_set_color(ctx, pass == 0 ? (Color){120, 170, 255, 110} : (Color){235, 245, 255, 255});
+        px = x1; py = y1;
+        for (int i = 1; i <= segs; i++) {
+            float t = (float)i / segs;
+            float j = (i == segs) ? 0 : ((rand() % 2001) - 1000) / 1000.0f * amp;
+            float qx = x1 + dx * t + nx * j, qy = y1 + dy * t + ny * j;
+            if (pass == 0) {
+                render_draw_line(ctx, px + nx, py + ny, qx + nx, qy + ny);
+                render_draw_line(ctx, px - nx, py - ny, qx - nx, qy - ny);
+            } else {
+                render_draw_line(ctx, px, py, qx, qy);
+            }
+            px = qx; py = qy;
+        }
+    }
+}
+
+// Transmission line: a box with two little towers; the pi legs are drawn for the pi model
+void render_tline(RenderContext *ctx, Component *comp) {
+    float x = comp->x, y = comp->y; int rot = comp->rotation;
+    render_draw_line_rotated(ctx, x, y, -40, 0, -26, 0, rot);
+    render_draw_line_rotated(ctx, x, y, 26, 0, 40, 0, rot);
+    // body
+    render_draw_line_rotated(ctx, x, y, -26, -9, 26, -9, rot);
+    render_draw_line_rotated(ctx, x, y, -26, 9, 26, 9, rot);
+    render_draw_line_rotated(ctx, x, y, -26, -9, -26, 9, rot);
+    render_draw_line_rotated(ctx, x, y, 26, -9, 26, 9, rot);
+    // two towers (lattice masts) inside the body
+    for (int t = -1; t <= 1; t += 2) {
+        float cx = 12.0f * t;
+        render_draw_line_rotated(ctx, x, y, cx - 4, 8, cx, -7, rot);
+        render_draw_line_rotated(ctx, x, y, cx + 4, 8, cx, -7, rot);
+        render_draw_line_rotated(ctx, x, y, cx - 6, -3, cx + 6, -3, rot);
+        render_draw_line_rotated(ctx, x, y, cx - 4, 2, cx + 4, 2, rot);
+    }
+    // catenary between the towers
+    render_draw_line_rotated(ctx, x, y, -12, -3, -4, -1, rot);
+    render_draw_line_rotated(ctx, x, y, -4, -1, 4, -1, rot);
+    render_draw_line_rotated(ctx, x, y, 4, -1, 12, -3, rot);
+    if (comp->props.tline.model >= 2) {
+        // pi legs: short capacitor ticks below each end
+        for (int t = -1; t <= 1; t += 2) {
+            float cx = 22.0f * t;
+            render_draw_line_rotated(ctx, x, y, cx, 9, cx, 13, rot);
+            render_draw_line_rotated(ctx, x, y, cx - 4, 13, cx + 4, 13, rot);
+            render_draw_line_rotated(ctx, x, y, cx - 4, 16, cx + 4, 16, rot);
+        }
+    } else if (comp->props.tline.model == 1) {
+        render_draw_line_rotated(ctx, x, y, 18, 4, 22, 4, rot);   // small "L" hint
+        render_draw_line_rotated(ctx, x, y, 18, 0, 18, 4, rot);
+    }
+}
+
+// Toroid topload: a ring drawn as two ellipses above the terminal stub; corona streaks appear
+// above ~50 kV (purely visual, scaled by the last accepted terminal voltage).
+void render_toroid(RenderContext *ctx, Component *comp) {
+    float x = comp->x, y = comp->y;
+    double D = comp->props.toroid.major_in, d = comp->props.toroid.minor_in;
+    float rx = (float)fminf(fmaxf((float)D * 2.4f, 16.0f), 70.0f);
+    float ry = (float)fminf(fmaxf((float)d * 2.4f, 5.0f), 30.0f);
+    float cy = y - 4;
+    // stub from the terminal (0,40) up to the ring
+    render_draw_line(ctx, x, y + 40, x, cy + ry);
+    // outer and inner ellipse
+    const int N = 40;
+    for (int pass = 0; pass < 2; pass++) {
+        float ex = pass ? rx * 0.42f : rx, ey = pass ? ry * 0.42f : ry;
+        float lx = x + ex, ly = cy;
+        for (int i = 1; i <= N; i++) {
+            float a = (float)(2.0 * M_PI * i / N);
+            float qx = x + ex * cosf(a), qy = cy + ey * sinf(a);
+            render_draw_line(ctx, lx, ly, qx, qy);
+            lx = qx; ly = qy;
+        }
+    }
+    double v = fabs(comp->props.toroid.voltage);
+    if (v > 50e3) {
+        float inten = (float)fmin((v - 50e3) / 250e3, 1.0);
+        int streaks = 2 + (int)(inten * 4);
+        for (int k = 0; k < streaks; k++) {
+            float a = (float)(-M_PI * (0.15 + 0.7 * ((rand() % 1000) / 1000.0)));   // upper half
+            float sx = x + rx * cosf(a), sy = cy + ry * sinf(a);
+            float L = 12 + 50 * inten * ((rand() % 1000) / 1000.0f);
+            render_arc_between(ctx, sx, sy, sx + L * cosf(a), sy + L * sinf(a), 0.6f + 0.4f * inten);
+        }
+    }
 }
 
 // Potentiometer - resistor with arrow (wiper)

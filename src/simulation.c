@@ -542,6 +542,7 @@ bool simulation_dc_analysis(Simulation *sim) {
     // Capacitors carry no current at the operating point; swept sources restart their phase
     for (int i = 0; i < circuit->num_components; i++) {
         circuit->components[i]->trap_i_prev = 0.0;
+        if (circuit->components[i]->type == COMP_SPARK_GAP) circuit->components[i]->props.spark_gap.conducting = false;
         circuit->components[i]->sweep_phase = 0.0;
     }
 
@@ -1155,13 +1156,39 @@ bool simulation_step(Simulation *sim) {
             }
         }
 
+        // Spark gaps: switch state from the accepted solution (never inside Newton)
+        for (int i = 0; i < circuit->num_components; i++) {
+            Component *comp = circuit->components[i];
+            if (comp->type != COMP_SPARK_GAP) continue;
+            int n0 = circuit->node_map[comp->node_ids[0]], n1 = circuit->node_map[comp->node_ids[1]];
+            double v = ((n0 > 0) ? vector_get(sim->solution, n0 - 1) : 0) - ((n1 > 0) ? vector_get(sim->solution, n1 - 1) : 0);
+            if (!comp->props.spark_gap.conducting) {
+                if (fabs(v) > spark_gap_breakdown(comp)) {
+                    comp->props.spark_gap.conducting = true;
+                    comp->props.spark_gap.last_conduct_time = sim->time;
+                }
+            } else {
+                double i_arc = v / fmax(comp->props.spark_gap.r_on, 1e-3);
+                if (fabs(i_arc) > comp->props.spark_gap.hold_current) comp->props.spark_gap.last_conduct_time = sim->time;
+                else if (sim->time - comp->props.spark_gap.last_conduct_time > comp->props.spark_gap.quench_time)
+                    comp->props.spark_gap.conducting = false;
+            }
+        }
+        for (int i = 0; i < circuit->num_components; i++) {
+            Component *comp = circuit->components[i];
+            if (comp->type != COMP_TOROID) continue;
+            int n0 = circuit->node_map[comp->node_ids[0]];
+            comp->props.toroid.voltage = (n0 > 0) ? vector_get(sim->solution, n0 - 1) : 0;
+        }
+
         // Trapezoidal capacitor state: i_new = (2C/dt)(v_new - v_prev) - i_prev
         for (int i = 0; i < circuit->num_components; i++) {
             Component *comp = circuit->components[i];
-            if (comp->type != COMP_CAPACITOR && comp->type != COMP_CAPACITOR_ELEC) continue;
+            if (comp->type != COMP_CAPACITOR && comp->type != COMP_CAPACITOR_ELEC && comp->type != COMP_TOROID) continue;
             double C = (comp->type == COMP_CAPACITOR) ? comp->props.capacitor.capacitance
+                     : (comp->type == COMP_TOROID) ? toroid_capacitance(comp)
                                                       : comp->props.capacitor_elec.capacitance;
-            int n0 = circuit->node_map[comp->node_ids[0]], n1 = circuit->node_map[comp->node_ids[1]];
+            int n0 = circuit->node_map[comp->node_ids[0]], n1 = (comp->type == COMP_TOROID) ? 0 : circuit->node_map[comp->node_ids[1]];
             double vn = ((n0 > 0) ? vector_get(sim->solution, n0 - 1) : 0) - ((n1 > 0) ? vector_get(sim->solution, n1 - 1) : 0);
             double vp = ((n0 > 0) ? vector_get(sim->prev_step_solution, n0 - 1) : 0) - ((n1 > 0) ? vector_get(sim->prev_step_solution, n1 - 1) : 0);
             comp->trap_i_prev = (C / (0.6 * dt)) * (vn - vp) - (0.4 / 0.6) * comp->trap_i_prev;   // theta = 0.6, see capacitor stamp

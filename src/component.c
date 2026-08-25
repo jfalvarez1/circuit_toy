@@ -579,10 +579,37 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         "Spark Gap", "SG", 2,
         {{ -40, 0, "1" }, { 40, 0, "2" }},
         80, 30,
-        { .zener = {
-            .vz = 90.0,                 // Breakdown voltage
-            .rz = 1.0,
-            .ideal = true
+        { .spark_gap = {
+            .gap_mm = 1.0,              // 3 kV breakdown
+            .r_on = 1.0,
+            .hold_current = 0.01,
+            .quench_time = 2e-6,
+            .conducting = false,
+            .last_conduct_time = 0.0
+        }}
+    },
+
+    [COMP_TLINE] = {
+        "Transmission Line", "TL", 2,
+        {{ -40, 0, "1" }, { 40, 0, "2" }},
+        80, 30,
+        { .tline = {
+            .length_mi = 100.0,
+            .r_per_mi = 0.06,           // 345 kV twin Drake
+            .x_per_mi = 0.55,
+            .b_us_per_mi = 8.0,
+            .model = 2
+        }}
+    },
+
+    [COMP_TOROID] = {
+        "Toroid", "TL", 1,
+        {{ 0, 40, "1" }},
+        120, 90,
+        { .toroid = {
+            .major_in = 13.0,           // 4 x 13 inch: ~14.5 pF
+            .minor_in = 4.0,
+            .voltage = 0.0
         }}
     },
 
@@ -1742,6 +1769,29 @@ const ComponentTypeInfo *component_get_info(ComponentType type) {
     return &component_info[COMP_NONE];
 }
 
+double toroid_capacitance(const Component *comp) {
+    // Bert Pool's toroid formula, D and d in inches, result in pF:
+    //   C = (1 + (0.2781 - d/D)) * 2.8 * sqrt(pi * (D - d) * d / 4)
+    double D = comp->props.toroid.major_in, d = comp->props.toroid.minor_in;
+    if (D < 0.5) D = 0.5;
+    if (d < 0.1) d = 0.1;
+    if (d > D * 0.9) d = D * 0.9;
+    double pf = (1.0 + (0.2781 - d / D)) * 2.8 * sqrt(M_PI * (D - d) * d / 4.0);
+    return pf * 1e-12;
+}
+
+void tline_params(const Component *comp, double *R, double *L, double *C_end) {
+    const double w = 2.0 * M_PI * 60.0;
+    double len = fmax(comp->props.tline.length_mi, 1e-3);
+    *R = fmax(comp->props.tline.r_per_mi, 0.0) * len;
+    *L = (comp->props.tline.model >= 1) ? fmax(comp->props.tline.x_per_mi, 0.0) * len / w : 0.0;
+    *C_end = (comp->props.tline.model >= 2) ? fmax(comp->props.tline.b_us_per_mi, 0.0) * 1e-6 * len / w / 2.0 : 0.0;
+}
+
+double spark_gap_breakdown(const Component *comp) {
+    return 3000.0 * comp->props.spark_gap.gap_mm;   // ~30 kV/cm in air at 1 atm
+}
+
 Component *component_create(ComponentType type, float x, float y) {
     if (type <= COMP_NONE || type >= COMP_TYPE_COUNT) {
         return NULL;
@@ -1817,7 +1867,8 @@ Component *component_create(ComponentType type, float x, float y) {
                                type == COMP_BATTERY ||
                                type == COMP_PULSE_SOURCE ||
                                type == COMP_PWM_SOURCE ||
-                               type == COMP_TRANSFORMER);
+                               type == COMP_TRANSFORMER ||
+                               type == COMP_TLINE);
 
     // Initialize thermal state for components that can fail
     comp->thermal.temperature = 25.0;           // Room temperature
@@ -2289,13 +2340,16 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         }
 
         case COMP_CAPACITOR:
-        case COMP_CAPACITOR_ELEC: {
+        case COMP_CAPACITOR_ELEC:
+        case COMP_TOROID: {
             // Backward Euler companion model for capacitor:
             // i_C = C * dv/dt ≈ C * (v - v_prev) / dt = Geq * v - Ieq
             // where Geq = C/dt and Ieq = C * v_prev / dt
-            double C = (comp->type == COMP_CAPACITOR) ?
-                       comp->props.capacitor.capacitance :
+            // (a toroid is a one-terminal capacitor to ground: n[1] is forced to 0)
+            double C = (comp->type == COMP_CAPACITOR) ? comp->props.capacitor.capacitance :
+                       (comp->type == COMP_TOROID) ? toroid_capacitance(comp) :
                        comp->props.capacitor_elec.capacitance;
+            if (comp->type == COMP_TOROID) n[1] = 0;
             // Trapezoidal companion (SPICE default): i = (2C/dt)(v - v_prev) - i_prev.
             // Half the numerical damping of backward Euler, which matters for oscillators.
             // Backward Euler (Geq = C/dt, Ieq = C v_prev/dt) is kept for the DC operating point,
@@ -3145,9 +3199,36 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         }
 
         case COMP_CRYSTAL:
+        case COMP_TLINE: {
+            // Series R-L through the auxiliary current i (backward Euler for L), shunt C/2 at
+            // each end (backward Euler). Aux row: V1 - V2 - (R + L/dt) i = -(L/dt) i_prev.
+            double R, L, Cend;
+            tline_params(comp, &R, &L, &Cend);
+            int k = num_nodes + comp->voltage_var_idx;
+            Vector *mem = g_stamp_prev_step ? g_stamp_prev_step : prev_solution;
+            bool transient = (mem != NULL) && dt > 0;
+            double Lterm = transient ? L / dt : 0.0;
+            double i_prev = (transient && k < (int)mem->size) ? vector_get(mem, k) : 0.0;
+            if (n[0] > 0) { matrix_add(A, k, n[0]-1, 1.0);  matrix_add(A, n[0]-1, k, 1.0); }
+            if (n[1] > 0) { matrix_add(A, k, n[1]-1, -1.0); matrix_add(A, n[1]-1, k, -1.0); }
+            matrix_add(A, k, k, -(R + Lterm + 1e-9));
+            vector_add(b, k, -Lterm * i_prev);
+            if (transient && Cend > 0) {
+                double Geq = Cend / dt;
+                for (int e = 0; e < 2; e++) {
+                    if (n[e] <= 0) continue;
+                    double vprev = vector_get(mem, n[e]-1);
+                    matrix_add(A, n[e]-1, n[e]-1, Geq);
+                    vector_add(b, n[e]-1, Geq * vprev);
+                }
+            }
+            break;
+        }
+
         case COMP_SPARK_GAP: {
-            // Simplified: treat as capacitor/high resistance
-            double G = 1e-12;  // Very high impedance
+            // Hysteretic arc: open (1 pS) until breakdown, then r_on. The state is only
+            // switched between accepted steps so Newton always sees a fixed conductance.
+            double G = comp->props.spark_gap.conducting ? 1.0 / fmax(comp->props.spark_gap.r_on, 1e-3) : 1e-12;
             STAMP_CONDUCTANCE(n[0], n[1], G);
             break;
         }
@@ -4820,6 +4901,16 @@ void component_get_value_string(Component *comp, char *buf, size_t buf_size) {
             break;
         case COMP_CAPACITOR:
             format_engineering(comp->props.capacitor.capacitance, "F", buf, buf_size);
+            break;
+        case COMP_TOROID:
+            format_engineering(toroid_capacitance(comp), "F", buf, buf_size);
+            break;
+        case COMP_TLINE:
+            snprintf(buf, buf_size, "%.4g mi %s", comp->props.tline.length_mi,
+                     comp->props.tline.model == 0 ? "R" : comp->props.tline.model == 1 ? "RL" : "pi");
+            break;
+        case COMP_SPARK_GAP:
+            format_engineering(spark_gap_breakdown(comp), "V", buf, buf_size);
             break;
         case COMP_INDUCTOR:
             format_engineering(comp->props.inductor.inductance, "H", buf, buf_size);

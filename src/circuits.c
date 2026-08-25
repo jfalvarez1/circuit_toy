@@ -216,6 +216,12 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_GEN_GSU] = {"Generator + GSU", "GenSU", "18 kV generator, step-up to 345 kV, 600 MW"},
     [CIRCUIT_GRID_CHAIN] = {"Grid: 18 kV to 240 V", "Grid", "Generator to house through every voltage level"},
     [CIRCUIT_FERRANTI_LINE] = {"Ferranti (open line)", "Ferr", "200-mile 345 kV pi line, open end, switchable reactor"},
+    [CIRCUIT_LINE_MODEL_LADDER] = {"Line Model Ladder", "Ladder", "Same line as R, R-L and pi: compare the load buses"},
+    [CIRCUIT_DC_LINE_DROP] = {"Line Drop Basics", "Drop", "Battery, wire resistance, load: the simplest voltage drop"},
+    [CIRCUIT_TESLA_COIL] = {"Tesla Coil", "Tesla", "Spark-gap Tesla coil, 4x13 in toroid, streamer to a rod"},
+    [CIRCUIT_TESLA_COIL_BIG] = {"Tesla Coil (big top)", "TeslaB", "Retuned for an 8x24 in toroid: more energy, longer arc"},
+    [CIRCUIT_TESLA_COIL_DETUNED] = {"Tesla Coil (detuned)", "TeslaX", "Big toroid but the primary was not retuned: weak output"},
+
 
 
 };
@@ -6215,6 +6221,11 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_GEN_GSU:          return place_gen_gsu(circuit, x, y);
         case CIRCUIT_GRID_CHAIN:       return place_grid_chain(circuit, x, y);
         case CIRCUIT_FERRANTI_LINE:    return place_ferranti_line(circuit, x, y);
+        case CIRCUIT_LINE_MODEL_LADDER: return place_line_model_ladder(circuit, x, y);
+        case CIRCUIT_DC_LINE_DROP:     return place_dc_line_drop(circuit, x, y);
+        case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
+        case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
+        case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
         default:
             return 0;
     }
@@ -6285,6 +6296,11 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_GEN_GSU] = {"GENERATOR + GSU: an 18 kV (line-to-line) machine, 14.7 kVpk per phase, with X'' = 0.15 pu", "on 700 MVA (0.184 mH) behind its terminals. The generator step-up transformer (1:19.17)", "lifts it to the 345 kV bus, which feeds 600 MW (198.4 ohm per phase).", "Referred to 345 kV the machine reactance is 25 ohm; at unity pf the bus stays within 1 %.", "PROBE: auto-placed on the 18 kV terminals and the 345 kV bus - note the 19x scale change."},
     [CIRCUIT_GRID_CHAIN] = {"WHOLE GRID IN ONE LINE: generator 18 kV -> GSU -> 100 mi of 345 kV -> 345/138 kV auto", "-> 30 mi of 138 kV -> 138/12.47 kV substation -> 5 mi feeder -> pole transformer -> a house.", "Each transformer trades voltage for current; each line drops I*Z. With only this one house", "the lines are unloaded, so the 240 V end sits at ~239 V; scale the loads up to see the sag.", "PROBE: probe any bus: 14.7 kVpk, 282 kVpk, 113 kVpk, 10.2 kVpk, 339 Vpk left to right."},
     [CIRCUIT_FERRANTI_LINE] = {"FERRANTI EFFECT: a long unloaded line is a capacitor; its charging current flowing through", "the series inductance RAISES the receiving-end voltage. 200 mi of 345 kV as a pi section:", "12 ohm + 291.8 mH with 2.12 uF at each end, open end (10 Mohm). Expect +9.9 % (309.6 kVpk).", "Close SW to connect a 3.54 H shunt reactor: it absorbs the charging VARs and cancels the rise.", "PROBE: auto-placed on both ends. The far end is HIGHER than the source until SW closes."},
+    [CIRCUIT_TESLA_COIL] = {"TESLA COIL: the NST (120 V -> 9 kV rms, current-limited by the 50 ohm) charges C1 = 25 nF.", "Near each peak the 3.2 mm gap breaks down (~9.6 kV) and C1 rings with L1 = 29 uH at", "f1 = 1/(2 pi sqrt(L1 C1)) = 186 kHz. The T-model (L1(1-k), k L1, 1:32, L2(1-k), k = 0.2)", "couples it to the 30 mH secondary, which resonates with the toroid (14.5 pF) + 10 pF self-C", "at the same 186 kHz, so the 1.2 J in C1 pumps the toroid to ~150 kV (E = 1/2 C V^2, minus losses).", "PROBE: auto-placed on the toroid. Set 20 us/div: bursts every 8.3 ms; arcs show on the gaps."},
+    [CIRCUIT_TESLA_COIL_BIG] = {"BIG TOROID: an 8x24 in toroid is 26.5 pF (Bert Pool: C = (1.2781 - d/D) 2.8 sqrt(pi (D-d) d/4)),", "so the secondary now resonates at 152 kHz. The primary was RETUNED with C1 = 38 nF to match.", "More C1 at the same 9.6 kV means more energy per bang (1.75 J vs 1.15 J): the toroid reaches a", "higher voltage and the streamer jumps a 45 mm gap (135 kV in this simple 3 kV/mm model).", "Click the toroid and edit D / d: watch C and the resonance move. Compare with Tesla (detuned).", "PROBE: auto-placed on the toroid; also probe C1 (12.7 kV sawtooth) and the primary node."},
+    [CIRCUIT_TESLA_COIL_DETUNED] = {"DETUNED COIL: same 8x24 in toroid (secondary at 152 kHz) but the primary has an 18 nF", "cap, ringing at 220 kHz. The two resonators are 45 % apart, so energy sloshes back", "into the primary instead of building up on the toroid: peak voltage is far lower and the", "40 mm rod gap never fires. Tuning the primary (C1 or the tap on L1) is the first thing a", "coiler does. Fix it here: click C1 and set 38 nF, or shrink the toroid to 4x13 in.", "PROBE: auto-placed on the toroid. Compare the envelope with the tuned coils."},
+    [CIRCUIT_LINE_MODEL_LADDER] = {"LINE MODEL LADDER: one 138 kV source feeds three copies of a 30-mile line into equal", "90 MW loads. Row 1 keeps only the conductor resistance (R = 0.13 ohm/mi x 30 = 3.9 ohm).", "Row 2 adds the series reactance (X = 0.72 ohm/mi -> 57 mH): the drop grows and lags.", "Row 3 is the nominal pi: 6 uS/mi of charging susceptance as C/2 at each end (Ferranti).", "Click any line: length, R/mi, X/mi, B/mi and the model number are editable properties.", "PROBE: the three load buses (auto probe on row 2). Row 1 ~110.7 kVpk, row 2 ~110.1 kVpk."},
+    [CIRCUIT_DC_LINE_DROP] = {"LINE DROP BASICS: the wire is a resistor too. I = V/(R_wire + R_load) = 12/11 = 1.09 A,", "so the load only sees 10.9 V and the wire burns 1.2 W. Longer wire = more ohms (R = rho L/A):", "double the length and the drop doubles. Everything in the power examples is this idea", "plus reactance (X) and charging (B) - open Line Model Ladder to see those added one by one.", "PROBE: auto-placed on the load; also probe the battery to compare 12 V vs 10.9 V."},
 };
 
 
@@ -6499,23 +6515,24 @@ static int place_halfwave_filtered(Circuit *circuit, float x, float y) {
 #define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
 #define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
 
-// source -> R -> L -> node -> load, all on one row: returns the load node id
-static int chain_rl_load(Circuit *circuit, float x, float y, Component *src, double R, double L, double Rload,
-                         Component **r_out, Component **l_out, Component **load_out) {
-    Component *r = add_comp(circuit, COMP_RESISTOR, x + 80, y + 20, 0);           // (40,20)-(120,20)
-    r->props.resistor.resistance = R;
-    Component *l = add_comp(circuit, COMP_INDUCTOR, x + 180, y + 20, 0);          // (140,20)-(220,20)
-    l->props.inductor.inductance = L;
-    Component *ld = add_comp(circuit, COMP_RESISTOR, x + 280, y + 60, 90);        // (280,20)-(280,100)
+// source -> transmission line -> node -> load, all on one row: returns the load node id
+static Component *add_tline(Circuit *circuit, float x, float y, int rot, double len_mi, double r, double xr, double b_us, int model) {
+    Component *t = add_comp(circuit, COMP_TLINE, x, y, rot);
+    t->props.tline.length_mi = len_mi; t->props.tline.r_per_mi = r; t->props.tline.x_per_mi = xr;
+    t->props.tline.b_us_per_mi = b_us; t->props.tline.model = model;
+    return t;
+}
+static int chain_line_load(Circuit *circuit, float x, float y, Component *src, double len_mi, double r, double xr, double b_us, int model,
+                           double Rload, Component **line_out, Component **load_out) {
+    Component *t = add_tline(circuit, x + 130, y + 20, 0, len_mi, r, xr, b_us, model);     // (90,20)-(170,20)
+    Component *ld = add_comp(circuit, COMP_RESISTOR, x + 280, y + 60, 90);                // (280,20)-(280,100)
     ld->props.resistor.resistance = Rload;
     Component *g = add_comp(circuit, COMP_GROUND, x + 280, y + 120, 0);
-    connect_terminals(circuit, src, 0, r, 0);
-    connect_terminals(circuit, r, 1, l, 0);
+    int sp = TN(x, y + 20), tl = TN(x + 90, y + 20), tr = TN(x + 170, y + 20), n = TN(x + 280, y + 20);
+    TW(sp, tl); TW(tr, n);
     connect_terminals(circuit, ld, 1, g, 0);
-    int n = TN(x + 280, y + 20), lr = TN(x + 220, y + 20);
-    TW(lr, n);
-    l->node_ids[1] = lr; ld->node_ids[0] = n;
-    if (r_out) *r_out = r; if (l_out) *l_out = l; if (load_out) *load_out = ld;
+    src->node_ids[0] = sp; t->node_ids[0] = tl; t->node_ids[1] = tr; ld->node_ids[0] = n;
+    if (line_out) *line_out = t; if (load_out) *load_out = ld;
     return n;
 }
 
@@ -6531,18 +6548,15 @@ static Component *ac_source(Circuit *circuit, float x, float y, double vpk) {
 // 345 kV, 100 mi twin-Drake, 600 MW at unity pf: Vpk 281.7 kV, R 6, L 145.9 mH, Rload 198.4
 static int place_hv_345_line(Circuit *circuit, float x, float y) {
     Component *v = ac_source(circuit, x, y, 281700.0); if (!v) return 0;
-    chain_rl_load(circuit, x, y, v, 6.0, 145.9e-3, 198.4, NULL, NULL, NULL);
+    chain_line_load(circuit, x, y, v, 100.0, 0.06, 0.55, 8.0, 1, 198.4, NULL, NULL);   // R-L model (click the line: model 2 = pi)
     add_label(circuit, x + 20, y - 40, "345 kV line, 100 mi, 600 MW");
-    return 6;
+    return 5;
 }
 
 // 138 kV, 30 mi single Drake, 90 MW at pf 0.9 lag; switchable 6.1 uF (per phase) cap bank
 static int place_hv_138_line_var(Circuit *circuit, float x, float y) {
     Component *v = ac_source(circuit, x, y, 112700.0); if (!v) return 0;
-    Component *r = add_comp(circuit, COMP_RESISTOR, x + 80, y + 20, 0);           // (40,20)-(120,20)
-    r->props.resistor.resistance = 3.9;
-    Component *l = add_comp(circuit, COMP_INDUCTOR, x + 180, y + 20, 0);          // (140,20)-(220,20)
-    l->props.inductor.inductance = 57.3e-3;
+    Component *tl = add_tline(circuit, x + 130, y + 20, 0, 30.0, 0.13, 0.72, 6.0, 1);   // (90,20)-(170,20) single Drake
     Component *ld = add_comp(circuit, COMP_RESISTOR, x + 280, y + 60, 90);        // (280,20)-(280,100)
     ld->props.resistor.resistance = 171.5;
     Component *xl = add_comp(circuit, COMP_INDUCTOR, x + 280, y + 140, 90);       // (280,100)-(280,180)
@@ -6553,25 +6567,23 @@ static int place_hv_138_line_var(Circuit *circuit, float x, float y) {
     Component *cb = add_comp(circuit, COMP_CAPACITOR, x + 380, y + 140, 90);     // (380,100)-(380,180)
     cb->props.capacitor.capacitance = 6.1e-6;
     Component *gc = add_comp(circuit, COMP_GROUND, x + 380, y + 200, 0);
-    connect_terminals(circuit, v, 0, r, 0);
-    connect_terminals(circuit, r, 1, l, 0);
     connect_terminals(circuit, xl, 1, g, 0);
     connect_terminals(circuit, cb, 1, gc, 0);
-    int lr = TN(x + 220, y + 20), n = TN(x + 280, y + 20), swt = TN(x + 380, y + 20);
-    TW(lr, n); TW(n, swt);
+    int sp = TN(x, y + 20), tll = TN(x + 90, y + 20), lr = TN(x + 170, y + 20), n = TN(x + 280, y + 20), swt = TN(x + 380, y + 20);
+    TW(sp, tll); TW(lr, n); TW(n, swt);
     int mid = TN(x + 280, y + 100), swb = TN(x + 380, y + 100);
-    l->node_ids[1] = lr; ld->node_ids[0] = n; ld->node_ids[1] = mid; xl->node_ids[0] = mid;
+    v->node_ids[0] = sp; tl->node_ids[0] = tll; tl->node_ids[1] = lr; ld->node_ids[0] = n; ld->node_ids[1] = mid; xl->node_ids[0] = mid;
     sw->node_ids[0] = swt; sw->node_ids[1] = swb; cb->node_ids[0] = swb;
     add_label(circuit, x + 20, y - 40, "138 kV line, 30 mi, 90 MW pf 0.9 - close SW for the cap bank");
-    return 11;
+    return 10;
 }
 
 // 12.47 kV feeder (7.2 kV L-N), 5 mi, 1 MW per phase: Vpk 10.18 kV, R 1.53, L 8.22 mH, Rload 51.84
 static int place_mv_feeder(Circuit *circuit, float x, float y) {
     Component *v = ac_source(circuit, x, y, 10182.0); if (!v) return 0;
-    chain_rl_load(circuit, x, y, v, 1.53, 8.22e-3, 51.84, NULL, NULL, NULL);
+    chain_line_load(circuit, x, y, v, 5.0, 0.306, 0.62, 0.0, 1, 51.84, NULL, NULL);      // 1/0 ACSR: 0.306 + j0.62 ohm/mi
     add_label(circuit, x + 20, y - 40, "12.47 kV feeder, 5 mi, 1 MW/phase");
-    return 6;
+    return 5;
 }
 
 // Pole transformer 7.2 kV -> 240 V (N = 1/30), 5 kW house load (11.52 ohm)
@@ -6631,12 +6643,10 @@ static int place_grid_chain(Circuit *circuit, float x, float y) {
     int bus = TN(x, y + 20);
     int count = 2;
     // helper lambdas as macros
-#define SERIES_RL(RR, LL) do { \
-        Component *r_ = add_comp(circuit, COMP_RESISTOR, cx + 60, y + 20, 0); r_->props.resistor.resistance = (RR); \
-        Component *l_ = add_comp(circuit, COMP_INDUCTOR, cx + 140, y + 20, 0); l_->props.inductor.inductance = (LL); \
-        int a_ = TN(cx + 20, y + 20); TW(bus, a_); r_->node_ids[0] = a_; \
-        int m_ = TN(cx + 100, y + 20); r_->node_ids[1] = m_; l_->node_ids[0] = m_; \
-        bus = TN(cx + 180, y + 20); l_->node_ids[1] = bus; cx += 180; count += 2; } while (0)
+#define SERIES_LINE(LEN, RR, XX, BB) do { \
+        Component *t_ = add_tline(circuit, cx + 80, y + 20, 0, (LEN), (RR), (XX), (BB), 1); \
+        int a_ = TN(cx + 40, y + 20); TW(bus, a_); t_->node_ids[0] = a_; \
+        bus = TN(cx + 120, y + 20); t_->node_ids[1] = bus; cx += 120; count += 1; } while (0)
 #define XFMR(NN) do { \
         Component *t_ = add_comp(circuit, COMP_TRANSFORMER, cx + 90, y + 20, 0); t_->props.transformer.turns_ratio = (NN); \
         int p1_ = TN(cx + 40, y), c1_ = TN(cx + 20, y + 20), c2_ = TN(cx + 20, y); TW(bus, c1_); TW(c1_, c2_); TW(c2_, p1_); \
@@ -6648,13 +6658,13 @@ static int place_grid_chain(Circuit *circuit, float x, float y) {
         t_->node_ids[0] = p1_; t_->node_ids[1] = p2_; t_->node_ids[2] = s1_; t_->node_ids[3] = s2_; \
         bus = o2_; cx += 160; count += 3; } while (0)
     XFMR(19.17);                       // GSU 18 kV -> 345 kV
-    SERIES_RL(6.0, 145.9e-3);          // 345 kV, 100 mi
-    XFMR(0.4);                         // 345/138 kV autotransformer
-    SERIES_RL(3.9, 57.3e-3);           // 138 kV, 30 mi
-    XFMR(1.0 / 11.07);                 // 138 kV -> 12.47 kV (7.2 kV L-N)
-    SERIES_RL(1.53, 8.22e-3);          // 5-mile feeder
-    XFMR(1.0 / 30.0);                  // pole transformer -> 240 V
-#undef SERIES_RL
+    SERIES_LINE(100.0, 0.06, 0.55, 8.0);   // 345 kV, 100 mi twin Drake
+    XFMR(0.4);                             // 345/138 kV autotransformer
+    SERIES_LINE(30.0, 0.13, 0.72, 6.0);    // 138 kV, 30 mi Drake
+    XFMR(1.0 / 11.07);                     // 138 kV -> 12.47 kV (7.2 kV L-N)
+    SERIES_LINE(5.0, 0.306, 0.62, 0.0);    // 5-mile feeder, 1/0 ACSR
+    XFMR(1.0 / 30.0);                      // pole transformer -> 240 V
+#undef SERIES_LINE
 #undef XFMR
     Component *house = add_comp(circuit, COMP_RESISTOR, cx + 40, y + 60, 90);    // (cx+40,20)-(cx+40,100)
     house->props.resistor.resistance = 11.52;
@@ -6669,39 +6679,161 @@ static int place_grid_chain(Circuit *circuit, float x, float y) {
 // switchable 3.54 H shunt reactor. Receiving end rises to about +9.9 %.
 static int place_ferranti_line(Circuit *circuit, float x, float y) {
     Component *v = ac_source(circuit, x, y, 281700.0); if (!v) return 0;
-    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 40, y + 80, 90);        // (40,40)-(40,120)
-    c1->props.capacitor.capacitance = 2.12e-6;
-    Component *g1 = add_comp(circuit, COMP_GROUND, x + 40, y + 140, 0);
-    Component *r = add_comp(circuit, COMP_RESISTOR, x + 120, y + 20, 0);         // (80,20)-(160,20)
-    r->props.resistor.resistance = 12.0;
-    Component *l = add_comp(circuit, COMP_INDUCTOR, x + 220, y + 20, 0);         // (180,20)-(260,20)
-    l->props.inductor.inductance = 291.8e-3;
-    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 300, y + 80, 90);      // (300,40)-(300,120)
-    c2->props.capacitor.capacitance = 2.12e-6;
-    Component *g2 = add_comp(circuit, COMP_GROUND, x + 300, y + 140, 0);
-    Component *open_load = add_comp(circuit, COMP_RESISTOR, x + 380, y + 60, 90); // (380,20)-(380,100)
+    Component *tl = add_tline(circuit, x + 130, y + 20, 0, 200.0, 0.06, 0.55, 8.0, 2);   // pi model: 12 ohm + 291.8 mH, 2.12 uF each end
+    Component *open_load = add_comp(circuit, COMP_RESISTOR, x + 280, y + 60, 90);       // (280,20)-(280,100)
     open_load->props.resistor.resistance = 1e7;
-    Component *g3 = add_comp(circuit, COMP_GROUND, x + 380, y + 120, 0);
-    Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 460, y + 60, 90);    // (460,20)-(460,100)
+    Component *g3 = add_comp(circuit, COMP_GROUND, x + 280, y + 120, 0);
+    Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 380, y + 60, 90);           // (380,20)-(380,100)
     sw->props.switch_spst.closed = false;
-    Component *xr = add_comp(circuit, COMP_INDUCTOR, x + 460, y + 140, 90);      // (460,100)-(460,180)
+    Component *xr = add_comp(circuit, COMP_INDUCTOR, x + 380, y + 140, 90);             // (380,100)-(380,180)
     xr->props.inductor.inductance = 3.54;
-    Component *g4 = add_comp(circuit, COMP_GROUND, x + 460, y + 200, 0);
-    add_label(circuit, x + 20, y - 40, "Ferranti rise: 345 kV, 200 mi, open end - close SW for the shunt reactor");
-    int vp = TN(x, y + 20), c1t = TN(x + 40, y + 40), c1c = TN(x + 40, y + 20), rl = TN(x + 80, y + 20);
-    TW(vp, c1c); TW(c1c, c1t); TW(c1c, rl);
-    connect_terminals(circuit, c1, 1, g1, 0);
-    connect_terminals(circuit, r, 1, l, 0);
-    int lr = TN(x + 260, y + 20), c2c = TN(x + 300, y + 20), c2t = TN(x + 300, y + 40), ot = TN(x + 380, y + 20), swt = TN(x + 460, y + 20);
-    TW(lr, c2c); TW(c2c, c2t); TW(c2c, ot); TW(ot, swt);
-    connect_terminals(circuit, c2, 1, g2, 0);
+    Component *g4 = add_comp(circuit, COMP_GROUND, x + 380, y + 200, 0);
+    add_label(circuit, x + 20, y - 40, "Ferranti rise: 345 kV, 200 mi pi line, open end - close SW for the shunt reactor");
+    int sp = TN(x, y + 20), tll = TN(x + 90, y + 20), tlr = TN(x + 170, y + 20), ot = TN(x + 280, y + 20), swt = TN(x + 380, y + 20), swb = TN(x + 380, y + 100);
+    TW(sp, tll); TW(tlr, ot); TW(ot, swt);
     connect_terminals(circuit, open_load, 1, g3, 0);
     connect_terminals(circuit, xr, 1, g4, 0);
-    int swb = TN(x + 460, y + 100);
-    r->node_ids[0] = rl; l->node_ids[1] = lr; c1->node_ids[0] = c1t; c2->node_ids[0] = c2t; open_load->node_ids[0] = ot;
-    sw->node_ids[0] = swt; sw->node_ids[1] = swb; xr->node_ids[0] = swb; v->node_ids[0] = vp;
-    return 14;
+    v->node_ids[0] = sp; tl->node_ids[0] = tll; tl->node_ids[1] = tlr; open_load->node_ids[0] = ot;
+    sw->node_ids[0] = swt; sw->node_ids[1] = swb; xr->node_ids[0] = swb;
+    return 8;
 }
+
+// Realism ladder: the same 138 kV, 30-mile line three ways from one source, same 90 MW load:
+//   row 1 resistance only, row 2 R-L (reactance), row 3 nominal pi (adds line charging).
+static int place_line_model_ladder(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 112700.0); if (!v) return 0;
+    int sp = TN(x, y + 20);
+    v->node_ids[0] = sp;
+    const char *names[3] = { "model 0: R only", "model 1: R + jX", "model 2: pi (R, X, B)" };
+    int prev = sp;
+    for (int row = 0; row < 3; row++) {
+        float ry = y + 20 + row * 140;                                   // bus row y
+        int bl = TN(x + 60, ry);
+        TW(prev, bl); prev = bl;
+        Component *t = add_tline(circuit, x + 130, ry, 0, 30.0, 0.13, 0.72, 6.0, row);   // (90,ry)-(170,ry)
+        Component *ld = add_comp(circuit, COMP_RESISTOR, x + 280, ry + 40, 90);          // (280,ry)-(280,ry+80)
+        ld->props.resistor.resistance = 211.6;
+        Component *g = add_comp(circuit, COMP_GROUND, x + 280, ry + 100, 0);
+        int tl = TN(x + 90, ry), tr = TN(x + 170, ry), n = TN(x + 280, ry);
+        TW(bl, tl); TW(tr, n);
+        connect_terminals(circuit, ld, 1, g, 0);
+        t->node_ids[0] = tl; t->node_ids[1] = tr; ld->node_ids[0] = n;
+        add_label(circuit, x + 100, ry - 30, names[row]);
+    }
+    add_label(circuit, x + 20, y - 60, "Line model ladder: 138 kV, 30 mi, 90 MW - probe the three load buses");
+    return 13;
+}
+
+// Fundamentals: a battery, the wire's own resistance and the load. V_load = V R_load / (R_wire + R_load).
+static int place_dc_line_drop(Circuit *circuit, float x, float y) {
+    Component *v = add_comp(circuit, COMP_DC_VOLTAGE, x, y + 60, 0);                   // +(0,20) -(0,100)
+    if (!v) return 0;
+    v->props.dc_voltage.voltage = 12.0;
+    Component *g0 = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    Component *rw = add_comp(circuit, COMP_RESISTOR, x + 100, y + 20, 0);               // (60,20)-(140,20) wire
+    rw->props.resistor.resistance = 1.0;
+    Component *rl = add_comp(circuit, COMP_RESISTOR, x + 200, y + 60, 90);              // (200,20)-(200,100) load
+    rl->props.resistor.resistance = 10.0;
+    Component *g1 = add_comp(circuit, COMP_GROUND, x + 200, y + 120, 0);
+    Component *rw2 = add_comp(circuit, COMP_RESISTOR, x + 100, y + 120, 0);             // (60,120)-(140,120) return wire (drawn, grounded both ends)
+    rw2->props.resistor.resistance = 1.0;
+    add_label(circuit, x + 20, y - 40, "Line drop basics: 12 V, 1 ohm wire, 10 ohm load -> 10.9 V (I = 1.09 A)");
+    add_label(circuit, x + 30, y + 160, "(return conductor shown for the picture; both ends are the 0 V reference)");
+    connect_terminals(circuit, v, 1, g0, 0);
+    connect_terminals(circuit, rl, 1, g1, 0);
+    int sp = TN(x, y + 20), wl = TN(x + 60, y + 20), wr = TN(x + 140, y + 20), lt = TN(x + 200, y + 20);
+    TW(sp, wl); TW(wr, lt);
+    int gl = TN(x + 60, y + 120), gr = TN(x + 140, y + 120), gnd0 = TN(x, y + 120), gnd1 = TN(x + 200, y + 120);
+    TW(gnd0, gl); TW(gr, gnd1);
+    v->node_ids[0] = sp; rw->node_ids[0] = wl; rw->node_ids[1] = wr; rl->node_ids[0] = lt; rw2->node_ids[0] = gl; rw2->node_ids[1] = gr;
+    return 7;
+}
+#undef TN
+#undef TW
+
+
+// ---------------------------------------------------------------------------------------
+// Spark-gap Tesla coil. NST (120 V -> 9 kV rms) charges C1; the gap fires near the peak and
+// the primary tank rings at f1 = 1/(2 pi sqrt(L1 C1)). Coupling k = 0.2 is modelled with the
+// T-equivalent: L1(1-k) series, k L1 shunt, ideal 1:sqrt(L2/L1), L2(1-k) series. The
+// secondary resonates with the toroid + self capacitance. A second gap to a grounded rod is
+// the streamer. See docs/RESEARCH_TEXAS_GRID.md (not Texas, but the same modelling notes).
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+static int place_tesla(Circuit *circuit, float x, float y, double c1, double toroid_D, double toroid_d, double rod_gap_mm, const char *title) {
+    const double L1 = 29e-6, L2 = 30e-3, k = 0.2;
+    // NST -> junction A. Gap: A -> ground. Tank: A -> C1 -> R -> L1(1-k) -> nc -> k L1 -> ground,
+    // so the RF loop C1-L1-gap closes on itself and the NST (281 kOhm referred) only recharges C1.
+    Component *v = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 60, 0);              // +(0,20) -(0,100)
+    if (!v) return 0;
+    v->props.ac_voltage.amplitude = 170.0; v->props.ac_voltage.frequency = 60.0;
+    Component *g0 = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    Component *rn = add_comp(circuit, COMP_RESISTOR, x + 60, y + 20, 0);          // (20,20)-(100,20) NST current limit (10 ohm -> 56 k on the HV side)
+    rn->props.resistor.resistance = 10.0;                                        // 56 kOhm referred: tau = 1.4 ms into 25 nF
+    Component *nst = add_comp(circuit, COMP_TRANSFORMER, x + 150, y + 20, 0);     // P1(100,0) P2(100,40) S1(200,0) S2(200,40)
+    nst->props.transformer.turns_ratio = 75.0;
+    Component *gp = add_comp(circuit, COMP_GROUND, x + 100, y + 80, 0);
+    Component *gs = add_comp(circuit, COMP_GROUND, x + 200, y + 80, 0);
+    Component *gap = add_comp(circuit, COMP_SPARK_GAP, x + 240, y + 40, 90);     // (240,0)-(240,80)
+    gap->props.spark_gap.gap_mm = 3.2; gap->props.spark_gap.r_on = 1.0; gap->props.spark_gap.hold_current = 20.0; gap->props.spark_gap.quench_time = 1e-6;
+    Component *ggap = add_comp(circuit, COMP_GROUND, x + 240, y + 100, 0);
+    Component *c1c = add_comp(circuit, COMP_CAPACITOR, x + 300, y, 0);           // (260,0)-(340,0)
+    c1c->props.capacitor.capacitance = c1;
+    Component *rl = add_comp(circuit, COMP_RESISTOR, x + 400, y, 0);             // (360,0)-(440,0) primary loss
+    rl->props.resistor.resistance = 2.0;
+    Component *l1a = add_comp(circuit, COMP_INDUCTOR, x + 500, y, 0);            // (460,0)-(540,0)
+    l1a->props.inductor.inductance = L1 * (1 - k);
+    Component *lk = add_comp(circuit, COMP_INDUCTOR, x + 540, y + 40, 90);       // (540,0)-(540,80)
+    lk->props.inductor.inductance = L1 * k;
+    Component *gk = add_comp(circuit, COMP_GROUND, x + 540, y + 100, 0);
+    Component *t = add_comp(circuit, COMP_TRANSFORMER, x + 640, y + 20, 0);      // P1(590,0) P2(590,40) S1(690,0) S2(690,40)
+    t->props.transformer.turns_ratio = sqrt(L2 / L1);
+    Component *gtp = add_comp(circuit, COMP_GROUND, x + 590, y + 80, 0);
+    Component *gts = add_comp(circuit, COMP_GROUND, x + 690, y + 80, 0);
+    Component *l2 = add_comp(circuit, COMP_INDUCTOR, x + 750, y, 0);             // (710,0)-(790,0)
+    l2->props.inductor.inductance = L2 * (1 - k);
+    Component *rs = add_comp(circuit, COMP_RESISTOR, x + 850, y, 0);             // (810,0)-(890,0) coil resistance
+    rs->props.resistor.resistance = 50.0;
+    Component *cs = add_comp(circuit, COMP_CAPACITOR, x + 890, y + 40, 90);      // (890,0)-(890,80) coil self-C
+    cs->props.capacitor.capacitance = 10e-12;
+    Component *gcs = add_comp(circuit, COMP_GROUND, x + 890, y + 100, 0);
+    Component *top = add_comp(circuit, COMP_TOROID, x + 990, y - 40, 0);         // terminal (990,0)
+    top->props.toroid.major_in = toroid_D; top->props.toroid.minor_in = toroid_d;
+    Component *rod = add_comp(circuit, COMP_SPARK_GAP, x + 1090, y + 40, 90);    // (1090,0)-(1090,80) streamer to the rod
+    rod->props.spark_gap.gap_mm = rod_gap_mm; rod->props.spark_gap.r_on = 2e5; rod->props.spark_gap.hold_current = 0.05; rod->props.spark_gap.quench_time = 20e-6;
+    Component *grod = add_comp(circuit, COMP_GROUND, x + 1090, y + 100, 0);
+    add_label(circuit, x + 300, y - 110, title);
+    add_label(circuit, x + 1050, y + 120, "grounded rod");
+    // wiring
+    connect_terminals(circuit, v, 1, g0, 0);
+    connect_terminals(circuit, v, 0, rn, 0);
+    int p1 = TN(x + 100, y), rnr = TN(x + 100, y + 20); TW(rnr, p1);
+    int p2 = TN(x + 100, y + 40), gpt = TN(x + 100, y + 60); TW(p2, gpt);
+    int s1 = TN(x + 200, y), na = TN(x + 240, y), c1l = TN(x + 260, y); TW(s1, na); TW(na, c1l);
+    int s2 = TN(x + 200, y + 40), gst = TN(x + 200, y + 60); TW(s2, gst);
+    connect_terminals(circuit, gap, 1, ggap, 0);
+    connect_terminals(circuit, c1c, 1, rl, 0);
+    connect_terminals(circuit, rl, 1, l1a, 0);
+    int nc = TN(x + 540, y), tp1 = TN(x + 590, y); TW(nc, tp1);
+    connect_terminals(circuit, lk, 1, gk, 0);
+    int tp2 = TN(x + 590, y + 40), gtpt = TN(x + 590, y + 60); TW(tp2, gtpt);
+    int ts1 = TN(x + 690, y), l2l = TN(x + 710, y); TW(ts1, l2l);
+    int ts2 = TN(x + 690, y + 40), gtst = TN(x + 690, y + 60); TW(ts2, gtst);
+    connect_terminals(circuit, l2, 1, rs, 0);
+    int ne = TN(x + 890, y), topt = TN(x + 990, y), rodt = TN(x + 1090, y); TW(ne, topt); TW(topt, rodt);
+    connect_terminals(circuit, cs, 1, gcs, 0);
+    connect_terminals(circuit, rod, 1, grod, 0);
+    rn->node_ids[1] = rnr; nst->node_ids[0] = p1; nst->node_ids[1] = p2; nst->node_ids[2] = s1; nst->node_ids[3] = s2;
+    gp->node_ids[0] = gpt; gs->node_ids[0] = gst; gap->node_ids[0] = na; c1c->node_ids[0] = c1l;
+    l1a->node_ids[1] = nc; lk->node_ids[0] = nc; t->node_ids[0] = tp1; t->node_ids[1] = tp2; t->node_ids[2] = ts1; t->node_ids[3] = ts2;
+    gtp->node_ids[0] = gtpt; gts->node_ids[0] = gtst; l2->node_ids[0] = l2l; rs->node_ids[1] = ne; cs->node_ids[0] = ne;
+    top->node_ids[0] = topt; rod->node_ids[0] = rodt;
+    return 25;
+}
+static int place_tesla_coil(Circuit *circuit, float x, float y)         { return place_tesla(circuit, x, y, 25e-9, 13.0, 4.0, 40.0, "Spark-gap Tesla coil: 4x13 in toroid, primary tuned to 186 kHz"); }
+static int place_tesla_coil_big(Circuit *circuit, float x, float y)     { return place_tesla(circuit, x, y, 38e-9, 24.0, 8.0, 45.0, "Tesla coil with an 8x24 in toroid: C1 retuned to 152 kHz, rod at 45 mm"); }
+static int place_tesla_coil_detuned(Circuit *circuit, float x, float y) { return place_tesla(circuit, x, y, 18e-9, 24.0, 8.0, 40.0, "DETUNED: big toroid (152 kHz) but the primary rings at 220 kHz"); }
 #undef TN
 #undef TW
 
@@ -6761,13 +6893,18 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_VOLTAGE_DOUBLER]  = { COMP_CAPACITOR, 1, 0 },
     [CIRCUIT_RELAXATION_OSC]   = { COMP_OPAMP, 0, 2 },
     [CIRCUIT_HALFWAVE_FILTERED]= { COMP_CAPACITOR, 0, 0 },
-    [CIRCUIT_HV_345_LINE]      = { COMP_RESISTOR, 1, 0 },
-    [CIRCUIT_HV_138_LINE_VAR]  = { COMP_RESISTOR, 1, 0 },
-    [CIRCUIT_MV_FEEDER]        = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_HV_345_LINE]      = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_HV_138_LINE_VAR]  = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_MV_FEEDER]        = { COMP_RESISTOR, 0, 0 },
     [CIRCUIT_POLE_XFMR]        = { COMP_RESISTOR, 0, 0 },
     [CIRCUIT_GEN_GSU]          = { COMP_RESISTOR, 0, 0 },
-    [CIRCUIT_GRID_CHAIN]       = { COMP_RESISTOR, 3, 0 },
-    [CIRCUIT_FERRANTI_LINE]    = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_GRID_CHAIN]       = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_FERRANTI_LINE]    = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_LINE_MODEL_LADDER] = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_DC_LINE_DROP]     = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
+    [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
+    [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
 };
 
 // Scope time/div that shows the interesting behaviour of each template
@@ -6792,6 +6929,8 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_VOLTAGE_DOUBLER] = 50e-3, [CIRCUIT_RELAXATION_OSC] = 1e-3, [CIRCUIT_HALFWAVE_FILTERED] = 50e-3,
     [CIRCUIT_HV_345_LINE] = 5e-3, [CIRCUIT_HV_138_LINE_VAR] = 5e-3, [CIRCUIT_MV_FEEDER] = 5e-3, [CIRCUIT_POLE_XFMR] = 5e-3,
     [CIRCUIT_GEN_GSU] = 5e-3, [CIRCUIT_GRID_CHAIN] = 5e-3, [CIRCUIT_FERRANTI_LINE] = 5e-3,
+    [CIRCUIT_TESLA_COIL] = 20e-6, [CIRCUIT_TESLA_COIL_BIG] = 20e-6, [CIRCUIT_TESLA_COIL_DETUNED] = 20e-6,
+    [CIRCUIT_LINE_MODEL_LADDER] = 5e-3, [CIRCUIT_DC_LINE_DROP] = 1e-3,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -6809,6 +6948,8 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_VOLTAGE_DOUBLER] = 2.0, [CIRCUIT_RELAXATION_OSC] = 5.0, [CIRCUIT_HALFWAVE_FILTERED] = 5.0,
     [CIRCUIT_HV_345_LINE] = 100e3, [CIRCUIT_HV_138_LINE_VAR] = 50e3, [CIRCUIT_MV_FEEDER] = 5e3, [CIRCUIT_POLE_XFMR] = 100.0,
     [CIRCUIT_GEN_GSU] = 100e3, [CIRCUIT_GRID_CHAIN] = 100.0, [CIRCUIT_FERRANTI_LINE] = 100e3,
+    [CIRCUIT_TESLA_COIL] = 100e3, [CIRCUIT_TESLA_COIL_BIG] = 100e3, [CIRCUIT_TESLA_COIL_DETUNED] = 100e3,
+    [CIRCUIT_LINE_MODEL_LADDER] = 50e3, [CIRCUIT_DC_LINE_DROP] = 5.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -6873,6 +7014,11 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_GEN_GSU]          = { DEMO_WAVEFORM, 60 },
     [CIRCUIT_GRID_CHAIN]       = { DEMO_WAVEFORM, 60 },
     [CIRCUIT_FERRANTI_LINE]    = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_TESLA_COIL]       = { DEMO_OSC, 186e3 },
+    [CIRCUIT_TESLA_COIL_BIG]   = { DEMO_OSC, 152e3 },
+    [CIRCUIT_TESLA_COIL_DETUNED] = { DEMO_OSC, 152e3 },
+    [CIRCUIT_LINE_MODEL_LADDER] = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_DC_LINE_DROP]     = { DEMO_DC, 0 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {

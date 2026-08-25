@@ -209,6 +209,10 @@ typedef enum {
     COMP_PIN,               // Pin marker for subcircuit creation (has pin_number property)
     COMP_SUBCIRCUIT,        // User-defined sub-circuit / IC block
 
+    // === HIGH VOLTAGE ===
+    COMP_TOROID,            // Tesla-coil topload: one-terminal capacitor to ground sized by its shape
+    COMP_TLINE,             // Power transmission line: length x per-mile R, X, B (R / R-L / pi model)
+
     COMP_TYPE_COUNT
 } ComponentType;
 

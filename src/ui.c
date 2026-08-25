@@ -265,6 +265,9 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_CRYSTAL, "Xtal");
     ADD_COMP(COMP_FUSE, "Fuse");
     ADD_COMP(COMP_THERMISTOR, "Therm");
+    ADD_COMP(COMP_SPARK_GAP, "Spark");
+    ADD_COMP(COMP_TOROID, "Toroid");
+    ADD_COMP(COMP_TLINE, "TLine");
 
     // === DIODES SECTION (index 25) ===
     NEW_SECTION();
@@ -399,11 +402,11 @@ void ui_init(UIState *ui) {
     // sRLC circuit button).
     {
         static const struct { int start, end; PaletteCategoryID cat; } ranges[] = {
-            {0, 4, PCAT_TOOLS}, {5, 10, PCAT_SOURCES}, {11, 16, PCAT_WAVEFORMS}, {17, 24, PCAT_PASSIVES},
-            {25, 30, PCAT_DIODES}, {31, 34, PCAT_BJT}, {35, 38, PCAT_FET}, {39, 42, PCAT_THYRISTORS},
-            {43, 46, PCAT_OPAMPS}, {47, 50, PCAT_CONTROLLED}, {51, 56, PCAT_SWITCHES}, {57, 58, PCAT_TRANSFORMERS},
-            {59, 68, PCAT_LOGIC}, {69, 78, PCAT_DIGITAL}, {79, 84, PCAT_MIXED}, {85, 87, PCAT_REGULATORS},
-            {88, 93, PCAT_DISPLAY}, {94, 98, PCAT_SUBPARTS}, {99, 102, PCAT_MEASUREMENT},
+            {0, 4, PCAT_TOOLS}, {5, 10, PCAT_SOURCES}, {11, 16, PCAT_WAVEFORMS}, {17, 27, PCAT_PASSIVES},
+            {28, 33, PCAT_DIODES}, {34, 37, PCAT_BJT}, {38, 41, PCAT_FET}, {42, 45, PCAT_THYRISTORS},
+            {46, 49, PCAT_OPAMPS}, {50, 53, PCAT_CONTROLLED}, {54, 59, PCAT_SWITCHES}, {60, 61, PCAT_TRANSFORMERS},
+            {62, 71, PCAT_LOGIC}, {72, 81, PCAT_DIGITAL}, {82, 87, PCAT_MIXED}, {88, 90, PCAT_REGULATORS},
+            {91, 96, PCAT_DISPLAY}, {97, 101, PCAT_SUBPARTS}, {102, 105, PCAT_MEASUREMENT},
         };
         for (int i = 0; i < ui->num_palette_items; i++) {
             ui->palette_items[i].category = PCAT_MEASUREMENT;   // anything past the table lands here
@@ -614,6 +617,31 @@ void ui_init(UIState *ui) {
     if (col >= 2) { col = 0; pal_y += pal_h + 5; }
     ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
         {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_FERRANTI_LINE, "Ferr", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_TESLA_COIL, "Tesla", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_TESLA_COIL_BIG, "TeslaB", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_TESLA_COIL_DETUNED, "TeslaX", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_LINE_MODEL_LADDER, "Ladder", false, false
+    };
+    col++;
+    if (col >= 2) { col = 0; pal_y += pal_h + 5; }
+    ui->circuit_items[ui->num_circuit_items++] = (CircuitPaletteItem){
+        {10 + col*70, pal_y, 60, pal_h}, CIRCUIT_DC_LINE_DROP, "Drop", false, false
     };
 
     // Calculate palette content height (from toolbar to last item + padding)
@@ -2218,6 +2246,105 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->properties[ui->num_properties].prop_type = PROP_BV;
                     ui->num_properties++;
                 }
+                break;
+            }
+
+            case COMP_TLINE: {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_TLINE_LENGTH;
+                    snprintf(buf, sizeof(buf), "%.4g mi", selected->props.tline.length_mi);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Length:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_TLINE_LENGTH;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_TLINE_R;
+                    snprintf(buf, sizeof(buf), "%.4g Ohm", selected->props.tline.r_per_mi);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R/mi:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_TLINE_R;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_TLINE_X;
+                    snprintf(buf, sizeof(buf), "%.4g Ohm", selected->props.tline.x_per_mi);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "X/mi:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_TLINE_X;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_TLINE_B;
+                    snprintf(buf, sizeof(buf), "%.4g uS", selected->props.tline.b_us_per_mi);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "B/mi:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_TLINE_B;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_TLINE_MODEL;
+                    snprintf(buf, sizeof(buf), "%d (0=R 1=RL 2=pi)", selected->props.tline.model);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Model:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_TLINE_MODEL;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    double R, L, Cend; tline_params(selected, &R, &L, &Cend);
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                    snprintf(buf, sizeof(buf), "R=%.3g  L=%.3gmH  C/2=%.3guF", R, L * 1e3, Cend * 1e6);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                    prop_y += 18;
+                }
+                break;
+            }
+
+            case COMP_SPARK_GAP: {
+                bool e1 = input && input->editing_property && input->editing_prop_type == PROP_SPARK_GAP_MM;
+                snprintf(buf, sizeof(buf), "%.2f mm (%.3g kV)", selected->props.spark_gap.gap_mm, spark_gap_breakdown(selected) / 1e3);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Gap:", buf, e1, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_SPARK_GAP_MM;
+                ui->num_properties++;
+                prop_y += 18;
+                bool e2 = input && input->editing_property && input->editing_prop_type == PROP_SPARK_GAP_RON;
+                snprintf(buf, sizeof(buf), "%.3g Ohm", selected->props.spark_gap.r_on);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "R arc:", buf, e2, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_SPARK_GAP_RON;
+                ui->num_properties++;
+                prop_y += 18;
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.spark_gap.conducting ? "State: ARC" : "State: open", x + 10, prop_y + 2);
+                prop_y += 18;
+                break;
+            }
+
+            case COMP_TOROID: {
+                bool e1 = input && input->editing_property && input->editing_prop_type == PROP_TOROID_MAJOR;
+                snprintf(buf, sizeof(buf), "%.1f in", selected->props.toroid.major_in);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Outer D:", buf, e1, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_TOROID_MAJOR;
+                ui->num_properties++;
+                prop_y += 18;
+                bool e2 = input && input->editing_property && input->editing_prop_type == PROP_TOROID_MINOR;
+                snprintf(buf, sizeof(buf), "%.1f in", selected->props.toroid.minor_in);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Tube d:", buf, e2, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_TOROID_MINOR;
+                ui->num_properties++;
+                prop_y += 18;
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                snprintf(buf, sizeof(buf), "C = %.1f pF   V = %.3g kV", toroid_capacitance(selected) * 1e12, selected->props.toroid.voltage / 1e3);
+                ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                prop_y += 18;
                 break;
             }
 

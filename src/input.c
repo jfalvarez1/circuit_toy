@@ -2312,6 +2312,34 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             break;
 
         // Zener parameters
+        case PROP_TLINE_LENGTH:
+            if (comp->type == COMP_TLINE && value > 0 && value <= 5000) { comp->props.tline.length_mi = value; applied = true; }
+            break;
+        case PROP_TLINE_R:
+            if (comp->type == COMP_TLINE && value >= 0) { comp->props.tline.r_per_mi = value; applied = true; }
+            break;
+        case PROP_TLINE_X:
+            if (comp->type == COMP_TLINE && value >= 0) { comp->props.tline.x_per_mi = value; applied = true; }
+            break;
+        case PROP_TLINE_B:
+            if (comp->type == COMP_TLINE && value >= 0) { comp->props.tline.b_us_per_mi = value; applied = true; }
+            break;
+        case PROP_TLINE_MODEL:
+            if (comp->type == COMP_TLINE && value >= 0 && value <= 2) { comp->props.tline.model = (int)value; applied = true; }
+            break;
+        case PROP_SPARK_GAP_MM:
+            if (comp->type == COMP_SPARK_GAP && value > 0 && value <= 10000) { comp->props.spark_gap.gap_mm = value; applied = true; }
+            break;
+        case PROP_SPARK_GAP_RON:
+            if (comp->type == COMP_SPARK_GAP && value > 0) { comp->props.spark_gap.r_on = value; applied = true; }
+            break;
+        case PROP_TOROID_MAJOR:
+            if (comp->type == COMP_TOROID && value > 0 && value <= 1000) { comp->props.toroid.major_in = value; applied = true; }
+            break;
+        case PROP_TOROID_MINOR:
+            if (comp->type == COMP_TOROID && value > 0 && value <= 1000) { comp->props.toroid.minor_in = value; applied = true; }
+            break;
+
         case PROP_VZ:
             if (comp->type == COMP_ZENER && value > 0 && value <= 1000) {
                 comp->props.zener.vz = value;
