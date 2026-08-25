@@ -712,6 +712,7 @@
                     <a href="#logic">7f. Logic Gates & Digital</a>
                     <a href="#ics">7g. Integrated Circuits</a>
                     <a href="#measurement-tools">7h. Measurement Tools</a>
+                    <a href="#power-systems">7i. Power Systems &amp; High Voltage</a>
 
                     <div class="toc-section">Theory & Concepts</div>
                     <a href="#theory">8. Circuit Theory Fundamentals</a>
@@ -818,17 +819,22 @@
             <h3>Interface Areas</h3>
             <ul>
                 <li><strong>Toolbar</strong> - Simulation controls (Run, Pause, Step, Reset) and file operations (Save, Load, Clear)</li>
-                <li><strong>Palette</strong> - Component selection on the left side, organized by category (Sources, Passive, Semiconductors, Waveforms, Tools, Circuit Templates)</li>
+                <li><strong>Left panel</strong> - two tabs: <em>Parts</em> (components in collapsible categories) and <em>Circuits</em> (65 example circuits grouped by topic). The box under the tabs filters either list as you type; Esc clears it.</li>
                 <li><strong>Canvas</strong> - Main working area where you build and visualize circuits</li>
                 <li><strong>Properties Panel</strong> - Shows details of the selected component and allows editing values</li>
                 <li><strong>Measurements Panel</strong> - Displays real-time voltage and current readings</li>
-                <li><strong>Oscilloscope</strong> - Waveform display with controls for time base, voltage scale, and triggering</li>
+                <li><strong>Oscilloscope</strong> - Waveform display. The primary button row holds V/div, time/div, Autoset, cursors (CUR), stacked view, sweep tracking (Trk) and PopOut; the <em>Display</em> / <em>Trigger</em> / <em>Analysis</em> tabs below it hold Y-T/X-Y and capture, the trigger controls, and FFT / Bode / Monte Carlo. V/div reaches 500 kV/div for the power examples.</li>
                 <li><strong>Status Bar</strong> - Shows simulation time, voltmeter/ammeter readings (VM/AM), environment controls (Light/Temp), component/node counts, and system status</li>
             </ul>
 
             <div class="tip">
                 <div class="tip-title">Resizable Panels</div>
-                You can resize the oscilloscope by dragging its top or left edge. The properties panel can also be resized by dragging its left edge.
+                You can resize the oscilloscope by dragging its top or left edge. The properties panel can also be resized by dragging its left edge, and collapsed to a single header line by clicking its title (the scope takes the room).
+            </div>
+
+            <div class="tip">
+                <div class="tip-title">Tooltips</div>
+                Hover any button, part or example circuit for half a second to see what it does.
             </div>
 
             <div class="tip">
@@ -1414,7 +1420,33 @@
         </section>
 
         <!-- Circuit Theory -->
-        <section id="theory" class="section">
+        <!-- 7h. Power systems & high voltage -->
+<section id="power-systems" class="section">
+<h2>7i. Power Systems &amp; High Voltage</h2>
+<p>The <em>Power systems</em> and <em>High voltage</em> groups of the Circuits tab model transmission and distribution with real numbers (Texas / ERCOT sizes, AEP practice; see <code>docs/RESEARCH_TEXAS_GRID.md</code> and <code>docs/RESEARCH_AEP_PC.md</code>). Everything is a single-phase equivalent at 60 Hz: sources are peak phase-to-neutral voltages, loads are resistors sized from MW per phase.</p>
+<table>
+<tr><th>Component</th><th>Properties</th><th>Notes</th></tr>
+<tr><td><strong>Transmission Line</strong> (TLine)</td><td>Length (mi), R/mi, X/mi, B/mi (uS), Model 0/1/2</td><td>R = r&middot;L, L = x&middot;L/(2&pi;60), C/2 = b&middot;L/(2&pi;60)/2 at each end. Model 0 = resistance only, 1 = R-L, 2 = nominal pi. Edit the length and watch the drop grow.</td></tr>
+<tr><td><strong>Transformer</strong></td><td>Turns ratio N = N<sub>sec</sub>/N<sub>pri</sub></td><td>Ideal: V<sub>s</sub> = N&middot;V<sub>p</sub> and I<sub>p</sub> = -N&middot;I<sub>s</sub>, so currents are right on both sides.</td></tr>
+<tr><td><strong>Spark Gap</strong></td><td>Gap (mm), R arc</td><td>Breaks down at 3 kV/mm &times; gap, conducts through R arc, quenches when the current stays small. An arc is drawn while it conducts.</td></tr>
+<tr><td><strong>Toroid</strong></td><td>Outer D, tube d (inches)</td><td>Tesla-coil topload: C = (1.2781 - d/D)&middot;2.8&middot;&radic;(&pi;(D-d)d/4) pF. Corona streaks appear above ~50 kV.</td></tr>
+</table>
+<h3>Examples</h3>
+<ul>
+<li><strong>Line Drop Basics</strong> - a battery, a 1 &Omega; wire and a 10 &Omega; load: the simplest voltage drop.</li>
+<li><strong>Line Model Ladder</strong> - one 138 kV source feeding the same 30-mile line three ways (R, R-L, pi) into equal loads.</li>
+<li><strong>345 kV Line / 138 kV Line + VAR / 12.47 kV Feeder / Pole Xfmr</strong> - one example per voltage level with the expected drop in its note. Close the switch on the 138 kV example to connect a capacitor bank and watch the bus recover.</li>
+<li><strong>Generator + GSU</strong> and <strong>Grid: 18 kV to 240 V</strong> - from the machine terminals through every transformer and line to a house.</li>
+<li><strong>Ferranti (open line)</strong> - the far end of an unloaded 200-mile line sits ~10 % <em>above</em> the sending end; close the switch to add the shunt reactor.</li>
+<li><strong>Tesla Coil</strong> (tuned, big toroid, detuned) - NST, spark gap, tank capacitor, coupled secondary, toroid and a streamer gap to a grounded rod. Use 10 &micro;s/div and watch one ring burst; click the toroid and change its size to move the resonance.</li>
+</ul>
+<div class="tip">
+<div class="tip-title">Reading kilovolts</div>
+Probe readouts, the scope channel labels and the measurements switch to kV automatically. Autoset picks a sensible V/div; the manual range goes up to 500 kV/div.
+</div>
+</section>
+
+<section id="theory" class="section">
             <h2>8. Circuit Theory Fundamentals</h2>
             <p>Understanding these fundamental concepts will help you design and troubleshoot circuits effectively.</p>
 

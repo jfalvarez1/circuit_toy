@@ -112,61 +112,125 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-Load complete circuit configurations instantly from the Circuits menu:
+65 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+(type in the filter box to find one). Every template carries an on-canvas note with the theory,
+the governing equation and a **PROBE:** line; loading one places scope probes on its input and
+output, presets time/div and V/div, and starts the simulation. Each template also declares a
+*demo contract* (`DemoKind`: low-pass, band-pass, envelope, limiter, oscillator, ...) that the
+smoke tests enforce, so the example really shows the behaviour it is named after.
 
-**Basic Circuits**
-- **Voltage Divider** - Basic resistive divider
-- **LED with Resistor** - Simple LED driver circuit
+**Basics**
+- **Voltage Divider** (`Div`) - Resistive voltage divider (1:1)
+- **LED + Resistor** (`LED`) - LED with current limiting resistor
+- **Series RLC** (`sRLC`) - Series RLC resonant circuit
+- **Parallel RLC** (`pRLC`) - Parallel RLC (tank) circuit
+- **Wheatstone Bridge** (`Whst`) - Wheatstone bridge measurement circuit
+- **Line Drop Basics** (`Drop`) - Battery, wire resistance, load: the simplest voltage drop
 
 **Filters**
-- **RC Low-Pass Filter** - First-order RC filter
-- **RC High-Pass Filter** - First-order RC high-pass
-- **RL Low-Pass Filter** - First-order RL filter
-- **RL High-Pass Filter** - First-order RL high-pass
-- **Sallen-Key Low-Pass** - Second-order active filter
-- **Active Band-Pass Filter** - Op-amp based band-pass
-- **Twin-T Notch Filter** - Notch/band-reject filter
+- **RC Low Pass** (`LP`) - RC low-pass filter (fc=1.6kHz)
+- **RC High Pass** (`HP`) - RC high-pass filter (fc=1.6kHz)
+- **RL Low Pass** (`RL-LP`) - RL low-pass filter
+- **RL High Pass** (`RL-HP`) - RL high-pass filter
+- **Sallen-Key LP** (`S-K`) - 2nd order Sallen-Key low pass filter
+- **Active Bandpass** (`BPF`) - Active band pass filter
+- **Notch Filter** (`Notc`) - Twin-T 60Hz notch filter
+- **RC Band-Pass** (`RC BP`) - Passive RC high-pass into low-pass
+- **LC Low-Pass** (`LC LP`) - 2nd-order LC low-pass with load
 
-**Rectifiers & Power**
-- **Half-Wave Rectifier** - Simple diode rectifier
-- **Full-Wave Bridge** - Bridge rectifier
-- **Center-Tap Rectifier** - Transformer-based rectifier
-- **AC-DC Power Supply** - Complete transformer-based supply
-- **120V/60Hz to 12V DC** - American-style power supply
+**Op-amps**
+- **Inverting Amp** (`Inv`) - Inverting op-amp (gain=-10)
+- **Non-Inv Amp** (`NonI`) - Non-inverting op-amp (gain=11)
+- **Voltage Follower** (`Fol`) - Unity gain buffer
+- **Integrator** (`Int`) - Op-amp integrator circuit
+- **Differentiator** (`Dif`) - Op-amp differentiator circuit
+- **Summing Amp** (`Sum`) - Inverting summing amplifier
+- **Comparator** (`Cmp`) - Op-amp voltage comparator
+- **Difference Amp** (`DifA`) - Op-amp difference amplifier (subtractor)
+- **Transimpedance** (`TIA`) - Transimpedance amplifier (I to V)
+- **Instr. Amp** (`Inst`) - Three op-amp instrumentation amplifier
+- **Window Comp** (`WCmp`) - Window comparator (OV/UV detection)
+- **Schmitt Trigger** (`Schm`) - Comparator with hysteresis
+- **Peak Detector** (`Peak`) - Op-amp peak detector circuit
 
-**Transistor Amplifiers**
-- **Common Emitter** - BJT voltage amplifier
-- **Common Source** - MOSFET amplifier
-- **Common Drain** - Source follower (buffer)
-- **Multistage Amplifier** - Cascaded gain stages
-- **Differential Pair** - Matched transistor pair
-- **Push-Pull Output** - Complementary output stage
-- **CMOS Inverter** - Digital inverter
-
-**Current Circuits**
-- **Current Mirror** - BJT current mirror
-- **Constant Current Source** - BJT-based current source
-
-**Op-Amp Circuits**
-- **Voltage Follower** - Unity-gain buffer
-- **Inverting Amplifier** - Negative gain amplifier
-- **Non-Inverting Amplifier** - Positive gain amplifier
-- **Difference Amplifier** - Subtractor circuit
-- **Summing Amplifier** - Voltage adder
-- **Integrator** - Op-amp integrator
-- **Differentiator** - Op-amp differentiator
-- **Transimpedance Amplifier** - Current to voltage converter
-- **Instrumentation Amplifier** - Three op-amp precision amplifier
-- **Comparator** - Voltage comparator
-- **Window Comparator** - Dual-threshold comparator
-- **Schmitt Trigger** - Comparator with hysteresis
-- **Precision Rectifier** - Full-wave precision rectifier
+**Transistors**
+- **Common Emitter** (`CE`) - BJT common-emitter amplifier
+- **Common Source** (`CS`) - MOSFET common-source amplifier
+- **Source Follower** (`SF`) - MOSFET source follower (common-drain)
+- **Two-Stage Amp** (`2Stg`) - Two-stage BJT amplifier
+- **Differential Pair** (`Diff`) - BJT differential amplifier
+- **Current Mirror** (`CMir`) - BJT current mirror
+- **Push-Pull** (`PP`) - Complementary push-pull output stage
+- **Current Source** (`Isrc`) - BJT constant current source
 
 **Oscillators**
-- **Wien Bridge Oscillator** - Sine wave generator
+- **Wien Oscillator** (`Wien`) - Wien bridge sine wave oscillator
+- **Phase Shift Osc** (`PhOsc`) - RC phase shift oscillator (keep noise on)
+- **Relaxation Osc** (`RelOsc`) - Op-amp Schmitt + RC relaxation oscillator
 
-**Voltage References**
-- **Zener Reference** - Zener-based voltage reference
+**Power supplies**
+- **Half-Wave Rect** (`HW`) - Half-wave rectifier
+- **Bridge Rectifier** (`Brdg`) - Full-wave bridge rectifier with filter
+- **Center-Tap Rect** (`CTap`) - Center-tap transformer rectifier
+- **AC-DC Supply** (`ACDC`) - Complete AC to DC power supply
+- **US 120V-12V** (`US12`) - American 120V/60Hz to 12V DC
+- **Zener Reference** (`Zref`) - Zener diode voltage reference
+- **Precision Rect** (`PRec`) - Precision full-wave rectifier
+- **7805 Regulator** (`7805`) - 7805 fixed 5V regulator with filtering
+- **LM317 Adj Reg** (`317`) - LM317 adjustable regulator with voltage set
+- **TL431 Reference** (`431`) - TL431 precision shunt reference
+- **Neg Clamper** (`Clmp`) - Negative clamper (DC restorer)
+- **Zener Clipper** (`ZClip`) - Back-to-back zeners limit the swing
+- **Voltage Doubler** (`Dblr`) - Villard/Greinacher diode-capacitor doubler
+- **HW Rect + Cap** (`HW+C`) - Half-wave rectifier with smoothing capacitor
+
+**Digital**
+- **CMOS Inverter** (`CMOS`) - CMOS logic inverter
+
+**Power systems (Texas / ERCOT numbers)**
+- **345 kV Line** (`345kV`) - 100-mile 345 kV line, 600 MW load (per-phase)
+- **138 kV Line + VAR** (`138kV`) - 30-mile 138 kV line, lagging load, switchable cap bank
+- **12.47 kV Feeder** (`Feedr`) - 5-mile distribution feeder, 1 MW per phase
+- **Pole Xfmr 120/240** (`Pole`) - 7.2 kV to 240 V service transformer with a house load
+- **Generator + GSU** (`GenSU`) - 18 kV generator, step-up to 345 kV, 600 MW
+- **Grid: 18 kV to 240 V** (`Grid`) - Generator to house through every voltage level
+- **Ferranti (open line)** (`Ferr`) - 200-mile 345 kV pi line, open end, switchable reactor
+- **Line Model Ladder** (`Ladder`) - Same line as R, R-L and pi: compare the load buses
+
+**High voltage**
+- **Tesla Coil** (`Tesla`) - Spark-gap Tesla coil, 4x13 in toroid, streamer to a rod
+- **Tesla Coil (big top)** (`TeslaB`) - Retuned for an 8x24 in toroid: more energy, longer arc
+- **Tesla Coil (detuned)** (`TeslaX`) - Big toroid but the primary was not retuned: weak output
+
+### Power Systems & High Voltage
+
+![345 kV line](screenshots/auto/line_345kv.png)
+
+The power-system examples use real per-mile conductor data (twin Drake 345 kV, Drake 138 kV,
+1/0 ACSR feeders) and Texas/ERCOT sizes researched in `docs/RESEARCH_TEXAS_GRID.md` and
+`docs/RESEARCH_AEP_PC.md`: a 100-mile 345 kV line at 600 MW, a 138 kV line with a lagging
+load and a switchable capacitor bank, a 12.47 kV feeder, a pole transformer, a generator with
+its step-up transformer, the whole chain from an 18 kV generator to a 240 V house, the Ferranti
+rise of an open 200-mile line, and a *realism ladder* that shows the same line as R only, R-L,
+and a nominal pi section. Each one has a hand-calculated oracle in the probe test.
+
+New components make this possible:
+
+- **Transmission line** (`TLine`) - length in miles times per-mile R, X and B; model 0 = resistance
+  only, 1 = series R-L, 2 = nominal pi. All parameters are editable, so line length and conductor
+  resistance can be explored live.
+- **Ideal transformer** - now reflects current (Ip = -N Is), so generator, line and load currents
+  are consistent through every voltage level.
+- **Spark gap** - hysteretic arc: breaks down at 3 kV/mm x gap, conducts through `R arc`, quenches
+  when the current stays below the hold level; arcs are drawn while it conducts.
+- **Toroid** - Tesla-coil topload whose capacitance follows its outer/tube diameter (Bert Pool
+  formula); corona streaks appear above ~50 kV.
+
+![Tesla coil](screenshots/auto/tesla_coil.png)
+
+Three **Tesla coil** examples (tuned, retuned for a bigger toroid, and deliberately detuned) use an
+NST, a spark gap, the tank capacitor, a k = 0.2 coupled secondary and a streamer gap to a grounded
+rod. The scope V/div range now reaches 500 kV/div with kV labels.
 
 ### Advanced Oscilloscope
 
@@ -268,6 +332,10 @@ Create reusable subcircuits from your designs:
 - **Synthwave color theme** - Neon pink, cyan, and purple accents
 - **Animated neon border** - Dual smooth chasers flow around window edges with thick glowing bars
 - **Spotlight Search (Ctrl+K)** - Quick component search with fuzzy matching, keyboard navigation, and mouse click selection
+- **Tabbed left panel** - *Parts* and *Circuits* tabs with a type-to-filter box; parts keep their collapsible categories, circuits are grouped by topic
+- **Compact scope controls** - one primary row (V/T scale, Autoset, cursors, stacked view, sweep tracking, pop-out) plus Display / Trigger / Analysis tabs; the same layout drives the pop-out window
+- **Collapsible properties panel** - click its header to give the room to the scope
+- **Hover tooltips** on every button and palette item
 - **Collapsible palette categories** - Click to expand/collapse component groups
 - **Grid-based placement** with snap-to-grid (toggle with 'S')
 - **Pan and zoom** - Middle mouse or Shift+drag to pan, scroll to zoom
@@ -285,6 +353,18 @@ Create reusable subcircuits from your designs:
 - **Save/Load circuits** - Binary format (.ckt)
 - **Auto-save** - Periodic backup during work
 - **Circuit templates** - Pre-built example circuits
+
+## Gallery
+
+| | |
+|---|---|
+| ![RC low-pass sweep](screenshots/auto/rc_lowpass_sweep.png) RC low-pass with a 100 Hz-20 kHz sweep and tracking scope | ![Wien oscillator](screenshots/auto/wien_oscillator.png) Wien bridge oscillator |
+| ![Grid chain](screenshots/auto/grid_chain.png) 18 kV generator to a 240 V house | ![Ferranti](screenshots/auto/ferranti.png) Ferranti rise on an open 200-mile line |
+| ![Line model ladder](screenshots/auto/line_model_ladder.png) The same line as R, R-L and pi | ![Relaxation oscillator](screenshots/auto/relaxation_osc.png) Op-amp relaxation oscillator |
+
+![RC sweep](gifs/auto_rc_lowpass_sweep.gif)
+
+![Tesla coil](gifs/auto_tesla_coil.gif)
 
 ## Building
 
@@ -348,15 +428,29 @@ point and a short transient, and reports solver errors, NaN/runaway voltages and
 point of every transistor / op-amp / regulator:
 
 ```bash
-build/tools/template_smoke.exe             # 47/47 templates passed
+build/tools/template_smoke.exe             # 65/65 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
-build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation
+build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (57 oracles)
+build/tools/template_smoke.exe --demo-test       # every template demonstrates its DemoKind contract
 build/tools/template_smoke.exe --osc-test        # oscillators really oscillate (add --osc-dt 5e-6)
+build/tools/template_smoke.exe --tesla-test      # spark-gap firings, ring frequency, toroid peak, streamer, tuned vs detuned
+build/tools/template_smoke.exe --param-test      # spark gap / toroid / line / transformer limits vs phasor oracles; scope presets
 build/tools/template_smoke.exe --flow-test       # current-flow display: KCL, conservation, series uniformity
 build/tools/template_smoke.exe --geom-test       # schematic audit: diagonals, crossings, wires through bodies
 build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
+build/tools/template_smoke.exe --response "RC BP"   # amplitude vs frequency of every node during the sweep
 build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
+build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template in the palette)
+```
+
+The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
+which produced the images in this README):
+
+```bash
+build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
+build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
+build/circuit-playground.exe --help
 ```
 
 Every example circuit carries an on-canvas note explaining how it works, the governing
@@ -368,7 +462,8 @@ peak detector / clamper an **amplitude-sweeping** one; a live `f=` / `A=` readou
 source shows the instantaneous value.
 
 `TEST_PLAN.md` (feature-by-feature manual plan) and `TEMPLATE_AUDIT.md` (per-template
-hand-calculated expectations and value variations) track the interactive test campaign.
+hand-calculated expectations and value variations) track the interactive test campaign;
+`docs/UI_DECLUTTER_PLAN.md` records the UI restructuring.
 
 ## Usage Guide
 

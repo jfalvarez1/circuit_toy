@@ -1900,8 +1900,28 @@ bool app_place_template_centered(App *app, CircuitTemplateType type) {
     float wx, wy;
     render_screen_to_world(render, render->canvas_rect.w * 0.5f - 300.0f, render->canvas_rect.h * 0.5f - 80.0f, &wx, &wy);
     wx = floorf(wx / 20.0f) * 20.0f; wy = floorf(wy / 20.0f) * 20.0f;
+    int first = app->circuit->num_components;
     int count = circuit_place_template(app->circuit, type, wx, wy);
     if (count <= 0) return false;
+    // Fit the placed circuit (and its note) into the canvas: wide templates zoom out
+    float minx = 1e9f, miny = 1e9f, maxx = -1e9f, maxy = -1e9f;
+    for (int i = first; i < app->circuit->num_components; i++) {
+        Component *c = app->circuit->components[i];
+        float w = (c->type == COMP_TEXT) ? (float)strlen(c->props.text.text) * 6.0f : 60.0f;
+        float h = (c->type == COMP_TEXT) ? 16.0f : 60.0f;
+        float x0 = (c->type == COMP_TEXT) ? c->x : c->x - w / 2, y0 = (c->type == COMP_TEXT) ? c->y : c->y - h / 2;
+        if (x0 < minx) minx = x0; if (y0 < miny) miny = y0;
+        if (x0 + w > maxx) maxx = x0 + w; if (y0 + h > maxy) maxy = y0 + h;
+    }
+    if (maxx > minx && maxy > miny) {
+        float bw = maxx - minx + 80.0f, bh = maxy - miny + 80.0f;
+        float z = fminf(render->canvas_rect.w / bw, render->canvas_rect.h / bh);
+        if (z > 1.0f) z = 1.0f;
+        if (z < 0.3f) z = 0.3f;
+        render->zoom = z;
+        render->offset_x = render->canvas_rect.w * 0.5f - (minx + maxx) * 0.5f * z;
+        render->offset_y = render->canvas_rect.h * 0.5f - (miny + maxy) * 0.5f * z;
+    }
     app->circuit->modified = true;
     double td = circuit_template_scope_time_div(type);
     if (td > 0) { ui->scope_time_div = td; ui->scope_capture_valid = false; }
