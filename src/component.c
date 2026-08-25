@@ -1097,7 +1097,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
 
     [COMP_AND_GATE] = {
         "AND Gate", "AND", 3,
-        {{ -40, -15, "A" }, { -40, 15, "B" }, { 40, 0, "OUT" }},
+        {{ -40, -20, "A" }, { -40, 20, "B" }, { 40, 0, "OUT" }},
         80, 50,
         { .logic_gate = {
             .v_low = 0.0,
@@ -1113,7 +1113,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
 
     [COMP_OR_GATE] = {
         "OR Gate", "OR", 3,
-        {{ -40, -15, "A" }, { -40, 15, "B" }, { 40, 0, "OUT" }},
+        {{ -40, -20, "A" }, { -40, 20, "B" }, { 40, 0, "OUT" }},
         80, 50,
         { .logic_gate = {
             .v_low = 0.0,
@@ -1129,7 +1129,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
 
     [COMP_NAND_GATE] = {
         "NAND Gate", "NAND", 3,
-        {{ -40, -15, "A" }, { -40, 15, "B" }, { 40, 0, "OUT" }},
+        {{ -40, -20, "A" }, { -40, 20, "B" }, { 40, 0, "OUT" }},
         80, 50,
         { .logic_gate = {
             .v_low = 0.0,
@@ -1145,7 +1145,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
 
     [COMP_NOR_GATE] = {
         "NOR Gate", "NOR", 3,
-        {{ -40, -15, "A" }, { -40, 15, "B" }, { 40, 0, "OUT" }},
+        {{ -40, -20, "A" }, { -40, 20, "B" }, { 40, 0, "OUT" }},
         80, 50,
         { .logic_gate = {
             .v_low = 0.0,
@@ -1161,7 +1161,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
 
     [COMP_XOR_GATE] = {
         "XOR Gate", "XOR", 3,
-        {{ -40, -15, "A" }, { -40, 15, "B" }, { 40, 0, "OUT" }},
+        {{ -40, -20, "A" }, { -40, 20, "B" }, { 40, 0, "OUT" }},
         80, 50,
         { .logic_gate = {
             .v_low = 0.0,
@@ -1177,7 +1177,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
 
     [COMP_XNOR_GATE] = {
         "XNOR Gate", "XNOR", 3,
-        {{ -40, -15, "A" }, { -40, 15, "B" }, { 40, 0, "OUT" }},
+        {{ -40, -20, "A" }, { -40, 20, "B" }, { 40, 0, "OUT" }},
         80, 50,
         { .logic_gate = {
             .v_low = 0.0,

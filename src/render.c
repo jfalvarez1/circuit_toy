@@ -3655,164 +3655,88 @@ void render_pwm_source(RenderContext *ctx, float x, float y, int rotation) {
 }
 
 // Logic gate helper - draw gate body outline
-static void render_gate_body(RenderContext *ctx, float x, float y, int rotation) {
-    // Left side (straight)
-    render_draw_line_rotated(ctx, x, y, -15, -15, -15, 15, rotation);
-    // Top
-    render_draw_line_rotated(ctx, x, y, -15, -15, 10, -15, rotation);
-    // Bottom
-    render_draw_line_rotated(ctx, x, y, -15, 15, 10, 15, rotation);
+// Logic gates. Inputs A/B are at (-40, -20) / (-40, +20) and the output at (40, 0) - all on the
+// 20 px grid, and the drawn stubs end exactly on those terminals.
+static void gate_arc(RenderContext *ctx, float x, float y, int rotation, float cx, float cy, float r, int a0, int a1) {
+    for (int a = a0; a < a1; a += 10) {
+        float r1 = a * M_PI / 180, r2 = (a + 10) * M_PI / 180;
+        render_draw_line_rotated(ctx, x, y, cx + r * cos(r1), cy + r * sin(r1), cx + r * cos(r2), cy + r * sin(r2), rotation);
+    }
 }
+static void gate_inputs(RenderContext *ctx, float x, float y, int rotation, float body_left) {
+    render_draw_line_rotated(ctx, x, y, -40, -20, body_left, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -40, 20, body_left, 20, rotation);
+}
+static void gate_output(RenderContext *ctx, float x, float y, int rotation, float from) {
+    render_draw_line_rotated(ctx, x, y, from, 0, 40, 0, rotation);
+}
+// AND body: flat back at x = -20, straight top/bottom to x = 0, semicircle of radius 20 to x = 20
+static void gate_and_body(RenderContext *ctx, float x, float y, int rotation) {
+    render_draw_line_rotated(ctx, x, y, -20, -20, -20, 20, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, -20, 0, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, 20, 0, 20, rotation);
+    gate_arc(ctx, x, y, rotation, 0, 0, 20, -90, 90);
+}
+// OR body: concave back through x = -20 at the centre, two arcs meeting at the point (20, 0)
+static void gate_or_body(RenderContext *ctx, float x, float y, int rotation, float back_shift) {
+    float bx = -30 + back_shift;
+    gate_arc(ctx, x, y, rotation, bx - 30, 0, 36.06f, -34, 34);          // back: passes through (bx, +/-20) and (bx+6, 0)
+    gate_arc(ctx, x, y, rotation, 0, -34, 40.4f, 32, 90);                 // top from (34,-... ) approximates (0,-20) .. (20,0)
+    gate_arc(ctx, x, y, rotation, 0, 34, 40.4f, -90, -32);
+    render_draw_line_rotated(ctx, x, y, bx, -20, 0, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, bx, 20, 0, 20, rotation);
+}
+static void render_gate_body(RenderContext *ctx, float x, float y, int rotation) { gate_and_body(ctx, x, y, rotation); }
 
 // NOT gate (inverter)
 void render_not_gate(RenderContext *ctx, float x, float y, int rotation) {
-    // Triangle
     render_draw_line_rotated(ctx, x, y, -20, -15, -20, 15, rotation);
     render_draw_line_rotated(ctx, x, y, -20, -15, 10, 0, rotation);
     render_draw_line_rotated(ctx, x, y, -20, 15, 10, 0, rotation);
-    // Inversion bubble
     render_draw_circle_rotated(ctx, x, y, 15, 0, 5, rotation);
-    // Input/output leads
     render_draw_line_rotated(ctx, x, y, -40, 0, -20, 0, rotation);
     render_draw_line_rotated(ctx, x, y, 20, 0, 40, 0, rotation);
 }
 
-// AND gate
 void render_and_gate(RenderContext *ctx, float x, float y, int rotation) {
-    // Left side
-    render_draw_line_rotated(ctx, x, y, -15, -15, -15, 15, rotation);
-    // Top
-    render_draw_line_rotated(ctx, x, y, -15, -15, 5, -15, rotation);
-    // Bottom
-    render_draw_line_rotated(ctx, x, y, -15, 15, 5, 15, rotation);
-    // Curved right side (arc)
-    for (int a = -90; a <= 90; a += 10) {
-        float r1 = a * M_PI / 180;
-        float r2 = (a + 10) * M_PI / 180;
-        float dx1 = 5 + 15 * cos(r1);
-        float dy1 = 15 * sin(r1);
-        float dx2 = 5 + 15 * cos(r2);
-        float dy2 = 15 * sin(r2);
-        render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
-    }
-    // Inputs
-    render_draw_line_rotated(ctx, x, y, -40, -8, -15, -8, rotation);
-    render_draw_line_rotated(ctx, x, y, -40, 8, -15, 8, rotation);
-    // Output
-    render_draw_line_rotated(ctx, x, y, 20, 0, 40, 0, rotation);
+    gate_and_body(ctx, x, y, rotation);
+    gate_inputs(ctx, x, y, rotation, -20);
+    gate_output(ctx, x, y, rotation, 20);
 }
 
-// OR gate
 void render_or_gate(RenderContext *ctx, float x, float y, int rotation) {
-    // Curved left side
-    for (int a = -30; a <= 30; a += 10) {
-        float r1 = a * M_PI / 180;
-        float r2 = (a + 10) * M_PI / 180;
-        float dx1 = -25 + 20 * cos(r1);
-        float dy1 = 20 * sin(r1);
-        float dx2 = -25 + 20 * cos(r2);
-        float dy2 = 20 * sin(r2);
-        render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
-    }
-    // Top curve
-    for (int a = 180; a <= 240; a += 10) {
-        float r1 = a * M_PI / 180;
-        float r2 = (a + 10) * M_PI / 180;
-        float dx1 = 20 + 25 * cos(r1);
-        float dy1 = -30 + 25 * sin(r1);
-        float dx2 = 20 + 25 * cos(r2);
-        float dy2 = -30 + 25 * sin(r2);
-        render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
-    }
-    // Bottom curve
-    for (int a = 120; a <= 180; a += 10) {
-        float r1 = a * M_PI / 180;
-        float r2 = (a + 10) * M_PI / 180;
-        float dx1 = 20 + 25 * cos(r1);
-        float dy1 = 30 + 25 * sin(r1);
-        float dx2 = 20 + 25 * cos(r2);
-        float dy2 = 30 + 25 * sin(r2);
-        render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
-    }
-    // Point
-    render_draw_line_rotated(ctx, x, y, 7, -9, 20, 0, rotation);
-    render_draw_line_rotated(ctx, x, y, 7, 9, 20, 0, rotation);
-    // Inputs
-    render_draw_line_rotated(ctx, x, y, -40, -8, -10, -8, rotation);
-    render_draw_line_rotated(ctx, x, y, -40, 8, -10, 8, rotation);
-    // Output
-    render_draw_line_rotated(ctx, x, y, 20, 0, 40, 0, rotation);
+    gate_or_body(ctx, x, y, rotation, 0);
+    gate_inputs(ctx, x, y, rotation, -27);
+    gate_output(ctx, x, y, rotation, 20);
 }
 
-// NAND gate
 void render_nand_gate(RenderContext *ctx, float x, float y, int rotation) {
-    // AND gate body
-    render_draw_line_rotated(ctx, x, y, -15, -15, -15, 15, rotation);
-    render_draw_line_rotated(ctx, x, y, -15, -15, 5, -15, rotation);
-    render_draw_line_rotated(ctx, x, y, -15, 15, 5, 15, rotation);
-    for (int a = -90; a <= 90; a += 10) {
-        float r1 = a * M_PI / 180;
-        float r2 = (a + 10) * M_PI / 180;
-        float dx1 = 5 + 15 * cos(r1);
-        float dy1 = 15 * sin(r1);
-        float dx2 = 5 + 15 * cos(r2);
-        float dy2 = 15 * sin(r2);
-        render_draw_line_rotated(ctx, x, y, dx1, dy1, dx2, dy2, rotation);
-    }
-    // Inversion bubble
+    gate_and_body(ctx, x, y, rotation);
     render_draw_circle_rotated(ctx, x, y, 25, 0, 5, rotation);
-    // Inputs/output
-    render_draw_line_rotated(ctx, x, y, -40, -8, -15, -8, rotation);
-    render_draw_line_rotated(ctx, x, y, -40, 8, -15, 8, rotation);
-    render_draw_line_rotated(ctx, x, y, 30, 0, 40, 0, rotation);
+    gate_inputs(ctx, x, y, rotation, -20);
+    gate_output(ctx, x, y, rotation, 30);
 }
 
-// NOR gate
 void render_nor_gate(RenderContext *ctx, float x, float y, int rotation) {
-    // OR gate body (simplified)
-    render_draw_line_rotated(ctx, x, y, -15, -15, 5, -15, rotation);
-    render_draw_line_rotated(ctx, x, y, -15, 15, 5, 15, rotation);
-    render_draw_line_rotated(ctx, x, y, -15, -15, -15, 15, rotation);
-    render_draw_line_rotated(ctx, x, y, 5, -15, 15, 0, rotation);
-    render_draw_line_rotated(ctx, x, y, 5, 15, 15, 0, rotation);
-    // Inversion bubble
-    render_draw_circle_rotated(ctx, x, y, 20, 0, 5, rotation);
-    // Inputs/output
-    render_draw_line_rotated(ctx, x, y, -40, -8, -15, -8, rotation);
-    render_draw_line_rotated(ctx, x, y, -40, 8, -15, 8, rotation);
-    render_draw_line_rotated(ctx, x, y, 25, 0, 40, 0, rotation);
+    gate_or_body(ctx, x, y, rotation, 0);
+    render_draw_circle_rotated(ctx, x, y, 25, 0, 5, rotation);
+    gate_inputs(ctx, x, y, rotation, -27);
+    gate_output(ctx, x, y, rotation, 30);
 }
 
-// XOR gate
 void render_xor_gate(RenderContext *ctx, float x, float y, int rotation) {
-    // OR shape with extra curve
-    render_draw_line_rotated(ctx, x, y, -18, -15, -18, 15, rotation);
-    render_draw_line_rotated(ctx, x, y, -15, -15, -15, 15, rotation);
-    render_draw_line_rotated(ctx, x, y, -15, -15, 5, -15, rotation);
-    render_draw_line_rotated(ctx, x, y, -15, 15, 5, 15, rotation);
-    render_draw_line_rotated(ctx, x, y, 5, -15, 20, 0, rotation);
-    render_draw_line_rotated(ctx, x, y, 5, 15, 20, 0, rotation);
-    // Inputs/output
-    render_draw_line_rotated(ctx, x, y, -40, -8, -15, -8, rotation);
-    render_draw_line_rotated(ctx, x, y, -40, 8, -15, 8, rotation);
-    render_draw_line_rotated(ctx, x, y, 20, 0, 40, 0, rotation);
+    gate_or_body(ctx, x, y, rotation, 4);
+    gate_arc(ctx, x, y, rotation, -62, 0, 36.06f, -34, 34);               // extra back line
+    gate_inputs(ctx, x, y, rotation, -32);
+    gate_output(ctx, x, y, rotation, 20);
 }
 
-// XNOR gate
 void render_xnor_gate(RenderContext *ctx, float x, float y, int rotation) {
-    // XOR body
-    render_draw_line_rotated(ctx, x, y, -18, -15, -18, 15, rotation);
-    render_draw_line_rotated(ctx, x, y, -15, -15, -15, 15, rotation);
-    render_draw_line_rotated(ctx, x, y, -15, -15, 5, -15, rotation);
-    render_draw_line_rotated(ctx, x, y, -15, 15, 5, 15, rotation);
-    render_draw_line_rotated(ctx, x, y, 5, -15, 15, 0, rotation);
-    render_draw_line_rotated(ctx, x, y, 5, 15, 15, 0, rotation);
-    // Inversion bubble
-    render_draw_circle_rotated(ctx, x, y, 20, 0, 5, rotation);
-    // Inputs/output
-    render_draw_line_rotated(ctx, x, y, -40, -8, -15, -8, rotation);
-    render_draw_line_rotated(ctx, x, y, -40, 8, -15, 8, rotation);
-    render_draw_line_rotated(ctx, x, y, 25, 0, 40, 0, rotation);
+    gate_or_body(ctx, x, y, rotation, 4);
+    gate_arc(ctx, x, y, rotation, -62, 0, 36.06f, -34, 34);
+    render_draw_circle_rotated(ctx, x, y, 25, 0, 5, rotation);
+    gate_inputs(ctx, x, y, rotation, -32);
+    gate_output(ctx, x, y, rotation, 30);
 }
 
 // Buffer

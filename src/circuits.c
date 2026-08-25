@@ -7146,7 +7146,6 @@ static int place_pc_distance(Circuit *circuit, float x, float y) {
 
 // 5.8: breaker failure: START = TRIP AND 50BF -> 150 ms timer -> BFT = timer AND 50BF
 static int place_pc_breaker_fail(Circuit *circuit, float x, float y) {
-    // gate inputs sit at +/-15 px, so gates are placed at y+35 / y+65: their terminals land on the 10 px grid
     Component *trip = add_comp(circuit, COMP_PULSE_SOURCE, x, y + 60, 0);        // +(0,20) -(0,100)
     if (!trip) return 0;
     trip->props.pulse_source.v_low = 0; trip->props.pulse_source.v_high = 5; trip->props.pulse_source.delay = 0.050; trip->props.pulse_source.pulse_width = 0.300; trip->props.pulse_source.period = 0.600;
@@ -7154,7 +7153,7 @@ static int place_pc_breaker_fail(Circuit *circuit, float x, float y) {
     Component *cur = add_comp(circuit, COMP_PULSE_SOURCE, x, y + 220, 0);        // +(0,180) -(0,260)
     cur->props.pulse_source.v_low = 0; cur->props.pulse_source.v_high = 5; cur->props.pulse_source.delay = 0.050; cur->props.pulse_source.pulse_width = 0.300; cur->props.pulse_source.period = 0.600;
     Component *g1 = add_comp(circuit, COMP_GROUND, x, y + 280, 0);
-    Component *and1 = add_comp(circuit, COMP_AND_GATE, x + 120, y + 35, 0);      // A(80,20) B(80,50) OUT(160,35)->node (160,40)
+    Component *and1 = add_comp(circuit, COMP_AND_GATE, x + 120, y + 40, 0);      // A(80,20) B(80,60) OUT(160,40)
     Component *rt = add_comp(circuit, COMP_RESISTOR, x + 220, y + 40, 0);        // (180,40)-(260,40)
     rt->props.resistor.resistance = 10e3;
     Component *ct = add_comp(circuit, COMP_CAPACITOR, x + 260, y + 80, 90);      // (260,40)-(260,120)
@@ -7163,7 +7162,7 @@ static int place_pc_breaker_fail(Circuit *circuit, float x, float y) {
     int plus = TN(x + 360, y + 80), ctop = TN(x + 260, y + 40), c1 = TN(x + 300, y + 40), c2 = TN(x + 300, y + 80);
     TW(ctop, c1); TW(c1, c2); TW(c2, plus);
     Component *u = comparator_with_ref(circuit, x + 400, y + 60, 3.16, plus);   // -(360,40) +(360,80) out(440,60), load at (480,60..140)
-    Component *and2 = add_comp(circuit, COMP_AND_GATE, x + 600, y + 65, 0);      // A(560,50) B(560,80) OUT(640,65)->node (640,70)
+    Component *and2 = add_comp(circuit, COMP_AND_GATE, x + 600, y + 70, 0);      // A(560,50) B(560,90) OUT(640,70)
     Component *rl = add_comp(circuit, COMP_RESISTOR, x + 700, y + 110, 90);      // (700,70)-(700,150)
     rl->props.resistor.resistance = 100e3;
     Component *gl = add_comp(circuit, COMP_GROUND, x + 700, y + 170, 0);
@@ -7172,7 +7171,7 @@ static int place_pc_breaker_fail(Circuit *circuit, float x, float y) {
     add_label(circuit, x + 20, y + 310, "TRIP (top pulse) and 50BF current detector (bottom pulse); shorten the 50BF pulse to 83 ms for a healthy breaker");
     // wiring
     int tp = TN(x, y + 20), ga = TN(x + 80, y + 20); TW(tp, ga);
-    int cp = TN(x, y + 180), b1 = TN(x + 60, y + 180), b2 = TN(x + 60, y + 50), gb = TN(x + 80, y + 50); TW(cp, b1); TW(b1, b2); TW(b2, gb);
+    int cp = TN(x, y + 180), b1 = TN(x + 60, y + 180), b2 = TN(x + 60, y + 60), gb = TN(x + 80, y + 60); TW(cp, b1); TW(b1, b2); TW(b2, gb);
     int o1 = TN(x + 160, y + 40), rl0 = TN(x + 180, y + 40); TW(o1, rl0);
     trip->node_ids[0] = tp; cur->node_ids[0] = cp;
     connect_terminals(circuit, trip, 1, g0, 0);
@@ -7182,7 +7181,7 @@ static int place_pc_breaker_fail(Circuit *circuit, float x, float y) {
     connect_terminals(circuit, ct, 1, gc, 0);
     int uo = TN(x + 440, y + 60), j1 = TN(x + 520, y + 60), j2 = TN(x + 520, y + 50), a2a = TN(x + 560, y + 50);
     TW(uo, j1); TW(j1, j2); TW(j2, a2a);
-    int k1 = TN(x + 540, y + 180), k2 = TN(x + 540, y + 80), a2b = TN(x + 560, y + 80);
+    int k1 = TN(x + 540, y + 180), k2 = TN(x + 540, y + 90), a2b = TN(x + 560, y + 90);
     TW(b1, k1); TW(k1, k2); TW(k2, a2b);
     (void)u;
     int bft = TN(x + 640, y + 70), lt = TN(x + 700, y + 70); TW(bft, lt);
