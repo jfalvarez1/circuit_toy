@@ -1234,7 +1234,12 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             }
 
             // Handle Ctrl+K to open spotlight search
-            if (event->key.keysym.sym == SDLK_k && (SDL_GetModState() & KMOD_CTRL) && ui) {
+            if (event->key.keysym.sym == SDLK_SLASH && ui && !input->editing_property && !ui->show_spotlight && !ui->palette_filter_active) {
+                ui->palette_filter_active = true;      // '/' : type-to-filter in the left panel
+                ui->palette_filter[0] = 0;
+                return true;
+            }
+            if (((event->key.keysym.sym == SDLK_k) || (event->key.keysym.sym == SDLK_SPACE)) && (SDL_GetModState() & KMOD_CTRL) && ui) {
                 ui_spotlight_open(ui);
                 return true;
             }
@@ -2329,6 +2334,21 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             break;
 
         // Zener parameters
+        case PROP_3PH_V:
+            if (comp->type == COMP_SOURCE_3PH && value > 0) { comp->props.source_3ph.v_peak = value; applied = true; }
+            break;
+        case PROP_3PH_F:
+            if (comp->type == COMP_SOURCE_3PH && value > 0) { comp->props.source_3ph.frequency = value; applied = true; }
+            break;
+        case PROP_3PH_PHASE:
+            if (comp->type == COMP_SOURCE_3PH) { comp->props.source_3ph.phase = value; applied = true; }
+            break;
+        case PROP_3PH_R:
+            if (comp->type == COMP_SOURCE_3PH && value >= 0) { comp->props.source_3ph.r_series = value; applied = true; }
+            break;
+        case PROP_3PH_L:
+            if (comp->type == COMP_SOURCE_3PH && value >= 0) { comp->props.source_3ph.l_series = value; applied = true; }
+            break;
         case PROP_TLINE_LENGTH:
             if (comp->type == COMP_TLINE && value > 0 && value <= 5000) { comp->props.tline.length_mi = value; applied = true; }
             break;

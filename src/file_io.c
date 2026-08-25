@@ -252,6 +252,16 @@ bool file_export_json(Circuit *circuit, const char *filename) {
             fprintf(f, "        \"r_on\": %.6e\n", comp->props.spark_gap.r_on);
             fprintf(f, "      }");
             has_props = true;
+        } else if (comp->type == COMP_SOURCE_3PH) {
+            fprintf(f, ",\n");
+            fprintf(f, "      \"properties\": {\n");
+            fprintf(f, "        \"v_peak\": %.6e,\n", comp->props.source_3ph.v_peak);
+            fprintf(f, "        \"frequency\": %.6e,\n", comp->props.source_3ph.frequency);
+            fprintf(f, "        \"phase\": %.6e,\n", comp->props.source_3ph.phase);
+            fprintf(f, "        \"r_series\": %.6e,\n", comp->props.source_3ph.r_series);
+            fprintf(f, "        \"l_series\": %.6e\n", comp->props.source_3ph.l_series);
+            fprintf(f, "      }");
+            has_props = true;
         } else if (comp->type == COMP_TLINE) {
             fprintf(f, ",\n");
             fprintf(f, "      \"properties\": {\n");
@@ -421,6 +431,13 @@ bool file_import_json(Circuit *circuit, const char *filename) {
                                     if (sscanf(res_ptr, "\"resistance\": %lf", &resistance) == 1) {
                                         comp->props.resistor.resistance = resistance;
                                     }
+                                }
+                            } else if (comp->type == COMP_SOURCE_3PH) {
+                                const char *keys[5] = { "\"v_peak\":", "\"frequency\":", "\"phase\":", "\"r_series\":", "\"l_series\":" };
+                                double *dst[5] = { &comp->props.source_3ph.v_peak, &comp->props.source_3ph.frequency, &comp->props.source_3ph.phase, &comp->props.source_3ph.r_series, &comp->props.source_3ph.l_series };
+                                for (int k = 0; k < 5; k++) {
+                                    char *kp = strstr(props_ptr, keys[k]);
+                                    if (kp && (!next_comp || kp < next_comp)) { double val; if (sscanf(kp + strlen(keys[k]), " %lf", &val) == 1) *dst[k] = val; }
                                 }
                             } else if (comp->type == COMP_SPARK_GAP || comp->type == COMP_TOROID || comp->type == COMP_TLINE) {
                                 const char *keys[5]; double *dst[5]; int nk = 0; double model_tmp = comp->props.tline.model;

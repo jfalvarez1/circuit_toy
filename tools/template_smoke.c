@@ -411,6 +411,12 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_RLC_RING,         COMP_CAPACITOR, 0, 0, "max", 9.53,  0.04, 6e-3, "first peak 5(1 + e^(-pi zeta/sqrt(1-zeta^2)))" },
     { CIRCUIT_RLC_DAMPING,      COMP_CAPACITOR, 1, 0, "max", 5.0,   0.02, 10e-3, "critical damping: no overshoot" },
     { CIRCUIT_OPAMP_SAT,        COMP_OPAMP,     0, 2, "max", 15.0,  0.03, 3e-3,  "clipped at the +15 V rail" },
+    { CIRCUIT_SINGLE_TUNED_AMP, COMP_RESISTOR,  4, 0, "amp", 4.5,   0.5,  2e-4,  "g_m (Rq || RL) x 10 mV at f0 (beta/V_T dependent)" },
+    { CIRCUIT_COMMON_BASE,      COMP_RESISTOR,  4, 0, "amp", 1.88,  0.3,  1e-3,  "g_m R_C x 10 mV, in phase" },
+    { CIRCUIT_DARLINGTON,       COMP_RESISTOR,  1, 0, "amp", 0.91,  0.12, 5e-3,  "R_in / (R_in + 100k) with R_in ~ beta^2 R_E" },
+    { CIRCUIT_SR_LATCH,         COMP_NOR_GATE,  1, 2, "max", 5.0,   0.05, 0.5e-3, "Q set by the S pulse at 0.2 ms" },
+    { CIRCUIT_POWER_PLANT,      COMP_RESISTOR,  0, 0, "amp", 259.6e3, 0.06, 60e-3, "345 kV load bus: GSU behind X'' then the 100 mi line (as the single-phase examples)" },
+    { CIRCUIT_SUBSTATION,       COMP_RESISTOR,  0, 0, "amp", 103.0e3, 0.08, 60e-3, "138 kV feeder bus with the pf 0.9 load, cap banks open" },
     { CIRCUIT_SCHMITT_BISTABLE, COMP_OPAMP,     0, 2, "max", 15.0,  0.05, 30e-3, "bistable output at the rail" },
     { CIRCUIT_TRI_SQUARE_GEN,   COMP_OPAMP,     1, 2, "amp", 7.5,   0.08, 3e-3,  "triangle peak = 15 R1/R2" },
     { CIRCUIT_FUNCTION_GEN,     COMP_RESISTOR,  3, 1, "amp", 4.9,   0.15, 3e-3,  "3-breakpoint sine ~4.9 V peak" },
@@ -624,7 +630,7 @@ static int sweep_check(void) {
  * around f_char/4, f_char and 4*f_char; envelope/limiter kinds bin by amplitude progress.
  * ------------------------------------------------------------------------------------- */
 static Component *first_source(Circuit *c) {
-    static const ComponentType st[] = { COMP_AC_VOLTAGE, COMP_SQUARE_WAVE, COMP_TRIANGLE_WAVE, COMP_PULSE_SOURCE, COMP_DC_CURRENT, COMP_DC_VOLTAGE };
+    static const ComponentType st[] = { COMP_AC_VOLTAGE, COMP_SOURCE_3PH, COMP_SQUARE_WAVE, COMP_TRIANGLE_WAVE, COMP_PULSE_SOURCE, COMP_DC_CURRENT, COMP_DC_VOLTAGE };
     for (unsigned k = 0; k < sizeof st / sizeof st[0]; k++) { Component *x = find_comp(c, st[k], 0); if (x) return x; }
     return NULL;
 }
@@ -817,6 +823,7 @@ static double source_scale(Circuit *c) {
     for (int i = 0; i < c->num_components; i++) {
         Component *k = c->components[i]; double a = 0;
         if (k->type == COMP_AC_VOLTAGE) a = fabs(k->props.ac_voltage.amplitude) + fabs(k->props.ac_voltage.offset);
+        else if (k->type == COMP_SOURCE_3PH) a = fabs(k->props.source_3ph.v_peak);
         else if (k->type == COMP_DC_VOLTAGE) a = fabs(k->props.dc_voltage.voltage);
         if (a > m) m = a;
     }
@@ -1126,6 +1133,12 @@ static int trace_template(const char *filter, double t_end) {
                 if (c->components[j]->node_ids[k] == id) snprintf(owners + strlen(owners), sizeof owners - strlen(owners), "%s[%d] ", c->components[j]->label, k);
             printf("  n%-4d (%6.0f,%6.0f) %12.4g .. %-12.4g %s\n", id, c->nodes[i].x, c->nodes[i].y, id < 4096 ? vmin[id] : 0.0, id < 4096 ? vmax[id] : 0.0, owners);
         }
+        for (int w = 0; w < c->num_wires; w++) {
+            Node *a = circuit_get_node(c, c->wires[w].start_node_id), *b = circuit_get_node(c, c->wires[w].end_node_id);
+            if (!a || !b) continue;
+            const char *tag = (fabsf(a->x - b->x) > 0.5f && fabsf(a->y - b->y) > 0.5f) ? "  <-- DIAGONAL" : "";
+            printf("  wire n%d (%.0f,%.0f) -> n%d (%.0f,%.0f)%s\n", a->id, a->x, a->y, b->id, b->x, b->y, tag);
+        }
         simulation_free(sim); circuit_free(c);
     }
     return 0;
@@ -1142,6 +1155,7 @@ static double *knob_value(Component *k, const char **what) {
         case COMP_CAPACITOR:      *what = "C";    return &k->props.capacitor.capacitance;
         case COMP_INDUCTOR:       *what = "L";    return &k->props.inductor.inductance;
         case COMP_AC_VOLTAGE:     *what = "Vac";  return &k->props.ac_voltage.amplitude;
+        case COMP_SOURCE_3PH:     *what = "V3ph"; return &k->props.source_3ph.v_peak;
         case COMP_DC_VOLTAGE:     *what = "Vdc";  return &k->props.dc_voltage.voltage;
         case COMP_TRANSFORMER:    *what = "N";    return &k->props.transformer.turns_ratio;
         case COMP_TLINE:          *what = "len";  return &k->props.tline.length_mi;
@@ -1301,6 +1315,29 @@ static int probe_audit(const char *filter) {
     return flagged;
 }
 
+static int series_template(const char *filter, double t_end, int node_id) {
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti || !strstr(ti->name, filter)) continue;
+        Circuit *c = circuit_create();
+        circuit_place_template(c, (CircuitTemplateType)t, 0, 0);
+        Simulation *sim = simulation_create(c);
+        int ok = simulation_dc_analysis(sim);
+        double td = circuit_template_scope_time_div((CircuitTemplateType)t);
+        simulation_set_time_step(sim, td > 0 ? simulation_scope_time_step(sim, td) : 1e-5);
+        simulation_start(sim);
+        long steps = 0, every = (long)(t_end / sim->time_step / 200); if (every < 1) every = 1;
+        while (ok && sim->time < t_end && steps < 5000000) {
+            if (!simulation_step(sim)) break;
+            steps++;
+            if (steps % every == 0) { Node *nd = circuit_get_node(c, node_id); printf("%.6g %.6g\n", sim->time, nd ? nd->voltage : 0.0); }
+        }
+        simulation_free(sim); circuit_free(c);
+        return 0;
+    }
+    return 1;
+}
+
 int main(int argc, char **argv) {
     int dc_only = 0, verbose = 0, dump_nodes = 0;
     const char *svg_dir = NULL;
@@ -1323,6 +1360,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--param-test")) return param_test();
         else if (!strcmp(argv[i], "--knob-test")) return knob_test(i + 1 < argc ? argv[++i] : NULL);
         else if (!strcmp(argv[i], "--probe-audit")) return probe_audit(i + 1 < argc ? argv[++i] : NULL);
+        else if (!strcmp(argv[i], "--series") && i + 3 < argc) { const char *nm = argv[++i]; double tt = atof(argv[++i]); return series_template(nm, tt, atoi(argv[++i])); }
         else if (!strcmp(argv[i], "--trace") && i + 2 < argc) { const char *nm = argv[++i]; return trace_template(nm, atof(argv[++i])); }
         else if (!strcmp(argv[i], "--response") && i + 1 < argc) return response_explore(argv[++i]);
         else if (!strcmp(argv[i], "--sim-time") && i + 1 < argc) sim_time = atof(argv[++i]);

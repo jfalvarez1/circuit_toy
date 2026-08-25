@@ -133,6 +133,7 @@ typedef enum {
     PROP_TOROID_MAJOR,            // Toroid outer diameter (in)
     PROP_TOROID_MINOR,            // Toroid tube diameter (in)
     PROP_TLINE_LENGTH, PROP_TLINE_R, PROP_TLINE_X, PROP_TLINE_B, PROP_TLINE_MODEL,   // Transmission line
+    PROP_3PH_V, PROP_3PH_F, PROP_3PH_PHASE, PROP_3PH_R, PROP_3PH_L,                   // Three-phase source
 
     // Bode plot parameters
     PROP_BODE_FREQ_START,         // Start frequency

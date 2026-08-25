@@ -277,6 +277,7 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_SPARK_GAP, "Spark");
     ADD_COMP(COMP_TOROID, "Toroid");
     ADD_COMP(COMP_TLINE, "TLine");
+    ADD_COMP(COMP_SOURCE_3PH, "3ph~");
 
     // === DIODES SECTION (index 25) ===
     NEW_SECTION(PCAT_DIODES);
@@ -2140,6 +2141,59 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->properties[ui->num_properties].prop_type = PROP_BV;
                     ui->num_properties++;
                 }
+                break;
+            }
+
+            case COMP_SOURCE_3PH: {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_3PH_V;
+                    snprintf(buf, sizeof(buf), "%.4g V", selected->props.source_3ph.v_peak);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Vpk L-N:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_3PH_V;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_3PH_F;
+                    snprintf(buf, sizeof(buf), "%.4g Hz", selected->props.source_3ph.frequency);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Freq:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_3PH_F;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_3PH_PHASE;
+                    snprintf(buf, sizeof(buf), "%.1f deg", selected->props.source_3ph.phase);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Phase A:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_3PH_PHASE;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_3PH_R;
+                    snprintf(buf, sizeof(buf), "%.4g Ohm", selected->props.source_3ph.r_series);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R/phase:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_3PH_R;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_3PH_L;
+                    snprintf(buf, sizeof(buf), "%.4g H", selected->props.source_3ph.l_series);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "L/phase:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_3PH_L;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                snprintf(buf, sizeof(buf), "L-L rms %.4g V", selected->props.source_3ph.v_peak / 1.41421356 * 1.7320508);
+                ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                prop_y += 18;
                 break;
             }
 

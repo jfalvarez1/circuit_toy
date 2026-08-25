@@ -243,6 +243,13 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_RLC_RING] = {"RLC Step (Ringing)", "RLCst", "Underdamped series RLC: 90 % overshoot, 199 us period", TG_TRANSIENTS},
     [CIRCUIT_RLC_DAMPING] = {"RLC Damping Ladder", "Damp", "Same L, C with R = 20 / 632 / 2000: under, critical, over", TG_TRANSIENTS},
     [CIRCUIT_OPAMP_SAT] = {"Op-Amp Saturation", "Sat", "Gain -10 clips at the rails; the virtual short is lost", TG_OPAMPS},
+    [CIRCUIT_SINGLE_TUNED_AMP] = {"Single-Tuned Amplifier", "Tuned", "CE stage with an LC tank load: gain peaks at f0 = 100 kHz", TG_TRANSISTORS},
+    [CIRCUIT_COMMON_BASE] = {"Common Base", "CB", "Non-inverting, low input resistance, gain g_m R_C", TG_TRANSISTORS},
+    [CIRCUIT_DARLINGTON] = {"Darlington Follower", "Darl", "beta^2 input resistance: a 100k source still drives 100 ohm", TG_TRANSISTORS},
+    [CIRCUIT_SR_LATCH] = {"SR Latch (NOR)", "SRlat", "Cross-coupled NOR gates remember S and R pulses", TG_DIGITAL},
+    [CIRCUIT_POWER_PLANT] = {"Power Plant (3-phase)", "Plant", "3-phase generator, GSU bank, breakers, 345 kV line, load", TG_POWER_SYSTEMS},
+    [CIRCUIT_SUBSTATION] = {"Transmission Substation", "Substn", "345 kV lines, breakers, 345/138 autos, feeders, cap banks", TG_POWER_SYSTEMS},
+
 
 
 
@@ -6278,6 +6285,12 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_RLC_RING:         return place_rlc_ring(circuit, x, y);
         case CIRCUIT_RLC_DAMPING:      return place_rlc_damping(circuit, x, y);
         case CIRCUIT_OPAMP_SAT:        return place_opamp_sat(circuit, x, y);
+        case CIRCUIT_SINGLE_TUNED_AMP: return place_single_tuned_amp(circuit, x, y);
+        case CIRCUIT_COMMON_BASE:      return place_common_base(circuit, x, y);
+        case CIRCUIT_DARLINGTON:       return place_darlington(circuit, x, y);
+        case CIRCUIT_SR_LATCH:         return place_sr_latch(circuit, x, y);
+        case CIRCUIT_POWER_PLANT:      return place_power_plant(circuit, x, y);
+        case CIRCUIT_SUBSTATION:       return place_substation(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6381,6 +6394,12 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_RLC_RING] = {"SERIES RLC STEP (A&L 12.2): w0 = 1/sqrt(LC) = 31.6 krad/s (5.03 kHz), alpha = R/2L = 1000/s,", "zeta = alpha/w0 = 0.032 -> underdamped. The capacitor overshoots to 5(1 + e^(-pi zeta/sqrt(1-zeta^2)))", "= 9.5 V and rings at the damped frequency with an envelope tau = 1/alpha = 1 ms (Q = 16).", "Raise R and the ringing dies: 632 ohm is critical, 2k overdamped (see RLC Damping Ladder).", "PROBE: square input and capacitor (auto). Cursors on two peaks: period 199 us."},
     [CIRCUIT_RLC_DAMPING] = {"DAMPING LADDER (A&L 12.2-12.3): same L = 10 mH, C = 100 nF, three values of R. R = 20 ohm rings", "(zeta 0.03); R = 632 ohm = 2 sqrt(L/C) is critically damped - the fastest rise with no overshoot", "(4.0 V at 3/w0 = 95 us); R = 2k is overdamped: two real roots, the slow one tau = 195 us.", "The rows share the same square input; compare the three capacitor voltages in Stack view.", "PROBE: the critical-row capacitor (auto) plus the underdamped and overdamped rows (extra)."},
     [CIRCUIT_OPAMP_SAT] = {"OP-AMP SATURATION (S&S 2.8, A&L 15.5): the inverting amplifier wants -10 x 2 Vpk = 20 Vpk, but", "the output can only reach the +/-15 V rails. While clipped the feedback loop is broken: the", "inverting input is no longer a virtual ground - it follows (v_i R2 + v_o R1)/(R1 + R2), 0.45 V at", "the input peak. Clipping starts at |v_i| = 1.5 V; lower the input to 1 V and the sine is clean.", "PROBE: output (auto) and the inverting input (extra probe): watch it leave 0 V while clipped."},
+    [CIRCUIT_SINGLE_TUNED_AMP] = {"SINGLE-TUNED AMPLIFIER: a common-emitter stage whose collector load is a parallel LC tank (L 1 mH,", "C 2.53 nF, Rq 10k). At resonance f0 = 1/(2 pi sqrt(LC)) = 100 kHz the tank impedance is just Rq,", "so the gain peaks at g_m (Rq || RL) ~ 500; off resonance L or C shorts the collector and the", "gain collapses. Bandwidth = f0/Q with Q = Rq / (2 pi f0 L) = 16 -> ~6 kHz. This is the IF stage of", "every classic radio; Rq (or the coil loss) sets the selectivity, C tunes the station.", "PROBE: input (10 mV) and output (auto). The sweep 20-500 kHz shows the narrow peak; use Trk."},
+    [CIRCUIT_COMMON_BASE] = {"COMMON BASE (S&S 7.3.5): the base is AC-grounded (10 uF), the signal enters the emitter and", "leaves at the collector IN PHASE. Input resistance is only r_e = V_T/I_E = 25 ohm (I_E = 1 mA),", "gain A_v = g_m R_C = 40 mA/V x 4.7k = +188. Low R_in and no Miller effect make it the natural", "RF / cascode partner; it is a lousy voltage buffer. Add 50 ohm in series with the source: 1/3 lost.", "PROBE: input (10 mV) and output (auto): ~1.9 V peak, same polarity as the input."},
+    [CIRCUIT_DARLINGTON] = {"DARLINGTON FOLLOWER (S&S 7.3.7): two emitter followers in cascade multiply the current gain,", "so R_in ~ beta1 beta2 R_E = 100 x 100 x 100 = 1 M. Even through a 100k source resistor the", "output still follows the 1 Vpk input (0.91 Vpk); a single transistor (beta R_E = 10k) would", "only pass 0.09 Vpk. The price: two V_BE drops (6 V in -> 4.6 V out) and slower turn-off.", "PROBE: input (6 V + 1 Vpk) and the emitter output (auto)."},
+    [CIRCUIT_SR_LATCH] = {"SR LATCH (S&S 15.1.1): two NOR gates feed each other. S = 1 forces Q = 1 (Qbar = 0); when S", "returns to 0 the cross-coupling keeps Q = 1: memory. R = 1 forces Q = 0. Both = 1 is forbidden", "(both outputs 0, and the result after release depends on which drops last).", "S pulses at 0.2 ms, R at 0.6 ms (1 ms period): Q is a 0.4 ms-wide pulse every millisecond.", "PROBE: S (auto), Q (auto), Qbar and R (extra probes) - use Stack view. S feeds the Qbar gate, R the Q gate."},
+    [CIRCUIT_POWER_PLANT] = {"POWER PLANT: the 3-phase block is a synchronous generator (18 kV line-line, 14.7 kVpk per phase)", "behind its subtransient reactance X'' (0.184 mH per phase). Three single-phase GSU transformers", "(1:19.17) lift it to 345 kV; breakers connect the 100-mile lines that deliver 600 MW (198 ohm/phase).", "Open one breaker: that phase's load drops and the neutral currents no longer cancel.", "Real plants: 500-1300 MW units, 13.8-24 kV terminals, GSU 300-700 MVA at 10-14 % impedance.", "PROBE: generator phase A (auto), the three 345 kV load buses (auto + extra). 100 kV/div, Stack."},
+    [CIRCUIT_SUBSTATION] = {"TRANSMISSION SUBSTATION: the 3-phase block stands for the 345 kV grid. Each phase: 50 mi of", "345 kV line -> breaker -> 345/138 kV autotransformer (0.4) -> 138 kV bus -> 30 mi feeder ->", "90 MW at pf 0.9 (171.5 ohm + 0.22 H). The lagging load drags the far bus down ~7 %; close the", "cap-bank switches (6.1 uF per phase) and it recovers. Open a breaker to drop one phase.", "AEP practice: breaker-and-a-half bus, redundant A/B relaying, cap banks switched by voltage.", "PROBE: grid phase A (auto), the three 138 kV feeder buses (auto + extra). 50 kV/div, Stack."},
 };
 
 
@@ -7776,6 +7795,254 @@ static int place_opamp_sat(Circuit *circuit, float x, float y) {
 #undef TN
 #undef TW
 
+
+// ---------------------------------------------------------------------------------------
+// Batch 5: tuned / CB / Darlington amplifiers, an SR latch, and two three-phase "plants".
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+static Component *dc_rail(Circuit *circuit, float x, float y, double v) {   // DC source at (x,y+40): +(x,y) -(x,y+80) -> gnd
+    Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x, y + 40, 0);
+    vcc->props.dc_voltage.voltage = v;
+    Component *g = add_comp(circuit, COMP_GROUND, x, y + 120, 0);
+    connect_terminals(circuit, vcc, 1, g, 0);
+    return vcc;
+}
+static Component *vres(Circuit *circuit, float x, float y, double r) {      // vertical resistor, terminals (x,y-40)/(x,y+40)
+    Component *c = add_comp(circuit, COMP_RESISTOR, x, y, 90); c->props.resistor.resistance = r; return c;
+}
+static Component *hres(Circuit *circuit, float x, float y, double r) {
+    Component *c = add_comp(circuit, COMP_RESISTOR, x, y, 0); c->props.resistor.resistance = r; return c;
+}
+static Component *vcap(Circuit *circuit, float x, float y, double c) {
+    Component *k = add_comp(circuit, COMP_CAPACITOR, x, y, 90); k->props.capacitor.capacitance = c; return k;
+}
+static Component *hcap(Circuit *circuit, float x, float y, double c) {
+    Component *k = add_comp(circuit, COMP_CAPACITOR, x, y, 0); k->props.capacitor.capacitance = c; return k;
+}
+static void gnd_below(Circuit *circuit, Component *c, int term, float x, float y) {   // ground symbol at (x,y), terminal (x,y-20)
+    Component *g = add_comp(circuit, COMP_GROUND, x, y, 0);
+    connect_terminals(circuit, c, term, g, 0);
+}
+
+// Single-tuned amplifier: CE stage (R1 47k, R2 10k, Re 1k || 10 uF), collector load L 1 mH || C 2.53 nF || Rq 10k
+static int place_single_tuned_amp(Circuit *circuit, float x, float y) {
+    Component *vcc = dc_rail(circuit, x, y - 100, 12.0); if (!vcc) return 0;               // +(0,-100)
+    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 100, y + 80, 0);              // +(-100,40) -(-100,120)
+    vin->props.ac_voltage.amplitude = 0.01; vin->props.ac_voltage.frequency = 100059.9;
+    set_freq_sweep(vin, 20e3, 500e3, 0.5);                                               // fast sweep: 100 kHz needs sub-us steps
+    Component *gi = add_comp(circuit, COMP_GROUND, x - 100, y + 140, 0);
+    connect_terminals(circuit, vin, 1, gi, 0);
+    Component *cc = hcap(circuit, x, y + 40, 10e-9);                                       // (-40,40)-(40,40)
+    Component *r1 = vres(circuit, x + 100, y - 60, 47e3);                                  // (100,-100)-(100,-20)
+    Component *r2 = vres(circuit, x + 100, y + 60, 10e3);                                  // (100,20)-(100,100)
+    gnd_below(circuit, r2, 1, x + 100, y + 120);
+    Component *q = add_comp(circuit, COMP_NPN_BJT, x + 200, y, 0);                        // B(180,0) C(220,-20) E(220,20)
+    Component *re = vres(circuit, x + 220, y + 60, 1e3);                                   // (220,20)-(220,100)
+    gnd_below(circuit, re, 1, x + 220, y + 120);
+    Component *ce = vcap(circuit, x + 280, y + 60, 10e-6);                                 // (280,20)-(280,100)
+    gnd_below(circuit, ce, 1, x + 280, y + 120);
+    Component *l = add_comp(circuit, COMP_INDUCTOR, x + 300, y - 60, 90); l->props.inductor.inductance = 1e-3;   // (300,-100)-(300,-20)
+    Component *ct = vcap(circuit, x + 360, y - 60, 2.53e-9);                               // (360,-100)-(360,-20)
+    Component *rq = vres(circuit, x + 420, y - 60, 10e3);                                  // (420,-100)-(420,-20)
+    Component *co = hcap(circuit, x + 480, y - 20, 10e-9);                                 // (440,-20)-(520,-20)
+    Component *rl = vres(circuit, x + 520, y + 20, 100e3);                                 // (520,-20)-(520,60)
+    gnd_below(circuit, rl, 1, x + 520, y + 80);
+    add_label(circuit, x - 80, y - 160, "Single-tuned amplifier: gain g_m (Rq || RL) only near f0 = 1/(2 pi sqrt(LC)) = 100 kHz; sweep 20-500 kHz");
+    int rail0 = TN(x, y - 100), rail1 = TN(x + 100, y - 100), rail2 = TN(x + 300, y - 100), rail3 = TN(x + 360, y - 100), rail4 = TN(x + 420, y - 100);
+    TW(rail0, rail1); TW(rail1, rail2); TW(rail2, rail3); TW(rail3, rail4);
+    int r1b = TN(x + 100, y - 20), bn = TN(x + 100, y), r2t = TN(x + 100, y + 20), base = TN(x + 180, y);
+    TW(r1b, bn); TW(bn, r2t); TW(bn, base);
+    int sp = TN(x - 100, y + 40), ccl = TN(x - 40, y + 40), ccr = TN(x + 40, y + 40), j1 = TN(x + 60, y + 40), j2 = TN(x + 60, y);
+    TW(sp, ccl); TW(ccr, j1); TW(j1, j2); TW(j2, bn);
+    int col = TN(x + 220, y - 20), lb = TN(x + 300, y - 20), ctb = TN(x + 360, y - 20), rqb = TN(x + 420, y - 20), col2 = TN(x + 440, y - 20);
+    TW(col, lb); TW(lb, ctb); TW(ctb, rqb); TW(rqb, col2);
+    int e = TN(x + 220, y + 20), cet = TN(x + 280, y + 20); TW(e, cet);
+    vcc->node_ids[0] = rail0; r1->node_ids[0] = rail1; r1->node_ids[1] = r1b; r2->node_ids[0] = r2t; q->node_ids[0] = base; q->node_ids[1] = col; q->node_ids[2] = e;
+    re->node_ids[0] = e; ce->node_ids[0] = cet; l->node_ids[0] = rail2; l->node_ids[1] = lb; ct->node_ids[0] = rail3; ct->node_ids[1] = ctb; rq->node_ids[0] = rail4; rq->node_ids[1] = rqb;
+    co->node_ids[0] = col2; co->node_ids[1] = TN(x + 520, y - 20); rl->node_ids[0] = co->node_ids[1]; vin->node_ids[0] = sp; cc->node_ids[0] = ccl; cc->node_ids[1] = ccr;
+    return 16;
+}
+
+// Common base: base held at 3.75 V (22k/10k, bypassed), Re 3k (1 mA), Rc 4.7k; input into the emitter via 10 uF
+static int place_common_base(Circuit *circuit, float x, float y) {
+    Component *vcc = dc_rail(circuit, x, y - 100, 12.0); if (!vcc) return 0;               // +(0,-100)
+    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 100, y + 200, 0);             // +(-100,160) -(-100,240)
+    vin->props.ac_voltage.amplitude = 0.01; vin->props.ac_voltage.frequency = 10e3;
+    Component *gi = add_comp(circuit, COMP_GROUND, x - 100, y + 260, 0);
+    connect_terminals(circuit, vin, 1, gi, 0);
+    Component *r1 = vres(circuit, x + 100, y - 60, 22e3);                                  // (100,-100)-(100,-20)
+    Component *r2 = vres(circuit, x + 100, y + 60, 10e3);                                  // (100,20)-(100,100)
+    gnd_below(circuit, r2, 1, x + 100, y + 120);
+    Component *cb = vcap(circuit, x + 40, y + 60, 10e-6);                                  // (40,20)-(40,100) base bypass
+    gnd_below(circuit, cb, 1, x + 40, y + 120);
+    Component *q = add_comp(circuit, COMP_NPN_BJT, x + 200, y, 0);                        // B(180,0) C(220,-20) E(220,20)
+    Component *re = vres(circuit, x + 220, y + 100, 3e3);                                  // (220,60)-(220,140)
+    gnd_below(circuit, re, 1, x + 220, y + 160);
+    Component *ci = vcap(circuit, x + 160, y + 120, 10e-6);                                // (160,80)-(160,160) input coupling
+    Component *rc = vres(circuit, x + 300, y - 60, 4.7e3);                                 // (300,-100)-(300,-20)
+    Component *co = hcap(circuit, x + 380, y - 20, 10e-6);                                 // (340,-20)-(420,-20)
+    Component *rl = vres(circuit, x + 420, y + 20, 100e3);                                 // (420,-20)-(420,60)
+    gnd_below(circuit, rl, 1, x + 420, y + 80);
+    add_label(circuit, x - 80, y - 160, "Common base: input at the emitter (R_in = r_e = 25 ohm), output in phase, A_v = g_m R_C = +188");
+    int rail0 = TN(x, y - 100), rail1 = TN(x + 100, y - 100), rail2 = TN(x + 300, y - 100); TW(rail0, rail1); TW(rail1, rail2);
+    int r1b = TN(x + 100, y - 20), bn = TN(x + 100, y), r2t = TN(x + 100, y + 20), base = TN(x + 180, y), cbt = TN(x + 40, y + 20), cbj = TN(x + 40, y);
+    TW(r1b, bn); TW(bn, r2t); TW(bn, base); TW(bn, cbj); TW(cbj, cbt);
+    int sp = TN(x - 100, y + 160), s1 = TN(x + 160, y + 160), cit = TN(x + 160, y + 80), cij = TN(x + 160, y + 60), e = TN(x + 220, y + 20), ej = TN(x + 220, y + 60);
+    TW(sp, s1); TW(cit, cij); TW(cij, ej); TW(e, ej);
+    int col = TN(x + 220, y - 20), rcb = TN(x + 300, y - 20), col2 = TN(x + 340, y - 20); TW(col, rcb); TW(rcb, col2);
+    vcc->node_ids[0] = rail0; r1->node_ids[0] = rail1; r1->node_ids[1] = r1b; r2->node_ids[0] = r2t; cb->node_ids[0] = cbt;
+    q->node_ids[0] = base; q->node_ids[1] = col; q->node_ids[2] = e; re->node_ids[0] = ej; ci->node_ids[0] = cit; ci->node_ids[1] = s1;
+    rc->node_ids[0] = rail2; rc->node_ids[1] = rcb; co->node_ids[0] = col2; co->node_ids[1] = TN(x + 420, y - 20); rl->node_ids[0] = co->node_ids[1]; vin->node_ids[0] = sp;
+    return 15;
+}
+
+// Darlington emitter follower driven through 100k; Re 100 ohm; 6 V DC + 1 Vpk input
+static int place_darlington(Circuit *circuit, float x, float y) {
+    Component *vcc = dc_rail(circuit, x, y - 100, 12.0); if (!vcc) return 0;               // +(0,-100)
+    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 100, 0);                   // +(0,60) -(0,140)
+    vin->props.ac_voltage.amplitude = 1.0; vin->props.ac_voltage.frequency = 1000.0; vin->props.ac_voltage.offset = 6.0;
+    Component *gi = add_comp(circuit, COMP_GROUND, x, y + 160, 0);
+    connect_terminals(circuit, vin, 1, gi, 0);
+    Component *rs = hres(circuit, x + 100, y + 60, 100e3);                                 // (60,60)-(140,60)
+    Component *q1 = add_comp(circuit, COMP_NPN_BJT, x + 200, y, 0);                       // B(180,0) C(220,-20) E(220,20)
+    Component *q2 = add_comp(circuit, COMP_NPN_BJT, x + 280, y + 60, 0);                  // B(260,60) C(300,40) E(300,80)
+    Component *re = vres(circuit, x + 300, y + 120, 100.0);                                // (300,80)-(300,160)
+    gnd_below(circuit, re, 1, x + 300, y + 180);
+    add_label(circuit, x - 40, y - 160, "Darlington follower: R_in ~ beta^2 R_E = 1 M, so a 100k source loses only 9 %; two V_BE drops (4.6 V DC out)");
+    int rail0 = TN(x, y - 100), rail1 = TN(x + 220, y - 100), rail2 = TN(x + 300, y - 100), c1 = TN(x + 220, y - 20), c2 = TN(x + 300, y + 40);
+    TW(rail0, rail1); TW(rail1, rail2); TW(rail1, c1); TW(rail2, c2);
+    int sp = TN(x, y + 60), rsl = TN(x + 60, y + 60), rsr = TN(x + 140, y + 60), j1 = TN(x + 160, y + 60), j2 = TN(x + 160, y), b1 = TN(x + 180, y);
+    TW(sp, rsl); TW(rsr, j1); TW(j1, j2); TW(j2, b1);
+    int e1 = TN(x + 220, y + 20), e1j = TN(x + 220, y + 60), b2 = TN(x + 260, y + 60), e2 = TN(x + 300, y + 80);
+    TW(e1, e1j); TW(e1j, b2);
+    vcc->node_ids[0] = rail0; vin->node_ids[0] = sp; rs->node_ids[0] = rsl; rs->node_ids[1] = rsr;
+    q1->node_ids[0] = b1; q1->node_ids[1] = c1; q1->node_ids[2] = e1; q2->node_ids[0] = b2; q2->node_ids[1] = c2; q2->node_ids[2] = e2; re->node_ids[0] = e2;
+    return 9;
+}
+
+// SR latch: two NOR gates cross-coupled; S and R pulses 50 us wide at 0.2 / 0.6 ms (1 ms period)
+static int place_sr_latch(Circuit *circuit, float x, float y) {
+    Component *g1 = add_comp(circuit, COMP_NOR_GATE, x + 200, y + 40, 0);                 // A(160,20)=S B(160,60)=Q  OUT(240,40) = Qbar
+    if (!g1) return 0;
+    Component *g2 = add_comp(circuit, COMP_NOR_GATE, x + 200, y + 160, 0);                // A(160,140)=Qbar B(160,180)=R OUT(240,160) = Q
+    Component *ps = add_comp(circuit, COMP_PULSE_SOURCE, x + 60, y - 20, 0);              // +(60,-60) -(60,20)
+    ps->props.pulse_source.v_low = 0; ps->props.pulse_source.v_high = 5; ps->props.pulse_source.delay = 0.2e-3; ps->props.pulse_source.pulse_width = 50e-6; ps->props.pulse_source.period = 1e-3;
+    Component *gs = add_comp(circuit, COMP_GROUND, x + 60, y + 40, 0);
+    Component *pr = add_comp(circuit, COMP_PULSE_SOURCE, x + 40, y + 190, 0);             // +(40,150) -(40,230)
+    pr->props.pulse_source.v_low = 0; pr->props.pulse_source.v_high = 5; pr->props.pulse_source.delay = 0.6e-3; pr->props.pulse_source.pulse_width = 50e-6; pr->props.pulse_source.period = 1e-3;
+    Component *gr = add_comp(circuit, COMP_GROUND, x + 40, y + 250, 0);
+    Component *lq = vres(circuit, x + 340, y + 200, 100e3);                                // (340,160)-(340,240) load on Q
+    gnd_below(circuit, lq, 1, x + 340, y + 260);
+    add_label(circuit, x, y - 110, "SR latch: S sets Q (0.2 ms), R resets it (0.6 ms); with S = R = 0 the cross-coupling holds the state");
+    add_label(circuit, x + 250, y + 25, "Qbar"); add_label(circuit, x + 250, y + 145, "Q");
+    int spp = TN(x + 60, y - 60), s1 = TN(x + 140, y - 60), s2 = TN(x + 140, y + 20), a1 = TN(x + 160, y + 20);
+    TW(spp, s1); TW(s1, s2); TW(s2, a1);
+    // Qbar (G1 out) -> G2 A: right, down, left, into (160,140)
+    int qb = TN(x + 240, y + 40), q1 = TN(x + 280, y + 40), q2 = TN(x + 280, y + 100), q3 = TN(x + 130, y + 100), q4 = TN(x + 130, y + 140), a2 = TN(x + 160, y + 140);
+    TW(qb, q1); TW(q1, q2); TW(q2, q3); TW(q3, q4); TW(q4, a2);
+    // Q (G2 out) -> G1 B: right, down below everything, far left, up, into (160,60)
+    int q = TN(x + 240, y + 160), n1 = TN(x + 300, y + 160), n2 = TN(x + 300, y + 300), n3 = TN(x, y + 300), n4 = TN(x, y + 60), b1 = TN(x + 160, y + 60), lqt = TN(x + 340, y + 160);
+    TW(q, n1); TW(n1, n2); TW(n2, n3); TW(n3, n4); TW(n4, b1); TW(n1, lqt);
+    int rpp = TN(x + 40, y + 150), r1 = TN(x + 110, y + 150), r2 = TN(x + 110, y + 180), b2 = TN(x + 160, y + 180);
+    TW(rpp, r1); TW(r1, r2); TW(r2, b2);
+    g1->node_ids[0] = a1; g1->node_ids[1] = b1; g1->node_ids[2] = qb; g2->node_ids[0] = a2; g2->node_ids[1] = b2; g2->node_ids[2] = q;
+    ps->node_ids[0] = spp; pr->node_ids[0] = rpp; lq->node_ids[0] = lqt;
+    connect_terminals(circuit, ps, 1, gs, 0);
+    connect_terminals(circuit, pr, 1, gr, 0);
+    return 8;
+}
+
+// three-phase fan-out from a SOURCE_3PH at (x+60,y+60): rows at ry[k]; returns the row start node ids in out[3]
+static Component *three_phase_fanout(Circuit *circuit, float x, float y, double vpk, double lseries, const float ry[3], int out[3]) {
+    Component *g = add_comp(circuit, COMP_SOURCE_3PH, x + 60, y + 60, 0);                 // A(100,40) B(100,60) C(100,80) N(60,100)
+    if (!g) return NULL;
+    g->props.source_3ph.v_peak = vpk; g->props.source_3ph.l_series = lseries;
+    Component *gn = add_comp(circuit, COMP_GROUND, x + 60, y + 120, 0);
+    int a = TN(x + 100, y + 40), b = TN(x + 100, y + 60), c = TN(x + 100, y + 80), nn = TN(x + 60, y + 100);
+    g->node_ids[0] = a; g->node_ids[1] = b; g->node_ids[2] = c; g->node_ids[3] = nn; gn->node_ids[0] = nn;
+    int a1 = TN(x + 120, y + 40), a2 = TN(x + 120, ry[0]), a3 = TN(x + 160, ry[0]); TW(a, a1); TW(a1, a2); TW(a2, a3);
+    int b1 = TN(x + 140, y + 60), b2 = TN(x + 140, ry[1]), b3 = TN(x + 160, ry[1]); TW(b, b1); TW(b1, b2); TW(b2, b3);
+    int c1 = TN(x + 160, y + 80), c2 = TN(x + 160, ry[2]), c3 = c2; TW(c, c1); TW(c1, c2);   // 20 px from B's vertical (nodes merge within 10 px)
+    out[0] = a3; out[1] = b3; out[2] = c3;
+    return g;
+}
+// transformer at (tx, ry+20): P1 (tx-50,ry) P2 (tx-50,ry+40)->gnd, S1 (tx+50,ry) S2 (tx+50,ry+40)->gnd; returns S1 node
+static int xfmr_row(Circuit *circuit, float tx, float ry, double n_ratio, int in_node) {
+    Component *t = add_comp(circuit, COMP_TRANSFORMER, tx, ry + 20, 0);
+    t->props.transformer.turns_ratio = n_ratio;
+    int p1 = TN(tx - 50, ry), p2 = TN(tx - 50, ry + 40), s1 = TN(tx + 50, ry), s2 = TN(tx + 50, ry + 40);
+    if (in_node != p1) TW(in_node, p1);
+    Component *g1 = add_comp(circuit, COMP_GROUND, tx - 50, ry + 80, 0), *g2 = add_comp(circuit, COMP_GROUND, tx + 50, ry + 80, 0);
+    int gp = TN(tx - 50, ry + 60), gs = TN(tx + 50, ry + 60); TW(p2, gp); TW(s2, gs);
+    g1->node_ids[0] = gp; g2->node_ids[0] = gs;
+    t->node_ids[0] = p1; t->node_ids[1] = p2; t->node_ids[2] = s1; t->node_ids[3] = s2;
+    return s1;
+}
+
+// Power plant: 18 kV generator (X'' 0.184 mH per phase) -> GSU bank 1:19.17 -> breakers -> 3 x 100 mi 345 kV lines -> 600 MW load
+static int place_power_plant(Circuit *circuit, float x, float y) {
+    static const float ry[3] = { -100, 40, 180 };
+    float rows[3] = { y + ry[0], y + ry[1], y + ry[2] };
+    int start[3];
+    Component *g = three_phase_fanout(circuit, x, y, 14697.0, 0.184e-3, rows, start);
+    if (!g) return 0;
+    for (int k = 0; k < 3; k++) {
+        float r = rows[k];
+        int s1 = xfmr_row(circuit, x + 210, r, 19.17, start[k]);                          // P1 (160,r) S1 (260,r)
+        Component *br = add_comp(circuit, COMP_SPST_SWITCH, x + 300, r, 0);               // (260,r)-(340,r) breaker
+        br->props.switch_spst.closed = true;
+        Component *tl = add_tline(circuit, x + 380, r, 0, 100.0, 0.06, 0.55, 8.0, 1);      // (340,r)-(420,r)
+        Component *ld = vres(circuit, x + 460, r + 40, 198.4);                             // (460,r)-(460,r+80)
+        gnd_below(circuit, ld, 1, x + 460, r + 100);
+        int bl = TN(x + 340, r), tr = TN(x + 420, r), lt = TN(x + 460, r);
+        TW(tr, lt);
+        br->node_ids[0] = s1; br->node_ids[1] = bl; tl->node_ids[0] = bl; tl->node_ids[1] = tr; ld->node_ids[0] = lt;
+    }
+    add_label(circuit, x + 20, y - 170, "Power plant: 18 kV generator (X'' = 0.15 pu) -> GSU bank 18/345 kV -> 345 kV breakers -> 100 mi lines -> 600 MW");
+    add_label(circuit, x + 280, y - 140, "open a breaker: that phase's load drops, the others keep going (unbalanced)");
+    return 22;
+}
+
+// Transmission substation: 345 kV grid -> 3 x 50 mi lines -> breakers -> 345/138 kV autos -> 138 kV bus ->
+// 30 mi feeders into 90 MW pf 0.9 loads, with a switchable 6.1 uF cap bank per phase on the far bus
+static int place_substation(Circuit *circuit, float x, float y) {
+    static const float ry[3] = { -140, 80, 300 };
+    float rows[3] = { y + ry[0], y + ry[1], y + ry[2] };
+    int start[3];
+    Component *g = three_phase_fanout(circuit, x, y, 281700.0, 0.0, rows, start);
+    if (!g) return 0;
+    for (int k = 0; k < 3; k++) {
+        float r = rows[k];
+        Component *tl = add_tline(circuit, x + 200, r, 0, 50.0, 0.06, 0.55, 8.0, 1);       // (160,r)-(240,r)
+        Component *br = add_comp(circuit, COMP_SPST_SWITCH, x + 280, r, 0);               // (240,r)-(320,r)
+        br->props.switch_spst.closed = true;
+        int brl = TN(x + 240, r), brr = TN(x + 320, r);
+        tl->node_ids[0] = start[k]; tl->node_ids[1] = brl; br->node_ids[0] = brl; br->node_ids[1] = brr;
+        int s1 = xfmr_row(circuit, x + 370, r, 0.4, brr);                                  // P1 (320,r) S1 (420,r)
+        Component *fd = add_tline(circuit, x + 480, r, 0, 30.0, 0.13, 0.72, 6.0, 1);       // (440,r)-(520,r)
+        int fl = TN(x + 440, r), fr = TN(x + 520, r), lt = TN(x + 560, r), ct = TN(x + 620, r);
+        TW(s1, fl); TW(fr, lt); TW(lt, ct);
+        fd->node_ids[0] = fl; fd->node_ids[1] = fr;
+        Component *rl = vres(circuit, x + 560, r + 40, 171.5);                             // (560,r)-(560,r+80)
+        Component *ll = add_comp(circuit, COMP_INDUCTOR, x + 560, r + 120, 90); ll->props.inductor.inductance = 0.22;   // (560,r+80)-(560,r+160)
+        gnd_below(circuit, ll, 1, x + 560, r + 180);
+        int mid = TN(x + 560, r + 80);
+        rl->node_ids[0] = lt; rl->node_ids[1] = mid; ll->node_ids[0] = mid;
+        Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 620, r + 40, 90);         // (620,r)-(620,r+80)
+        sw->props.switch_spst.closed = false;
+        Component *cb = vcap(circuit, x + 620, r + 120, 6.1e-6);                           // (620,r+80)-(620,r+160)
+        gnd_below(circuit, cb, 1, x + 620, r + 180);
+        int swb = TN(x + 620, r + 80);
+        sw->node_ids[0] = ct; sw->node_ids[1] = swb; cb->node_ids[0] = swb;
+    }
+    add_label(circuit, x + 20, y - 210, "Transmission substation: 345 kV grid -> 50 mi lines -> breakers -> 345/138 kV autotransformers -> 138 kV bus");
+    add_label(circuit, x + 20, y - 180, "-> 30 mi feeders into 90 MW pf 0.9 loads. Close the cap-bank switches: the far bus recovers ~5 %");
+    return 34;
+}
+#undef TN
+#undef TW
+
 // Output node to probe for each template (component type, ordinal among that type, terminal)
 typedef struct { ComponentType ct; int ord, term; } TemplateProbeSpec;
 static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
@@ -7866,6 +8133,12 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_RLC_RING]         = { COMP_CAPACITOR, 0, 0 },
     [CIRCUIT_RLC_DAMPING]      = { COMP_CAPACITOR, 1, 0 },   // critical row
     [CIRCUIT_OPAMP_SAT]        = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_SINGLE_TUNED_AMP] = { COMP_RESISTOR, 4, 0 },
+    [CIRCUIT_COMMON_BASE]      = { COMP_RESISTOR, 4, 0 },
+    [CIRCUIT_DARLINGTON]       = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_SR_LATCH]         = { COMP_NOR_GATE, 1, 2 },   // Q
+    [CIRCUIT_POWER_PLANT]      = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_SUBSTATION]       = { COMP_RESISTOR, 0, 0 },
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -7881,6 +8154,9 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_FUNCTION_GEN]     = { { COMP_OPAMP, 1, 2 } },                                   // triangle
     [CIRCUIT_RLC_DAMPING]      = { { COMP_CAPACITOR, 0, 0 }, { COMP_CAPACITOR, 2, 0 } },      // under / over rows
     [CIRCUIT_OPAMP_SAT]        = { { COMP_OPAMP, 0, 0 } },                                   // inverting input
+    [CIRCUIT_SR_LATCH]         = { { COMP_NOR_GATE, 0, 2 }, { COMP_PULSE_SOURCE, 1, 0 } },   // Qbar, R
+    [CIRCUIT_POWER_PLANT]      = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 2, 0 } },      // phases B, C
+    [CIRCUIT_SUBSTATION]       = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 2, 0 } },
 };
 
 // Scope time/div that shows the interesting behaviour of each template
@@ -7913,6 +8189,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_SCHMITT_BISTABLE] = 2e-3, [CIRCUIT_TRI_SQUARE_GEN] = 100e-6, [CIRCUIT_FUNCTION_GEN] = 100e-6, [CIRCUIT_COLPITTS] = 500e-9, [CIRCUIT_RING_OSC] = 2e-6,
     [CIRCUIT_HARTLEY] = 500e-9, [CIRCUIT_CLAPP] = 100e-9,
     [CIRCUIT_THEVENIN] = 1e-3, [CIRCUIT_SUPERPOSITION] = 1e-3, [CIRCUIT_RC_STEP] = 1e-3, [CIRCUIT_RL_STEP] = 100e-6, [CIRCUIT_RLC_RING] = 50e-6, [CIRCUIT_RLC_DAMPING] = 100e-6, [CIRCUIT_OPAMP_SAT] = 200e-6,
+    [CIRCUIT_SINGLE_TUNED_AMP] = 5e-6, [CIRCUIT_COMMON_BASE] = 20e-6, [CIRCUIT_DARLINGTON] = 200e-6, [CIRCUIT_SR_LATCH] = 200e-6, [CIRCUIT_POWER_PLANT] = 5e-3, [CIRCUIT_SUBSTATION] = 5e-3,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -7938,6 +8215,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_SCHMITT_BISTABLE] = 5.0, [CIRCUIT_TRI_SQUARE_GEN] = 5.0, [CIRCUIT_FUNCTION_GEN] = 2.0, [CIRCUIT_COLPITTS] = 10.0, [CIRCUIT_RING_OSC] = 2.0,
     [CIRCUIT_HARTLEY] = 10.0, [CIRCUIT_CLAPP] = 5.0,
     [CIRCUIT_THEVENIN] = 2.0, [CIRCUIT_SUPERPOSITION] = 2.0, [CIRCUIT_RC_STEP] = 2.0, [CIRCUIT_RL_STEP] = 2.0, [CIRCUIT_RLC_RING] = 5.0, [CIRCUIT_RLC_DAMPING] = 5.0, [CIRCUIT_OPAMP_SAT] = 5.0,
+    [CIRCUIT_SINGLE_TUNED_AMP] = 2.0, [CIRCUIT_COMMON_BASE] = 1.0, [CIRCUIT_DARLINGTON] = 2.0, [CIRCUIT_SR_LATCH] = 2.0, [CIRCUIT_POWER_PLANT] = 100e3, [CIRCUIT_SUBSTATION] = 50e3,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -8032,6 +8310,12 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_RLC_RING]         = { DEMO_WAVEFORM, 5030 },   // the ring frequency: 6 cycles of ringing in the demo window
     [CIRCUIT_RLC_DAMPING]      = { DEMO_WAVEFORM, 5030 },
     [CIRCUIT_OPAMP_SAT]        = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_SINGLE_TUNED_AMP] = { DEMO_BANDPASS, 100060 },
+    [CIRCUIT_COMMON_BASE]      = { DEMO_WAVEFORM, 10000 },
+    [CIRCUIT_DARLINGTON]       = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_SR_LATCH]         = { DEMO_SWITCH, 1000 },
+    [CIRCUIT_POWER_PLANT]      = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_SUBSTATION]       = { DEMO_WAVEFORM, 60 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -8101,14 +8385,15 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
     // Auto-place probes: CH1 on the input source (+ terminal), CH2 on the output node,
     // so the scope shows the circuit working the moment it is run.
     {
-        static const ComponentType src_types[] = { COMP_AC_VOLTAGE, COMP_SQUARE_WAVE, COMP_TRIANGLE_WAVE,
+        static const ComponentType src_types[] = { COMP_AC_VOLTAGE, COMP_SOURCE_3PH, COMP_SQUARE_WAVE, COMP_TRIANGLE_WAVE,
                                                    COMP_PULSE_SOURCE, COMP_DC_CURRENT, COMP_DC_VOLTAGE };
         Component *src = NULL;
         for (unsigned k = 0; k < sizeof src_types / sizeof src_types[0] && !src; k++)
             src = nth_of_type(circuit, first, src_types[k], 0);
         const TemplateProbeSpec *spec = &template_output[type];
         Component *out = spec->ct ? nth_of_type(circuit, first, spec->ct, spec->ord) : NULL;
-        bool osc = (type == CIRCUIT_WIEN_OSCILLATOR || type == CIRCUIT_PHASE_SHIFT_OSC);
+        const TemplateDemo *dm = &template_demo[type];
+        bool osc = (dm->kind == DEMO_OSC);   // oscillators: the only 'source' is a start-up kick - do not probe it
         if (src && !osc) {
             // probe the source terminal that is not ground (a rotated current source has its '+' on ground)
             int st = 0;

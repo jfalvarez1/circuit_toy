@@ -425,7 +425,8 @@ bool simulation_dc_analysis(Simulation *sim) {
     for (int i = 0; i < circuit->num_components; i++) {
         Component *comp = circuit->components[i];
         if (comp->needs_voltage_var) {
-            comp->voltage_var_idx = num_volt_vars++;
+            comp->voltage_var_idx = num_volt_vars;
+            num_volt_vars += component_aux_count(comp);   // 1 for most, 3 for the three-phase source
         }
     }
 
@@ -602,7 +603,7 @@ static Vector *simulation_solve_step(Simulation *sim, double dt) {
         int num_volt_vars = 0;
         for (int i = 0; i < circuit->num_components; i++) {
             if (circuit->components[i]->needs_voltage_var) {
-                num_volt_vars++;
+                num_volt_vars += component_aux_count(circuit->components[i]);
             }
         }
         g_subcircuit_internal_node_offset = num_nodes + num_volt_vars;
@@ -1001,7 +1002,7 @@ void simulation_compute_terminal_currents(Simulation *sim) {
             if (idx > 0) rows[nrows++] = idx - 1;
         }
         if (comp->needs_voltage_var)
-            for (int k = 0; k < 4; k++) {
+            for (int k = 0; k < component_aux_count(comp); k++) {   // only this component's own aux rows
                 int r = num_nodes + comp->voltage_var_idx + k;
                 if (r < M) rows[nrows++] = r;
             }
@@ -1009,7 +1010,7 @@ void simulation_compute_terminal_currents(Simulation *sim) {
 
         Vector *lin = (sim->last_linearization && sim->last_linearization->size == M)
                       ? sim->last_linearization : sim->solution;
-        component_stamp(comp, A, b, circuit->node_map, num_nodes, sim->time, lin, dt);
+        component_stamp(comp, A, b, circuit->node_map, num_nodes, sim->time - dt, lin, dt);   /* the accepted step was stamped before time advanced */
 
         int ground_t = -1, ground_count = 0; double sum = 0.0;
         for (int t = 0; t < comp->num_terminals; t++) {
@@ -1375,6 +1376,9 @@ double simulation_accuracy_time_step(Simulation *sim) {
                 break;
             case COMP_SAWTOOTH_WAVE:
                 freq = c->props.sawtooth_wave.frequency;
+                break;
+            case COMP_SOURCE_3PH:
+                freq = c->props.source_3ph.frequency;
                 break;
             case COMP_PULSE_SOURCE:
                 // repetitive pulses count as a periodic source (start-up kicks with a huge period do not)

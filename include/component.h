@@ -688,6 +688,14 @@ typedef union {
         double b_us_per_mi;     // micro-siemens per mile (shunt charging susceptance at 60 Hz)
         int model;
     } tline;
+    // Three-phase source / generator block (per-phase peak voltage, common neutral)
+    struct {
+        double v_peak;          // phase-to-neutral peak (V)
+        double frequency;       // Hz
+        double phase;           // phase A angle (deg); B = -120, C = +120 from it
+        double r_series;        // per-phase series resistance (Ohm)
+        double l_series;        // per-phase series inductance (H), e.g. a generator's X''
+    } source_3ph;
 } ComponentProps;
 
 // Component structure
@@ -757,6 +765,7 @@ void component_get_terminal_pos(Component *comp, int terminal_idx, float *x, flo
 double toroid_capacitance(const Component *comp);      // Farads, from props.toroid dimensions
 double spark_gap_breakdown(const Component *comp);     // Volts, from props.spark_gap.gap_mm
 void tline_params(const Component *comp, double *R, double *L, double *C_end);   // lumped values from the per-mile data
+int component_aux_count(const Component *comp);        // number of MNA auxiliary (current) variables the component needs
 
 // Check if point is inside component
 bool component_contains_point(Component *comp, float px, float py);

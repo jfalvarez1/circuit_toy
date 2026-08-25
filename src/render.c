@@ -18,6 +18,7 @@ static void render_volt_str(char *out, size_t n, double v) {
 }
 void render_toroid(RenderContext *ctx, Component *comp);
 void render_tline(RenderContext *ctx, Component *comp);
+void render_source_3ph(RenderContext *ctx, Component *comp);
 static void render_arc_between(RenderContext *ctx, float x1, float y1, float x2, float y2, float intensity);
 void render_potentiometer(RenderContext *ctx, float x, float y, int rotation);
 void render_photoresistor(RenderContext *ctx, float x, float y, int rotation);
@@ -921,6 +922,9 @@ void render_component(RenderContext *ctx, Component *comp) {
             break;
         case COMP_TLINE:
             render_tline(ctx, comp);
+            break;
+        case COMP_SOURCE_3PH:
+            render_source_3ph(ctx, comp);
             break;
         case COMP_POTENTIOMETER:
             render_potentiometer(ctx, comp->x, comp->y, comp->rotation);
@@ -2718,6 +2722,36 @@ static void render_arc_between(RenderContext *ctx, float x1, float y1, float x2,
             px = qx; py = qy;
         }
     }
+}
+
+// Three-phase source: circle with three sine strokes, leads A/B/C to the right, N below
+void render_source_3ph(RenderContext *ctx, Component *comp) {
+    float x = comp->x, y = comp->y; int rot = comp->rotation;
+    const int N = 32;
+    float lx = x + 24, ly = y;
+    for (int i = 1; i <= N; i++) {
+        float a = (float)(2.0 * M_PI * i / N);
+        float qx = x + 24 * cosf(a), qy = y + 24 * sinf(a);
+        render_draw_line(ctx, lx, ly, qx, qy);
+        lx = qx; ly = qy;
+    }
+    for (int k = 0; k < 3; k++) {
+        float oy = -8 + 8 * k;
+        float px = -14, py = oy;
+        for (int i = 1; i <= 12; i++) {
+            float t = (float)i / 12;
+            float qx = -14 + 28 * t, qy = oy - 5 * sinf((float)(2 * M_PI * t));
+            render_draw_line_rotated(ctx, x, y, px, py, qx, qy, rot);
+            px = qx; py = qy;
+        }
+    }
+    // leads: A (40,-20), B (40,0), C (40,20) from the circle edge; N (0,40)
+    render_draw_line_rotated(ctx, x, y, 22, -9, 32, -20, rot);
+    render_draw_line_rotated(ctx, x, y, 32, -20, 40, -20, rot);
+    render_draw_line_rotated(ctx, x, y, 24, 0, 40, 0, rot);
+    render_draw_line_rotated(ctx, x, y, 22, 9, 32, 20, rot);
+    render_draw_line_rotated(ctx, x, y, 32, 20, 40, 20, rot);
+    render_draw_line_rotated(ctx, x, y, 0, 24, 0, 40, rot);
 }
 
 // Transmission line: a box with two little towers; the pi legs are drawn for the pi model

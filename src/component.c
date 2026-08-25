@@ -602,6 +602,19 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         }}
     },
 
+    [COMP_SOURCE_3PH] = {
+        "3-Phase Source", "G", 4,
+        {{ 40, -20, "A" }, { 40, 0, "B" }, { 40, 20, "C" }, { 0, 40, "N" }},
+        80, 80,
+        { .source_3ph = {
+            .v_peak = 392.0,            // 277 V rms L-N (480 V system)
+            .frequency = 60.0,
+            .phase = 0.0,
+            .r_series = 0.001,
+            .l_series = 0.0
+        }}
+    },
+
     [COMP_TOROID] = {
         "Toroid", "TL", 1,
         {{ 0, 40, "1" }},
@@ -1788,6 +1801,12 @@ void tline_params(const Component *comp, double *R, double *L, double *C_end) {
     *C_end = (comp->props.tline.model >= 2) ? fmax(comp->props.tline.b_us_per_mi, 0.0) * 1e-6 * len / w / 2.0 : 0.0;
 }
 
+int component_aux_count(const Component *comp) {
+    if (!comp) return 0;
+    if (comp->type == COMP_SOURCE_3PH) return 3;
+    return comp->needs_voltage_var ? 1 : 0;
+}
+
 double spark_gap_breakdown(const Component *comp) {
     return 3000.0 * comp->props.spark_gap.gap_mm;   // ~30 kV/cm in air at 1 atm
 }
@@ -1868,7 +1887,8 @@ Component *component_create(ComponentType type, float x, float y) {
                                type == COMP_PULSE_SOURCE ||
                                type == COMP_PWM_SOURCE ||
                                type == COMP_TRANSFORMER ||
-                               type == COMP_TLINE);
+                               type == COMP_TLINE ||
+                               type == COMP_SOURCE_3PH);
 
     // Initialize thermal state for components that can fail
     comp->thermal.temperature = 25.0;           // Room temperature
@@ -3202,6 +3222,27 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         }
 
         case COMP_CRYSTAL:
+        case COMP_SOURCE_3PH: {
+            // Three voltage sources A, B, C referenced to N, each with its own current variable
+            // (voltage_var_idx + k) and a small series R (+ optional L, backward Euler) per phase.
+            double w = 2.0 * M_PI * comp->props.source_3ph.frequency;
+            double Rs = fmax(comp->props.source_3ph.r_series, 1e-6);
+            double Ls = fmax(comp->props.source_3ph.l_series, 0.0);
+            Vector *mem = g_stamp_prev_step ? g_stamp_prev_step : prev_solution;
+            for (int k = 0; k < 3; k++) {
+                int idx = num_nodes + comp->voltage_var_idx + k;
+                double ph = (comp->props.source_3ph.phase - 120.0 * k) * M_PI / 180.0;   // A, B = -120, C = -240 (= +120)
+                double V = comp->props.source_3ph.v_peak * sin(w * time + ph);
+                double Lterm = (mem && dt > 0) ? Ls / dt : 0.0;
+                double iprev = (mem && dt > 0 && idx < (int)mem->size) ? vector_get(mem, idx) : 0.0;
+                if (n[k] > 0) { matrix_add(A, idx, n[k]-1, 1.0);  matrix_add(A, n[k]-1, idx, 1.0); }
+                if (n[3] > 0) { matrix_add(A, idx, n[3]-1, -1.0); matrix_add(A, n[3]-1, idx, -1.0); }
+                matrix_add(A, idx, idx, -(Rs + Lterm));
+                vector_add(b, idx, V - Lterm * iprev);
+            }
+            break;
+        }
+
         case COMP_TLINE: {
             // Series R-L through the auxiliary current i, shunt C/2 at each end, both with the same
             // theta method as the capacitor (theta = 0.6: trapezoidal accuracy, slight damping).
@@ -4913,6 +4954,9 @@ void component_get_value_string(Component *comp, char *buf, size_t buf_size) {
             break;
         case COMP_TOROID:
             format_engineering(toroid_capacitance(comp), "F", buf, buf_size);
+            break;
+        case COMP_SOURCE_3PH:
+            format_engineering(comp->props.source_3ph.v_peak, "V", buf, buf_size);
             break;
         case COMP_TLINE:
             snprintf(buf, buf_size, "%.4g mi %s", comp->props.tline.length_mi,
