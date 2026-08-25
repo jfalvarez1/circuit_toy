@@ -41,6 +41,8 @@ typedef struct {
     int  cli_record_frames, cli_record_every, cli_recorded;
     bool cli_exit;               // --exit : quit once the shot / recording is done
     int  cli_frame;              // frames rendered since start
+    char cli_keys[64];           // --keys "^mosfet" FRAME EVERY : from FRAME, one char every EVERY frames ('^' opens Spotlight, '|' = Enter)
+    int  cli_keys_frame, cli_keys_every, cli_keys_pos;
 
     // Auto-update (GitHub releases)
     UpdaterState updater;

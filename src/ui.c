@@ -885,14 +885,14 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
 }
 
 // Case-insensitive substring match of the palette filter against a label (empty filter = match)
-static bool palette_filter_match(const UIState *ui, const char *label, const char *label2) {
+static bool palette_filter_match(const UIState *ui, const char *label, const char *label2, const char *label3) {
     if (!ui->palette_filter[0]) return true;
     char f[32], l[96];
     size_t i;
     for (i = 0; ui->palette_filter[i] && i < sizeof f - 1; i++) f[i] = (char)tolower((unsigned char)ui->palette_filter[i]);
     f[i] = 0;
-    for (int pass = 0; pass < 2; pass++) {
-        const char *src = pass ? label2 : label;
+    for (int pass = 0; pass < 3; pass++) {
+        const char *src = pass == 2 ? label3 : pass ? label2 : label;
         if (!src) continue;
         for (i = 0; src[i] && i < sizeof l - 1; i++) l[i] = (char)tolower((unsigned char)src[i]);
         l[i] = 0;
@@ -999,7 +999,7 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
             for (int i = 0; i < ui->num_palette_items; i++) {
                 PaletteItem *item = &ui->palette_items[i];
                 if (item->category != cat_id) continue;
-                if (!palette_filter_match(ui, item->label, item->is_tool ? NULL : component_get_info(item->comp_type)->name)) {
+                if (!palette_filter_match(ui, item->label, item->is_tool ? NULL : component_get_info(item->comp_type)->name, item->is_tool ? NULL : component_search_keywords(item->comp_type))) {
                     item->bounds.w = 0;   // filtered out: unreachable by hit-test
                     continue;
                 }
@@ -1089,7 +1089,7 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
                 if (ui->circuit_group_collapsed[cur_group]) { item->bounds.w = 0; item->bounds.h = 0; continue; }
                 {
                     const CircuitTemplateInfo *tinfo = circuit_template_get_info((CircuitTemplateType)item->circuit_type);
-                    if (!palette_filter_match(ui, item->label, tinfo ? tinfo->name : NULL)) { item->bounds.w = 0; item->bounds.h = 0; continue; }
+                    if (!palette_filter_match(ui, item->label, tinfo ? tinfo->name : NULL, tinfo ? tinfo->description : NULL)) { item->bounds.w = 0; item->bounds.h = 0; continue; }
                 }
 
                 item->bounds.x = 10 + col * 70;
@@ -5134,7 +5134,8 @@ static void spotlight_update_results(UIState *ui) {
         const ComponentTypeInfo *info = component_get_info(i);
         if (info && info->name) {
             if (str_contains_ci(info->name, ui->spotlight_query) ||
-                str_contains_ci(info->short_name, ui->spotlight_query)) {
+                str_contains_ci(info->short_name, ui->spotlight_query) ||
+                str_contains_ci(component_search_keywords((ComponentType)i), ui->spotlight_query)) {
                 ui->spotlight_results[ui->spotlight_num_results++] = (ComponentType)i;
             }
         }

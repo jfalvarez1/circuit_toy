@@ -67,6 +67,8 @@ GIFS = [
     ("breaker_failure", "50BF", 60, 20, 8),
     ("function_generator", "FuncGn", 60, 15, 4),
     ("three_phase_balanced", "3phY", 60, 12, 6),
+    # Spotlight search (Ctrl+K / Ctrl+Space): type "mosfet", Enter picks the NMOS; extra tuple = (keys, first, every)
+    ("spotlight_search", None, 20, 20, 4, ("^mosfet|", 24, 8)),
 ]
 GIF_FRAME_MS = 200
 
@@ -95,12 +97,17 @@ def shots():
 
 def gifs():
     os.makedirs(GIF_DIR, exist_ok=True)
-    for name, tpl, first, frames, every in GIFS:
+    for spec in GIFS:
+        name, tpl, first, frames, every = spec[:5]
+        keys = spec[5] if len(spec) > 5 else None
         tmp = os.path.join(SHOT_DIR, "_rec_" + name)
         shutil.rmtree(tmp, ignore_errors=True)
         os.makedirs(tmp)
         print("gif", name)
-        run(["--tab", "circuits", "--template", tpl, "--frame", str(first), "--record", tmp, str(frames), str(every)], timeout=300, size=GIF_SIZE)
+        args = ["--tab", "circuits" if tpl else "parts", "--frame", str(first), "--record", tmp, str(frames), str(every)]
+        if tpl: args += ["--template", tpl]
+        if keys: args += ["--keys", keys[0], str(keys[1]), str(keys[2])]
+        run(args, timeout=300, size=GIF_SIZE)
         files = sorted(glob.glob(os.path.join(tmp, "frame_*.bmp")))
         if not files:
             print("  ! no frames"); continue

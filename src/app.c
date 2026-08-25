@@ -2018,6 +2018,22 @@ bool app_save_window_bmp(App *app, const char *path) {
 
 static void app_cli_capture(App *app) {
     app->cli_frame++;
+    // Scripted typing (--keys): feed characters through the normal SDL event path so the
+    // Spotlight / palette filter behave exactly as they do for a user.
+    if (app->cli_keys[0] && app->cli_keys[app->cli_keys_pos] && app->cli_frame >= app->cli_keys_frame &&
+        (app->cli_frame - app->cli_keys_frame) % (app->cli_keys_every > 0 ? app->cli_keys_every : 1) == 0) {
+        char ch = app->cli_keys[app->cli_keys_pos++];
+        if (ch == '^') ui_spotlight_open(&app->ui);
+        else if (ch == '|') {
+            SDL_Event ev; memset(&ev, 0, sizeof ev);
+            ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_RETURN; ev.key.keysym.scancode = SDL_SCANCODE_RETURN;
+            SDL_PushEvent(&ev);
+        } else {
+            SDL_Event ev; memset(&ev, 0, sizeof ev);
+            ev.type = SDL_TEXTINPUT; ev.text.text[0] = ch; ev.text.text[1] = 0;
+            SDL_PushEvent(&ev);
+        }
+    }
     bool done = true;
     if (app->cli_shot_path[0]) {
         if (app->cli_frame == app->cli_shot_frame) {

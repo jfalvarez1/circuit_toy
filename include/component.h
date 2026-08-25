@@ -746,6 +746,8 @@ typedef struct {
 
 // Get info for component type
 const ComponentTypeInfo *component_get_info(ComponentType type);
+// Extra search words for the Spotlight / palette filter ("mosfet", "coil", "transistor" ...); "" if none
+const char *component_search_keywords(ComponentType type);
 
 // Create a new component
 Component *component_create(ComponentType type, float x, float y);

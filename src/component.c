@@ -1791,6 +1791,44 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
 
 static int next_component_id = 1;
 
+const char *component_search_keywords(ComponentType type) {
+    switch (type) {
+        case COMP_RESISTOR:        return "resistor res ohm";
+        case COMP_LOAD_HP:         return "resistor load high power hp";
+        case COMP_CAPACITOR:       return "capacitor cap farad";
+        case COMP_CAPACITOR_ELEC:  return "capacitor electrolytic polar cap";
+        case COMP_INDUCTOR:        return "inductor coil henry choke";
+        case COMP_POTENTIOMETER:   return "potentiometer pot variable resistor trimmer";
+        case COMP_DIODE:           return "diode rectifier";
+        case COMP_SCHOTTKY:        return "diode schottky";
+        case COMP_ZENER:           return "diode zener reference";
+        case COMP_LED:             return "led light diode";
+        case COMP_NPN_BJT:         return "transistor bjt npn bipolar";
+        case COMP_PNP_BJT:         return "transistor bjt pnp bipolar";
+        case COMP_NMOS:            return "transistor mosfet fet nmos n-channel";
+        case COMP_PMOS:            return "transistor mosfet fet pmos p-channel";
+        case COMP_OPAMP: case COMP_OPAMP_FLIPPED: return "opamp op-amp amplifier operational";
+        case COMP_DC_VOLTAGE:      return "battery dc voltage source supply";
+        case COMP_AC_VOLTAGE:      return "ac voltage source sine generator";
+        case COMP_DC_CURRENT: case COMP_AC_CURRENT: return "current source";
+        case COMP_GROUND:          return "ground gnd earth";
+        case COMP_TRANSFORMER: case COMP_TRANSFORMER_CT: return "transformer xfmr coil";
+        case COMP_TLINE:           return "transmission line power line tline";
+        case COMP_SOURCE_3PH:      return "three phase 3ph generator grid";
+        case COMP_SPARK_GAP:       return "spark gap arc";
+        case COMP_TOROID:          return "toroid tesla top load";
+        case COMP_SPST_SWITCH: case COMP_SPDT_SWITCH: case COMP_DPDT_SWITCH: return "switch";
+        case COMP_ANALOG_SWITCH:   return "switch analog";
+        case COMP_CRYSTAL:         return "crystal xtal quartz";
+        case COMP_FUSE:            return "fuse";
+        case COMP_THERMISTOR:      return "thermistor temperature ntc";
+        case COMP_NOT_GATE: case COMP_AND_GATE: case COMP_OR_GATE: case COMP_NAND_GATE: case COMP_NOR_GATE: case COMP_XOR_GATE: case COMP_XNOR_GATE:
+                                   return "logic gate digital";
+        case COMP_VOLTMETER: case COMP_AMMETER: case COMP_WATTMETER: return "meter measure";
+        default:                   return "";
+    }
+}
+
 const ComponentTypeInfo *component_get_info(ComponentType type) {
     if (type >= 0 && type < COMP_TYPE_COUNT) {
         return &component_info[type];
