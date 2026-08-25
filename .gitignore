@@ -49,3 +49,4 @@ build-static/
 build-test/
 release/
 .playwright-mcp/
+dist/

@@ -23,6 +23,8 @@ Copy-Item build/tools/template_smoke.exe $stage
 Copy-Item guide.html, README.md, TEST_PLAN.md, TEMPLATE_AUDIT.md $stage
 Copy-Item -Recurse docs (Join-Path $stage docs)
 Get-ChildItem build -Filter *.dll -ErrorAction SilentlyContinue | Copy-Item -Destination $stage
+Get-ChildItem $root -Filter *.dll | Copy-Item -Destination $stage      # SDL2-8.dll lives next to the sources
+if (-not (Test-Path (Join-Path $stage 'SDL2-8.dll'))) { throw 'SDL2-8.dll not found: the exe is dynamically linked' }
 $zip = Join-Path $root "dist/circuit-playground-windows-$tag.zip"
 if (Test-Path $zip) { Remove-Item $zip }
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip

@@ -1,4 +1,4 @@
-# Prebuilt Circuit Template Audit (81 templates)
+# Prebuilt Circuit Template Audit (90 templates, 10 palette groups)
 
 Companion to `TEST_PLAN.md` §8. Every template gets the same five passes; the per-template
 block adds the hand-calculated nominal, the **value variations** to try, and specific traps.
@@ -6,7 +6,7 @@ block adds the hand-calculated nominal, the **value variations** to try, and spe
 Values below were extracted from `src/circuits.c` `place_*` builders on 2026-08-24 — if a
 template's BOM changes, update its block.
 
-### Fixes applied 2026-08-24 (headless smoke test now reports 47/47; 65/65 after the 18 templates added later the same day; 72/72 after the 7 protection & control templates; 81/81 after the 4 three-phase and 5 signal-generator templates, see the added sections)
+### Fixes applied 2026-08-24 (headless smoke test now reports 47/47; 65/65 after the 18 templates added later the same day; 72/72 after the 7 protection & control templates; 81/81 after the 4 three-phase and 5 signal-generator templates; 90/90 after the Hartley / Clapp and the 7 textbook templates #82–#90, see the added sections)
 Engine: BJT stamp was missing the collector Newton equivalent current and flipped the PNP
 transconductance sign (every BJT template ran away to MV); PMOS had the same sign bug (CMOS
 inverter); zener breakdown and TL431 were hard switches that chattered (now smooth models);
@@ -737,6 +737,141 @@ Common building blocks (`src/circuits.c`, `sat_opamp` / `place_tri_square_core`)
 
 ---
 
+## Oscillators II and the textbook set (added; Hartley / Clapp from Sedra & Smith 18.3, the rest from Agarwal & Lang / Sedra & Smith via `docs/RESEARCH_TEXTBOOK_CIRCUITS.md` items 1, 2, 6, 7, 8, 9, 26; 9 templates: #82–#90)
+
+Palette: Hartley and Clapp join **Oscillators**; Thevenin and Superposition join **Basics**; Op-Amp Saturation
+joins **Op-amps**; the four step responses live in a new tenth group **Transients** (`TG_TRANSIENTS`, "step
+responses, Agarwal & Lang ch. 10/12"). The palette now has 10 groups.
+
+Common building blocks (`src/circuits.c`):
+- **`place_lc_core(hartley, cc_val)`** builds the Colpitts, the Hartley and the Clapp from one layout: 12 V, NMOS
+  common source, 1 M/1 M gate bias (6 V), 0.3 V/50 ns one-shot kick on the gate-side tank leg. Colpitts/Clapp:
+  RFC 1 mH, C1 (drain–ground), L 100 µH in series with the coupling cap `cc_val` (10 nF Colpitts, **100 pF Clapp**),
+  C2 (gate–ground). Hartley: the RFC position *is* L1 = 50 µH (the drain inductor, tap = Vdd = AC ground), the
+  series element is C = 1 nF, the gate-side leg is L2 = 50 µH, and a **10 nF cap** sits between the gate node and
+  L2 so the 6 V bias is not shorted to ground through L2.
+- **`square_source(f)`**: `COMP_SQUARE_WAVE` 0/5 V (amplitude 2.5, offset 2.5), 50 % duty, into
+  `series_series_shunt()` — one or two series parts and a shunt part to ground, probe on the shunt part.
+- **Engine change that came with this batch:** the inductor now uses the **theta = 0.6 method like the capacitor**
+  (the old backward-Euler companion damped a high-Q LC by ≈ (ω dt)²/2 per step: a Q = 16 ring at 200 steps per
+  period lost ~10 % per period, which is why the first RLC peak read low). All previous oracles still pass.
+- **Probe-test dt rule:** `--probe-test` now never runs coarser than the template's own scope preset
+  (`simulation_scope_time_step(circuit_template_scope_time_div(t))`, ~50 samples per division) — the ring
+  templates need it (50 µs/div ⇒ dt 1 µs ⇒ 200 points per 199 µs ring period). A template with a 1 ms/div preset
+  and a 100 µs feature would still be under-sampled: set the preset for the fastest feature, not the slowest.
+- `--osc-test` cases: Hartley 80 µs window at dt 5 ns expecting 503 292 Hz, Clapp 30 µs at dt 2 ns expecting
+  1 743 455 Hz; the pass band is **±25 %** for every case (the Hartley needs it, see the trap below).
+
+**Traps discovered while building these:**
+- **Missing wire, again:** the first Hartley build had no wire from the bias divider to the gate-side node —
+  `--trace "Hartley (MOSFET)" 80e-6` showed the gate min = max = 0 V in one run. As with the generators: run
+  `--trace` before touching the engine.
+- **Current-source polarity (Superposition):** the model's current flows **out of its "−" terminal**. To inject
+  1 mA *into* node N the `COMP_DC_CURRENT` is placed rotated 180° ("−" at the top on N, "+" to ground). Unrotated
+  it sinks 1 mA and N reads 4.667 V instead of 7.333 V — a plausible-looking wrong number, so keep the oracle.
+- **Hartley DC path through the drain inductor:** L1 is both tank half and drain load, so the drain (and the tank
+  top) sits at 12 V DC through L1's zero DCR — there is no RFC. The gate side must *not* have a DC path to ground
+  through L2 (the 1 M/1 M bias would be shorted to 0 V and g_m would be zero): that is what the 10 nF series cap
+  is for. Remove it and the oscillator is dead; make it 1 nF and it pulls f far above the formula (see V).
+- **Probe window straddling a falling edge:** `--probe-test` judges the last 25 % of the run. For a square-driven
+  template pick `run` so that window is either a whole number of cycles (RC Step: 20 ms = 2 cycles, window 15–20 ms)
+  or sits inside the settled high half (RL Step: 2 ms at 1 kHz); a window that straddles a falling edge makes
+  "dc"/"mean" meaningless and can even clip "max" if the edge lands at the window start. Use "max" for steps.
+- **dt resolution of ringing:** before the scope-preset dt rule the auto dt for a 200 Hz square (no AC source)
+  was run/1000 = 6 µs ⇒ 33 points per ring period, and the 9.53 V first peak read ~9.0 V (peak between samples
+  plus the integrator's damping). With dt 1 µs and theta 0.6 it reads 9.5 V. In the app: 50 µs/div ⇒ dt 1 µs
+  automatically; if you set dt by hand keep it ≤ T_ring/100.
+- **Hartley frequency pull:** measured **557 kHz vs 503 kHz** from f = 1/(2π√((L1 + L2) C)). Two real effects, not
+  a bug: the 10 nF coupling cap is *in series with L2* in the loop (X_C = 32 Ω vs X_L2 = 157 Ω at 500 kHz ⇒
+  L2_eff ≈ 40 µH ⇒ ≈ 525–530 kHz), and the MOSFET C_gs/C_gd across the tank halves shift the tap ratio. Raise
+  the coupling cap to 100 nF and f falls back toward 510 kHz. The `--osc-test` tolerance of 25 % covers it.
+- **Note text nit:** the Hartley's on-canvas title label says "tapped at ground" while the note (and the circuit)
+  tap at Vdd = AC ground — same thing electrically; fix the label text in `place_hartley()` when convenient.
+
+### 82. Hartley (MOSFET) — 12 V, NMOS common source, L1 = 50 µH drain inductor (tap at Vdd = AC ground), C = 1 nF series, L2 = 50 µH gate side via a 10 nF coupling cap, 1 M/1 M gate bias (6 V), 0.3 V/50 ns kick
+- **Demonstrates:** (S&S 18.3.1) the Colpitts with the roles swapped: a tapped inductor L1 + L2 with a single C. f = 1/(2π √((L1 + L2) C)) = 1/(2π √(100 µ · 1 n)) = **503 kHz**; start-up needs g_m R_tank > L1/L2 (= 1). L1 doubles as the drain load, so there is no RFC.
+- **Demo:** `DEMO_OSC`, f_char 503292; `--osc-test` 80 µs window, dt 5 ns, expects 503 kHz ±25 % (**measured 557 kHz** — see the pull trap above). Probe: drain (`COMP_NMOS` 0, term 1) auto. Presets 500 ns/div, 5 V/div.
+- **N:** drain swings around the 12 V rail (up to ≈ 2 × VDD) at **~557 kHz**; the gate rides on 6 V with an L1/L2 = 1 share of the drain swing. Compare with the Colpitts at the same drive: the Hartley's drain has the same class-C flat bottom.
+- **V:** **C 1 → 2 nF** ⇒ 356 kHz formula (expect ≈ 390 kHz measured, the same ~10 % pull) · C → 0.5 nF ⇒ 712 kHz formula, dt must follow · **L2 50 → 100 µH** ⇒ 411 kHz formula and the feedback ratio L1/L2 halves — starts more easily · L1 → 100 µH ⇒ 411 kHz but L1/L2 = 2 needs g_m R_tank > 2, may not start (raise kp) · **coupling cap 10 → 100 nF** ⇒ f drops toward ≈ 510 kHz (the series-C pull vanishes); 10 → 1 nF ⇒ L2_eff collapses, f jumps > 700 kHz or it fails to start; remove it ⇒ dead (gate bias shorted through L2) · kick v_high 0.3 → 0 ⇒ starts from noise much later.
+- **M:** NMOS only. vth 1.5 → 3 V ⇒ stops (start-up criterion); kp × 10 ⇒ hard limiting. Inductor `ideal = false` with DCR ⇒ the drain DC sits below 12 V by I_D · DCR and Q drops — a few ohms is enough to stop it: the Hartley start-up margin is smaller than the Colpitts'.
+- **T:** **dt ≤ 10 ns** (5 ns in `--osc-test`, ~360 points per cycle); at 100 ns f reads low and the amplitude sags; at 1 µs it does not start. 500 ns/div shows ~3 cycles; 20 µs/div for the envelope.
+
+### 83. Clapp (MOSFET) — Colpitts (#80) with C3 = 100 pF in series with L = 100 µH: C1 = C2 = 1 nF, RFC 1 mH, 1 M/1 M bias, 0.3 V/50 ns kick
+- **Demonstrates:** (S&S 18.3.1) C_eff = 1/(1/C1 + 1/C2 + 1/C3) = 1/(1 + 1 + 10) nF⁻¹ = **83.3 pF**, dominated by the small series cap, so f = 1/(2π √(L C_eff)) = **1.744 MHz** and the device capacitances (which sit across the big C1, C2) hardly move it — the Clapp's stability advantage. The price is a weaker feedback fraction: g_m must be higher.
+- **Demo:** `DEMO_OSC`, f_char 1743455; `--osc-test` 30 µs window, dt 2 ns, expects 1.744 MHz (**measured 1.76 MHz**, +1 %). Probe: drain (`COMP_NMOS` 0, term 1) auto. Presets 200 ns/div, 5 V/div.
+- **N:** drain swings around 12 V at **1.74–1.76 MHz** — within 1 % of the formula, against the Hartley's +10 % (that is the lesson: probe both, same drive, compare the pull).
+- **V:** **C3 100 → 47 pF** ⇒ C_eff 43 pF ⇒ **2.43 MHz** (the note says 2.4) · C3 → 220 pF ⇒ C_eff 180 pF ⇒ 1.19 MHz · **C1 1 → 2 nF** ⇒ C_eff 87 pF ⇒ 1.707 MHz — only −2 % for doubling C1 (the stability demo; in the Colpitts the same edit gives −13 %) · C2 → 2 nF ⇒ same 1.707 MHz, C2/C1 = 2 may not start · L 100 → 47 µH ⇒ 2.54 MHz, dt must follow · C3 → 10 nF ⇒ it is the Colpitts again (712 kHz).
+- **M:** NMOS only, as #80. Because the feedback fraction is small, vth 1.5 → 2.5 V may already stop it; kp × 10 restores it. Ideal L and C.
+- **T:** **dt ≤ 5 ns** (2 ns in `--osc-test`, ~290 points per cycle); at 20 ns f reads a few % low; at 100 ns it does not start. 200 ns/div shows 3.5 cycles.
+
+### 84. Thevenin Equivalent — 10 V DC, R1 2 k (top), R2 3 k (to ground), R3 1 k series, load R_L 2.2 k
+- **Demonstrates:** (A&L 3.6) everything left of the load collapses to V_th = 10 · 3/(2 + 3) = **6 V** in series with R_th = 2 k‖3 k + 1 k = **2.2 k**; V_L = V_th · R_L/(R_L + R_th) = **3.00 V**. Norton: I_N = V_th/R_th = 2.73 mA. Maximum power transfer at R_L = R_th: 3²/2200 = 4.09 mW.
+- **Demo:** `DEMO_DC`. Probe: load node (`COMP_RESISTOR` 3, term 0) auto (`--probe-test` "dc" 3.0 ±1 %, 5 ms). Presets 1 ms/div, 2 V/div.
+- **N:** load **3.00 V** flat; the source probe reads 10 V (the divider does the rest). Power readout on R_L: 4.09 mW.
+- **V:** **R_L 2.2 k → 1 k** ⇒ 1.875 V · R_L → 10 k ⇒ 4.918 V · R_L → 100 Ω ⇒ 0.261 V · R_L → 10 M (open) ⇒ **6.00 V** = V_th · R_L → 1 Ω ⇒ I ≈ 2.73 mA = I_N · **R2 3 → 6 k** ⇒ V_th 7.5 V, R_th 2.5 k ⇒ 3.51 V · source 10 → 20 V ⇒ 6.00 V (everything scales) · R3 1 k → 0 ⇒ R_th 1.2 k ⇒ 3.88 V · each live: instantaneous, no transient (resistive).
+- **M:** resistors only. Source `ideal = false` with Rint 100 Ω ⇒ Rint adds to R1's branch: V_th = 10 · 3/5.1 = 5.88 V, R_th = (2.1 k‖3 k) + 1 k = 2.235 k ⇒ 2.92 V.
+- **T:** DC — any dt; 1 ms/div. **S:** R_L and the divider values round-trip; the probe on R_L's top terminal is restored.
+
+### 85. Superposition — V1 12 V through 4 k, V2 6 V through 4 k, 4 k to ground, 1 mA `COMP_DC_CURRENT` (rotated 180°) injecting into node N
+- **Demonstrates:** (A&L 3.5) with linear elements V_N is the sum of each source acting alone (voltage sources shorted, current sources opened): 12 V alone ⇒ 12 · (4 k‖4 k)/(4 k + 4 k‖4 k) = 4 V; 6 V alone ⇒ 2 V; 1 mA into 4 k‖4 k‖4 k = 1.333 k ⇒ 1.333 V. Total **7.333 V**.
+- **Demo:** `DEMO_DC`. Probe: node N (`COMP_RESISTOR` 0, term 1) auto (`--probe-test` "dc" 7.333 ±1 %, 5 ms). Presets 1 ms/div, 2 V/div.
+- **N:** **7.33 V** flat.
+- **V:** **current 1 → 0 mA** ⇒ 6.00 V · **V1 12 → 0** ⇒ 3.33 V · V2 6 → 0 ⇒ 5.33 V · current 1 → 2 mA ⇒ 8.67 V · **rotate the current source back to 0°** (sinks 1 mA) ⇒ **4.67 V** — the polarity trap; rotate it 180° again · V1 → 24 V ⇒ 11.33 V (linear) · replace the 1 mA source with a 1 mA 1 kHz AC current ⇒ 6 V DC with a 1.33 Vpk ripple riding on it — superposition of DC and AC.
+- **M:** resistors and sources only. Sources `ideal = false` (Rint) ⇒ each contribution shrinks slightly; the sum still equals the full solve — superposition holds for any linear R.
+- **T:** DC — any dt. **S:** the current source's rotation (180°) must round-trip; if a reload shows 4.67 V the rotation was lost.
+
+### 86. RC Step Response — 0/5 V 100 Hz square, R 10 k, C 100 nF (τ = 1 ms), half period 5 ms = 5 τ
+- **Demonstrates:** (A&L 10.1) V_C = 5 (1 − e^(−t/τ)); **63 % (3.16 V) at t = τ = 1.00 ms**, 90 % at 2.3 τ, 10–90 % rise = 2.2 τ = 2.2 ms, settled (99 %) at 5 τ — exactly the half period, so the discharge starts from 5 V and is the mirror image.
+- **Demo:** `DEMO_WAVEFORM`, f_char 100. Probe: square input and capacitor (`COMP_CAPACITOR` 0, term 0) auto (`--probe-test` "max" 5.0 ±2 %, 20 ms — the window 15–20 ms is one whole cycle). Presets 1 ms/div, 1 V/div.
+- **N:** exponential 0 → 5 V, **cursors**: A on the rising edge, B where V_C = 3.16 V ⇒ Δt = **1.00 ms**; rise-time measurement 2.2 ms.
+- **V:** **R 10 → 20 k** ⇒ τ 2 ms, half period 2.5 τ ⇒ peaks at 4.59 V, never settles (the "max" oracle would read 4.59 — expected) · **C 100 → 10 nF** ⇒ τ 100 µs, looks like a square at 1 ms/div; 100 µs/div to see it · **f 100 → 1 kHz** ⇒ half period 0.5 τ ⇒ V_C is a rounded triangle between 1.89 and 3.11 V (steady-state formula 5 (1 − e^(−T/2τ))/(1 − e^(−T/τ))) · duty 50 → 20 % ⇒ charge 2 τ (4.32 V), discharge 8 τ · source amplitude 2.5 → 5 (0/10 V) ⇒ 6.32 V at τ, same τ · each live: V_C continues from its present value (state preserved).
+- **M:** capacitor `ideal = false` with ESR 10 Ω ⇒ a 5 · 10/10 010 = 5 mV step at the edge; leakage 1 M ⇒ final value 5 · 1 M/1.01 M = 4.95 V. Source Rint 100 Ω ⇒ τ 1.01 ms.
+- **T:** dt auto (~1 µs with 1 ms/div); at **dt 100 µs** τ is 10 steps and the 63 % point reads 1.05 ms (theta 0.6 error); at dt 1 ms one step per τ — document as expected. 1 ms/div = one cycle; 200 µs/div with cursors for the τ reading.
+
+### 87. RL Step Response — 0/5 V 1 kHz square, L 10 mH series, R 100 Ω shunt (τ = L/R = 100 µs), half period 500 µs = 5 τ
+- **Demonstrates:** (A&L 10.2) the **current** is the state that cannot jump: i_L = (V/R)(1 − e^(−t/τ)) ⇒ V_R = 100 · i_L rises to **5 V (50 mA)**, 3.16 V (31.6 mA) at t = τ = 100 µs; the inductor voltage V_in − V_R jumps to 5 V at the edge and decays to 0. Dual of #86.
+- **Demo:** `DEMO_WAVEFORM`, f_char 1000. Probe: square input and resistor (`COMP_RESISTOR` 0, term 0) auto (`--probe-test` "max" 5.0 ±2 %, 2 ms — window 1.5–2 ms = one cycle). Presets 100 µs/div, 1 V/div.
+- **N:** V_R exponential 0 → 5 V, 3.16 V at τ = **100 µs** by cursors. The L–R junction *is* the V_R node; for the inductor voltage use the math channel V_in − V_R: 5 V at the edge, decaying to 0 with the same τ.
+- **V:** **L 10 → 20 mH** ⇒ τ 200 µs ⇒ peaks 4.59 V (2.5 τ per half) · **R 100 → 1 k** ⇒ τ 10 µs, final 5 V still (5 mA) — looks square at 100 µs/div · R → 10 Ω ⇒ τ 1 ms ⇒ V_R a rounded triangle 1.89–3.11 V (same formula as #86 with T/τ = 1), 500 mA final · f 1 kHz → 10 kHz ⇒ same triangle shape at R = 100 Ω · L → 1 mH ⇒ τ 10 µs · each live: i_L continues from its present value — no current jump, no spike.
+- **M:** inductor `ideal = false` with DCR 10 Ω ⇒ final V_R = 5 · 100/110 = 4.55 V, τ = 10 mH/110 Ω = 91 µs; DCR 100 Ω ⇒ 2.5 V. Source Rint adds to R the same way.
+- **T:** the **inductor now integrates with theta = 0.6** (was backward Euler): at dt 10 µs (= τ/10) the 63 % point reads 105 µs; at dt 100 µs (= τ) the exponential is a 1-step staircase — expected. 100 µs/div (dt 2 µs) shows one cycle; 20 µs/div for the τ reading.
+
+### 88. RLC Step (Ringing) — 0/5 V 200 Hz square, R 20 Ω, L 10 mH, C 100 nF series; probe the capacitor
+- **Demonstrates:** (A&L 12.2) ω0 = 1/√(LC) = 31.6 krad/s (**5.03 kHz, T = 199 µs**), α = R/2L = 1000 s⁻¹, ζ = α/ω0 = **0.032** ⇒ underdamped: V_C overshoots to 5 (1 + e^(−πζ/√(1 − ζ²))) = **9.53 V** on the first peak and rings with envelope τ = 1/α = 1 ms (Q = 1/2ζ ≈ 16). Half period 2.5 ms = 2.5 τ, so the ring has decayed to 8 % before the next edge.
+- **Demo:** `DEMO_WAVEFORM`, f_char 5030 (the ring frequency: 6 ring cycles in the demo window). Probe: square input and capacitor (`COMP_CAPACITOR` 0, term 0) auto (`--probe-test` "max" 9.53 ±4 %, 6 ms — **runs at the 50 µs/div preset dt, 1 µs**, see the rule). Presets 50 µs/div, 2 V/div.
+- **N:** first peak **9.5 V**, successive peaks 9.53 → 9.1 → 8.7 … (ratio e^(−0.199) = 0.82 per cycle); **cursors on two peaks: 199 µs**; at 500 µs/div the whole 1 ms envelope. Measured f 5.03 kHz.
+- **V:** **R 20 → 632 Ω** ⇒ critical, 5 V, no overshoot · R → 2 k ⇒ overdamped, slow root τ 195 µs · R → 5 Ω ⇒ ζ 0.008, peak 9.88 V, envelope 4 ms — the ring no longer dies before the next edge and the edges superpose · R → 100 Ω ⇒ ζ 0.16, peak 8.0 V, ~5 visible cycles · **C 100 → 400 nF** ⇒ 2.52 kHz, ζ 0.063, peak 9.10 V · **L 10 → 40 mH** ⇒ 2.52 kHz, ζ 0.016, peak 9.75 V (L raises Q, C lowers it) · f 200 → 2 kHz ⇒ half period 250 µs ≈ 1.26 ring periods: the response of each edge rides on the previous ring — looks chaotic, is linear · each live: continuous, the ring keeps its phase.
+- **M:** L `ideal = false` DCR 10 Ω ⇒ α doubles (R_total 30), peak 9.3 V, envelope 0.67 ms; C ESR 1 Ω ⇒ small step at the edge; source Rint 10 Ω ⇒ as DCR. All ideal is the textbook case.
+- **T:** the dt-resolution trap: **dt ≤ 2 µs** (≥ 100 points per ring period); at dt 6 µs (the old auto value) the first peak read ≈ 9.0 V; at 20 µs the ring is a 10-point polygon and the peak is 15 % low; at 100 µs it is gone. Changing time/div to 50 µs/div re-maps dt to 1 µs (§2.9a) — the fix is one click. 50 µs/div shows 2.5 ring cycles, 500 µs/div the envelope, 1 ms/div the square.
+
+### 89. RLC Damping Ladder — three rows, each 0/5 V 200 Hz square + R + L 10 mH + C 100 nF; R = 20 / 632 / 2000 Ω (under / critical / over)
+- **Demonstrates:** (A&L 12.2–12.3) same ω0 = 31.6 krad/s in every row; only R sets the shape. Row 1 R = 20: ζ 0.032, rings (#88). Row 2 **R = 632 = 2 √(L/C)**: critically damped, V_C = 5 (1 − (1 + ω0 t) e^(−ω0 t)) — fastest rise with **no overshoot**, 4.0 V at t = 3/ω0 = 95 µs. Row 3 R = 2 k: overdamped, roots −5 132 s⁻¹ (**τ 195 µs**, dominant) and −195 000 s⁻¹ (5 µs); rises like an RC with τ ≈ RC = 200 µs.
+- **Demo:** `DEMO_WAVEFORM`, f_char 5030. Probe: critical-row capacitor (`COMP_CAPACITOR` 1, term 0) auto (`--probe-test` "max" 5.0 ±2 %, 10 ms: "no overshoot"); **extra probes** on the underdamped (`COMP_CAPACITOR` 0) and overdamped (`COMP_CAPACITOR` 2) rows. Presets 100 µs/div, 2 V/div.
+- **N:** **Stack view**, three channels: row 1 rings to 9.5 V, row 2 rises cleanly to 5 V (4.0 V at 95 µs by cursor), row 3 reaches 63 % at ≈ 200 µs. The three rows are electrically independent (each has its own source and ground) — the same input edge, three responses.
+- **V:** **row 2 R 632 → 500** ⇒ ζ 0.79, overshoot 1.7 % (5.09 V — the 2 % oracle just passes); → 800 ⇒ ζ 1.27, slightly slower, no overshoot; → 300 ⇒ ζ 0.47, overshoot 19 % (5.9 V) · **row 3 R 2 k → 20 k** ⇒ τ ≈ RC = 2 ms > the 2.5 ms half period: never settles · row 1 R 20 → 100 ⇒ peak 8.0 V · change **L or C in one row only** ⇒ that row's ω0 moves and its critical R with it (C → 400 nF: critical R becomes 316 Ω, so row 2 at 632 is now overdamped ζ = 2) · square f 200 → 50 Hz ⇒ each row settles fully before the next edge.
+- **M:** as #88 per row. Inductor DCR 10 Ω hardly changes rows 2–3 (632 → 642, 2000 → 2010) but changes row 1's ζ by 50 % — the low-R row is the sensitive one.
+- **T:** as #88: dt ≤ 2 µs (100 µs/div ⇒ 2 µs by the scope rule); row 1 shows the dt aliasing first. Stack with 100 µs/div shows the first 1 ms of all three; 1 ms/div the square.
+
+### 90. Op-Amp Saturation — 2 Vpk 1 kHz sine, inverting op-amp R1 10 k / R2 100 k (gain −10), `ideal = false` gain 1e5, ±15 V rails, 10 k load; extra probe on the inverting input
+- **Demonstrates:** (S&S 2.8, A&L 15.5) the amplifier wants −20 Vpk but the output stops at the **±15 V rails**; clipping starts at |v_i| = 1.5 V, i.e. 46 % of each half-cycle is flat. While clipped the loop is open and the **inverting input is no longer a virtual ground**: v− = (v_i R2 + v_o R1)/(R1 + R2) = (2 · 100 k − 15 · 10 k)/110 k = **0.45 V** at the input peak (and −0.45 V at the negative peak).
+- **Demo:** `DEMO_WAVEFORM`, f_char 1000. Probe: output (`COMP_OPAMP` 0, term 2) auto (`--probe-test` "max" 15.0 ±3 %, 3 ms: "clipped at the +15 V rail"); **extra probe** on the inverting input (`COMP_OPAMP` 0, term 0). Presets 200 µs/div, 5 V/div.
+- **N:** output a −10× sine with flat tops at **±15.0 V** for 46 % of each half-cycle; the − input channel (set it to 0.2 V/div) is ≈ 0 while the loop is closed and rises to **±0.45 V** pulses exactly during the flats. FFT: odd harmonics from the clipping.
+- **V:** **amplitude 2 → 1 Vpk** ⇒ clean −10 V sine, v− ≈ −100 µV (finite gain: v_o/A) · amplitude → 5 Vpk ⇒ near-square output, v− peaks at (500 k − 150 k)/110 k = 3.18 V · **R2 100 → 50 k** ⇒ gain −5, 10 Vpk, no clipping, v− ≈ 0 · R1 10 → 5 k ⇒ gain −20, clipping starts at 0.75 V, v− peak (2 · 100 k − 15 · 5 k)/105 k = 1.19 V · **rails ±15 → ±10 V** ⇒ flats at ±10 V from |v_i| = 1 V, v− peak 0.91 V · f 1 → 10 kHz ⇒ same picture with the finite-gain model; with `COMP_OPAMP_REAL` the slew rate rounds the corners (see M) · each live: the change is immediate, no transient.
+- **M:** the finite-gain `ideal = false` model is the reference. Set `ideal = true`: the rails are stamped as rail sources for the ideal model too (fixes 2026-08-24) — record whether the output clips at 15 V and whether v− still shows the 0.45 V departure or is held at 0 by the virtual-short constraint (document; the finite-gain result is the physical one). `COMP_OPAMP_REAL` swap: GBW rolls off the gain a little at 10 kHz, the slew limit rounds the clip corners, output R droops the 15 V into a 100 Ω load. Load 10 k → 100 Ω with the ideal-rail model ⇒ still 15 V (no output R).
+- **T:** dt auto ~2 µs (200 µs/div); at dt 100 µs the flats are 5 samples wide and the v− pulses are a single sample — expected. 200 µs/div shows 2 cycles; 50 µs/div with cursors to read the 1.5 V clip-start on the input channel.
+
+### Not shipped: Pierce Crystal (builder kept, not in the palette)
+`place_pierce()` in `src/circuits.c` builds an op-amp Pierce loop (inverting stage gain −100, 100 Ω drive R, C2 / crystal / C1
+π network) around a "teaching crystal": Ls 100 mH, Cs 25.33 pF, Rs 200 Ω, Cp 1 nF ⇒ f_s = 100.0 kHz, Q ≈ 314, f ≈ 100.63 kHz
+between f_s and f_p. It is **not in the palette** because it only sustains at **dt ≤ 10 ns** with the current theta = 0.6
+integrator: the residual numerical damping per step is larger than the crystal's own loss per step at any usable dt, so the
+loop dies unless the step is ~1000× finer than the app would ever pick for a 100 kHz signal. Logged in `docs/ROADMAP.md`
+("Crystal (Pierce) oscillator — not shipped yet"): needs pure trapezoidal theta = 0.5 for L and C (with a start-up damping
+ramp), a dedicated crystal component that stamps the motional arm analytically, or a lower-Q teaching crystal. No audit
+block, no oracle, no `CIRCUIT_*` enum entry until one of those lands.
+
+---
+
 ## Result log
 
 | # | Template | L | N | V | M | T | S | Notes / issue link |
@@ -822,5 +957,14 @@ Common building blocks (`src/circuits.c`, `sat_opamp` / `place_tri_square_core`)
 | 79 | Function Generator | | | | | | | FFT: 3rd harmonic > 30 dB down; re-scale bias V after R2 change |
 | 80 | Colpitts (MOSFET) | | | | | | | `--osc-test` 712 kHz @ dt 5 ns (measured 710); C1 → 2 nF = 616 kHz (note says 581 — see block) |
 | 81 | Ring Oscillator | | | | | | | `--osc-test` 145 kHz @ dt 20 ns (measured 139); per-stage C retune; gates have no currents |
+| 82 | Hartley (MOSFET) | | | | | | | `--osc-test` 503 kHz @ dt 5 ns (measured 557, ±25 %); coupling cap + device C pull f; no DC path for the gate through L2 |
+| 83 | Clapp (MOSFET) | | | | | | | `--osc-test` 1.744 MHz @ dt 2 ns (measured 1.76); C3 47 pF = 2.43 MHz; C1 × 2 moves f only −2 % |
+| 84 | Thevenin Equivalent | | | | | | | 3.00 V oracle; R_L edits 1 k / 10 k / open / short (1.875 / 4.92 / 6.00 V / 2.73 mA) |
+| 85 | Superposition | | | | | | | 7.333 V oracle; zero each source (6.00 / 3.33 / 5.33 V); current source rotated 180° — unrotated gives 4.67 V |
+| 86 | RC Step Response | | | | | | | cursors at 63 % = 1.00 ms; 2.2 τ rise; R × 2 no longer settles (4.59 V) |
+| 87 | RL Step Response | | | | | | | V_R = 100 · i_L, τ 100 µs; inductor now theta 0.6; DCR lowers the 5 V final |
+| 88 | RLC Step (Ringing) | | | | | | | 9.53 V first peak oracle at the 50 µs/div preset dt (1 µs); ring period 199 µs by cursors; dt ≤ 2 µs |
+| 89 | RLC Damping Ladder | | | | | | | Stack view, 3 probes; critical row 5.0 V no-overshoot oracle; R 500 ⇒ 1.7 % overshoot (oracle edge) |
+| 90 | Op-Amp Saturation | | | | | | | 15 V clip oracle; extra probe on the − input: 0.45 V pulses while clipped; 1 Vpk ⇒ clean |
 
-(81 blocks = the 81 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`; #48-#65 follow the enum order after `CIRCUIT_PHASE_SHIFT_OSC`, #66-#72 the enum order after `CIRCUIT_DC_LINE_DROP`, #73-#81 the enum order after `CIRCUIT_HV_765_LINE`.)
+(90 blocks = the 90 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`; #48-#65 follow the enum order after `CIRCUIT_PHASE_SHIFT_OSC`, #66-#72 the enum order after `CIRCUIT_DC_LINE_DROP`, #73-#81 the enum order after `CIRCUIT_HV_765_LINE`, #82-#90 the enum order after `CIRCUIT_RING_OSC`.)

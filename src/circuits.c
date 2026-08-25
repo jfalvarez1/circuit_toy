@@ -7534,7 +7534,7 @@ static int place_colpitts(Circuit *circuit, float x, float y) {
     return place_lc_core(circuit, x, y, 0, 10e-9, "Colpitts (common source): tank L 100 uH with C1 = C2 = 1 nF -> 712 kHz; 1 mH RFC feeds the drain");
 }
 static int place_hartley(Circuit *circuit, float x, float y) {
-    return place_lc_core(circuit, x, y, 1, 10e-9, "Hartley (common source): L1 = L2 = 50 uH tapped at ground, C = 1 nF -> 503 kHz");
+    return place_lc_core(circuit, x, y, 1, 10e-9, "Hartley (common source): L1 = L2 = 50 uH with the tap at Vdd (AC ground), C = 1 nF -> 503 kHz");
 }
 static int place_clapp(Circuit *circuit, float x, float y) {
     return place_lc_core(circuit, x, y, 0, 100e-12, "Clapp: Colpitts with 100 pF in series with L - the small cap sets f = 1.744 MHz");
