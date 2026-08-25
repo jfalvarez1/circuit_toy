@@ -18,6 +18,7 @@ EXE = os.path.join(ROOT, "build", "circuit-playground.exe")
 SHOT_DIR = os.path.join(ROOT, "screenshots", "auto")
 GIF_DIR = os.path.join(ROOT, "gifs")
 SIZE = "1400x900"
+GIF_SIZE = SIZE           # full app resolution (1400x900), same layout as the screenshots
 
 # name, template (short name), frame to capture, left tab
 SHOTS = [
@@ -56,20 +57,22 @@ SHOTS = [
     ("common_base", "CB", 140, "circuits"),
 ]
 # name, template, first frame, frames, every
+# Full resolution, full 256-colour palette; low frame rate (5 fps) keeps the files small.
 GIFS = [
-    ("rc_lowpass_sweep", "LP", 60, 36, 3),
-    ("tesla_coil", "Tesla", 120, 30, 2),
-    ("grid_chain", "Grid", 60, 24, 3),
-    ("relaxation_osc", "RelOsc", 60, 24, 2),
-    ("relay_differential", "87L", 60, 40, 3),
-    ("breaker_failure", "50BF", 60, 40, 4),
-    ("function_generator", "FuncGn", 60, 30, 2),
-    ("three_phase_balanced", "3phY", 60, 24, 3),
+    ("rc_lowpass_sweep", "LP", 60, 18, 6),
+    ("tesla_coil", "Tesla", 120, 15, 4),
+    ("grid_chain", "Grid", 60, 12, 6),
+    ("relaxation_osc", "RelOsc", 60, 12, 4),
+    ("relay_differential", "87L", 60, 20, 6),
+    ("breaker_failure", "50BF", 60, 20, 8),
+    ("function_generator", "FuncGn", 60, 15, 4),
+    ("three_phase_balanced", "3phY", 60, 12, 6),
 ]
+GIF_FRAME_MS = 200
 
 
-def run(args, timeout=120):
-    cmd = [EXE, "--size", SIZE, "--exit"] + args
+def run(args, timeout=120, size=SIZE):
+    cmd = [EXE, "--size", size, "--exit"] + args
     r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=timeout)
     if r.returncode not in (0,):
         print("  ! exit", r.returncode, r.stderr[-300:])
@@ -97,17 +100,16 @@ def gifs():
         shutil.rmtree(tmp, ignore_errors=True)
         os.makedirs(tmp)
         print("gif", name)
-        run(["--tab", "circuits", "--template", tpl, "--frame", str(first), "--record", tmp, str(frames), str(every)], timeout=300)
+        run(["--tab", "circuits", "--template", tpl, "--frame", str(first), "--record", tmp, str(frames), str(every)], timeout=300, size=GIF_SIZE)
         files = sorted(glob.glob(os.path.join(tmp, "frame_*.bmp")))
         if not files:
             print("  ! no frames"); continue
         imgs = []
         for f in files:
             im = Image.open(f).convert("RGB")
-            im = im.resize((im.width // 2, im.height // 2), Image.LANCZOS)
-            imgs.append(im.quantize(colors=64, method=Image.Quantize.MEDIANCUT))
+            imgs.append(im.quantize(colors=256, method=Image.Quantize.MEDIANCUT))
         out = os.path.join(GIF_DIR, "auto_" + name + ".gif")
-        imgs[0].save(out, save_all=True, append_images=imgs[1:], duration=90, loop=0, optimize=True)
+        imgs[0].save(out, save_all=True, append_images=imgs[1:], duration=GIF_FRAME_MS, loop=0, optimize=True)
         shutil.rmtree(tmp, ignore_errors=True)
         print("  ->", out, os.path.getsize(out) // 1024, "KB")
 
