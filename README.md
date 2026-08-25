@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.2.2](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.2.2)**
+**Latest Release: [v3.4.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.4.0)** (auto-updating from v3.4.0 on)
 
 A native desktop circuit simulator written in C with SDL2, featuring a synthwave-themed interface. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
 
@@ -112,7 +112,7 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-81 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+86 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -126,6 +126,8 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **Parallel RLC** (`pRLC`) - Parallel RLC (tank) circuit
 - **Wheatstone Bridge** (`Whst`) - Wheatstone bridge measurement circuit
 - **Line Drop Basics** (`Drop`) - Battery, wire resistance, load: the simplest voltage drop
+- **Thevenin Equivalent** (`Thev`) - Divider + series R seen by a load: Vth 6 V, Rth 2.2 k
+- **Superposition** (`Super`) - Two voltage sources + a current source: responses add
 
 **Filters**
 - **RC Low Pass** (`LP`) - RC low-pass filter (fc=1.6kHz)
@@ -152,6 +154,7 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **Window Comp** (`WCmp`) - Window comparator (OV/UV detection)
 - **Schmitt Trigger** (`Schm`) - Comparator with hysteresis
 - **Peak Detector** (`Peak`) - Op-amp peak detector circuit
+- **Op-Amp Saturation** (`Sat`) - Gain -10 clips at the rails; the virtual short is lost
 
 **Transistors**
 - **Common Emitter** (`CE`) - BJT common-emitter amplifier
@@ -172,6 +175,8 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **Function Generator** (`FuncGn`) - Triangle -> 3-breakpoint diode shaper -> sine; R sets f, thresholds set A
 - **Colpitts (MOSFET)** (`Colpit`) - LC tank C1-C2 capacitive divider, 712 kHz
 - **Ring Oscillator** (`Ring`) - Five inverters with RC delay stages, ~145 kHz
+- **Hartley (MOSFET)** (`Hartly`) - Tapped-inductor tank L1 + L2 with C: 503 kHz
+- **Clapp (MOSFET)** (`Clapp`) - Colpitts with a small series cap setting f: 1.744 MHz
 
 **Power supplies**
 - **Half-Wave Rect** (`HW`) - Half-wave rectifier
@@ -383,6 +388,16 @@ Create reusable subcircuits from your designs:
 - **Status bar** - Shows simulation time, voltmeter/ammeter readings, Lux/Temp sliders, node count, component count
 - **Live measurements** - Voltmeter (VM) and Ammeter (AM) readings displayed in status bar
 
+### Auto-Update (Windows)
+
+On start-up the app asks GitHub for the latest release in a background thread (PowerShell
+`Invoke-RestMethod`, nothing new is linked). If a newer tag exists an **Update** button appears at
+the right of the toolbar: it downloads `circuit-playground-windows-vX.Y.Z.zip`, waits for the app to
+close, extracts it over the install folder and relaunches. `--no-update-check` (or
+`CIRCUIT_TOY_NO_UPDATE=1`) disables the check; `--update-check` / `--update-now` do it from the
+command line. Releases are built with `pwsh tools/make_release.ps1 -Publish` (version from
+`include/version.h`).
+
 ### File Operations
 
 - **Save/Load circuits** - Binary format (.ckt)
@@ -401,6 +416,8 @@ Create reusable subcircuits from your designs:
 | ![Three-phase](screenshots/auto/three_phase_balanced.png) Balanced three-phase Y (A, B, C, neutral) | ![6-pulse](screenshots/auto/six_pulse_rectifier.png) Three-phase six-pulse rectifier |
 | ![Triangle/square](screenshots/auto/triangle_square_gen.png) Bistable + integrator triangle/square generator | ![Function generator](screenshots/auto/function_generator.png) Triangle-to-sine diode shaper (function generator) |
 | ![Colpitts](screenshots/auto/colpitts.png) MOSFET Colpitts at 712 kHz | ![Ring](screenshots/auto/ring_oscillator.png) Five-inverter ring oscillator |
+| ![Hartley](screenshots/auto/hartley.png) Hartley (tapped inductor) | ![RLC ringing](screenshots/auto/rlc_ringing.png) Series RLC step: 90 % overshoot, 199 us ring |
+| ![Damping ladder](screenshots/auto/damping_ladder.png) Under / critical / over-damped on one screen | ![Op-amp saturation](screenshots/auto/opamp_saturation.png) Clipping at the rails and the lost virtual ground |
 
 ![Function generator](gifs/auto_function_generator.gif)
 
@@ -476,7 +493,7 @@ point and a short transient, and reports solver errors, NaN/runaway voltages and
 point of every transistor / op-amp / regulator:
 
 ```bash
-build/tools/template_smoke.exe             # 81/81 templates passed
+build/tools/template_smoke.exe             # 86/86 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (66 oracles)
@@ -492,6 +509,15 @@ build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
 build/tools/template_smoke.exe --response "RC BP"   # amplitude vs frequency of every node during the sweep
 build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
 build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template in the palette)
+```
+
+The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
+which produced the images in this README):
+
+```bash
+build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
+build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
+build/circuit-playground.exe --help
 ```
 
 The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,

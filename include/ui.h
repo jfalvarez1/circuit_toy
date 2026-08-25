@@ -269,6 +269,7 @@ typedef struct {
     Button btn_scope_track;          // Toggle time/div tracking of a sweeping source
     Button btn_scope_autoset;        // Auto-configure scope settings
     Button btn_scope_popup;          // Pop out oscilloscope to separate window
+    Button btn_update;               // toolbar "Update" (shown only when a newer release exists)
     Button btn_scope_tab[3];         // Display / Trigger / Analysis tab strip under the primary row
     int scope_ctl_tab;               // active tab (0 Display, 1 Trigger, 2 Analysis)
     int scope_buttons_bottom;        // screen y just below the last button row (info rows start here)
@@ -511,6 +512,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode);
 #define UI_ACTION_SCOPE_POPUP   32   // Pop out oscilloscope to separate window
 #define UI_ACTION_SCOPE_STACK   33   // Toggle stacked / overlay channel view
 #define UI_ACTION_SCOPE_TRACK   1101   // Toggle sweep-tracking time/div
+#define UI_ACTION_UPDATE        1103 // Install the newer release
 #define UI_ACTION_SPOTLIGHT     1102 // Open component spotlight search (Ctrl+K)  (was 33: collided with SCOPE_STACK)
 #define UI_ACTION_EXPORT_SVG    34   // Export circuit to SVG file
 #define UI_ACTION_MC_RUN        35   // Start Monte Carlo analysis

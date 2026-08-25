@@ -203,6 +203,7 @@ void ui_init(UIState *ui) {
     ui->btn_timestep_down = (Button){{ts_x + 70, 12, 20, 20}, "-", "Decrease time step", false, false, true, false};
     ui->btn_timestep_up = (Button){{ts_x + 92, 12, 20, 20}, "+", "Increase time step", false, false, true, false};
     ui->btn_timestep_auto = (Button){{ts_x + 115, 10, 40, 24}, "Auto", "Auto time step", false, false, true, false};
+    ui->btn_update = (Button){{0, 0, 0, 0}, "Update", "A newer release is available - click to download and install", false, false, true, false};
     ui->display_time_step = 1e-7;  // Default 100 nanoseconds (will be updated from simulation)
 
     // Environment sliders (positioned in status bar area - will be updated in ui_update_layout)
@@ -870,6 +871,7 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     draw_button(renderer, &ui->btn_timestep_down);
     draw_button(renderer, &ui->btn_timestep_up);
     draw_button(renderer, &ui->btn_timestep_auto);
+    if (ui->btn_update.bounds.w > 0) { ui->btn_update.toggled = true; draw_button(renderer, &ui->btn_update); }
 
     // Toolbar border
     SDL_SetRenderDrawColor(renderer, SYNTH_BORDER, 0xff);
@@ -6189,6 +6191,9 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_timestep_down.bounds) && ui->btn_timestep_down.enabled) {
             return UI_ACTION_TIMESTEP_DOWN;
         }
+        if (ui->btn_update.bounds.w > 0 && point_in_rect(x, y, &ui->btn_update.bounds)) {
+            return UI_ACTION_UPDATE;
+        }
         if (point_in_rect(x, y, &ui->btn_timestep_auto.bounds) && ui->btn_timestep_auto.enabled) {
             return UI_ACTION_TIMESTEP_AUTO;
         }
@@ -6774,6 +6779,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         ui->btn_timestep_up.hovered = point_in_rect(x, y, &ui->btn_timestep_up.bounds);
         ui->btn_timestep_down.hovered = point_in_rect(x, y, &ui->btn_timestep_down.bounds);
         ui->btn_timestep_auto.hovered = point_in_rect(x, y, &ui->btn_timestep_auto.bounds);
+        ui->btn_update.hovered = ui->btn_update.bounds.w > 0 && point_in_rect(x, y, &ui->btn_update.bounds);
     }
 
     // Update oscilloscope button hover states
@@ -6803,7 +6809,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         const char *tip = NULL;
         char tipbuf[160];
         Button *tb[] = { &ui->btn_run, &ui->btn_pause, &ui->btn_step, &ui->btn_reset, &ui->btn_clear, &ui->btn_save, &ui->btn_load,
-                         &ui->btn_export_svg, &ui->btn_screenshot, &ui->btn_timestep_up, &ui->btn_timestep_down, &ui->btn_timestep_auto };
+                         &ui->btn_export_svg, &ui->btn_screenshot, &ui->btn_timestep_up, &ui->btn_timestep_down, &ui->btn_timestep_auto, &ui->btn_update };
         for (unsigned i = 0; i < sizeof tb / sizeof tb[0] && !tip; i++)
             if (!popup_mode && tb[i]->bounds.w > 0 && point_in_rect(x, y, &tb[i]->bounds)) tip = tb[i]->tooltip;
         Button *sb[SCOPE_BTN_N]; scope_button_list(ui, sb);

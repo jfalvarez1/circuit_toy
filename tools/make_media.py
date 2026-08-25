@@ -44,6 +44,11 @@ SHOTS = [
     ("function_generator", "FuncGn", 160, "circuits"),
     ("colpitts", "Colpit", 200, "circuits"),
     ("ring_oscillator", "Ring", 160, "circuits"),
+    ("hartley", "Hartly", 200, "circuits"),
+    ("rlc_ringing", "RLCst", 140, "circuits"),
+    ("damping_ladder", "Damp", 140, "circuits"),
+    ("thevenin", "Thev", 60, "circuits"),
+    ("opamp_saturation", "Sat", 140, "circuits"),
 ]
 # name, template, first frame, frames, every
 GIFS = [

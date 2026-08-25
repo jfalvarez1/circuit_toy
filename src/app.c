@@ -12,6 +12,7 @@
 #include <sys/stat.h>  // for mkdir
 #endif
 #include "app.h"
+#include "version.h"
 #include "file_io.h"
 #include "circuits.h"
 #include "analysis.h"
@@ -137,6 +138,7 @@ bool app_init(App *app) {
 }
 
 void app_shutdown(App *app) {
+    updater_shutdown(&app->updater);
     // Cancel and wait for frequency sweep thread if running
     if (app->freq_sweep_thread_running && app->simulation) {
         simulation_cancel_freq_sweep(app->simulation);
@@ -578,6 +580,12 @@ void app_handle_events(App *app) {
                 }
                 break;
 
+            case UI_ACTION_UPDATE: {
+                char msg[200];
+                if (updater_install(&app->updater, msg, sizeof msg)) { ui_set_status(&app->ui, msg); app->running = false; }
+                else ui_set_status(&app->ui, msg);
+                break;
+            }
             case UI_ACTION_SCOPE_TRACK:
                 app->ui.scope_track_sweep = !app->ui.scope_track_sweep;
                 ui_set_status(&app->ui, app->ui.scope_track_sweep
@@ -1894,6 +1902,27 @@ void app_update(App *app) {
     }
 }
 
+void app_update_check(App *app) {
+    updater_init(&app->updater);
+    if (!app->skip_update_check) updater_check_async(&app->updater);
+}
+
+/* called once per frame: surface the result of the background check */
+static void app_update_poll(App *app) {
+    if (app->update_announced || !app->updater.lock) return;
+    char tag[128];
+    if (updater_available(&app->updater, tag, sizeof tag)) {
+        app->update_announced = true;
+        char msg[200];
+        snprintf(msg, sizeof msg, "Update available: %s (you have v%s) - click Update in the toolbar", tag, APP_VERSION);
+        ui_set_status(&app->ui, msg);
+        app->ui.btn_update.bounds = (Rect){app->ui.window_width - 70, 10, 60, 24};
+    } else {
+        int failed = 0;
+        if (updater_checked(&app->updater, &failed)) app->update_announced = true;   // up to date or offline: stay quiet
+    }
+}
+
 bool app_place_template_centered(App *app, CircuitTemplateType type) {
     RenderContext *render = app->render;
     UIState *ui = &app->ui;
@@ -1975,6 +2004,7 @@ static void app_cli_capture(App *app) {
 }
 
 void app_render(App *app) {
+    app_update_poll(app);
     SDL_Renderer *r = app->renderer;
 
     // Clear screen

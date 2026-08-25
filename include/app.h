@@ -12,6 +12,7 @@
 #include "render.h"
 #include "ui.h"
 #include "circuits.h"
+#include "updater.h"
 #include "input.h"
 #include "analysis.h"
 #include "threadpool.h"
@@ -40,6 +41,11 @@ typedef struct {
     int  cli_record_frames, cli_record_every, cli_recorded;
     bool cli_exit;               // --exit : quit once the shot / recording is done
     int  cli_frame;              // frames rendered since start
+
+    // Auto-update (GitHub releases)
+    UpdaterState updater;
+    bool update_announced;       // status message shown once
+    bool skip_update_check;      // --no-update-check
     bool show_voltages;
     bool show_current;
     double synced_time_div;      // scope time/div the sim dt was last matched to (0 = never)
@@ -68,6 +74,8 @@ typedef struct {
 bool app_init(App *app);
 // Place a template at the canvas centre with its scope presets and auto-start (used by --template)
 bool app_place_template_centered(App *app, CircuitTemplateType type);
+// Start the background release check (unless --no-update-check)
+void app_update_check(App *app);
 // Save the current window contents as a BMP (used by --shot / --record)
 bool app_save_window_bmp(App *app, const char *path);
 

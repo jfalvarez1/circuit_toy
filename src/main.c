@@ -12,6 +12,8 @@
 #include "file_io.h"
 #include "simulation.h"
 #include "circuits.h"
+#include "version.h"
+#include "updater.h"
 #include "ui.h"
 
 static bool rects_overlap(const Rect *a, const Rect *b) {
@@ -81,12 +83,15 @@ static void usage(void) {
            "  --scroll PX          scroll the left palette by PX pixels (screenshots)\n"
            "  --tab parts|circuits left panel tab\n"
            "  --exit               quit when the shot / recording is done\n"
+           "  --no-update-check    do not query GitHub for a newer release (also CIRCUIT_TOY_NO_UPDATE=1)\n"
+           "  --version            print the version and exit\n"
+           "  --update-check       query the latest GitHub release and exit; --update-now also installs it\n"
            "  --layout-test        headless UI layout self-check (no window)\n");
 }
 
 int main(int argc, char *argv[]) {
     const char *cli_template = NULL, *cli_shot = NULL, *cli_record = NULL, *cli_size = NULL;
-    int cli_frame = 90, cli_rec_n = 0, cli_rec_every = 1, cli_scroll = -1, cli_tab = -1; bool cli_exit = false;
+    int cli_frame = 90, cli_rec_n = 0, cli_rec_every = 1, cli_scroll = -1, cli_tab = -1; bool cli_exit = false, no_update = false;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--template") && i + 1 < argc) cli_template = argv[++i];
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) cli_shot = argv[++i];
@@ -94,6 +99,19 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--size") && i + 1 < argc) cli_size = argv[++i];
         else if (!strcmp(argv[i], "--record") && i + 3 < argc) { cli_record = argv[++i]; cli_rec_n = atoi(argv[++i]); cli_rec_every = atoi(argv[++i]); }
         else if (!strcmp(argv[i], "--exit")) cli_exit = true;
+        else if (!strcmp(argv[i], "--no-update-check")) no_update = true;
+        else if (!strcmp(argv[i], "--version")) { printf("%s\n", APP_VERSION); return 0; }
+        else if (!strcmp(argv[i], "--update-check") || !strcmp(argv[i], "--update-now")) {
+            UpdaterState st; updater_init(&st); updater_check_async(&st); updater_wait(&st);
+            char tag[128]; int failed = 0; updater_checked(&st, &failed);
+            int avail = updater_available(&st, tag, sizeof tag);
+            printf("installed %s, latest %s -> %s\n", getenv("CIRCUIT_TOY_FAKE_VERSION") ? getenv("CIRCUIT_TOY_FAKE_VERSION") : APP_VERSION,
+                   failed ? "(query failed)" : tag, avail ? "update available" : "up to date");
+            int rc = 0;
+            if (!strcmp(argv[i], "--update-now")) { char msg[200]; rc = updater_install(&st, msg, sizeof msg) ? 0 : 3; printf("%s\n", msg); }
+            updater_shutdown(&st);
+            return failed ? 2 : rc;
+        }
         else if (!strcmp(argv[i], "--scroll") && i + 1 < argc) cli_scroll = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--tab") && i + 1 < argc) cli_tab = !strcmp(argv[++i], "circuits") ? 1 : 0;
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
@@ -101,7 +119,7 @@ int main(int argc, char *argv[]) {
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); usage(); return 2; }
     }
 
-    printf("Circuit Playground v3.2.3\n");
+    printf("Circuit Playground v%s\n", APP_VERSION);
     printf("A circuit simulator inspired by The Powder Toy\n\n");
 
     // Initialize SDL (video + timer; audio subsystem was removed with the microphone feature)
@@ -128,6 +146,8 @@ int main(int argc, char *argv[]) {
     if (cli_shot) { strncpy(app.cli_shot_path, cli_shot, sizeof app.cli_shot_path - 1); }
     if (cli_record) { strncpy(app.cli_record_dir, cli_record, sizeof app.cli_record_dir - 1); app.cli_record_frames = cli_rec_n; app.cli_record_every = cli_rec_every; }
     app.cli_shot_frame = cli_frame;
+    app.skip_update_check = no_update || cli_shot || cli_record;   // scripted runs never phone home
+    app_update_check(&app);
     if (cli_scroll >= 0) app.ui.palette_scroll_offset = cli_scroll;
     if (cli_tab >= 0) app.ui.left_tab = cli_tab;
     app.cli_exit = cli_exit;

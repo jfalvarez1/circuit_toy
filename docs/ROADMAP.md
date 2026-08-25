@@ -23,3 +23,14 @@ See `docs/RESEARCH_SIMULATORS.md` for the survey of formats and of how other sim
 (CircuitJS, LTspice, ngspice) handle integration, convergence and model import, which should
 drive the engine improvements (trapezoidal integration, LTE timestep control, junction
 voltage limiting, op-amp macro-model).
+
+## Crystal (Pierce) oscillator - not shipped yet (2026-08-24)
+
+`place_pierce()` in src/circuits.c builds an op-amp Pierce loop around a "teaching crystal" (Ls 100 mH,
+Cs 25.33 pF, Rs 200, Cp 1 nF, f_s = 100 kHz, Q ~ 314) with a C2 / crystal / C1 pi network and an extra
+1k / 2.2 nF output pole. A phasor scan (loop gain ~24 at 100.63 kHz) says it should oscillate, and it
+does at dt <= 10 ns, but the theta = 0.6 integrator damps the motional arm enough that at the app's
+time steps (100-250 ns) the loop gain falls below 1 (or the stage latches at gain 1000). Options:
+pure trapezoidal (theta = 0.5) for L and C with a startup damping ramp, a dedicated crystal component
+that stamps the motional arm analytically, or accepting a lower-Q "crystal" and a 20 kHz f_s.
+Until then the template is not registered in the palette (hard rule: every template must demonstrate).
