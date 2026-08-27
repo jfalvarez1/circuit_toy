@@ -211,6 +211,8 @@ void ui_init(UIState *ui) {
     // These control global light/temperature for LDR and thermistor components
     ui->env_light_slider = (Rect){0, 0, 80, 14};   // Will be positioned in render
     ui->env_temp_slider = (Rect){0, 0, 80, 14};    // Will be positioned in render
+    ui->brightness_slider = (Rect){-100, -100, 0, 0};
+    ui->brightness = 1.0f;
     ui->dragging_light = false;
     ui->dragging_temp = false;
 
@@ -4974,6 +4976,7 @@ void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer) {
         // Hide sliders and just init bounds to offscreen
         ui->env_light_slider = (Rect){-100, -100, 0, 0};
         ui->env_temp_slider = (Rect){-100, -100, 0, 0};
+        ui->brightness_slider = (Rect){-100, -100, 0, 0};
     } else {
 
     // Light slider (for LDR components)
@@ -5033,7 +5036,43 @@ void ui_render_statusbar(UIState *ui, SDL_Renderer *renderer) {
     snprintf(temp_text, sizeof(temp_text), "%.0fC", g_environment.temperature);
     SDL_SetRenderDrawColor(renderer, SYNTH_ORANGE, 0xff);
     ui_draw_text(renderer, temp_text, temp_x + text_w + slider_w + 4, y + 8);
+
+    // Screen brightness slider (25 % .. 100 %), persisted in settings.json; F3 / F4 step it
+    int brt_x = ui->window_width - 400;   // right of the VM/AM readouts (end ~905), left of the t= readout (w - 250)
+    if (brt_x >= 920) {
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
+        ui_draw_text(renderer, "Brt:", brt_x, y + 8);
+        ui->brightness_slider = (Rect){brt_x + text_w, slider_y, slider_w, slider_h};
+        SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
+        SDL_Rect bb = {brt_x + text_w, slider_y, slider_w, slider_h};
+        SDL_RenderFillRect(renderer, &bb);
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0x60);
+        SDL_RenderDrawRect(renderer, &bb);
+        int bf = (int)(slider_w * (ui->brightness - 0.25f) / 0.75f);
+        bf = CLAMP(bf, 0, slider_w);
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
+        SDL_Rect bfr = {brt_x + text_w, slider_y, bf, slider_h};
+        SDL_RenderFillRect(renderer, &bfr);
+        char bt[16]; snprintf(bt, sizeof bt, "%d%%", (int)(ui->brightness * 100 + 0.5f));
+        ui_draw_text(renderer, bt, brt_x + text_w + slider_w + 4, y + 8);
+    } else {
+        ui->brightness_slider = (Rect){-100, -100, 0, 0};
+    }
     }  // End of else block (sliders have room)
+}
+
+void ui_set_brightness(UIState *ui, float b) {
+    ui->brightness = CLAMP(b, 0.25f, 1.0f);
+    char msg[64]; snprintf(msg, sizeof msg, "Brightness %d%% (F3 / F4, saved on exit)", (int)(ui->brightness * 100 + 0.5f));
+    ui_set_status(ui, msg);
+}
+
+void ui_render_brightness(UIState *ui, SDL_Renderer *renderer, int w, int h) {
+    if (ui->brightness >= 0.995f) return;
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, (Uint8)((1.0f - ui->brightness) * 255.0f));
+    SDL_Rect all = {0, 0, w, h};
+    SDL_RenderFillRect(renderer, &all);
 }
 
 void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer) {
@@ -6237,6 +6276,7 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (ui->dragging_temp) {
             ui->dragging_temp = false;
         }
+        ui->dragging_brightness = false;
         // Release palette scrollbar drag
         if (ui->palette_scrolling) {
             ui->palette_scrolling = false;
@@ -6310,6 +6350,13 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             normalized = CLAMP(normalized, 0.0f, 1.0f);
             g_environment.light_level = normalized;
             ui->dragging_light = true;
+            return UI_ACTION_NONE;
+        }
+
+        if (point_in_rect(x, y, &ui->brightness_slider)) {
+            float normalized = (float)(x - ui->brightness_slider.x) / ui->brightness_slider.w;
+            ui_set_brightness(ui, 0.25f + CLAMP(normalized, 0.0f, 1.0f) * 0.75f);
+            ui->dragging_brightness = true;
             return UI_ACTION_NONE;
         }
 
@@ -6830,6 +6877,12 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         float normalized = (float)(x - ui->env_light_slider.x) / ui->env_light_slider.w;
         normalized = CLAMP(normalized, 0.0f, 1.0f);
         g_environment.light_level = normalized;
+        return UI_ACTION_NONE;
+    }
+
+    if (ui->dragging_brightness) {
+        float normalized = (float)(x - ui->brightness_slider.x) / ui->brightness_slider.w;
+        ui_set_brightness(ui, 0.25f + CLAMP(normalized, 0.0f, 1.0f) * 0.75f);
         return UI_ACTION_NONE;
     }
 

@@ -48,6 +48,7 @@ typedef struct {
     UpdaterState updater;
     bool update_announced;       // status message shown once
     bool skip_update_check;      // --no-update-check
+    int  saved_window_w, saved_window_h;   // from settings.json (0 = default)
     bool show_voltages;
     bool show_current;
     double synced_time_div;      // scope time/div the sim dt was last matched to (0 = never)

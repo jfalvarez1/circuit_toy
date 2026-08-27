@@ -392,7 +392,9 @@ Create reusable subcircuits from your designs:
 - **Compact scope controls** - one primary row (V/T scale, Autoset, cursors, stacked view, sweep tracking, pop-out) plus Display / Trigger / Analysis tabs; the same layout drives the pop-out window
 - **Collapsible properties panel** - click its header to give the room to the scope
 - **Hover tooltips** on every button and palette item
-- **Search anywhere** - Ctrl+K or Ctrl+Space opens Spotlight, `/` jumps into the left-panel filter box; F2 toggles the on-canvas value labels
+- **Search anywhere** - Ctrl+K or Ctrl+Space opens Spotlight, `/` jumps into the left-panel filter box; both understand plain words (`mosfet`, `coil`, `transistor`, `battery`, `power line`) as well as part names; F2 toggles the on-canvas value labels
+- **Brightness** - `Brt` slider in the status bar (25-100 %) or F3 / F4; dims the whole window including the popped-out scope
+- **Remembered between runs** - window size, brightness, Parts/Circuits tab, value labels / voltages / current-flow / grid toggles, collapsed properties panel, speed, Lux and Tmp sliders are saved to `%APPDATA%\circuit_toy\circuit-playground\settings.json` on exit and restored at launch (independent of the exe folder, so updates never reset them; scripted `--shot`/`--record` runs never write it)
 - **Collapsible palette categories** - Click to expand/collapse component groups
 - **Grid-based placement** with snap-to-grid (toggle with 'S')
 - **Pan and zoom** - Middle mouse or Shift+drag to pan, scroll to zoom
@@ -531,6 +533,15 @@ build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
 build/tools/template_smoke.exe --response "RC BP"   # amplitude vs frequency of every node during the sweep
 build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
 build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template in the palette)
+```
+
+The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
+which produced the images in this README):
+
+```bash
+build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
+build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
+build/circuit-playground.exe --help
 ```
 
 The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,

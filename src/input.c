@@ -1239,6 +1239,10 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 ui->palette_filter[0] = 0;
                 return true;
             }
+            if (ui && (event->key.keysym.sym == SDLK_F3 || event->key.keysym.sym == SDLK_F4)) {   // screen brightness
+                ui_set_brightness(ui, ui->brightness + (event->key.keysym.sym == SDLK_F4 ? 0.05f : -0.05f));
+                return true;
+            }
             if (((event->key.keysym.sym == SDLK_k) || (event->key.keysym.sym == SDLK_SPACE)) && (SDL_GetModState() & KMOD_CTRL) && ui) {
                 ui_spotlight_open(ui);
                 return true;

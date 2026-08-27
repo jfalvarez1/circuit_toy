@@ -60,7 +60,8 @@ src_files = files(
   'src/file_io.c',
   'src/analysis.c',
   'src/threadpool.c',
-  'src/updater.c'
+  'src/updater.c',
+  'src/settings.c'
 )
 
 # Windows resource file for application icon

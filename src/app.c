@@ -13,6 +13,7 @@
 #endif
 #include "app.h"
 #include "version.h"
+#include "settings.h"
 #include "file_io.h"
 #include "circuits.h"
 #include "analysis.h"
@@ -131,6 +132,10 @@ bool app_init(App *app) {
     app->show_current = false;
     app->last_frame_time = SDL_GetTicks();
 
+    // Persistent preferences (brightness, window size, view toggles ...): %APPDATA%\circuit_toy\circuit-playground\settings.json
+    settings_load(app);
+    if (app->saved_window_w > 0 && app->saved_window_h > 0) SDL_SetWindowSize(app->window, app->saved_window_w, app->saved_window_h);
+
     ui_set_status(&app->ui, "Ready - Select a component or tool to begin");
 
     render_reset_view(app->render);
@@ -139,6 +144,7 @@ bool app_init(App *app) {
 }
 
 void app_shutdown(App *app) {
+    if (!app->cli_shot_path[0] && !app->cli_record_dir[0]) settings_save(app);   // scripted runs never overwrite the user's preferences
     updater_shutdown(&app->updater);
     // Cancel and wait for frequency sweep thread if running
     if (app->freq_sweep_thread_running && app->simulation) {
@@ -2180,6 +2186,7 @@ void app_render(App *app) {
     // Render synthwave LED trim on top
     ui_render_neon_trim(&app->ui, r);
     ui_render_tooltip(&app->ui, r);
+    ui_render_brightness(&app->ui, r, app->ui.window_width, app->ui.window_height);
 
     // Present main window
     SDL_RenderPresent(r);
@@ -2201,6 +2208,7 @@ void app_render(App *app) {
         ScopeCoordsBackup popup_backup = ui_setup_popup_scope_coords(&app->ui);
         ui_render_oscilloscope(&app->ui, popup_r, app->simulation, &app->analysis);
         ui_restore_popup_scope_coords(&app->ui, &popup_backup);
+        { int pw = 0, ph = 0; SDL_GetRendererOutputSize(popup_r, &pw, &ph); ui_render_brightness(&app->ui, popup_r, pw, ph); }
 
         // Present popup window
         SDL_RenderPresent(popup_r);

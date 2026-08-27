@@ -401,6 +401,9 @@ typedef struct {
     // Environment sliders (for LDR and Thermistor)
     Rect env_light_slider;          // Light level slider bounds
     Rect env_temp_slider;           // Temperature slider bounds
+    Rect brightness_slider;         // Screen brightness slider bounds (status bar)
+    float brightness;               // 0.25 .. 1.0 overall screen brightness (persisted)
+    bool dragging_brightness;
     bool dragging_light;            // Currently dragging light slider
     bool dragging_temp;             // Currently dragging temperature slider
 
@@ -580,6 +583,9 @@ void ui_layout_scope_buttons(UIState *ui, int x0, int y0, int max_x);
 // Fill out[] with every scope control button (SCOPE_BTN_N entries)
 void ui_scope_buttons(UIState *ui, Button *out[]);
 // Hover tooltip, drawn after everything else
+// Dims the whole frame to ui->brightness (draw last, before present)
+void ui_render_brightness(UIState *ui, SDL_Renderer *renderer, int w, int h);
+void ui_set_brightness(UIState *ui, float b);
 void ui_render_tooltip(UIState *ui, SDL_Renderer *renderer);
 
 // Setup popup scope coordinates for input handling
