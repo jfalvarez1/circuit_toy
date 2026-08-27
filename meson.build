@@ -75,6 +75,11 @@ endif
 inc_dirs = include_directories('include')
 
 # Build executable
+# SDL2 runtime next to the exe, so it starts from a taskbar pin / Explorer (DLL search = exe dir first)
+if host_machine.system() == 'windows'
+  configure_file(input: 'SDL2-8.dll', output: 'SDL2-8.dll', copy: true)
+endif
+
 executable('circuit-playground',
   src_files,
   include_directories : inc_dirs,
