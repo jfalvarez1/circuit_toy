@@ -13,6 +13,7 @@
  *        template_smoke --scope-test     (scope time/div <-> dt mapping checks)
  *        template_smoke --flow-test      (current-flow display invariants on all templates)
  *        template_smoke --burn-test      (no resistor/LED over its rating; HV templates must be clean)
+ *        template_smoke --std-test       (bus voltages vs ERCOT / NERC / ANSI C84.1 / NEC limits)
  *        template_smoke --osc-test       (oscillator templates really oscillate, at the right frequency)
  *        template_smoke --probe-test     (probe each template's output node, compare with hand calculation)
  *        template_smoke --geom-test      (schematic audit: diagonals, crossings, wires through bodies)
@@ -430,6 +431,18 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_IO_UART,          COMP_RESISTOR,  1, 0, "max", 3.33,  0.05, 1e-3,  "1k/2k divider: 5 V x 2/3" },
     { CIRCUIT_IO_RS485,         COMP_OPAMP,     0, 2, "amp", 2.5,   0.08, 12e-6, "receiver output 0/5 V despite 1 V common-mode noise" },
     { CIRCUIT_IO_SPMI,          COMP_CAPACITOR, 1, 0, "amp", 0.9,   0.08, 2e-6,  "1.8 V SDATA at the 15 pF load" },
+    { CIRCUIT_TX_69KV,          COMP_RESISTOR,  0, 0, "amp", 53900.0, 0.05, 100e-3, "69 kV bus at 0.957 pu with 20 MVA at 0.95 pf" },
+    { CIRCUIT_TX_LADDER,        COMP_RESISTOR,  5, 0, "amp", 332.0,  0.05, 100e-3, "240 V service at the bottom of the ladder (117.4 V per leg)" },
+    { CIRCUIT_TX_WIND,          COMP_TLINE,     0, 0, "amp", 28040.0, 0.05, 100e-3, "34.5 kV collector bus while the strings export" },
+    { CIRCUIT_TX_PLANT,         COMP_RESISTOR,  3, 0, "amp", 381.7,  0.05, 100e-3, "480 V shop bus behind two transformers" },
+    { CIRCUIT_RES_SERVICE,      COMP_RESISTOR,  3, 0, "amp", 168.7,  0.05, 100e-3, "L1 at the panel: 119.3 V rms" },
+    { CIRCUIT_RES_BRANCH,       COMP_RESISTOR,  1, 0, "amp", 161.6,  0.05, 100e-3, "#14 at 100 ft: 114.3 V, a 4.8 % drop" },
+    { CIRCUIT_RES_ACSTART,      COMP_RESISTOR,  1, 0, "max", 336.4,  0.05, 40e-3,  "panel before the contactor closes at 50 ms" },
+    { CIRCUIT_RES_SOLAR,        COMP_RESISTOR,  1, 0, "amp", 349.1,  0.05, 100e-3, "PCC lifted to 123.4 V by the 7.6 kW export" },
+    { CIRCUIT_COM_480Y,         COMP_RESISTOR,  1, 0, "amp", 388.7,  0.05, 100e-3, "480Y phase A bus (motor + 277 V lighting)" },
+    { CIRCUIT_COM_208Y,         COMP_RESISTOR,  1, 0, "amp", 168.3,  0.05, 100e-3, "208Y phase A branch bus, 20 A" },
+    { CIRCUIT_COM_PFC,          COMP_RESISTOR,  0, 0, "amp", 8.7,    0.08, 100e-3, "supply shunt: 174 Apk at 0.75 pf, bank open" },
+    { CIRCUIT_COM_ATS,          COMP_RESISTOR,  1, 0, "max", 328.8,  0.05, 300e-3, "life-safety load re-energised by the generator" },
     { CIRCUIT_SCHMITT_BISTABLE, COMP_OPAMP,     0, 2, "max", 15.0,  0.05, 30e-3, "bistable output at the rail" },
     { CIRCUIT_TRI_SQUARE_GEN,   COMP_OPAMP,     1, 2, "amp", 7.5,   0.08, 3e-3,  "triangle peak = 15 R1/R2" },
     { CIRCUIT_FUNCTION_GEN,     COMP_RESISTOR,  3, 1, "amp", 4.9,   0.15, 3e-3,  "3-breakpoint sine ~4.9 V peak" },
@@ -1380,6 +1393,78 @@ static int burn_test(void) {
     return hv_flagged ? 1 : 0;
 }
 
+
+/* --std-test: steady-state bus voltages against the standards the templates are sized to.
+   ERCOT Planning Guide / NERC TPL-001-5.1 P0: transmission 0.95-1.05 pu system normal.
+   ANSI C84.1 Range A: 114-126 V on a 120 V base (0.95-1.05 pu), 456-504 V on a 480 V service.
+   NEC 210.19(A): 3 % on a branch circuit.
+   Each row also pins the measured value, so a template cannot drift out of its documented
+   design point unnoticed. Rows whose expected pu sits outside the band are documented
+   exceptions (a heavily loaded line, the Ferranti rise, a deliberately undersized conductor).  */
+typedef struct {
+    CircuitTemplateType t; ComponentType ct; int ord, term;
+    double nom_pk, pu_expect, lo, hi; const char *std; const char *note;
+} StdCase;
+static const StdCase std_cases[] = {
+    { CIRCUIT_TX_69KV,      COMP_RESISTOR, 0, 0, 56340.0,  0.957, 0.95, 1.05, "ERCOT PG 4 / NERC TPL-001 P0", "69 kV bus, 20 MVA at 0.95 pf" },
+    { CIRCUIT_TX_LADDER,    COMP_RESISTOR, 0, 0, 281700.0, 0.990, 0.95, 1.05, "ERCOT PG 4 / NERC TPL-001 P0", "345 kV bus" },
+    { CIRCUIT_TX_LADDER,    COMP_RESISTOR, 1, 0, 112670.0, 0.969, 0.95, 1.05, "ERCOT PG 4 / NERC TPL-001 P0", "138 kV bus" },
+    { CIRCUIT_TX_LADDER,    COMP_RESISTOR, 2, 0, 56340.0,  0.957, 0.95, 1.05, "ERCOT PG 4 / NERC TPL-001 P0", "69 kV bus" },
+    { CIRCUIT_TX_LADDER,    COMP_RESISTOR, 3, 0, 10182.0,  0.987, 0.95, 1.05, "AEP LTC +5 % (8 steps)",       "12.47 kV distribution bus" },
+    { CIRCUIT_TX_LADDER,    COMP_RESISTOR, 5, 0, 339.41,   0.978, 0.95, 1.05, "ANSI C84.1 Range A",           "240 V service, 117.4 V per leg" },
+    { CIRCUIT_TX_WIND,      COMP_TLINE,    0, 0, 28170.0,  1.043, 0.95, 1.05, "ERCOT PG 4",                   "34.5 kV collector bus while exporting" },
+    { CIRCUIT_TX_PLANT,     COMP_RESISTOR, 1, 0, 3397.0,   0.981, 0.95, 1.05, "ANSI C84.1 Range A",           "4.16 kV motor bus" },
+    { CIRCUIT_TX_PLANT,     COMP_RESISTOR, 3, 0, 391.9,    0.974, 0.95, 1.05, "ANSI C84.1 Range A (480 V)",   "480 V shop bus" },
+    { CIRCUIT_RES_SERVICE,  COMP_RESISTOR, 3, 0, 169.71,   0.994, 0.95, 1.05, "ANSI C84.1 Range A",           "L1 at the panel, 119.3 V" },
+    { CIRCUIT_RES_SERVICE,  COMP_RESISTOR, 4, 1, 169.71,   0.997, 0.95, 1.05, "ANSI C84.1 Range A",           "L2 at the panel, 119.6 V" },
+    { CIRCUIT_RES_BRANCH,   COMP_RESISTOR, 3, 0, 169.71,   0.980, 0.97, 1.05, "NEC 210.19(A) 3 % branch",     "#10 at 100 ft: 2.0 % drop" },
+    { CIRCUIT_RES_BRANCH,   COMP_RESISTOR, 1, 0, 169.71,   0.952, 0.97, 1.05, "NEC 210.19(A) 3 % branch",     "#14 at 100 ft: 4.8 % - the documented counter-example" },
+    { CIRCUIT_RES_SOLAR,    COMP_RESISTOR, 1, 0, 339.41,   1.029, 0.95, 1.05, "IEEE 1547 / ANSI C84.1",       "PCC raised by the 7.6 kW export" },
+    { CIRCUIT_COM_480Y,     COMP_RESISTOR, 1, 0, 391.9,    0.992, 0.95, 1.05, "ANSI C84.1 Range A (480 V)",   "480Y phase A bus" },
+    { CIRCUIT_COM_208Y,     COMP_RESISTOR, 1, 0, 169.71,   0.992, 0.95, 1.05, "ANSI C84.1 Range A",           "208Y phase A, the 20 A branch" },
+    { CIRCUIT_HV_345_LINE,  COMP_RESISTOR, 0, 0, 281700.0, 0.937, 0.95, 1.05, "ERCOT PG 4 / NERC TPL-001 P0", "100 mi at 600 MW: past SIL, a documented heavy-load case" },
+    { CIRCUIT_HV_765_LINE,  COMP_RESISTOR, 0, 0, 624600.0, 0.957, 0.95, 1.05, "AEP 765 kV backbone",          "765 kV, 200 mi, 2 GW at 0.957 pu" },
+    { CIRCUIT_FERRANTI_LINE, COMP_TLINE,   0, 1, 281700.0, 1.139, 0.95, 1.05, "ERCOT PG 4",                   "open-ended 200 mi: +13.9 % Ferranti rise, a documented exception" },
+};
+static int std_test(void) {
+    int fails = 0, viol = 0;
+    printf("%-26s %-34s %7s %7s  %s\n", "template", "bus", "pu", "expect", "standard");
+    for (unsigned k = 0; k < sizeof std_cases / sizeof std_cases[0]; k++) {
+        const StdCase *c = &std_cases[k];
+        const CircuitTemplateInfo *ti = circuit_template_get_info(c->t);
+        Circuit *ct = circuit_create();
+        if (circuit_place_template(ct, c->t, 0, 0) <= 0) { circuit_free(ct); continue; }
+        Component *comp = NULL; int seen = 0;
+        for (int i = 0; i < ct->num_components; i++)
+            if (ct->components[i]->type == c->ct && seen++ == c->ord) { comp = ct->components[i]; break; }
+        if (!comp) { printf("[FAIL] %-26s component not found\n", ti ? ti->name : "?"); fails++; circuit_free(ct); continue; }
+        int node = comp->node_ids[c->term];
+        Simulation *sim = simulation_create(ct);
+        int ok = simulation_dc_analysis(sim);
+        simulation_set_time_step(sim, 1.0 / 60.0 / 400.0);
+        simulation_start(sim);
+        double pk = 0;
+        while (ok && sim->time < 0.1) {
+            if (!simulation_step(sim)) { ok = 0; break; }
+            if (sim->time > 0.05) { Node *nd = circuit_get_node(ct, node); double v = nd ? fabs(nd->voltage) : 0; if (v > pk) pk = v; }
+        }
+        double pu = pk / c->nom_pk;
+        int inband = (pu >= c->lo && pu <= c->hi);
+        int expect_inband = (c->pu_expect >= c->lo && c->pu_expect <= c->hi);
+        int drift = !(fabs(pu - c->pu_expect) <= 0.03);
+        if (!ok || drift) fails++;
+        if (!inband) viol++;
+        printf("%s %-26s %-34s %7.3f %7.3f  %s%s\n",
+               (!ok || drift) ? "[FAIL]" : inband ? "[ OK ]" : "[NOTE]",
+               ti ? ti->name : "?", c->note, pu, c->pu_expect, c->std,
+               inband ? "" : (expect_inband ? "  << OUTSIDE THE BAND" : "  (documented exception)"));
+        simulation_free(sim); circuit_free(ct);
+    }
+    printf("std-test: %u buses, %d drifted from the documented value, %d outside their band\n",
+           (unsigned)(sizeof std_cases / sizeof std_cases[0]), fails, viol);
+    return fails ? 1 : 0;
+}
+
 static int series_template(const char *filter, double t_end, int node_id) {
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
@@ -1416,6 +1501,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--scope-test")) return scope_dt_test();
         else if (!strcmp(argv[i], "--flow-test")) return flow_test();
         else if (!strcmp(argv[i], "--burn-test")) return burn_test();
+        else if (!strcmp(argv[i], "--std-test")) return std_test();
         else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt = atof(argv[++i]);
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();

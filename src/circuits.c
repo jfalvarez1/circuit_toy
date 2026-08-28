@@ -261,6 +261,18 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_IO_UART] = {"UART 5 V <-> 3.3 V", "UART", "Divider one way, direct the other way (TTL V_IH = 2 V)", TG_IC_IO},
     [CIRCUIT_IO_RS485] = {"RS-485 Differential Link", "RS485", "A/B antiphase, 120 ohm both ends, common-mode noise rejected", TG_IC_IO},
     [CIRCUIT_IO_SPMI] = {"SPMI Bus (1.8 V)", "SPMI", "MIPI two-wire: 1.8 V SCLK 5 MHz + SDATA, 33 ohm into 15 pF", TG_IC_IO},
+    [CIRCUIT_TX_69KV] = {"69 kV Subtransmission", "69kV", "AEP Texas 69 kV: 20 mi 336 ACSR into 20 MVA at 0.95 pf", TG_POWER_SYSTEMS},
+    [CIRCUIT_TX_LADDER] = {"Texas Voltage Ladder", "TXLad", "345 / 138 / 69 / 12.47 kV and the 240 V service in one canvas", TG_POWER_SYSTEMS},
+    [CIRCUIT_TX_WIND] = {"CREZ Wind Collector", "Wind", "34.5 kV strings -> collector -> 345 kV GSU -> ERCOT grid", TG_POWER_SYSTEMS},
+    [CIRCUIT_TX_PLANT] = {"13.8 kV Industrial Service", "13k8", "13.8/4.16 kV plant transformer, motor bus, 480 V shop", TG_POWER_SYSTEMS},
+    [CIRCUIT_RES_SERVICE] = {"240/120 V Service", "Split", "Centre-tapped pole transformer, unbalanced legs, neutral", TG_BUILDING},
+    [CIRCUIT_RES_BRANCH] = {"120 V Branch Circuits", "Branch", "#14 vs #10, 100 ft, 12 A: the NEC 3 % voltage drop", TG_BUILDING},
+    [CIRCUIT_RES_ACSTART] = {"AC Compressor Start", "ACstart", "LRA 104 A on a weak service: a 10 % flicker dip", TG_BUILDING},
+    [CIRCUIT_RES_SOLAR] = {"Rooftop Solar Backfeed", "Solar", "7.6 kW export raises the PCC (IEEE 1547 / C84.1)", TG_BUILDING},
+    [CIRCUIT_COM_480Y] = {"480Y/277 V Service", "480Y", "3-phase 30 hp motor plus 277 V lighting", TG_BUILDING},
+    [CIRCUIT_COM_208Y] = {"208Y/120 V Panel", "208Y", "Unbalanced 20/12/6 A and the shared neutral (NEC 220.61)", TG_BUILDING},
+    [CIRCUIT_COM_PFC] = {"Power Factor Correction", "PFC", "0.75 -> 0.95 pf with a switched 478 uF bank", TG_BUILDING},
+    [CIRCUIT_COM_ATS] = {"Standby Generator Transfer", "ATS", "Utility drops, the generator picks the load up (NEC 700)", TG_BUILDING},
 
 
 
@@ -6162,6 +6174,18 @@ static int place_io_spi(Circuit *circuit, float x, float y);
 static int place_io_uart(Circuit *circuit, float x, float y);
 static int place_io_rs485(Circuit *circuit, float x, float y);
 static int place_io_spmi(Circuit *circuit, float x, float y);
+static int place_tx_69kv(Circuit *circuit, float x, float y);
+static int place_tx_ladder(Circuit *circuit, float x, float y);
+static int place_tx_wind(Circuit *circuit, float x, float y);
+static int place_tx_plant(Circuit *circuit, float x, float y);
+static int place_res_service(Circuit *circuit, float x, float y);
+static int place_res_branch(Circuit *circuit, float x, float y);
+static int place_res_acstart(Circuit *circuit, float x, float y);
+static int place_res_solar(Circuit *circuit, float x, float y);
+static int place_com_480y(Circuit *circuit, float x, float y);
+static int place_com_208y(Circuit *circuit, float x, float y);
+static int place_com_pfc(Circuit *circuit, float x, float y);
+static int place_com_ats(Circuit *circuit, float x, float y);
 static int place_template_body(Circuit *circuit, CircuitTemplateType type, float x, float y) {
     if (!circuit) return 0;
 
@@ -6327,6 +6351,18 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_IO_UART:          return place_io_uart(circuit, x, y);
         case CIRCUIT_IO_RS485:         return place_io_rs485(circuit, x, y);
         case CIRCUIT_IO_SPMI:          return place_io_spmi(circuit, x, y);
+        case CIRCUIT_TX_69KV:          return place_tx_69kv(circuit, x, y);
+        case CIRCUIT_TX_LADDER:        return place_tx_ladder(circuit, x, y);
+        case CIRCUIT_TX_WIND:          return place_tx_wind(circuit, x, y);
+        case CIRCUIT_TX_PLANT:         return place_tx_plant(circuit, x, y);
+        case CIRCUIT_RES_SERVICE:      return place_res_service(circuit, x, y);
+        case CIRCUIT_RES_BRANCH:       return place_res_branch(circuit, x, y);
+        case CIRCUIT_RES_ACSTART:      return place_res_acstart(circuit, x, y);
+        case CIRCUIT_RES_SOLAR:        return place_res_solar(circuit, x, y);
+        case CIRCUIT_COM_480Y:         return place_com_480y(circuit, x, y);
+        case CIRCUIT_COM_208Y:         return place_com_208y(circuit, x, y);
+        case CIRCUIT_COM_PFC:          return place_com_pfc(circuit, x, y);
+        case CIRCUIT_COM_ATS:          return place_com_ats(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6448,6 +6484,18 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_IO_UART] = {"UART BETWEEN 5 V AND 3.3 V PARTS: TX of the 5 V device goes through a 1k / 2k divider, so the", "3.3 V RX pin sees 3.33 V (never 5 V straight in - the ESD diode would conduct). The other", "direction needs nothing: a 5 V TTL input takes anything above V_IH = 2 V as HIGH, so the", "3.3 V TX drives it directly (the inverter here is the 5 V input stage). Idle level is HIGH.", "PROBE: 5 V TX, 3.3 V RX node, 3.3 V TX (extra) and the 5 V receiver output (extra)."},
     [CIRCUIT_IO_RS485] = {"RS-485 (differential, half-duplex): A carries the data, B its complement (the inverter),", "120 ohm at both ends of the pair so the line is matched. The receiver is a comparator on", "A - B: it only needs a 200 mV difference. 1 V of 100 kHz noise is injected into BOTH wires", "(ground shift, coupling) - each wire wobbles, the difference does not, and the output is a", "clean 0 / 5 V copy of the data. That is why every long industrial bus is differential.", "PROBE: data, A at the far end (extra), B at the far end (extra), receiver output. Stack."},
     [CIRCUIT_IO_SPMI] = {"SPMI (MIPI System Power Management Interface): the two-wire 1.8 V bus between an SoC and", "its PMIC. SCLK (5 MHz here, up to 26 MHz) and SDATA are push-pull, 33 ohm into 15 pF of", "on-board load. Bus arbitration and the SDATA bus-keeper are protocol level (not modelled);", "the electrical lesson is the 1.8 V swing: V_IH ~ 1.2 V leaves ~0.6 V of noise margin, so", "ground bounce and crosstalk that a 5 V bus shrugs off will corrupt this one.", "PROBE: SCLK source, SDATA at the load and SCLK at the load (extra). 50 ns/div."},
+    [CIRCUIT_TX_69KV] = {"AEP TEXAS 69 kV SUBTRANSMISSION: 20 miles of 336.4 ACSR (Linnet) is 6.1 + j15 ohm.", "The load is 20 MVA three-phase at 0.95 pf lagging - AEP's design power factor - so per phase", "226 ohm in series with 197 mH. The receiving bus lands at 0.957 pu, inside the 0.95-1.05 pu", "ERCOT Planning Guide / NERC TPL-001 system-normal band with almost nothing to spare.", "PROBE: sending bus (source) and the load bus. Both are 60 Hz sines; read the peaks.", "TRY: 25 MVA -> 0.946 pu, a steady-state violation. Model 1 -> 2 gives the line its charging."},
+    [CIRCUIT_TX_LADDER] = {"TEXAS VOLTAGE LADDER: every level a Texas electron passes through. 345 kV (ERCOT's highest", "transmission voltage) -> 138 kV -> 69 kV subtransmission -> 12.47 kV distribution -> the 240 V", "service, with a tap load at each level (300 / 100 / 15 / 3 MW and a 10 kW house). The 69/12.47 kV", "substation transformer carries its LTC 8 steps up (+5 %, 0.625 % per step) - without it the house", "sits at 112 V, below ANSI C84.1 Range A. Buses: 0.99 / 0.97 / 0.96 / 0.99 pu, service 117.7 V.", "PROBE: 345 kV source, the house, and the 138 / 69 / 12.47 kV buses. Use Stack + Fit."},
+    [CIRCUIT_TX_WIND] = {"CREZ WIND COLLECTOR: the Texas build-out that put 345 kV lines out to the Panhandle. Two", "34.5 kV turbine strings (each behind its pad transformer, 1 + j2 ohm) feed a 6 mi collector", "cable, a 34.5/345 kV GSU and 30 mi of 345 kV line into the ERCOT grid. The strings run 6 deg", "ahead of the grid: that angle is what pushes ~50 MW out, and it lifts the collector bus above", "the grid - the voltage-rise problem every collector system has. ERCOT wants 0.95 pf at the POI.", "PROBE: string A, the collector bus, the 345 kV POI. TRY: open the string-B switch."},
+    [CIRCUIT_TX_PLANT] = {"AEP 13.8 kV INDUSTRIAL SERVICE: a 13.8 kV primary (2 mi of 4/0) into the plant's 13.8/4.16 kV", "transformer. The 4.16 kV bus carries a 2500 hp motor group (0.88 pf) and feeds a 4160/480 V", "shop transformer with 300 kVA of 0.95 pf load. This is the standard industrial ladder: medium", "voltage for the big motors, 480 V for everything else.", "PROBE: 13.8 kV source, the 480 V shop bus, and the 4.16 kV motor bus.", "TRY: the motor R down (more load) and watch both downstream buses sag together."},
+    [CIRCUIT_RES_SERVICE] = {"240/120 V RESIDENTIAL SERVICE: the pole transformer is two 7200:120 windings in series and", "the joint is the grounded neutral, so L1 and L2 are 120 V either side of it and 240 V apart.", "1.2 kW on L1, 600 W on L2, a 4.8 kW range across 240 V. The neutral carries only the", "difference of the two 120 V legs (10 A - 5 A = 5 A), which is why it can be smaller.", "PROBE: primary, L1, L2 and the range. L1 and L2 are 180 deg apart - that is the 240 V.", "TRY: neutral 0.02 -> 5 ohm (a corroded splice): L1 collapses, L2 rises past 126 V."},
+    [CIRCUIT_RES_BRANCH] = {"120 V BRANCH CIRCUITS: the same 12 A load (80 % of a 15 A circuit) at the end of 100 ft of", "#14 copper and of 100 ft of #10. Both conductors count, so #14 is 2 x 100 x 2.525/1000 =", "0.505 ohm and #10 is 0.20 ohm. The loads land at 114.2 V (4.8 %) and 117.7 V (2.0 %). NEC 210.19(A)", "informs 3 % on a branch and 5 % overall - the #14 run misses it, the #10 run passes.", "PROBE: the panel, the #14 load and the #10 load. Read the peaks: 169.7 / 161 / 166 V.", "TRY: halve the load current, or run the #14 circuit only 50 ft, and it comes into compliance."},
+    [CIRCUIT_RES_ACSTART] = {"AC COMPRESSOR START: a 5-ton condenser draws its locked-rotor current (104 A at 0.5 pf) for", "the first fraction of a second. On a long rural service (0.20 + j0.12 ohm of transformer and", "conductor) the panel falls from 333 to 310 Vpk - a 7 % dip to 219 V (109.6 V per leg) - and", "every lamp dims. IEEE 1453 and AEP distribution practice allow roughly 3 % for a rare start.", "PROBE: utility, the panel and the motor branch. The contactor closes at 50 ms.", "TRY: service R 0.20 -> 0.05 ohm (bigger transformer / conductor), or a soft starter."},
+    [CIRCUIT_RES_SOLAR] = {"ROOFTOP SOLAR BACKFEED: a 7.6 kW inverter pushes 31.7 A back through the 0.25 ohm service.", "Current out of the house instead of into it means the voltage at the point of common coupling", "rises rather than sags: +7.9 V, so about 124 V per leg. IEEE 1547-2018 and the ERCOT DG rules", "require the PCC to stay inside ANSI C84.1 Range A (114-126 V) while exporting.", "PROBE: utility, the PCC and the house load. Compare the PCC peak with the utility peak.", "TRY: double the inverter current - the PCC passes 126 V, where volt-var / volt-watt kicks in."},
+    [CIRCUIT_COM_480Y] = {"480Y/277 V COMMERCIAL SERVICE: the standard American commercial system. Each phase is 277 V", "to neutral, 480 V phase to phase. A 30 hp motor (0.85 pf) sits across all three phases and", "6 kW of 277 V lighting hangs on phase A - NEC 210.6(C) allows 277 V luminaires. Phase A is", "loaded more heavily, so it sits slightly lower than B and C.", "PROBE: phase A source and the three phase buses. Stack shows the 120 deg spacing.", "TRY: Range A for a 480 V service is 456-504 V line-to-line, i.e. 263-291 V here."},
+    [CIRCUIT_COM_208Y] = {"208Y/120 V PANEL: three 120 V branches loaded 20 / 12 / 6 A. Because the phases are 120 deg", "apart the neutral carries the vector unbalance, not the sum: sqrt(a^2+b^2+c^2-ab-bc-ca) =", "12.2 A, not 38 A. That is why NEC 220.61 lets the neutral be sized on the unbalance.", "The 0.05 ohm shared neutral lifts the panel neutral slightly, so the loaded phase sags and", "the light one rises. PROBE: source A and the three branch buses.", "TRY: neutral 0.05 -> 1 ohm and the three 120 V branches spread apart badly."},
+    [CIRCUIT_COM_PFC] = {"POWER FACTOR CORRECTION: a 33 kVA motor at 0.75 pf lagging on a 277 V phase draws 120 A,", "but only 25 kW of that is real. Close the switch and a 478 uF bank supplies 13.8 kvar", "locally: the same kW now needs 95 A, a 21 % smaller supply current. The scope watches a", "0.05 ohm shunt in the supply return, so 50 mV on CH1 is one amp.", "ERCOT / AEP tariffs price reactive power and NERC VAR-001 makes it a planning obligation.", "TRY: 956 uF over-corrects into a leading pf and the current climbs again."},
+    [CIRCUIT_COM_ATS] = {"STANDBY GENERATOR TRANSFER: the utility contactor opens at 50 ms (an outage) and the", "generator contactor closes at 70 ms, so the life-safety load is dead for 20 ms. This is an", "open-transition transfer - the two sources are never closed together, which is what keeps a", "generator from being back-fed into the utility. NEC 700 gives emergency systems 10 s to", "transfer, NEC 701 gives legally required standby 60 s; NFPA 110 Type 10 is the 10 s class.", "PROBE: utility, the load bus and the generator. TRY: overlap the contactors and watch them fight."},
 };
 
 
@@ -8389,6 +8437,366 @@ static int place_io_rs485(Circuit *circuit, float x, float y) {
 #undef TN
 #undef TW
 
+// ---------------------------------------------------------------------------------------
+// Texas voltage levels, and the residential / commercial services at the end of the line.
+//
+// Standards the numbers are sized against (see docs/RESEARCH_ERCOT_STANDARDS.md):
+//   ERCOT Planning Guide 4 / Nodal Operating Guide 2 - transmission bus 0.95-1.05 pu system
+//     normal (NERC TPL-001-5.1 P0), 0.90-1.10 pu post-contingency (P1-P7).
+//   NERC PRC-023 relay loadability (150 % of the highest emergency rating), VAR-001 reactive
+//     planning, PRC-006 / ERCOT UFLS 59.3 / 58.9 / 58.5 Hz, PRC-024 ride-through.
+//   AEP Texas: 345 / 138 / 69 kV transmission and subtransmission, 34.5 / 12.47 kV distribution,
+//     LTC +/-10 % in 32 steps of 0.625 %, 0.95 pf design point at the delivery point.
+//   ANSI C84.1 Range A: service 114-126 V, utilization 110-125 V (120 V base); 456-504 V for 480 V.
+//   NEC 210.19(A)/215.2(A) informational notes: 3 % branch, 5 % feeder + branch voltage drop.
+//   IEEE 1547-2018 / ERCOT DG: the PCC stays inside ANSI C84.1 Range A while exporting.
+//   IEEE 1453 / AEP distribution planning: ~3 % voltage dip for infrequent motor starts.
+//
+// Everything transmission-side is a single-phase (phase-to-neutral) equivalent at 60 Hz.
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+
+// horizontal transmission line: terminals (x-40,y) and (x+40,y); returns the far node
+static int line_seg(Circuit *circuit, float x, float y, int in, double mi, double r, double xr, double b_us, int model) {
+    Component *t = add_tline(circuit, x, y, 0, mi, r, xr, b_us, model);
+    int l = TN(x - 40, y), rr = TN(x + 40, y);
+    if (in >= 0 && in != l) TW(in, l);
+    t->node_ids[0] = l; t->node_ids[1] = rr;
+    return rr;
+}
+// horizontal resistance (conductor / service drop): terminals (x-40,y),(x+40,y)
+static int res_seg(Circuit *circuit, float x, float y, int in, double R) {
+    Component *r = hres(circuit, x, y, R);
+    int l = TN(x - 40, y), rr = TN(x + 40, y);
+    if (in >= 0 && in != l) TW(in, l);
+    r->node_ids[0] = l; r->node_ids[1] = rr;
+    return rr;
+}
+// series R-L shunt load from node `n` at (x,y) down to ground (L = 0 -> resistor only)
+static Component *rl_load(Circuit *circuit, float x, float y, int n, double R, double L) {
+    Component *r = add_comp(circuit, COMP_RESISTOR, x, y + 40, 90);          // (x,y)-(x,y+80)
+    r->props.resistor.resistance = R;
+    int t = TN(x, y), m = TN(x, y + 80);
+    if (n >= 0 && n != t) TW(n, t);
+    r->node_ids[0] = t;
+    if (L > 0) {
+        Component *l = add_comp(circuit, COMP_INDUCTOR, x, y + 120, 90);     // (x,y+80)-(x,y+160)
+        l->props.inductor.inductance = L;
+        int bt = TN(x, y + 160);
+        Component *g = add_comp(circuit, COMP_GROUND, x, y + 180, 0);
+        r->node_ids[1] = m; l->node_ids[0] = m; l->node_ids[1] = bt; g->node_ids[0] = bt;
+    } else {
+        Component *g = add_comp(circuit, COMP_GROUND, x, y + 100, 0);        // terminal (x,y+80)
+        r->node_ids[1] = m; g->node_ids[0] = m;
+    }
+    return r;
+}
+
+// 1. AEP Texas 69 kV subtransmission: 20 mi of 336 ACSR into 20 MVA at 0.95 pf lag
+static int place_tx_69kv(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 56340.0); if (!v) return 0;      // 69 kV L-L -> 39.84 kV L-N -> 56.34 kVpk
+    int sp = TN(x, y + 20);
+    v->node_ids[0] = sp;
+    int bus = line_seg(circuit, x + 160, y + 20, sp, 20.0, 0.306, 0.75, 5.4, 1);   // 336.4 ACSR Linnet
+    int b2 = TN(x + 300, y + 20); TW(bus, b2);
+    rl_load(circuit, x + 300, y + 20, b2, 226.2, 197.1e-3);                  // 20 MVA 3ph at 0.95 pf lag
+    add_label(circuit, x - 40, y - 60, "AEP Texas 69 kV subtransmission: 20 mi 336 ACSR (6.1 + j15 ohm), 20 MVA at 0.95 pf -> 0.957 pu (ERCOT limit 0.95)");
+    return 8;
+}
+
+// 2. Texas voltage ladder: 345 -> 138 -> 69 -> 12.47 kV -> 240 V, a tap load at every level
+static int place_tx_ladder(Circuit *circuit, float x, float y) {
+    // per row: [0] line mi, r, x, b; [1] tap R; [2] transformer ratio
+    Component *v = ac_source(circuit, x, y, 281700.0); if (!v) return 0;     // 345 kV L-L -> 199.2 kV L-N
+    int in = TN(x, y + 20); v->node_ids[0] = in;
+    static const double mi[4] = { 30, 20, 10, 3 };
+    static const double rr[4] = { 0.06, 0.13, 0.306, 0.30 };
+    static const double xx[4] = { 0.55, 0.72, 0.75, 0.65 };
+    static const double bb[4] = { 8.0, 6.0, 5.4, 0.0 };
+    static const double tap[4] = { 396.8, 190.4, 317.4, 51.84 };             // 300 / 100 / 15 / 3 MW three-phase
+    static const double ratio[4] = { 0.4, 0.5, 0.189735, 0.0333333 };        // 345/138, 138/69, 69/12.47 with LTC +5 %, 7.2 kV/240 V
+    static const char *lbl[4] = { "345 kV bus (0.99 pu)", "138 kV bus (0.97 pu)", "69 kV bus (0.96 pu)", "12.47 kV bus (0.99 pu, LTC +5 %)" };
+    for (int k = 0; k < 4; k++) {
+        float ry = y + 20 + k * 260;
+        int bus = line_seg(circuit, x + 160, ry, in, mi[k], rr[k], xx[k], bb[k], 1);
+        int b2 = TN(x + 300, ry); TW(bus, b2);
+        rl_load(circuit, x + 300, ry, b2, tap[k], 0);
+        add_label(circuit, x + 120, ry - 30, lbl[k]);
+        int sec = xfmr_row(circuit, x + 520, ry, ratio[k], b2);              // P1(x+470,ry) S1(x+570,ry)
+        if (k < 3) {                                                        // carry the secondary down to the next row
+            int d1 = TN(x + 620, ry), d2 = TN(x + 620, ry + 220), d3 = TN(x, ry + 220), d4 = TN(x, ry + 260);
+            TW(sec, d1); TW(d1, d2); TW(d2, d3); TW(d3, d4);
+            in = d4;
+        } else {
+            int serv = res_seg(circuit, x + 660, ry, sec, 0.05);             // 100 ft 4/0 AL service drop
+            int h = TN(x + 740, ry); TW(serv, h);
+            rl_load(circuit, x + 740, ry, h, 5.76, 0);                       // 10 kW house at 240 V
+            add_label(circuit, x + 640, ry - 30, "240 V service (117.7 V per leg)");
+        }
+    }
+    add_label(circuit, x - 40, y - 60, "TEXAS VOLTAGE LADDER - 345 / 138 / 69 / 12.47 kV and the 240 V service, each with its own tap load");
+    return 40;
+}
+
+// 3. CREZ wind collector: two 34.5 kV strings -> 6 mi collector -> 34.5/345 kV GSU -> 30 mi 345 kV to the grid
+static int place_tx_wind(Circuit *circuit, float x, float y) {
+    Component *g1 = ac_source(circuit, x, y, 29300.0); if (!g1) return 0;    // string A behind its pad transformer, +3.5 %
+    g1->props.ac_voltage.phase = 6.0;
+    Component *g2 = ac_source(circuit, x, y + 200, 29300.0);
+    g2->props.ac_voltage.phase = 6.0;
+    int s1 = TN(x, y + 20), s2 = TN(x, y + 220);
+    g1->node_ids[0] = s1; g2->node_ids[0] = s2;
+    int a1 = res_seg(circuit, x + 100, y + 20, s1, 1.0);                     // string A pad transformer + cable
+    Component *la = add_comp(circuit, COMP_INDUCTOR, x + 200, y + 20, 0); la->props.inductor.inductance = 5.3e-3;
+    int al = TN(x + 160, y + 20), ar = TN(x + 240, y + 20); TW(a1, al);
+    la->node_ids[0] = al; la->node_ids[1] = ar;
+    Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 320, y + 220, 0);   // string B disconnect (closed)
+    sw->props.switch_spst.closed = true;
+    int b1 = res_seg(circuit, x + 100, y + 220, s2, 1.0);
+    Component *lb = add_comp(circuit, COMP_INDUCTOR, x + 200, y + 220, 0); lb->props.inductor.inductance = 5.3e-3;
+    int bl = TN(x + 160, y + 220), br = TN(x + 240, y + 220); TW(b1, bl);
+    lb->node_ids[0] = bl; lb->node_ids[1] = br;
+    int swl = TN(x + 280, y + 220), swr = TN(x + 360, y + 220); TW(br, swl);
+    sw->node_ids[0] = swl; sw->node_ids[1] = swr;
+    int coll = TN(x + 420, y + 20), cb = TN(x + 420, y + 220);              // 34.5 kV collector bus
+    TW(ar, coll); TW(swr, cb); TW(cb, coll);
+    int cf = line_seg(circuit, x + 520, y + 20, coll, 6.0, 0.15, 0.12, 0.0, 0);   // 6 mi 1000 kcmil collector cable
+    int gsu = xfmr_row(circuit, x + 700, y + 20, 10.0, cf);                 // 34.5 -> 345 kV GSU (P1 x+650, S1 x+750)
+    int poi = line_seg(circuit, x + 860, y + 20, gsu, 30.0, 0.06, 0.55, 8.0, 1);  // 30 mi 345 kV to the POI
+    Component *grid = ac_source(circuit, x + 1000, y + 60, 281700.0);       // ERCOT 345 kV bus, + terminal (x+1000,y+80)
+    int gp = TN(x + 1000, y + 80), pj = TN(x + 940, y + 20), pj2 = TN(x + 940, y + 80);
+    TW(poi, pj); TW(pj, pj2); TW(pj2, gp);
+    grid->node_ids[0] = gp;
+    add_label(circuit, x - 40, y - 60, "CREZ WIND COLLECTOR: two 34.5 kV strings -> 6 mi collector -> 34.5/345 kV GSU -> 30 mi to the ERCOT 345 kV grid");
+    add_label(circuit, x + 260, y + 300, "Open the string-B switch (or set the string phase to 0 deg) and the export - and the collector voltage rise - collapse");
+    return 20;
+}
+
+// 4. AEP 13.8 kV industrial service: 13.8/4.16 kV plant transformer, motor bus + 480 V shop feeder
+static int place_tx_plant(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 11267.0); if (!v) return 0;      // 13.8 kV L-L -> 7.97 kV L-N -> 11.27 kVpk
+    int sp = TN(x, y + 20); v->node_ids[0] = sp;
+    int feed = res_seg(circuit, x + 120, y + 20, sp, 1.2);                   // 2 mi 4/0 primary
+    int bus = TN(x + 200, y + 20); TW(feed, bus);
+    int mv = xfmr_row(circuit, x + 340, y + 20, 0.30145, bus);              // 13.8/4.16 kV (4.16/13.8)
+    int m2 = TN(x + 460, y + 20); TW(mv, m2);
+    rl_load(circuit, x + 460, y + 20, m2, 5.77, 3.06e-3);                    // 2500 hp motor bus, 0.88 pf
+    int lv = xfmr_row(circuit, x + 640, y + 20, 0.11538, m2);               // 4.16 kV -> 480 V shop
+    int l2 = res_seg(circuit, x + 760, y + 20, lv, 0.02);                   // 200 ft of 480 V feeder
+    rl_load(circuit, x + 840, y + 20, l2, 2.56, 0.84e-3);                    // 300 kVA shop load at 0.95 pf
+    add_label(circuit, x - 40, y - 60, "AEP 13.8 kV INDUSTRIAL SERVICE: 13.8/4.16 kV plant transformer, 2500 hp motor bus, 4160/480 V shop feeder");
+    return 16;
+}
+
+// 5. 240/120 V residential service: centre-tapped pole transformer, unbalanced legs, neutral conductor
+static int place_res_service(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 10182.0); if (!v) return 0;      // 12.47Y/7.2 kV primary, 7.2 kV L-N
+    int pri = TN(x, y + 20); v->node_ids[0] = pri;
+    Component *ta = add_comp(circuit, COMP_TRANSFORMER, x + 200, y + 40, 0);   // P1(150,20) P2(150,60) S1(250,20) S2(250,60)
+    Component *tb = add_comp(circuit, COMP_TRANSFORMER, x + 200, y + 200, 0);  // P1(150,180) P2(150,220) S1(250,180) S2(250,220)
+    ta->props.transformer.turns_ratio = 0.0166667; tb->props.transformer.turns_ratio = 0.0166667;
+    int p1a = TN(x + 150, y + 20), p2a = TN(x + 150, y + 60), p1b = TN(x + 150, y + 180), p2b = TN(x + 150, y + 220);
+    TW(pri, p1a); TW(p1a, p1b);
+    Component *gp = add_comp(circuit, COMP_GROUND, x + 110, y + 120, 0);     // primary neutral, terminal (110,100)
+    int pn = TN(x + 110, y + 100); TW(p2a, TN(x + 110, y + 60)); TW(TN(x + 110, y + 60), pn); TW(pn, TN(x + 110, y + 220)); TW(TN(x + 110, y + 220), p2b);
+    gp->node_ids[0] = pn;
+    int s1a = TN(x + 250, y + 20), s2a = TN(x + 250, y + 60), s1b = TN(x + 250, y + 180), s2b = TN(x + 250, y + 220);
+    ta->node_ids[0] = p1a; ta->node_ids[1] = p2a; ta->node_ids[2] = s1a; ta->node_ids[3] = s2a;
+    tb->node_ids[0] = p1b; tb->node_ids[1] = p2b; tb->node_ids[2] = s1b; tb->node_ids[3] = s2b;
+    int ct = TN(x + 300, y + 120);                                           // centre tap = system neutral
+    TW(s2a, TN(x + 300, y + 60)); TW(TN(x + 300, y + 60), ct); TW(ct, TN(x + 300, y + 180)); TW(TN(x + 300, y + 180), s1b);
+    int l1 = res_seg(circuit, x + 400, y + 20, s1a, 0.02);                   // 100 ft 4/0 AL triplex, L1
+    int l2 = res_seg(circuit, x + 400, y + 220, s2b, 0.02);                  // L2
+    int nn = res_seg(circuit, x + 400, y + 120, ct, 0.02);                   // neutral conductor
+    Component *gn = add_comp(circuit, COMP_GROUND, x + 440, y + 160, 0);     // grounded neutral at the panel, terminal (440,140)
+    int np = TN(x + 440, y + 120), ng = TN(x + 440, y + 140); TW(nn, np); TW(np, ng);
+    gn->node_ids[0] = ng;
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 520, y + 60, 90);   // L1-N 1.2 kW: (520,20)-(520,100)
+    r1->props.resistor.resistance = 12.0;
+    int r1t = TN(x + 520, y + 20), r1b = TN(x + 520, y + 100);
+    TW(l1, r1t);
+    r1->node_ids[0] = r1t; r1->node_ids[1] = r1b;
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 520, y + 160, 90);  // L2-N 600 W: (520,120)-(520,200)
+    r2->props.resistor.resistance = 24.0;
+    int r2t = TN(x + 520, y + 120), r2b = TN(x + 520, y + 200);
+    TW(r1b, r2t); TW(np, r2t);                                               // both returns land on the neutral
+    int l2j = TN(x + 520, y + 220); TW(r2b, l2j); TW(l2j, l2);
+    r2->node_ids[0] = r2t; r2->node_ids[1] = r2b;
+    Component *r3 = add_comp(circuit, COMP_RESISTOR, x + 620, y + 120, 90);  // 240 V range 4.8 kW: (620,80)-(620,160)
+    r3->props.resistor.resistance = 12.0;
+    int r3t = TN(x + 620, y + 80), r3b = TN(x + 620, y + 160), r3j = TN(x + 620, y + 20), r3k = TN(x + 620, y + 220);
+    TW(r1t, r3j); TW(r3j, r3t);
+    TW(r3b, r3k); TW(r3k, l2j);
+    r3->node_ids[0] = r3t; r3->node_ids[1] = r3b;
+    add_label(circuit, x - 40, y - 60, "240/120 V RESIDENTIAL SERVICE: centre-tapped pole transformer, 1.2 kW on L1, 600 W on L2, 4.8 kW range across 240 V");
+    add_label(circuit, x + 360, y + 300, "Raise the neutral conductor to 5 ohm (a corroded connection): L1 collapses and L2 rises past 126 V - the open-neutral failure");
+    return 18;
+}
+
+// 6. 120 V branch circuits: 100 ft of #14 and 100 ft of #10 feeding the same 12 A load (NEC 210.19(A))
+static int place_res_branch(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 169.71); if (!v) return 0;       // 120 V rms
+    int sp = TN(x, y + 20); v->node_ids[0] = sp;
+    int p14 = res_seg(circuit, x + 140, y + 20, sp, 0.505);                  // #14 Cu, 100 ft, both conductors
+    int n14 = TN(x + 240, y + 20); TW(p14, n14);
+    rl_load(circuit, x + 240, y + 20, n14, 10.0, 0);                         // 12 A load
+    int t1 = TN(x + 100, y + 20), b2 = TN(x + 100, y + 220); TW(t1, b2);    // tap the panel, not the source's return
+    int p10 = res_seg(circuit, x + 140, y + 220, b2, 0.200);                 // #10 Cu, 100 ft
+    int n10 = TN(x + 240, y + 220); TW(p10, n10);
+    rl_load(circuit, x + 240, y + 220, n10, 10.0, 0);
+    add_label(circuit, x - 40, y - 60, "120 V BRANCH CIRCUITS (NEC 210.19(A)): the same 12 A load 100 ft away on #14 (0.505 ohm) and on #10 (0.20 ohm)");
+    add_label(circuit, x + 100, y + 340, "#14: 114.2 V at the load = 4.8 % drop, over the 3 % guideline. #10: 117.7 V = 2.0 %, compliant");
+    return 10;
+}
+
+// 7. AC compressor start: 5-ton unit, LRA 104 A, on a long rural 240 V service (IEEE 1453 flicker)
+static int place_res_acstart(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 339.41); if (!v) return 0;       // 240 V rms
+    int sp = TN(x, y + 20); v->node_ids[0] = sp;
+    int sr = res_seg(circuit, x + 120, y + 20, sp, 0.20);                    // transformer + 200 ft service
+    Component *ls = add_comp(circuit, COMP_INDUCTOR, x + 220, y + 20, 0); ls->props.inductor.inductance = 0.318e-3;
+    int ll = TN(x + 180, y + 20), lr = TN(x + 260, y + 20); TW(sr, ll);
+    ls->node_ids[0] = ll; ls->node_ids[1] = lr;
+    int bus = TN(x + 320, y + 20); TW(lr, bus);                              // house panel
+    rl_load(circuit, x + 320, y + 20, bus, 28.8, 0);                         // 2 kW of lighting / receptacles
+    Component *sw = fault_switch(circuit, x + 460, y + 20, 0.050, 0.120, 0.400);   // IN(420,20) OUT(500,20): compressor contactor
+    TW(bus, TN(x + 420, y + 20)); sw->node_ids[0] = TN(x + 420, y + 20);
+    int mtr = TN(x + 500, y + 20); sw->node_ids[1] = mtr;
+    int m2 = TN(x + 560, y + 20); TW(mtr, m2);
+    rl_load(circuit, x + 560, y + 20, m2, 1.15, 5.30e-3);                    // locked rotor: 104 A at 0.5 pf
+    add_label(circuit, x - 40, y - 60, "AC COMPRESSOR START: 5-ton unit (LRA 104 A) on a long rural 240 V service (0.20 + j0.12 ohm)");
+    add_label(circuit, x + 120, y + 300, "The contactor closes at 50 ms: the panel sags 7 % (333 -> 310 Vpk), past the ~3 % flicker limit (IEEE 1453 / AEP planning).");
+    add_label(circuit, x + 120, y + 330, "Fix it: service R 0.20 -> 0.05 ohm (bigger transformer and conductor) or a soft starter (raise the motor R).");
+    return 14;
+}
+
+// 8. Rooftop solar backfeed: 7.6 kW inverter exporting into the service impedance (IEEE 1547 / ANSI C84.1)
+static int place_res_solar(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 339.41); if (!v) return 0;       // utility 240 V
+    int sp = TN(x, y + 20); v->node_ids[0] = sp;
+    int sr = res_seg(circuit, x + 140, y + 20, sp, 0.25);                    // 25 kVA transformer + 150 ft drop
+    int pcc = TN(x + 240, y + 20); TW(sr, pcc);                              // point of common coupling
+    rl_load(circuit, x + 240, y + 20, pcc, 57.6, 0);                         // 1 kW house load
+    Component *inv = add_comp(circuit, COMP_AC_CURRENT, x + 400, y + 100, 180);   // rotated: -(400,60) +(400,140) injects up
+    inv->props.ac_current.amplitude = 44.8; inv->props.ac_current.frequency = 60.0;   // 7.6 kW at unity pf
+    Component *gi = add_comp(circuit, COMP_GROUND, x + 400, y + 160, 0);
+    int it = TN(x + 400, y + 60), ib = TN(x + 400, y + 140), ig = TN(x + 400, y + 160);
+    TW(pcc, TN(x + 400, y + 20)); TW(TN(x + 400, y + 20), it); TW(ib, ig);
+    inv->node_ids[0] = ib; inv->node_ids[1] = it; gi->node_ids[0] = ig;
+    add_label(circuit, x - 40, y - 60, "ROOFTOP SOLAR BACKFEED (IEEE 1547 / ERCOT DG): a 7.6 kW inverter exports 31.7 A through a 0.25 ohm service");
+    add_label(circuit, x + 60, y + 260, "Export raises the PCC by I x Z = 7.9 V (124 V per leg): inside ANSI C84.1 Range A, but only just.");
+    add_label(circuit, x + 60, y + 290, "Double the inverter current (or the service resistance) and the PCC passes 126 V - where 1547 volt-var / volt-watt takes over.");
+    return 11;
+}
+
+// 9. 480Y/277 V commercial service: 3-phase motor plus 277 V lighting
+static int place_com_480y(Circuit *circuit, float x, float y) {
+    static const float ry[3] = { 40, 260, 480 };   // R-L loads are 160 px tall: keep the rows clear
+    int out[3];
+    Component *g = three_phase_fanout(circuit, x, y, 391.9, 0.0, ry, out);   // 277 V L-N
+    if (!g) return 0;
+    static const char *ph[3] = { "A", "B", "C" };
+    for (int k = 0; k < 3; k++) {
+        float py = y + ry[k];
+        int f = res_seg(circuit, x + 240, py, out[k], 0.03);                 // 200 ft feeder per phase
+        int bus = TN(x + 320, py); TW(f, bus);
+        rl_load(circuit, x + 320, py, bus, 3.62, 6.42e-3);                   // 30 hp motor, 0.85 pf, per phase
+        add_label(circuit, x + 300, py - 30, ph[k]);
+        if (k == 0) {                                                        // 277 V lighting on phase A only
+            int lt = TN(x + 480, py); TW(bus, TN(x + 440, py)); TW(TN(x + 440, py), lt);
+            rl_load(circuit, x + 480, py, lt, 12.8, 0);                      // 6 kW of 277 V lighting
+        }
+    }
+    add_label(circuit, x - 40, y - 60, "480Y/277 V COMMERCIAL SERVICE: 30 hp motor across the three phases plus 6 kW of 277 V lighting on A (NEC 210.6(C))");
+    add_label(circuit, x + 200, y + 680, "ANSI C84.1 Range A for a 480 V service is 456-504 V line-to-line (263-291 V line-to-neutral).");
+    return 24;
+}
+
+// 10. 208Y/120 V panel: unbalanced loads and the neutral conductor (NEC 220.61)
+static int place_com_208y(Circuit *circuit, float x, float y) {
+    static const float ry[3] = { 40, 180, 320 };
+    int out[3];
+    Component *g = three_phase_fanout(circuit, x, y, 169.71, 0.0, ry, out);  // 120 V L-N
+    if (!g) return 0;
+    static const double load[3] = { 6.0, 10.0, 20.0 };                       // 20 A, 12 A, 6 A
+    static const char *ph[3] = { "A 20 A", "B 12 A", "C 6 A" };
+    int neutral = TN(x + 520, y + 180);
+    for (int k = 0; k < 3; k++) {
+        float py = y + ry[k];
+        int f = res_seg(circuit, x + 240, py, out[k], 0.05);                 // branch conductors
+        int bus = TN(x + 320, py); TW(f, bus);
+        Component *r = add_comp(circuit, COMP_RESISTOR, x + 400, py, 0);     // (360,py)-(440,py)
+        r->props.resistor.resistance = load[k];
+        int rl_ = TN(x + 360, py), rr_ = TN(x + 440, py); TW(bus, rl_);
+        r->node_ids[0] = rl_; r->node_ids[1] = rr_;
+        int j = TN(x + 480, py), j2 = TN(x + 520, py); TW(rr_, j); TW(j, j2); if (j2 != neutral) TW(j2, neutral);
+        add_label(circuit, x + 340, py - 30, ph[k]);
+    }
+    Component *rn = add_comp(circuit, COMP_RESISTOR, x + 600, y + 180, 0);   // shared neutral back to the transformer
+    rn->props.resistor.resistance = 0.05;
+    int nl = TN(x + 560, y + 180), nr = TN(x + 640, y + 180); TW(neutral, nl);
+    rn->node_ids[0] = nl; rn->node_ids[1] = nr;
+    Component *gn = add_comp(circuit, COMP_GROUND, x + 680, y + 200, 0);
+    int ng = TN(x + 680, y + 180), ng2 = TN(x + 680, y + 200); TW(nr, ng); TW(ng, ng2);
+    gn->node_ids[0] = ng2;
+    add_label(circuit, x - 40, y - 60, "208Y/120 V PANEL: 20 / 12 / 6 A on A / B / C. The neutral carries the unbalance (~12.2 A), not the sum (NEC 220.61)");
+    add_label(circuit, x + 200, y + 480, "Raise the neutral conductor and the panel neutral shifts: the lightly loaded phase rises, the heavy one sags.");
+    return 22;
+}
+
+// 11. Power factor correction: 277 V commercial motor with a switchable capacitor bank
+static int place_com_pfc(Circuit *circuit, float x, float y) {
+    Component *v = add_comp(circuit, COMP_AC_VOLTAGE, x, y + 60, 0);        // +(x,y+20) -(x,y+100)
+    if (!v) return 0;
+    v->props.ac_voltage.amplitude = 391.9; v->props.ac_voltage.frequency = 60.0;   // 277 V L-N
+    Component *sense = add_comp(circuit, COMP_RESISTOR, x, y + 160, 90);     // supply-return shunt: (x,y+120)-(x,y+200)
+    sense->props.resistor.resistance = 0.05;
+    Component *gs = add_comp(circuit, COMP_GROUND, x, y + 220, 0);
+    int sp = TN(x, y + 20), vm = TN(x, y + 100), st = TN(x, y + 120), sb = TN(x, y + 200);
+    TW(vm, st);
+    v->node_ids[0] = sp; v->node_ids[1] = vm;
+    sense->node_ids[0] = st; sense->node_ids[1] = sb; gs->node_ids[0] = sb;
+    int bus = TN(x + 240, y + 20); TW(sp, bus);
+    rl_load(circuit, x + 240, y + 20, bus, 1.727, 4.04e-3);                  // 33 kVA at 0.75 pf lag
+    Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 420, y + 20, 0); // capacitor bank switch (open)
+    sw->props.switch_spst.closed = false;
+    int swl = TN(x + 380, y + 20), swr = TN(x + 460, y + 20); TW(bus, swl);
+    sw->node_ids[0] = swl; sw->node_ids[1] = swr;
+    Component *c = add_comp(circuit, COMP_CAPACITOR, x + 520, y + 60, 90);   // (520,20)-(520,100)
+    c->props.capacitor.capacitance = 478e-6;
+    int ct = TN(x + 520, y + 20), cb = TN(x + 520, y + 100); TW(swr, ct);
+    Component *gc = add_comp(circuit, COMP_GROUND, x + 520, y + 120, 0);
+    c->node_ids[0] = ct; c->node_ids[1] = cb; gc->node_ids[0] = cb;
+    add_label(circuit, x - 40, y - 60, "POWER FACTOR CORRECTION: 33 kVA motor at 0.75 pf on 277 V; close the switch for 478 uF (13.8 kvar) -> 0.95 pf");
+    add_label(circuit, x + 60, y + 300, "CH1 is the 0.05 ohm supply shunt (50 mV per amp): the line current falls from 120 A to 95 A for the same kW.");
+    add_label(circuit, x + 60, y + 330, "ERCOT / AEP tariffs and NERC VAR-001 both push the delivery point to 0.95; the kvar comes from the bank, not the line.");
+    return 12;
+}
+
+// 12. Standby generator transfer switch (NEC 700 / NFPA 110): utility drops, the generator picks the load up
+static int place_com_ats(Circuit *circuit, float x, float y) {
+    Component *u = ac_source(circuit, x, y, 339.41); if (!u) return 0;       // utility 240 V
+    int up = TN(x, y + 20); u->node_ids[0] = up;
+    Component *swu = fault_switch(circuit, x + 200, y + 20, 0.0, 0.050, 1.0);      // utility contactor: closed 0-50 ms
+    TW(up, TN(x + 160, y + 20)); swu->node_ids[0] = TN(x + 160, y + 20);
+    Component *gsrc = ac_source(circuit, x, y + 240, 339.41);               // standby generator
+    int gp = TN(x, y + 260); gsrc->node_ids[0] = gp;
+    Component *swg = fault_switch(circuit, x + 200, y + 260, 0.070, 0.300, 1.0);   // generator contactor: closed from 70 ms
+    TW(gp, TN(x + 160, y + 260)); swg->node_ids[0] = TN(x + 160, y + 260);
+    int bus = TN(x + 340, y + 20), gb = TN(x + 340, y + 260);
+    swu->node_ids[1] = TN(x + 240, y + 20); TW(TN(x + 240, y + 20), bus);
+    swg->node_ids[1] = TN(x + 240, y + 260); TW(TN(x + 240, y + 260), gb); TW(gb, bus);
+    int f = res_seg(circuit, x + 440, y + 20, bus, 0.05);
+    int lb = TN(x + 520, y + 20); TW(f, lb);
+    rl_load(circuit, x + 520, y + 20, lb, 11.52, 0);                         // 5 kW life-safety load
+    add_label(circuit, x - 40, y - 60, "STANDBY GENERATOR TRANSFER (NEC 700 / NFPA 110): the utility contactor opens at 50 ms, the generator closes at 70 ms");
+    add_label(circuit, x + 100, y + 420, "The load is dead for 20 ms (open transition). NEC 700 allows 10 s for emergency systems, 60 s for legally required standby.");
+    return 16;
+}
+#undef TN
+#undef TW
+
 static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_RC_LOWPASS]       = { COMP_CAPACITOR, 0, 0 },
     [CIRCUIT_RC_HIGHPASS]      = { COMP_RESISTOR, 0, 0 },
@@ -8495,6 +8903,18 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IO_UART]          = { COMP_RESISTOR, 1, 0 },
     [CIRCUIT_IO_RS485]         = { COMP_OPAMP, 0, 2 },
     [CIRCUIT_IO_SPMI]          = { COMP_CAPACITOR, 1, 0 },
+    [CIRCUIT_TX_69KV]          = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_TX_LADDER]        = { COMP_RESISTOR, 5, 0 },
+    [CIRCUIT_TX_WIND]          = { COMP_TLINE, 0, 0 },        // 34.5 kV collector bus
+    [CIRCUIT_TX_PLANT]         = { COMP_RESISTOR, 3, 0 },      // 480 V shop bus
+    [CIRCUIT_RES_SERVICE]      = { COMP_RESISTOR, 3, 0 },
+    [CIRCUIT_RES_BRANCH]       = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_RES_ACSTART]      = { COMP_RESISTOR, 1, 0 },      // house panel
+    [CIRCUIT_RES_SOLAR]        = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_COM_480Y]         = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_COM_208Y]         = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_COM_PFC]          = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_COM_ATS]          = { COMP_RESISTOR, 1, 0 },
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -8522,6 +8942,15 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_IO_UART]          = { { COMP_PULSE_SOURCE, 1, 0 }, { COMP_NOT_GATE, 0, 1 } },    // 3.3 V TX, 5 V receiver out
     [CIRCUIT_IO_RS485]         = { { COMP_RESISTOR, 3, 0 }, { COMP_RESISTOR, 3, 1 } },        // A, B at the far termination
     [CIRCUIT_IO_SPMI]          = { { COMP_CAPACITOR, 0, 0 } },                                // SCLK at load
+    [CIRCUIT_TX_LADDER]        = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 2, 0 }, { COMP_RESISTOR, 3, 0 } },   // 138 / 69 / 12.47 kV buses
+    [CIRCUIT_TX_WIND]          = { { COMP_TLINE, 1, 0 }, { COMP_TLINE, 1, 1 } },               // 345 kV sending end, POI
+    [CIRCUIT_TX_PLANT]         = { { COMP_RESISTOR, 1, 0 } },                                 // 4.16 kV motor bus
+    [CIRCUIT_RES_SERVICE]      = { { COMP_RESISTOR, 4, 1 }, { COMP_RESISTOR, 2, 0 } },        // L2 at the panel, the neutral conductor
+    [CIRCUIT_RES_BRANCH]       = { { COMP_RESISTOR, 3, 0 } },                                 // #10 load
+    [CIRCUIT_RES_ACSTART]      = { { COMP_RESISTOR, 2, 0 } },                                 // motor branch
+    [CIRCUIT_COM_480Y]         = { { COMP_RESISTOR, 4, 0 }, { COMP_RESISTOR, 6, 0 } },        // phase B, phase C buses
+    [CIRCUIT_COM_208Y]         = { { COMP_RESISTOR, 3, 0 }, { COMP_RESISTOR, 5, 0 } },        // phase B, C branch buses
+    [CIRCUIT_COM_ATS]          = { { COMP_AC_VOLTAGE, 1, 0 } },                               // the standby generator
     // multi-input circuits: every input on its own channel
     [CIRCUIT_SUMMING_AMP]      = { { COMP_DC_VOLTAGE, 1, 0 }, { COMP_DC_VOLTAGE, 2, 0 } },    // V2, V3 (V1 = source probe)
     [CIRCUIT_DIFFERENCE_AMP]   = { { COMP_DC_VOLTAGE, 1, 0 } },                               // V2 (0.5 V DC)
@@ -8563,6 +8992,9 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IO_PUSH_PULL] = 200e-9, [CIRCUIT_IO_OPEN_DRAIN] = 1e-6, [CIRCUIT_IO_OPEN_COLLECTOR] = 2e-6, [CIRCUIT_IO_I2C_BUS] = 10e-6,
     [CIRCUIT_IO_I2C_LEVEL] = 2e-6, [CIRCUIT_IO_INPUT_DEBOUNCE] = 5e-3, [CIRCUIT_IO_LOW_SIDE] = 500e-6, [CIRCUIT_IO_HIGH_SIDE] = 500e-6,
     [CIRCUIT_IO_SPI] = 50e-9, [CIRCUIT_IO_UART] = 100e-6, [CIRCUIT_IO_RS485] = 500e-9, [CIRCUIT_IO_SPMI] = 50e-9,
+    [CIRCUIT_TX_69KV] = 5e-3, [CIRCUIT_TX_LADDER] = 5e-3, [CIRCUIT_TX_WIND] = 5e-3, [CIRCUIT_TX_PLANT] = 5e-3,
+    [CIRCUIT_RES_SERVICE] = 5e-3, [CIRCUIT_RES_BRANCH] = 5e-3, [CIRCUIT_RES_ACSTART] = 20e-3, [CIRCUIT_RES_SOLAR] = 5e-3,
+    [CIRCUIT_COM_480Y] = 5e-3, [CIRCUIT_COM_208Y] = 5e-3, [CIRCUIT_COM_PFC] = 5e-3, [CIRCUIT_COM_ATS] = 20e-3,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -8592,6 +9024,9 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IO_PUSH_PULL] = 1.0, [CIRCUIT_IO_OPEN_DRAIN] = 1.0, [CIRCUIT_IO_OPEN_COLLECTOR] = 2.0, [CIRCUIT_IO_I2C_BUS] = 1.0,
     [CIRCUIT_IO_I2C_LEVEL] = 2.0, [CIRCUIT_IO_INPUT_DEBOUNCE] = 1.0, [CIRCUIT_IO_LOW_SIDE] = 5.0, [CIRCUIT_IO_HIGH_SIDE] = 2.0,
     [CIRCUIT_IO_SPI] = 1.0, [CIRCUIT_IO_UART] = 1.0, [CIRCUIT_IO_RS485] = 2.0, [CIRCUIT_IO_SPMI] = 0.5,
+    [CIRCUIT_TX_69KV] = 20e3, [CIRCUIT_TX_LADDER] = 100e3, [CIRCUIT_TX_WIND] = 100e3, [CIRCUIT_TX_PLANT] = 5e3,
+    [CIRCUIT_RES_SERVICE] = 100.0, [CIRCUIT_RES_BRANCH] = 50.0, [CIRCUIT_RES_ACSTART] = 200.0, [CIRCUIT_RES_SOLAR] = 100.0,
+    [CIRCUIT_COM_480Y] = 100.0, [CIRCUIT_COM_208Y] = 50.0, [CIRCUIT_COM_PFC] = 5.0, [CIRCUIT_COM_ATS] = 100.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -8704,6 +9139,18 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IO_UART]          = { DEMO_WAVEFORM, 4800 },
     [CIRCUIT_IO_RS485]         = { DEMO_WAVEFORM, 500e3 },
     [CIRCUIT_IO_SPMI]          = { DEMO_WAVEFORM, 2.5e6 },
+    [CIRCUIT_TX_69KV]          = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_TX_LADDER]        = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_TX_WIND]          = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_TX_PLANT]         = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_RES_SERVICE]      = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_RES_BRANCH]       = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_RES_ACSTART]      = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_RES_SOLAR]        = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_COM_480Y]         = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_COM_208Y]         = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_COM_PFC]          = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_COM_ATS]          = { DEMO_WAVEFORM, 60 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -8723,6 +9170,11 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IO_I2C_BUS] = SCOPE_FLAG_STACK, [CIRCUIT_IO_I2C_LEVEL] = SCOPE_FLAG_STACK, [CIRCUIT_IO_INPUT_DEBOUNCE] = SCOPE_FLAG_STACK,
     [CIRCUIT_IO_HIGH_SIDE] = SCOPE_FLAG_STACK, [CIRCUIT_IO_SPI] = SCOPE_FLAG_STACK, [CIRCUIT_IO_UART] = SCOPE_FLAG_STACK,
     [CIRCUIT_IO_RS485] = SCOPE_FLAG_STACK, [CIRCUIT_IO_SPMI] = SCOPE_FLAG_STACK,
+    [CIRCUIT_TX_LADDER] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_TX_PLANT] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_TX_WIND] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_RES_SERVICE] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_RES_BRANCH] = SCOPE_FLAG_STACK, [CIRCUIT_RES_SOLAR] = SCOPE_FLAG_STACK,
+    [CIRCUIT_RES_ACSTART] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_COM_PFC] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_COM_480Y] = SCOPE_FLAG_STACK, [CIRCUIT_COM_208Y] = SCOPE_FLAG_STACK, [CIRCUIT_COM_ATS] = SCOPE_FLAG_STACK,
     [CIRCUIT_SUMMING_AMP] = SCOPE_FLAG_STACK, [CIRCUIT_DIFFERENCE_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_INSTR_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_SUPERPOSITION] = SCOPE_FLAG_STACK,
 };
 int circuit_template_scope_flags(CircuitTemplateType type) {
@@ -8793,11 +9245,15 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
     // low-voltage templates keep the normal resistor and its overload warning (--burn-test enforces).
     {
         const CircuitTemplateInfo *tinfo = circuit_template_get_info(type);
-        if (tinfo && (tinfo->group == TG_POWER_SYSTEMS || tinfo->group == TG_HIGH_VOLTAGE)) {
+        if (tinfo && (tinfo->group == TG_POWER_SYSTEMS || tinfo->group == TG_HIGH_VOLTAGE || tinfo->group == TG_BUILDING)) {
+            // Building services: a resistor is either a load (>= 1 ohm: an appliance, a motor, a
+            // lighting circuit - draw it as a load box) or a conductor / shunt (< 1 ohm: keep the
+            // resistor symbol, but it is wire, not a 1/4 W part, so it has no thermal limit either).
+            bool building = (tinfo->group == TG_BUILDING);
             for (int i = first; i < circuit->num_components; i++) {
                 Component *c = circuit->components[i];
                 if (c->type == COMP_RESISTOR) {
-                    c->props.resistor.high_power = true;
+                    if (!building || c->props.resistor.resistance >= 1.0) c->props.resistor.high_power = true;
                     c->props.resistor.power_rating = 1e12;
                     c->thermal.max_temperature = 0.0;
                 }
@@ -8846,7 +9302,7 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
 
 const char *circuit_template_group_name(TemplateGroup g) {
     static const char *names[TG_COUNT] = {
-        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients", "IC I/O & drivers"
+        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients", "IC I/O & drivers", "Residential & commercial"
     };
     return (g >= 0 && g < TG_COUNT) ? names[g] : "?";
 }

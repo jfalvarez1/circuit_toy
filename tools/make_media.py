@@ -64,6 +64,18 @@ SHOTS = [
     ("open_drain", "OD", 200, "circuits"),
     ("i2c_level", "I2Clv", 200, "circuits"),
     ("low_side", "LoSw", 200, "circuits"),
+    ("tx_ladder", "TXLad", 200, "circuits"),
+    ("res_service", "Split", 200, "circuits"),
+    ("ac_start", "ACstart", 260, "circuits"),
+    ("wind_collector", "Wind", 200, "circuits"),
+    ("pfc", "PFC", 200, "circuits"),
+    ("tx_69kv", "69kV", 200, "circuits"),
+    ("branch_drop", "Branch", 200, "circuits"),
+    ("solar_backfeed", "Solar", 200, "circuits"),
+    ("com_480y", "480Y", 200, "circuits"),
+    ("com_208y", "208Y", 200, "circuits"),
+    ("ats", "ATS", 200, "circuits"),
+    ("plant_13k8", "13k8", 200, "circuits"),
 ]
 # name, template, first frame, frames, every
 # Full resolution, full 256-colour palette; low frame rate (5 fps) keeps the files small.
@@ -80,6 +92,8 @@ GIFS = [
     ("spotlight_search", None, 20, 20, 4, ("^mosfet|", 24, 8)),
     ("i2c_bus", "I2C", 60, 15, 6),
     ("rs485", "RS485", 60, 15, 6),
+    ("ac_start", "ACstart", 40, 20, 5),
+    ("ats", "ATS", 30, 18, 4),
 ]
 GIF_FRAME_MS = 200
 

@@ -33,7 +33,7 @@ and note: build hash, steps, expected vs actual, stderr excerpt.
 | 0.16 | `[ ]` `template_smoke --probe-audit [NAME]` | "What the user will actually see": for every template the auto-placed probes exactly as the app places them (source, output, extra), the component terminals each probe sits on (owner list), and min / max over one scope screen at the preset time/div and V/div, with flags `DUP` (two probes on one node), `GND` (probe on ground), `FLAT` (waveform demo that does not move), `SMALL` (output < 0.25 div at the preset V/div), `CLIP` (beyond ±4 div before the one-shot autoscale), `NOOUT`. Current: **10/96 flagged, all physically expected** — HP / band-pass outputs SMALL at the start of their sweep, the 14.7 kV generator channel SMALL at 100 kV/div, etc. A *new* flag after a template or preset edit is the thing to chase; oscillators no longer auto-probe their kick source, so a `DUP`/`GND` on a kick is gone for good |
 | 0.17 | `[ ]` `template_smoke --series NAME T NODE` | Explorer: prints `time voltage` pairs for node id NODE over T seconds (node ids from `--nodes`) — paste into a plot, or diff two runs to see a sign / phase error (this is how the one-step phase error of the terminal-current re-stamp was localised). Use `--trace` first to pick the node |
 
-Smoke test modes: (none) template load+run · `--demo-test` · `--probe-test` (dt never coarser than the template's scope preset) · `--osc-test [--osc-dt X]` (per-case dt in `cases[]` wins over `--osc-dt`; output node from the template spec) · `--flow-test` (behavioural gates exempt) · `--burn-test` (no part over its rating; HV templates must be clean) ·
+Smoke test modes: (none) template load+run · `--demo-test` · `--probe-test` (dt never coarser than the template's scope preset) · `--osc-test [--osc-dt X]` (per-case dt in `cases[]` wins over `--osc-dt`; output node from the template spec) · `--flow-test` (behavioural gates exempt) · `--burn-test` (no part over its rating; HV templates must be clean) · `--std-test` (bus voltages vs ERCOT / NERC / ANSI C84.1 / NEC) ·
 `--geom-test` · `--scope-test` · `--sweep-check` · `--tesla-test` · `--param-test` · `--response NAME` · `--trace NAME T` · `--probe-audit [NAME]` · `--series NAME T NODE` ·
 flags `--verbose`, `--nodes`, `--svg DIR`, `--dc`, `--sim-time T`, and a bare NAME argument to filter templates.
 | 0.5 | `[ ]` Window resize to min size / maximized / 4K | Panels reflow, no overlapping text, neon border tracks edges |
@@ -440,6 +440,31 @@ in ideal mode) is regression-tested by the existing 86 oracles. Every manual row
 | 3.16.13 | `[ ]` Scope **AC** / **Fit** (Display tab) on Two-Stage Amp, CE, Diff Pair, Instr. Amp | Fit: per-band tags "CHn 5.0mV/div"; both traces readable; axis labels hidden; trigger line follows the band; AC alone: shared V/div, traces centred |
 | 3.16.14 | `[ ]` Multi-input probes: Summing (4 ch), Difference (3), Instr (3), Superposition (3), Diff Pair (3) | every input on its own channel; diff pair inputs 10 mV, both collectors mirror images (0.5 V) |
 | 3.16.15 | `[ ]` **Automated:** `template_smoke --probe-test`, `--demo-test`, `--burn-test`, `--flow-test`, `--knob-test` | 98/98, 108/108, 0 overloads, 108/108, 1328/0 |
+
+### 3.17 Batch seven: Texas voltage levels and building services (new 2026-08-27: templates #109–#120 in TEMPLATE_AUDIT, palette group **Residential & commercial**, `docs/RESEARCH_ERCOT_STANDARDS.md`)
+
+Automated by `--demo-test`, `--probe-test` (twelve oracles), `--burn-test` and the new **`--std-test`**
+(19 buses against ERCOT Planning Guide 4 / NERC TPL-001-5.1 P0, ANSI C84.1 Range A and NEC 210.19(A); it
+fails on a >0.03 pu drift from the documented value and prints `[NOTE] … (documented exception)` for the
+three buses that sit outside their band on purpose). Every manual row is done **(a) before Run and (b) live**.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.17.1 | `[ ]` 69 kV: load 20 → 25 MVA; line 20 → 40 mi | 0.957 → 0.946 pu (an ERCOT steady-state violation) → ≈ 0.92 pu |
+| 3.17.2 | `[ ]` Texas Ladder: Stack + Fit, read the five band tags | 100 kV / 200 V / 50 kV / 20 kV / 5 kV per division; buses 0.991 / 0.971 / 0.959 / 0.988 pu and 117.4 V per leg |
+| 3.17.3 | `[ ]` Texas Ladder: set the 69/12.47 kV transformer ratio 0.189735 → 0.1807 (LTC neutral) | the service falls to ≈ 112 V, below ANSI C84.1 Range A — the reason the LTC exists |
+| 3.17.4 | `[ ]` Wind: open the string-B switch; set a string phase 6 → 0 ° | export and the collector rise both halve; at 0 ° the export stops and the bus falls below the grid |
+| 3.17.5 | `[ ]` Industrial: halve the motor resistance | the 4.16 kV and 480 V buses sag together; both stay above 0.95 pu until roughly double load |
+| 3.17.6 | `[ ]` 240/120 V: check L1 and L2 are 180 ° apart; **neutral 0.02 → 5 Ω** | L1-L2 = 240 V; with the bad neutral L1 collapses and L2 rises past 126 V (the open-neutral failure) |
+| 3.17.7 | `[ ]` Branch: compare the two loads; shorten the #14 run to 50 ft; load 12 → 20 A | 114.2 V vs 117.7 V; 50 ft brings #14 inside 3 %; 20 A pushes it to ≈ 8 % |
+| 3.17.8 | `[ ]` AC start: watch the 50 ms contactor; service R 0.20 → 0.05 Ω | panel 333 → 310 Vpk (7 %) while the motor runs; with the stiffer service the dip is under 2 % |
+| 3.17.9 | `[ ]` Solar: compare the PCC with the utility; double the inverter current | +9.7 Vpk (123.4 V per leg); doubled it passes 126 V — where IEEE 1547 volt-var/volt-watt takes over |
+| 3.17.10 | `[ ]` 480Y/277: Stack; delete the lighting load | three bands 120 ° apart, A lowest; without the lighting A matches B and C |
+| 3.17.11 | `[ ]` 208Y/120: neutral 0.05 → 1 Ω; then balance the loads | the three branches spread apart badly; balanced, the neutral current goes to zero |
+| 3.17.12 | `[ ]` PFC: **close the cap-bank switch**; then 478 → 956 µF | shunt trace shrinks ≈ 20 % (123 → 95 A) and moves into phase; 956 µF over-corrects and the current climbs |
+| 3.17.13 | `[ ]` ATS: watch the 20 ms dead window; generator delay 70 → 40 ms | load dead 50–70 ms then restored; overlapped contactors make the two sources fight |
+| 3.17.14 | `[ ]` **Automated:** `template_smoke --std-test` | 19 buses, **0 drifted**, 3 outside their band (all printed as documented exceptions) |
+| 3.17.15 | `[ ]` **Automated:** `--probe-test`, `--demo-test`, `--burn-test`, `--flow-test`, `--knob-test`, `--geom-test` | 110/110, 120/120, 0 overloads, 120/120, 1518/0, all twelve new templates geometrically clean |
 
 ## 4. Oscilloscope
 

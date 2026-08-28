@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.5.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.5.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.6.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.6.0)** (auto-updating from v3.4.0 on)
 
 A native desktop circuit simulator written in C with SDL2, featuring a synthwave-themed interface. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
 
@@ -112,7 +112,7 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-108 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+112 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -223,6 +223,10 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **3-Phase 6-Pulse Rect** (`6Pulse`) - Three-phase diode bridge: 360 Hz ripple, 1.35 x V_LL
 - **Power Plant (3-phase)** (`Plant`) - 3-phase generator, GSU bank, breakers, 345 kV line, load
 - **Transmission Substation** (`Substn`) - 345 kV lines, breakers, 345/138 autos, feeders, cap banks
+- **69 kV Subtransmission** (`69kV`) - AEP Texas 69 kV: 20 mi 336 ACSR into 20 MVA at 0.95 pf
+- **Texas Voltage Ladder** (`TXLad`) - 345 / 138 / 69 / 12.47 kV and the 240 V service in one canvas
+- **CREZ Wind Collector** (`Wind`) - 34.5 kV strings -> collector -> 345 kV GSU -> ERCOT grid
+- **13.8 kV Industrial Service** (`13k8`) - 13.8/4.16 kV plant transformer, motor bus, 480 V shop
 
 **High voltage**
 - **Tesla Coil** (`Tesla`) - Spark-gap Tesla coil, 4x13 in toroid, streamer to a rod
@@ -460,6 +464,36 @@ command line. Releases are built with `pwsh tools/make_release.ps1 -Publish` (ve
 | ![Damping ladder](screenshots/auto/damping_ladder.png) Under / critical / over-damped on one screen | ![Op-amp saturation](screenshots/auto/opamp_saturation.png) Clipping at the rails and the lost virtual ground |
 | ![Power plant](screenshots/auto/power_plant.png) Three-phase power plant: generator, GSU bank, breakers, lines | ![Substation](screenshots/auto/substation.png) Transmission substation: 345/138 kV autos, feeders, cap banks |
 
+### Texas Voltages, Residential & Commercial
+
+![Texas voltage ladder](screenshots/auto/tx_ladder.png)
+
+Every voltage a Texas electron passes through has a template, and every number is sized against a
+published criterion rather than picked to look good - the full table of standards, conductor data and
+documented exceptions is in `docs/RESEARCH_ERCOT_STANDARDS.md`:
+
+- **765 kV** (AEP backbone, outside ERCOT) - **345 kV** (ERCOT's highest transmission voltage, the CREZ
+  build-out) - **138 kV** - **69 kV** subtransmission - **34.5 kV** wind collector - **13.8 kV**
+  industrial primary - **12.47Y/7.2 kV** distribution - **4.16 kV** plant motor bus - **480Y/277 V** and
+  **208Y/120 V** commercial - **240/120 V** residential.
+- The **Texas Voltage Ladder** puts 345 / 138 / 69 / 12.47 kV and the 240 V service on one canvas with a
+  tap load at each level, and the scope shows all five at once in Stack + Fit (each band with its own
+  V/div in the tag). Its 69/12.47 kV transformer runs its LTC 8 steps up (+5 %); set it back to neutral
+  and the house drops to 112 V, below ANSI C84.1 Range A - which is exactly why LTCs exist.
+- **Residential & commercial**: the centre-tapped 240/120 V service (and the open-neutral failure), the
+  NEC 3 % branch-circuit rule on #14 vs #10, AC compressor start flicker, rooftop solar raising the point
+  of common coupling, 480Y/277 V and 208Y/120 V panels, power factor correction with a switched capacitor
+  bank, and an NEC 700 open-transition generator transfer.
+
+| | |
+|---|---|
+| ![240/120 V service](screenshots/auto/res_service.png) The centre-tapped pole transformer: L1 and L2 180 degrees apart | ![AC compressor start](screenshots/auto/ac_start.png) Locked-rotor current sags the panel 7 % - motor-start flicker |
+| ![CREZ wind collector](screenshots/auto/wind_collector.png) 34.5 kV strings into a 345 kV POI, and the collector voltage rise | ![Power factor correction](screenshots/auto/pfc.png) A shunt in the supply return: 123 A falls to 95 A when the bank closes |
+
+`template_smoke --std-test` measures 19 steady-state buses and reports each against its band (ERCOT
+Planning Guide 4 / NERC TPL-001-5.1 P0 at 0.95-1.05 pu, ANSI C84.1 Range A at 114-126 V, NEC 210.19(A)
+at 3 % on a branch), and pins the measured value so nothing drifts off its design point unnoticed.
+
 ### IC I/O & drivers
 
 What a GPIO pin is made of and how it talks to the outside world - twelve templates in the **IC I/O & drivers** group:
@@ -551,7 +585,7 @@ point and a short transient, and reports solver errors, NaN/runaway voltages and
 point of every transistor / op-amp / regulator:
 
 ```bash
-build/tools/template_smoke.exe             # 108/108 templates passed
+build/tools/template_smoke.exe             # 112/112 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (66 oracles)
@@ -563,12 +597,22 @@ build/tools/template_smoke.exe --tesla-test      # spark-gap firings, ring frequ
 build/tools/template_smoke.exe --param-test      # spark gap / toroid / line / transformer limits vs phasor oracles; scope presets
 build/tools/template_smoke.exe --flow-test       # current-flow display: KCL, conservation, series uniformity
 build/tools/template_smoke.exe --burn-test       # no resistor/LED over its rating (HV templates use R_HP loads)
+build/tools/template_smoke.exe --std-test        # bus voltages vs ERCOT / NERC / ANSI C84.1 / NEC limits
 build/circuit-playground.exe --keys "^mosfet|" 24 8 --record DIR N EVERY   # scripted typing: ^ opens Spotlight, | is Enter
 build/tools/template_smoke.exe --geom-test       # schematic audit: diagonals, crossings, wires through bodies
 build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
 build/tools/template_smoke.exe --response "RC BP"   # amplitude vs frequency of every node during the sweep
 build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
 build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template in the palette)
+```
+
+The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
+which produced the images in this README):
+
+```bash
+build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
+build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
+build/circuit-playground.exe --help
 ```
 
 The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,

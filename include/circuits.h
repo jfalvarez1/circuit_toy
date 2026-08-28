@@ -132,6 +132,18 @@ typedef enum {
     CIRCUIT_IO_UART,
     CIRCUIT_IO_RS485,
     CIRCUIT_IO_SPMI,
+    CIRCUIT_TX_69KV,
+    CIRCUIT_TX_LADDER,
+    CIRCUIT_TX_WIND,
+    CIRCUIT_TX_PLANT,
+    CIRCUIT_RES_SERVICE,
+    CIRCUIT_RES_BRANCH,
+    CIRCUIT_RES_ACSTART,
+    CIRCUIT_RES_SOLAR,
+    CIRCUIT_COM_480Y,
+    CIRCUIT_COM_208Y,
+    CIRCUIT_COM_PFC,
+    CIRCUIT_COM_ATS,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 
@@ -148,6 +160,7 @@ typedef enum {
     TG_HIGH_VOLTAGE,    // Tesla coils
     TG_TRANSIENTS,      // step responses (Agarwal & Lang ch. 10/12)
     TG_IC_IO,           // IC output / input structures, buses and drivers (GPIO, I2C, SPI, UART, RS-485, SPMI)
+    TG_BUILDING,        // Residential and commercial services (ANSI C84.1, NEC, IEEE 1547)
     TG_COUNT
 } TemplateGroup;
 

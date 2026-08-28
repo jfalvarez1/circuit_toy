@@ -878,6 +878,19 @@ Current status: 96/96 templates, 96/96 `--demo-test`, 86/86 `--probe-test`, 96/9
 (all six of #91–#96 are clean), `--osc-test` 9/9, `--param-test` all OK, `--tesla-test` 3/3, knob test 1182 runs 0 failed,
 `--probe-audit` 10/96 flagged — every flag physically expected (HP outputs SMALL at the start of a sweep, etc.; see the tool note).
 
+**Batch seven (2026-08-27) — Texas voltage levels and building services, templates #109–#120, palette
+group "Residential & commercial" (12th).** Every voltage in Texas from 765 kV down to 120 V now has a
+template, and the numbers are sized against published criteria rather than chosen to look good — see
+`docs/RESEARCH_ERCOT_STANDARDS.md`. New test mode **`--std-test`** measures 19 steady-state bus voltages
+and reports each against its band (ERCOT Planning Guide 4 / NERC TPL-001-5.1 P0 0.95–1.05 pu for
+transmission, ANSI C84.1 Range A 114–126 V for services, NEC 210.19(A) 3 % for branch circuits), while
+also pinning the measured value so a template cannot silently drift off its design point. Three buses
+are documented exceptions and print as `[NOTE]`: the 345 kV line at 0.937 pu (600 MW is past SIL), the
+Ferranti open line at 1.139 pu, and the #14 branch at 0.952 pu (the point of that template). The
+building templates treat every resistor ≥ 1 Ω as a load box (`R_HP`) and everything below as conductor
+resistance with no thermal limit, so `--burn-test` stays clean without pretending a 4.8 kW range is a
+quarter-watt part.
+
 **Batch six (2026-08-27) — IC I/O & drivers, templates #97–#108, palette group "IC I/O & drivers" (11th).** What a GPIO pin is
 made of and how it talks to the world: push-pull / open-drain / open-collector outputs, the I2C wired-AND bus and level shifter,
 a debounced input, low- and high-side load switches, SPI / UART / RS-485 / SPMI signalling. Two simulator changes came out of the
@@ -1047,6 +1060,70 @@ Common building blocks (`src/circuits.c`, batch 5):
 - **Demo:** `DEMO_WAVEFORM`, f_char 2.5 MHz. Probe: SDATA at the load (`COMP_CAPACITOR` 1, term 0) — "amp" **0.9 V ±8 %** at 2 µs; SCLK auto; **extra** SCLK at load (`COMP_CAPACITOR` 0). Preset 50 ns/div, 0.5 V/div, Stack.
 - **N:** three bands of 1.8 V squares, SDATA changing 50 ns after the SCLK edge. **V:** C 15 pF → 150 pF: τ 5 ns, edges visible; 1.8 → 1.2 V rail: the same picture with 0.4 V of margin. **M:** SCLK 5 → 26 MHz (SPMI max): still square at 15 pF. **T:** dt 2 ns.
 
+
+### 109. 69 kV Subtransmission — `ac_source` 56.34 kVpk (69 kV L-L / 39.84 kV L-N), 20 mi `COMP_TLINE` model 1 at 0.306 + j0.75 Ω/mi (336.4 ACSR Linnet ⇒ 6.12 + j15 Ω), load 226.2 Ω + 197.1 mH (20 MVA three-phase at 0.95 pf lag)
+- **Demonstrates:** AEP Texas subtransmission at its design power factor. |Z| = 248.9 Ω ⇒ I = 160 A, receiving bus 53.9 kVpk = **0.957 pu**, inside the ERCOT Planning Guide 4 / NERC TPL-001-5.1 P0 band (0.95–1.05) with 0.007 pu to spare.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: load bus (`COMP_RESISTOR` 0, term 0) — `--probe-test` "amp" **53.9 kVpk ±5 %**; source auto. `--std-test` pins 0.957 pu. Preset 5 ms/div, 20 kV/div.
+- **N:** two 60 Hz sines, the load bus 4.3 % below the source and lagging slightly. **V:** load 20 → 25 MVA (R 181, L 158 mH) ⇒ 0.946 pu, a steady-state violation. Line 20 → 40 mi ⇒ 0.92 pu. **M:** `model` 1 → 2 adds the 5.4 µS/mi charging (+0.2 %). **T:** dt auto ≈ 42 µs at 5 ms/div.
+
+### 110. Texas Voltage Ladder — `ac_source` 281.7 kVpk, then four rows of (line → tap load → `xfmr_row`): 30 mi 345 kV + 396.8 Ω, N = 0.4; 20 mi 138 kV + 190.4 Ω, N = 0.5; 10 mi 69 kV + 317.4 Ω, N = 0.189735; 3 mi 12.47 kV + 51.84 Ω, N = 0.033333; then 0.05 Ω of service drop into 5.76 Ω
+- **Demonstrates:** every voltage a Texas electron passes through, with a tap load at each level (300 / 100 / 15 / 3 MW three-phase and a 10 kW house). The 69/12.47 kV transformer carries its **LTC 8 steps up (+5 %, 0.625 % per step)**; without it the service lands at 112 V, below ANSI C84.1 Range A.
+- **Measured:** 345 kV **0.991 pu**, 138 kV **0.971**, 69 kV **0.959**, 12.47 kV **0.988**, service **0.980 pu = 117.4 V per leg**. All inside ERCOT 0.95–1.05 / ANSI C84.1 114–126 V; `--std-test` pins all five.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: house (`COMP_RESISTOR` 5, term 0) — "amp" **332 V ±5 %**; source auto; **extras** the 138 / 69 / 12.47 kV taps (`COMP_RESISTOR` 1, 2, 3). Preset 5 ms/div, 100 kV/div, **Stack + Fit** — five bands, each with its own V/div in the tag (100 kV, 200 V, 50 kV, 20 kV, 5 kV per division).
+- **V:** set the 69/12.47 kV transformer ratio back to 0.1807 (LTC neutral) ⇒ the service falls to ≈ 112 V, an ANSI violation — that is what the LTC is for. Double the 12.47 kV tap load ⇒ the distribution bus alone sags. **M:** any transformer ratio, any line length. **T:** dt auto; the probe-audit SMALL flag is expected (a 240 V trace at 100 kV/div — Fit is what makes it readable).
+
+### 111. CREZ Wind Collector — two `ac_source` 29.3 kVpk at +6° (34.5 kV strings), each through 1 Ω + 5.3 mH (pad transformer + string cable), a `COMP_SPST_SWITCH` on string B, 6 mi collector cable (`COMP_TLINE` model 0, 0.15 + j0.12 Ω/mi), `xfmr_row` N = 10 (34.5/345 kV GSU), 30 mi 345 kV line, and the ERCOT grid as a second 281.7 kVpk source
+- **Demonstrates:** how generation injects power — the strings are held 6° ahead of the grid, and that angle (not the magnitude) is what pushes ≈ 50 MW out. The consequence is collector **voltage rise**: the bus sits at **1.043 pu** while the grid end is at 1.00, which is the constraint that limits how much a string can produce.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: collector bus (`COMP_TLINE` 0, term 0) — "amp" **28.04 kVpk ±5 %** (measured at the cable's far end); string A auto; **extras** the 345 kV sending end and the POI (`COMP_TLINE` 1, terms 0 and 1). `--std-test` pins the collector at 1.043 pu (inside the band, but 4.3 % up).
+- **V:** **open the string-B switch** ⇒ export and the voltage rise both halve. Set the string phase to 0° ⇒ export stops and the collector falls below the grid. **M:** ERCOT interconnection requires 0.95 lead/lag pf at the POI; give a string a lagging load to see the bus drop instead. **T:** 5 ms/div.
+
+### 112. 13.8 kV Industrial Service — 11.267 kVpk source, 1.2 Ω primary feeder, `xfmr_row` N = 0.30145 (13.8/4.16 kV), motor bus 5.77 Ω + 3.06 mH (2500 hp at 0.88 pf), `xfmr_row` N = 0.11538 (4.16 kV/480 V), 0.02 Ω shop feeder, 2.56 Ω + 0.84 mH (300 kVA at 0.95 pf)
+- **Demonstrates:** the standard industrial ladder — medium voltage for the big motors, 480 V for the rest. 13.8 kV bus 0.981 pu, 4.16 kV motor bus **0.981 pu**, 480 V shop bus **0.974 pu**, all inside ANSI C84.1 Range A.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: 480 V shop bus (`COMP_RESISTOR` 3, term 0) — "amp" **381.7 V ±5 %**; source auto; **extra** the 4.16 kV motor bus (`COMP_RESISTOR` 1). Preset 5 ms/div, 5 kV/div, Stack + Fit.
+- **V:** halve the motor resistance (more load) ⇒ both downstream buses sag together. **M:** either transformer ratio; the primary feeder length. **T:** dt auto. SMALL flag expected (480 V at 5 kV/div; Fit handles it).
+
+### 113. 240/120 V Service — 10.182 kVpk primary (12.47Y/7.2 kV), two `COMP_TRANSFORMER` N = 0.0166667 with primaries in parallel and secondaries in series, the joint grounded (centre tap); 0.02 Ω per leg and 0.02 Ω of neutral; 12 Ω on L1 (1.2 kW), 24 Ω on L2 (600 W), 12 Ω across L1-L2 (4.8 kW range)
+- **Demonstrates:** the American split-phase service. L1 and L2 come out **180° apart** (opposite secondary polarity), so L1-L2 is 240 V. The neutral carries only the difference of the two 120 V legs (10 A − 5 A = 5 A), which is why NEC lets it be smaller.
+- **Measured:** L1 **168.7 Vpk = 119.3 V rms (0.994 pu)**, L2 **169.1 Vpk = 119.6 V (0.997)**, neutral shift 0.14 V. Both inside ANSI C84.1 Range A; `--std-test` pins both.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: L1 (`COMP_RESISTOR` 3, term 0) — "amp" **168.7 V ±5 %**; primary auto; **extras** L2 (`COMP_RESISTOR` 4, term 1) and the neutral conductor (`COMP_RESISTOR` 2). Preset 5 ms/div, 100 V/div, Stack + Fit.
+- **V:** **neutral 0.02 → 5 Ω** (a corroded splice): L1 collapses and L2 rises past 126 V — the open-neutral failure that destroys appliances. Unbalance the two legs further and watch the neutral current grow. **M:** any load; the transformer ratio (a 7620 V primary tap).
+
+### 114. 120 V Branch Circuits — 169.71 Vpk source feeding two 10 Ω loads (12 A each), one through 0.505 Ω (#14 Cu, 100 ft, both conductors: 2 × 100 × 2.525 Ω/1000 ft) and one through 0.200 Ω (#10 Cu)
+- **Demonstrates:** NEC 210.19(A)'s 3 % branch-circuit guideline, side by side. **#14 lands at 114.2 V (4.8 % drop) — over the guideline; #10 at 117.7 V (2.0 %) — compliant.** Both are still inside ANSI C84.1's 110 V utilisation minimum, which is why this is a guideline and not a violation.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: #14 load (`COMP_RESISTOR` 1, term 0) — "amp" **161.6 Vpk ±5 %**; panel auto; **extra** the #10 load (`COMP_RESISTOR` 3). Preset 5 ms/div, 50 V/div, Stack. `--std-test` pins #10 at 0.980 (compliant) and #14 at 0.952 as a **documented exception**.
+- **V:** halve the load current, or shorten the #14 run to 50 ft ⇒ it comes into compliance. Push the load to 20 A ⇒ #14 drops to 8 %. **M:** conductor R (the table of AWG values is in the note).
+
+### 115. AC Compressor Start — 339.41 Vpk (240 V) behind 0.20 Ω + 0.318 mH (transformer + 200 ft of rural service), 28.8 Ω of house load, a `fault_switch` contactor closing at 50 ms for 120 ms into 1.15 Ω + 5.30 mH (locked rotor: 104 A at 0.5 pf)
+- **Demonstrates:** motor-start flicker. The panel falls from **333 Vpk to 310 Vpk — a 7 % dip to 219 V (109.6 V per leg)** for the duration of the start. IEEE 1453 and AEP distribution practice allow roughly 3 % for an infrequent start, so this service is undersized.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: panel (`COMP_RESISTOR` 1, term 0) — "max" **336.4 V ±5 %** over the first 40 ms (before the contactor); utility auto; **extra** the motor branch (`COMP_RESISTOR` 2). Preset 20 ms/div, 200 V/div, Stack + Fit.
+- **N:** CH2 visibly shrinks between 50 and 170 ms and CH3 (the motor branch) is only alive in that window. **V:** service R 0.20 → 0.05 Ω (a bigger transformer and conductor) ⇒ the dip drops under 2 %. Raise the motor R (a soft starter) ⇒ same. **M:** contactor timing via the pulse source.
+
+### 116. Rooftop Solar Backfeed — 339.41 Vpk utility behind 0.25 Ω (25 kVA transformer + 150 ft drop), 57.6 Ω house load, and a `COMP_AC_CURRENT` of 44.8 Apk (31.7 A rms, 7.6 kW at unity pf) injecting at the PCC
+- **Demonstrates:** export raises voltage instead of dropping it. I × Z lifts the PCC by 9.7 Vpk to **349.1 Vpk = 123.4 V per leg (1.029 pu)** — inside ANSI C84.1 Range A, but with only 2.6 V of headroom. IEEE 1547-2018 and the ERCOT DG rules require the PCC to stay in Range A while exporting.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: PCC (`COMP_RESISTOR` 1, term 0) — "amp" **349.1 V ±5 %**; utility auto. Preset 5 ms/div, 100 V/div, Stack. `--std-test` pins 1.029 pu.
+- **V:** double the inverter current (or the service resistance) ⇒ the PCC passes 126 V, which is where 1547's volt-var and volt-watt curtailment take over. Give the current source a phase angle to see volt-var absorbing instead. **M:** house load, service R.
+
+### 117. 480Y/277 V Service — `three_phase_fanout` at 391.9 Vpk (277 V L-N, 480 V L-L), 0.03 Ω per-phase feeder, 3.62 Ω + 6.42 mH per phase (30 hp motor at 0.85 pf), plus 12.8 Ω of 277 V lighting on phase A only
+- **Demonstrates:** the standard American commercial system, and why phase A sits lower than B and C (it carries the lighting as well as its share of the motor). Bus A **388.7 Vpk = 274.9 V L-N = 476 V L-L (0.992 pu)**, inside ANSI C84.1's 456–504 V Range A for a 480 V service. NEC 210.6(C) is what allows 277 V luminaires.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: bus A (`COMP_RESISTOR` 1, term 0) — "amp" **388.7 V ±5 %**; the 3-phase source auto; **extras** buses B and C (`COMP_RESISTOR` 4 and 6). Preset 5 ms/div, 100 V/div, Stack — the three bands are 120° apart.
+- **V:** delete the lighting ⇒ A matches B and C. Unbalance the motor ⇒ neutral current appears. **M:** row spacing is 220 px because the R-L loads are 160 px tall (a 140 px pitch ran the next feeder through them — caught by `--geom-test`).
+
+### 118. 208Y/120 V Panel — `three_phase_fanout` at 169.71 Vpk (120 V L-N, 208 V L-L), 0.05 Ω branch conductors, loads 6 / 10 / 20 Ω (20 / 12 / 6 A), all returning through one 0.05 Ω shared neutral to ground
+- **Demonstrates:** NEC 220.61. Because the phases are 120° apart the neutral carries the **vector** unbalance, √(a²+b²+c²−ab−bc−ca) = 12.2 A, not the 38 A arithmetic sum. The shared neutral lifts the panel neutral slightly, so the heavily loaded phase sags and the light one rises.
+- **Measured:** bus A **168.3 Vpk = 119.0 V (0.992 pu)**, bus B 168.8 Vpk = 119.4 V — all inside Range A. `--std-test` pins bus A.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: bus A (`COMP_RESISTOR` 1, term 0) — "amp" **168.3 V ±5 %**; source auto; **extras** buses B and C (`COMP_RESISTOR` 3 and 5). Preset 5 ms/div, 50 V/div, Stack.
+- **V:** **neutral 0.05 → 1 Ω** and the three 120 V branches spread apart badly. Balance the loads ⇒ the neutral current goes to zero.
+
+### 119. Power Factor Correction — 391.9 Vpk (277 V) source whose **return** passes through a 0.05 Ω shunt to ground, 1.727 Ω + 4.04 mH bus load (33 kVA at 0.75 pf lag), and a `COMP_SPST_SWITCH` (open) in series with 478 µF to ground
+- **Demonstrates:** the shunt is in the supply return so a single-ended scope channel reads the **line current** (50 mV per amp), not a bus voltage — that is the only way an ammeter-style measurement works here. Bank open: 8.7 Vpk on the shunt = 174 Apk = **123 A rms** for 25 kW of real power. Close the switch and 478 µF supplies 13.8 kvar locally, so the same kW needs ≈ 95 A.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: the shunt (`COMP_RESISTOR` 0, term 0) — "amp" **8.7 V ±8 %**; source auto. Preset 5 ms/div, 5 V/div, Stack + Fit.
+- **V:** **close the cap-bank switch** ⇒ CH2 shrinks by about a fifth and moves into phase with the voltage. 956 µF over-corrects into a leading pf and the current climbs again. **M:** ERCOT/AEP tariffs price reactive power; NERC VAR-001 makes it a planning obligation.
+
+### 120. Standby Generator Transfer — two 339.41 Vpk sources (utility, generator), each behind a `fault_switch` contactor (utility closed 0–50 ms, generator closed from 70 ms), feeding a common bus, 0.05 Ω feeder and an 11.52 Ω life-safety load (5 kW)
+- **Demonstrates:** an **open-transition** transfer: the two sources are never closed together, which is what stops a generator being back-fed into the utility. The load is dead for 20 ms. NEC 700 allows 10 s for emergency systems, NEC 701 allows 60 s for legally required standby, and NFPA 110 Type 10 is the 10 s class.
+- **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: load bus (`COMP_RESISTOR` 1, term 0) — "max" **328.8 V ±5 %** over 300 ms; utility auto; **extra** the generator (`COMP_AC_VOLTAGE` 1). Preset 20 ms/div, 100 V/div, Stack.
+- **N:** CH2 is a clean 240 V sine, dead from 50 to 70 ms, then back. **V:** **overlap the contactors** (generator delay 70 → 40 ms) and the two sources fight through 0.1 Ω — the closed-transition case that needs synchronising. Widen the gap to see a longer outage. **M:** contactor timings via the two pulse sources.
+
 ---
 
 ## Result log
@@ -1161,5 +1238,17 @@ Common building blocks (`src/circuits.c`, batch 5):
 | 106 | UART 5 V ↔ 3.3 V | | | | | | | 3.33 V max at RX; 4 bands; threshold 3.5 V case |
 | 107 | RS-485 Differential Link | | | | | | | 2.5 V amp at the receiver with 1 V common-mode noise; A/B far-end bands |
 | 108 | SPMI Bus (1.8 V) | | | | | | | 0.9 V amp at SDATA load; 3 bands; 26 MHz still square |
+| 109 | 69 kV Subtransmission | | | | | | | 53.9 kVpk oracle; 0.957 pu (ERCOT PG 4); 25 MVA -> 0.946 violation |
+| 110 | Texas Voltage Ladder | | | | | | | 5 buses pinned by --std-test: 0.991 / 0.971 / 0.959 / 0.988 pu and 117.4 V; LTC neutral -> 112 V |
+| 111 | CREZ Wind Collector | | | | | | | collector 1.043 pu (voltage rise); open string B; 6 deg angle sets the export |
+| 112 | 13.8 kV Industrial Service | | | | | | | 4.16 kV 0.981 pu, 480 V 0.974 pu; SMALL flag expected at 5 kV/div |
+| 113 | 240/120 V Service | | | | | | | L1 119.3 V, L2 119.6 V, 180 deg apart; neutral 5 ohm = the open-neutral failure |
+| 114 | 120 V Branch Circuits | | | | | | | #14 114.2 V (4.8 %, documented NEC exception), #10 117.7 V (2.0 %) |
+| 115 | AC Compressor Start | | | | | | | 7 % dip (333 -> 310 Vpk) at 50 ms; service R 0.20 -> 0.05 fixes it |
+| 116 | Rooftop Solar Backfeed | | | | | | | PCC 1.029 pu (123.4 V) exporting 7.6 kW; double it to pass 126 V |
+| 117 | 480Y/277 V Service | | | | | | | bus A 476 V L-L (0.992 pu); phase A lower because it carries the lighting |
+| 118 | 208Y/120 V Panel | | | | | | | 119.0 V on the 20 A phase; neutral carries 12.2 A, not 38 A (NEC 220.61) |
+| 119 | Power Factor Correction | | | | | | | shunt in the supply return: 123 A -> 95 A when the bank closes |
+| 120 | Standby Generator Transfer | | | | | | | 20 ms open transition; overlap the contactors to see them fight |
 
 (96 blocks = the 96 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`; #48-#65 follow the enum order after `CIRCUIT_PHASE_SHIFT_OSC`, #66-#72 the enum order after `CIRCUIT_DC_LINE_DROP`, #73-#81 the enum order after `CIRCUIT_HV_765_LINE`, #82-#90 the enum order after `CIRCUIT_RING_OSC`, #91-#96 the enum order after `CIRCUIT_OPAMP_SAT`.)

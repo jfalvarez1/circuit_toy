@@ -714,6 +714,7 @@
                     <a href="#measurement-tools">7h. Measurement Tools</a>
                     <a href="#power-systems">7i. Power Systems &amp; High Voltage</a>
                     <a href="#ic-io">7j. IC I/O &amp; Drivers</a>
+                    <a href="#building">7k. Texas Voltages, Residential &amp; Commercial</a>
 
                     <div class="toc-section">Theory & Concepts</div>
                     <a href="#theory">8. Circuit Theory Fundamentals</a>
@@ -1464,6 +1465,65 @@ matters (Stack view), and its on-canvas text says what to change to break it.</p
 division above the bottom of their band, so a 0/3.3 V square uses the whole band. For amplifiers, the Display tab's
 <strong>AC</strong> (draw each trace minus its DC level) and <strong>Fit</strong> (per-band V/div, shown in the band tag) make a
 10 mV input and a 250 mV output riding on 6 V both readable at once.</div>
+</section>
+
+
+<!-- 7k. Texas voltages, residential & commercial -->
+<section id="building" class="section">
+<h2>7k. Texas Voltages, Residential &amp; Commercial</h2>
+<p>Every voltage level used in Texas has a template, and every number is sized against a published
+criterion rather than chosen to look good. The full table of standards, conductor data and documented
+exceptions lives in <code>docs/RESEARCH_ERCOT_STANDARDS.md</code>; <code>template_smoke --std-test</code>
+measures 19 steady-state buses and checks each against its band.</p>
+
+<table>
+<tr><th>Band</th><th>Limit</th><th>Standard</th></tr>
+<tr><td>Transmission, system normal</td><td>0.95 - 1.05 pu</td><td>ERCOT Planning Guide 4 / Nodal Operating Guide 2; NERC TPL-001-5.1 category P0</td></tr>
+<tr><td>Transmission, post-contingency</td><td>0.90 - 1.10 pu</td><td>NERC TPL-001-5.1 categories P1 - P7</td></tr>
+<tr><td>Service, 120 V base</td><td>114 - 126 V (Range A)</td><td>ANSI C84.1</td></tr>
+<tr><td>Service, 480 V base</td><td>456 - 504 V (Range A)</td><td>ANSI C84.1</td></tr>
+<tr><td>Branch circuit voltage drop</td><td>3 % (5 % feeder + branch)</td><td>NEC 210.19(A) / 215.2(A) informational notes</td></tr>
+<tr><td>Infrequent motor-start dip</td><td>~3 %</td><td>IEEE 1453; AEP distribution planning practice</td></tr>
+<tr><td>Distributed generation at the PCC</td><td>stay inside Range A while exporting</td><td>IEEE 1547-2018; ERCOT DG interconnection</td></tr>
+<tr><td>Emergency / standby transfer</td><td>10 s / 60 s</td><td>NEC 700 / 701; NFPA 110 Type 10</td></tr>
+</table>
+
+<h3>The Texas ladder</h3>
+<p>The <strong>Texas Voltage Ladder</strong> puts 345 kV (ERCOT's highest transmission voltage), 138 kV,
+69 kV subtransmission, 12.47 kV distribution and the 240 V service on one canvas, with a real tap load at
+every level - 300 / 100 / 15 / 3 MW and a 10 kW house. The scope shows all five at once in Stack + Fit,
+each band carrying its own V/div in its tag. The buses land at 0.991 / 0.971 / 0.959 / 0.988 pu and the
+service at 117.4 V per leg, all compliant.</p>
+<div class="tip">The 69/12.47 kV substation transformer runs its load tap changer <strong>8 steps up
+(+5 %, 0.625 % per step)</strong>. Set the ratio back to 0.1807 (LTC neutral) and the house falls to about
+112 V - below ANSI C84.1 Range A. That single experiment is the clearest answer to "why does a substation
+need an LTC?".</div>
+
+<h3>Transmission and distribution</h3>
+<table>
+<tr><th>Template</th><th>What it shows</th><th>Try</th></tr>
+<tr><td><strong>69 kV Subtransmission</strong></td><td>AEP Texas practice: 20 mi of 336 ACSR into 20 MVA at the 0.95 pf design point, landing at 0.957 pu with almost nothing to spare.</td><td>Load 20 &rarr; 25 MVA drops it to 0.946 pu - a steady-state violation you can watch happen.</td></tr>
+<tr><td><strong>CREZ Wind Collector</strong></td><td>Two 34.5 kV strings, a 6 mi collector cable, a 34.5/345 kV GSU and 30 mi into the ERCOT grid. The strings are held 6&deg; ahead: that <em>angle</em>, not the magnitude, is what pushes power out, and the consequence is collector voltage rise (1.043 pu).</td><td>Open the string-B switch, or set a string phase to 0&deg; and watch the export stop.</td></tr>
+<tr><td><strong>13.8 kV Industrial Service</strong></td><td>The standard industrial ladder: 13.8 kV primary, a 13.8/4.16 kV plant transformer, a 2500 hp motor bus, and a 4160/480 V shop transformer.</td><td>Halve the motor resistance and both downstream buses sag together.</td></tr>
+</table>
+
+<h3>Residential</h3>
+<table>
+<tr><th>Template</th><th>What it shows</th><th>Try</th></tr>
+<tr><td><strong>240/120 V Service</strong></td><td>The pole transformer is two 7200:120 windings in series with the joint grounded, so L1 and L2 come out 180&deg; apart and 240 V apart. The neutral carries only the difference of the two legs (10 A - 5 A = 5 A).</td><td><strong>Raise the neutral conductor to 5 &Omega;</strong> (a corroded splice): L1 collapses and L2 rises past 126 V. That is the open-neutral failure that destroys appliances.</td></tr>
+<tr><td><strong>120 V Branch Circuits</strong></td><td>The same 12 A load 100 ft away on #14 (0.505 &Omega;) and on #10 (0.20 &Omega;): 114.2 V (4.8 %) versus 117.7 V (2.0 %). NEC 210.19(A) informs 3 %.</td><td>Shorten the #14 run to 50 ft, or halve the load, and it comes into compliance.</td></tr>
+<tr><td><strong>AC Compressor Start</strong></td><td>A 5-ton condenser pulling its locked-rotor current (104 A at 0.5 pf) on a long rural service drops the panel from 333 to 310 V<sub>pk</sub> - a 7 % dip, well past the ~3 % flicker guideline.</td><td>Service R 0.20 &rarr; 0.05 &Omega; (a bigger transformer and conductor), or raise the motor resistance to imitate a soft starter.</td></tr>
+<tr><td><strong>Rooftop Solar Backfeed</strong></td><td>Current flowing <em>out</em> of the house raises the point of common coupling instead of dropping it: +9.7 V<sub>pk</sub>, about 123.4 V per leg.</td><td>Double the inverter current and the PCC passes 126 V - where IEEE 1547 volt-var and volt-watt curtailment take over.</td></tr>
+</table>
+
+<h3>Commercial</h3>
+<table>
+<tr><th>Template</th><th>What it shows</th><th>Try</th></tr>
+<tr><td><strong>480Y/277 V Service</strong></td><td>277 V to neutral, 480 V phase to phase, a 30 hp motor across all three phases and 6 kW of 277 V lighting on phase A (NEC 210.6(C)). Phase A sits lowest because it carries both.</td><td>Delete the lighting and phase A comes back up to match B and C.</td></tr>
+<tr><td><strong>208Y/120 V Panel</strong></td><td>Branches loaded 20 / 12 / 6 A. The shared neutral carries the <em>vector</em> unbalance - 12.2 A, not the 38 A sum - which is why NEC 220.61 lets it be sized on the unbalance.</td><td>Neutral 0.05 &rarr; 1 &Omega; and the three 120 V branches spread apart badly.</td></tr>
+<tr><td><strong>Power Factor Correction</strong></td><td>A 33 kVA motor at 0.75 pf draws 123 A for only 25 kW. The shunt sits in the <em>supply return</em>, so a single-ended scope channel reads line current at 50 mV per amp.</td><td>Close the cap-bank switch: 478 &micro;F supplies 13.8 kvar locally and the same kW now needs 95 A. 956 &micro;F over-corrects and the current climbs again.</td></tr>
+<tr><td><strong>Standby Generator Transfer</strong></td><td>An open-transition transfer - the utility contactor opens at 50 ms, the generator closes at 70 ms, and the load is dead for 20 ms. The two sources are never closed together, which is what stops a generator being back-fed into the utility.</td><td>Overlap the contactors and watch the two sources fight - the closed-transition case that needs synchronising.</td></tr>
+</table>
 </section>
 
 <!-- Circuit Theory -->
