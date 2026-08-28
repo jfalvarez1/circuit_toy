@@ -8,6 +8,7 @@ static_build = get_option('default_library') == 'static'
 
 # Find SDL2 dependency (with subproject fallback for Windows)
 # For static builds, we build SDL2 as a static library
+sdl2_from_subproject = false
 if static_build and host_machine.system() == 'windows'
   # Build SDL2 statically for standalone Windows executable
   sdl2_proj = subproject('sdl2',
@@ -16,6 +17,7 @@ if static_build and host_machine.system() == 'windows'
   )
   sdl2_dep = sdl2_proj.get_variable('sdl2_dep')
   sdl2main_dep = sdl2_proj.get_variable('sdl2main_dep')
+  sdl2_from_subproject = true
 else
   sdl2_dep = dependency('sdl2', required : false)
   sdl2main_dep = dependency('sdl2main', required : false)
@@ -23,6 +25,7 @@ else
     sdl2_proj = subproject('sdl2', required : true)
     sdl2_dep = sdl2_proj.get_variable('sdl2_dep')
     sdl2main_dep = sdl2_proj.get_variable('sdl2main_dep')
+    sdl2_from_subproject = true
   endif
 endif
 
@@ -75,11 +78,6 @@ endif
 inc_dirs = include_directories('include')
 
 # Build executable
-# SDL2 runtime next to the exe, so it starts from a taskbar pin / Explorer (DLL search = exe dir first)
-if host_machine.system() == 'windows'
-  configure_file(input: 'SDL2-8.dll', output: 'SDL2-8.dll', copy: true)
-endif
-
 executable('circuit-playground',
   src_files,
   include_directories : inc_dirs,
@@ -87,6 +85,22 @@ executable('circuit-playground',
   install : true,
   win_subsystem : 'console'  # Show console window for debug output
 )
+
+# SDL2 runtime next to the exe, so the app starts from a taskbar pin or Explorer (Windows
+# searches the exe's own directory first) and so a freshly configured build directory can run
+# the headless UI checks. It is copied from the library the subproject BUILDS: doing it with
+# configure_file(copy: true) reads from the source tree at configure time, which only ever
+# worked on a machine with a stray SDL2-8.dll in it and failed every clean checkout.
+# A static build links SDL2 in and needs no DLL at all.
+if host_machine.system() == 'windows' and not static_build and sdl2_from_subproject
+  py_copy = find_program('python3', 'python')
+  custom_target('sdl2-runtime-dll',
+    input : sdl2_proj.get_variable('sdl2'),
+    output : 'SDL2-8.dll',            # the name the exe's import table records
+    command : [py_copy, files('tools/copy_file.py'), '@INPUT@', '@OUTPUT@'],
+    build_by_default : true
+  )
+endif
 
 # Development tools
 subdir('tools')
