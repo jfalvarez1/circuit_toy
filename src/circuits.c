@@ -311,6 +311,8 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_ID_OPAMP] = {"Ideal vs Real Op-Amp", "IdOA", "Gain-bandwidth and slew rate against infinity", TG_IDEAL},
     [CIRCUIT_ID_BJT] = {"Ideal vs Real BJT", "IdBJT", "The Early effect moves the operating point", TG_IDEAL},
     [CIRCUIT_ID_MOSFET] = {"Ideal vs Real MOSFET", "IdMOS", "Channel-length modulation is not a rounding error", TG_IDEAL},
+    [CIRCUIT_ID_OPAMP_ERR] = {"Op-Amp Error Sources", "OAerr", "Offset and bias current at DC, and how to cancel them", TG_IDEAL},
+    [CIRCUIT_PARTS_MOSFET] = {"Named Parts: MOSFET Switches", "Parts", "2N7000 / 2N7002 / IRF540N doing the same job", TG_IDEAL},
 
 
 
@@ -6262,6 +6264,8 @@ static int place_id_ind(Circuit *circuit, float x, float y);
 static int place_id_opamp(Circuit *circuit, float x, float y);
 static int place_id_bjt(Circuit *circuit, float x, float y);
 static int place_id_mosfet(Circuit *circuit, float x, float y);
+static int place_id_opamp_err(Circuit *circuit, float x, float y);
+static int place_parts_mosfet(Circuit *circuit, float x, float y);
 static int place_template_body(Circuit *circuit, CircuitTemplateType type, float x, float y) {
     if (!circuit) return 0;
 
@@ -6477,6 +6481,8 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_ID_OPAMP:           return place_id_opamp(circuit, x, y);
         case CIRCUIT_ID_BJT:             return place_id_bjt(circuit, x, y);
         case CIRCUIT_ID_MOSFET:          return place_id_mosfet(circuit, x, y);
+        case CIRCUIT_ID_OPAMP_ERR:       return place_id_opamp_err(circuit, x, y);
+        case CIRCUIT_PARTS_MOSFET:       return place_parts_mosfet(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6674,6 +6680,18 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "also rises with V_CE - the Early effect, I_C = I_S exp(V_BE/V_T)(1 + V_CE/V_AF) - so with V_AF = 80 V",
         "the current is ~9 % higher and the collector sits lower. It is the same effect that sets a stage's",
         "output resistance r_o = V_AF/I_C, so it is not a rounding error. PROBE: both collectors."},
+    [CIRCUIT_PARTS_MOSFET] = {"NAMED PARTS: the same low-side switch three times, with three real MOSFETs from the",
+        "library. Each gate is held at 10 V - the voltage their data sheets specify R_DS(on) at -",
+        "so the drop across each device is 12 V x R_DS(on) / (R_load + R_DS(on)): 143 mV for the",
+        "2N7000 (1.2 ohm), 233 mV for the 2N7002 (2 ohm) and 5 mV for the IRF540N (44 mohm).",
+        "CLOSE THE SWITCH to halve the first load: twice the current, twice the drop, four times",
+        "the heat in the device. Pick a part in the properties panel. PROBE: all three drains."},
+    [CIRCUIT_ID_OPAMP_ERR] = {"OP-AMP ERROR SOURCES AT DC: two x100 non-inverting stages with their inputs grounded",
+        "through a source resistance, so whatever comes out is error. The ideal part gives 0.000 V; the",
+        "real one has V_os = 1 mV and I_B = 100 nA, and the bias current has to flow through whatever",
+        "the input sees: V_out = 100 (V_os - I_B (R_s - R1||Rf)) = 100 (1 mV - 9.9 mV) = -0.89 V.",
+        "CLOSE THE SWITCH to short 99k of it: R_s becomes 1k, almost exactly the 990 ohm the other input",
+        "sees, the bias errors cancel and only the offset is left (+0.10 V). PROBE: both outputs."},
     [CIRCUIT_ID_MOSFET] = {"IDEAL vs REAL MOSFET (channel-length modulation): common source, V_GS = 3 V, V_th = 1.5 V,",
         "K = u_Cox(W/L) = 2 mA/V^2. The square law gives I_D = K V_ov^2/2 = 2.25 mA and V_D = 12 - 2.2k x I_D",
         "= 7.05 V, and with lambda = 0 that is exactly what the left device does. Switch lambda to 0.05 /V and",
@@ -10589,6 +10607,140 @@ static int place_id_mosfet(Circuit *circuit, float x, float y) {
     return 16;
 }
 
+
+// 8. What a real op-amp gets wrong at DC, and the resistor that fixes half of it
+static int place_id_opamp_err(Circuit *circuit, float x, float y) {
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 380;
+        bool real = (k == 1);
+        Component *u = add_comp(circuit, COMP_OPAMP, x + 240, py + 40, 0);   // -(200,py+20) +(200,py+60) out(280,py+40)
+        if (!u) return 0;
+        u->props.opamp.ideal = !real;
+        u->props.opamp.gain = 1e5;
+        u->props.opamp.voffset = 1e-3;      /* 1 mV input offset, a jellybean bipolar part */
+        u->props.opamp.i_bias = 100e-9;     /* 100 nA into each input */
+        int minus = TN(x + 200, py + 20), plus = TN(x + 200, py + 60);
+
+        /* gain network: R1 to ground, Rf from the output, both in the left column */
+        Component *r1 = add_comp(circuit, COMP_RESISTOR, x - 100, py + 80, 90);   // (-100,py+40)-(-100,py+120)
+        r1->props.resistor.resistance = 1000.0;
+        Component *g1 = add_comp(circuit, COMP_GROUND, x - 100, py + 160, 0);
+        int mleft = TN(x - 100, py + 20), r1t = TN(x - 100, py + 40), r1b = TN(x - 100, py + 120), g1t = TN(x - 100, py + 140);
+        TW(minus, mleft); TW(mleft, r1t); TW(r1b, g1t);
+        r1->node_ids[0] = r1t; r1->node_ids[1] = r1b; g1->node_ids[0] = g1t;
+        Component *rf = add_comp(circuit, COMP_RESISTOR, x + 235, py - 40, 0);    // (195,py-40)-(275,py-40)
+        rf->props.resistor.resistance = 99000.0;                                  /* 1 + 99k/1k = x100 */
+        int out = TN(x + 280, py + 40), oright = TN(x + 320, py + 40), otop = TN(x + 320, py - 40);
+        int rfr = TN(x + 275, py - 40), rfl = TN(x + 195, py - 40), fbl = TN(x - 100, py - 40);
+        TW(out, oright); TW(oright, otop); TW(otop, rfr); TW(rfl, fbl); TW(fbl, mleft);
+        rf->node_ids[0] = rfl; rf->node_ids[1] = rfr;
+        u->node_ids[0] = minus; u->node_ids[1] = plus; u->node_ids[2] = out;
+
+        /* source resistance on the + input: 99k + 1k to ground, with a switch across the 99k */
+        int ptap = TN(x + 120, py + 60), ptop = TN(x + 120, py + 100);
+        TW(plus, ptap); TW(ptap, ptop);
+        Component *rs_big = add_comp(circuit, COMP_RESISTOR, x + 120, py + 140, 90);  // (120,py+100)-(120,py+180)
+        rs_big->props.resistor.resistance = 99000.0;
+        Component *rs_small = add_comp(circuit, COMP_RESISTOR, x + 120, py + 220, 90); // (120,py+180)-(120,py+260)
+        rs_small->props.resistor.resistance = 1000.0;
+        Component *gs = add_comp(circuit, COMP_GROUND, x + 120, py + 280, 0);
+        int mid = TN(x + 120, py + 180), sbot = TN(x + 120, py + 260);
+        rs_big->node_ids[0] = ptop; rs_big->node_ids[1] = mid;
+        rs_small->node_ids[0] = mid; rs_small->node_ids[1] = sbot;
+        gs->node_ids[0] = sbot;
+        if (real) {
+            /* only the real stage gets the matching switch - it is the only one the error
+               depends on, and it keeps exactly one switch in the template for --switch-test */
+            Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 40, py + 140, 90);  // (40,py+100)-(40,py+180)
+            sw->props.switch_spst.closed = false;
+            int swt = TN(x + 40, py + 100), swb = TN(x + 40, py + 180);
+            TW(ptop, swt); TW(swb, mid);
+            sw->node_ids[0] = swt; sw->node_ids[1] = swb;
+            add_label(circuit, x + 360, py + 100, "CLOSE to short the 99k: R_s = 1k matches R1||Rf = 990 ohm");
+        }
+        add_label(circuit, x + 360, py + 40,
+                  real ? "REAL: V_os = 1 mV, I_B = 100 nA -> -0.89 V out of a grounded input"
+                       : "IDEAL: no offset, no bias current -> 0.000 V");
+    }
+    add_label(circuit, x - 180, y - 100, "OP-AMP ERROR SOURCES: two x100 non-inverting stages with the input grounded through a source resistance");
+    add_label(circuit, x - 180, y + 700, "Everything at the output is error. V_out = 100 (V_os - I_B (R_s - R1||Rf)): the offset contributes 100 mV and the");
+    add_label(circuit, x - 180, y + 730, "bias current 990 mV, in opposite directions, so the real stage sits at -0.89 V with nothing at its input. Close the");
+    add_label(circuit, x - 180, y + 760, "switch and R_s becomes 1k - almost exactly the 990 ohm the inverting input sees - so the two bias-current drops");
+    add_label(circuit, x - 180, y + 790, "cancel and only the offset is left. Matching the DC resistance at both inputs is a free 10x accuracy improvement.");
+    return 15;
+}
+
+
+// 9. The same low-side switch built with three real devices from the part library
+static int place_parts_mosfet(Circuit *circuit, float x, float y) {
+    static const char *parts[3] = { "2N7000", "2N7002", "IRF540N" };
+    static const char *nm[3] = {
+        "2N7000: R_DS(on) 1.2 ohm at V_GS = 10 V -> 143 mV across the switch",
+        "2N7002: R_DS(on) 2 ohm -> 233 mV, and it is the same silicon in a smaller package",
+        "IRF540N: R_DS(on) 44 mohm -> 5 mV; a power part earns its size in the drop"
+    };
+    for (int k = 0; k < 3; k++) {
+        float py = y + k * 360;
+        Component *vdd = add_comp(circuit, COMP_DC_VOLTAGE, x, py + 60, 0);   // +(x,py+20)
+        if (!vdd) return 0;
+        vdd->props.dc_voltage.voltage = 12.0;
+        Component *g0 = add_comp(circuit, COMP_GROUND, x, py + 140, 0);
+        connect_terminals(circuit, vdd, 1, g0, 0);
+        int rail = TN(x, py + 20), rt = TN(x + 240, py + 20);
+        vdd->node_ids[0] = rail; TW(rail, rt);
+
+        Component *rl = add_comp(circuit, COMP_RESISTOR, x + 240, py + 60, 90);   // (240,py+20)-(240,py+100)
+        rl->props.resistor.resistance = 100.0;
+        rl->props.resistor.power_rating = 5.0;                                    /* 1.4 W in this circuit */
+        int rb = TN(x + 240, py + 100), rdrop = TN(x + 240, py + 140);
+        rl->node_ids[0] = rt; rl->node_ids[1] = rb;
+        TW(rb, rdrop);
+
+        Component *m = add_comp(circuit, COMP_NMOS, x + 320, py + 160, 0);   // G(300,py+160) D(340,py+140) S(340,py+180)
+        component_apply_part(m, parts[k]);                                   /* the data sheet model, by name */
+        int drain = TN(x + 340, py + 140), gate = TN(x + 300, py + 160), src = TN(x + 340, py + 180);
+        TW(rdrop, drain);
+        m->node_ids[0] = gate; m->node_ids[1] = drain; m->node_ids[2] = src;
+        int sb = TN(x + 340, py + 220);
+        TW(src, sb);
+        Component *gm = add_comp(circuit, COMP_GROUND, x + 340, py + 240, 0);
+        gm->node_ids[0] = sb;
+
+        /* gate held at the data sheet's 10 V test condition */
+        Component *vg = add_comp(circuit, COMP_DC_VOLTAGE, x + 140, py + 240, 0);  // +(140,py+200) -(140,py+280)
+        vg->props.dc_voltage.voltage = 10.0;
+        Component *gg = add_comp(circuit, COMP_GROUND, x + 140, py + 320, 0);
+        connect_terminals(circuit, vg, 1, gg, 0);
+        int gp = TN(x + 140, py + 200), gu = TN(x + 140, py + 160);
+        vg->node_ids[0] = gp;
+        TW(gp, gu); TW(gu, gate);
+
+        if (k == 0) {
+            /* a second load the switch can bring in: twice the current through the same device */
+            Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 460, py + 60, 90);  // (460,py+20)-(460,py+100)
+            r2->props.resistor.resistance = 100.0;
+            r2->props.resistor.power_rating = 5.0;
+            Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 460, py + 160, 90); // (460,py+120)-(460,py+200)
+            sw->props.switch_spst.closed = false;
+            int r2t = TN(x + 460, py + 20), r2b = TN(x + 460, py + 100);
+            int swt = TN(x + 460, py + 120), swb = TN(x + 460, py + 200), sj = TN(x + 460, py + 220);
+            TW(rt, r2t); TW(r2b, swt); TW(swb, sj);
+            int dj = TN(x + 400, py + 220), dd = TN(x + 400, py + 140);
+            TW(sj, dj); TW(dj, dd); TW(dd, drain);
+            r2->node_ids[0] = r2t; r2->node_ids[1] = r2b;
+            sw->node_ids[0] = swt; sw->node_ids[1] = swb;
+            add_label(circuit, x + 520, py + 160, "CLOSE: a second 100 ohm load, so twice the current");
+        }
+        add_label(circuit, x + 520, py + 60, nm[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "NAMED PARTS: the same low-side switch with three real MOSFETs, each at the 10 V gate drive its data sheet specifies");
+    add_label(circuit, x - 40, y + 1080, "F2 shows each part number on the canvas, and the properties panel's Part row swaps a device for another in the");
+    add_label(circuit, x - 40, y + 1110, "library - the parameters come from the data sheet, and template_smoke --part-test rebuilds each one's test");
+    add_label(circuit, x - 40, y + 1140, "condition to check it. The drop across a closed switch is I x R_DS(on): the 2N7000 loses 143 mV and dissipates");
+    add_label(circuit, x - 40, y + 1170, "17 mW, the IRF540N loses 5 mV. Close the switch to double the current and watch the drop double with it.");
+    return 24;
+}
+
 #undef TN
 #undef TW
 
@@ -10748,6 +10900,8 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_ID_OPAMP]         = { COMP_RESISTOR, 2, 0 },
     [CIRCUIT_ID_BJT]           = { COMP_RESISTOR, 1, 1 },
     [CIRCUIT_ID_MOSFET]        = { COMP_RESISTOR, 2, 1 },
+    [CIRCUIT_ID_OPAMP_ERR]     = { COMP_OPAMP, 1, 2 },
+    [CIRCUIT_PARTS_MOSFET]     = { COMP_NMOS, 0, 1 },
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -10807,6 +10961,8 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_ID_OPAMP]         = { { COMP_RESISTOR, 5, 0 }, { COMP_RESISTOR, 8, 0 } },
     [CIRCUIT_ID_BJT]           = { { COMP_RESISTOR, 3, 1 } },
     [CIRCUIT_ID_MOSFET]        = { { COMP_RESISTOR, 5, 1 } },
+    [CIRCUIT_ID_OPAMP_ERR]     = { { COMP_OPAMP, 0, 2 } },
+    [CIRCUIT_PARTS_MOSFET]     = { { COMP_NMOS, 1, 1 }, { COMP_NMOS, 2, 1 } },
     [CIRCUIT_CMOS_NAND]        = { { COMP_PULSE_SOURCE, 1, 0 } },
     // multi-input circuits: every input on its own channel
     [CIRCUIT_SUMMING_AMP]      = { { COMP_DC_VOLTAGE, 1, 0 }, { COMP_DC_VOLTAGE, 2, 0 } },    // V2, V3 (V1 = source probe)
@@ -10865,6 +11021,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_MATCH] = 500e-9, [CIRCUIT_HW_REFLECT] = 500e-9, [CIRCUIT_HW_LOOP] = 100e-6,
     [CIRCUIT_ID_SOURCE] = 1e-3, [CIRCUIT_ID_DIODE] = 200e-6, [CIRCUIT_ID_CAP] = 10e-6,
     [CIRCUIT_ID_IND] = 200e-6, [CIRCUIT_ID_OPAMP] = 2e-6, [CIRCUIT_ID_BJT] = 1e-3, [CIRCUIT_ID_MOSFET] = 1e-3,
+    [CIRCUIT_ID_OPAMP_ERR] = 1e-3, [CIRCUIT_PARTS_MOSFET] = 1e-3,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -10910,6 +11067,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_MATCH] = 0.5, [CIRCUIT_HW_REFLECT] = 1.0, [CIRCUIT_HW_LOOP] = 2.0,
     [CIRCUIT_ID_SOURCE] = 1.0, [CIRCUIT_ID_DIODE] = 0.2, [CIRCUIT_ID_CAP] = 0.1,
     [CIRCUIT_ID_IND] = 2.0, [CIRCUIT_ID_OPAMP] = 0.5, [CIRCUIT_ID_BJT] = 2.0, [CIRCUIT_ID_MOSFET] = 2.0,
+    [CIRCUIT_ID_OPAMP_ERR] = 0.5, [CIRCUIT_PARTS_MOSFET] = 0.1,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -11072,6 +11230,8 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_ID_OPAMP]         = { DEMO_WAVEFORM, 100e3 },
     [CIRCUIT_ID_BJT]           = { DEMO_DC, 0 },
     [CIRCUIT_ID_MOSFET]        = { DEMO_DC, 0 },
+    [CIRCUIT_ID_OPAMP_ERR]     = { DEMO_DC, 0 },
+    [CIRCUIT_PARTS_MOSFET]     = { DEMO_DC, 0 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -11111,6 +11271,8 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_ID_CAP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_ID_IND] = SCOPE_FLAG_STACK,
     [CIRCUIT_ID_OPAMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_ID_BJT] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_ID_MOSFET] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_ID_OPAMP_ERR] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_PARTS_MOSFET] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */
     [CIRCUIT_COLPITTS] = SCOPE_FLAG_AC, [CIRCUIT_HARTLEY] = SCOPE_FLAG_AC, [CIRCUIT_CLAPP] = SCOPE_FLAG_AC,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,

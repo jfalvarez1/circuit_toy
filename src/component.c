@@ -1896,7 +1896,7 @@ const char *component_search_keywords(ComponentType type) {
         case COMP_LED:             return "led light diode";
         case COMP_NPN_BJT:         return "transistor bjt npn bipolar";
         case COMP_PNP_BJT:         return "transistor bjt pnp bipolar";
-        case COMP_NMOS:            return "transistor mosfet fet nmos n-channel";
+        case COMP_NMOS:            return "transistor mosfet fet nmos n-channel 2n7000 2n7002 irf540n";
         case COMP_PMOS:            return "transistor mosfet fet pmos p-channel";
         case COMP_OPAMP: case COMP_OPAMP_FLIPPED: return "opamp op-amp amplifier operational";
         case COMP_DC_VOLTAGE:      return "battery dc voltage source supply";
@@ -1919,6 +1919,215 @@ const char *component_search_keywords(ComponentType type) {
         case COMP_VOLTMETER: case COMP_AMMETER: case COMP_WATTMETER: return "meter measure";
         default:                   return "";
     }
+}
+
+
+/* ======================= Named part models =======================
+   Every number below is from the manufacturer's data sheet, and the comment says which line.
+   The square-law MOSFET model is fitted at the datasheet's own R_DS(on) point, since that is
+   the figure a design is built around: K = 1 / (R_DS(on) (V_GS,test - V_th)).  --part-test
+   rebuilds each of these conditions and checks the model reproduces the number. */
+
+static void part_2n7000(Component *c) {
+    c->props.mosfet.vth = 2.1;        /* V_GS(th) 0.8 - 3.0 V, 2.1 typ */
+    c->props.mosfet.kp = 0.105;       /* R_DS(on) 1.2 ohm typ at V_GS = 10 V, I_D = 0.5 A */
+    c->props.mosfet.w = 1e-6; c->props.mosfet.l = 1e-6;
+    c->props.mosfet.lambda = 0.02;
+    c->props.mosfet.ideal = false;
+}
+static void part_2n7002(Component *c) {
+    c->props.mosfet.vth = 1.6;        /* V_GS(th) 1.0 - 2.5 V */
+    c->props.mosfet.kp = 0.060;       /* R_DS(on) 2 ohm typ at V_GS = 10 V */
+    c->props.mosfet.w = 1e-6; c->props.mosfet.l = 1e-6;
+    c->props.mosfet.lambda = 0.02;
+    c->props.mosfet.ideal = false;
+}
+static void part_irf540n(Component *c) {
+    c->props.mosfet.vth = 4.0;        /* V_GS(th) 2 - 4 V */
+    c->props.mosfet.kp = 3.8;         /* R_DS(on) 44 mohm max at V_GS = 10 V, I_D = 17 A */
+    c->props.mosfet.w = 1e-6; c->props.mosfet.l = 1e-6;
+    c->props.mosfet.lambda = 0.005;
+    c->props.mosfet.ideal = false;
+}
+static void part_bs250(Component *c) {
+    c->props.mosfet.vth = -3.0;       /* P-channel, V_GS(th) -1 to -3.5 V */
+    c->props.mosfet.kp = 0.0143;      /* R_DS(on) 10 ohm typ at V_GS = -10 V (14 ohm max) */
+    c->props.mosfet.w = 1e-6; c->props.mosfet.l = 1e-6;
+    c->props.mosfet.lambda = 0.02;
+    c->props.mosfet.ideal = false;
+}
+static void part_2n3904(Component *c) {
+    c->props.bjt.bf = 200;            /* h_FE 100 - 300 at I_C = 10 mA */
+    c->props.bjt.is = 6.7e-15;        /* gives V_BE ~ 0.66 V at 10 mA */
+    c->props.bjt.vaf = 74;
+    c->props.bjt.nf = 1.0;
+    c->props.bjt.ideal = false;
+}
+static void part_bc547b(Component *c) {
+    c->props.bjt.bf = 290;            /* B grade: h_FE 200 - 450 at I_C = 2 mA */
+    c->props.bjt.is = 7.0e-15;
+    c->props.bjt.vaf = 63;
+    c->props.bjt.nf = 1.0;
+    c->props.bjt.ideal = false;
+}
+static void part_2n3906(Component *c) {
+    c->props.bjt.bf = 180;            /* h_FE 100 - 300 at I_C = 10 mA */
+    c->props.bjt.is = 1.4e-14;
+    c->props.bjt.vaf = 100;
+    c->props.bjt.nf = 1.0;
+    c->props.bjt.ideal = false;
+}
+static void part_1n4148(Component *c) {
+    c->props.diode.is = 2.52e-9;      /* the standard 1N4148 SPICE model */
+    c->props.diode.n = 1.752;
+    c->props.diode.bv = 100.0;        /* V_R 100 V */
+    c->props.diode.ideal = false;     /* Shockley: the soft knee is the whole point of this part */
+}
+static void part_1n4001(Component *c) {
+    c->props.diode.is = 1.4e-9;       /* fitted to V_F = 1.0 V typ at 1 A (1.1 V max) */
+    c->props.diode.n = 1.9;
+    c->props.diode.bv = 50.0;
+    c->props.diode.ideal = false;
+}
+static void part_1n4733a(Component *c) {
+    c->props.zener.vz = 5.1;          /* 5.1 V, 1 W, I_ZT = 49 mA */
+    c->props.zener.rz = 7.0;          /* Z_ZT 7 ohm */
+    c->props.zener.ideal = false;
+}
+static void part_lm358(Component *c) {
+    c->props.opamp.gain = 100000;     /* A_VOL 100 V/mV */
+    c->props.opamp.gbw = 1e6;         /* 1 MHz */
+    c->props.opamp.slew_rate = 0.5;   /* 0.5 V/us */
+    c->props.opamp.voffset = 2e-3;    /* V_IO 2 mV typ, 7 mV max */
+    c->props.opamp.i_bias = 45e-9;    /* I_IB 45 nA typ */
+    c->props.opamp.cmrr = 85;         /* 85 dB typ */
+    c->props.opamp.r_out = 75;
+    c->props.opamp.rail_to_rail = false;
+    c->props.opamp.ideal = false;
+}
+static void part_lm741(Component *c) {
+    c->props.opamp.gain = 200000;     /* A_VOL 200 V/mV typ */
+    c->props.opamp.gbw = 1e6;
+    c->props.opamp.slew_rate = 0.5;
+    c->props.opamp.voffset = 1e-3;    /* V_IO 1 mV typ */
+    c->props.opamp.i_bias = 80e-9;    /* I_IB 80 nA typ */
+    c->props.opamp.cmrr = 90;
+    c->props.opamp.r_out = 75;
+    c->props.opamp.rail_to_rail = false;
+    c->props.opamp.ideal = false;
+}
+static void part_tl072(Component *c) {
+    c->props.opamp.gain = 200000;     /* A_VD 200 V/mV typ */
+    c->props.opamp.gbw = 3e6;         /* 3 MHz */
+    c->props.opamp.slew_rate = 13.0;  /* 13 V/us */
+    c->props.opamp.voffset = 3e-3;    /* V_IO 3 mV typ */
+    c->props.opamp.i_bias = 65e-12;   /* JFET inputs: 65 pA */
+    c->props.opamp.cmrr = 100;
+    c->props.opamp.r_out = 75;
+    c->props.opamp.rail_to_rail = false;
+    c->props.opamp.ideal = false;
+}
+static void part_mcp6001(Component *c) {
+    c->props.opamp.gain = 100000;     /* A_OL 112 dB typ */
+    c->props.opamp.gbw = 1e6;         /* 1 MHz */
+    c->props.opamp.slew_rate = 0.6;   /* 0.6 V/us */
+    c->props.opamp.voffset = 4.5e-3;  /* V_OS +/- 4.5 mV max */
+    c->props.opamp.i_bias = 1e-12;    /* 1 pA */
+    c->props.opamp.cmrr = 76;
+    c->props.opamp.r_out = 75;
+    c->props.opamp.rail_to_rail = true;   /* the reason to pick it */
+    c->props.opamp.ideal = false;
+}
+/* The regulator symbols reuse the source / zener property structs, so the datasheet figure
+   goes into the field the stamp actually reads. */
+static void part_lm317(Component *c) {
+    c->props.dc_voltage.voltage = 1.25;   /* V_REF 1.25 V (1.20 - 1.30 over line and load) */
+    c->props.dc_voltage.r_series = 0.1;
+}
+static void part_lm7805(Component *c) {
+    c->props.dc_voltage.voltage = 5.0;    /* V_O 4.8 - 5.2 V */
+    c->props.dc_voltage.r_series = 0.1;
+}
+static void part_tl431(Component *c) {
+    c->props.zener.vz = 2.495;            /* V_ref 2.495 V, +/- 1 % (A grade) */
+    c->props.zener.rz = 0.2;
+}
+
+static const PartModel g_parts[] = {
+    { "2N7000",  COMP_NMOS,    "logic-level NMOS, V_th 2.1 V, R_DS(on) 1.2 ohm at V_GS 10 V", part_2n7000 },
+    { "2N7002",  COMP_NMOS,    "SOT-23 NMOS, V_th 1.6 V, R_DS(on) 2 ohm at V_GS 10 V",        part_2n7002 },
+    { "IRF540N", COMP_NMOS,    "power NMOS, V_th 4 V, R_DS(on) 44 mohm at V_GS 10 V",         part_irf540n },
+    { "BS250",   COMP_PMOS,    "P-channel, V_th -3 V, R_DS(on) 14 ohm at V_GS -10 V",         part_bs250 },
+    { "2N3904",  COMP_NPN_BJT, "general-purpose NPN, h_FE 200 at 10 mA, V_AF 74 V",           part_2n3904 },
+    { "BC547B",  COMP_NPN_BJT, "small-signal NPN, h_FE 290 (B grade), V_AF 63 V",             part_bc547b },
+    { "2N3906",  COMP_PNP_BJT, "general-purpose PNP, h_FE 180 at 10 mA",                      part_2n3906 },
+    { "1N4148",  COMP_DIODE,   "small-signal silicon, V_F 0.72 V at 5 mA, V_R 100 V",         part_1n4148 },
+    { "1N4001",  COMP_DIODE,   "1 A rectifier, V_F 1.1 V at 1 A, V_R 50 V",                   part_1n4001 },
+    { "1N4733A", COMP_ZENER,   "5.1 V 1 W zener, Z_ZT 7 ohm at 49 mA",                        part_1n4733a },
+    { "LM358",   COMP_OPAMP,   "dual op-amp, 1 MHz, 0.5 V/us, V_os 2 mV, I_B 45 nA",          part_lm358 },
+    { "LM741",   COMP_OPAMP,   "the classic, 1 MHz, 0.5 V/us, V_os 1 mV, I_B 80 nA",          part_lm741 },
+    { "TL072",   COMP_OPAMP,   "JFET input, 3 MHz, 13 V/us, I_B 65 pA",                       part_tl072 },
+    { "MCP6001", COMP_OPAMP,   "rail-to-rail CMOS, 1 MHz, 0.6 V/us, I_B 1 pA",                part_mcp6001 },
+    { "LM317",   COMP_LM317,   "adjustable regulator, V_ref 1.25 V",                          part_lm317 },
+    { "LM7805",  COMP_7805,    "fixed 5 V regulator, 4.8 - 5.2 V",                            part_lm7805 },
+    { "TL431",   COMP_TL431,   "programmable shunt reference, V_ref 2.495 V",                 part_tl431 },
+};
+
+int component_part_count(void) { return (int)(sizeof g_parts / sizeof g_parts[0]); }
+
+const PartModel *component_part_at(int i) {
+    if (i < 0 || i >= component_part_count()) return NULL;
+    return &g_parts[i];
+}
+
+int component_parts_for(ComponentType type, int *idx, int n) {
+    int found = 0;
+    for (int i = 0; i < component_part_count(); i++) {
+        if (g_parts[i].type != type) continue;
+        if (idx && found < n) idx[found] = i;
+        found++;
+    }
+    return found;
+}
+
+bool component_apply_part_idx(Component *c, int idx) {
+    const PartModel *m = component_part_at(idx);
+    if (!c || !m || m->type != c->type) return false;
+    m->apply(c);
+    snprintf(c->part, sizeof c->part, "%s", m->part);
+    return true;
+}
+
+bool component_apply_part(Component *c, const char *part) {
+    if (!c || !part) return false;
+    for (int i = 0; i < component_part_count(); i++) {
+        if (g_parts[i].type != c->type) continue;
+        const char *a = g_parts[i].part, *b = part;
+        while (*a && *b && toupper((unsigned char)*a) == toupper((unsigned char)*b)) { a++; b++; }
+        if (!*a && !*b) return component_apply_part_idx(c, i);
+    }
+    return false;
+}
+
+void component_cycle_part(Component *c) {
+    if (!c) return;
+    int idx[16];
+    int n = component_parts_for(c->type, idx, 16);
+    if (n <= 0) return;
+    if (n > 16) n = 16;
+    int cur = -1;                                  /* -1 = generic */
+    for (int i = 0; i < n; i++)
+        if (c->part[0] && !strcmp(component_part_at(idx[i])->part, c->part)) { cur = i; break; }
+    int next = cur + 1;
+    if (next >= n) {                               /* wrap back to the generic component */
+        c->part[0] = '\0';
+        Component fresh = *c;
+        const ComponentTypeInfo *info = component_get_info(c->type);
+        if (info) fresh.props = info->default_props;
+        c->props = fresh.props;
+        return;
+    }
+    component_apply_part_idx(c, idx[next]);
 }
 
 const ComponentTypeInfo *component_get_info(ComponentType type) {
@@ -2390,9 +2599,13 @@ double sweep_get_value(const SweepConfig *sweep, double base_value, double time)
 static bool opamp_stamp_dynamic(Component *comp, Matrix *A, Vector *b, Vector *prev_solution,
                                 int plus_idx, int minus_idx, int out_idx, int volt_idx, double dt) {
     if (!comp || comp->props.opamp.ideal) return false;
-    if (!g_stamp_prev_step || dt <= 0) return false;
     double gain = comp->props.opamp.gain, gbw = comp->props.opamp.gbw;
     if (gain <= 0 || gbw <= 0) return false;
+    /* The input errors and the output resistance are there at DC as much as in the transient -
+       an offset voltage is exactly what a DC amplifier gets wrong - so the operating point
+       uses this path too. Only the pole and the slew limit are transient-only: neither means
+       anything without a previous step. */
+    bool trans = (g_stamp_prev_step != NULL) && dt > 0;
 
     if (out_idx > 0) {
         matrix_add(A, volt_idx, out_idx-1, 1.0);
@@ -2400,27 +2613,58 @@ static bool opamp_stamp_dynamic(Component *comp, Matrix *A, Vector *b, Vector *p
     }
 
     double prev = comp->props.opamp.prev_output;
-    double k = (gain / (2.0 * M_PI * gbw)) / dt;                 /* tau / dt */
-    double sr = comp->props.opamp.slew_rate;
+    double k = trans ? (gain / (2.0 * M_PI * gbw)) / dt : 0.0;    /* tau / dt */
+    double sr = trans ? comp->props.opamp.slew_rate : 0.0;
     double hi = 1e30, lo = -1e30;
     if (sr > 0) { hi = prev + sr * 1e6 * dt; lo = prev - sr * 1e6 * dt; }
     double vmax = comp->props.opamp.vmax, vmin = comp->props.opamp.vmin;
+    /* A part that is not rail-to-rail cannot drive its output all the way to the supply;
+       1.5 V of headroom is the classic bipolar figure (a 741 on +/-15 V swings +/-13.5). */
+    if (vmax > vmin && !comp->props.opamp.rail_to_rail) {
+        double head = 1.5;
+        if (vmax - vmin > 4 * head) { vmax -= head; vmin += head; }
+    }
     if (vmax > vmin) { if (hi > vmax) hi = vmax; if (lo < vmin) lo = vmin; }
 
-    if (!comp->slew_latch && prev_solution && out_idx > 0) {
+    /* Input-side error sources. These are what decide a DC amplifier's accuracy, and they are
+       what the datasheet's front page is about:
+         - offset voltage: the input pair is never perfectly matched, so the part behaves as if
+           a small battery sat in series with one input;
+         - bias current: real inputs draw current, which becomes a voltage error across
+           whatever resistance the source presents (and cancels if both sides see the same);
+         - CMRR: a common-mode voltage leaks through with gain A / 10^(CMRR_dB/20);
+         - input resistance: a finite differential resistance loads the source. */
+    double acm = (comp->props.opamp.cmrr > 0) ? gain / pow(10.0, comp->props.opamp.cmrr / 20.0) : 0.0;
+    double ib = comp->props.opamp.i_bias;
+    if (ib > 0) {
+        if (plus_idx > 0)  vector_add(b, plus_idx-1,  -ib);
+        if (minus_idx > 0) vector_add(b, minus_idx-1, -ib);
+    }
+    if (comp->props.opamp.r_in > 0 && comp->props.opamp.r_in < 1e15) {
+        double g_in = 1.0 / comp->props.opamp.r_in;
+        STAMP_CONDUCTANCE(plus_idx, minus_idx, g_in);
+    }
+
+    if (trans && !comp->slew_latch && prev_solution && out_idx > 0) {
         double vo_it = vector_get(prev_solution, out_idx-1);
         if (vo_it > hi) comp->slew_latch = 1;
         else if (vo_it < lo) comp->slew_latch = -1;
     }
-    if (comp->slew_latch) {
+    if (trans && comp->slew_latch) {
         vector_add(b, volt_idx, comp->slew_latch > 0 ? hi : lo);   /* on the limit, and no further */
         return true;
     }
-    /* free: the pole decides how far the output gets this step */
-    if (plus_idx > 0)  matrix_add(A, volt_idx, plus_idx-1,  -gain);
-    if (minus_idx > 0) matrix_add(A, volt_idx, minus_idx-1,  gain);
+    /* Free: the pole decides how far the output gets this step. The row is
+         (1 + tau/dt) Vout - (A + Acm/2) V+ + (A - Acm/2) V- - r_out I = A Voffset + (tau/dt) Vprev
+       which is Vout = A(Vd + Voffset) + Acm Vcm rolled off by the pole, driving the load
+       through the output resistance. */
+    if (plus_idx > 0)  matrix_add(A, volt_idx, plus_idx-1,  -(gain + acm / 2.0));
+    if (minus_idx > 0) matrix_add(A, volt_idx, minus_idx-1,  (gain - acm / 2.0));
     if (out_idx > 0)   matrix_add(A, volt_idx, out_idx-1,    k);
-    vector_add(b, volt_idx, k * prev);
+    /* Output resistance: the aux variable is the current leaving the output node into the
+       part, so a negative coefficient here makes the terminal droop as it sources current. */
+    if (comp->props.opamp.r_out > 0) matrix_add(A, volt_idx, volt_idx, -comp->props.opamp.r_out);
+    vector_add(b, volt_idx, k * prev + gain * comp->props.opamp.voffset);
     return true;
 }
 
@@ -2467,6 +2711,22 @@ static bool opamp_stamp_output(Component *comp, Matrix *A, Vector *b, Vector *pr
         if (minus_idx > 0) matrix_add(A, volt_idx, minus_idx-1,  gain);
     }
     return saturated;
+}
+
+/* Newton limiting for the MOSFET linearisation point.
+
+   A device with a large K - a power MOSFET is several amps per volt squared - can be thrown by
+   one linear solve to a V_DS hundreds of volts from anything its load line allows. The square
+   law then reports a current in the hundreds of amps, the next iteration answers with a bigger
+   overshoot, and Newton settles on a point that satisfies no KCL at all (the drain of a 2N7000
+   switching a 100 ohm load came out at -42 V). SPICE limits how far the linearisation point may
+   move per iteration; this is the same idea in its simplest useful form. It cannot change where
+   Newton converges - the fixed point is unchanged - only how it gets there. */
+static double mos_limit(double vnew, double vold) {
+    double step = 2.0 + 0.5 * fabs(vold);
+    if (vnew > vold + step) return vold + step;
+    if (vnew < vold - step) return vold - step;
+    return vnew;
 }
 
 /* Capacitor branch companion: theta-method C, plus ESR / ESL / leakage when the part is
@@ -3018,6 +3278,11 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                     Vds = vD - vS;
                     Vsb = 0;
                 }
+                /* Limit only V_DS (see mos_limit). V_GS is almost always held by a source, and
+                   limiting it stalls the solve instead: the device stays in cutoff while the
+                   node voltages sit still, and the convergence test - which watches the node
+                   voltages - calls that converged. */
+                Vds = mos_limit(Vds, comp->props.mosfet.op_vds);
             }
 
             // Body effect (non-ideal mode only)

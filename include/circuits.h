@@ -183,6 +183,8 @@ typedef enum {
     CIRCUIT_ID_OPAMP,
     CIRCUIT_ID_BJT,
     CIRCUIT_ID_MOSFET,
+    CIRCUIT_ID_OPAMP_ERR,
+    CIRCUIT_PARTS_MOSFET,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 

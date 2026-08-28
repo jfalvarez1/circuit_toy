@@ -52,6 +52,16 @@ static void render_component_value(RenderContext *ctx, Component *comp) {
         char pw[24]; format_engineering(comp->props.resistor.power_dissipated, "W", pw, sizeof pw);
         size_t n = strlen(buf); snprintf(buf + n, sizeof buf - n, "  %s", pw);   // show the real dissipation instead of a warning
     }
+    /* A named device shows its part number - that is what a schematic is labelled with. The
+       transistor symbols draw their own label, so those are already covered; everything else
+       gets it in front of the value. */
+    if (comp->part[0] && comp->type != COMP_NMOS && comp->type != COMP_PMOS &&
+        comp->type != COMP_NPN_BJT && comp->type != COMP_PNP_BJT) {
+        char merged[96];
+        if (buf[0]) snprintf(merged, sizeof merged, "%s  %s", comp->part, buf);
+        else        snprintf(merged, sizeof merged, "%s", comp->part);
+        snprintf(buf, sizeof buf, "%s", merged);
+    }
     if (!buf[0]) return;
     const ComponentTypeInfo *info = component_get_info(comp->type);
     int rot = ((comp->rotation % 360) + 360) % 360;
@@ -882,16 +892,16 @@ void render_component(RenderContext *ctx, Component *comp) {
             break;
         }
         case COMP_NPN_BJT:
-            render_bjt(ctx, comp->x, comp->y, comp->rotation, false, "NPN");
+            render_bjt(ctx, comp->x, comp->y, comp->rotation, false, comp->part[0] ? comp->part : "NPN");
             break;
         case COMP_PNP_BJT:
-            render_bjt(ctx, comp->x, comp->y, comp->rotation, true, "PNP");
+            render_bjt(ctx, comp->x, comp->y, comp->rotation, true, comp->part[0] ? comp->part : "PNP");
             break;
         case COMP_NMOS:
-            render_mosfet(ctx, comp->x, comp->y, comp->rotation, false, "NMOS");
+            render_mosfet(ctx, comp->x, comp->y, comp->rotation, false, comp->part[0] ? comp->part : "NMOS");
             break;
         case COMP_PMOS:
-            render_mosfet(ctx, comp->x, comp->y, comp->rotation, true, "PMOS");
+            render_mosfet(ctx, comp->x, comp->y, comp->rotation, true, comp->part[0] ? comp->part : "PMOS");
             break;
         case COMP_OPAMP:
             render_opamp(ctx, comp->x, comp->y, comp->rotation);

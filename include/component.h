@@ -720,6 +720,7 @@ typedef struct Component {
     bool selected;
     bool highlighted;
     char label[MAX_LABEL_LEN];
+    char part[16];      // Named device ("2N7000", "LM358", ...) when one has been applied; "" = generic
 
     // Terminals and connections
     int num_terminals;
@@ -791,6 +792,30 @@ void component_get_terminal_pos(Component *comp, int terminal_idx, float *x, flo
 
 // High-voltage helpers
 double toroid_capacitance(const Component *comp);      // Farads, from props.toroid dimensions
+
+/* ---------------------------------------------------------------------------------------
+   Named parts. A schematic says 2N7000, not "an NMOS with V_th = 2.1 V", so each entry here
+   carries the datasheet parameters for a real device and the one-line spec it was taken from.
+   Applying one sets the model parameters and the part name; the name is what the canvas and
+   the properties panel show. The parts are checked against their data sheets by
+   `template_smoke --part-test`, which builds the datasheet's own test condition.
+   --------------------------------------------------------------------------------------- */
+typedef struct {
+    const char *part;            // "2N7000"
+    ComponentType type;          // which symbol it is
+    const char *summary;         // the line shown in the properties panel
+    void (*apply)(Component *c); // datasheet parameters
+} PartModel;
+
+int  component_part_count(void);
+const PartModel *component_part_at(int i);
+// Parts that fit this component type, in table order; returns how many and fills idx[] (max n).
+int  component_parts_for(ComponentType type, int *idx, int n);
+// Apply by name (case-insensitive) or by table index. Returns false if it does not fit.
+bool component_apply_part(Component *c, const char *part);
+bool component_apply_part_idx(Component *c, int idx);
+// Next part for this component's type, wrapping through "" (generic) - drives the panel row.
+void component_cycle_part(Component *c);
 
 /* Capacitor companion model for one step. The branch is  C in series with ESR and ESL,
    with the leakage resistance in parallel across the whole branch:

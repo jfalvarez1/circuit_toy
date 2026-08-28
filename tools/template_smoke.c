@@ -512,6 +512,11 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_ID_BJT,           COMP_RESISTOR,  3, 1, "dc",  6.874,  0.02, 5e-3, "V_AF = 80 V: (1 + V_CE/V_AF) adds ~9 % of collector current" },
     { CIRCUIT_ID_MOSFET,        COMP_RESISTOR,  2, 1, "dc",  7.05,   0.02, 5e-3, "square law: I_D = K V_ov^2/2 = 2.25 mA into 2.2k" },
     { CIRCUIT_ID_MOSFET,        COMP_RESISTOR,  5, 1, "dc",  5.652,  0.02, 5e-3, "lambda = 0.05: V_D solves 12 - 2.2k I_D (1 + lambda V_D)" },
+    { CIRCUIT_ID_OPAMP_ERR,     COMP_OPAMP,     0, 2, "dc",  0.0,   -0.005, 5e-3, "ideal op-amp: a grounded input gives 0.000 V" },
+    { CIRCUIT_ID_OPAMP_ERR,     COMP_OPAMP,     1, 2, "dc", -0.8892, 0.03, 5e-3, "100 (V_os - I_B (100k - 990)) with the switch open" },
+    { CIRCUIT_PARTS_MOSFET,     COMP_NMOS,      0, 1, "dc",  0.1442, 0.05, 5e-3, "2N7000: 12 x 1.2 / (100 + 1.2) at V_GS = 10 V" },
+    { CIRCUIT_PARTS_MOSFET,     COMP_NMOS,      1, 1, "dc",  0.2340, 0.05, 5e-3, "2N7002: 12 x 2.0 / (100 + 2.0)" },
+    { CIRCUIT_PARTS_MOSFET,     COMP_NMOS,      2, 1, "dc",  0.00526, 0.08, 5e-3, "IRF540N: 12 x 0.044 / (100 + 0.044)" },
     { CIRCUIT_SCHMITT_BISTABLE, COMP_OPAMP,     0, 2, "max", 15.0,  0.05, 30e-3, "bistable output at the rail" },
     { CIRCUIT_TRI_SQUARE_GEN,   COMP_OPAMP,     1, 2, "amp", 7.5,   0.08, 3e-3,  "triangle peak = 15 R1/R2" },
     { CIRCUIT_FUNCTION_GEN,     COMP_RESISTOR,  3, 1, "amp", 4.9,   0.15, 3e-3,  "3-breakpoint sine ~4.9 V peak" },
@@ -1596,6 +1601,8 @@ static const SwitchCase switch_cases[] = {
     { CIRCUIT_COM_PFC,      0, 8.70,     6.90,    0.08, "capacitor bank: 0.75 pf open, 0.95 pf closed" },
     { CIRCUIT_TX_WIND,      0, 29370.0,  29370.0, 0.10, "string B disconnect (collector bus barely moves)" },
     { CIRCUIT_GS_PIDS,      0, 12.0,     8.775,   0.05, "cable integrity link: open = cable cut (12 V), closed = the loop cycling 8.5 / 9.2 V" },
+    { CIRCUIT_ID_OPAMP_ERR, 0, -0.8892,  0.0998,  0.04, "source-matching switch: 100k unmatched -> -0.89 V, 1k matched -> +0.10 V (offset only)" },
+    { CIRCUIT_PARTS_MOSFET, 0, 0.1442,   0.2849,  0.05, "second 100 ohm load: twice the current, twice the drop across the 2N7000" },
     /* switches that act on another phase or another branch than the probed one: no movement is correct */
     { CIRCUIT_POWER_PLANT,  1, 252504.0, 252504.0, 0.05, "phase B breaker - the probe is on phase A" },
     { CIRCUIT_POWER_PLANT,  2, 252504.0, 252504.0, 0.05, "phase C breaker - the probe is on phase A" },
@@ -1676,6 +1683,345 @@ static int switch_test(void) {
     return fails ? 1 : 0;
 }
 
+
+/* ---------------------------------------------------------------------------------------
+ * --part-test: every named device against the data sheet condition it was specified at.
+ * Each check builds the manufacturer's own test circuit - force the stated current or gate
+ * voltage, read the stated terminal - so a wrong parameter or a broken stamp shows up as a
+ * number that does not match the front page of the data sheet.
+ * ------------------------------------------------------------------------------------- */
+typedef enum {
+    PC_RDSON,       /* MOSFET: force I_D through the channel at the stated V_GS, read V_DS/I_D */
+    PC_ID_MIN,      /* MOSFET: saturation current at a stated V_GS must clear the I_D(on) minimum */
+    PC_HFE,         /* BJT: force I_B, measure I_C/I_B */
+    PC_VBE,         /* BJT: V_BE at the same operating point */
+    PC_VF,          /* diode: force I_F, read the forward drop */
+    PC_VZ,          /* zener: force I_ZT, read the reverse voltage */
+    PC_OPAMP_VOS,   /* op-amp: a unity buffer with its input grounded outputs its offset */
+    PC_OPAMP_SR,    /* op-amp: the largest dV/dt a buffer produces on a 5 V step */
+    PC_TEMPLATE     /* regulator: its own template, with the part applied */
+} PartCheckKind;
+
+typedef struct {
+    const char *part;
+    PartCheckKind kind;
+    double bias;                 /* the data sheet's test condition */
+    double expect, tol;          /* value and relative tolerance (tol < 0 = absolute) */
+    CircuitTemplateType tpl;     /* PC_TEMPLATE only */
+    const char *note;
+} PartCheck;
+
+static const PartCheck part_checks[] = {
+    /* --- MOSFETs: R_DS(on) at the stated V_GS, then the transfer-curve minimum --- */
+    { "2N7000",  PC_RDSON,  10.0, 1.2,   0.15, 0, "R_DS(on) 1.2 ohm typ at V_GS = 10 V" },
+    { "2N7000",  PC_ID_MIN,  4.5, 0.075, 0,    0, "I_D(on) 75 mA min at V_GS = 4.5 V" },
+    { "2N7002",  PC_RDSON,  10.0, 2.0,   0.15, 0, "R_DS(on) 2 ohm typ at V_GS = 10 V" },
+    { "2N7002",  PC_ID_MIN,  4.5, 0.050, 0,    0, "I_D(on) 50 mA min at V_GS = 4.5 V" },
+    { "IRF540N", PC_RDSON,  10.0, 0.044, 0.15, 0, "R_DS(on) 44 mohm max at V_GS = 10 V" },
+    { "IRF540N", PC_ID_MIN,  6.0, 1.0,   0,    0, "well into conduction one volt above V_GS(th) + 1" },
+    { "BS250",   PC_RDSON, -10.0, 10.0,  0.20, 0, "R_DS(on) 14 ohm max at V_GS = -10 V (10 typ)" },
+    /* --- BJTs: forced base current, at the data sheet's collector current --- */
+    { "2N3904",  PC_HFE,   50e-6, 200.0, 0.15, 0, "h_FE 100 - 300 at I_C = 10 mA" },
+    { "2N3904",  PC_VBE,   50e-6, 0.66,  0.12, 0, "V_BE(on) 0.65 V typ at I_C = 10 mA" },
+    { "BC547B",  PC_HFE,   10e-6, 290.0, 0.15, 0, "h_FE 200 - 450 (B grade)" },
+    { "2N3906",  PC_HFE,   50e-6, 180.0, 0.15, 0, "h_FE 100 - 300 at I_C = 10 mA" },
+    /* --- diodes and the zener: forced current, measured drop --- */
+    { "1N4148",  PC_VF,     5e-3, 0.72,  0.12, 0, "V_F 0.72 V at 5 mA" },
+    { "1N4148",  PC_VF,    10e-3, 0.80,  0.15, 0, "V_F 1.0 V max at 10 mA" },
+    { "1N4001",  PC_VF,      1.0, 1.0,   0.15, 0, "V_F 1.0 V typ at 1 A (1.1 V max)" },
+    { "1N4733A", PC_VZ,    49e-3, 5.1,   0.10, 0, "V_Z 5.1 V at I_ZT = 49 mA" },
+    /* --- op-amps: the two figures that decide a design --- */
+    { "LM358",   PC_OPAMP_VOS, 0, 2e-3,  -5e-4, 0, "V_IO 2 mV typ" },
+    { "LM358",   PC_OPAMP_SR,  0, 0.5e6, 0.25,  0, "SR 0.5 V/us" },
+    { "LM741",   PC_OPAMP_VOS, 0, 1e-3,  -5e-4, 0, "V_IO 1 mV typ" },
+    { "TL072",   PC_OPAMP_SR,  0, 13e6,  0.25,  0, "SR 13 V/us" },
+    { "MCP6001", PC_OPAMP_SR,  0, 0.6e6, 0.25,  0, "SR 0.6 V/us" },
+    /* --- regulators: their own reference circuit --- */
+    { "LM7805",  PC_TEMPLATE, 0, 5.0,   0.02, CIRCUIT_7805_REG,  "V_O 5 V (4.8 - 5.2)" },
+    { "LM317",   PC_TEMPLATE, 0, 5.0,   0.03, CIRCUIT_LM317_REG, "1.25 (1 + 720/240) = 5.0 V" },
+    { "TL431",   PC_TEMPLATE, 0, 2.495, 0.02, CIRCUIT_TL431_REF, "V_ref 2.495 V" },
+};
+
+static ComponentType part_type(const char *name) {
+    for (int i = 0; i < component_part_count(); i++) {
+        const PartModel *m = component_part_at(i);
+        if (m && !strcmp(m->part, name)) return m->type;
+    }
+    return COMP_NONE;
+}
+
+/* DC operating point, then the voltage at one node */
+static double pc_dc_at(Circuit *c, int node_id, int *ok) {
+    Simulation *sim = simulation_create(c);
+    *ok = sim && simulation_dc_analysis(sim);
+    double v = 0;
+    if (*ok) { Node *n = circuit_get_node(c, node_id); v = n ? n->voltage : 0; }
+    if (!isfinite(v)) *ok = 0;
+    simulation_free(sim);
+    return v;
+}
+
+/* R_DS(on): hold the gate at the data sheet's V_GS and drive the drain from a supply through
+   a sense resistor, so the channel current is (V - V_D)/R_sense and R_DS(on) = V_D divided by
+   it. A current source into the drain would be the more literal reading of the data sheet, but
+   it leaves that node with no DC path at all until the device turns on, and Newton starts from
+   a drain sitting at the compliance limit - which converges on nonsense. */
+static double pc_mos_rdson(const char *part, double vgs, double vsupply, double rsense, int *ok) {
+    ComponentType ty = part_type(part);
+    Circuit *c = circuit_create();
+    Component *m = pt_add(c, ty, 100, 100, 0);
+    if (!m || !component_apply_part(m, part)) { circuit_free(c); *ok = 0; return 0; }
+    Component *vg = pt_add(c, COMP_DC_VOLTAGE, 0, 100, 0);
+    vg->props.dc_voltage.voltage = vgs;
+    Component *gg = pt_add(c, COMP_GROUND, 0, 200, 0);
+    Component *vd = pt_add(c, COMP_DC_VOLTAGE, 320, 40, 0);
+    vd->props.dc_voltage.voltage = vsupply;
+    Component *gv = pt_add(c, COMP_GROUND, 320, 140, 0);
+    Component *rs = pt_add(c, COMP_RESISTOR, 240, 60, 0);
+    rs->props.resistor.resistance = rsense;
+    rs->props.resistor.power_rating = 100.0;
+    Component *gs = pt_add(c, COMP_GROUND, 200, 260, 0);
+    int gate = pt_node(c, 60, 100), drain = pt_node(c, 180, 60), src = pt_node(c, 180, 160);
+    int rail = pt_node(c, 320, 0), rr = pt_node(c, 280, 60);
+    int gnd1 = pt_node(c, 0, 180), gnd2 = pt_node(c, 320, 120), gnd3 = pt_node(c, 200, 240);
+    vg->node_ids[0] = gate; vg->node_ids[1] = gnd1; gg->node_ids[0] = gnd1;
+    vd->node_ids[0] = rail; vd->node_ids[1] = gnd2; gv->node_ids[0] = gnd2;
+    rs->node_ids[0] = rr; rs->node_ids[1] = drain;
+    circuit_add_wire(c, rail, rr);
+    gs->node_ids[0] = gnd3; circuit_add_wire(c, src, gnd3);
+    m->node_ids[0] = gate; m->node_ids[1] = drain; m->node_ids[2] = src;
+    double vdrain = pc_dc_at(c, drain, ok);
+    circuit_free(c);
+    double id = (vsupply - vdrain) / rsense;
+    if (fabs(id) < 1e-9) { *ok = 0; return 0; }
+    return fabs(vdrain / id);
+}
+
+/* Saturation drain current at a stated V_GS: 10 V rail through a 1 ohm sense resistor. */
+static double pc_mos_id(const char *part, double vgs, int *ok) {
+    ComponentType ty = part_type(part);
+    Circuit *c = circuit_create();
+    Component *m = pt_add(c, ty, 100, 100, 0);
+    if (!m || !component_apply_part(m, part)) { circuit_free(c); *ok = 0; return 0; }
+    Component *vg = pt_add(c, COMP_DC_VOLTAGE, 0, 100, 0);
+    vg->props.dc_voltage.voltage = vgs;
+    Component *gg = pt_add(c, COMP_GROUND, 0, 200, 0);
+    Component *vdd = pt_add(c, COMP_DC_VOLTAGE, 300, 40, 0);
+    vdd->props.dc_voltage.voltage = 10.0;
+    Component *gv = pt_add(c, COMP_GROUND, 300, 140, 0);
+    Component *rs = pt_add(c, COMP_RESISTOR, 240, 60, 0);
+    rs->props.resistor.resistance = 1.0;
+    rs->props.resistor.power_rating = 100.0;
+    Component *gs = pt_add(c, COMP_GROUND, 200, 260, 0);
+    int gate = pt_node(c, 60, 100), drain = pt_node(c, 180, 60), src = pt_node(c, 180, 160);
+    int rail = pt_node(c, 300, 0), rr = pt_node(c, 280, 60);
+    int gnd1 = pt_node(c, 0, 180), gnd2 = pt_node(c, 300, 120), gnd3 = pt_node(c, 200, 240);
+    vg->node_ids[0] = gate; vg->node_ids[1] = gnd1; gg->node_ids[0] = gnd1;
+    vdd->node_ids[0] = rail; vdd->node_ids[1] = gnd2; gv->node_ids[0] = gnd2;
+    rs->node_ids[0] = rr; rs->node_ids[1] = drain;
+    circuit_add_wire(c, rail, rr);
+    gs->node_ids[0] = gnd3; circuit_add_wire(c, src, gnd3);
+    m->node_ids[0] = gate; m->node_ids[1] = drain; m->node_ids[2] = src;
+    double vd = pc_dc_at(c, drain, ok);
+    circuit_free(c);
+    return (10.0 - vd) / 1.0;                   /* the sense resistor is 1 ohm */
+}
+
+/* Forced base current; returns I_C through a 100 ohm collector resistor and V_BE. */
+static void pc_bjt(const char *part, double ib, double *hfe, double *vbe, int *ok) {
+    ComponentType ty = part_type(part);
+    bool pnp = (ty == COMP_PNP_BJT);
+    Circuit *c = circuit_create();
+    Component *q = pt_add(c, ty, 100, 100, 0);
+    if (!q || !component_apply_part(q, part)) { circuit_free(c); *ok = 0; return; }
+    Component *vcc = pt_add(c, COMP_DC_VOLTAGE, 300, 40, 0);
+    vcc->props.dc_voltage.voltage = pnp ? -5.0 : 5.0;
+    Component *gv = pt_add(c, COMP_GROUND, 300, 140, 0);
+    Component *rc = pt_add(c, COMP_RESISTOR, 240, 60, 0);
+    rc->props.resistor.resistance = 100.0;
+    rc->props.resistor.power_rating = 10.0;
+    Component *ibs = pt_add(c, COMP_DC_CURRENT, 0, 100, 0);
+    ibs->props.dc_current.current = pnp ? -ib : ib;
+    Component *gi = pt_add(c, COMP_GROUND, 0, 200, 0);
+    Component *ge = pt_add(c, COMP_GROUND, 200, 260, 0);
+    int base = pt_node(c, 60, 100), coll = pt_node(c, 180, 60), emit = pt_node(c, 180, 160);
+    int rail = pt_node(c, 300, 0), rr = pt_node(c, 280, 60);
+    int gnd1 = pt_node(c, 0, 180), gnd2 = pt_node(c, 300, 120), gnd3 = pt_node(c, 200, 240);
+    ibs->node_ids[0] = gnd1; ibs->node_ids[1] = base; gi->node_ids[0] = gnd1;
+    vcc->node_ids[0] = rail; vcc->node_ids[1] = gnd2; gv->node_ids[0] = gnd2;
+    rc->node_ids[0] = rr; rc->node_ids[1] = coll; circuit_add_wire(c, rail, rr);
+    ge->node_ids[0] = gnd3; circuit_add_wire(c, emit, gnd3);
+    q->node_ids[0] = base; q->node_ids[1] = coll; q->node_ids[2] = emit;
+    Simulation *sim = simulation_create(c);
+    *ok = sim && simulation_dc_analysis(sim);
+    if (*ok) {
+        Node *nb = circuit_get_node(c, base), *nc = circuit_get_node(c, coll);
+        double vb = nb ? nb->voltage : 0, vc = nc ? nc->voltage : 0;
+        double ic = ((pnp ? -5.0 : 5.0) - vc) / 100.0;
+        if (pnp) { ic = -ic; vb = -vb; }
+        *hfe = ib > 0 ? ic / ib : 0;
+        *vbe = vb;
+        if (!isfinite(*hfe) || !isfinite(*vbe)) *ok = 0;
+    }
+    simulation_free(sim);
+    circuit_free(c);
+}
+
+/* Forced forward (or zener) current; returns the drop across the part. */
+static double pc_diode_v(const char *part, double iforce, bool reverse, int *ok) {
+    ComponentType ty = part_type(part);
+    Circuit *c = circuit_create();
+    Component *d = pt_add(c, ty, 100, 100, 0);
+    if (!d || !component_apply_part(d, part)) { circuit_free(c); *ok = 0; return 0; }
+    Component *is = pt_add(c, COMP_DC_CURRENT, 0, 100, 0);
+    is->props.dc_current.current = iforce;
+    Component *gi = pt_add(c, COMP_GROUND, 0, 200, 0);
+    Component *gk = pt_add(c, COMP_GROUND, 200, 200, 0);
+    int a = pt_node(c, 60, 100), k = pt_node(c, 140, 100);
+    int gnd1 = pt_node(c, 0, 180), gnd2 = pt_node(c, 200, 180);
+    /* forward: current into the anode; reverse (zener): into the cathode */
+    is->node_ids[0] = gnd1; is->node_ids[1] = reverse ? k : a;
+    gi->node_ids[0] = gnd1;
+    gk->node_ids[0] = gnd2;
+    circuit_add_wire(c, reverse ? a : k, gnd2);
+    d->node_ids[0] = a; d->node_ids[1] = k;
+    double v = pc_dc_at(c, reverse ? k : a, ok);
+    circuit_free(c);
+    return v;
+}
+
+/* A unity-gain buffer built from the part; drive is optional (NULL = input grounded). */
+static Circuit *pc_buffer(const char *part, Component **src_out, int *out_node) {
+    Circuit *c = circuit_create();
+    Component *u = pt_add(c, COMP_OPAMP, 200, 100, 0);
+    if (!u || !component_apply_part(u, part)) { circuit_free(c); return NULL; }
+    Component *v = pt_add(c, COMP_PULSE_SOURCE, 0, 100, 0);
+    v->props.pulse_source.v_low = 0; v->props.pulse_source.v_high = 0;
+    /* edges every 2 us, so a run of a few microseconds always contains one */
+    v->props.pulse_source.period = 4e-6; v->props.pulse_source.pulse_width = 2e-6;
+    v->props.pulse_source.rise_time = v->props.pulse_source.fall_time = 1e-9;
+    Component *g0 = pt_add(c, COMP_GROUND, 0, 200, 0);
+    Component *rl = pt_add(c, COMP_RESISTOR, 340, 140, 90);
+    rl->props.resistor.resistance = 10000.0;
+    Component *gl = pt_add(c, COMP_GROUND, 340, 240, 0);
+    int plus = pt_node(c, 160, 120), minus = pt_node(c, 160, 80), out = pt_node(c, 240, 100);
+    int sp = pt_node(c, 0, 60), gnd0 = pt_node(c, 0, 180), lt = pt_node(c, 340, 100), lb = pt_node(c, 340, 180), gnd1 = pt_node(c, 340, 220);
+    v->node_ids[0] = sp; v->node_ids[1] = gnd0; g0->node_ids[0] = gnd0;
+    circuit_add_wire(c, sp, plus);
+    circuit_add_wire(c, out, minus);                 /* unity-gain feedback */
+    circuit_add_wire(c, out, lt);
+    rl->node_ids[0] = lt; rl->node_ids[1] = lb; gl->node_ids[0] = gnd1;
+    circuit_add_wire(c, lb, gnd1);
+    u->node_ids[0] = minus; u->node_ids[1] = plus; u->node_ids[2] = out;
+    if (src_out) *src_out = v;
+    if (out_node) *out_node = out;
+    return c;
+}
+
+static double pc_opamp_vos(const char *part, int *ok) {
+    int out = -1;
+    Circuit *c = pc_buffer(part, NULL, &out);
+    if (!c) { *ok = 0; return 0; }
+    double v = pc_dc_at(c, out, ok);
+    circuit_free(c);
+    return v;
+}
+
+/* Largest dV/dt the buffer produces on a 0 -> 5 V step. */
+static double pc_opamp_sr(const char *part, int *ok) {
+    Component *src = NULL; int out = -1;
+    Circuit *c = pc_buffer(part, &src, &out);
+    if (!c) { *ok = 0; return 0; }
+    src->props.pulse_source.v_high = 5.0;
+    Simulation *sim = simulation_create(c);
+    *ok = sim && simulation_dc_analysis(sim);
+    double best = 0;
+    if (*ok) {
+        double dt = 2e-9;                            /* fine enough for a 13 V/us part */
+        simulation_set_time_step(sim, dt);
+        simulation_start(sim);
+        Node *n = circuit_get_node(c, out);
+        double prev = n ? n->voltage : 0;
+        for (int i = 0; i < 4000; i++) {
+            if (!simulation_step(sim)) { *ok = 0; break; }
+            n = circuit_get_node(c, out);
+            double v = n ? n->voltage : 0;
+            double slope = fabs(v - prev) / dt;
+            if (slope > best) best = slope;
+            prev = v;
+        }
+    }
+    if (!isfinite(best)) *ok = 0;
+    simulation_free(sim);
+    circuit_free(c);
+    return best;
+}
+
+/* A regulator in its own template, with the named part applied to it. */
+static double pc_template(const char *part, CircuitTemplateType t, int *ok) {
+    ComponentType ty = part_type(part);
+    Circuit *c = circuit_create();
+    circuit_place_template(c, t, 0, 0);
+    Component *reg = find_comp(c, ty, 0);
+    if (!reg || !component_apply_part(reg, part)) { circuit_free(c); *ok = 0; return 0; }
+    ComponentType oct; int oord, oterm;
+    if (!circuit_template_output_spec(t, &oct, &oord, &oterm)) { circuit_free(c); *ok = 0; return 0; }
+    Component *probe = find_comp(c, oct, oord);
+    double v = probe ? pc_dc_at(c, probe->node_ids[oterm], ok) : 0;
+    if (!probe) *ok = 0;
+    circuit_free(c);
+    return v;
+}
+
+static int part_test(void) {
+    int fails = 0, total = 0;
+    printf("part-test: every named device at its data sheet's own test condition\n\n");
+    for (unsigned i = 0; i < sizeof part_checks / sizeof part_checks[0]; i++) {
+        const PartCheck *pc = &part_checks[i];
+        int ok = 1;
+        double got = 0;
+        const char *unit = "";
+        switch (pc->kind) {
+            case PC_RDSON: {
+                /* pick a sense resistor that lands near the data sheet's own test current:
+                   ~1 A for a power part, ~50 mA for a small-signal one */
+                double rsense = (pc->expect < 0.1) ? 5.0 : 100.0;
+                double vsup = (part_type(pc->part) == COMP_PMOS) ? -5.0 : 5.0;
+                got = pc_mos_rdson(pc->part, pc->bias, vsup, rsense, &ok);
+                unit = "ohm";
+                break;
+            }
+            case PC_ID_MIN: got = pc_mos_id(pc->part, pc->bias, &ok); unit = "A"; break;
+            case PC_HFE: { double h = 0, vb = 0; pc_bjt(pc->part, pc->bias, &h, &vb, &ok); got = h; unit = ""; break; }
+            case PC_VBE: { double h = 0, vb = 0; pc_bjt(pc->part, pc->bias, &h, &vb, &ok); got = vb; unit = "V"; break; }
+            case PC_VF:  got = pc_diode_v(pc->part, pc->bias, false, &ok); unit = "V"; break;
+            case PC_VZ:  got = fabs(pc_diode_v(pc->part, pc->bias, true, &ok)); unit = "V"; break;
+            case PC_OPAMP_VOS: got = pc_opamp_vos(pc->part, &ok); unit = "V"; break;
+            case PC_OPAMP_SR:  got = pc_opamp_sr(pc->part, &ok); unit = "V/s"; break;
+            default:           got = pc_template(pc->part, pc->tpl, &ok); unit = "V"; break;
+        }
+        total++;
+        int pass;
+        if (!ok) pass = 0;
+        else if (pc->kind == PC_ID_MIN) pass = (got >= pc->expect && got < pc->expect * 20.0);
+        else {
+            double lim = (pc->tol >= 0) ? pc->tol * fabs(pc->expect) : -pc->tol;
+            pass = fabs(got - pc->expect) <= lim;
+        }
+        if (!pass) fails++;
+        printf("%s part %-9s %-12s = %10.4g %-4s  data sheet %-9.4g  %s%s\n",
+               pass ? " OK " : "FAIL", pc->part,
+               pc->kind == PC_RDSON ? "R_DS(on)" : pc->kind == PC_ID_MIN ? "I_D(on)" :
+               pc->kind == PC_HFE ? "h_FE" : pc->kind == PC_VBE ? "V_BE" :
+               pc->kind == PC_VF ? "V_F" : pc->kind == PC_VZ ? "V_Z" :
+               pc->kind == PC_OPAMP_VOS ? "V_offset" : pc->kind == PC_OPAMP_SR ? "slew rate" : "V_out",
+               got, unit, pc->expect, pc->note, ok ? "" : "  [simulation failed]");
+    }
+    printf("\npart-test: %d checks over %d named devices, %d failed\n",
+           total, component_part_count(), fails);
+    return fails ? 1 : 0;
+}
+
 static int series_template(const char *filter, double t_end, int node_id) {
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
@@ -1714,6 +2060,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--burn-test")) return burn_test();
         else if (!strcmp(argv[i], "--std-test")) return std_test();
         else if (!strcmp(argv[i], "--switch-test")) return switch_test();
+        else if (!strcmp(argv[i], "--part-test")) return part_test();
         else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt = atof(argv[++i]);
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();

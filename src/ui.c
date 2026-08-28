@@ -1523,6 +1523,39 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
         int prop_w = ui->properties_width - 20;
         char buf[64];
 
+                /* Named device. A schematic says 2N7000, not "an NMOS with V_th = 2.1 V", so
+           anything with datasheet models in the library gets a row to pick one; the
+           summary underneath is the line the parameters were taken from. */
+        if (component_parts_for(selected->type, NULL, 0) > 0) {
+            SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+            ui_draw_text(renderer, "Part:", x + 10, prop_y + 2);
+            SDL_SetRenderDrawColor(renderer, 0xff, 0xd7, 0x4a, 0xff);
+            ui_draw_text(renderer, selected->part[0] ? selected->part : "[generic]", x + 100, prop_y + 2);
+            ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+            ui->properties[ui->num_properties].prop_type = PROP_PART;
+            ui->num_properties++;
+            prop_y += 16;
+            if (selected->part[0]) {
+                const char *sum = NULL;
+                for (int q = 0; q < component_part_count(); q++) {
+            const PartModel *m = component_part_at(q);
+            if (m && m->type == selected->type && !strcmp(m->part, selected->part)) { sum = m->summary; break; }
+                }
+                if (sum) {
+            SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+            char line[64];
+            int len = (int)strlen(sum), per = (prop_w - 16) / 6;
+            if (per < 8) per = 8;
+            for (int off = 0; off < len && off < 3 * per; off += per) {
+                snprintf(line, sizeof line, "%.*s", per, sum + off);
+                ui_draw_text(renderer, line, x + 10, prop_y + 2);
+                prop_y += 11;
+            }
+                }
+            }
+            prop_y += 4;
+        }
+
         switch (selected->type) {
             case COMP_DC_VOLTAGE: {
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.dc_voltage.voltage);

@@ -1080,6 +1080,18 @@ void app_handle_events(App *app) {
                             if (c->type == COMP_NMOS || c->type == COMP_PMOS) {
                                 snprintf(current_value, sizeof(current_value), "%.6g", c->props.mosfet.tox);
                             }
+                        } else if (prop_type == PROP_PART) {
+                            component_cycle_part(c);
+                            if (c->part[0]) {
+                                char msg[96];
+                                snprintf(msg, sizeof msg, "Part: %s (datasheet model)", c->part);
+                                ui_set_status(&app->ui, msg);
+                            } else {
+                                ui_set_status(&app->ui, "Part: generic (the component's own defaults)");
+                            }
+                            app->circuit->modified = true;
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
                         } else if (prop_type == PROP_MOS_TYPE) {
                             // Enhancement <-> depletion: flip the sign of the threshold
                             if (c->type == COMP_NMOS || c->type == COMP_PMOS) {

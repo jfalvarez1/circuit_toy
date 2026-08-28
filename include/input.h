@@ -71,6 +71,7 @@ typedef enum {
     PROP_MOS_TOX,       // Gate oxide thickness (sets Cox, and so u*Cox)
     PROP_MOS_TYPE,      // Enhancement <-> depletion (flips the sign of Vth)
     PROP_MOS_IDEAL,     // Ideal mode toggle
+    PROP_PART,          // Named device: cycle 2N7000 / 2N7002 / ... / generic
 
     // LED parameters
     PROP_LED_COLOR,     // Color selector (cycle through presets)
