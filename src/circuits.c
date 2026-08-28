@@ -327,6 +327,11 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_IV_BUCK_NODES] = {"Discrete Buck, Node by Node", "BuckN", "Real PMOS and gate drive: what every node does", TG_IV_POWER},
     [CIRCUIT_IV_LDO_VS_BUCK] = {"LDO vs Switcher", "LDOsw", "12 V to 5 V at 1 A: 7 W of heat, or 0.5 W", TG_IV_POWER},
     [CIRCUIT_IV_BOOTSTRAP] = {"Bootstrap High-Side Drive", "Boot", "Why an N-channel high side cannot run at 100 %", TG_IV_POWER},
+    [CIRCUIT_IV_TERMINATION] = {"Termination: none / series / parallel", "Term", "One line, three ways of ending it", TG_IV_SI},
+    [CIRCUIT_IV_PULLUP_SIZING] = {"Pull-up Sizing", "PullUp", "10k / 4.7k / 1k against 400 pF of bus", TG_IV_SI},
+    [CIRCUIT_IV_GROUND_BOUNCE] = {"Ground Bounce", "Bounce", "A shared return lifts a quiet pin by a volt", TG_IV_SI},
+    [CIRCUIT_IV_CROSSTALK] = {"Crosstalk", "Xtalk", "Same coupled charge, two victim impedances", TG_IV_SI},
+    [CIRCUIT_IV_ESD_CLAMP] = {"ESD Clamp Diodes", "ESD", "6 V into a 3.3 V pin, through 1 k and through 220 k", TG_IV_SI},
 
 
 
@@ -6296,6 +6301,11 @@ static int place_iv_kelvin(Circuit *circuit, float x, float y);
 static int place_iv_buck_nodes(Circuit *circuit, float x, float y);
 static int place_iv_ldo_vs_buck(Circuit *circuit, float x, float y);
 static int place_iv_bootstrap(Circuit *circuit, float x, float y);
+static int place_iv_termination(Circuit *circuit, float x, float y);
+static int place_iv_pullup_sizing(Circuit *circuit, float x, float y);
+static int place_iv_ground_bounce(Circuit *circuit, float x, float y);
+static int place_iv_crosstalk(Circuit *circuit, float x, float y);
+static int place_iv_esd_clamp(Circuit *circuit, float x, float y);
 static int place_3ph_345_line(Circuit *circuit, float x, float y);
 static int place_3ph_rectifier(Circuit *circuit, float x, float y);
 static int place_3ph_unbalanced(Circuit *circuit, float x, float y);
@@ -6621,6 +6631,11 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_IV_BUCK_NODES:      return place_iv_buck_nodes(circuit, x, y);
         case CIRCUIT_IV_LDO_VS_BUCK:     return place_iv_ldo_vs_buck(circuit, x, y);
         case CIRCUIT_IV_BOOTSTRAP:       return place_iv_bootstrap(circuit, x, y);
+        case CIRCUIT_IV_TERMINATION:     return place_iv_termination(circuit, x, y);
+        case CIRCUIT_IV_PULLUP_SIZING:   return place_iv_pullup_sizing(circuit, x, y);
+        case CIRCUIT_IV_GROUND_BOUNCE:   return place_iv_ground_bounce(circuit, x, y);
+        case CIRCUIT_IV_CROSSTALK:       return place_iv_crosstalk(circuit, x, y);
+        case CIRCUIT_IV_ESD_CLAMP:       return place_iv_esd_clamp(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6818,6 +6833,36 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "also rises with V_CE - the Early effect, I_C = I_S exp(V_BE/V_T)(1 + V_CE/V_AF) - so with V_AF = 80 V",
         "the current is ~9 % higher and the collector sits lower. It is the same effect that sets a stage's",
         "output resistance r_o = V_AF/I_C, so it is not a rounding error. PROBE: both collectors."},
+    [CIRCUIT_IV_TERMINATION] = {"TERMINATION: the same 3.3 V driver into the same 50 ohm line, ended three ways.",
+        "NONE: the far end is open, the step reflects in full, and the driver sees it back one round trip",
+        "later - 10 ns here. SERIES 33 ohm at the source: the driver's own 25 ohm plus 33 matches the line,",
+        "so whatever comes back is absorbed there; the far end still shows the full 3.3 V, because incident",
+        "plus reflected is exactly that. PARALLEL 50 ohm at the load: nothing reflects at all, but the",
+        "receiver only sees 2.2 V and the driver holds 44 mA the whole time it is high. INTERVIEW: the trade."},
+    [CIRCUIT_IV_PULLUP_SIZING] = {"PULL-UP SIZING: one open-drain bus with 400 pF on it, three pull-ups. An open-drain pin",
+        "can only pull down, so the rising edge is the pull-up charging that capacitance: 10 % to 90 % takes",
+        "2.2 R C. 10 k gives 8.8 us and sinks 330 uA; 4.7 k gives 4.1 us and 700 uA; 1 k gives 880 ns and",
+        "3.3 mA. The whole choice is that trade, and I2C specifies both ends of it - 300 ns maximum rise for",
+        "fast mode, 3 mA maximum sink - which is also why the specification caps the bus at 400 pF, because",
+        "with more than that no resistor satisfies both. INTERVIEW: 'why 4.7 k?' It is a compromise, not a law."},
+    [CIRCUIT_IV_GROUND_BOUNCE] = {"GROUND BOUNCE: a driver charging 100 pF to 3.3 V through 10 ohm pulls 330 mA for about a",
+        "nanosecond, and all of it goes home through the 5 nH of bond wire and via that every pin on the die",
+        "shares. L di/dt swings that local ground 2.2 V pk-pk. Nothing is broken - but every other signal",
+        "on the die is referred to the lifted ground, so a pin that is holding LOW appears to pulse, and a",
+        "receiver with a 0.8 V threshold may believe it. The fixes are all the same fix: fewer ways for the",
+        "current to be shared - more ground pins, shorter returns, a plane instead of a trace, slower edges."},
+    [CIRCUIT_IV_CROSSTALK] = {"CROSSTALK: one aggressor edge, 2 pF of coupling, two victims that differ only in what holds",
+        "them. The coupled charge is identical: C_m dV = 2 pF x 3.3 V = 6.6 pC. Into a victim with 5 pF of",
+        "its own capacitance and only a 10 k pull-down to drain it, that is 3.3 x 2/7 = 0.94 V - a logic",
+        "level - and it takes 70 ns to bleed away. Into a 10 ohm driver the same charge is gone in 70 ps.",
+        "nanosecond. The lesson is not 'avoid coupling': it is that coupling becomes a fault only when the",
+        "victim's impedance lets it. Drive your quiet nets, and never leave an input floating."},
+    [CIRCUIT_IV_ESD_CLAMP] = {"ESD CLAMPS: every CMOS input has a diode to each rail, and they exist to survive a strike -",
+        "not to be a voltage clamp you design around. Drive 6 V into a 3.3 V pin through 1 k and the pin sits",
+        "at 4.0 V with 2.7 mA flowing INTO the 3.3 V rail: more than the 10 uA to 20 mA of injection a data",
+        "sheet allows, and on a lightly loaded board that current alone can pull the whole supply up. This is",
+        "how a live signal back-powers a board that is switched off, through one input pin. Through 220 k the",
+        "same 6 V injects 12 uA, the pin still reads a solid high, and the only cost is bandwidth."},
     [CIRCUIT_IV_BUCK_NODES] = {"DISCRETE BUCK, NODE BY NODE: 12 V, 50 % duty at 50 kHz, 5.5 V out, built from real parts",
         "instead of an ideal switch: an IRF9540N, an NPN to drive it and a Schottky to catch the current.",
         "GATE sits at 12 V and the NPN pulls it to 0.2 V, so Vgs = -11.8 V and the PMOS turns on. The 1 k",
@@ -11763,6 +11808,317 @@ static int place_iv_bootstrap(Circuit *circuit, float x, float y) {
     return 16;
 }
 
+/* =====================================================================================
+ * Interview prep: I/O, termination and signal integrity.
+ *
+ * Signal Reflections shows a line terminated or not; SPI Lines and RS-485 show real buses.
+ * These five are the questions asked about them: what SERIES termination does that parallel
+ * does not, how you pick a pull-up, and the two ways a neighbouring signal ruins yours.
+ * =================================================================================== */
+
+/* A 3.3 V CMOS driver into an artificial 50 ohm line: five L-C sections of 50 nH and 20 pF.
+   Z0 = sqrt(L/C) = 50 ohm and each section is sqrt(L C) = 1 ns, so the line is 5 ns one way -
+   about a metre of coax, and slow enough that a 250 ps time step resolves it section by
+   section rather than smearing the whole thing into one lump. Returns the far-end node. */
+static int fast_line(Circuit *circuit, float x, float y, int src, double rs_val, Component **rs_out) {
+    Component *rs = hres(circuit, x + 60, y, rs_val);
+    int sl = TN(x + 20, y), sr = TN(x + 100, y);
+    TW(src, sl); rs->node_ids[0] = sl; rs->node_ids[1] = sr;
+    if (rs_out) *rs_out = rs;
+    int prev = sr;
+    for (int s = 0; s < 5; s++) {
+        float sx = x + 180 + s * 160;
+        Component *ls = add_comp(circuit, COMP_INDUCTOR, sx, y, 0);
+        ls->props.inductor.inductance = 50e-9;
+        ls->props.inductor.dcr = 0.05;
+        Component *cs = vcap(circuit, sx + 40, y + 60, 20e-12);
+        int a = TN(sx - 40, y), b = TN(sx + 40, y);
+        TW(prev, a); ls->node_ids[0] = a; ls->node_ids[1] = b;
+        int ct = TN(sx + 40, y + 20), cb = TN(sx + 40, y + 100);
+        TW(b, ct); cs->node_ids[0] = ct; cs->node_ids[1] = cb;
+        Component *gc = add_comp(circuit, COMP_GROUND, sx + 40, y + 160, 0);
+        gc->node_ids[0] = TN(sx + 40, y + 140); TW(cb, TN(sx + 40, y + 140));
+        prev = b;
+    }
+    return prev;
+}
+
+static int place_iv_termination(Circuit *circuit, float x, float y) {
+    /* one driver, one line, three ways of ending it */
+    static const double rser[3] = { 25.0, 58.0, 25.0 };   /* driver alone, driver + 33 series, driver alone */
+    static const double rpar[3] = { 0.0,  0.0,  50.0 };
+    static const char *tag[3] = {
+        "NONE: the far end is open, so the 2.2 V the driver launched arrives and doubles to 4.4 V, and the",
+        "SERIES 33 ohm at the SOURCE: 25 + 33 = 58 ohm matches the line, so the reflection that comes",
+        "PARALLEL 50 ohm at the LOAD: nothing reflects at all, the cleanest edge of the three - and the"
+    };
+    for (int k = 0; k < 3; k++) {
+        float py = y + k * 320;
+        Component *drv = add_comp(circuit, COMP_PULSE_SOURCE, x, py + 60, 0);   // +(x,py+20) -(x,py+100)
+        if (!drv) return 0;
+        drv->props.pulse_source.v_low = 0; drv->props.pulse_source.v_high = 3.3;
+        drv->props.pulse_source.pulse_width = 20e-9; drv->props.pulse_source.period = 40e-9;
+        drv->props.pulse_source.rise_time = drv->props.pulse_source.fall_time = 200e-12;   /* 200 ps: far shorter than the 1.5 ns the line takes, which is when termination starts to matter */
+        Component *gd = add_comp(circuit, COMP_GROUND, x, py + 160, 0);
+        connect_terminals(circuit, drv, 1, gd, 0);
+        int sp = TN(x, py + 20); drv->node_ids[0] = sp;
+        int far = fast_line(circuit, x, py + 20, sp, rser[k], NULL);
+        int rx = TN(x + 1060, py + 20); TW(far, rx);
+        if (rpar[k] > 0) {
+            Component *rt = vres(circuit, x + 1060, py + 80, rpar[k]);
+            int rtt = TN(x + 1060, py + 40), rtb = TN(x + 1060, py + 120);
+            TW(rx, rtt); rt->node_ids[0] = rtt; rt->node_ids[1] = rtb;
+            Component *gt = add_comp(circuit, COMP_GROUND, x + 1060, py + 180, 0);
+            gt->node_ids[0] = TN(x + 1060, py + 160); TW(rtb, TN(x + 1060, py + 160));
+        }
+        Component *crx = vcap(circuit, x + 1160, py + 80, 10e-12);   /* the receiver's input pin */
+        int ct = TN(x + 1160, py + 40), cb = TN(x + 1160, py + 120);
+        TW(rx, TN(x + 1160, py + 20)); TW(TN(x + 1160, py + 20), ct);
+        crx->node_ids[0] = ct; crx->node_ids[1] = cb;
+        Component *gr = add_comp(circuit, COMP_GROUND, x + 1160, py + 180, 0);
+        gr->node_ids[0] = TN(x + 1160, py + 160); TW(cb, TN(x + 1160, py + 160));
+        add_label(circuit, x + 1240, py + 60, tag[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "TERMINATION: the same 3.3 V driver into the same 50 ohm line, ended three ways");
+    add_label(circuit, x + 1240, y + 400, "back is absorbed there. The far end still doubles the step, which is exactly right: the");
+    add_label(circuit, x + 1240, y + 430, "receiver is high impedance, so the incident half plus the reflected half make the full 3.3 V.");
+    add_label(circuit, x + 1240, y + 720, "receiver only ever sees 3.3 x 50/75 = 2.2 V, and the driver holds 44 mA the whole time it is high.");
+    add_label(circuit, x - 40, y + 1000, "The interview answer is the trade: SERIES costs nothing at DC and one line delay of latency, and it works");
+    add_label(circuit, x - 40, y + 1030, "for exactly one receiver at the far end. PARALLEL works for a bus with receivers along it, and costs DC");
+    add_label(circuit, x - 40, y + 1060, "current and amplitude forever. NONE is fine when the edge is slow next to the round trip - the real rule is");
+    add_label(circuit, x - 40, y + 1090, "terminate when the rise time is shorter than about twice the one-way delay, which here is 10 ns.");
+    add_label(circuit, x - 40, y + 1120, "ALSO SEE: Signal Reflections, Impedance Matching, SPI Lines, RS-485 Differential Link.");
+    return 42;
+}
+
+static int place_iv_pullup_sizing(Circuit *circuit, float x, float y) {
+    /* the same open-drain bus, three pull-ups, 400 pF of bus capacitance */
+    static const double rp[3] = { 10e3, 4.7e3, 1e3 };
+    static const char *tag[3] = {
+        "10 k: rise time 2.2 R C = 8.8 us. Only 330 uA of sink current, but the bus cannot run at 400 kHz",
+        "4.7 k: 4.1 us, 700 uA. The I2C default, and it is a compromise, not a magic number",
+        "1 k: 880 ns, 3.3 mA. Fast enough for fast-mode, but check the sink spec: 3 mA is a lot for some parts"
+    };
+    for (int k = 0; k < 3; k++) {
+        float py = y + k * 560;
+        Component *rail = dc_rail(circuit, x, py, 3.3); if (!rail) return 0;
+        int vdd = TN(x, py);
+        Component *r = vres(circuit, x + 200, py + 60, rp[k]);            // (200,py+20)-(200,py+100)
+        int rt = TN(x + 200, py + 20), rb = TN(x + 200, py + 100);
+        TW(vdd, TN(x + 200, py)); TW(TN(x + 200, py), rt);
+        r->node_ids[0] = rt; r->node_ids[1] = rb;
+        int bus = TN(x + 200, py + 140); TW(rb, bus);
+
+        Component *cb = vcap(circuit, x + 320, py + 200, 400e-12);        // (320,py+160)-(320,py+240)
+        int ct = TN(x + 320, py + 160), cbm = TN(x + 320, py + 240);
+        TW(bus, TN(x + 320, py + 140)); TW(TN(x + 320, py + 140), ct);
+        cb->node_ids[0] = ct; cb->node_ids[1] = cbm;
+        Component *gc = add_comp(circuit, COMP_GROUND, x + 320, py + 300, 0);
+        gc->node_ids[0] = TN(x + 320, py + 280); TW(cbm, TN(x + 320, py + 280));
+
+        /* the open-drain device that pulls the bus down */
+        Component *m = add_comp(circuit, COMP_NMOS, x + 460, py + 160, 0);  // G(440,160) D(480,140) S(480,180)
+        component_apply_part(m, "2N7000");
+        m->props.mosfet.cgso = m->props.mosfet.cgdo = m->props.mosfet.cgbo = m->props.mosfet.cj = 0.0;
+        /* gate charge off: this template is about the pull-up, and the gate's displacement
+           current is not reported as a terminal current, so leaving it on makes the bus net
+           fail a KCL audit by exactly the current the audit cannot see */
+        int gate = TN(x + 440, py + 160), drain = TN(x + 480, py + 140), srcn = TN(x + 480, py + 180);
+        TW(TN(x + 320, py + 140), TN(x + 480, py + 140));   /* through the junction, not across it: a wire that passes over a node makes the flow display guess */
+        m->node_ids[0] = gate; m->node_ids[1] = drain; m->node_ids[2] = srcn;
+        Component *gm = add_comp(circuit, COMP_GROUND, x + 480, py + 240, 0);
+        gm->node_ids[0] = TN(x + 480, py + 220); TW(srcn, TN(x + 480, py + 220));
+        Component *pw = add_comp(circuit, COMP_PULSE_SOURCE, x + 340, py + 380, 0);  // +(340,340) -(340,420)
+        pw->props.pulse_source.v_low = 0; pw->props.pulse_source.v_high = 5.0;
+        pw->props.pulse_source.period = 40e-6; pw->props.pulse_source.pulse_width = 20e-6;
+        pw->props.pulse_source.rise_time = pw->props.pulse_source.fall_time = 1e-6;
+        int pp = TN(x + 340, py + 340); pw->node_ids[0] = pp;
+        TW(pp, TN(x + 340, py + 320)); TW(TN(x + 340, py + 320), TN(x + 440, py + 320)); TW(TN(x + 440, py + 320), gate);
+        Component *gp = add_comp(circuit, COMP_GROUND, x + 340, py + 480, 0);
+        connect_terminals(circuit, pw, 1, gp, 0);
+        add_label(circuit, x + 560, py + 160, tag[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "PULL-UP SIZING: one open-drain bus with 400 pF on it, three pull-ups, 25 kHz of switching");
+    add_label(circuit, x - 40, y + 1720, "An open-drain pin can only pull down. The rise is the pull-up charging the bus capacitance, so the whole");
+    add_label(circuit, x - 40, y + 1750, "choice is a trade between rise time (2.2 R C to get from 10 % to 90 %) and the current the pin has to sink");
+    add_label(circuit, x - 40, y + 1780, "while it holds the bus low. I2C specifies both ends of it: 300 ns maximum rise for fast mode, 3 mA maximum");
+    add_label(circuit, x - 40, y + 1810, "sink. With 400 pF of bus you cannot satisfy both, which is why the specification also caps the bus at 400 pF.");
+    add_label(circuit, x - 40, y + 1840, "ALSO SEE: I2C Bus (wired-AND), Open-Drain + Pull-up, I2C Level Shifter.");
+    return 33;
+}
+
+static int place_iv_ground_bounce(Circuit *circuit, float x, float y) {
+    /* one driver switching hard, one quiet line, one shared return inductance */
+    Component *rail = dc_rail(circuit, x, y, 3.3); if (!rail) return 0;
+    int vdd = TN(x, y);
+    Component *drv = add_comp(circuit, COMP_PULSE_SOURCE, x + 160, y + 60, 0);   // +(160,20) -(160,100)
+    drv->props.pulse_source.v_low = 0; drv->props.pulse_source.v_high = 3.3;
+    drv->props.pulse_source.pulse_width = 20e-9; drv->props.pulse_source.period = 50e-9;
+    drv->props.pulse_source.rise_time = drv->props.pulse_source.fall_time = 1e-9;
+    int dp = TN(x + 160, y + 20), dn = TN(x + 160, y + 100);
+    drv->node_ids[0] = dp; drv->node_ids[1] = dn;
+    Component *rout = hres(circuit, x + 280, y + 20, 10.0);       // (240,20)-(320,20)
+    int rl = TN(x + 240, y + 20), rr = TN(x + 320, y + 20);
+    TW(dp, rl); rout->node_ids[0] = rl; rout->node_ids[1] = rr;
+    int load = TN(x + 400, y + 20); TW(rr, load);
+    Component *cl = vcap(circuit, x + 400, y + 80, 100e-12);      // (400,40)-(400,120)
+    int clt = TN(x + 400, y + 40), clb = TN(x + 400, y + 120);
+    TW(load, clt); cl->node_ids[0] = clt; cl->node_ids[1] = clb;
+
+    /* The load capacitor returns to the BOARD ground - it is off-chip. The driver returns to the
+       chip's own ground, and that reaches the board through one 5 nH bond wire. So the charging
+       current has to cross the bond wire, which is the entire point. */
+    Component *gload = add_comp(circuit, COMP_GROUND, x + 480, y + 180, 0);
+    gload->node_ids[0] = TN(x + 480, y + 160);
+    TW(clb, TN(x + 480, y + 120)); TW(TN(x + 480, y + 120), TN(x + 480, y + 160));
+    int localgnd = TN(x + 400, y + 200);
+    TW(dn, TN(x + 160, y + 200)); TW(TN(x + 160, y + 200), localgnd);
+    Component *lb = add_comp(circuit, COMP_INDUCTOR, x + 400, y + 280, 90);   // (400,240)-(400,320)
+    lb->props.inductor.inductance = 5e-9; lb->props.inductor.dcr = 0.05;
+    int lt = TN(x + 400, y + 240), lbm = TN(x + 400, y + 320);
+    TW(localgnd, lt); lb->node_ids[0] = lt; lb->node_ids[1] = lbm;
+    Component *gb = add_comp(circuit, COMP_GROUND, x + 400, y + 380, 0);
+    gb->node_ids[0] = TN(x + 400, y + 360); TW(lbm, TN(x + 400, y + 360));
+
+    /* the quiet output: a pin held low, referred to the SAME local ground */
+    Component *rq = vres(circuit, x + 620, y + 120, 50.0);        // (620,80)-(620,160)
+    rq->props.resistor.power_rating = 1.0;
+    int rqt = TN(x + 620, y + 80), rqb = TN(x + 620, y + 160);
+    TW(rqb, TN(x + 620, y + 200)); TW(TN(x + 620, y + 200), localgnd);
+    rq->node_ids[0] = rqt; rq->node_ids[1] = rqb;
+    Component *cq = vcap(circuit, x + 760, y + 120, 10e-12);      // (760,80)-(760,160)
+    int cqt = TN(x + 760, y + 80), cqb = TN(x + 760, y + 160);
+    TW(rqt, TN(x + 760, y + 80)); cq->node_ids[0] = cqt; cq->node_ids[1] = cqb;
+    Component *gq = add_comp(circuit, COMP_GROUND, x + 760, y + 220, 0);
+    gq->node_ids[0] = TN(x + 760, y + 200); TW(cqb, TN(x + 760, y + 200));
+
+    add_label(circuit, x - 40, y - 60, "GROUND BOUNCE: one driver switching 100 pF in a nanosecond, and one quiet pin sharing its return");
+    add_label(circuit, x + 840, y + 100, "The quiet pin is 'low'. Measured against the board's ground it is not:");
+    add_label(circuit, x + 840, y + 130, "it moves with the local ground, because that is what it is referred to.");
+    add_label(circuit, x + 480, y + 280, "5 nH of bond wire and via: the local ground swings 2.2 V pk-pk.");
+    add_label(circuit, x - 40, y + 460, "Nothing here is broken. The driver charges 100 pF to 3.3 V through 10 ohm, so 330 mA flows for about a");
+    add_label(circuit, x - 40, y + 490, "nanosecond, and all of it goes home through the shared 5 nH: L di/dt swings the local ground 2.2 V pk-pk.");
+    add_label(circuit, x - 40, y + 520, "Every other signal on that die is referred to the lifted ground, so a pin that is holding low appears to");
+    add_label(circuit, x - 40, y + 550, "pulse - and a receiver with a 0.8 V threshold may believe it. The fixes are all the same fix: fewer ways for");
+    add_label(circuit, x - 40, y + 580, "the current to be shared. More ground pins, shorter returns, a plane instead of a trace, slower edges.");
+    add_label(circuit, x - 40, y + 610, "ALSO SEE: Power Delivery Network for the same story on the supply side, and Ground Lead Ringing for the");
+    add_label(circuit, x - 40, y + 640, "measurement version of it - where the inductance you are fighting is in your own probe.");
+    return 15;
+}
+
+static int place_iv_crosstalk(Circuit *circuit, float x, float y) {
+    /* one aggressor, two victims: the difference is what drives the victim */
+    static const double rv[2] = { 10e3, 10.0 };
+    static const char *tag[2] = {
+        "WEAK victim (10 k pull-down): 2 pF of coupling against 5 pF of victim capacitance is a divider.",
+        "STRONG victim (10 ohm driver): the same charge arrives and is swallowed in 70 ps. No glitch,"
+    };
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 320;
+        Component *agg = add_comp(circuit, COMP_PULSE_SOURCE, x, py + 60, 0);
+        if (!agg) return 0;
+        agg->props.pulse_source.v_low = 0; agg->props.pulse_source.v_high = 3.3;
+        agg->props.pulse_source.pulse_width = 20e-9; agg->props.pulse_source.period = 50e-9;
+        agg->props.pulse_source.rise_time = agg->props.pulse_source.fall_time = 1e-9;
+        Component *ga = add_comp(circuit, COMP_GROUND, x, py + 160, 0);
+        connect_terminals(circuit, agg, 1, ga, 0);
+        int ap = TN(x, py + 20); agg->node_ids[0] = ap;
+        Component *ra = hres(circuit, x + 100, py + 20, 25.0);
+        int al = TN(x + 60, py + 20), ar = TN(x + 140, py + 20);
+        TW(ap, al); ra->node_ids[0] = al; ra->node_ids[1] = ar;
+        int agn = TN(x + 240, py + 20); TW(ar, agn);
+        Component *ca = vcap(circuit, x + 240, py + 80, 5e-12);           /* the aggressor's own trace C */
+        int cat = TN(x + 240, py + 40), cab = TN(x + 240, py + 120);
+        TW(agn, cat); ca->node_ids[0] = cat; ca->node_ids[1] = cab;
+        Component *gca = add_comp(circuit, COMP_GROUND, x + 240, py + 180, 0);
+        gca->node_ids[0] = TN(x + 240, py + 160); TW(cab, TN(x + 240, py + 160));
+
+        /* the coupling between the two traces: 2 pF of running side by side */
+        Component *cm = hcap(circuit, x + 360, py + 20, 2e-12);           // (320,20)-(400,20)
+        int cml = TN(x + 320, py + 20), cmr = TN(x + 400, py + 20);
+        TW(agn, cml); cm->node_ids[0] = cml; cm->node_ids[1] = cmr;
+        int vic = TN(x + 500, py + 20); TW(cmr, vic);
+
+        Component *cv = vcap(circuit, x + 500, py + 80, 5e-12);
+        int cvt = TN(x + 500, py + 40), cvb = TN(x + 500, py + 120);
+        TW(vic, cvt); cv->node_ids[0] = cvt; cv->node_ids[1] = cvb;
+        Component *gcv = add_comp(circuit, COMP_GROUND, x + 500, py + 180, 0);
+        gcv->node_ids[0] = TN(x + 500, py + 160); TW(cvb, TN(x + 500, py + 160));
+        Component *rvv = vres(circuit, x + 620, py + 80, rv[k]);
+        int rvt = TN(x + 620, py + 40), rvb = TN(x + 620, py + 120);
+        TW(vic, TN(x + 620, py + 20)); TW(TN(x + 620, py + 20), rvt);
+        rvv->node_ids[0] = rvt; rvv->node_ids[1] = rvb;
+        Component *grv = add_comp(circuit, COMP_GROUND, x + 620, py + 180, 0);
+        grv->node_ids[0] = TN(x + 620, py + 160); TW(rvb, TN(x + 620, py + 160));
+        add_label(circuit, x + 700, py + 80, tag[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "CROSSTALK: one aggressor edge, 2 pF of coupling, and two victims that differ only in what holds them");
+    add_label(circuit, x + 700, y + 110, "The victim jumps 3.3 x 2/7 = 0.94 V and takes 10 k x 7 pF = 70 ns to bleed away.");
+    add_label(circuit, x + 700, y + 140, "That is a logic level, on a line nothing is driving. This is how a floating input");
+    add_label(circuit, x + 700, y + 170, "or a slow reset line picks up its neighbour and glitches.");
+    add_label(circuit, x + 700, y + 430, "and nothing to debug. The lesson is not 'avoid coupling' - it is that coupling only");
+    add_label(circuit, x + 700, y + 460, "becomes a fault when the victim's impedance lets it become one.");
+    add_label(circuit, x - 40, y + 700, "The coupled charge is the same in both copies: C_m dV = 2 pF x 3.3 V = 6.6 pC. What differs is where it");
+    add_label(circuit, x - 40, y + 730, "goes. Into 5 pF of victim capacitance with only 10 k to drain it, that charge is nearly a volt for 70 ns.");
+    add_label(circuit, x - 40, y + 760, "Into a 10 ohm driver it is gone before the aggressor edge has finished. Hence: drive your quiet nets, do");
+    add_label(circuit, x - 40, y + 790, "not leave inputs floating, and give the aggressor a return path close to it so its field stays local.");
+    add_label(circuit, x - 40, y + 820, "ALSO SEE: GPIO Input + Debounce (a real pull-up on a real input), Signal Reflections.");
+    return 24;
+}
+
+static int place_iv_esd_clamp(Circuit *circuit, float x, float y) {
+    /* an input pin with rail clamps, overdriven two ways */
+    static const double rlim[2] = { 1e3, 220e3 };
+    static const char *tag[2] = {
+        "1 k series: the pin clamps at 4.0 V and 2.7 mA flows into the 3.3 V rail. That is more than the",
+        "220 k series: the same 6 V outside, 12 uA in. Under every data sheet's injection limit, and the"
+    };
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 360;
+        Component *rail = dc_rail(circuit, x, py, 3.3); if (!rail) return 0;
+        int vdd = TN(x, py);
+        Component *ext = add_comp(circuit, COMP_DC_VOLTAGE, x + 160, py + 220, 0);   // +(160,180) -(160,260)
+        ext->props.dc_voltage.voltage = 6.0;
+        Component *ge = add_comp(circuit, COMP_GROUND, x + 160, py + 320, 0);
+        connect_terminals(circuit, ext, 1, ge, 0);
+        int ep = TN(x + 160, py + 180); ext->node_ids[0] = ep;
+        Component *rl = vres(circuit, x + 160, py + 100, rlim[k]);       // (160,60)-(160,140)
+        int rlt = TN(x + 160, py + 60), rlb = TN(x + 160, py + 140);
+        TW(ep, rlb); rl->node_ids[0] = rlt; rl->node_ids[1] = rlb;
+        int pin = TN(x + 300, py + 60); TW(rlt, pin);
+
+        /* the two clamp diodes every CMOS input has: pin to VDD, ground to pin */
+        Component *d1 = add_comp(circuit, COMP_DIODE, x + 300, py - 40, 90);   // A(300,-80) K(300,0) -> anode down
+        int d1a = TN(x + 300, py - 80), d1k = TN(x + 300, py);
+        d1->node_ids[0] = d1k; d1->node_ids[1] = d1a;                    /* anode at the pin, cathode at VDD */
+        TW(pin, TN(x + 300, py + 20)); TW(TN(x + 300, py + 20), d1k);
+        TW(d1a, TN(x + 300, py - 120)); TW(TN(x + 300, py - 120), TN(x, py - 120)); TW(TN(x, py - 120), vdd);
+        Component *d2 = add_comp(circuit, COMP_DIODE, x + 420, py + 120, 90);  // A(420,80) K(420,160)
+        int d2a = TN(x + 420, py + 80), d2k = TN(x + 420, py + 160);
+        d2->node_ids[0] = d2k; d2->node_ids[1] = d2a;                    /* anode at ground, cathode at the pin */
+        TW(pin, TN(x + 420, py + 60)); TW(TN(x + 420, py + 60), d2a);
+        Component *gd2 = add_comp(circuit, COMP_GROUND, x + 420, py + 220, 0);
+        gd2->node_ids[0] = TN(x + 420, py + 200); TW(d2k, TN(x + 420, py + 200));
+        Component *rin = vres(circuit, x + 560, py + 120, 1e6);          /* the gate the pin drives */
+        int rit = TN(x + 560, py + 80), rib = TN(x + 560, py + 160);
+        TW(pin, TN(x + 560, py + 60)); TW(TN(x + 560, py + 60), rit);
+        rin->node_ids[0] = rit; rin->node_ids[1] = rib;
+        Component *gri = add_comp(circuit, COMP_GROUND, x + 560, py + 220, 0);
+        gri->node_ids[0] = TN(x + 560, py + 200); TW(rib, TN(x + 560, py + 200));
+        add_label(circuit, x + 660, py + 120, tag[k]);
+    }
+    add_label(circuit, x - 40, y - 200, "ESD CLAMPS: 6 V applied to a 3.3 V input, through 1 k and through 220 k");
+    add_label(circuit, x + 660, y + 150, "10 uA to 20 mA a data sheet allows, and it is being sourced INTO the rail:");
+    add_label(circuit, x + 660, y + 180, "on a lightly loaded board that alone can pull the whole 3.3 V supply up.");
+    add_label(circuit, x + 660, y + 510, "pin still reads a solid high. The resistor costs bandwidth, and nothing else.");
+    add_label(circuit, x - 40, y + 760, "Every CMOS input has a diode to each rail. They exist to survive an ESD strike, not to be a voltage");
+    add_label(circuit, x - 40, y + 790, "clamp you design around: hold one on and you are pushing current into the supply, which is why a signal");
+    add_label(circuit, x - 40, y + 820, "that is live while a board is off can back-power the whole thing through one input pin. INTERVIEW: 'what");
+    add_label(circuit, x - 40, y + 850, "happens if you drive 5 V into a 3.3 V input?' - and the follow-up, 'so how do you make that safe?'");
+    add_label(circuit, x - 40, y + 880, "ALSO SEE: UART 5 V <-> 3.3 V and I2C Level Shifter for the ways you are supposed to do it.");
+    return 20;
+}
+
 #undef TN
 #undef TW
 
@@ -11937,6 +12293,11 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_BUCK_NODES]    = { COMP_RESISTOR, 2, 0 },     /* the output, after L and C */
     [CIRCUIT_IV_LDO_VS_BUCK]   = { COMP_RESISTOR, 1, 0 },     /* the linear regulator's 5 V output */
     [CIRCUIT_IV_BOOTSTRAP]     = { COMP_CAPACITOR, 0, 0 },    /* BOOT, riding on the switch node */
+    [CIRCUIT_IV_TERMINATION]   = { COMP_CAPACITOR, 5, 0 },    /* unterminated receiver: the overshoot */
+    [CIRCUIT_IV_PULLUP_SIZING] = { COMP_CAPACITOR, 0, 0 },    /* the 10 k bus */
+    [CIRCUIT_IV_GROUND_BOUNCE] = { COMP_INDUCTOR, 0, 0 },     /* the local ground, above the bond wire */
+    [CIRCUIT_IV_CROSSTALK]     = { COMP_CAPACITOR, 2, 0 },    /* the weakly held victim */
+    [CIRCUIT_IV_ESD_CLAMP]     = { COMP_DIODE, 0, 0 },        /* the pin, clamped one diode above the rail */
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -12064,6 +12425,8 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_AC_COUPLING] = 2e-6, [CIRCUIT_IV_SHUNT_SENSE] = 1e-3, [CIRCUIT_IV_KELVIN] = 1e-3,
     [CIRCUIT_IV_BUCK_NODES] = 2e-6,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2e-6, [CIRCUIT_IV_BOOTSTRAP] = 2e-6,
+    [CIRCUIT_IV_TERMINATION] = 5e-9, [CIRCUIT_IV_PULLUP_SIZING] = 5e-6,
+    [CIRCUIT_IV_GROUND_BOUNCE] = 5e-9, [CIRCUIT_IV_CROSSTALK] = 5e-9, [CIRCUIT_IV_ESD_CLAMP] = 1e-3,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -12115,6 +12478,8 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_AC_COUPLING] = 0.05, [CIRCUIT_IV_SHUNT_SENSE] = 0.5, [CIRCUIT_IV_KELVIN] = 0.05,
     [CIRCUIT_IV_BUCK_NODES] = 2.0,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2.0, [CIRCUIT_IV_BOOTSTRAP] = 5.0,
+    [CIRCUIT_IV_TERMINATION] = 1.0, [CIRCUIT_IV_PULLUP_SIZING] = 1.0,
+    [CIRCUIT_IV_GROUND_BOUNCE] = 0.5, [CIRCUIT_IV_CROSSTALK] = 0.5, [CIRCUIT_IV_ESD_CLAMP] = 1.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -12292,6 +12657,11 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_BUCK_NODES]    = { DEMO_DC, 0 },
     [CIRCUIT_IV_LDO_VS_BUCK]   = { DEMO_DC, 0 },
     [CIRCUIT_IV_BOOTSTRAP]     = { DEMO_WAVEFORM, 100000 },
+    [CIRCUIT_IV_TERMINATION]   = { DEMO_WAVEFORM, 25000000 },
+    [CIRCUIT_IV_PULLUP_SIZING] = { DEMO_WAVEFORM, 25000 },
+    [CIRCUIT_IV_GROUND_BOUNCE] = { DEMO_WAVEFORM, 20000000 },
+    [CIRCUIT_IV_CROSSTALK]     = { DEMO_WAVEFORM, 20000000 },
+    [CIRCUIT_IV_ESD_CLAMP]     = { DEMO_DC, 0 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -12344,6 +12714,10 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_BUCK_NODES] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_IV_LDO_VS_BUCK] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_IV_BOOTSTRAP] = SCOPE_FLAG_STACK,
+    [CIRCUIT_IV_TERMINATION] = SCOPE_FLAG_STACK,
+    [CIRCUIT_IV_PULLUP_SIZING] = SCOPE_FLAG_STACK,
+    [CIRCUIT_IV_GROUND_BOUNCE] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_IV_CROSSTALK] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */
     [CIRCUIT_COLPITTS] = SCOPE_FLAG_AC, [CIRCUIT_HARTLEY] = SCOPE_FLAG_AC, [CIRCUIT_CLAPP] = SCOPE_FLAG_AC,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
