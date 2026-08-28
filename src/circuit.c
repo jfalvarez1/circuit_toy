@@ -82,6 +82,7 @@ void circuit_clear(Circuit *circuit) {
     circuit->next_wire_id = 1;
 
     circuit->modified = true;
+    circuit->topology_dirty = true;
 }
 
 int circuit_add_component(Circuit *circuit, Component *comp) {
@@ -101,6 +102,7 @@ int circuit_add_component(Circuit *circuit, Component *comp) {
     }
 
     circuit->modified = true;
+    circuit->topology_dirty = true;
     return comp->id;
 }
 
@@ -118,6 +120,8 @@ void circuit_remove_component(Circuit *circuit, int comp_id) {
             circuit->num_components--;
             circuit->components[circuit->num_components] = NULL;
             circuit->modified = true;
+            circuit->topology_dirty = true;
+    circuit->topology_dirty = true;
 
             // Clean up orphaned nodes
             circuit_cleanup_orphaned_nodes(circuit);
@@ -221,6 +225,7 @@ int circuit_add_wire(Circuit *circuit, int start_node_id, int end_node_id) {
     wire->current = 0;
 
     circuit->modified = true;
+    circuit->topology_dirty = true;
     return wire->id;
 }
 
@@ -238,6 +243,8 @@ void circuit_remove_wire(Circuit *circuit, int wire_id) {
             // Zero out the last slot
             memset(&circuit->wires[circuit->num_wires], 0, sizeof(Wire));
             circuit->modified = true;
+            circuit->topology_dirty = true;
+    circuit->topology_dirty = true;
 
             // Clean up orphaned nodes
             circuit_cleanup_orphaned_nodes(circuit);
@@ -316,6 +323,7 @@ int circuit_split_wire_at(Circuit *circuit, Wire *wire, float x, float y) {
     circuit_add_wire(circuit, new_node_id, orig_end_id);
 
     circuit->modified = true;
+    circuit->topology_dirty = true;
 
     return new_node_id;
 }
@@ -1181,6 +1189,7 @@ bool circuit_undo(Circuit *circuit) {
     }
 
     circuit->modified = true;
+    circuit->topology_dirty = true;
     return true;
 }
 
@@ -1309,6 +1318,7 @@ bool circuit_redo(Circuit *circuit) {
     }
 
     circuit->modified = true;
+    circuit->topology_dirty = true;
     return true;
 }
 

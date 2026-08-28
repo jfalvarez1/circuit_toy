@@ -100,7 +100,11 @@ typedef struct Circuit {
     int redo_count;
 
     // Modified flag
-    bool modified;
+    bool modified;          // unsaved changes (cleared on save / new / load)
+    bool topology_dirty;    // the STRUCTURE changed - a component or wire was added, moved or
+                            // deleted - so the node map and the matrix have to be rebuilt.
+                            // Editing a value does not set this: the stamps read the new number
+                            // on the next step, so a running simulation can keep running.
 } Circuit;
 
 // Create/destroy circuit

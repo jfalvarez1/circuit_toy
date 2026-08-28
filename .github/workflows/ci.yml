@@ -50,6 +50,8 @@ jobs:
           echo "--- oscillators (frequency + shape)"  && $T --osc-test
           echo "--- current-flow invariants"          && $T --flow-test
           echo "--- switch states"                    && $T --switch-test
+          echo "--- named parts vs data sheets"       && $T --part-test
+          echo "--- device operating points"          && $T --op-test
           echo "--- standards limits"                 && $T --std-test
           echo "--- power ratings"                    && $T --burn-test
           echo "--- every adjustable knob"            && $T --knob-test

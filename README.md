@@ -779,6 +779,8 @@ build/tools/template_smoke.exe --flow-test       # current-flow display: KCL, co
 build/tools/template_smoke.exe --burn-test       # no resistor/LED over its rating (HV templates use R_HP loads)
 build/tools/template_smoke.exe --std-test        # bus voltages vs ERCOT / NERC / ANSI C84.1 / NEC limits
 build/tools/template_smoke.exe --switch-test     # every switch in both states, measured at the probed output
+build/tools/template_smoke.exe --part-test       # every named device at its data sheet's own test condition
+build/tools/template_smoke.exe --op-test         # the operating point the properties panel shows, per device
 build/tools/template_smoke.exe --param-test      # scope presets: the window really shows the circuit's own frequency
 build/circuit-playground.exe --keys "^mosfet|" 24 8 --record DIR N EVERY   # scripted typing: ^ opens Spotlight, | is Enter
 build/tools/template_smoke.exe --geom-test       # schematic audit: diagonals, crossings, wires through bodies

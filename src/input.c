@@ -186,6 +186,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             snprintf(msg, sizeof(msg), "Placed %s circuit (%d components)", info->name, count);
                             ui_set_status(ui, msg);
                             circuit->modified = true;
+                            circuit->topology_dirty = true;
 
                             // Scope preset for this template, then auto-start so the probes show it working
                             double td = circuit_template_scope_time_div(ui->selected_circuit_type);
@@ -253,6 +254,8 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                 snprintf(msg, sizeof(msg), "Placed subcircuit '%s'", def->name);
                                 ui_set_status(ui, msg);
                                 circuit->modified = true;
+                                circuit->topology_dirty = true;
+                            circuit->topology_dirty = true;
                             }
                         } else {
                             ui_set_status(ui, "Subcircuit definition not found");

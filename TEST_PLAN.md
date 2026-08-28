@@ -555,6 +555,21 @@ button rows clear the status bar.
 | 3.22.10 | `[ ]` **Automated:** `--layout-test` palette count | It caught the circuit palette silently dropping a template once the library passed its 160-item capacity. 161 templates, 161 palette items |
 | 3.22.11 | `[ ]` **Automated:** the full battery | 161/161 templates, 161/161 demos, **167/167 probe oracles**, 23/23 part checks, 25/25 switches, 0 burns, 2158 knob runs, 0 param failures, 0 layout failures |
 
+### 3.23 The operating point the panel shows, and what a value edit does to a running simulation (2026-08-28)
+
+Reported: "the V_GS cutoff and I_D don't get modified, or at least it displays 0 regardless of
+which model I pick". Three separate faults were behind it, and the automated check below is the
+one that would have caught it.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.23.1 | `[ ]` **Automated:** `template_smoke --op-test` | The operating point cached for the panel, per device: region, V_GS, V_DS, I_D and g_m at a stated gate voltage. **6 checks, 0 failed.** 2N7000 at V_GS 4.5 V is in saturation at 361 mA; the same part at 10 V is pulled into **triode** by 3.6 A through the sense resistor; the 2N7002 gives 301 mA at the same drive; an IRF540N gives 7.7 A; and below V_GS(th) the device reads cutoff, 0 A, with V_DS at the full rail |
+| 3.23.2 | `[ ]` **Bug:** the panel read 0 for every device | Cycling the Part row restored the component's whole property union to defaults - and the operating point lives in that union - so it was blanked. `component_cycle_part` now carries it across. `--op-test` asserts I_D is unchanged by a part change and non-zero after cycling all the way round to generic and back |
+| 3.23.3 | `[ ]` **Bug:** nothing refreshed it afterwards | Editing ANY property set `circuit->modified`, which auto-paused a running simulation, so the operating point froze at whatever it was - and after 3.23.2 that was zero. `modified` now means only "unsaved"; the new `topology_dirty` means "a component or wire was added, moved or deleted", and only that pauses the run or forces a restart from t = 0. Turning a knob while it runs now does what a simulator should |
+| 3.23.4 | `[ ]` **Bug:** V_DS showed the linearisation point | The MOSFET Newton limiter (3.22.8) kept its working value in `op_vds`, which is also what the panel reads. A device in cutoff showed V_DS 5 V with its drain actually at 10 V, because the solve stops as soon as the nodes stop moving - before the limiter has walked out. The limiter has its own field now and the panel gets the real terminal voltage |
+| 3.23.5 | `[ ]` Interactive: select a MOSFET in Named Parts with the simulation running, cycle the Part row | Region, V_GS, V_DS, I_D and g_m all update as each device is applied, and the simulation keeps running |
+| 3.23.6 | `[ ]` Interactive: edit a resistor value mid-run | The waveform responds and the run continues from where it was. Adding, moving or deleting a part still pauses with "Circuit changed - simulation paused" |
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.

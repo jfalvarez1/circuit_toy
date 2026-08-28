@@ -2144,16 +2144,27 @@ void component_cycle_part(Component *c) {
     int cur = -1;                                  /* -1 = generic */
     for (int i = 0; i < n; i++)
         if (c->part[0] && !strcmp(component_part_at(idx[i])->part, c->part)) { cur = i; break; }
+    /* The operating point the panel shows lives in the same union as the model parameters, so
+       restoring defaults would blank it - and since the simulation is paused while you click,
+       nothing would refresh it and every device would read 0. Carry it across. */
+    double op_vgs = c->props.mosfet.op_vgs, op_vds = c->props.mosfet.op_vds;
+    double op_id = c->props.mosfet.op_id, op_gm = c->props.mosfet.op_gm;
+    int op_region = c->props.mosfet.op_region;
+    bool is_mos = (c->type == COMP_NMOS || c->type == COMP_PMOS);
+
     int next = cur + 1;
     if (next >= n) {                               /* wrap back to the generic component */
         c->part[0] = '\0';
-        Component fresh = *c;
         const ComponentTypeInfo *info = component_get_info(c->type);
-        if (info) fresh.props = info->default_props;
-        c->props = fresh.props;
-        return;
+        if (info) c->props = info->default_props;
+    } else {
+        component_apply_part_idx(c, idx[next]);
     }
-    component_apply_part_idx(c, idx[next]);
+    if (is_mos) {
+        c->props.mosfet.op_vgs = op_vgs; c->props.mosfet.op_vds = op_vds;
+        c->props.mosfet.op_id = op_id;   c->props.mosfet.op_gm = op_gm;
+        c->props.mosfet.op_region = op_region;
+    }
 }
 
 const ComponentTypeInfo *component_get_info(ComponentType type) {
@@ -3310,7 +3321,7 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double sign = (comp->type == COMP_PMOS) ? -1.0 : 1.0;
             double Vth_eff = fabs(Vth);
 
-            double Vgs = 0, Vds = 0, Vsb = 0;
+            double Vgs = 0, Vds = 0, Vsb = 0, Vds_terminal = 0;
             if (prev_solution) {
                 double vG = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
                 double vD = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
@@ -3329,8 +3340,15 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 /* Limit only V_DS (see mos_limit). V_GS is almost always held by a source, and
                    limiting it stalls the solve instead: the device stays in cutoff while the
                    node voltages sit still, and the convergence test - which watches the node
-                   voltages - calls that converged. */
-                Vds = mos_limit(Vds, comp->props.mosfet.op_vds);
+                   voltages - calls that converged.
+                   The limiter remembers its own point: op_vds is what the properties panel
+                   shows, and it has to be the real terminal voltage. Feeding the panel the
+                   linearisation point instead made a device sitting in cutoff read 5 V when its
+                   drain was actually at 10 - the solve stops as soon as the nodes stop moving,
+                   which can be before the limiter has walked all the way out. */
+                Vds_terminal = Vds;
+                Vds = mos_limit(Vds, comp->mos_vds_lin);
+                comp->mos_vds_lin = Vds;
             }
 
             // Body effect (non-ideal mode only)
@@ -3381,7 +3399,7 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             Gm = MAX(Gm, 0);
 
             // Cache the operating point for the properties panel (Vov <= 0 cutoff, Vds < Vov triode)
-            comp->props.mosfet.op_vgs = Vgs; comp->props.mosfet.op_vds = Vds;
+            comp->props.mosfet.op_vgs = Vgs; comp->props.mosfet.op_vds = Vds_terminal;
             comp->props.mosfet.op_id = Id;   comp->props.mosfet.op_gm = Gm;
             comp->props.mosfet.op_region = (Vov <= 0) ? 0 : (Vds < Vov ? 1 : 2);
 

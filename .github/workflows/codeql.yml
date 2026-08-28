@@ -33,7 +33,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Initialise CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: c-cpp
 
@@ -43,6 +43,6 @@ jobs:
           meson compile -C build
 
       - name: Analyse
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: /language:c-cpp

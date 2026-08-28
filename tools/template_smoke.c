@@ -2025,6 +2025,114 @@ static int part_test(void) {
     return fails ? 1 : 0;
 }
 
+
+/* ---------------------------------------------------------------------------------------
+ * --op-test: the operating point the properties panel shows. It is cached on the component
+ * by the stamp (region, V_GS, V_DS, I_D, g_m), so this checks the numbers a user reads off
+ * the panel are real, differ between devices, and survive a part change - the panel showed
+ * zeros for every device once, because cycling the part restored the whole property union
+ * (the operating point lives in it) while the simulation was paused, so nothing refreshed it.
+ * ------------------------------------------------------------------------------------- */
+typedef struct { const char *part; double vgs; double id_min, id_max; int region; const char *note; } OpCase;
+static const OpCase op_cases[] = {
+    { "2N7000",  4.5, 0.20,  0.45, 2, "saturation: K V_ov^2/2 with V_ov = 2.4 V" },
+    { "2N7000", 10.0, 1.0,   4.0,  1, "harder on: 3.6 A into a 1 ohm sense pulls it into triode" },
+    { "2N7002",  4.5, 0.15,  0.40, 2, "lower K than the 2N7000 at the same drive" },
+    { "IRF540N", 6.0, 5.0,  12.0,  2, "power part: amps, not milliamps" },
+    { "2N7000",  1.0, -1e-9, 1e-9, 0, "below V_GS(th) = 2.1 V: cutoff, no current" },
+};
+
+/* Gate at vgs, drain from a 10 V rail through 1 ohm, source grounded; returns the component
+   so the caller can read the cached operating point off it. */
+static Component *op_build(Circuit *c, const char *part, double vgs) {
+    ComponentType ty = part_type(part);
+    Component *m = pt_add(c, ty, 100, 100, 0);
+    if (!m || !component_apply_part(m, part)) return NULL;
+    Component *vg = pt_add(c, COMP_DC_VOLTAGE, 0, 100, 0);
+    vg->props.dc_voltage.voltage = vgs;
+    Component *gg = pt_add(c, COMP_GROUND, 0, 200, 0);
+    Component *vdd = pt_add(c, COMP_DC_VOLTAGE, 300, 40, 0);
+    vdd->props.dc_voltage.voltage = 10.0;
+    Component *gv = pt_add(c, COMP_GROUND, 300, 140, 0);
+    Component *rs = pt_add(c, COMP_RESISTOR, 240, 60, 0);
+    rs->props.resistor.resistance = 1.0;
+    rs->props.resistor.power_rating = 100.0;
+    Component *gs = pt_add(c, COMP_GROUND, 200, 260, 0);
+    int gate = pt_node(c, 60, 100), drain = pt_node(c, 180, 60), src = pt_node(c, 180, 160);
+    int rail = pt_node(c, 300, 0), rr = pt_node(c, 280, 60);
+    int gnd1 = pt_node(c, 0, 180), gnd2 = pt_node(c, 300, 120), gnd3 = pt_node(c, 200, 240);
+    vg->node_ids[0] = gate; vg->node_ids[1] = gnd1; gg->node_ids[0] = gnd1;
+    vdd->node_ids[0] = rail; vdd->node_ids[1] = gnd2; gv->node_ids[0] = gnd2;
+    rs->node_ids[0] = rr; rs->node_ids[1] = drain;
+    circuit_add_wire(c, rail, rr);
+    gs->node_ids[0] = gnd3; circuit_add_wire(c, src, gnd3);
+    m->node_ids[0] = gate; m->node_ids[1] = drain; m->node_ids[2] = src;
+    return m;
+}
+
+static int op_test(void) {
+    static const char *regions[3] = { "cutoff", "triode", "saturation" };
+    int fails = 0, total = 0;
+    printf("op-test: the operating point the properties panel reads, per device\n\n");
+    for (unsigned i = 0; i < sizeof op_cases / sizeof op_cases[0]; i++) {
+        const OpCase *oc = &op_cases[i];
+        Circuit *c = circuit_create();
+        Component *m = op_build(c, oc->part, oc->vgs);
+        int ok = m != NULL;
+        Simulation *sim = ok ? simulation_create(c) : NULL;
+        if (ok) ok = sim && simulation_dc_analysis(sim);
+        double vgs = 0, vds = 0, id = 0, gm = 0; int region = -1;
+        if (ok) {
+            vgs = m->props.mosfet.op_vgs; vds = m->props.mosfet.op_vds;
+            id = m->props.mosfet.op_id;   gm = m->props.mosfet.op_gm;
+            region = m->props.mosfet.op_region;
+            if (!isfinite(vgs) || !isfinite(id)) ok = 0;
+        }
+        total++;
+        int pass = ok && region == oc->region &&
+                   id >= oc->id_min && id <= oc->id_max &&
+                   fabs(vgs - oc->vgs) < 0.05 &&
+                   (oc->region == 0 || gm > 0);
+        if (!pass) fails++;
+        printf("%s op   %-9s V_GS %5.2f -> %-10s V_DS %7.4f  I_D %9.4g A  g_m %8.4g  %s%s\n",
+               pass ? " OK " : "FAIL", oc->part, oc->vgs,
+               (region >= 0 && region <= 2) ? regions[region] : "?", vds, id, gm, oc->note,
+               ok ? "" : "  [simulation failed]");
+        if (sim) simulation_free(sim);
+        circuit_free(c);
+    }
+
+    /* the regression itself: changing the part must not blank the panel */
+    {
+        Circuit *c = circuit_create();
+        Component *m = op_build(c, "2N7000", 4.5);
+        Simulation *sim = m ? simulation_create(c) : NULL;
+        int ok = sim && simulation_dc_analysis(sim);
+        double id_before = ok ? m->props.mosfet.op_id : 0;
+        total++;
+        int pass = 0;
+        if (ok && id_before > 0) {
+            component_cycle_part(m);                       /* 2N7000 -> 2N7002 */
+            double id_after = m->props.mosfet.op_id;
+            int cycles_ok = (strcmp(m->part, "2N7000") != 0);
+            /* cycle all the way round to generic and back */
+            for (int k = 0; k < 8; k++) component_cycle_part(m);
+            pass = cycles_ok && id_after == id_before && m->props.mosfet.op_id != 0;
+            printf("%s op   part change keeps the operating point: I_D %.4g A before, %.4g after%s\n",
+                   pass ? " OK " : "FAIL", id_before, m->props.mosfet.op_id,
+                   pass ? "" : "  [the panel would read 0 for every device]");
+        } else {
+            printf("FAIL op   part-change check could not be set up\n");
+        }
+        if (!pass) fails++;
+        if (sim) simulation_free(sim);
+        circuit_free(c);
+    }
+
+    printf("\nop-test: %d checks, %d failed\n", total, fails);
+    return fails ? 1 : 0;
+}
+
 static int series_template(const char *filter, double t_end, int node_id) {
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
@@ -2064,6 +2172,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--std-test")) return std_test();
         else if (!strcmp(argv[i], "--switch-test")) return switch_test();
         else if (!strcmp(argv[i], "--part-test")) return part_test();
+        else if (!strcmp(argv[i], "--op-test")) return op_test();
         else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt = atof(argv[++i]);
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();

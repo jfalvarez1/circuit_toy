@@ -741,7 +741,11 @@ typedef struct Component {
     double tline_ic_prev[2];   // transmission line: shunt-capacitor currents at each end after the last accepted step (theta method)
     int sat_last_rail;                       // Op-amps: rail chosen in the previous Newton iteration (+1/-1/0)
     int sat_flips;
-    int slew_latch;                          // Op-amps: -1/+1 while the output is slew-limited this step, 0 free                           // Op-amps: rail flip-flops seen in this solve (>=2 -> use the linear stamp)
+    int slew_latch;                          // Op-amps: -1/+1 while the output is slew-limited this step, 0 free
+    double mos_vds_lin;                      // MOSFETs: the V_DS the last stamp linearised at.
+                                             // Kept apart from props.mosfet.op_vds, which is the
+                                             // real terminal voltage the properties panel shows -
+                                             // the two differ while Newton limiting is catching up.                           // Op-amps: rail flip-flops seen in this solve (>=2 -> use the linear stamp)
     double sweep_phase;                      // AC sources with a frequency sweep: accumulated phase (rad)
 
     // Properties

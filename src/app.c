@@ -1567,9 +1567,12 @@ void app_update(App *app) {
         fps_timer = current_time;
     }
 
-    // Auto-pause simulation when circuit is modified while running
-    // Exception: Don't pause if a sweep is active (sweeps modify circuit values during simulation)
-    if (app->simulation->state == SIM_RUNNING && app->circuit->modified &&
+    /* Auto-pause when the STRUCTURE changes under a running simulation - the node map and the
+       matrix no longer describe the circuit. Editing a value is not that: the stamps pick the
+       new number up on the next step, so turning a knob while it runs is the whole point of a
+       simulator and used to stop it dead (and lose the operating point with it).
+       Exception: a sweep changes values during the run by design. */
+    if (app->simulation->state == SIM_RUNNING && app->circuit->topology_dirty &&
         !circuit_has_active_sweep(app->circuit)) {
         simulation_pause(app->simulation);
         ui_set_status(&app->ui, "Circuit changed - simulation paused");
@@ -2004,6 +2007,7 @@ bool app_place_template_centered(App *app, CircuitTemplateType type) {
         render->offset_y = render->canvas_rect.h * 0.5f - (miny + maxy) * 0.5f * z;
     }
     app->circuit->modified = true;
+    app->circuit->topology_dirty = true;
     double td = circuit_template_scope_time_div(type);
     if (td > 0) { ui->scope_time_div = td; ui->scope_capture_valid = false; }
     double vd = circuit_template_scope_volt_div(type);
@@ -2341,16 +2345,17 @@ void app_load_circuit(App *app) {
 }
 
 void app_run_simulation(App *app) {
-    // If paused and circuit hasn't changed, just resume
-    if (app->simulation->state == SIM_PAUSED && !app->circuit->modified) {
+    // If paused and the structure is unchanged, just resume - a new component value does not
+    // need the run restarted from zero
+    if (app->simulation->state == SIM_PAUSED && !app->circuit->topology_dirty) {
         simulation_start(app->simulation);
         ui_set_status(&app->ui, "Simulation resumed");
         return;
     }
 
-    // Circuit changed or stopped - need full re-evaluation
+    // Structure changed or stopped - need full re-evaluation
     simulation_reset(app->simulation);
-    app->circuit->modified = false;  // Clear the modified flag
+    app->circuit->topology_dirty = false;   // `modified` stays: it means unsaved, and it is
 
     // Auto-adjust timestep based on highest frequency signal in circuit
     simulation_auto_time_step(app->simulation);
