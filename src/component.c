@@ -2167,6 +2167,49 @@ void component_cycle_part(Component *c) {
     }
 }
 
+SubCircuitDef *subcircuit_find_def(int def_id) {
+    for (int i = 0; i < g_subcircuit_library.count; i++)
+        if (g_subcircuit_library.defs[i].id == def_id) return &g_subcircuit_library.defs[i];
+    return NULL;
+}
+
+/* Give this instance its own copies of the definition's components, so their state (a
+   capacitor's charge, an inductor's current) belongs to the block rather than to the template
+   every block shares. Rebuilt only when the definition behind the block changes. */
+static Component *subcircuit_instance(Component *comp, SubCircuitDef *def, int *count) {
+    if (comp->props.subcircuit.inst_data && comp->props.subcircuit.inst_def_id == def->id &&
+        comp->props.subcircuit.inst_count == def->num_components) {
+        *count = comp->props.subcircuit.inst_count;
+        return (Component *)comp->props.subcircuit.inst_data;
+    }
+    free(comp->props.subcircuit.inst_data);
+    comp->props.subcircuit.inst_data = malloc((size_t)def->num_components * sizeof(Component));
+    if (!comp->props.subcircuit.inst_data) { *count = 0; return NULL; }
+    memcpy(comp->props.subcircuit.inst_data, def->component_data,
+           (size_t)def->num_components * sizeof(Component));
+    Component *arr = (Component *)comp->props.subcircuit.inst_data;
+    for (int i = 0; i < def->num_components; i++) {
+        arr[i].trap_i_prev = 0; arr[i].cap_vc = 0;
+        arr[i].tline_ic_prev[0] = arr[i].tline_ic_prev[1] = 0;
+        arr[i].sat_last_rail = 0; arr[i].sat_flips = 0; arr[i].slew_latch = 0;
+        arr[i].mos_vds_lin = 0;
+        if (arr[i].type == COMP_SUBCIRCUIT) {          /* no nesting: never share a pointer */
+            arr[i].props.subcircuit.inst_data = NULL;
+            arr[i].props.subcircuit.inst_count = 0;
+        }
+    }
+    comp->props.subcircuit.inst_count = def->num_components;
+    comp->props.subcircuit.inst_def_id = def->id;
+    *count = def->num_components;
+    return arr;
+}
+
+int component_subcircuit_instance(Component *comp, Component **out) {
+    if (!comp || comp->type != COMP_SUBCIRCUIT || !comp->props.subcircuit.inst_data) return 0;
+    if (out) *out = (Component *)comp->props.subcircuit.inst_data;
+    return comp->props.subcircuit.inst_count;
+}
+
 const ComponentTypeInfo *component_get_info(ComponentType type) {
     if (type >= 0 && type < COMP_TYPE_COUNT) {
         return &component_info[type];
@@ -2193,9 +2236,24 @@ void tline_params(const Component *comp, double *R, double *L, double *C_end) {
     *C_end = (comp->props.tline.model >= 2) ? fmax(comp->props.tline.b_us_per_mi, 0.0) * 1e-6 * len / w / 2.0 : 0.0;
 }
 
+/* How many auxiliary matrix rows a component needs. A subcircuit needs one for every internal
+   component that needs one - a voltage source or an inductor inside the block has to have a row
+   of its own, or it stamps into somebody else's and reads as 0 V. */
 int component_aux_count(const Component *comp) {
     if (!comp) return 0;
     if (comp->type == COMP_SOURCE_3PH) return 3;
+    if (comp->type == COMP_SUBCIRCUIT) {
+        SubCircuitDef *def = subcircuit_find_def(comp->props.subcircuit.def_id);
+        if (!def || !def->component_data) return 0;
+        const Component *arr = (const Component *)def->component_data;
+        int n = 0;
+        for (int i = 0; i < def->num_components; i++) {
+            if (arr[i].type == COMP_PIN || arr[i].type == COMP_LABEL ||
+                arr[i].type == COMP_TEST_POINT || arr[i].type == COMP_SUBCIRCUIT) continue;
+            n += (arr[i].type == COMP_SOURCE_3PH) ? 3 : (arr[i].needs_voltage_var ? 1 : 0);
+        }
+        return n;
+    }
     return comp->needs_voltage_var ? 1 : 0;
 }
 
@@ -2364,6 +2422,11 @@ void component_update_led_color(Component *comp) {
 }
 
 void component_free(Component *comp) {
+    if (comp && comp->type == COMP_SUBCIRCUIT) {
+        free(comp->props.subcircuit.inst_data);
+        comp->props.subcircuit.inst_data = NULL;
+        comp->props.subcircuit.inst_count = 0;
+    }
     free(comp);
 }
 
@@ -5518,38 +5581,45 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 }
             }
 
-            // Iterate through internal components and stamp them
-            for (int c_idx = 0; c_idx < def->num_components; c_idx++) {
-                Component *ic = &internal_comps[c_idx];
+            /* Stamp this instance's own components. They keep their state between steps, and
+               each one that needs an auxiliary row gets one out of the block reserved for this
+               block (component_aux_count told the solver how many to set aside). */
+            int inst_n = 0;
+            Component *inst = subcircuit_instance(comp, def, &inst_n);
+            if (!inst) break;
 
-                // Skip non-stampable components (wires are stored separately, not in component_data)
+            int dummy_node_map[MAX_NODES];
+            for (int i = 0; i < MAX_NODES; i++) dummy_node_map[i] = i;   /* identity: already indices */
+
+            int aux_used = 0;
+            for (int c_idx = 0; c_idx < inst_n; c_idx++) {
+                Component *ic = &inst[c_idx];
+                const Component *src_ic = &internal_comps[c_idx];
+
                 if (ic->type == COMP_PIN || ic->type == COMP_LABEL ||
                     ic->type == COMP_TEST_POINT || ic->type == COMP_SUBCIRCUIT) {
                     continue;
                 }
 
-                // Create a temporary component with remapped node IDs
-                Component temp_comp;
-                memcpy(&temp_comp, ic, sizeof(Component));
-
-                // Remap node IDs using the mapping table
-                for (int t = 0; t < temp_comp.num_terminals && t < MAX_TERMINALS; t++) {
-                    int orig_node = ic->node_ids[t];
+                /* remap from the DEFINITION's node ids (the instance's were overwritten with
+                   matrix indices on the previous pass, and the indices move every solve) */
+                for (int t = 0; t < ic->num_terminals && t < MAX_TERMINALS; t++) {
+                    int orig_node = src_ic->node_ids[t];
                     if (orig_node > 0 && orig_node < MAX_NODES) {
                         int mapped = node_remap[orig_node];
-                        temp_comp.node_ids[t] = (mapped >= 0) ? mapped : 0;
+                        ic->node_ids[t] = (mapped >= 0) ? mapped : 0;
                     } else {
-                        temp_comp.node_ids[t] = 0;  // Ground
+                        ic->node_ids[t] = 0;   // Ground
                     }
                 }
 
-                // Stamp the remapped component directly using matrix indices
-                // Note: We pass a dummy node_map since temp_comp already has matrix indices
-                int dummy_node_map[MAX_NODES];
-                for (int i = 0; i < MAX_NODES; i++) {
-                    dummy_node_map[i] = i;  // Identity mapping
+                int need = (ic->type == COMP_SOURCE_3PH) ? 3 : (ic->needs_voltage_var ? 1 : 0);
+                if (need > 0) {
+                    ic->voltage_var_idx = comp->voltage_var_idx + aux_used;
+                    aux_used += need;
                 }
-                component_stamp(&temp_comp, A, b, dummy_node_map, num_nodes, time, prev_solution, dt);
+
+                component_stamp(ic, A, b, dummy_node_map, num_nodes, time, prev_solution, dt);
             }
             break;
         }

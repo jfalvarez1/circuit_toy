@@ -678,6 +678,14 @@ typedef union {
     struct {
         int def_id;             // Reference to SubCircuitDef in g_subcircuit_library
         char name[32];          // Instance name (e.g., "U1", "IC2")
+        /* Live copy of the definition's components for THIS instance. The definition is a
+           template; two blocks of the same type each need their own capacitor voltages and
+           inductor currents, so the copies live here and persist between steps. Rebuilt when
+           the instance is first stamped or the definition changes; never serialized (a saved
+           circuit stores def_id, and the instance is rebuilt on load). */
+        void *inst_data;
+        int inst_count;
+        int inst_def_id;        // which definition inst_data was built from
     } subcircuit;
     // Spark gap: open until |V| exceeds the breakdown of the air gap (3 kV/mm), then a low
     // resistance arc that persists until the current has stayed below hold_current for
@@ -802,6 +810,11 @@ void component_get_terminal_pos(Component *comp, int terminal_idx, float *x, flo
 
 // High-voltage helpers
 double toroid_capacitance(const Component *comp);      // Farads, from props.toroid dimensions
+SubCircuitDef *subcircuit_find_def(int def_id);        // NULL if the id is not in the library
+/* The live internal components of a placed subcircuit, after it has been stamped at least
+   once: their node_ids hold MATRIX INDICES, not circuit node ids, and their state (capacitor
+   charge, inductor current) belongs to this block. Returns the count, 0 if there is none. */
+int component_subcircuit_instance(Component *comp, Component **out);
 
 /* ---------------------------------------------------------------------------------------
    Named parts. A schematic says 2N7000, not "an NMOS with V_th = 2.1 V", so each entry here

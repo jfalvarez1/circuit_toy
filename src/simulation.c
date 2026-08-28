@@ -426,9 +426,11 @@ bool simulation_dc_analysis(Simulation *sim) {
     int num_volt_vars = 0;
     for (int i = 0; i < circuit->num_components; i++) {
         Component *comp = circuit->components[i];
-        if (comp->needs_voltage_var) {
+        /* not gated on needs_voltage_var: a subcircuit needs rows for whatever is inside it */
+        int aux = component_aux_count(comp);   // 1 for most, 3 for a three-phase source
+        if (aux > 0) {
             comp->voltage_var_idx = num_volt_vars;
-            num_volt_vars += component_aux_count(comp);   // 1 for most, 3 for the three-phase source
+            num_volt_vars += aux;
         }
     }
 
@@ -453,7 +455,10 @@ bool simulation_dc_analysis(Simulation *sim) {
     sim->solution_size = matrix_size;
 
     // Store base offset for subcircuit internal nodes (after voltage variables)
-    g_subcircuit_internal_node_offset = num_nodes + num_volt_vars;
+    /* +1 because these are NODE ids, and a node id addresses matrix row id-1 (0 is ground).
+       Starting at num_nodes + num_volt_vars put the first internal node on the LAST auxiliary
+       row, on top of whatever voltage source or inductor owned it. */
+    g_subcircuit_internal_node_offset = num_nodes + num_volt_vars + 1;
 
     // Iterative solution for nonlinear components
     Vector *solution = vector_create(matrix_size);
@@ -481,7 +486,10 @@ bool simulation_dc_analysis(Simulation *sim) {
 
         // Reset subcircuit internal node offset for this iteration
         // (subcircuit stamping increments this, so we must reset each pass)
-        g_subcircuit_internal_node_offset = num_nodes + num_volt_vars;
+        /* +1 because these are NODE ids, and a node id addresses matrix row id-1 (0 is ground).
+       Starting at num_nodes + num_volt_vars put the first internal node on the LAST auxiliary
+       row, on top of whatever voltage source or inductor owned it. */
+    g_subcircuit_internal_node_offset = num_nodes + num_volt_vars + 1;
 
         // Stamp all components
         // Use large dt for DC analysis so capacitors → open circuit, inductors → short circuit
@@ -559,6 +567,19 @@ bool simulation_dc_analysis(Simulation *sim) {
         }
         circuit->components[i]->trap_i_prev = 0.0;
         circuit->components[i]->tline_ic_prev[0] = circuit->components[i]->tline_ic_prev[1] = 0.0;
+        {   /* the same for anything inside a subcircuit block */
+            Component *inner = NULL;
+            int inner_n = component_subcircuit_instance(circuit->components[i], &inner);
+            for (int q = 0; q < inner_n; q++) {
+                inner[q].trap_i_prev = 0.0;
+                inner[q].tline_ic_prev[0] = inner[q].tline_ic_prev[1] = 0.0;
+                if (inner[q].type == COMP_CAPACITOR || inner[q].type == COMP_CAPACITOR_ELEC) {
+                    int a2 = inner[q].node_ids[0], b2 = inner[q].node_ids[1];
+                    inner[q].cap_vc = ((a2 > 0) ? vector_get(solution, a2 - 1) : 0)
+                                    - ((b2 > 0) ? vector_get(solution, b2 - 1) : 0);
+                }
+            }
+        }
         if (circuit->components[i]->type == COMP_SPARK_GAP) circuit->components[i]->props.spark_gap.conducting = false;
         circuit->components[i]->sweep_phase = 0.0;
     }
@@ -616,12 +637,12 @@ static Vector *simulation_solve_step(Simulation *sim, double dt) {
         // Reset subcircuit internal node offset for this iteration
         // Count voltage variables to compute base offset
         int num_volt_vars = 0;
-        for (int i = 0; i < circuit->num_components; i++) {
-            if (circuit->components[i]->needs_voltage_var) {
-                num_volt_vars += component_aux_count(circuit->components[i]);
-            }
-        }
-        g_subcircuit_internal_node_offset = num_nodes + num_volt_vars;
+        for (int i = 0; i < circuit->num_components; i++)
+            num_volt_vars += component_aux_count(circuit->components[i]);
+        /* +1 because these are NODE ids, and a node id addresses matrix row id-1 (0 is ground).
+       Starting at num_nodes + num_volt_vars put the first internal node on the LAST auxiliary
+       row, on top of whatever voltage source or inductor owned it. */
+    g_subcircuit_internal_node_offset = num_nodes + num_volt_vars + 1;
 
         // Stamp components
         for (int i = 0; i < circuit->num_components; i++) {
@@ -985,8 +1006,11 @@ void simulation_compute_terminal_currents(Simulation *sim) {
 
     int num_volt_vars = 0;
     for (int i = 0; i < circuit->num_components; i++)
-        if (circuit->components[i]->needs_voltage_var) num_volt_vars++;
-    g_subcircuit_internal_node_offset = num_nodes + num_volt_vars;
+        num_volt_vars += component_aux_count(circuit->components[i]);
+    /* +1 because these are NODE ids, and a node id addresses matrix row id-1 (0 is ground).
+       Starting at num_nodes + num_volt_vars put the first internal node on the LAST auxiliary
+       row, on top of whatever voltage source or inductor owned it. */
+    g_subcircuit_internal_node_offset = num_nodes + num_volt_vars + 1;
 
     double dt = (sim->dt_actual > 0) ? sim->dt_actual : sim->time_step;
     if (!sim->prev_step_solution) dt = 1e9;      // DC operating point: storage elements idle
@@ -1232,7 +1256,29 @@ bool simulation_step(Simulation *sim) {
             }
         }
 
-        // Trapezoidal capacitor state: i_new = (2C/dt)(v_new - v_prev) - i_prev
+        /* Trapezoidal capacitor state: i_new = (2C/dt)(v_new - v_prev) - i_prev.
+           Components inside a subcircuit are advanced the same way - their state lives on the
+           block's own copies, and without this pass an internal capacitor never charges. Their
+           node_ids already hold matrix indices, so they skip the node_map. */
+        for (int sub = 0; sub < circuit->num_components; sub++) {
+            Component *blk = circuit->components[sub];
+            Component *inner = NULL;
+            int inner_n = component_subcircuit_instance(blk, &inner);
+            for (int i = 0; i < inner_n; i++) {
+                Component *comp = &inner[i];
+                if (comp->type != COMP_CAPACITOR && comp->type != COMP_CAPACITOR_ELEC) continue;
+                int n0 = comp->node_ids[0], n1 = comp->node_ids[1];
+                double vn = ((n0 > 0) ? vector_get(sim->solution, n0 - 1) : 0)
+                          - ((n1 > 0) ? vector_get(sim->solution, n1 - 1) : 0);
+                double vp = ((n0 > 0) ? vector_get(sim->prev_step_solution, n0 - 1) : 0)
+                          - ((n1 > 0) ? vector_get(sim->prev_step_solution, n1 - 1) : 0);
+                CapCompanion cc = component_cap_companion(comp, dt, true, vp);
+                double i_prev = comp->trap_i_prev;
+                double i_new = cc.G * vn - cc.Ieq;
+                if (cc.Geq > 0) comp->cap_vc += (i_new + cc.K * i_prev) / cc.Geq;
+                comp->trap_i_prev = i_new;
+            }
+        }
         for (int i = 0; i < circuit->num_components; i++) {
             Component *comp = circuit->components[i];
             if (comp->type != COMP_CAPACITOR && comp->type != COMP_CAPACITOR_ELEC && comp->type != COMP_TOROID) continue;
