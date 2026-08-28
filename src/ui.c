@@ -1133,23 +1133,8 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
     // My Circuits (user subcircuits) section
     PaletteCategory *subcircuits_cat = &ui->categories[PCAT_SUBCIRCUITS];
 
-    // Update subcircuit items from g_subcircuit_library
-    ui->num_subcircuit_items = 0;
-    for (int i = 0; i < g_subcircuit_library.count && ui->num_subcircuit_items < MAX_SUBCIRCUIT_DEFS; i++) {
-        SubCircuitDef *def = &g_subcircuit_library.defs[i];
-        if (def->id >= 0) {
-            SubcircuitPaletteItem *item = &ui->subcircuit_items[ui->num_subcircuit_items];
-            item->def_id = def->id;
-            strncpy(item->label, def->name, sizeof(item->label) - 1);
-            item->label[sizeof(item->label) - 1] = '\0';
-            item->num_pins = def->num_pins;
-            item->hovered = false;
-            item->selected = (ui->selected_subcircuit_def_id == def->id);
-            item->bounds.w = 60;
-            item->bounds.h = 35;
-            ui->num_subcircuit_items++;
-        }
-    }
+    // Update subcircuit items from g_subcircuit_library (shared with ui_update_layout)
+    ui_sync_subcircuit_items(ui);
 
     if (ui->left_tab == LTAB_CIRCUITS && ui->num_subcircuit_items > 0) {
         subcircuits_cat->header_y = draw_y;
@@ -7314,7 +7299,30 @@ void ui_layout_scope_buttons(UIState *ui, int x0, int y0, int max_x) {
     ui->scope_buttons_bottom = y + h;
 }
 
+/* The subcircuit palette list is state, not drawing: it has to exist as soon as a definition
+   does, so that placing an imported model does not depend on a frame having been rendered
+   first. ui_render_palette() calls this too, and it is idempotent. */
+void ui_sync_subcircuit_items(UIState *ui) {
+    if (!ui) return;
+    ui->num_subcircuit_items = 0;
+    for (int i = 0; i < g_subcircuit_library.count && ui->num_subcircuit_items < MAX_SUBCIRCUIT_DEFS; i++) {
+        SubCircuitDef *def = &g_subcircuit_library.defs[i];
+        if (def->id < 0) continue;
+        SubcircuitPaletteItem *item = &ui->subcircuit_items[ui->num_subcircuit_items];
+        item->def_id = def->id;
+        strncpy(item->label, def->name, sizeof(item->label) - 1);
+        item->label[sizeof(item->label) - 1] = '\0';
+        item->num_pins = def->num_pins;
+        item->hovered = false;
+        item->selected = (ui->selected_subcircuit_def_id == def->id);
+        item->bounds.w = 60;
+        item->bounds.h = 35;
+        ui->num_subcircuit_items++;
+    }
+}
+
 void ui_update_layout(UIState *ui) {
+    ui_sync_subcircuit_items(ui);
     if (!ui) return;
 
     // Update palette visible height

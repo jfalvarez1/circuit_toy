@@ -130,6 +130,31 @@ static int layout_test(void) {
         ui_set_brightness(ui, 1.0f);
     }
 
+    /* An imported vendor model has to be placeable, not just present in the library: it
+       belongs in the Circuits tab's subcircuit list, which is where a user reaches for it. */
+    {
+        static const char *netlist =
+            ".SUBCKT LAYOUTCHK 1 2\n"
+            "R1 1 2 1k\n"
+            ".ENDS\n";
+        char msg[128] = "";
+        int before = ui->num_subcircuit_items;
+        int n = spice_import_text(netlist, msg, sizeof msg);
+        ui_update_layout(ui);
+        int after = ui->num_subcircuit_items;
+        int found = 0;
+        for (int i = 0; i < ui->num_subcircuit_items; i++)
+            if (!strcmp(ui->subcircuit_items[i].label, "LAYOUTCHK")) found = 1;
+        if (n != 1 || after != before + 1 || !found) {
+            printf("[FAIL] imported model is not in the subcircuit palette (imported %d, items %d -> %d, found %d)\n",
+                   n, before, after, found);
+            fails++;
+        } else {
+            printf("[ OK ] imported SPICE model appears in the palette as '%s' (%d subcircuit item%s)\n",
+                   ui->subcircuit_items[found ? 0 : 0].label, after, after == 1 ? "" : "s");
+        }
+    }
+
     /* every template is in the Circuits palette, exactly once */
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
         int n = 0;

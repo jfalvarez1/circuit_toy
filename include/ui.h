@@ -582,6 +582,7 @@ void ui_update_scope_channels(UIState *ui, Circuit *circuit);
 void ui_scope_autoset(UIState *ui, Simulation *sim);
 
 // Update UI layout after window resize
+void ui_sync_subcircuit_items(UIState *ui);   // rebuild the subcircuit palette list from the library
 void ui_update_layout(UIState *ui);
 
 // Handle palette scroll (mouse wheel)
