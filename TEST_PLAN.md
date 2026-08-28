@@ -584,6 +584,18 @@ one that would have caught it.
 | 3.24.8 | `[ ]` **CI:** the gate failed on warnings | `--geom-test` returned the count of templates with ANY geometry remark, and `set -e` read 31 tracked cosmetic warnings as 31 failures. Only the two hard rules - overlapping symbols, diagonal wires - set the exit status now |
 | 3.24.9 | `[ ]` **CI:** the audit runs the new suites | `--part-test`, `--op-test` and `--sub-test` are in the workflow, so a model regression cannot reach a release |
 
+### 3.25 SPICE .SUBCKT import, and nesting (2026-08-28)
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.25.1 | `[ ]` **Automated:** `template_smoke --spice-test` | Value parsing (including MEG = mega against M = milli), a two-subcircuit netlist imported, and the model measured against the hand calculation. **14 checks, 0 failed** |
+| 3.25.2 | `[ ]` The imported ceramic across three decades | 100 nF with 30 mOhm ESR and 0.7 nH ESL: **15.91 ohm at 100 kHz** (1/(2 pi f C) = 15.9, still a capacitor), **0.033 ohm at 19.02 MHz** (series resonance - the reactances cancel and only the ESR is left), **0.442 ohm at 100 MHz** (2 pi f L = 0.44, now an inductor). This is the vendor-curve comparison the roadmap asked for |
+| 3.25.3 | `[ ]` Two of them in parallel via `X` instances | **7.957 ohm** against 7.96 by hand, which also proves an X instance nests |
+| 3.25.4 | `[ ]` `circuit-playground --import-spice <file>` | Prints "imported N subcircuits", or names the first line it had to skip. Each one appears in the subcircuit palette and can be placed |
+| 3.25.5 | `[ ]` **Bug:** matrix sizing ignored nested internal nodes | `subcircuit_count_internal_nodes` counted one level, so a nested model's nodes were past the end of the matrix and `matrix_add`'s bounds check dropped them - they behaved like ground. Two capacitor models in parallel measured 0.026 ohm. The count recurses now |
+| 3.25.6 | `[ ]` **Bug:** nested capacitors never advanced | The per-step state pass walked only top-level blocks, so a nested capacitor's stored voltage stayed at zero and the part acted as a near short (0.09 ohm). The walk recurses now, and so does the operating-point seeding |
+| 3.25.7 | `[ ]` Unsupported lines | A `.MODEL` card, a semiconductor instance or an unparseable value is counted and the first one is named in the summary, rather than being silently dropped or guessed at |
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.

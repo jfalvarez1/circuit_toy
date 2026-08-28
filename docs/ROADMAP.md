@@ -1,6 +1,25 @@
 # Roadmap
 
-## Vendor / SPICE model import (requested 2026-08-24)
+## Vendor / SPICE model import - FIRST VERSION SHIPPED 2026-08-28
+
+`.SUBCKT` import is in: `src/spice.c` reads the passive subset of a manufacturer's netlist and
+turns each subcircuit into a library entry, so an imported model is placed and solved like any
+block. Supported: `.SUBCKT` / `.ENDS` with a port list, R / L / C instances, `X` instances of
+another subcircuit in the same file (nested), `+` continuation lines, `*` and `;` comments, and
+the value suffixes including the MEG-is-mega / M-is-milli trap. Anything else is reported and
+skipped rather than guessed at. Load one with `--import-spice <file>`.
+
+`--spice-test` imports a vendor-style ceramic model (C in series with its ESR and ESL) and
+measures its impedance across three decades against the hand calculation: **15.91 ohm at
+100 kHz** (capacitive), **0.033 ohm at 19.02 MHz** (series resonance, so just the ESR) and
+**0.442 ohm at 100 MHz** (inductive), plus two of them in parallel at **7.957 ohm** against
+7.96. That is the vendor-curve comparison this entry asked for, as a regression test.
+
+Still to do from the original scope: `.PARAM` expressions and parameterised subcircuits, a
+"Import model..." button in the properties panel (it is CLI-only for now), semiconductor
+`.MODEL` cards, and S-parameter (`.s2p`) import.
+
+## Original scope (2026-08-24)
 
 Goal: load manufacturer models — Murata SimSurfing exports, TDK, Würth, KEMET, Samsung — for
 capacitors, inductors and other passives so simulations use measured impedance behaviour

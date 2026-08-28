@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.13.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.13.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.14.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.14.0)** (auto-updating from v3.4.0 on)
 
 A native desktop circuit simulator written in C with SDL2, featuring a synthwave-themed interface. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
 
@@ -433,6 +433,26 @@ what is being left out:
 The **Ideal vs real models** group builds each of those into a side-by-side circuit: the same
 schematic two or three times with one part swapped, both on the scope at once. Every value in the
 notes is a hand calculation that the regression suite checks - both halves of every comparison.
+
+### Vendor Models (SPICE .SUBCKT import)
+
+Manufacturers publish their parts as SPICE subcircuits - a Murata capacitor is an R-L-C ladder,
+which is why a real 100 nF stops being a capacitor somewhere around 20 MHz. Those models import:
+
+```bash
+build/circuit-playground.exe --import-spice GRM188R71H104.cir
+```
+
+Each `.SUBCKT` becomes an entry in the subcircuit library, placeable as an IC block and solved
+like any other. R, L and C instances, `X` instances of another subcircuit in the same file
+(nested), `+` continuations, `*` and `;` comments and the usual value suffixes are supported -
+including the trap that `M` is milli while `MEG` is mega. Anything else is reported and skipped
+rather than guessed at.
+
+`template_smoke --spice-test` imports a vendor-style ceramic model and measures it against the
+hand calculation across three decades: 15.91 ohm at 100 kHz (still a capacitor), 0.033 ohm at
+its 19 MHz series resonance (just the ESR), 0.442 ohm at 100 MHz (now an inductor), and two in
+parallel at 7.957 ohm against 7.96 - which also proves the nesting.
 
 ### Named Parts
 

@@ -53,6 +53,7 @@ jobs:
           echo "--- named parts vs data sheets"       && $T --part-test
           echo "--- device operating points"          && $T --op-test
           echo "--- subcircuits as IC blocks"         && $T --sub-test
+          echo "--- SPICE .SUBCKT import"             && $T --spice-test
           echo "--- standards limits"                 && $T --std-test
           echo "--- power ratings"                    && $T --burn-test
           echo "--- every adjustable knob"            && $T --knob-test

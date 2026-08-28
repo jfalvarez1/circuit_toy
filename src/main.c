@@ -12,6 +12,7 @@
 #include "file_io.h"
 #include "simulation.h"
 #include "circuits.h"
+#include "spice.h"
 #include "version.h"
 #include "updater.h"
 #include "ui.h"
@@ -178,6 +179,7 @@ int main(int argc, char *argv[]) {
     const char *cli_keys = NULL; int cli_keys_frame = 30, cli_keys_every = 6;
     const char *cli_xy = NULL;
     bool cli_popout = false;
+    const char *cli_spice = NULL;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--template") && i + 1 < argc) cli_template = argv[++i];
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) cli_shot = argv[++i];
@@ -203,6 +205,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--xy") && i + 1 < argc) cli_xy = argv[++i];
         else if (!strcmp(argv[i], "--tab") && i + 1 < argc) cli_tab = !strcmp(argv[++i], "circuits") ? 1 : 0;
         else if (!strcmp(argv[i], "--popout")) cli_popout = true;
+        else if (!strcmp(argv[i], "--import-spice") && i + 1 < argc) cli_spice = argv[++i];
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
         else if (!strcmp(argv[i], "--layout-test")) return layout_test();
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); usage(); return 2; }
@@ -228,6 +231,12 @@ int main(int argc, char *argv[]) {
     printf("Application initialized successfully\n");
     printf("Press F1 for keyboard shortcuts\n\n");
 
+    if (cli_spice) {
+        char msg[256] = "";
+        int n = spice_import_file(cli_spice, msg, sizeof msg);
+        if (n > 0) printf("SPICE import: %s\n", msg);
+        else fprintf(stderr, "SPICE import failed: %s\n", msg);
+    }
     if (cli_xy) {
         int n = arb_load_xy_file(cli_xy);
         if (n) printf("Loaded %d X-Y points from %s\n", n, cli_xy);

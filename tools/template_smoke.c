@@ -32,6 +32,7 @@
 #include "component.h"
 #include "circuit.h"
 #include "circuits.h"
+#include "spice.h"
 #include "simulation.h"
 #include "file_io.h"
 
@@ -2406,6 +2407,147 @@ static int sub_test(void) {
     return fails ? 1 : 0;
 }
 
+
+/* ---------------------------------------------------------------------------------------
+ * --spice-test: importing a vendor .SUBCKT and simulating what comes out.
+ *
+ * The netlist below is the shape every manufacturer publishes for a ceramic capacitor: the
+ * capacitance in series with its ESR and ESL, which is why a real 100 nF stops being a
+ * capacitor somewhere around 20 MHz. The test imports it, places it as a block, and measures
+ * the impedance at three frequencies against the hand calculation |Z| = |ESR + j(wL - 1/wC)|.
+ * ------------------------------------------------------------------------------------- */
+static const char *SPICE_NETLIST =
+    "* A vendor-style ceramic capacitor model\n"
+    "* 100 nF, ESR 30 mOhm, ESL 0.7 nH  ->  series resonance at 1/(2 pi sqrt(LC)) = 19.0 MHz\n"
+    ".SUBCKT CAP100N 1 2\n"
+    "Ls   1   a   0.7n\n"
+    "Rs   a   b   30m\n"
+    "Cs   b   2   100n\n"
+    ".ENDS\n"
+    "\n"
+    "* and one built ON TOP of it, to prove an X instance nests\n"
+    ".SUBCKT CAPBANK 1 2\n"
+    "X1   1   2   CAP100N\n"
+    "X2   1   2   CAP100N\n"
+    ".ENDS\n";
+
+/* Drive the imported block from a source through a 1 ohm sense resistor and return |Z| of the
+   block at `freq`, measured from the steady-state amplitude either side of the sense resistor. */
+static double spice_block_z(int def_id, double freq, int *ok) {
+    Circuit *c = circuit_create();
+    Component *v = pt_add(c, COMP_AC_VOLTAGE, 0, 100, 0);
+    v->props.ac_voltage.amplitude = 1.0; v->props.ac_voltage.frequency = freq;
+    Component *g0 = pt_add(c, COMP_GROUND, 0, 200, 0);
+    Component *rs = pt_add(c, COMP_RESISTOR, 140, 60, 0);
+    rs->props.resistor.resistance = 1.0;
+    rs->props.resistor.power_rating = 100.0;
+    Component *blk = pt_add(c, COMP_SUBCIRCUIT, 320, 100, 0);
+    blk->props.subcircuit.def_id = def_id;
+    blk->num_terminals = 2;
+    Component *gb = pt_add(c, COMP_GROUND, 320, 220, 0);
+    int src = pt_node(c, 0, 60), mid = pt_node(c, 200, 60), gnd = pt_node(c, 0, 180), bg = pt_node(c, 320, 200);
+    v->node_ids[0] = src; v->node_ids[1] = gnd; g0->node_ids[0] = gnd;
+    rs->node_ids[0] = src; rs->node_ids[1] = mid;
+    blk->node_ids[0] = mid; blk->node_ids[1] = bg;
+    gb->node_ids[0] = bg;
+
+    Simulation *sim = simulation_create(c);
+    *ok = sim && simulation_dc_analysis(sim);
+    double vmin = 1e300, vmax = -1e300, imin = 1e300, imax = -1e300;
+    if (*ok) {
+        double dt = 1.0 / (freq * 400.0);
+        simulation_set_time_step(sim, dt);
+        simulation_start(sim);
+        double t_end = 12.0 / freq;
+        while (sim->time < t_end) {
+            if (!simulation_step(sim)) { *ok = 0; break; }
+            if (sim->time < t_end * 0.6) continue;       /* let it settle first */
+            Node *nm = circuit_get_node(c, mid), *ns = circuit_get_node(c, src);
+            double vm = nm ? nm->voltage : 0, vsrc = ns ? ns->voltage : 0;
+            double i = (vsrc - vm) / 1.0;                /* through the 1 ohm sense */
+            if (vm < vmin) vmin = vm;  if (vm > vmax) vmax = vm;
+            if (i < imin) imin = i;    if (i > imax) imax = i;
+        }
+    }
+    double z = 0;
+    if (*ok && (imax - imin) > 1e-12) z = (vmax - vmin) / (imax - imin);
+    if (!isfinite(z)) *ok = 0;
+    if (sim) simulation_free(sim);
+    circuit_free(c);
+    return z;
+}
+
+static int spice_test(void) {
+    int fails = 0, total = 0;
+    printf("spice-test: a vendor .SUBCKT imported and simulated\n\n");
+
+    /* value parsing, including the MEG / M trap */
+    struct { const char *txt; double want; } vals[] = {
+        { "4.7u", 4.7e-6 }, { "100n", 100e-9 }, { "1MEG", 1e6 }, { "1m", 1e-3 },
+        { "2.2k", 2200.0 }, { "1e-9", 1e-9 }, { "30m", 30e-3 }, { "0.7n", 0.7e-9 },
+    };
+    for (unsigned i = 0; i < sizeof vals / sizeof vals[0]; i++) {
+        double got = 0;
+        int ok = spice_parse_value(vals[i].txt, &got);
+        int pass = ok && fabs(got - vals[i].want) <= fabs(vals[i].want) * 1e-9;
+        total++; if (!pass) fails++;
+        printf("%s spice value %-8s = %-12.6g expect %-12.6g\n", pass ? " OK " : "FAIL",
+               vals[i].txt, got, vals[i].want);
+    }
+
+    g_subcircuit_library.count = 0; g_subcircuit_library.next_id = 0;
+    char msg[256] = "";
+    int n = spice_import_text(SPICE_NETLIST, msg, sizeof msg);
+    total++;
+    int pass = (n == 2);
+    if (!pass) fails++;
+    printf("%s spice import  %d subcircuit(s): %s\n", pass ? " OK " : "FAIL", n, msg);
+
+    int cap_id = 0, bank_id = 0;
+    for (int i = 0; i < g_subcircuit_library.count; i++) {
+        if (!strcmp(g_subcircuit_library.defs[i].name, "CAP100N")) cap_id = g_subcircuit_library.defs[i].id;
+        if (!strcmp(g_subcircuit_library.defs[i].name, "CAPBANK")) bank_id = g_subcircuit_library.defs[i].id;
+    }
+    total++;
+    pass = (cap_id != 0 && bank_id != 0);
+    if (!pass) fails++;
+    printf("%s spice both models are in the library (CAP100N and the CAPBANK built from it)\n",
+           pass ? " OK " : "FAIL");
+
+    /* |Z| of C = 100 nF, ESR 30 mOhm, ESL 0.7 nH at three points either side of resonance */
+    if (cap_id) {
+        struct { double f, want, tol; const char *note; } zc[] = {
+            { 100e3,  15.9,   0.10, "below resonance: 1/(2 pi f C) = 15.9 ohm, the capacitor" },
+            { 19.02e6, 0.030, 0.60, "at series resonance the reactances cancel: just the ESR" },
+            { 100e6,   0.44,  0.15, "above it the ESL takes over: 2 pi f L = 0.44 ohm" },
+        };
+        for (unsigned i = 0; i < sizeof zc / sizeof zc[0]; i++) {
+            int ok = 1;
+            double z = spice_block_z(cap_id, zc[i].f, &ok);
+            total++;
+            int p2 = ok && fabs(z - zc[i].want) <= zc[i].tol * zc[i].want;
+            if (!p2) fails++;
+            printf("%s spice |Z| at %-8.4g Hz = %9.4g ohm  expect %-8.3g  %s%s\n",
+                   p2 ? " OK " : "FAIL", zc[i].f, z, zc[i].want, zc[i].note,
+                   ok ? "" : "  [simulation failed]");
+        }
+    }
+
+    /* two of them in parallel: half the impedance, and it proves the X instance nested */
+    if (bank_id) {
+        int ok = 1;
+        double z = spice_block_z(bank_id, 100e3, &ok);
+        total++;
+        int p2 = ok && fabs(z - 7.96) <= 0.12 * 7.96;
+        if (!p2) fails++;
+        printf("%s spice |Z| of two in parallel  = %9.4g ohm  expect 7.96     (X instances nest)%s\n",
+               p2 ? " OK " : "FAIL", z, ok ? "" : "  [simulation failed]");
+    }
+
+    printf("\nspice-test: %d checks, %d failed\n", total, fails);
+    return fails ? 1 : 0;
+}
+
 static int series_template(const char *filter, double t_end, int node_id) {
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
@@ -2447,6 +2589,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--part-test")) return part_test();
         else if (!strcmp(argv[i], "--op-test")) return op_test();
         else if (!strcmp(argv[i], "--sub-test")) return sub_test();
+        else if (!strcmp(argv[i], "--spice-test")) return spice_test();
         else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt = atof(argv[++i]);
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();

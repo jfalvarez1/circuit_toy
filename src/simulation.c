@@ -18,25 +18,72 @@ int g_subcircuit_internal_node_offset = 0;
 
 // Helper to count internal nodes needed for a subcircuit definition
 // Returns the max internal node ID found (excluding pin nodes)
-static int subcircuit_count_internal_nodes(SubCircuitDef *def) {
-    if (!def || !def->component_data || def->num_components == 0) {
-        return 0;
+/* How many matrix rows a placed block needs for the nodes inside it - INCLUDING the nodes
+   inside any block nested in it, which each allocate their own. Counting only this level left
+   the matrix too small, and indices past the end were dropped by the bounds check in
+   matrix_add: those nodes silently behaved like ground, so a capacitor model nested twice read
+   as a short (0.026 ohm where two 100 nF in parallel should be 7.96). */
+/* Advance the capacitors inside a block - and inside any block nested in it. Without the
+   recursion a nested capacitor's stored voltage stays at zero, its companion source with it,
+   and the part behaves as a near short: a vendor capacitor model instantiated twice measured
+   0.09 ohm where two 100 nF in parallel should be 7.96. */
+static void subcircuit_advance_caps(Component *blk, Vector *now, Vector *prev, double dt) {
+    Component *inner = NULL;
+    int n = component_subcircuit_instance(blk, &inner);
+    for (int i = 0; i < n; i++) {
+        Component *comp = &inner[i];
+        if (comp->type == COMP_SUBCIRCUIT) { subcircuit_advance_caps(comp, now, prev, dt); continue; }
+        if (comp->type != COMP_CAPACITOR && comp->type != COMP_CAPACITOR_ELEC) continue;
+        int n0 = comp->node_ids[0], n1 = comp->node_ids[1];
+        double vn = ((n0 > 0) ? vector_get(now, n0 - 1) : 0) - ((n1 > 0) ? vector_get(now, n1 - 1) : 0);
+        double vp = ((n0 > 0) ? vector_get(prev, n0 - 1) : 0) - ((n1 > 0) ? vector_get(prev, n1 - 1) : 0);
+        CapCompanion cc = component_cap_companion(comp, dt, true, vp);
+        double i_prev = comp->trap_i_prev;
+        double i_new = cc.G * vn - cc.Ieq;
+        if (cc.Geq > 0) comp->cap_vc += (i_new + cc.K * i_prev) / cc.Geq;
+        comp->trap_i_prev = i_new;
     }
+}
 
-    int max_node_id = 0;
+/* Start a block's storage elements from the operating point, nested ones included. */
+static void subcircuit_seed_state(Component *blk, Vector *solution) {
+    Component *inner = NULL;
+    int n = component_subcircuit_instance(blk, &inner);
+    for (int i = 0; i < n; i++) {
+        Component *comp = &inner[i];
+        comp->trap_i_prev = 0.0;
+        comp->tline_ic_prev[0] = comp->tline_ic_prev[1] = 0.0;
+        if (comp->type == COMP_SUBCIRCUIT) { subcircuit_seed_state(comp, solution); continue; }
+        if (comp->type == COMP_CAPACITOR || comp->type == COMP_CAPACITOR_ELEC) {
+            int a2 = comp->node_ids[0], b2 = comp->node_ids[1];
+            comp->cap_vc = ((a2 > 0) ? vector_get(solution, a2 - 1) : 0)
+                         - ((b2 > 0) ? vector_get(solution, b2 - 1) : 0);
+        }
+    }
+}
+
+static int subcircuit_count_internal_nodes_depth(SubCircuitDef *def, int depth) {
+    if (!def || !def->component_data || def->num_components == 0) return 0;
+    if (depth >= SUBCIRCUIT_MAX_DEPTH) return 0;
+
+    int max_node_id = 0, nested = 0;
     Component *internal_comps = (Component *)def->component_data;
 
-    // Find max node ID used by internal components
     for (int i = 0; i < def->num_components; i++) {
         Component *ic = &internal_comps[i];
         for (int t = 0; t < ic->num_terminals && t < MAX_TERMINALS; t++) {
-            if (ic->node_ids[t] > max_node_id) {
-                max_node_id = ic->node_ids[t];
-            }
+            if (ic->node_ids[t] > max_node_id) max_node_id = ic->node_ids[t];
+        }
+        if (ic->type == COMP_SUBCIRCUIT) {
+            SubCircuitDef *sub = subcircuit_find_def(ic->props.subcircuit.def_id);
+            nested += subcircuit_count_internal_nodes_depth(sub, depth + 1) + 1;
         }
     }
+    return max_node_id + nested;
+}
 
-    return max_node_id;
+static int subcircuit_count_internal_nodes(SubCircuitDef *def) {
+    return subcircuit_count_internal_nodes_depth(def, 0);
 }
 
 // GMIN - minimum conductance added from each node to ground
@@ -567,19 +614,7 @@ bool simulation_dc_analysis(Simulation *sim) {
         }
         circuit->components[i]->trap_i_prev = 0.0;
         circuit->components[i]->tline_ic_prev[0] = circuit->components[i]->tline_ic_prev[1] = 0.0;
-        {   /* the same for anything inside a subcircuit block */
-            Component *inner = NULL;
-            int inner_n = component_subcircuit_instance(circuit->components[i], &inner);
-            for (int q = 0; q < inner_n; q++) {
-                inner[q].trap_i_prev = 0.0;
-                inner[q].tline_ic_prev[0] = inner[q].tline_ic_prev[1] = 0.0;
-                if (inner[q].type == COMP_CAPACITOR || inner[q].type == COMP_CAPACITOR_ELEC) {
-                    int a2 = inner[q].node_ids[0], b2 = inner[q].node_ids[1];
-                    inner[q].cap_vc = ((a2 > 0) ? vector_get(solution, a2 - 1) : 0)
-                                    - ((b2 > 0) ? vector_get(solution, b2 - 1) : 0);
-                }
-            }
-        }
+        subcircuit_seed_state(circuit->components[i], solution);   /* nested blocks included */
         if (circuit->components[i]->type == COMP_SPARK_GAP) circuit->components[i]->props.spark_gap.conducting = false;
         circuit->components[i]->sweep_phase = 0.0;
     }
@@ -1263,25 +1298,8 @@ bool simulation_step(Simulation *sim) {
            Components inside a subcircuit are advanced the same way - their state lives on the
            block's own copies, and without this pass an internal capacitor never charges. Their
            node_ids already hold matrix indices, so they skip the node_map. */
-        for (int sub = 0; sub < circuit->num_components; sub++) {
-            Component *blk = circuit->components[sub];
-            Component *inner = NULL;
-            int inner_n = component_subcircuit_instance(blk, &inner);
-            for (int i = 0; i < inner_n; i++) {
-                Component *comp = &inner[i];
-                if (comp->type != COMP_CAPACITOR && comp->type != COMP_CAPACITOR_ELEC) continue;
-                int n0 = comp->node_ids[0], n1 = comp->node_ids[1];
-                double vn = ((n0 > 0) ? vector_get(sim->solution, n0 - 1) : 0)
-                          - ((n1 > 0) ? vector_get(sim->solution, n1 - 1) : 0);
-                double vp = ((n0 > 0) ? vector_get(sim->prev_step_solution, n0 - 1) : 0)
-                          - ((n1 > 0) ? vector_get(sim->prev_step_solution, n1 - 1) : 0);
-                CapCompanion cc = component_cap_companion(comp, dt, true, vp);
-                double i_prev = comp->trap_i_prev;
-                double i_new = cc.G * vn - cc.Ieq;
-                if (cc.Geq > 0) comp->cap_vc += (i_new + cc.K * i_prev) / cc.Geq;
-                comp->trap_i_prev = i_new;
-            }
-        }
+        for (int sub = 0; sub < circuit->num_components; sub++)
+            subcircuit_advance_caps(circuit->components[sub], sim->solution, sim->prev_step_solution, dt);
         for (int i = 0; i < circuit->num_components; i++) {
             Component *comp = circuit->components[i];
             if (comp->type != COMP_CAPACITOR && comp->type != COMP_CAPACITOR_ELEC && comp->type != COMP_TOROID) continue;
