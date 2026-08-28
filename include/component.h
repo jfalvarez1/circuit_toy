@@ -810,7 +810,11 @@ void component_get_terminal_pos(Component *comp, int terminal_idx, float *x, flo
 
 // High-voltage helpers
 double toroid_capacitance(const Component *comp);      // Farads, from props.toroid dimensions
+#define SUBCIRCUIT_MAX_DEPTH 8   /* blocks inside blocks: deep enough for real hierarchy, and a
+                                    stop for a definition that manages to contain itself */
+extern int g_subcircuit_depth;
 SubCircuitDef *subcircuit_find_def(int def_id);        // NULL if the id is not in the library
+void subcircuit_release_instance(Component *comp);     // free a block's live copies, not the block
 /* The live internal components of a placed subcircuit, after it has been stamped at least
    once: their node_ids hold MATRIX INDICES, not circuit node ids, and their state (capacitor
    charge, inductor current) belongs to this block. Returns the count, 0 if there is none. */

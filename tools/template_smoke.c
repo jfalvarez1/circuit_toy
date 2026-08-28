@@ -2357,6 +2357,51 @@ static int sub_test(void) {
                ok ? "(the block conducts, so the dots do not stop at its edge)" : "[simulation failed]");
     }
 
+    /* ---- 5. a block inside a block: an inner divider wrapped by an outer block ---- */
+    {
+        /* inner: 1k / 1k divider with IN / OUT / GND */
+        Circuit *in1 = circuit_create();
+        Component *a1 = pt_add(in1, COMP_RESISTOR, 100, 60, 90);
+        a1->props.resistor.resistance = 1000.0;
+        Component *a2 = pt_add(in1, COMP_RESISTOR, 100, 220, 90);
+        a2->props.resistor.resistance = 1000.0;
+        int i_in = pt_node(in1, 100, 20), i_mid = pt_node(in1, 100, 140), i_gnd = pt_node(in1, 100, 260);
+        a1->node_ids[0] = i_in; a1->node_ids[1] = i_mid;
+        a2->node_ids[0] = i_mid; a2->node_ids[1] = i_gnd;
+        SubCircuitDef *inner_def = sub_new_def("INNERDIV");
+        int ipins[3] = { i_in, i_mid, i_gnd };
+        const char *inames[3] = { "IN", "OUT", "GND" };
+        sub_fill_def(inner_def, in1, ipins, inames, 3);
+        circuit_free(in1);
+
+        /* outer: a 1k in series with an instance of the inner block */
+        Circuit *out1 = circuit_create();
+        Component *rs = pt_add(out1, COMP_RESISTOR, 100, 60, 90);
+        rs->props.resistor.resistance = 1000.0;
+        Component *nested = pt_add(out1, COMP_SUBCIRCUIT, 100, 200, 0);
+        nested->props.subcircuit.def_id = inner_def->id;
+        nested->num_terminals = 3;
+        int o_in = pt_node(out1, 100, 20), o_mid = pt_node(out1, 100, 140),
+            o_out = pt_node(out1, 220, 200), o_gnd = pt_node(out1, 100, 300);
+        rs->node_ids[0] = o_in; rs->node_ids[1] = o_mid;
+        nested->node_ids[0] = o_mid; nested->node_ids[1] = o_out; nested->node_ids[2] = o_gnd;
+        SubCircuitDef *outer_def = sub_new_def("OUTERDIV");
+        int opins[3] = { o_in, o_out, o_gnd };
+        const char *onames[3] = { "IN", "OUT", "GND" };
+        sub_fill_def(outer_def, out1, opins, onames, 3);
+        circuit_free(out1);
+
+        int ok = 1;
+        double v = sub_drive(outer_def, 3, &ok, 0);
+        total++;
+        /* 10 V across 1k + (1k + 1k); OUT is the inner divider's midpoint = 10 x 1k/3k */
+        int pass = ok && fabs(v - 10.0 / 3.0) < 0.05;
+        if (!pass) fails++;
+        printf("%s sub  nested block in a block   OUT = %8.4f V   expect 3.3333  %s\n",
+               pass ? " OK " : "FAIL", v,
+               ok ? "(outer 1k into an inner 1k/1k divider)" : "[simulation failed]");
+    }
+
     printf("\nsub-test: %d checks, %d failed\n", total, fails);
     return fails ? 1 : 0;
 }

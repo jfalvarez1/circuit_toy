@@ -957,8 +957,8 @@ circuit_toy/
   their own matrix rows, and the pins carry current so the flow animation runs through the
   block instead of stopping at its edge. `template_smoke --sub-test` builds three definitions
   the way the dialog does and drives each one: a divider, an RC that has to hold its charge,
-  and a block with a voltage source inside it. What is still missing is nesting - a subcircuit
-  inside a subcircuit is skipped rather than expanded.
+  a block with a voltage source inside it, and a block nested inside another block, which is
+  expanded to eight levels deep.
 
 - **Current flow display** - the animation traces paths from sources to ground, sizing and
   timing each dot from the solved terminal currents, and `--flow-test` checks KCL at every

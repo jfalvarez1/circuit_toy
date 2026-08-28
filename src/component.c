@@ -2167,6 +2167,8 @@ void component_cycle_part(Component *c) {
     }
 }
 
+int g_subcircuit_depth = 0;      /* how deep the current stamp is inside nested blocks */
+
 SubCircuitDef *subcircuit_find_def(int def_id) {
     for (int i = 0; i < g_subcircuit_library.count; i++)
         if (g_subcircuit_library.defs[i].id == def_id) return &g_subcircuit_library.defs[i];
@@ -2182,7 +2184,7 @@ static Component *subcircuit_instance(Component *comp, SubCircuitDef *def, int *
         *count = comp->props.subcircuit.inst_count;
         return (Component *)comp->props.subcircuit.inst_data;
     }
-    free(comp->props.subcircuit.inst_data);
+    subcircuit_release_instance(comp);
     comp->props.subcircuit.inst_data = malloc((size_t)def->num_components * sizeof(Component));
     if (!comp->props.subcircuit.inst_data) { *count = 0; return NULL; }
     memcpy(comp->props.subcircuit.inst_data, def->component_data,
@@ -2193,9 +2195,12 @@ static Component *subcircuit_instance(Component *comp, SubCircuitDef *def, int *
         arr[i].tline_ic_prev[0] = arr[i].tline_ic_prev[1] = 0;
         arr[i].sat_last_rail = 0; arr[i].sat_flips = 0; arr[i].slew_latch = 0;
         arr[i].mos_vds_lin = 0;
-        if (arr[i].type == COMP_SUBCIRCUIT) {          /* no nesting: never share a pointer */
+        if (arr[i].type == COMP_SUBCIRCUIT) {
+            /* never share the template's pointer - the nested block builds its own copies the
+               first time it is stamped, so its state belongs to this instance too */
             arr[i].props.subcircuit.inst_data = NULL;
             arr[i].props.subcircuit.inst_count = 0;
+            arr[i].props.subcircuit.inst_def_id = 0;
         }
     }
     comp->props.subcircuit.inst_count = def->num_components;
@@ -2239,22 +2244,29 @@ void tline_params(const Component *comp, double *R, double *L, double *C_end) {
 /* How many auxiliary matrix rows a component needs. A subcircuit needs one for every internal
    component that needs one - a voltage source or an inductor inside the block has to have a row
    of its own, or it stamps into somebody else's and reads as 0 V. */
-int component_aux_count(const Component *comp) {
+/* A block inside a block is counted too, so nesting reserves the rows the whole tree needs.
+   `depth` stops a definition that somehow contains itself from recursing for ever. */
+static int component_aux_count_depth(const Component *comp, int depth) {
     if (!comp) return 0;
     if (comp->type == COMP_SOURCE_3PH) return 3;
     if (comp->type == COMP_SUBCIRCUIT) {
+        if (depth >= SUBCIRCUIT_MAX_DEPTH) return 0;
         SubCircuitDef *def = subcircuit_find_def(comp->props.subcircuit.def_id);
         if (!def || !def->component_data) return 0;
         const Component *arr = (const Component *)def->component_data;
         int n = 0;
         for (int i = 0; i < def->num_components; i++) {
             if (arr[i].type == COMP_PIN || arr[i].type == COMP_LABEL ||
-                arr[i].type == COMP_TEST_POINT || arr[i].type == COMP_SUBCIRCUIT) continue;
-            n += (arr[i].type == COMP_SOURCE_3PH) ? 3 : (arr[i].needs_voltage_var ? 1 : 0);
+                arr[i].type == COMP_TEST_POINT) continue;
+            n += component_aux_count_depth(&arr[i], depth + 1);
         }
         return n;
     }
     return comp->needs_voltage_var ? 1 : 0;
+}
+
+int component_aux_count(const Component *comp) {
+    return component_aux_count_depth(comp, 0);
 }
 
 double spark_gap_breakdown(const Component *comp) {
@@ -2421,12 +2433,21 @@ void component_update_led_color(Component *comp) {
     }
 }
 
+/* Release a block's instance copies WITHOUT freeing the component itself - the nested ones
+   live inside an array, so component_free()'s free(comp) would be freeing an array element. */
+void subcircuit_release_instance(Component *comp) {
+    if (!comp || comp->type != COMP_SUBCIRCUIT || !comp->props.subcircuit.inst_data) return;
+    Component *inner = (Component *)comp->props.subcircuit.inst_data;
+    for (int i = 0; i < comp->props.subcircuit.inst_count; i++)
+        subcircuit_release_instance(&inner[i]);          /* frees the tree, not the array */
+    free(comp->props.subcircuit.inst_data);
+    comp->props.subcircuit.inst_data = NULL;
+    comp->props.subcircuit.inst_count = 0;
+    comp->props.subcircuit.inst_def_id = 0;
+}
+
 void component_free(Component *comp) {
-    if (comp && comp->type == COMP_SUBCIRCUIT) {
-        free(comp->props.subcircuit.inst_data);
-        comp->props.subcircuit.inst_data = NULL;
-        comp->props.subcircuit.inst_count = 0;
-    }
+    subcircuit_release_instance(comp);
     free(comp);
 }
 
@@ -2440,6 +2461,12 @@ Component *component_clone(Component *comp) {
     clone->id = next_component_id++;
     clone->selected = false;
     clone->highlighted = false;
+    if (clone->type == COMP_SUBCIRCUIT) {
+        /* the copy must not share the original's instance array, or both would free it */
+        clone->props.subcircuit.inst_data = NULL;
+        clone->props.subcircuit.inst_count = 0;
+        clone->props.subcircuit.inst_def_id = 0;
+    }
 
     // Clear node connections
     for (int i = 0; i < MAX_TERMINALS; i++) {
@@ -5561,10 +5588,12 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             for (int i = 0; i < def->num_pins && i < comp->num_terminals; i++) {
                 int internal_id = def->pins[i].internal_node_id;
                 int external_id = comp->node_ids[i];
-                if (internal_id > 0 && internal_id < MAX_NODES && external_id > 0) {
-                    // Map internal node to the matrix index of the external node
-                    node_remap[internal_id] = node_map[external_id];
-                }
+                if (internal_id <= 0 || internal_id >= MAX_NODES) continue;
+                /* external_id 0 is ground, and a pin tied to ground means the internal node IS
+                   ground - index 0. Skipping it left the node unmapped, so the loop below gave
+                   it a fresh internal index and the inside of the block floated: a divider
+                   inside another block came out at the supply rail instead of a third of it. */
+                node_remap[internal_id] = (external_id > 0) ? node_map[external_id] : 0;
             }
 
             // Then, allocate matrix indices for non-pin internal nodes
@@ -5596,9 +5625,15 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 Component *ic = &inst[c_idx];
                 const Component *src_ic = &internal_comps[c_idx];
 
+                /* A block inside a block is stamped like anything else: this case expands it,
+                   and its pins arrive already carrying matrix indices, which is exactly what
+                   the identity node map below hands back. */
                 if (ic->type == COMP_PIN || ic->type == COMP_LABEL ||
-                    ic->type == COMP_TEST_POINT || ic->type == COMP_SUBCIRCUIT) {
+                    ic->type == COMP_TEST_POINT) {
                     continue;
+                }
+                if (ic->type == COMP_SUBCIRCUIT && g_subcircuit_depth >= SUBCIRCUIT_MAX_DEPTH) {
+                    continue;                      /* a definition that contains itself */
                 }
 
                 /* remap from the DEFINITION's node ids (the instance's were overwritten with
@@ -5613,13 +5648,15 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                     }
                 }
 
-                int need = (ic->type == COMP_SOURCE_3PH) ? 3 : (ic->needs_voltage_var ? 1 : 0);
+                int need = component_aux_count(ic);   /* a nested block asks for its whole tree */
                 if (need > 0) {
                     ic->voltage_var_idx = comp->voltage_var_idx + aux_used;
                     aux_used += need;
                 }
 
+                g_subcircuit_depth++;
                 component_stamp(ic, A, b, dummy_node_map, num_nodes, time, prev_solution, dt);
+                g_subcircuit_depth--;
             }
             break;
         }
