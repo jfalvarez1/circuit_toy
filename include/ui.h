@@ -266,6 +266,8 @@ typedef struct {
     Button btn_scope_cursor;         // Toggle measurement cursors
     Button btn_scope_fft;            // Toggle FFT view
     Button btn_scope_stack;          // Toggle stacked (one band per channel) / overlay view
+    Button btn_scope_ac;             // AC coupling toggle
+    Button btn_scope_fit;            // Per-band fit toggle (stacked view)
     Button btn_scope_track;          // Toggle time/div tracking of a sweeping source
     Button btn_scope_autoset;        // Auto-configure scope settings
     Button btn_scope_popup;          // Pop out oscilloscope to separate window
@@ -299,6 +301,11 @@ typedef struct {
     // FFT display state
     bool scope_fft_mode;             // FFT display active
     bool scope_stacked;              // Stacked view: each channel in its own horizontal band
+    bool scope_ac_coupling;          // AC: every trace drawn minus its own mean (shared V/div)
+    bool scope_stack_fit;            // Fit (stacked only): each band auto-scaled to its own signal, centred on its mean
+    double scope_ch_shift[MAX_PROBES];   // per-channel vertical shift used for the last draw (AC / Fit)
+    double scope_ch_scale[MAX_PROBES];   // per-channel px/V used for the last draw
+    double scope_band_vdiv[MAX_PROBES];  // per-band V/div when Fit is on
     bool scope_track_sweep;          // Auto time/div: ~3 cycles of the sweeping source per screen
     bool scope_auto_vdiv_pending;    // One-shot: pick V/div from the measured probe range once data exists
     double sim_realtime_ratio;       // Achieved fraction of real time last frame (shown next to speed)
@@ -514,6 +521,8 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode);
 #define UI_ACTION_TIMESTEP_AUTO 31   // Auto-adjust time step
 #define UI_ACTION_SCOPE_POPUP   32   // Pop out oscilloscope to separate window
 #define UI_ACTION_SCOPE_STACK   33   // Toggle stacked / overlay channel view
+#define UI_ACTION_SCOPE_AC      44   // Toggle AC coupling
+#define UI_ACTION_SCOPE_FIT     45   // Toggle per-band fit (stacked)
 #define UI_ACTION_SCOPE_TRACK   1101   // Toggle sweep-tracking time/div
 #define UI_ACTION_UPDATE        1103 // Install the newer release
 #define UI_ACTION_SPOTLIGHT     1102 // Open component spotlight search (Ctrl+K)  (was 33: collided with SCOPE_STACK)
@@ -569,7 +578,7 @@ void ui_scope_controls_scroll(UIState *ui, int direction);
 
 // Popup scope coordinate handling for input events
 // Stores saved coordinates for scope rect and buttons
-#define SCOPE_BTN_N 22
+#define SCOPE_BTN_N 24
 typedef struct {
     Rect scope_rect;
     Rect b[SCOPE_BTN_N];

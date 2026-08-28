@@ -55,6 +55,15 @@ SHOTS = [
     ("single_tuned_amp", "Tuned", 200, "circuits"),
     ("sr_latch", "SRlat", 160, "circuits"),
     ("common_base", "CB", 140, "circuits"),
+    ("i2c_bus", "I2C", 200, "circuits"),
+    ("rs485", "RS485", 200, "circuits"),
+    ("high_side", "HiSw", 200, "circuits"),
+    ("gpio_input", "Btn", 200, "circuits"),
+    ("two_stage_fit", "2Stg", 200, "circuits"),
+    ("spi", "SPI", 200, "circuits"),
+    ("open_drain", "OD", 200, "circuits"),
+    ("i2c_level", "I2Clv", 200, "circuits"),
+    ("low_side", "LoSw", 200, "circuits"),
 ]
 # name, template, first frame, frames, every
 # Full resolution, full 256-colour palette; low frame rate (5 fps) keeps the files small.
@@ -69,6 +78,8 @@ GIFS = [
     ("three_phase_balanced", "3phY", 60, 12, 6),
     # Spotlight search (Ctrl+K / Ctrl+Space): type "mosfet", Enter picks the NMOS; extra tuple = (keys, first, every)
     ("spotlight_search", None, 20, 20, 4, ("^mosfet|", 24, 8)),
+    ("i2c_bus", "I2C", 60, 15, 6),
+    ("rs485", "RS485", 60, 15, 6),
 ]
 GIF_FRAME_MS = 200
 

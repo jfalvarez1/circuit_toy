@@ -713,6 +713,7 @@
                     <a href="#ics">7g. Integrated Circuits</a>
                     <a href="#measurement-tools">7h. Measurement Tools</a>
                     <a href="#power-systems">7i. Power Systems &amp; High Voltage</a>
+                    <a href="#ic-io">7j. IC I/O &amp; Drivers</a>
 
                     <div class="toc-section">Theory & Concepts</div>
                     <a href="#theory">8. Circuit Theory Fundamentals</a>
@@ -1424,7 +1425,48 @@
             </div>
         </section>
 
-        <!-- Circuit Theory -->
+        
+<!-- 7j. IC I/O & drivers -->
+<section id="ic-io" class="section">
+<h2>7j. IC I/O &amp; Drivers</h2>
+<p>The <em>IC I/O &amp; drivers</em> group of the Circuits tab is about hardware practice rather than theory: what a GPIO pin
+is made of, how it drives a load, and how two chips talk to each other. Every template is self-running, probes each signal that
+matters (Stack view), and its on-canvas text says what to change to break it.</p>
+
+<h3>Output structures</h3>
+<table>
+<tr><th>Template</th><th>What it shows</th><th>Try</th></tr>
+<tr><td><strong>Push-Pull Output</strong></td><td>The CMOS totem pole inside every GPIO: PMOS sources, NMOS sinks, output actively driven both ways, inverting. 1 MHz into 10 k &parallel; 20 pF.</td><td>Delete the PMOS &rarr; the pin can only pull low (it floats high). Load 20 pF &rarr; 1 nF &rarr; RC ramps. PMOS w 200 &rarr; 20 &micro;m &rarr; the rising edge is 10&times; slower (why real pads size the PMOS ~2.5&times; the NMOS).</td></tr>
+<tr><td><strong>Open-Drain + Pull-up</strong></td><td>Only an NMOS to ground: hard fast LOW, HIGH made by the 4.7 k pull-up charging 100 pF (&tau; = 470 ns). The asymmetric edge is the I2C / reset / interrupt signature.</td><td>C &rarr; 1 nF: the line never reaches 3.3 V between pulses. R &rarr; 1 k: fast, but 3.3 mA wasted when low.</td></tr>
+<tr><td><strong>Open-Collector Level Shift</strong></td><td>A 3.3 V pin driving a <em>5 V</em> line through an NPN (1 k base, 2.6 mA): V<sub>OL</sub> = V<sub>CE(sat)</sub> &asymp; 20 mV, HIGH = 5 V, inverted.</td><td>Pull-up rail 5 &rarr; 12 or 24 V: same waveform at the higher level. Base R &rarr; 1 M: the transistor leaves saturation and V<sub>OL</sub> climbs.</td></tr>
+</table>
+
+<h3>Buses</h3>
+<table>
+<tr><th>Template</th><th>What it shows</th><th>Try</th></tr>
+<tr><td><strong>I2C Bus (wired-AND)</strong></td><td>Master and slave are both open-drain on one SDA: the line is LOW when <em>either</em> pulls, HIGH only when both release &mdash; exactly how ACK and clock stretching work. 4.7 k against 200 pF &rArr; ~1 &micro;s rise (the standard-mode limit).</td><td>Set the slave delay to 0 so the pulls overlap. Bus C &rarr; 1 nF: the rises no longer finish.</td></tr>
+<tr><td><strong>I2C Level Shifter</strong></td><td>The NXP AN10441 trick: one NMOS, gate on the 3.3 V rail, pull-ups on both sides. Idle V<sub>GS</sub> = 0 (off); pull the 3.3 V side low and V<sub>GS</sub> = 3.3 V turns it on, dragging the 5 V side down with it.</td><td>Gate rail 3.3 &rarr; 1.8 V, or the far rail 5 &rarr; 12 V: the same circuit translates any pair of levels.</td></tr>
+<tr><td><strong>SPI Lines</strong></td><td>SCLK 10 MHz and MOSI 5 MHz push-pull, 33 &Omega; series termination into 200 pF of ribbon cable: &tau; = 6.6 ns rounds every edge but the clock still reaches both rails.</td><td>C &rarr; 1 nF (a long cable) or SCLK &rarr; 50 MHz: the clock collapses into a triangle &mdash; why long SPI runs fail.</td></tr>
+<tr><td><strong>UART 5 V &harr; 3.3 V</strong></td><td>5 V TX needs a 1 k / 2 k divider (3.33 V at the RX pin; 5 V straight in would forward-bias the ESD diode). 3.3 V TX into a 5 V TTL input needs nothing: V<sub>IH</sub> = 2 V.</td><td>Raise the receiver threshold to 3.5 V (a 5 V CMOS input) and the 3.3 V TX stops registering &mdash; the case where direct drive is <em>not</em> safe.</td></tr>
+<tr><td><strong>RS-485 Differential Link</strong></td><td>A carries the data, B its complement, 120 &Omega; at both ends. 1 V of common-mode noise is injected into <em>both</em> wires; the receiver subtracts A &minus; B and its output stays a clean 0 / 5 V.</td><td>Noise 1 &rarr; 3 V<sub>pk</sub>: still clean (real receivers tolerate &minus;7&hellip;+12 V common mode).</td></tr>
+<tr><td><strong>SPMI Bus (1.8 V)</strong></td><td>The MIPI two-wire SoC &harr; PMIC bus: 1.8 V SCLK and SDATA, 33 &Omega; into 15 pF. The lesson is the level: V<sub>IH</sub> &asymp; 1.2 V leaves only ~0.6 V of noise margin. Arbitration and the bus-keeper are protocol-level, not modelled.</td><td>SCLK &rarr; 26 MHz (the SPMI maximum): still square at 15 pF.</td></tr>
+</table>
+
+<h3>Inputs and load switches</h3>
+<table>
+<tr><th>Template</th><th>What it shows</th><th>Try</th></tr>
+<tr><td><strong>GPIO Input + Debounce</strong></td><td>A 10 k pull-up idles the pin HIGH, the button shorts it LOW, and 10 k + 100 nF filters contact bounce before the inverter (discharge &tau; 1 ms, recharge 2 ms). Four bands: button, pin, RC node, output.</td><td>C &rarr; 10 nF: 0.1 ms latency, but a 1 ms bounce would get through. C &rarr; 1 &micro;F: a 10 ms press is missed entirely. Switch r<sub>on</sub> &rarr; 1 k (a dirty contact): the pin only reaches 0.3 V &mdash; still a valid LOW.</td></tr>
+<tr><td><strong>Low-side Switch + Flyback</strong></td><td>An NMOS sinking a relay coil (10 mH + 50 &Omega;) from a 12 V rail. At turn-off the coil current has nowhere to go: the flyback diode clamps the drain at 12.65 V and the current decays with L/R = 200 &micro;s.</td><td><strong>Delete the diode</strong> and watch the drain spike &mdash; that is what kills MOSFETs in real designs. Gate 5 &rarr; 2 V: the MOSFET stays in its linear region and becomes a heater.</td></tr>
+<tr><td><strong>High-side PMOS Switch</strong></td><td>Switching the rail side of a load from a 3.3 V pin: logic HIGH turns the NPN on, pulls the PMOS gate to 0 V (V<sub>GS</sub> = &minus;12) and the load gets 11.8 V. Two inversions &rArr; non-inverting.</td><td>Rail 12 &rarr; 24 V (real parts need a gate clamp beyond &plusmn;20 V). PMOS w &rarr; 50 &micro;m: R<sub>DS(on)</sub> eats 4 V.</td></tr>
+</table>
+
+<div class="tip"><strong>Scope tip:</strong> these templates preset <em>Stack</em>, and unipolar (logic) traces are drawn with 0 V one
+division above the bottom of their band, so a 0/3.3 V square uses the whole band. For amplifiers, the Display tab's
+<strong>AC</strong> (draw each trace minus its DC level) and <strong>Fit</strong> (per-band V/div, shown in the band tag) make a
+10 mV input and a 250 mV output riding on 6 V both readable at once.</div>
+</section>
+
+<!-- Circuit Theory -->
         <!-- 7h. Power systems & high voltage -->
 <section id="power-systems" class="section">
 <h2>7i. Power Systems &amp; High Voltage</h2>

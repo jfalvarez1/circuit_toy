@@ -2628,15 +2628,19 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 Gbe = (Is / (bf * nf * Vt)) * expBE + 1e-12;
                 Ieq_be = Ibe - Gbe * Vbe;
 
-                // Collector current - forward active
-                double Ic = Is * (expBE - 1);
-                Gm = (Is / (nf * Vt)) * expBE;
-                Gmr = 0;
-                Ieq_c = Ic - Gm * Vbe;
+                // Base-collector junction (reverse diode, beta_R = br): without it a saturated
+                // transistor keeps sinking beta_F x I_B and drags its collector below ground.
+                double br = comp->props.bjt.br > 0 ? comp->props.bjt.br : 1.0;
+                double expBC = exp(Vbc / (nf * Vt));
+                double Ibc = (Is / br) * (expBC - 1);
+                Gbc = (Is / (br * nf * Vt)) * expBC + 1e-12;
+                Ieq_bc = Ibc - Gbc * Vbc;
 
-                // Simplified: ignore B-C junction for ideal mode
-                Gbc = 1e-12;
-                Ieq_bc = 0;
+                // Collector current (Ebers-Moll transport): forward minus reverse
+                double Ic = Is * (expBE - 1) - Is * (expBC - 1);
+                Gm = (Is / (nf * Vt)) * expBE;
+                Gmr = -(Is / (nf * Vt)) * expBC;
+                Ieq_c = Ic - Gm * Vbe - Gmr * Vbc;
             } else {
                 // Non-ideal Gummel-Poon model with Early effect
                 double br = comp->props.bjt.br;
@@ -2685,8 +2689,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             if (n[0] > 0) vector_add(b, n[0]-1, -Ieq_be);
             if (n[2] > 0) vector_add(b, n[2]-1, Ieq_be);
 
-            // Stamp B-C junction (for non-ideal mode)
-            if (!ideal) {
+            // Stamp B-C junction (both modes: it is what makes saturation clamp V_CE)
+            {
                 STAMP_CONDUCTANCE(n[0], n[1], Gbc);
                 if (n[0] > 0) vector_add(b, n[0]-1, -Ieq_bc);
                 if (n[1] > 0) vector_add(b, n[1]-1, Ieq_bc);

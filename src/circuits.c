@@ -249,6 +249,18 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_SR_LATCH] = {"SR Latch (NOR)", "SRlat", "Cross-coupled NOR gates remember S and R pulses", TG_DIGITAL},
     [CIRCUIT_POWER_PLANT] = {"Power Plant (3-phase)", "Plant", "3-phase generator, GSU bank, breakers, 345 kV line, load", TG_POWER_SYSTEMS},
     [CIRCUIT_SUBSTATION] = {"Transmission Substation", "Substn", "345 kV lines, breakers, 345/138 autos, feeders, cap banks", TG_POWER_SYSTEMS},
+    [CIRCUIT_IO_PUSH_PULL] = {"Push-Pull Output", "PPout", "CMOS totem-pole GPIO: PMOS sources, NMOS sinks, 1 MHz into 20 pF", TG_IC_IO},
+    [CIRCUIT_IO_OPEN_DRAIN] = {"Open-Drain + Pull-up", "OD", "Pin only pulls low; 4.7k pull-up makes the slow RC rise", TG_IC_IO},
+    [CIRCUIT_IO_OPEN_COLLECTOR] = {"Open-Collector Level Shift", "OC", "3.3 V logic drives a 5 V line through an NPN (inverting)", TG_IC_IO},
+    [CIRCUIT_IO_I2C_BUS] = {"I2C Bus (wired-AND)", "I2C", "Master and slave open-drain on one SDA, 4.7k / 200 pF", TG_IC_IO},
+    [CIRCUIT_IO_I2C_LEVEL] = {"I2C Level Shifter", "I2Clv", "One NMOS, gate at 3.3 V, pull-ups both sides: 3.3 V <-> 5 V", TG_IC_IO},
+    [CIRCUIT_IO_INPUT_DEBOUNCE] = {"GPIO Input + Debounce", "Btn", "Pull-up, button to ground, RC debounce, inverter", TG_IC_IO},
+    [CIRCUIT_IO_LOW_SIDE] = {"Low-side Switch + Flyback", "LoSw", "NMOS sinks a relay coil; flyback diode clamps the spike", TG_IC_IO},
+    [CIRCUIT_IO_HIGH_SIDE] = {"High-side PMOS Switch", "HiSw", "3.3 V logic -> NPN -> PMOS gate: load switched from the 12 V rail", TG_IC_IO},
+    [CIRCUIT_IO_SPI] = {"SPI Lines", "SPI", "SCLK 10 MHz / MOSI 5 MHz, 33 ohm series termination, 200 pF cable", TG_IC_IO},
+    [CIRCUIT_IO_UART] = {"UART 5 V <-> 3.3 V", "UART", "Divider one way, direct the other way (TTL V_IH = 2 V)", TG_IC_IO},
+    [CIRCUIT_IO_RS485] = {"RS-485 Differential Link", "RS485", "A/B antiphase, 120 ohm both ends, common-mode noise rejected", TG_IC_IO},
+    [CIRCUIT_IO_SPMI] = {"SPMI Bus (1.8 V)", "SPMI", "MIPI two-wire: 1.8 V SCLK 5 MHz + SDATA, 33 ohm into 15 pF", TG_IC_IO},
 
 
 
@@ -1692,11 +1704,11 @@ static int place_differential_pair(Circuit *circuit, float x, float y) {
 
     // AC input sources - on far left and right, DC-biased at 6 V, anti-phase
     Component *vin1 = add_comp(circuit, COMP_AC_VOLTAGE, x - 100, y + 80, 0);
-    vin1->props.ac_voltage.amplitude = 0.05;
+    vin1->props.ac_voltage.amplitude = 0.01;   // 10 mV each, antiphase: 20 mV differential keeps the pair linear (tanh saturates past ~4 V_T)
     vin1->props.ac_voltage.frequency = 1000.0;
     vin1->props.ac_voltage.offset = 6.0;
     Component *vin2 = add_comp(circuit, COMP_AC_VOLTAGE, x + 300, y + 80, 0);
-    vin2->props.ac_voltage.amplitude = 0.05;
+    vin2->props.ac_voltage.amplitude = 0.01;
     vin2->props.ac_voltage.frequency = 1000.0;
     vin2->props.ac_voltage.phase = 180.0;
     vin2->props.ac_voltage.offset = 6.0;
@@ -6138,6 +6150,18 @@ static int place_phase_shift_osc(Circuit *circuit, float x, float y) {
     return 16;
 }
 
+static int place_io_push_pull(Circuit *circuit, float x, float y);
+static int place_io_open_drain(Circuit *circuit, float x, float y);
+static int place_io_open_collector(Circuit *circuit, float x, float y);
+static int place_io_i2c_bus(Circuit *circuit, float x, float y);
+static int place_io_i2c_level(Circuit *circuit, float x, float y);
+static int place_io_input_debounce(Circuit *circuit, float x, float y);
+static int place_io_low_side(Circuit *circuit, float x, float y);
+static int place_io_high_side(Circuit *circuit, float x, float y);
+static int place_io_spi(Circuit *circuit, float x, float y);
+static int place_io_uart(Circuit *circuit, float x, float y);
+static int place_io_rs485(Circuit *circuit, float x, float y);
+static int place_io_spmi(Circuit *circuit, float x, float y);
 static int place_template_body(Circuit *circuit, CircuitTemplateType type, float x, float y) {
     if (!circuit) return 0;
 
@@ -6291,6 +6315,18 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_SR_LATCH:         return place_sr_latch(circuit, x, y);
         case CIRCUIT_POWER_PLANT:      return place_power_plant(circuit, x, y);
         case CIRCUIT_SUBSTATION:       return place_substation(circuit, x, y);
+        case CIRCUIT_IO_PUSH_PULL:     return place_io_push_pull(circuit, x, y);
+        case CIRCUIT_IO_OPEN_DRAIN:    return place_io_open_drain(circuit, x, y);
+        case CIRCUIT_IO_OPEN_COLLECTOR: return place_io_open_collector(circuit, x, y);
+        case CIRCUIT_IO_I2C_BUS:       return place_io_i2c_bus(circuit, x, y);
+        case CIRCUIT_IO_I2C_LEVEL:     return place_io_i2c_level(circuit, x, y);
+        case CIRCUIT_IO_INPUT_DEBOUNCE: return place_io_input_debounce(circuit, x, y);
+        case CIRCUIT_IO_LOW_SIDE:      return place_io_low_side(circuit, x, y);
+        case CIRCUIT_IO_HIGH_SIDE:     return place_io_high_side(circuit, x, y);
+        case CIRCUIT_IO_SPI:           return place_io_spi(circuit, x, y);
+        case CIRCUIT_IO_UART:          return place_io_uart(circuit, x, y);
+        case CIRCUIT_IO_RS485:         return place_io_rs485(circuit, x, y);
+        case CIRCUIT_IO_SPMI:          return place_io_spmi(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6316,8 +6352,8 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_COMMON_EMITTER] = {"COMMON-EMITTER AMPLIFIER: R1/R2 bias the base at 2.1 V so the transistor", "sits mid-way (Ve 1.4 V, Ic 1.4 mA, Vc 9 V). A small base wiggle steers", "Ic, which drops across Rc: gain ~ -Rc/(Re+re) ~ -2, inverted.", "Coupling caps pass the AC but keep the bias DC where it is.", "PROBE: base (2.1 V DC + tiny wiggle) and collector (9 V, inverted, ~2x)."},
     [CIRCUIT_COMMON_SOURCE] = {"COMMON-SOURCE (MOSFET) AMPLIFIER: 1M/330k bias the gate at 3 V, above", "Vth = 1.5 V, so ~2.7 mA flows. Gate voltage controls drain current", "(square law); the swing across Rd is the inverted output. Rs adds", "negative feedback that stabilises the bias point.", "PROBE: gate (3 V DC) and drain. Expect an inverted swing around 6 V."},
     [CIRCUIT_COMMON_DRAIN] = {"SOURCE FOLLOWER: the drain is tied to Vdd, the output is taken at the", "source. Vs tracks Vg minus Vgs, so gain is just under 1 with no", "inversion - a buffer with high input and low output impedance.", "PROBE: gate (6 V) and source. Same shape, 1.7 V lower, not inverted."},
-    [CIRCUIT_MULTISTAGE_AMP] = {"TWO-STAGE AMPLIFIER: two identical common-emitter stages in cascade.", "Each inverts and gives ~4.6x, so overall ~21x and back in phase.", "Interstage cap C2 passes the signal but isolates the two bias networks.", "PROBE: input (10 mVpk) and the second collector. Expect ~0.2 Vpk, in phase."},
-    [CIRCUIT_DIFFERENTIAL_PAIR] = {"DIFFERENTIAL PAIR: both bases sit at 6 V; the shared tail resistor", "carries 0.54 mA. A difference between the inputs steers that current", "from one transistor to the other, so the collectors swing in opposite", "directions. Equal (common-mode) input changes cancel - the op-amp front end.", "PROBE: both collectors. Two mirror-image swings around 10.75 V."},
+    [CIRCUIT_MULTISTAGE_AMP] = {"TWO-STAGE AMPLIFIER: two identical common-emitter stages in cascade.", "Each inverts; ~4.7x unloaded, ~13x overall once stage 2 loads stage 1 - and back in phase.", "Interstage cap C2 passes the signal but isolates the two bias networks.", "PROBE: input (10 mVpk) and the second collector. Expect ~0.13 Vpk, in phase."},
+    [CIRCUIT_DIFFERENTIAL_PAIR] = {"DIFFERENTIAL PAIR: both bases sit at 6 V; the shared tail resistor", "carries 0.54 mA. A difference between the inputs steers that current", "from one transistor to the other, so the collectors swing in opposite", "directions (gain g_m R_C / 2 = 25 per side). Common-mode changes cancel.", "PROBE: base (10 mV) and both collectors: mirror-image 0.5 V swings around 10.75 V.", "Raise the inputs to 50 mV and the pair saturates - the outputs turn into rounded squares."},
     [CIRCUIT_CURRENT_MIRROR] = {"CURRENT MIRROR: Q1 is diode-connected, so Rref sets Iref = (12-0.65)/10k", "= 1.1 mA and fixes Vbe. Q2 shares the same Vbe and copies the current", "into its own load regardless of that load's resistance (up to compliance).", "PROBE: the Rload-Q2 collector node. Expect ~10.9 V; change Rload, I stays 1.1 mA."},
     [CIRCUIT_PUSH_PULL] = {"PUSH-PULL (CLASS B) OUTPUT: NPN sources current on positive swings, PNP", "sinks it on negative swings; each is an emitter follower (gain ~1).", "Neither conducts within +/-0.7 V of zero, so you see crossover", "distortion - the flat step at the zero crossing. Bias diodes would fix it.", "PROBE: input (5 Vpk) and the output node. Same sine with a flat notch at 0 V."},
     [CIRCUIT_CMOS_INVERTER] = {"CMOS INVERTER: PMOS on top, NMOS below, gates tied together. Input low", "turns the PMOS on -> output pulled to Vdd; input high turns the NMOS on", "-> output pulled to 0 V. Only one conducts at a time, so almost no", "static current. The 100 pF load sets the edge speed.", "PROBE: gate input and the drain output. Expect the square wave inverted."},
@@ -6400,6 +6436,18 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_SR_LATCH] = {"SR LATCH (S&S 15.1.1): two NOR gates feed each other. S = 1 forces Q = 1 (Qbar = 0); when S", "returns to 0 the cross-coupling keeps Q = 1: memory. R = 1 forces Q = 0. Both = 1 is forbidden", "(both outputs 0, and the result after release depends on which drops last).", "S pulses at 0.2 ms, R at 0.6 ms (1 ms period): Q is a 0.4 ms-wide pulse every millisecond.", "PROBE: S (auto), Q (auto), Qbar and R (extra probes) - use Stack view. S feeds the Qbar gate, R the Q gate."},
     [CIRCUIT_POWER_PLANT] = {"POWER PLANT: the 3-phase block is a synchronous generator (18 kV line-line, 14.7 kVpk per phase)", "behind its subtransient reactance X'' (0.184 mH per phase). Three single-phase GSU transformers", "(1:19.17) lift it to 345 kV; breakers connect the 100-mile lines that deliver 600 MW (198 ohm/phase).", "Open one breaker: that phase's load drops and the neutral currents no longer cancel.", "Real plants: 500-1300 MW units, 13.8-24 kV terminals, GSU 300-700 MVA at 10-14 % impedance.", "PROBE: generator phase A (auto), the three 345 kV load buses (auto + extra). 100 kV/div, Stack."},
     [CIRCUIT_SUBSTATION] = {"TRANSMISSION SUBSTATION: the 3-phase block stands for the 345 kV grid. Each phase: 50 mi of", "345 kV line -> breaker -> 345/138 kV autotransformer (0.4) -> 138 kV bus -> 30 mi feeder ->", "90 MW at pf 0.9 (171.5 ohm + 0.22 H). The lagging load drags the far bus down ~7 %; close the", "cap-bank switches (6.1 uF per phase) and it recovers. Open a breaker to drop one phase.", "AEP practice: breaker-and-a-half bus, redundant A/B relaying, cap banks switched by voltage.", "PROBE: grid phase A (auto), the three 138 kV feeder buses (auto + extra). 50 kV/div, Stack."},
+    [CIRCUIT_IO_PUSH_PULL] = {"PUSH-PULL (CMOS) OUTPUT: this is what a GPIO pin is inside. Input HIGH turns the NMOS on", "(output pulled to 0 V) and the PMOS off; input LOW does the opposite, so the output is", "actively driven both ways - fast edges into 20 pF, no pull-up needed, but two push-pull", "pins on one wire fight (shoot-through). The stage inverts.", "PROBE: input pulse (1 MHz) and the output across the 10k / 20 pF load: clean inverted 0-3.3 V."},
+    [CIRCUIT_IO_OPEN_DRAIN] = {"OPEN-DRAIN OUTPUT: only an NMOS to ground. The pin can pull LOW hard, but HIGH is", "made by the external 4.7k pull-up charging the 100 pF line: tau = 470 ns, so the rising", "edge is slow and the falling edge is fast. That asymmetry is the signature of I2C, reset", "lines and interrupt pins. Raise C or R and watch the rise stretch; several open-drain", "pins can share the wire (wired-AND). PROBE: input (200 kHz) and the drain / pull-up node."},
+    [CIRCUIT_IO_OPEN_COLLECTOR] = {"OPEN-COLLECTOR LEVEL SHIFT: a 3.3 V pin drives the NPN base through 1k (2.6 mA), the", "collector is pulled up to a different rail (5 V) through 4.7k. Output LOW = Vce(sat)", "~0.1 V, HIGH = 5 V, and it is INVERTED. The classic way to drive a 5 V (or 12 V or 24 V)", "input from a low-voltage MCU; the pull-up and the line capacitance set the rise time.", "PROBE: 3.3 V input (100 kHz) and the 5 V collector node."},
+    [CIRCUIT_IO_I2C_BUS] = {"I2C SDA, WIRED-AND: master (50 kHz, 30 %) and slave (20 kHz, 20 %, delayed) are both", "open-drain on the same 3.3 V line. The line is LOW whenever EITHER device pulls; it is", "HIGH only when both release - that is how ACK and clock stretching work. The 4.7k pull-up", "against 200 pF of bus gives ~1 us rising edges (standard mode allows 1 us at 100 kHz).", "PROBE: master pulse, slave pulse (extra) and SDA. Stack view shows the AND."},
+    [CIRCUIT_IO_I2C_LEVEL] = {"I2C LEVEL SHIFTER (NXP AN10441): one NMOS with its gate on the 3.3 V rail, source on", "the 3.3 V bus, drain on the 5 V bus, pull-ups on both sides. Idle: both sides high, the", "MOSFET is off (Vgs = 0). When the 3.3 V side is pulled low Vgs = 3.3 V, the MOSFET turns", "on and drags the 5 V side down too; release and both pull-ups restore their own level.", "It works in both directions (the body diode pulls the low side when the 5 V side drops).", "PROBE: driver pulse, 3.3 V side (extra) and the 5 V side: same timing, two levels."},
+    [CIRCUIT_IO_INPUT_DEBOUNCE] = {"GPIO INPUT: the 10k pull-up idles the pin at 3.3 V; pressing the button (the analog switch,", "driven by the 50 Hz pulse: 10 ms press, 10 ms release) shorts it to 0 V. Real contacts", "bounce for ~1 ms, so 10k + 100 nF low-passes the pin before the inverter (threshold 1.65 V):", "discharge tau 1 ms, recharge tau 2 ms (through both 10k) - a bounce never reaches the", "threshold. Cost: ~1-2 ms of latency; the pin itself ramps because the RC loads it.", "PROBE: button, pin (extra), RC node (extra) and the inverter output: sharp / slow / delayed."},
+    [CIRCUIT_IO_LOW_SIDE] = {"LOW-SIDE SWITCH: the load (relay coil: 10 mH + 50 ohm) hangs from the 12 V rail and the", "NMOS pulls its bottom end to ground - the simplest way an MCU drives a coil, motor or LED", "string. Gate needs 5 V for a plain NMOS (logic-level part). At turn-off the coil current", "(240 mA) has nowhere to go: without the diode the drain would fly to kilovolts and kill", "the MOSFET; the flyback diode clamps it at 12.7 V and the current decays with L/R = 200 us.", "PROBE: gate pulse (500 Hz) and the drain: 0 V on, 12.7 V clamp then 12 V off."},
+    [CIRCUIT_IO_HIGH_SIDE] = {"HIGH-SIDE SWITCH: the load sits between the PMOS and ground, so the switch is in the 12 V", "rail. A 3.3 V pin cannot reach 12 V, so an NPN level shifter pulls the PMOS gate down:", "logic HIGH -> NPN on -> gate 0 V -> Vgs = -12 V -> PMOS on -> load sees 12 V. Logic LOW ->", "10k pull-up parks the gate at 12 V -> PMOS off. Two inversions = non-inverting overall.", "Used for switched power rails, LED strips, 'ignition' style loads.", "PROBE: logic pulse, PMOS gate (extra) and the load: 0 / 12 V in phase with the input."},
+    [CIRCUIT_IO_SPI] = {"SPI: push-pull drivers, SCLK 10 MHz and MOSI 5 MHz (a 1010 pattern), each through a 33 ohm", "series termination into 200 pF of ribbon cable. tau = 6.6 ns rounds every edge; at 10 MHz", "the clock still reaches the rails, at 50 MHz it would not - that is why long SPI cables fail", "and why the series resistor sits at the driver (it damps the reflection a real cable adds).", "PROBE: SCLK source, SCLK at the load, MOSI source and MOSI at the load (extras). Stack view."},
+    [CIRCUIT_IO_UART] = {"UART BETWEEN 5 V AND 3.3 V PARTS: TX of the 5 V device goes through a 1k / 2k divider, so the", "3.3 V RX pin sees 3.33 V (never 5 V straight in - the ESD diode would conduct). The other", "direction needs nothing: a 5 V TTL input takes anything above V_IH = 2 V as HIGH, so the", "3.3 V TX drives it directly (the inverter here is the 5 V input stage). Idle level is HIGH.", "PROBE: 5 V TX, 3.3 V RX node, 3.3 V TX (extra) and the 5 V receiver output (extra)."},
+    [CIRCUIT_IO_RS485] = {"RS-485 (differential, half-duplex): A carries the data, B its complement (the inverter),", "120 ohm at both ends of the pair so the line is matched. The receiver is a comparator on", "A - B: it only needs a 200 mV difference. 1 V of 100 kHz noise is injected into BOTH wires", "(ground shift, coupling) - each wire wobbles, the difference does not, and the output is a", "clean 0 / 5 V copy of the data. That is why every long industrial bus is differential.", "PROBE: data, A at the far end (extra), B at the far end (extra), receiver output. Stack."},
+    [CIRCUIT_IO_SPMI] = {"SPMI (MIPI System Power Management Interface): the two-wire 1.8 V bus between an SoC and", "its PMIC. SCLK (5 MHz here, up to 26 MHz) and SDATA are push-pull, 33 ohm into 15 pF of", "on-board load. Bus arbitration and the SDATA bus-keeper are protocol level (not modelled);", "the electrical lesson is the 1.8 V swing: V_IH ~ 1.2 V leaves ~0.6 V of noise margin, so", "ground bounce and crosstalk that a 5 V bus shrugs off will corrupt this one.", "PROBE: SCLK source, SDATA at the load and SCLK at the load (extra). 50 ns/div."},
 };
 
 
@@ -8045,6 +8093,302 @@ static int place_substation(Circuit *circuit, float x, float y) {
 
 // Output node to probe for each template (component type, ordinal among that type, terminal)
 typedef struct { ComponentType ct; int ord, term; } TemplateProbeSpec;
+// ---------------------------------------------------------------------------------------
+// IC I/O and drivers: what a GPIO pin is made of and how it talks to the outside world.
+// Push-pull / open-drain / open-collector outputs, wired-AND buses, level shifting, input
+// pull-ups and debouncing, low- and high-side load switches, SPI/UART/RS-485/SPMI signalling.
+// Every builder keeps a 20 px minimum between distinct nodes (10 px auto-merge).
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+// logic pulse source at (x,y+40): +(x,y) -(x,y+80) -> ground
+static Component *logic_pulse(Circuit *circuit, float x, float y, double v, double f, double duty, double delay) {
+    Component *p = add_comp(circuit, COMP_PULSE_SOURCE, x, y + 40, 0);
+    if (!p) return NULL;
+    p->props.pulse_source.v_low = 0; p->props.pulse_source.v_high = v; p->props.pulse_source.delay = delay;
+    p->props.pulse_source.period = 1.0 / f; p->props.pulse_source.pulse_width = duty / f;
+    p->props.pulse_source.rise_time = p->props.pulse_source.fall_time = 0.01 / f;   // 1 % of the period: realistic GPIO edges, and the BJT stages stay solvable
+    Component *g = add_comp(circuit, COMP_GROUND, x, y + 120, 0);
+    connect_terminals(circuit, p, 1, g, 0);
+    return p;
+}
+static Component *io_nmos(Circuit *circuit, float x, float y, double w) {   // G(x-20,y) D(x+20,y-20) S(x+20,y+20), source grounded below
+    Component *m = add_comp(circuit, COMP_NMOS, x, y, 0); m->props.mosfet.w = w;
+    gnd_below(circuit, m, 2, x + 20, y + 40);
+    return m;
+}
+
+// 1. Push-pull (CMOS totem-pole) output: PMOS to 3.3 V, NMOS to ground, one input drives both gates
+static int place_io_push_pull(Circuit *circuit, float x, float y) {
+    Component *vdd = dc_rail(circuit, x, y - 140, 3.3); if (!vdd) return 0;               // +(0,-140)
+    Component *in = logic_pulse(circuit, x, y + 40, 3.3, 1e6, 0.5, 0);                     // +(0,40)
+    Component *rin = hres(circuit, x + 100, y + 40, 100.0);                                // (60,40)-(140,40)
+    Component *mp = add_comp(circuit, COMP_PMOS, x + 240, y - 40, 0); mp->props.mosfet.w = 200e-6;   // G(220,-40) D(260,-60) S(260,-20)
+    Component *mn = io_nmos(circuit, x + 240, y + 120, 100e-6);                             // G(220,120) D(260,100) S(260,140)
+    Component *rl = vres(circuit, x + 420, y + 60, 10e3);                                  // (420,20)-(420,100)
+    gnd_below(circuit, rl, 1, x + 420, y + 120);
+    Component *cl = vcap(circuit, x + 500, y + 60, 20e-12);                                // (500,20)-(500,100)
+    gnd_below(circuit, cl, 1, x + 500, y + 120);
+    add_label(circuit, x - 40, y - 200, "Push-pull (CMOS) output: PMOS sources, NMOS sinks - drives both ways, never leave two of them fighting on one wire");
+    int rail0 = TN(x, y - 140), rail1 = TN(x + 300, y - 140), ps = TN(x + 260, y - 20), psj = TN(x + 300, y - 20);
+    TW(rail0, rail1); TW(rail1, psj); TW(psj, ps);
+    int sp = TN(x, y + 40), rl_ = TN(x + 60, y + 40), rr = TN(x + 140, y + 40), gb = TN(x + 180, y + 40), gp = TN(x + 180, y - 40), gn = TN(x + 180, y + 120), gpt = TN(x + 220, y - 40), gnt = TN(x + 220, y + 120);
+    TW(sp, rl_); TW(rr, gb); TW(gb, gp); TW(gb, gn); TW(gp, gpt); TW(gn, gnt);
+    int pd = TN(x + 260, y - 60), ob0 = TN(x + 340, y - 60), ob1 = TN(x + 340, y + 100), nd = TN(x + 260, y + 100), out = TN(x + 340, y + 20), lt = TN(x + 420, y + 20), ct = TN(x + 500, y + 20);
+    TW(pd, ob0); TW(ob0, out); TW(out, ob1); TW(ob1, nd); TW(out, lt); TW(lt, ct);
+    vdd->node_ids[0] = rail0; in->node_ids[0] = sp; rin->node_ids[0] = rl_; rin->node_ids[1] = rr;
+    mp->node_ids[0] = gpt; mp->node_ids[1] = pd; mp->node_ids[2] = ps; mn->node_ids[0] = gnt; mn->node_ids[1] = nd;
+    rl->node_ids[0] = lt; cl->node_ids[0] = ct;
+    return 12;
+}
+
+// 2. Open-drain output with an external pull-up: fast fall through the NMOS, RC rise through the pull-up
+static int place_io_open_drain(Circuit *circuit, float x, float y) {
+    Component *vdd = dc_rail(circuit, x, y - 140, 3.3); if (!vdd) return 0;
+    Component *in = logic_pulse(circuit, x, y + 40, 3.3, 200e3, 0.5, 0);
+    Component *rin = hres(circuit, x + 100, y + 40, 100.0);                                // (60,40)-(140,40)
+    Component *mn = io_nmos(circuit, x + 240, y + 40, 100e-6);                              // G(220,40) D(260,20) S(260,60)
+    Component *rpu = vres(circuit, x + 340, y - 60, 4.7e3);                                // (340,-100)-(340,-20)
+    Component *cl = vcap(circuit, x + 420, y + 20, 100e-12);                               // (420,-20)-(420,60)
+    gnd_below(circuit, cl, 1, x + 420, y + 80);
+    add_label(circuit, x - 40, y - 200, "Open-drain output + 4.7k pull-up: the pin can only pull LOW; the resistor makes the HIGH (tau = R C = 470 ns)");
+    int rail0 = TN(x, y - 140), rail1 = TN(x + 340, y - 140), rt = TN(x + 340, y - 100); TW(rail0, rail1); TW(rail1, rt);
+    int sp = TN(x, y + 40), rl_ = TN(x + 60, y + 40), rr = TN(x + 140, y + 40), g = TN(x + 220, y + 40); TW(sp, rl_); TW(rr, g);
+    int d = TN(x + 260, y + 20), dj = TN(x + 340, y + 20), out = TN(x + 340, y - 20), ct = TN(x + 420, y - 20); TW(d, dj); TW(dj, out); TW(out, ct);
+    vdd->node_ids[0] = rail0; in->node_ids[0] = sp; rin->node_ids[0] = rl_; rin->node_ids[1] = rr; mn->node_ids[0] = g; mn->node_ids[1] = d;
+    rpu->node_ids[0] = rt; rpu->node_ids[1] = out; cl->node_ids[0] = ct;
+    return 10;
+}
+
+// 3. Open-collector NPN with the pull-up on a different rail: 3.3 V logic drives a 5 V line (inverted)
+static int place_io_open_collector(Circuit *circuit, float x, float y) {
+    Component *v5 = dc_rail(circuit, x, y - 140, 5.0); if (!v5) return 0;
+    Component *in = logic_pulse(circuit, x, y + 40, 3.3, 100e3, 0.5, 0);
+    Component *rb = hres(circuit, x + 100, y + 40, 1e3);                                   // (60,40)-(140,40)
+    Component *q = add_comp(circuit, COMP_NPN_BJT, x + 240, y + 40, 0);                   // B(220,40) C(260,20) E(260,60)
+    gnd_below(circuit, q, 2, x + 260, y + 80);
+    Component *rpu = vres(circuit, x + 340, y - 60, 4.7e3);                                // (340,-100)-(340,-20)
+    Component *cl = vres(circuit, x + 420, y + 20, 100e3);                                 // 5 V receiver input
+    gnd_below(circuit, cl, 1, x + 420, y + 80);
+    add_label(circuit, x - 40, y - 200, "Open-collector level shift: a 3.3 V pin drives a 5 V line through an NPN (1k base) - output is inverted, 0 / 5 V");
+    int rail0 = TN(x, y - 140), rail1 = TN(x + 340, y - 140), rt = TN(x + 340, y - 100); TW(rail0, rail1); TW(rail1, rt);
+    int sp = TN(x, y + 40), rl_ = TN(x + 60, y + 40), rr = TN(x + 140, y + 40), b = TN(x + 220, y + 40); TW(sp, rl_); TW(rr, b);
+    int c = TN(x + 260, y + 20), cj = TN(x + 340, y + 20), out = TN(x + 340, y - 20), ct = TN(x + 420, y - 20); TW(c, cj); TW(cj, out); TW(out, ct);
+    v5->node_ids[0] = rail0; in->node_ids[0] = sp; rb->node_ids[0] = rl_; rb->node_ids[1] = rr; q->node_ids[0] = b; q->node_ids[1] = c;
+    rpu->node_ids[0] = rt; rpu->node_ids[1] = out; cl->node_ids[0] = ct;
+    return 10;
+}
+
+// 4. I2C SDA: two open-drain devices on one pulled-up wire (wired-AND) - whoever pulls, the line is low
+static int place_io_i2c_bus(Circuit *circuit, float x, float y) {
+    Component *vdd = dc_rail(circuit, x, y - 140, 3.3); if (!vdd) return 0;
+    Component *ma = logic_pulse(circuit, x, y + 40, 3.3, 50e3, 0.3, 0);                    // master, +(0,40)
+    Component *ra = hres(circuit, x + 100, y + 40, 100.0);
+    Component *mna = io_nmos(circuit, x + 240, y + 40, 100e-6);                             // D(260,20)
+    Component *sb = logic_pulse(circuit, x, y + 240, 3.3, 20e3, 0.2, 15e-6);               // slave, +(0,240)
+    Component *rb_ = hres(circuit, x + 100, y + 240, 100.0);
+    Component *mnb = io_nmos(circuit, x + 240, y + 240, 100e-6);                            // D(260,220)
+    Component *rpu = vres(circuit, x + 340, y - 60, 4.7e3);                                // (340,-100)-(340,-20)
+    Component *cb = vcap(circuit, x + 420, y + 20, 200e-12);                               // bus capacitance
+    gnd_below(circuit, cb, 1, x + 420, y + 80);
+    add_label(circuit, x - 40, y - 200, "I2C SDA (wired-AND): master and slave are both open-drain; the 4.7k pull-up + 200 pF bus set the rise time (~1 us)");
+    int rail0 = TN(x, y - 140), rail1 = TN(x + 340, y - 140), rt = TN(x + 340, y - 100); TW(rail0, rail1); TW(rail1, rt);
+    int spa = TN(x, y + 40), ral = TN(x + 60, y + 40), rar = TN(x + 140, y + 40), ga = TN(x + 220, y + 40); TW(spa, ral); TW(rar, ga);
+    int spb = TN(x, y + 240), rbl = TN(x + 60, y + 240), rbr = TN(x + 140, y + 240), gb = TN(x + 220, y + 240); TW(spb, rbl); TW(rbr, gb);
+    int da = TN(x + 260, y + 20), daj = TN(x + 340, y + 20), db = TN(x + 260, y + 220), dbj = TN(x + 340, y + 220), sda = TN(x + 340, y - 20), ct = TN(x + 420, y - 20);
+    TW(da, daj); TW(db, dbj); TW(sda, daj); TW(daj, dbj); TW(sda, ct);
+    vdd->node_ids[0] = rail0; ma->node_ids[0] = spa; ra->node_ids[0] = ral; ra->node_ids[1] = rar; mna->node_ids[0] = ga; mna->node_ids[1] = da;
+    sb->node_ids[0] = spb; rb_->node_ids[0] = rbl; rb_->node_ids[1] = rbr; mnb->node_ids[0] = gb; mnb->node_ids[1] = db;
+    rpu->node_ids[0] = rt; rpu->node_ids[1] = sda; cb->node_ids[0] = ct;
+    return 15;
+}
+
+// 5. Bidirectional I2C level shifter: one NMOS, gate at 3.3 V, pull-ups on both sides
+static int place_io_i2c_level(Circuit *circuit, float x, float y) {
+    Component *v33 = dc_rail(circuit, x, y - 140, 3.3); if (!v33) return 0;                // +(0,-140)
+    Component *in = logic_pulse(circuit, x, y + 40, 3.3, 100e3, 0.5, 0);
+    Component *rin = hres(circuit, x + 100, y + 40, 100.0);
+    Component *mdrv = io_nmos(circuit, x + 240, y + 40, 100e-6);                            // D(260,20)
+    Component *rpul = vres(circuit, x + 340, y - 60, 4.7e3);                               // (340,-100)-(340,-20) low side pull-up
+    Component *cl = vcap(circuit, x + 400, y + 20, 50e-12);                                // (400,-20)-(400,60)
+    gnd_below(circuit, cl, 1, x + 400, y + 80);
+    Component *msh = add_comp(circuit, COMP_NMOS, x + 500, y + 20, 0); msh->props.mosfet.w = 100e-6;   // G(480,20) D(520,0) S(520,40)
+    Component *rpuh = vres(circuit, x + 600, y - 60, 4.7e3);                               // (600,-100)-(600,-20) high side pull-up
+    Component *v5 = dc_rail(circuit, x + 700, y - 140, 5.0);                               // +(700,-140)
+    Component *ch = vcap(circuit, x + 660, y + 20, 50e-12);                                // (660,-20)-(660,60)
+    gnd_below(circuit, ch, 1, x + 660, y + 80);
+    add_label(circuit, x - 40, y - 200, "I2C level shifter: NMOS gate at 3.3 V; pull the 3.3 V side low and the 5 V side follows (either side can drive, pull-ups both sides)");
+    int rail0 = TN(x, y - 140), rail1 = TN(x + 340, y - 140), rlt = TN(x + 340, y - 100); TW(rail0, rail1); TW(rail1, rlt);
+    int sp = TN(x, y + 40), rl_ = TN(x + 60, y + 40), rr = TN(x + 140, y + 40), g = TN(x + 220, y + 40); TW(sp, rl_); TW(rr, g);
+    int d = TN(x + 260, y + 20), dj = TN(x + 340, y + 20), low = TN(x + 340, y - 20), clt = TN(x + 400, y - 20), lj = TN(x + 440, y - 20), lj2 = TN(x + 440, y + 40), ssh = TN(x + 520, y + 40);
+    TW(d, dj); TW(dj, low); TW(low, clt); TW(clt, lj); TW(lj, lj2); TW(lj2, ssh);
+    int gsh = TN(x + 480, y + 20), gj = TN(x + 480, y - 100); TW(gsh, gj); TW(gj, rlt);           // gate tied to the 3.3 V rail
+    int dsh = TN(x + 520, y), hj = TN(x + 600, y), high = TN(x + 600, y - 20), rht = TN(x + 600, y - 100), rail5 = TN(x + 700, y - 140), rail5j = TN(x + 600, y - 140), cht = TN(x + 660, y - 20);
+    TW(dsh, hj); TW(hj, high); TW(rail5, rail5j); TW(rail5j, rht); TW(high, cht);
+    v33->node_ids[0] = rail0; in->node_ids[0] = sp; rin->node_ids[0] = rl_; rin->node_ids[1] = rr; mdrv->node_ids[0] = g; mdrv->node_ids[1] = d;
+    rpul->node_ids[0] = rlt; rpul->node_ids[1] = low; cl->node_ids[0] = clt; msh->node_ids[0] = gsh; msh->node_ids[1] = dsh; msh->node_ids[2] = ssh;
+    rpuh->node_ids[0] = rht; rpuh->node_ids[1] = high; v5->node_ids[0] = rail5; ch->node_ids[0] = cht;
+    return 16;
+}
+
+// 6. GPIO input: pull-up, push-button to ground, RC debounce, Schmitt-style inverter
+static int place_io_input_debounce(Circuit *circuit, float x, float y) {
+    Component *vdd = dc_rail(circuit, x, y - 140, 3.3); if (!vdd) return 0;
+    Component *rpu = vres(circuit, x + 200, y - 60, 10e3);                                 // (200,-100)-(200,-20)
+    Component *sw = add_comp(circuit, COMP_ANALOG_SWITCH, x + 260, y + 20, 0);            // IN(220,20) OUT(300,20) CTL(260,40)
+    sw->props.analog_switch.v_on = 2.5; sw->props.analog_switch.v_off = 0.8; sw->props.analog_switch.r_on = 1.0; sw->props.analog_switch.ideal = false;
+    gnd_below(circuit, sw, 1, x + 300, y + 40);
+    Component *btn = logic_pulse(circuit, x + 260, y + 100, 3.3, 50.0, 0.5, 0);            // "press" = high for 10 ms, +(260,100)
+    Component *rd = hres(circuit, x + 400, y - 20, 10e3);                                  // (360,-20)-(440,-20)
+    Component *cd = vcap(circuit, x + 440, y + 20, 100e-9);                                // (440,-20)-(440,60)
+    gnd_below(circuit, cd, 1, x + 440, y + 80);
+    Component *inv = add_comp(circuit, COMP_NOT_GATE, x + 540, y - 20, 0);                // IN(500,-20) OUT(580,-20)
+    inv->props.logic_gate.v_high = 3.3; inv->props.logic_gate.v_threshold = 1.65;
+    Component *rl = vres(circuit, x + 620, y + 20, 100e3);                                 // (620,-20)-(620,60)
+    gnd_below(circuit, rl, 1, x + 620, y + 80);
+    add_label(circuit, x - 40, y - 200, "GPIO input: 10k pull-up idles the pin HIGH, the button shorts it LOW; 10k + 100 nF (tau 1 ms) debounces before the inverter");
+    int rail0 = TN(x, y - 140), rail1 = TN(x + 200, y - 140), rt = TN(x + 200, y - 100); TW(rail0, rail1); TW(rail1, rt);
+    int pin = TN(x + 200, y - 20), pj = TN(x + 200, y + 20), swin = TN(x + 220, y + 20), ctl = TN(x + 260, y + 40), bp = TN(x + 260, y + 100);
+    TW(pin, pj); TW(pj, swin); TW(ctl, bp);
+    int rdl = TN(x + 360, y - 20), rdr = TN(x + 440, y - 20), gi = TN(x + 500, y - 20), go = TN(x + 580, y - 20), lt = TN(x + 620, y - 20);
+    TW(pin, rdl); TW(rdr, gi); TW(go, lt);
+    vdd->node_ids[0] = rail0; rpu->node_ids[0] = rt; rpu->node_ids[1] = pin; sw->node_ids[0] = swin; sw->node_ids[2] = ctl; btn->node_ids[0] = bp;
+    rd->node_ids[0] = rdl; rd->node_ids[1] = rdr; cd->node_ids[0] = rdr; inv->node_ids[0] = gi; inv->node_ids[1] = go; rl->node_ids[0] = lt;
+    return 13;
+}
+
+// 7. Low-side NMOS switch on an inductive load (relay coil) with a flyback diode
+static int place_io_low_side(Circuit *circuit, float x, float y) {
+    Component *v12 = dc_rail(circuit, x, y - 220, 12.0); if (!v12) return 0;               // +(0,-220)
+    Component *in = logic_pulse(circuit, x, y + 40, 5.0, 500.0, 0.5, 0);
+    Component *rg = hres(circuit, x + 100, y + 40, 100.0);
+    Component *mn = io_nmos(circuit, x + 240, y + 40, 1e-3);                                // D(260,20)
+    Component *rcoil = vres(circuit, x + 340, y - 180, 50.0); rcoil->props.resistor.power_rating = 5.0;   // (340,-220)-(340,-140); 2.9 W coil resistance
+    Component *lcoil = add_comp(circuit, COMP_INDUCTOR, x + 340, y - 100, 90); lcoil->props.inductor.inductance = 10e-3;   // (340,-140)-(340,-60)
+    Component *dfb = add_comp(circuit, COMP_DIODE, x + 420, y - 140, 270);                // A(420,-100) K(420,-180)
+    add_label(circuit, x - 40, y - 280, "Low-side switch: 5 V gate drive, NMOS sinks the coil current; the flyback diode clamps the turn-off spike to 12.7 V (delete it: kV!)");
+    int rail0 = TN(x, y - 220), rail1 = TN(x + 340, y - 220), rail2 = TN(x + 420, y - 220), kt = TN(x + 420, y - 180); TW(rail0, rail1); TW(rail1, rail2); TW(rail2, kt);
+    int sp = TN(x, y + 40), rl_ = TN(x + 60, y + 40), rr = TN(x + 140, y + 40), g = TN(x + 220, y + 40); TW(sp, rl_); TW(rr, g);
+    int lb = TN(x + 340, y - 60), dj = TN(x + 340, y + 20), d = TN(x + 260, y + 20), at = TN(x + 420, y - 100), aj = TN(x + 420, y - 60);
+    TW(lb, dj); TW(dj, d); TW(at, aj); TW(aj, lb);
+    v12->node_ids[0] = rail0; in->node_ids[0] = sp; rg->node_ids[0] = rl_; rg->node_ids[1] = rr; mn->node_ids[0] = g; mn->node_ids[1] = d;
+    rcoil->node_ids[0] = rail1; rcoil->node_ids[1] = TN(x + 340, y - 140); lcoil->node_ids[0] = rcoil->node_ids[1]; lcoil->node_ids[1] = lb;
+    dfb->node_ids[0] = at; dfb->node_ids[1] = kt;
+    return 10;
+}
+
+// 8. High-side PMOS switch driven from 3.3 V logic through an NPN level shifter
+static int place_io_high_side(Circuit *circuit, float x, float y) {
+    Component *v12 = dc_rail(circuit, x, y - 140, 12.0); if (!v12) return 0;               // +(0,-140)
+    Component *in = logic_pulse(circuit, x, y + 100, 3.3, 500.0, 0.5, 0);                  // +(0,100)
+    Component *rb = hres(circuit, x + 100, y + 100, 10e3);                                 // (60,100)-(140,100)
+    Component *q = add_comp(circuit, COMP_NPN_BJT, x + 180, y + 100, 0);                  // B(160,100) C(200,80) E(200,120)
+    gnd_below(circuit, q, 2, x + 200, y + 140);
+    Component *rgate = vres(circuit, x + 200, y - 40, 10e3);                               // (200,-80)-(200,0)
+    Component *mp = add_comp(circuit, COMP_PMOS, x + 300, y - 20, 0); mp->props.mosfet.w = 1e-3;   // G(280,-20) D(320,-40) S(320,0)
+    Component *rload = vres(circuit, x + 420, y + 40, 100.0); rload->props.resistor.power_rating = 3.0;    // (420,0)-(420,80); 1.44 W at 12 V
+    gnd_below(circuit, rload, 1, x + 420, y + 100);
+    add_label(circuit, x - 40, y - 200, "High-side switch: logic HIGH turns the NPN on, pulls the PMOS gate to 0 V (Vgs = -12), the load gets the full 12 V rail");
+    int rail0 = TN(x, y - 140), rail1 = TN(x + 200, y - 140), rail2 = TN(x + 360, y - 140), rgt = TN(x + 200, y - 80), sj = TN(x + 360, y), s = TN(x + 320, y);
+    TW(rail0, rail1); TW(rail1, rail2); TW(rail1, rgt); TW(rail2, sj); TW(sj, s);
+    int sp = TN(x, y + 100), rbl = TN(x + 60, y + 100), rbr = TN(x + 140, y + 100), b = TN(x + 160, y + 100); TW(sp, rbl); TW(rbr, b);
+    int rgb = TN(x + 200, y), c = TN(x + 200, y + 80), gj = TN(x + 240, y + 80), gj2 = TN(x + 240, y - 20), g = TN(x + 280, y - 20);
+    TW(rgb, c); TW(c, gj); TW(gj, gj2); TW(gj2, g);
+    int d = TN(x + 320, y - 40), dj = TN(x + 420, y - 40), lt = TN(x + 420, y); TW(d, dj); TW(dj, lt);
+    v12->node_ids[0] = rail0; in->node_ids[0] = sp; rb->node_ids[0] = rbl; rb->node_ids[1] = rbr; q->node_ids[0] = b; q->node_ids[1] = c;
+    rgate->node_ids[0] = rgt; rgate->node_ids[1] = rgb; mp->node_ids[0] = g; mp->node_ids[1] = d; mp->node_ids[2] = s; rload->node_ids[0] = lt;
+    return 10;
+}
+
+// two push-pull lines through series resistors into a cable/trace capacitance (SPI, SPMI)
+static int io_two_lines(Circuit *circuit, float x, float y, double v, double f1, double f2, double delay2, double rs, double cline) {
+    Component *a = logic_pulse(circuit, x, y + 40, v, f1, 0.5, 0); if (!a) return 0;      // +(0,40)
+    Component *ra = hres(circuit, x + 100, y + 40, rs); ra->props.resistor.power_rating = 0.5;
+    Component *ca = vcap(circuit, x + 200, y + 80, cline);                                 // (200,40)-(200,120)
+    gnd_below(circuit, ca, 1, x + 200, y + 140);
+    Component *b = logic_pulse(circuit, x, y + 240, v, f2, 0.5, delay2);                   // +(0,240)
+    Component *rb_ = hres(circuit, x + 100, y + 240, rs); rb_->props.resistor.power_rating = 0.5;
+    Component *cb = vcap(circuit, x + 200, y + 280, cline);
+    gnd_below(circuit, cb, 1, x + 200, y + 340);
+    int spa = TN(x, y + 40), ral = TN(x + 60, y + 40), rar = TN(x + 140, y + 40), cat = TN(x + 200, y + 40); TW(spa, ral); TW(rar, cat);
+    int spb = TN(x, y + 240), rbl = TN(x + 60, y + 240), rbr = TN(x + 140, y + 240), cbt = TN(x + 200, y + 240); TW(spb, rbl); TW(rbr, cbt);
+    a->node_ids[0] = spa; ra->node_ids[0] = ral; ra->node_ids[1] = rar; ca->node_ids[0] = cat;
+    b->node_ids[0] = spb; rb_->node_ids[0] = rbl; rb_->node_ids[1] = rbr; cb->node_ids[0] = cbt;
+    return 10;
+}
+// 9. SPI: SCLK 10 MHz and MOSI 5 MHz push-pull, 33 ohm series termination into 200 pF of ribbon cable
+static int place_io_spi(Circuit *circuit, float x, float y) {
+    int n = io_two_lines(circuit, x, y, 3.3, 10e6, 5e6, 0, 33.0, 200e-12);
+    add_label(circuit, x - 40, y - 40, "SPI: SCLK 10 MHz / MOSI 5 MHz push-pull, 33 ohm series termination, 200 pF cable -> tau 6.6 ns rounds the edges");
+    add_label(circuit, x - 40, y + 400, "Try: 1 nF (long cable) and the clock never reaches 3.3 V; 0 ohm and a real trace would ring");
+    return n;
+}
+// 12. SPMI (MIPI): 1.8 V two-wire, SCLK 5 MHz push-pull, SDATA 2.5 MHz, 15 pF on-board loads
+static int place_io_spmi(Circuit *circuit, float x, float y) {
+    int n = io_two_lines(circuit, x, y, 1.8, 5e6, 2.5e6, 50e-9, 33.0, 15e-12);
+    add_label(circuit, x - 40, y - 40, "SPMI (MIPI): 1.8 V SCLK 5 MHz and SDATA 2.5 MHz, push-pull through 33 ohm into 15 pF (PMIC on the same board)");
+    add_label(circuit, x - 40, y + 400, "1.8 V logic: V_IH is only ~1.2 V, so 0.3 V of noise or ground bounce already matters; keep the return path short");
+    return n;
+}
+
+// 10. UART between 5 V and 3.3 V parts: a divider one way, direct the other way (5 V V_IH = 2 V)
+static int place_io_uart(Circuit *circuit, float x, float y) {
+    Component *tx5 = logic_pulse(circuit, x, y + 40, 5.0, 4800.0, 0.5, 0); if (!tx5) return 0;   // +(0,40): 9600 baud alternating bits
+    Component *rt = hres(circuit, x + 100, y + 40, 1e3);                                   // (60,40)-(140,40)
+    Component *rbt = vres(circuit, x + 140, y + 80, 2e3);                                  // (140,40)-(140,120)
+    gnd_below(circuit, rbt, 1, x + 140, y + 140);
+    Component *crx = vcap(circuit, x + 220, y + 80, 10e-12);                               // (220,40)-(220,120) RX pin
+    gnd_below(circuit, crx, 1, x + 220, y + 140);
+    Component *tx33 = logic_pulse(circuit, x, y + 240, 3.3, 4800.0, 0.5, 52e-6);          // +(0,240)
+    Component *rx5 = add_comp(circuit, COMP_NOT_GATE, x + 180, y + 240, 0);               // IN(140,240) OUT(220,240): 5 V logic input
+    rx5->props.logic_gate.v_high = 5.0; rx5->props.logic_gate.v_threshold = 2.0;
+    Component *rl = vres(circuit, x + 260, y + 280, 100e3);                                // (260,240)-(260,320)
+    gnd_below(circuit, rl, 1, x + 260, y + 320);
+    add_label(circuit, x - 40, y - 40, "UART 5 V <-> 3.3 V: TX(5 V) -> 1k/2k divider -> 3.33 V at the 3.3 V RX pin (never feed 5 V straight into a 3.3 V pin)");
+    add_label(circuit, x - 40, y + 380, "The other way needs nothing: a 5 V TTL input takes anything above V_IH = 2 V as HIGH, so 3.3 V TX drives it directly");
+    int sp = TN(x, y + 40), rl_ = TN(x + 60, y + 40), rr = TN(x + 140, y + 40), ct = TN(x + 220, y + 40); TW(sp, rl_); TW(rr, ct);
+    int sp2 = TN(x, y + 240), gi = TN(x + 140, y + 240), go = TN(x + 220, y + 240), lt = TN(x + 260, y + 240); TW(sp2, gi); TW(go, lt);
+    tx5->node_ids[0] = sp; rt->node_ids[0] = rl_; rt->node_ids[1] = rr; rbt->node_ids[0] = rr; crx->node_ids[0] = ct;
+    tx33->node_ids[0] = sp2; rx5->node_ids[0] = gi; rx5->node_ids[1] = go; rl->node_ids[0] = lt;
+    return 11;
+}
+
+// 11. RS-485 differential link: A and B driven in antiphase, 120 ohm at both ends, common-mode noise cancels at the receiver
+static int place_io_rs485(Circuit *circuit, float x, float y) {
+    Component *data = logic_pulse(circuit, x, y + 40, 5.0, 500e3, 0.5, 0); if (!data) return 0;   // +(0,40) = A driver
+    Component *invb = add_comp(circuit, COMP_NOT_GATE, x + 100, y + 120, 0);              // IN(60,120) OUT(140,120) = B driver
+    invb->props.logic_gate.v_high = 5.0; invb->props.logic_gate.v_threshold = 2.5; invb->props.logic_gate.r_out = 10.0;
+    Component *rla = hres(circuit, x + 240, y + 40, 10.0);                                 // (200,40)-(280,40)
+    Component *rlb = hres(circuit, x + 240, y + 120, 10.0);                                // (200,120)-(280,120)
+    Component *rt0 = vres(circuit, x + 180, y + 80, 120.0);                                // (180,40)-(180,120) driver-end termination
+    Component *rt = vres(circuit, x + 420, y + 80, 120.0);                                 // (420,40)-(420,120) far-end termination
+    Component *na = add_comp(circuit, COMP_AC_VOLTAGE, x + 320, y, 0);                    // +(320,-40) -(320,40): noise into A
+    na->props.ac_voltage.amplitude = 1.0; na->props.ac_voltage.frequency = 100e3;
+    Component *nb = add_comp(circuit, COMP_AC_VOLTAGE, x + 340, y + 160, 0);              // +(340,120) -(340,200): same noise into B
+    nb->props.ac_voltage.amplitude = 1.0; nb->props.ac_voltage.frequency = 100e3;
+    Component *rx = sat_opamp(circuit, x + 520, y + 80);                                  // -(480,60) +(480,100) OUT(560,80)
+    rx->props.opamp.slew_rate = 1000.0; rx->props.opamp.gbw = 1e9; rx->props.opamp.vmax = 5.0; rx->props.opamp.vmin = 0.0;
+    Component *rl = vres(circuit, x + 600, y + 120, 10e3);                                 // (600,80)-(600,160)
+    gnd_below(circuit, rl, 1, x + 600, y + 180);
+    add_label(circuit, x - 40, y - 100, "RS-485: A = data, B = NOT data, 120 ohm at both ends; 1 V of common-mode noise rides on BOTH wires and the receiver (A-B) ignores it");
+    int sp = TN(x, y + 40), ij = TN(x + 60, y + 40), gi = TN(x + 60, y + 120), t0a = TN(x + 180, y + 40), ral = TN(x + 200, y + 40);
+    TW(sp, ij); TW(ij, gi); TW(ij, t0a); TW(t0a, ral);
+    int go = TN(x + 140, y + 120), t0b = TN(x + 180, y + 120), rbl = TN(x + 200, y + 120); TW(go, t0b); TW(t0b, rbl);
+    int rar = TN(x + 280, y + 40), nam = TN(x + 320, y + 40), nap = TN(x + 320, y - 40), aj = TN(x + 360, y - 40), aj2 = TN(x + 360, y + 40), ta = TN(x + 420, y + 40);
+    TW(rar, nam); TW(nap, aj); TW(aj, aj2); TW(aj2, ta);
+    int rbr = TN(x + 280, y + 120), bj = TN(x + 300, y + 120), bj2 = TN(x + 300, y + 200), nbm = TN(x + 340, y + 200), nbp = TN(x + 340, y + 120), tb = TN(x + 420, y + 120);
+    TW(rbr, bj); TW(bj, bj2); TW(bj2, nbm); TW(nbp, tb);
+    int ap = TN(x + 460, y + 40), ap2 = TN(x + 460, y + 100), rxp = TN(x + 480, y + 100), bm = TN(x + 440, y + 120), bm2 = TN(x + 440, y + 60), rxm = TN(x + 480, y + 60), out = TN(x + 560, y + 80), lt = TN(x + 600, y + 80);
+    TW(ta, ap); TW(ap, ap2); TW(ap2, rxp); TW(tb, bm); TW(bm, bm2); TW(bm2, rxm); TW(out, lt);
+    data->node_ids[0] = sp; invb->node_ids[0] = gi; invb->node_ids[1] = go; rla->node_ids[0] = ral; rla->node_ids[1] = rar; rlb->node_ids[0] = rbl; rlb->node_ids[1] = rbr;
+    rt0->node_ids[0] = t0a; rt0->node_ids[1] = t0b; rt->node_ids[0] = ta; rt->node_ids[1] = tb;
+    na->node_ids[0] = nap; na->node_ids[1] = nam; nb->node_ids[0] = nbp; nb->node_ids[1] = nbm;
+    rx->node_ids[0] = rxm; rx->node_ids[1] = rxp; rx->node_ids[2] = out; rl->node_ids[0] = lt;
+    return 12;
+}
+#undef TN
+#undef TW
+
 static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_RC_LOWPASS]       = { COMP_CAPACITOR, 0, 0 },
     [CIRCUIT_RC_HIGHPASS]      = { COMP_RESISTOR, 0, 0 },
@@ -8139,6 +8483,18 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_SR_LATCH]         = { COMP_NOR_GATE, 1, 2 },   // Q
     [CIRCUIT_POWER_PLANT]      = { COMP_RESISTOR, 0, 0 },
     [CIRCUIT_SUBSTATION]       = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_IO_PUSH_PULL]     = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_IO_OPEN_DRAIN]    = { COMP_RESISTOR, 1, 1 },
+    [CIRCUIT_IO_OPEN_COLLECTOR]= { COMP_RESISTOR, 1, 1 },
+    [CIRCUIT_IO_I2C_BUS]       = { COMP_RESISTOR, 2, 1 },
+    [CIRCUIT_IO_I2C_LEVEL]     = { COMP_RESISTOR, 2, 1 },
+    [CIRCUIT_IO_INPUT_DEBOUNCE]= { COMP_NOT_GATE, 0, 1 },
+    [CIRCUIT_IO_LOW_SIDE]      = { COMP_INDUCTOR, 0, 1 },
+    [CIRCUIT_IO_HIGH_SIDE]     = { COMP_RESISTOR, 2, 0 },
+    [CIRCUIT_IO_SPI]           = { COMP_CAPACITOR, 0, 0 },
+    [CIRCUIT_IO_UART]          = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_IO_RS485]         = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_IO_SPMI]          = { COMP_CAPACITOR, 1, 0 },
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -8147,6 +8503,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
 // Extra probes (up to 3) for templates that need more than input + output on the scope
 static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_3PH_Y_BALANCED]   = { { COMP_RESISTOR, 5, 0 }, { COMP_RESISTOR, 6, 0 } },      // phase C load, neutral (A = source probe)
+    [CIRCUIT_DIFFERENTIAL_PAIR] = { { COMP_NPN_BJT, 1, 1 } },                                // Q2 collector: the mirror image
     [CIRCUIT_3PH_UNBALANCED]   = { { COMP_RESISTOR, 3, 0 }, { COMP_RESISTOR, 5, 0 } },
     [CIRCUIT_3PH_345_LINE]     = { { COMP_RESISTOR, 0, 0 }, { COMP_RESISTOR, 2, 0 } },      // phase A, C loads
     [CIRCUIT_3PH_RECTIFIER]    = { { COMP_DIODE, 5, 0 } },                                   // minus bus
@@ -8157,6 +8514,19 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_SR_LATCH]         = { { COMP_NOR_GATE, 0, 2 }, { COMP_PULSE_SOURCE, 1, 0 } },   // Qbar, R
     [CIRCUIT_POWER_PLANT]      = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 2, 0 } },      // phases B, C
     [CIRCUIT_SUBSTATION]       = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 2, 0 } },
+    [CIRCUIT_IO_I2C_BUS]       = { { COMP_PULSE_SOURCE, 1, 0 } },                             // slave driver
+    [CIRCUIT_IO_I2C_LEVEL]     = { { COMP_RESISTOR, 1, 1 } },                                 // 3.3 V side
+    [CIRCUIT_IO_INPUT_DEBOUNCE]= { { COMP_RESISTOR, 0, 1 }, { COMP_CAPACITOR, 0, 0 } },       // pin, RC node
+    [CIRCUIT_IO_HIGH_SIDE]     = { { COMP_RESISTOR, 1, 1 } },                                 // PMOS gate
+    [CIRCUIT_IO_SPI]           = { { COMP_PULSE_SOURCE, 1, 0 }, { COMP_CAPACITOR, 1, 0 } },   // MOSI source, MOSI at load
+    [CIRCUIT_IO_UART]          = { { COMP_PULSE_SOURCE, 1, 0 }, { COMP_NOT_GATE, 0, 1 } },    // 3.3 V TX, 5 V receiver out
+    [CIRCUIT_IO_RS485]         = { { COMP_RESISTOR, 3, 0 }, { COMP_RESISTOR, 3, 1 } },        // A, B at the far termination
+    [CIRCUIT_IO_SPMI]          = { { COMP_CAPACITOR, 0, 0 } },                                // SCLK at load
+    // multi-input circuits: every input on its own channel
+    [CIRCUIT_SUMMING_AMP]      = { { COMP_DC_VOLTAGE, 1, 0 }, { COMP_DC_VOLTAGE, 2, 0 } },    // V2, V3 (V1 = source probe)
+    [CIRCUIT_DIFFERENCE_AMP]   = { { COMP_DC_VOLTAGE, 1, 0 } },                               // V2 (0.5 V DC)
+    [CIRCUIT_INSTR_AMP]        = { { COMP_DC_VOLTAGE, 0, 0 } },                               // V2 (50 mV DC)
+    [CIRCUIT_SUPERPOSITION]    = { { COMP_DC_VOLTAGE, 1, 0 } },                               // the 6 V source
 };
 
 // Scope time/div that shows the interesting behaviour of each template
@@ -8190,6 +8560,9 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HARTLEY] = 500e-9, [CIRCUIT_CLAPP] = 100e-9,
     [CIRCUIT_THEVENIN] = 1e-3, [CIRCUIT_SUPERPOSITION] = 1e-3, [CIRCUIT_RC_STEP] = 1e-3, [CIRCUIT_RL_STEP] = 100e-6, [CIRCUIT_RLC_RING] = 50e-6, [CIRCUIT_RLC_DAMPING] = 100e-6, [CIRCUIT_OPAMP_SAT] = 200e-6,
     [CIRCUIT_SINGLE_TUNED_AMP] = 5e-6, [CIRCUIT_COMMON_BASE] = 20e-6, [CIRCUIT_DARLINGTON] = 200e-6, [CIRCUIT_SR_LATCH] = 200e-6, [CIRCUIT_POWER_PLANT] = 5e-3, [CIRCUIT_SUBSTATION] = 5e-3,
+    [CIRCUIT_IO_PUSH_PULL] = 200e-9, [CIRCUIT_IO_OPEN_DRAIN] = 1e-6, [CIRCUIT_IO_OPEN_COLLECTOR] = 2e-6, [CIRCUIT_IO_I2C_BUS] = 10e-6,
+    [CIRCUIT_IO_I2C_LEVEL] = 2e-6, [CIRCUIT_IO_INPUT_DEBOUNCE] = 5e-3, [CIRCUIT_IO_LOW_SIDE] = 500e-6, [CIRCUIT_IO_HIGH_SIDE] = 500e-6,
+    [CIRCUIT_IO_SPI] = 50e-9, [CIRCUIT_IO_UART] = 100e-6, [CIRCUIT_IO_RS485] = 500e-9, [CIRCUIT_IO_SPMI] = 50e-9,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -8216,6 +8589,9 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HARTLEY] = 10.0, [CIRCUIT_CLAPP] = 5.0,
     [CIRCUIT_THEVENIN] = 2.0, [CIRCUIT_SUPERPOSITION] = 2.0, [CIRCUIT_RC_STEP] = 2.0, [CIRCUIT_RL_STEP] = 2.0, [CIRCUIT_RLC_RING] = 5.0, [CIRCUIT_RLC_DAMPING] = 5.0, [CIRCUIT_OPAMP_SAT] = 5.0,
     [CIRCUIT_SINGLE_TUNED_AMP] = 2.0, [CIRCUIT_COMMON_BASE] = 1.0, [CIRCUIT_DARLINGTON] = 2.0, [CIRCUIT_SR_LATCH] = 2.0, [CIRCUIT_POWER_PLANT] = 100e3, [CIRCUIT_SUBSTATION] = 50e3,
+    [CIRCUIT_IO_PUSH_PULL] = 1.0, [CIRCUIT_IO_OPEN_DRAIN] = 1.0, [CIRCUIT_IO_OPEN_COLLECTOR] = 2.0, [CIRCUIT_IO_I2C_BUS] = 1.0,
+    [CIRCUIT_IO_I2C_LEVEL] = 2.0, [CIRCUIT_IO_INPUT_DEBOUNCE] = 1.0, [CIRCUIT_IO_LOW_SIDE] = 5.0, [CIRCUIT_IO_HIGH_SIDE] = 2.0,
+    [CIRCUIT_IO_SPI] = 1.0, [CIRCUIT_IO_UART] = 1.0, [CIRCUIT_IO_RS485] = 2.0, [CIRCUIT_IO_SPMI] = 0.5,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -8316,12 +8692,42 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_SR_LATCH]         = { DEMO_SWITCH, 1000 },
     [CIRCUIT_POWER_PLANT]      = { DEMO_WAVEFORM, 60 },
     [CIRCUIT_SUBSTATION]       = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_IO_PUSH_PULL]     = { DEMO_WAVEFORM, 1e6 },
+    [CIRCUIT_IO_OPEN_DRAIN]    = { DEMO_WAVEFORM, 200e3 },
+    [CIRCUIT_IO_OPEN_COLLECTOR]= { DEMO_WAVEFORM, 100e3 },
+    [CIRCUIT_IO_I2C_BUS]       = { DEMO_WAVEFORM, 20e3 },
+    [CIRCUIT_IO_I2C_LEVEL]     = { DEMO_WAVEFORM, 100e3 },
+    [CIRCUIT_IO_INPUT_DEBOUNCE]= { DEMO_WAVEFORM, 50 },
+    [CIRCUIT_IO_LOW_SIDE]      = { DEMO_WAVEFORM, 500 },
+    [CIRCUIT_IO_HIGH_SIDE]     = { DEMO_WAVEFORM, 500 },
+    [CIRCUIT_IO_SPI]           = { DEMO_WAVEFORM, 5e6 },
+    [CIRCUIT_IO_UART]          = { DEMO_WAVEFORM, 4800 },
+    [CIRCUIT_IO_RS485]         = { DEMO_WAVEFORM, 500e3 },
+    [CIRCUIT_IO_SPMI]          = { DEMO_WAVEFORM, 2.5e6 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
     static const TemplateDemo none = { DEMO_NONE, 0 };
     if (type <= CIRCUIT_NONE || type >= CIRCUIT_TYPE_COUNT) return &none;
     return &template_demo[type];
+}
+
+// Amplifier stages whose input and output sit on different DC levels: stacked + fitted bands
+// (each band centred on its own mean and scaled to its own swing) so a 10 mV input and a
+// 250 mV output riding on 6 V are both readable.
+static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
+    [CIRCUIT_COMMON_EMITTER] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_COMMON_SOURCE] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_COMMON_DRAIN] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_MULTISTAGE_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_DIFFERENTIAL_PAIR] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_COMMON_BASE] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_DARLINGTON] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_IO_I2C_BUS] = SCOPE_FLAG_STACK, [CIRCUIT_IO_I2C_LEVEL] = SCOPE_FLAG_STACK, [CIRCUIT_IO_INPUT_DEBOUNCE] = SCOPE_FLAG_STACK,
+    [CIRCUIT_IO_HIGH_SIDE] = SCOPE_FLAG_STACK, [CIRCUIT_IO_SPI] = SCOPE_FLAG_STACK, [CIRCUIT_IO_UART] = SCOPE_FLAG_STACK,
+    [CIRCUIT_IO_RS485] = SCOPE_FLAG_STACK, [CIRCUIT_IO_SPMI] = SCOPE_FLAG_STACK,
+    [CIRCUIT_SUMMING_AMP] = SCOPE_FLAG_STACK, [CIRCUIT_DIFFERENCE_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_INSTR_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_SUPERPOSITION] = SCOPE_FLAG_STACK,
+};
+int circuit_template_scope_flags(CircuitTemplateType type) {
+    if (type <= CIRCUIT_NONE || type >= CIRCUIT_TYPE_COUNT) return 0;
+    return template_scope_flags[type];
 }
 
 double circuit_template_scope_volt_div(CircuitTemplateType type) {
@@ -8440,7 +8846,7 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
 
 const char *circuit_template_group_name(TemplateGroup g) {
     static const char *names[TG_COUNT] = {
-        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients"
+        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients", "IC I/O & drivers"
     };
     return (g >= 0 && g < TG_COUNT) ? names[g] : "?";
 }

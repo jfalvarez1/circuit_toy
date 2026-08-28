@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.4.1](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.4.1)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.5.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.5.0)** (auto-updating from v3.4.0 on)
 
 A native desktop circuit simulator written in C with SDL2, featuring a synthwave-themed interface. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
 
@@ -112,7 +112,7 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-92 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+108 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -228,6 +228,26 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **Tesla Coil** (`Tesla`) - Spark-gap Tesla coil, 4x13 in toroid, streamer to a rod
 - **Tesla Coil (big top)** (`TeslaB`) - Retuned for an 8x24 in toroid: more energy, longer arc
 - **Tesla Coil (detuned)** (`TeslaX`) - Big toroid but the primary was not retuned: weak output
+
+**Transients**
+- **RC Step Response** (`RCstp`) - 63 % at one time constant, 10-90 % rise = 2.2 tau
+- **RL Step Response** (`RLstp`) - Inductor current rises with tau = L/R
+- **RLC Step (Ringing)** (`RLCst`) - Underdamped series RLC: 90 % overshoot, 199 us period
+- **RLC Damping Ladder** (`Damp`) - Same L, C with R = 20 / 632 / 2000: under, critical, over
+
+**IC I/O & drivers**
+- **Push-Pull Output** (`PPout`) - CMOS totem-pole GPIO: PMOS sources, NMOS sinks, 1 MHz into 20 pF
+- **Open-Drain + Pull-up** (`OD`) - Pin only pulls low; 4.7k pull-up makes the slow RC rise
+- **Open-Collector Level Shift** (`OC`) - 3.3 V logic drives a 5 V line through an NPN (inverting)
+- **I2C Bus (wired-AND)** (`I2C`) - Master and slave open-drain on one SDA, 4.7k / 200 pF
+- **I2C Level Shifter** (`I2Clv`) - One NMOS, gate at 3.3 V, pull-ups both sides: 3.3 V <-> 5 V
+- **GPIO Input + Debounce** (`Btn`) - Pull-up, button to ground, RC debounce, inverter
+- **Low-side Switch + Flyback** (`LoSw`) - NMOS sinks a relay coil; flyback diode clamps the spike
+- **High-side PMOS Switch** (`HiSw`) - 3.3 V logic -> NPN -> PMOS gate: load switched from the 12 V rail
+- **SPI Lines** (`SPI`) - SCLK 10 MHz / MOSI 5 MHz, 33 ohm series termination, 200 pF cable
+- **UART 5 V <-> 3.3 V** (`UART`) - Divider one way, direct the other way (TTL V_IH = 2 V)
+- **RS-485 Differential Link** (`RS485`) - A/B antiphase, 120 ohm both ends, common-mode noise rejected
+- **SPMI Bus (1.8 V)** (`SPMI`) - MIPI two-wire: 1.8 V SCLK 5 MHz + SDATA, 33 ohm into 15 pF
 
 ### Power Systems & High Voltage
 
@@ -393,6 +413,7 @@ Create reusable subcircuits from your designs:
 - **Collapsible properties panel** - click its header to give the room to the scope
 - **Hover tooltips** on every button and palette item
 - **Search anywhere** - Ctrl+K or Ctrl+Space opens Spotlight, `/` jumps into the left-panel filter box; both understand plain words (`mosfet`, `coil`, `transistor`, `battery`, `power line`) as well as part names; F2 toggles the on-canvas value labels
+- **Scope AC / Fit** - Display tab: `AC` draws each trace minus its DC level, `Fit` (stacked view) gives every band its own V/div centred on its mean, shown in the band tag; the amplifier templates preset Stack + Fit, and stacked logic signals sit one division above the band bottom
 - **Brightness** - `Brt` slider in the status bar (25-100 %) or F3 / F4; dims the whole window including the popped-out scope
 - **Remembered between runs** - window size, brightness, Parts/Circuits tab, value labels / voltages / current-flow / grid toggles, collapsed properties panel, speed, Lux and Tmp sliders are saved to `%APPDATA%\circuit_toy\circuit-playground\settings.json` on exit and restored at launch (independent of the exe folder, so updates never reset them; scripted `--shot`/`--record` runs never write it)
 - **Collapsible palette categories** - Click to expand/collapse component groups
@@ -438,6 +459,20 @@ command line. Releases are built with `pwsh tools/make_release.ps1 -Publish` (ve
 | ![Hartley](screenshots/auto/hartley.png) Hartley (tapped inductor) | ![RLC ringing](screenshots/auto/rlc_ringing.png) Series RLC step: 90 % overshoot, 199 us ring |
 | ![Damping ladder](screenshots/auto/damping_ladder.png) Under / critical / over-damped on one screen | ![Op-amp saturation](screenshots/auto/opamp_saturation.png) Clipping at the rails and the lost virtual ground |
 | ![Power plant](screenshots/auto/power_plant.png) Three-phase power plant: generator, GSU bank, breakers, lines | ![Substation](screenshots/auto/substation.png) Transmission substation: 345/138 kV autos, feeders, cap banks |
+
+### IC I/O & drivers
+
+What a GPIO pin is made of and how it talks to the outside world - twelve templates in the **IC I/O & drivers** group:
+push-pull (CMOS) output, open-drain + pull-up, open-collector level shift, the I2C wired-AND bus and the NXP one-MOSFET
+level shifter, a debounced pull-up input, low-side (flyback) and high-side (PMOS) load switches, SPI series termination,
+UART between 5 V and 3.3 V parts, an RS-485 differential link with common-mode noise, and the 1.8 V SPMI bus. Each one
+probes every signal that matters (Stack view) and its text says what to change to break it.
+
+| | |
+|---|---|
+| ![I2C bus](screenshots/auto/i2c_bus.png) I2C SDA: master and slave open-drain, the line is LOW when either pulls | ![RS-485](screenshots/auto/rs485.png) RS-485: A/B carry the data plus 1 V of common-mode noise, the receiver sees only A-B |
+| ![High-side switch](screenshots/auto/high_side.png) High-side PMOS switch driven from 3.3 V through an NPN | ![GPIO input](screenshots/auto/gpio_input.png) Pull-up input, button, RC debounce, inverter |
+| ![Two-stage amp](screenshots/auto/two_stage_fit.png) Scope **Fit**: 10 mV input and 130 mV output on 6 V DC, each band on its own scale | ![SPI](screenshots/auto/spi.png) SPI at 10 MHz through 33 ohm into 200 pF of cable |
 | ![Single-tuned amplifier](screenshots/auto/single_tuned_amp.png) Single-tuned (LC collector load) amplifier | ![SR latch](screenshots/auto/sr_latch.png) SR latch from cross-coupled NOR gates |
 
 ![Function generator](gifs/auto_function_generator.gif)
@@ -516,7 +551,7 @@ point and a short transient, and reports solver errors, NaN/runaway voltages and
 point of every transistor / op-amp / regulator:
 
 ```bash
-build/tools/template_smoke.exe             # 92/92 templates passed
+build/tools/template_smoke.exe             # 108/108 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (66 oracles)
@@ -528,11 +563,39 @@ build/tools/template_smoke.exe --tesla-test      # spark-gap firings, ring frequ
 build/tools/template_smoke.exe --param-test      # spark gap / toroid / line / transformer limits vs phasor oracles; scope presets
 build/tools/template_smoke.exe --flow-test       # current-flow display: KCL, conservation, series uniformity
 build/tools/template_smoke.exe --burn-test       # no resistor/LED over its rating (HV templates use R_HP loads)
+build/circuit-playground.exe --keys "^mosfet|" 24 8 --record DIR N EVERY   # scripted typing: ^ opens Spotlight, | is Enter
 build/tools/template_smoke.exe --geom-test       # schematic audit: diagonals, crossings, wires through bodies
 build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
 build/tools/template_smoke.exe --response "RC BP"   # amplitude vs frequency of every node during the sweep
 build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
 build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template in the palette)
+```
+
+The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
+which produced the images in this README):
+
+```bash
+build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
+build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
+build/circuit-playground.exe --help
+```
+
+The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
+which produced the images in this README):
+
+```bash
+build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
+build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
+build/circuit-playground.exe --help
+```
+
+The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
+which produced the images in this README):
+
+```bash
+build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
+build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
+build/circuit-playground.exe --help
 ```
 
 The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,

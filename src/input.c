@@ -183,6 +183,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             if (td > 0) { ui->scope_time_div = td; ui->scope_capture_valid = false; }
                             double vd = circuit_template_scope_volt_div(ui->selected_circuit_type);
                             if (vd > 0) ui->scope_volt_div = vd;
+                            { int fl = circuit_template_scope_flags(ui->selected_circuit_type); ui->scope_ac_coupling = (fl & SCOPE_FLAG_AC) != 0; ui->scope_stacked = (fl & SCOPE_FLAG_STACK) != 0; ui->scope_stack_fit = (fl & SCOPE_FLAG_FIT) != 0; }
                             ui->scope_auto_vdiv_pending = true;   // refine from real data once it flows
                             // Templates with a frequency-sweeping source get sweep tracking on
                             ui->scope_track_sweep = false;

@@ -120,6 +120,18 @@ typedef enum {
     CIRCUIT_SR_LATCH,
     CIRCUIT_POWER_PLANT,
     CIRCUIT_SUBSTATION,
+    CIRCUIT_IO_PUSH_PULL,
+    CIRCUIT_IO_OPEN_DRAIN,
+    CIRCUIT_IO_OPEN_COLLECTOR,
+    CIRCUIT_IO_I2C_BUS,
+    CIRCUIT_IO_I2C_LEVEL,
+    CIRCUIT_IO_INPUT_DEBOUNCE,
+    CIRCUIT_IO_LOW_SIDE,
+    CIRCUIT_IO_HIGH_SIDE,
+    CIRCUIT_IO_SPI,
+    CIRCUIT_IO_UART,
+    CIRCUIT_IO_RS485,
+    CIRCUIT_IO_SPMI,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 
@@ -135,6 +147,7 @@ typedef enum {
     TG_POWER_SYSTEMS,   // transmission / distribution examples
     TG_HIGH_VOLTAGE,    // Tesla coils
     TG_TRANSIENTS,      // step responses (Agarwal & Lang ch. 10/12)
+    TG_IC_IO,           // IC output / input structures, buses and drivers (GPIO, I2C, SPI, UART, RS-485, SPMI)
     TG_COUNT
 } TemplateGroup;
 
@@ -158,6 +171,11 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
 // Suggested scope time/div for a template (0 = no preference)
 double circuit_template_scope_time_div(CircuitTemplateType type);
 double circuit_template_scope_volt_div(CircuitTemplateType type);
+// Scope view preset: SCOPE_FLAG_STACK | SCOPE_FLAG_FIT for amplifiers whose in/out ride on different DC levels
+#define SCOPE_FLAG_AC    1
+#define SCOPE_FLAG_STACK 2
+#define SCOPE_FLAG_FIT   4
+int circuit_template_scope_flags(CircuitTemplateType type);
 
 // HARD RULE: every template declares how it demonstrates itself, and template_smoke
 // --demo-test checks that the stimulus actually shows it (see tools/template_smoke.c).

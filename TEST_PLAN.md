@@ -416,6 +416,31 @@ Automated by `--demo-test` (`DEMO_BANDPASS` tuned amp, `DEMO_WAVEFORM` CB / Darl
 
 ---
 
+### 3.16 Batch six: IC I/O & drivers (new 2026-08-27: templates #97–#108 in TEMPLATE_AUDIT, palette group **IC I/O & drivers**)
+
+Automated by `--demo-test` (`DEMO_WAVEFORM`, six periods for MHz-class templates) and `--probe-test` (twelve oracles, see 0.7),
+`--burn-test` (50 Ω coil 5 W, 100 Ω load 3 W, 33 Ω terminations 0.5 W). New helper `logic_pulse()` gives every pulse source edges of
+1 % of its period (a 2 ns edge into a 100 ns step made the BJT stage unsolvable). The BJT model change (base–collector junction
+in ideal mode) is regression-tested by the existing 86 oracles. Every manual row is done **(a) before Run and (b) live**.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.16.1 | `[ ]` Push-Pull Output: run; delete the PMOS; load 20 pF → 1 nF | inverted 0–3.3 V square, edges < 20 ns; without the PMOS the output only falls (floats); 1 nF: RC ramps |
+| 3.16.2 | `[ ]` Open-Drain: C 100 pF → 1 nF; R 4.7 k → 1 k | rise τ 470 ns → 4.7 µs (never reaches 3.3 V in 2.5 µs) → 100 ns |
+| 3.16.3 | `[ ]` Open-Collector: base R 1 k → 100 k → 1 M; rail 5 → 12 V | V_OL ≈ 20 mV stays until the base starves (1 M: linear region); 12 V rail: same waveform at 12 V; **no negative collector voltage** (model fix) |
+| 3.16.4 | `[ ]` I2C Bus: Stack; slave delay 15 → 0 µs; bus C → 1 nF | SDA = NOT(master OR slave); overlapping pulls extend the low; 1 nF: 6 µs lows barely recover |
+| 3.16.5 | `[ ]` I2C Level Shifter: gate rail 3.3 → 1.8 V; 5 V rail → 12 V | 5 V side follows the 3.3 V side low/high; 1.8 ↔ 5 and 3.3 ↔ 12 both work |
+| 3.16.6 | `[ ]` GPIO Input: Stack (4 bands); C 100 nF → 10 nF → 1 µF; switch r_on → 1 k; threshold → 3 V | latency 1–2 ms → 0.1 ms → 20 ms (press missed); dirty contact 0.3 V still LOW; 3 V threshold chatters |
+| 3.16.7 | `[ ]` Low-side Switch: delete the diode; gate 5 → 3.3 → 2 V; L → 100 mH | drain 12.65 V clamp → kV spike without the diode; 2 V gate = linear heater; 100 mH plateau lasts the off-time |
+| 3.16.8 | `[ ]` High-side Switch: Stack; rail 12 → 24 V; PMOS w → 50 µm | gate 12/0, load in phase 0/11.8 V; works at 24 V; small PMOS only reaches ~8 V |
+| 3.16.9 | `[ ]` SPI: Stack (4 bands); C → 1 nF; SCLK 10 → 50 MHz; R 33 → 0 | rounded edges 6.6 ns; 1 nF triangle ~2.5 V peak; 50 MHz collapses to ~1 V; 0 Ω instant edges (no ringing: no L modelled) |
+| 3.16.10 | `[ ]` UART: divider 1 k/1 k; threshold 2 → 3.5 V; RX C → 100 nF | 2.5 V (no margin); 3.3 V TX no longer registers on a 3.5 V V_IH input; 100 nF smears bits |
+| 3.16.11 | `[ ]` RS-485: Stack; noise 1 → 3 Vpk; far termination open; inverter r_out → 1 k | receiver output stays a clean 0/5 V; A/B levels change, no reflections modelled; weak B still resolved |
+| 3.16.12 | `[ ]` SPMI: C 15 → 150 pF; rail 1.8 → 1.2 V; SCLK → 26 MHz | edges appear at 150 pF; 1.2 V picture identical with 0.4 V margin; 26 MHz still square |
+| 3.16.13 | `[ ]` Scope **AC** / **Fit** (Display tab) on Two-Stage Amp, CE, Diff Pair, Instr. Amp | Fit: per-band tags "CHn 5.0mV/div"; both traces readable; axis labels hidden; trigger line follows the band; AC alone: shared V/div, traces centred |
+| 3.16.14 | `[ ]` Multi-input probes: Summing (4 ch), Difference (3), Instr (3), Superposition (3), Diff Pair (3) | every input on its own channel; diff pair inputs 10 mV, both collectors mirror images (0.5 V) |
+| 3.16.15 | `[ ]` **Automated:** `template_smoke --probe-test`, `--demo-test`, `--burn-test`, `--flow-test`, `--knob-test` | 98/98, 108/108, 0 overloads, 108/108, 1328/0 |
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.

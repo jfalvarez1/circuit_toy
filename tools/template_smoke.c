@@ -418,6 +418,18 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_SR_LATCH,         COMP_NOR_GATE,  1, 2, "max", 5.0,   0.05, 0.5e-3, "Q set by the S pulse at 0.2 ms" },
     { CIRCUIT_POWER_PLANT,      COMP_RESISTOR,  0, 0, "amp", 259.6e3, 0.06, 60e-3, "345 kV load bus: GSU behind X'' then the 100 mi line (as the single-phase examples)" },
     { CIRCUIT_SUBSTATION,       COMP_RESISTOR,  0, 0, "amp", 103.0e3, 0.08, 60e-3, "138 kV feeder bus with the pf 0.9 load, cap banks open" },
+    { CIRCUIT_IO_PUSH_PULL,     COMP_RESISTOR,  1, 0, "max", 3.3,   0.05, 6e-6,  "push-pull output reaches the 3.3 V rail" },
+    { CIRCUIT_IO_OPEN_DRAIN,    COMP_RESISTOR,  1, 1, "max", 3.3,   0.05, 30e-6, "pull-up brings the line to 3.3 V (tau 470 ns << 2.5 us)" },
+    { CIRCUIT_IO_OPEN_COLLECTOR,COMP_RESISTOR,  1, 1, "max", 5.0,   0.05, 60e-6, "collector pulled up to the 5 V rail; low = Vce(sat)" },
+    { CIRCUIT_IO_I2C_BUS,       COMP_RESISTOR,  2, 1, "max", 3.3,   0.05, 200e-6, "SDA released by both devices reaches 3.3 V" },
+    { CIRCUIT_IO_I2C_LEVEL,     COMP_RESISTOR,  2, 1, "max", 5.0,   0.05, 40e-6, "5 V side restored by its own pull-up" },
+    { CIRCUIT_IO_INPUT_DEBOUNCE,COMP_NOT_GATE,  0, 1, "max", 3.3,   0.05, 40e-3, "inverter output high while the RC node is below 1.65 V" },
+    { CIRCUIT_IO_LOW_SIDE,      COMP_INDUCTOR,  0, 1, "max", 12.6,  0.05, 6e-3,  "flyback clamp: drain never exceeds 12 V + V_F" },
+    { CIRCUIT_IO_HIGH_SIDE,     COMP_RESISTOR,  2, 0, "max", 11.8,  0.05, 6e-3,  "PMOS on: load gets the rail minus R_DS(on) drop" },
+    { CIRCUIT_IO_SPI,           COMP_CAPACITOR, 0, 0, "amp", 1.65,  0.08, 1e-6,  "10 MHz clock still reaches both rails through 33 ohm / 200 pF" },
+    { CIRCUIT_IO_UART,          COMP_RESISTOR,  1, 0, "max", 3.33,  0.05, 1e-3,  "1k/2k divider: 5 V x 2/3" },
+    { CIRCUIT_IO_RS485,         COMP_OPAMP,     0, 2, "amp", 2.5,   0.08, 12e-6, "receiver output 0/5 V despite 1 V common-mode noise" },
+    { CIRCUIT_IO_SPMI,          COMP_CAPACITOR, 1, 0, "amp", 0.9,   0.08, 2e-6,  "1.8 V SDATA at the 15 pF load" },
     { CIRCUIT_SCHMITT_BISTABLE, COMP_OPAMP,     0, 2, "max", 15.0,  0.05, 30e-3, "bistable output at the rail" },
     { CIRCUIT_TRI_SQUARE_GEN,   COMP_OPAMP,     1, 2, "amp", 7.5,   0.08, 3e-3,  "triangle peak = 15 R1/R2" },
     { CIRCUIT_FUNCTION_GEN,     COMP_RESISTOR,  3, 1, "amp", 4.9,   0.15, 3e-3,  "3-breakpoint sine ~4.9 V peak" },
@@ -734,7 +746,7 @@ static int demo_test(void) {
             }
         } else if (ok && (d->kind == DEMO_WAVEFORM || d->kind == DEMO_SWITCH || d->kind == DEMO_DC)) {
             simulation_dc_analysis(sim); simulation_auto_time_step(sim);
-            double run = (d->f_char > 0) ? 6.0 / d->f_char : 0.01; if (run < 0.003) run = 0.003;
+            double run = (d->f_char > 0) ? 6.0 / d->f_char : 0.01; if (run < 0.003 && d->f_char < 1e4) run = 0.003;   /* MHz-class I/O templates: six periods is enough */
             /* circuits driven only by pulse/logic sources get no useful auto dt: use 1000 steps per run */
             if (!(sim->time_step > 0) || sim->time_step > run / 200 || sim->time_step < run / 100000) simulation_set_time_step(sim, run / 1000);
             simulation_start(sim);

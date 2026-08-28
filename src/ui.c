@@ -503,6 +503,8 @@ void ui_init(UIState *ui) {
     ui->btn_scope_fft = (Button){{scope_btn_x, scope_btn_y, 35, scope_btn_h}, "FFT", "Toggle FFT spectrum view", false, false, true, false};
     scope_btn_x += 38;
     ui->btn_scope_stack = (Button){{scope_btn_x, scope_btn_y, 40, scope_btn_h}, "Stack", "Stacked view: one band per channel (toggle overlay)", false, false, true, false};
+    ui->btn_scope_ac = (Button){{0, 0, 0, 0}, "AC", "AC coupling: draw each trace minus its DC level (readouts stay DC)", false, false, true, false};
+    ui->btn_scope_fit = (Button){{0, 0, 0, 0}, "Fit", "Fit (stacked view): scale every band to its own signal, centred on its mean", false, false, true, false};
     scope_btn_x += 43;
     ui->btn_scope_track = (Button){{scope_btn_x, scope_btn_y, 32, scope_btn_h}, "Trk", "Track a sweeping source: time/div follows its frequency (~3 cycles per screen)", false, false, true, false};
     scope_btn_x += 35;
@@ -3170,7 +3172,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     // Draw voltage scale labels on Y-axis (left side)
     // 8 divisions total: 4 above center (positive) and 4 below (negative)
     SDL_SetRenderDrawColor(renderer, 0x60, 0x80, 0x60, 0xff);
-    for (int i = 0; i <= 8; i++) {
+    for (int i = 0; i <= 8 && !(ui->scope_stacked && ui->scope_stack_fit); i++) {   // Fit: every band has its own scale (tag per band)
         int y = r->y + i * div_y;
         // Calculate voltage value: top is +4*V/div, center is 0, bottom is -4*V/div
         double voltage = (4 - i) * ui->scope_volt_div;
@@ -3598,7 +3600,9 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++)
                     if (ui->scope_channels[ch].enabled) n_enabled++;
                 bool stacked = ui->scope_stacked && n_enabled > 1;
+                bool fit = stacked && ui->scope_stack_fit;
                 int band_index = 0;
+                for (int ch = 0; ch < MAX_PROBES; ch++) { ui->scope_ch_shift[ch] = 0; ui->scope_ch_scale[ch] = scale; ui->scope_band_vdiv[ch] = ui->scope_volt_div; }
 
                 for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
                     if (!ui->scope_channels[ch].enabled) continue;
@@ -3620,13 +3624,25 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                         SDL_SetRenderDrawColor(renderer, 0x30, 0x48, 0x30, 0xff);
                         SDL_RenderDrawLine(renderer, r->x, ch_center, r->x + r->w, ch_center);
                         // Channel tag in its own colour
-                        char tag[16];
+                        char tag[24];
                         snprintf(tag, sizeof(tag), "CH%d", ch + 1);
+                        if (fit) {
+                            double v_lo = ui->scope_capture_values[ch][0], v_hi = v_lo;
+                            for (int i = 1; i < ui->scope_capture_count; i++) { double v = ui->scope_capture_values[ch][i]; if (v < v_lo) v_lo = v; if (v > v_hi) v_hi = v; }
+                            double amp = (v_hi - v_lo) / 2.0; if (amp < 0.01) amp = 0.01;   // DC / tiny: 10 mV floor keeps the band readable
+                            double vd = amp / 3.0;   // ~6 of the 8 divisions
+                            double dec = pow(10.0, floor(log10(vd))); double m = vd / dec;
+                            vd = (m <= 1.0 ? 1.0 : m <= 2.0 ? 2.0 : m <= 5.0 ? 5.0 : 10.0) * dec;
+                            ui->scope_band_vdiv[ch] = vd;
+                            ch_scale = (band_h / 8.0) / vd;
+                            char vs[16]; format_volt_value(vs, sizeof vs, vd);
+                            snprintf(tag, sizeof(tag), "CH%d %s/div", ch + 1, vs);
+                        }
                         SDL_SetRenderDrawColor(renderer,
                             ui->scope_channels[ch].color.r,
                             ui->scope_channels[ch].color.g,
                             ui->scope_channels[ch].color.b, 0xff);
-                        ui_draw_text(renderer, tag, r->x + r->w - 34, band_y + 3);
+                        ui_draw_text(renderer, tag, r->x + r->w - (fit ? 110 : 34), band_y + 3);
                     }
                     band_index++;
 
@@ -3650,6 +3666,10 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     double v_avg = v_sum / ui->scope_capture_count;
                     double v_range = v_max - v_min;
                     bool is_dc = (v_range < 0.01);  // Less than 10mV variation = DC
+                    if (ui->scope_ac_coupling || fit) offset -= v_avg;   // AC view / fitted band: centre on the channel's own mean
+                    else if (stacked && v_min >= -0.05 * ui->scope_volt_div) offset += 3.0 * ui->scope_volt_div;   // unipolar (logic) signal: put 0 V one division above the band bottom
+                    ui->scope_ch_shift[ch] = offset - ui->scope_channels[ch].offset;
+                    ui->scope_ch_scale[ch] = ch_scale;
 
                     // Calculate x range for the captured data
                     double x_frac_start = (ui->scope_capture_times[0] - t_reference) / display_time_span;
@@ -3726,7 +3746,8 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                             t_scale = (t_h / 8.0) / ui->scope_volt_div;
                         }
                     }
-                    int trig_y = t_center - (int)((ui->trigger_level + trig_offset) * t_scale);
+                    if (ui->scope_stacked && ui->scope_stack_fit) t_scale = ui->scope_ch_scale[trig_ch];
+                    int trig_y = t_center - (int)((ui->trigger_level + trig_offset + ui->scope_ch_shift[trig_ch]) * t_scale);
                     trig_y = CLAMP(trig_y, t_top, t_top + t_h);
 
                     SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);  // Orange
@@ -3991,6 +4012,11 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     // Stacked / overlay view toggle
     ui->btn_scope_stack.toggled = ui->scope_stacked;
     draw_button(renderer, &ui->btn_scope_stack);
+    ui->btn_scope_ac.toggled = ui->scope_ac_coupling;
+    draw_button(renderer, &ui->btn_scope_ac);
+    ui->btn_scope_fit.toggled = ui->scope_stack_fit;
+    ui->btn_scope_fit.enabled = ui->scope_stacked;
+    draw_button(renderer, &ui->btn_scope_fit);
     ui->btn_scope_track.toggled = ui->scope_track_sweep;
     draw_button(renderer, &ui->btn_scope_track);
 
@@ -4023,6 +4049,8 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     ui_draw_text(renderer, "VOLTS", r->x + 110, info_y);
     SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x00, 0xff);
     format_volt_value(buf, sizeof(buf), ui->scope_volt_div);
+    if (ui->scope_stacked && ui->scope_stack_fit) snprintf(buf, sizeof buf, "per-ch");
+    else if (ui->scope_ac_coupling) { size_t n = strlen(buf); snprintf(buf + n, sizeof buf - n, " AC"); }
     ui_draw_text(renderer, buf, r->x + 160, info_y);
 
     // Trigger readout: channel, level, edge, mode
@@ -6416,6 +6444,8 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_scope_stack.bounds) && ui->btn_scope_stack.enabled) {
             return UI_ACTION_SCOPE_STACK;
         }
+        if (point_in_rect(x, y, &ui->btn_scope_ac.bounds) && ui->btn_scope_ac.enabled) return UI_ACTION_SCOPE_AC;
+        if (point_in_rect(x, y, &ui->btn_scope_fit.bounds) && ui->btn_scope_fit.enabled) return UI_ACTION_SCOPE_FIT;
         if (point_in_rect(x, y, &ui->btn_scope_track.bounds) && ui->btn_scope_track.enabled) {
             return UI_ACTION_SCOPE_TRACK;
         }
@@ -6940,6 +6970,8 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
     ui->btn_scope_cursor.hovered = point_in_rect(x, y, &ui->btn_scope_cursor.bounds);
     ui->btn_scope_fft.hovered = point_in_rect(x, y, &ui->btn_scope_fft.bounds);
     ui->btn_scope_stack.hovered = point_in_rect(x, y, &ui->btn_scope_stack.bounds);
+    ui->btn_scope_ac.hovered = point_in_rect(x, y, &ui->btn_scope_ac.bounds);
+    ui->btn_scope_fit.hovered = point_in_rect(x, y, &ui->btn_scope_fit.bounds);
     ui->btn_scope_track.hovered = point_in_rect(x, y, &ui->btn_scope_track.bounds);
     ui->btn_scope_autoset.hovered = point_in_rect(x, y, &ui->btn_scope_autoset.bounds);
     ui->btn_bode.hovered = point_in_rect(x, y, &ui->btn_bode.bounds);
@@ -7080,7 +7112,7 @@ static void scope_button_list(UIState *ui, Button *out[SCOPE_BTN_N]) {
         &ui->btn_scope_tab[0], &ui->btn_scope_tab[1], &ui->btn_scope_tab[2],
         &ui->btn_scope_mode, &ui->btn_scope_screenshot,
         &ui->btn_scope_trig_mode, &ui->btn_scope_trig_edge, &ui->btn_scope_trig_ch, &ui->btn_scope_trig_up, &ui->btn_scope_trig_down,
-        &ui->btn_scope_fft, &ui->btn_bode, &ui->btn_mc,
+        &ui->btn_scope_fft, &ui->btn_bode, &ui->btn_mc, &ui->btn_scope_ac, &ui->btn_scope_fit,
     };
     memcpy(out, l, sizeof l);
 }
@@ -7128,11 +7160,11 @@ void ui_layout_scope_buttons(UIState *ui, int x0, int y0, int max_x) {
     for (int t = 0; t < 3; t++) PUT(&ui->btn_scope_tab[t], 62);
     // active tab row; everything else is hidden (zero bounds never hit-test or draw)
     y += row; x = x0;
-    HIDE(&ui->btn_scope_mode); HIDE(&ui->btn_scope_screenshot);
+    HIDE(&ui->btn_scope_mode); HIDE(&ui->btn_scope_screenshot); HIDE(&ui->btn_scope_ac); HIDE(&ui->btn_scope_fit);
     HIDE(&ui->btn_scope_trig_mode); HIDE(&ui->btn_scope_trig_edge); HIDE(&ui->btn_scope_trig_ch); HIDE(&ui->btn_scope_trig_up); HIDE(&ui->btn_scope_trig_down);
     HIDE(&ui->btn_scope_fft); HIDE(&ui->btn_bode); HIDE(&ui->btn_mc);
     switch (ui->scope_ctl_tab) {
-        case 0: PUT(&ui->btn_scope_mode, 40); PUT(&ui->btn_scope_screenshot, 40); break;
+        case 0: PUT(&ui->btn_scope_mode, 40); PUT(&ui->btn_scope_ac, 30); PUT(&ui->btn_scope_fit, 34); PUT(&ui->btn_scope_screenshot, 40); break;
         case 1: PUT(&ui->btn_scope_trig_mode, 45); PUT(&ui->btn_scope_trig_edge, 28); PUT(&ui->btn_scope_trig_ch, 35); PUT(&ui->btn_scope_trig_up, 24); PUT(&ui->btn_scope_trig_down, 24); break;
         default: PUT(&ui->btn_scope_fft, 35); PUT(&ui->btn_bode, 40); PUT(&ui->btn_mc, 25); break;
     }

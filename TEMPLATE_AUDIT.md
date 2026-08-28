@@ -878,6 +878,19 @@ Current status: 96/96 templates, 96/96 `--demo-test`, 86/86 `--probe-test`, 96/9
 (all six of #91–#96 are clean), `--osc-test` 9/9, `--param-test` all OK, `--tesla-test` 3/3, knob test 1182 runs 0 failed,
 `--probe-audit` 10/96 flagged — every flag physically expected (HP outputs SMALL at the start of a sweep, etc.; see the tool note).
 
+**Batch six (2026-08-27) — IC I/O & drivers, templates #97–#108, palette group "IC I/O & drivers" (11th).** What a GPIO pin is
+made of and how it talks to the world: push-pull / open-drain / open-collector outputs, the I2C wired-AND bus and level shifter,
+a debounced input, low- and high-side load switches, SPI / UART / RS-485 / SPMI signalling. Two simulator changes came out of the
+audit: (1) **BJT saturation** — the "ideal" BJT model stamped no base–collector junction, so a saturated transistor kept sinking
+β·I_B and pulled its collector to −1 kV (seen on #99); both junctions are now stamped in both modes (Ebers-Moll transport), all 86
+probe oracles unchanged. (2) **Scope AC / Fit** — Display tab: `AC` draws every trace minus its own mean; `Fit` (stacked view)
+scales each band to its own signal and centres it on its mean, with the V/div shown in the band tag. Amplifier templates (CE, CS,
+SF, 2-stage, diff pair, tuned, CB, Darlington, difference / instrumentation amp) preset Stack + Fit, so a 10 mV input and a 250 mV
+output riding on 6 V are both readable (the two-stage amp used to look flat at 5 V/div). Stacked unipolar (logic) signals put 0 V
+one division above the band bottom. **Multi-input circuits probe every input**: summing (V1, V2, V3), difference (V1, V2),
+instrumentation (V1, V2), superposition (12 V, 6 V), differential pair (base + both collectors — inputs reduced 50 → 10 mV so the
+pair stays linear; 50 mV saturates it into rounded squares, now stated in the text).
+
 Palette: Single-Tuned Amplifier, Common Base and Darlington Follower join **Transistors**; SR Latch (NOR) joins **Digital**;
 Power Plant (3-phase) and Transmission Substation join **Power systems**. Still 10 groups.
 
@@ -972,6 +985,67 @@ Common building blocks (`src/circuits.c`, batch 5):
 - **V:** **close the cap banks one at a time** (live) ⇒ only that phase recovers (+5.6 %) — Stack makes it obvious; the switching transient is a half-cycle bump (the capacitor charges through the feeder L: ring at 1/(2π √(57 mH · 6.1 µF)) ≈ 270 Hz, damped in ~2 cycles) · **open breaker A** ⇒ phase A feeder bus 0 V, B and C unchanged (grounded banks, no neutral coupling) · cap 6.1 → 12.2 µF (over-compensated, leading) ⇒ ≈ 113 kVpk, the bus is *above* nominal — the reason banks are switched by voltage · load L 0.22 → 0 (unity-pf load) ⇒ 112.7 · 171.5 / |175.9 + j26| ≈ 108.7 kVpk, and the cap bank then *raises* it further (leading) · load R 171.5 → 85.7 Ω (180 MW) ⇒ ≈ 89 kVpk, bank brings back ≈ +8 % · auto N 0.4 → 0.36 (tap −10 %) ⇒ everything × 0.9 · feeder 30 → 60 mi ⇒ 7.8 + j43.2 ⇒ ≈ 96 kVpk · `phase` / `frequency` as #95.
 - **M:** transformer `ideal` toggle: leakage j-ohms in series, bus −1–2 %. Line/feeder model 1 → 2 (π): line-charging 8 µS/mi × 50 mi and 6 µS/mi × 30 mi ⇒ +0.5 % (small Ferranti). Switch r_on 1 Ω on the cap branch: none (435 Ω). Capacitor ESR: none. Inductor DCR 5 Ω in the load: pf 0.89, −0.3 %.
 - **T:** as #95: dt auto ~100 µs, 5 ms/div shows 3 cycles; 20 ms/div to watch the bank-switching bump; the 270 Hz ring needs dt ≤ 200 µs to be visible — it is at the preset.
+
+
+### 97. Push-Pull Output — 3.3 V rail, `COMP_PULSE_SOURCE` 0/3.3 V 1 MHz (edges 1 % of period) → 100 Ω → gates of `COMP_PMOS` (w 200 µm, source on the rail) and `COMP_NMOS` (w 100 µm, source grounded); output node → 10 k ∥ 20 pF
+- **Demonstrates:** the CMOS totem-pole that every GPIO pin is made of: input HIGH ⇒ NMOS on / PMOS off ⇒ 0 V; input LOW ⇒ PMOS on ⇒ 3.3 V. Actively driven both ways, inverting; 20 pF is charged through R_DS(on) in ~ns.
+- **Demo:** `DEMO_WAVEFORM`, f_char 1 MHz (six periods, 6 µs). Probe: output (`COMP_RESISTOR` 1, term 0) — `--probe-test` "max" **3.3 V ±5 %**; source auto. Preset 200 ns/div, 1 V/div.
+- **N:** inverted 0–3.3 V square, edges < 20 ns, no overshoot (no line inductance). **V:** load 20 pF → 1 nF: edges become RC ramps (R_DS(on) ~30 Ω ⇒ 30 ns). Delete the PMOS ⇒ the output only falls (open-drain without a pull-up: floats). **M:** PMOS `w` 200 µm → 20 µm: rising edge 10× slower than falling (real CMOS pads size the PMOS ~2.5× the NMOS for this reason). **T:** dt 10 ns auto; 200 ns/div shows 2 periods; geometry note: one drawn crossing (PMOS source rail vs drain bus) — no node.
+
+### 98. Open-Drain + Pull-up — `COMP_NMOS` (w 100 µm) drain node with 4.7 k pull-up to 3.3 V and 100 pF; `COMP_PULSE_SOURCE` 0/3.3 V 200 kHz → 100 Ω → gate
+- **Demonstrates:** the pin can only pull LOW; HIGH is the pull-up charging the line, τ = 4.7 k × 100 pF = 470 ns — fast fall, slow exponential rise (the I2C / reset-line signature).
+- **Demo:** `DEMO_WAVEFORM`, f_char 200 kHz. Probe: drain (`COMP_RESISTOR` 1, term 1) — "max" **3.3 V ±5 %** at 30 µs. Preset 1 µs/div, 1 V/div.
+- **N:** 0 V for 2.5 µs (MOSFET on), then 3.3 (1 − e^(−t/470 ns)). **V:** C 100 pF → 1 nF (τ 4.7 µs): the line never reaches 3.3 V in 2.5 µs — the "too much bus capacitance" failure. R 4.7 k → 1 k: τ 100 ns, but the MOSFET now sinks 3.3 mA when low. **M:** NMOS `w` 100 → 10 µm: V_OL rises (weak pull-down). **T:** dt 50 ns auto.
+
+### 99. Open-Collector Level Shift — `COMP_PULSE_SOURCE` 0/3.3 V 100 kHz → 1 k → `COMP_NPN_BJT` base; collector pull-up 4.7 k to a **5 V** rail; 100 k receiver load
+- **Demonstrates:** a 3.3 V pin driving a 5 V line through an NPN: I_B = 2.6 mA, saturated ⇒ V_OL = V_CE(sat) ≈ 20 mV; HIGH = 5 V; inverted. **Found by this template:** the "ideal" BJT model had no base–collector junction, so a saturated transistor kept sinking β·I_B and drove its collector to −1 kV; the model now stamps both junctions (Ebers-Moll transport) in both modes — every BJT template re-verified (`--probe-test` 86/86 unchanged).
+- **Demo:** `DEMO_WAVEFORM`, f_char 100 kHz. Probe: collector (`COMP_RESISTOR` 1, term 1) — "max" **5.0 V ±5 %** at 60 µs. Preset 2 µs/div, 2 V/div.
+- **N:** 0/5 V square, inverted w.r.t. the 3.3 V input, V_OL ≈ 20 mV. **V:** base R 1 k → 100 k: I_B 26 µA, β·I_B = 2.6 mA > 1 mA still saturates; 1 M: V_OL rises to volts (linear region). Pull-up rail 5 V → 12 V: same waveform at 12 V (the point of the circuit). **M:** BJT `bf` 100 → 10 with 100 k base: no longer saturates. **T:** dt 100 ns auto.
+
+### 100. I2C Bus (wired-AND) — 3.3 V, 4.7 k pull-up, 200 pF bus; master `COMP_PULSE_SOURCE` 50 kHz 30 % and slave `COMP_PULSE_SOURCE` 20 kHz 20 % delayed 15 µs, each → 100 Ω → its own `COMP_NMOS` on SDA
+- **Demonstrates:** wired-AND: SDA is LOW whenever **either** open-drain device pulls; HIGH only when both release (ACK, clock stretching). Rise τ = 0.94 µs (standard-mode limit 1 µs at 100 kHz).
+- **Demo:** `DEMO_WAVEFORM`, f_char 20 kHz. Probe: SDA (`COMP_RESISTOR` 2, term 1) — "max" **3.3 V ±5 %** at 200 µs; master auto; **extra** slave pulse (`COMP_PULSE_SOURCE` 1). Preset 10 µs/div, 1 V/div, **Stack** (unipolar bands put 0 V one division above the bottom).
+- **N:** CH1 master 50 kHz bursts, CH3 slave pulse at 15 µs, CH2 SDA = NOT(CH1 OR CH3) with exponential rises. **V:** slave delay 15 → 0 µs: overlaps the master pull — the line stays low longer (that is the AND). Bus C 200 pF → 1 nF: rise 4.7 µs, the 6 µs master lows barely recover. **M:** `v_high` of the slave 3.3 → 1 V: its NMOS (Vth 0.7) barely turns on — a weak pull. **T:** dt 200 ns auto.
+
+### 101. I2C Level Shifter — NXP AN10441: `COMP_NMOS` (w 100 µm) gate on the 3.3 V rail, source on the 3.3 V bus (4.7 k pull-up, 50 pF), drain on the 5 V bus (4.7 k to a 5 V `COMP_DC_VOLTAGE`, 50 pF); low-side driver `COMP_NMOS` from a 100 kHz pulse
+- **Demonstrates:** idle both high, V_GS = 0 ⇒ off; the 3.3 V side pulled low ⇒ V_GS = 3.3 ⇒ on ⇒ the 5 V side follows to ~0; release ⇒ each pull-up restores its own rail. Bidirectional (body diode not modelled: the 5 V → 3.3 V direction relies on it in silicon).
+- **Demo:** `DEMO_WAVEFORM`, f_char 100 kHz. Probe: 5 V side (`COMP_RESISTOR` 2, term 1) — "max" **5.0 V ±5 %** at 40 µs; driver auto; **extra** 3.3 V side (`COMP_RESISTOR` 1, term 1). Preset 2 µs/div, 2 V/div, Stack.
+- **N:** CH1 0/3.3, CH3 3.3 V side 0/3.3 (RC rise 235 ns), CH2 5 V side 0/5 with the same timing. **V:** gate rail 3.3 → 1.8 V: the shifter now translates 1.8 ↔ 5 V; 5 V rail → 12 V: still works (the MOSFET only sees V_GS). **M:** shifter `w` 100 → 5 µm: V_OL on the 5 V side rises (R_DS(on) vs 4.7 k). **T:** dt 100 ns auto.
+
+### 102. GPIO Input + Debounce — 3.3 V, 10 k pull-up to the pin; `COMP_ANALOG_SWITCH` (r_on 1 Ω, v_on 2.5 V) from the pin to ground driven by a 50 Hz `COMP_PULSE_SOURCE` (10 ms press / 10 ms release); 10 k + 100 nF; `COMP_NOT_GATE` (v_high 3.3, threshold 1.65 V); 100 k load
+- **Demonstrates:** pull-up idles the pin HIGH, the button shorts it LOW; the RC (discharge τ 1 ms through 10 k, recharge τ 2 ms through both 10 k) filters contact bounce before the inverter; latency ≈ 1–2 ms; the pin itself ramps while the RC loads it.
+- **Demo:** `DEMO_WAVEFORM`, f_char 50. Probe: inverter output (`COMP_NOT_GATE` 0, term 1) — "max" **3.3 V ±5 %** at 40 ms; button pulse auto; **extra** pin (`COMP_RESISTOR` 0, term 1) and RC node (`COMP_CAPACITOR` 0, term 0). Preset 5 ms/div, 1 V/div, Stack.
+- **N:** CH1 button 0/3.3 (HIGH = pressed), CH3 pin 3.3 → 0 sharp, back with a 2 ms ramp, CH4 RC node exponential, CH2 inverter output the delayed inverse of the pin (HIGH while pressed). **V:** C 100 nF → 10 nF: latency 0.1 ms — and a 1 ms bounce would now get through; 1 µF: 20 ms, the 10 ms press is missed entirely. **M:** switch `r_on` 1 → 1 k: the pin only drops to 0.3 V (a dirty contact), still below 1.65 V. Threshold 1.65 → 3 V: output chatters near the ramp top. **T:** dt 50 µs auto (pulse-only circuit: scope rule).
+
+### 103. Low-side Switch + Flyback — 12 V rail → 50 Ω (5 W) + 10 mH coil → `COMP_NMOS` (w 1 mm) drain; source grounded; `COMP_DIODE` across the coil (cathode on the rail); gate from a 0/5 V 500 Hz pulse through 100 Ω
+- **Demonstrates:** the MCU-side switch for coils/motors/LED strings; on: drain ≈ 0, I = 12/50 = 240 mA (τ = L/R = 200 µs rise); off: the coil current commutates into the diode and the drain sits at 12 + 0.65 = 12.65 V while I decays with τ 200 µs, then 12 V. Delete the diode ⇒ the drain flies to kV (the model then limits at the MOSFET's numerical breakdown).
+- **Demo:** `DEMO_WAVEFORM`, f_char 500. Probe: drain (`COMP_INDUCTOR` 0, term 1) — "max" **12.6 V ±5 %** at 6 ms; gate auto. Preset 500 µs/div, 5 V/div.
+- **N:** drain 0 V for 1 ms, 12.65 V plateau for ~1 ms (decay), 12 V. **V:** gate 5 V → 3.3 V: V_GS − V_th = 2.6 V, K = 55 mA/V² ⇒ 370 mA limit, still saturates at 240 mA but with more V_DS; 2 V: linear-region heater. L 10 mH → 100 mH: the plateau lasts the whole off-time (τ 2 ms). **M:** NMOS `w` 1 mm → 100 µm: V_DS(on) ≈ 2 V, 0.5 W in the MOSFET. **T:** dt 20 µs auto; 500 µs/div shows 2.5 periods.
+
+### 104. High-side PMOS Switch — 12 V rail; `COMP_PMOS` (w 1 mm) source on the rail, drain → 100 Ω (3 W) load; gate pulled up 10 k, pulled down by `COMP_NPN_BJT` (base 10 k from a 0/3.3 V 500 Hz pulse)
+- **Demonstrates:** switching the rail side of a load from a 3.3 V pin: logic HIGH ⇒ NPN on ⇒ gate ≈ 0 ⇒ V_GS = −12 ⇒ PMOS on ⇒ load 11.8 V; logic LOW ⇒ gate 12 V ⇒ off. Two inversions ⇒ non-inverting.
+- **Demo:** `DEMO_WAVEFORM`, f_char 500. Probe: load (`COMP_RESISTOR` 2, term 0) — "max" **11.8 V ±5 %** at 6 ms; logic auto; **extra** PMOS gate (`COMP_RESISTOR` 1, term 1). Preset 500 µs/div, 5 V/div, Stack.
+- **N:** CH1 0/3.3, CH3 gate 12/0.05 V (inverted), CH2 load 0/11.8 V in phase with CH1. **V:** rail 12 → 24 V: still works (V_GS = −24; real parts have a ±20 V gate limit — add a zener/divider). Load 100 → 10 Ω: 1.2 A, V_DS drop visible. **M:** PMOS `w` 1 mm → 50 µm: load only reaches ~8 V (R_DS(on)). Base 10 k → 1 M: NPN starves, gate never fully drops. **T:** dt 20 µs auto. One drawn crossing (rail vs drain bus).
+
+### 105. SPI Lines — SCLK `COMP_PULSE_SOURCE` 0/3.3 V 10 MHz and MOSI 5 MHz (1010 pattern), each → 33 Ω → 200 pF (ribbon cable)
+- **Demonstrates:** series termination at the driver; τ = 33 × 200 p = 6.6 ns rounds every edge; at 10 MHz (50 ns half-period ≈ 7.6 τ) the clock still reaches both rails; 1 nF (long cable, τ 33 ns) would not.
+- **Demo:** `DEMO_WAVEFORM`, f_char 5 MHz. Probe: SCLK at the load (`COMP_CAPACITOR` 0, term 0) — "amp" **1.65 V ±8 %** at 1 µs; SCLK source auto; **extra** MOSI source (`COMP_PULSE_SOURCE` 1) and MOSI at load (`COMP_CAPACITOR` 1). Preset 50 ns/div, 1 V/div, Stack.
+- **N:** four bands: SCLK square / SCLK rounded, MOSI square / MOSI rounded, MOSI edges aligned to every second SCLK edge. **V:** C 200 pF → 1 nF: SCLK triangle-ish, peak ~2.5 V. R 33 → 0 Ω: instant edges (no cable inductance modelled, so no ringing — noted in the template text). **M:** SCLK 10 → 50 MHz: τ ≈ 0.66 half-period, clock amplitude collapses to ~1 V — "why long SPI cables fail". **T:** dt 1 ns (period/100).
+
+### 106. UART 5 V ↔ 3.3 V — TX5 `COMP_PULSE_SOURCE` 0/5 V 4.8 kHz (alternating bits at 9600 baud) → 1 k / 2 k divider → 10 pF RX pin; TX33 `COMP_PULSE_SOURCE` 0/3.3 V 4.8 kHz (delayed 52 µs) → `COMP_NOT_GATE` (v_high 5, threshold 2 V) → 100 k
+- **Demonstrates:** 5 V → 3.3 V needs the divider (3.33 V at the RX pin; 5 V straight in would forward-bias the ESD diode); 3.3 V → 5 V TTL needs nothing (V_IH = 2 V). Idle HIGH.
+- **Demo:** `DEMO_WAVEFORM`, f_char 4800. Probe: RX node (`COMP_RESISTOR` 1, term 0) — "max" **3.33 V ±5 %** at 1 ms; TX5 auto; **extra** TX33 (`COMP_PULSE_SOURCE` 1) and the 5 V receiver output (`COMP_NOT_GATE` 0, term 1). Preset 100 µs/div, 1 V/div, Stack.
+- **N:** CH1 0/5, CH2 0/3.33, CH3 0/3.3 (half a bit later), CH4 5/0 (inverted copy of CH3: the inverter is the receiver's input stage). **V:** divider 1 k/2 k → 1 k/1 k: 2.5 V — still ≥ V_IH(3.3 V CMOS) = 2 V but no margin. Threshold 2 → 3.5 V: the 3.3 V TX no longer registers (a 5 V CMOS input, V_IH = 3.5 V: the case where direct drive fails). **M:** RX C 10 pF → 10 nF with 667 Ω Thevenin: 6.7 µs rounding at 104 µs bits — fine; 100 nF: bits smear. **T:** dt 2 µs auto.
+
+### 107. RS-485 Differential Link — data `COMP_PULSE_SOURCE` 0/5 V 500 kHz = A; `COMP_NOT_GATE` (v_high 5, r_out 10 Ω) = B; 10 Ω line resistances; 120 Ω at the driver end and at the far end; two `COMP_AC_VOLTAGE` 1 Vpk 100 kHz in series with A and with B (same polarity: common-mode); receiver `sat_opamp` (gain 1e5, slew 1000 V/µs, rails 0/5 V) on A − B → 10 k
+- **Demonstrates:** differential signalling: each wire carries data + noise, the receiver sees only A − B (≈ ±3 V), output a clean 0/5 V copy; 1 V of common-mode noise (ground shift) vanishes.
+- **Demo:** `DEMO_WAVEFORM`, f_char 500 kHz. Probe: receiver out (`COMP_OPAMP` 0, term 2) — "amp" **2.5 V ±8 %** at 12 µs; data auto; **extra** A and B at the far termination (`COMP_RESISTOR` 3, terms 0 and 1). Preset 500 ns/div, 2 V/div, Stack.
+- **N:** CH1 data, CH3/CH4 A and B: complementary squares with the same 100 kHz wobble on both, CH2 clean 0/5 V. **V:** noise 1 → 3 Vpk: still clean (real receivers: −7…+12 V common-mode range). Far termination 120 Ω → open: no reflection model, so only the level changes (5 V instead of ~2.6 V at the far end — the driver sees 60 Ω vs 120 Ω). **M:** inverter `r_out` 10 → 1 k: B is weak, A − B shrinks but the comparator still resolves it. **T:** dt 20 ns auto. One drawn crossing (A to + input vs B to − input).
+
+### 108. SPMI Bus (1.8 V) — SCLK `COMP_PULSE_SOURCE` 0/1.8 V 5 MHz, SDATA 0/1.8 V 2.5 MHz delayed 50 ns, each → 33 Ω → 15 pF
+- **Demonstrates:** the MIPI two-wire 1.8 V SoC ↔ PMIC bus: 0.5 ns edges into an on-board load, 1.8 V swing ⇒ V_IH ≈ 1.2 V and ~0.6 V of noise margin. Arbitration / bus-keeper are protocol-level and not modelled (stated in the template text).
+- **Demo:** `DEMO_WAVEFORM`, f_char 2.5 MHz. Probe: SDATA at the load (`COMP_CAPACITOR` 1, term 0) — "amp" **0.9 V ±8 %** at 2 µs; SCLK auto; **extra** SCLK at load (`COMP_CAPACITOR` 0). Preset 50 ns/div, 0.5 V/div, Stack.
+- **N:** three bands of 1.8 V squares, SDATA changing 50 ns after the SCLK edge. **V:** C 15 pF → 150 pF: τ 5 ns, edges visible; 1.8 → 1.2 V rail: the same picture with 0.4 V of margin. **M:** SCLK 5 → 26 MHz (SPMI max): still square at 15 pF. **T:** dt 2 ns.
 
 ---
 
@@ -1075,5 +1149,17 @@ Common building blocks (`src/circuits.c`, batch 5):
 | 94 | SR Latch (NOR) | | | | | | | Q max 5 V at 0.5 ms oracle (caught the S/R swap); Stack 4 channels; overlap S = R is a documented race; pulse-only dt |
 | 95 | Power Plant (3-phase) | | | | | | | 259.6 kVpk ±6 %; open a breaker live; `l_series` 1.84 mH ⇒ ~150 kV; r_series stays in mΩ (18 kV side); fan-out 20 px trap |
 | 96 | Transmission Substation | | | | | | | 103 kVpk ±8 % banks open; close banks one at a time ⇒ +5.6 % per phase, 270 Hz bump; open a breaker; 12.2 µF over-compensates |
+| 97 | Push-Pull Output | | | | | | | 3.3 V max oracle; 20 pF → 1 nF ramps; delete the PMOS ⇒ floats high |
+| 98 | Open-Drain + Pull-up | | | | | | | 3.3 V max; τ 470 ns rise vs instant fall; 1 nF never recovers |
+| 99 | Open-Collector Level Shift | | | | | | | 5 V max; V_OL 20 mV; **BJT model fix** (B–C junction in ideal mode) found here |
+| 100 | I2C Bus (wired-AND) | | | | | | | 3.3 V max; SDA = NOT(master OR slave); 3 channels Stack |
+| 101 | I2C Level Shifter | | | | | | | 5 V max; 3.3 V side extra; works with 1.8 V gate rail |
+| 102 | GPIO Input + Debounce | | | | | | | 3.3 V max; pin / RC / output bands; 50 Hz press, τ 1 / 2 ms |
+| 103 | Low-side Switch + Flyback | | | | | | | 12.6 V clamp max; L/R 200 µs; 50 Ω rated 5 W (burn-test) |
+| 104 | High-side PMOS Switch | | | | | | | 11.8 V max; gate band 12/0 V; 100 Ω rated 3 W |
+| 105 | SPI Lines | | | | | | | 1.65 V amp at the load; 4 bands; 50 MHz collapses; demo run = 6 periods |
+| 106 | UART 5 V ↔ 3.3 V | | | | | | | 3.33 V max at RX; 4 bands; threshold 3.5 V case |
+| 107 | RS-485 Differential Link | | | | | | | 2.5 V amp at the receiver with 1 V common-mode noise; A/B far-end bands |
+| 108 | SPMI Bus (1.8 V) | | | | | | | 0.9 V amp at SDATA load; 3 bands; 26 MHz still square |
 
 (96 blocks = the 96 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`; #48-#65 follow the enum order after `CIRCUIT_PHASE_SHIFT_OSC`, #66-#72 the enum order after `CIRCUIT_DC_LINE_DROP`, #73-#81 the enum order after `CIRCUIT_HV_765_LINE`, #82-#90 the enum order after `CIRCUIT_RING_OSC`, #91-#96 the enum order after `CIRCUIT_OPAMP_SAT`.)

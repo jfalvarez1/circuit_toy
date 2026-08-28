@@ -608,6 +608,14 @@ void app_handle_events(App *app) {
                     ? "Scope: time/div tracks the sweeping source (~3 cycles per screen)"
                     : "Scope: time/div tracking off");
                 break;
+            case UI_ACTION_SCOPE_AC:
+                app->ui.scope_ac_coupling = !app->ui.scope_ac_coupling;
+                ui_set_status(&app->ui, app->ui.scope_ac_coupling ? "Scope: AC coupling (traces drawn minus their DC level; readouts stay DC)" : "Scope: DC coupling");
+                break;
+            case UI_ACTION_SCOPE_FIT:
+                app->ui.scope_stack_fit = !app->ui.scope_stack_fit;
+                ui_set_status(&app->ui, app->ui.scope_stack_fit ? "Scope: Fit - each stacked band scaled to its own signal" : "Scope: Fit off - bands share V/div");
+                break;
             case UI_ACTION_SCOPE_STACK:
                 // Toggle stacked (one band per channel) vs overlay view
                 app->ui.scope_stacked = !app->ui.scope_stacked;
@@ -1996,6 +2004,7 @@ bool app_place_template_centered(App *app, CircuitTemplateType type) {
     if (td > 0) { ui->scope_time_div = td; ui->scope_capture_valid = false; }
     double vd = circuit_template_scope_volt_div(type);
     if (vd > 0) ui->scope_volt_div = vd;
+    { int fl = circuit_template_scope_flags(type); ui->scope_ac_coupling = (fl & SCOPE_FLAG_AC) != 0; ui->scope_stacked = (fl & SCOPE_FLAG_STACK) != 0; ui->scope_stack_fit = (fl & SCOPE_FLAG_FIT) != 0; }
     ui->scope_auto_vdiv_pending = true;
     ui->scope_track_sweep = false;
     for (int i = 0; i < app->circuit->num_components; i++) {
