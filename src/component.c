@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include <ctype.h>   /* toupper, in component_apply_part */
 #include "component.h"
 
 // Global environment state (affects LDR and thermistor components)
