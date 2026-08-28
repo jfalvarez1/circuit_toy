@@ -188,6 +188,16 @@ typedef enum {
     CIRCUIT_CAP_DCBIAS,
     CIRCUIT_NE555_ASTABLE,
     CIRCUIT_PIERCE,
+    /* Interview prep: the questions a hardware interview actually asks. Nothing here
+       repeats a circuit that already exists elsewhere in the list - where the ground is
+       already covered, the notes name the template that covers it. */
+    CIRCUIT_IV_PROBE_COMP,
+    CIRCUIT_IV_PROBE_LOADING,
+    CIRCUIT_IV_GROUND_LEAD,
+    CIRCUIT_IV_SCOPE_INPUT_Z,
+    CIRCUIT_IV_AC_COUPLING,
+    CIRCUIT_IV_SHUNT_SENSE,
+    CIRCUIT_IV_KELVIN,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 
@@ -208,6 +218,10 @@ typedef enum {
     TG_GRID_STD,        // Reliability standards and simulation methods (NERC TPL/PRC/FAC, ERCOT BAL/NOGRR, CIP-014)
     TG_HARDWARE,        // Hardware engineering: switching converters, PDN, signal integrity, loop stability
     TG_IDEAL,           // Ideal vs real: the same circuit with a textbook part and with its real model
+    TG_IV_MEAS,         // Interview prep: instrumentation, probing and scope setup
+    TG_IV_FUND,         // Interview prep: analog fundamentals
+    TG_IV_POWER,        // Interview prep: converters and power delivery
+    TG_IV_SI,           // Interview prep: I/O, termination and signal integrity
     TG_COUNT
 } TemplateGroup;
 

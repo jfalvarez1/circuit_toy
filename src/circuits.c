@@ -317,6 +317,13 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_CAP_DCBIAS] = {"Ceramic DC Bias", "Cbias", "The same 10 uF X5R at 0, 2 and 5 V of bias", TG_IDEAL},
     [CIRCUIT_NE555_ASTABLE] = {"555 Astable", "555", "The 555 as a block, built from its own comparators and latch", TG_OSCILLATORS},
     [CIRCUIT_PIERCE] = {"Pierce Crystal Oscillator", "Pierce", "A real quartz model: it only oscillates between fs and fp", TG_OSCILLATORS},
+    [CIRCUIT_IV_PROBE_COMP] = {"Probe Compensation", "PrbCmp", "Under, correct and over, on the same 1 kHz square", TG_IV_MEAS},
+    [CIRCUIT_IV_PROBE_LOADING] = {"Probe Loading (1x vs 10x)", "PrbLd", "The probe is part of the circuit you are measuring", TG_IV_MEAS},
+    [CIRCUIT_IV_GROUND_LEAD] = {"Ground Lead Ringing", "GndLd", "6 inch clip vs spring tip: 119 MHz of ring that is not real", TG_IV_MEAS},
+    [CIRCUIT_IV_SCOPE_INPUT_Z] = {"Scope Input: 1 M vs 50 ohm", "InpZ", "The unterminated cable reads twice the amplitude", TG_IV_MEAS},
+    [CIRCUIT_IV_AC_COUPLING] = {"AC Coupling: 200 mV on 12 V", "ACcpl", "Finding ripple you cannot see at 5 V/div", TG_IV_MEAS},
+    [CIRCUIT_IV_SHUNT_SENSE] = {"Current Sense: High vs Low Side", "Isense", "Burden voltage, ground lift and common mode", TG_IV_MEAS},
+    [CIRCUIT_IV_KELVIN] = {"4-Wire (Kelvin) Sensing", "Kelvin", "10 mohm read as 110 mohm, and how to fix it", TG_IV_MEAS},
 
 
 
@@ -6276,6 +6283,13 @@ static int place_tesla_coil(Circuit *circuit, float x, float y);
 static int place_tesla_coil_big(Circuit *circuit, float x, float y);
 /* Every builder is declared before the dispatch switch below uses it. Without these the
    compiler declares them implicitly (MSVC C4013) and cannot check a single argument. */
+static int place_iv_probe_comp(Circuit *circuit, float x, float y);
+static int place_iv_probe_loading(Circuit *circuit, float x, float y);
+static int place_iv_ground_lead(Circuit *circuit, float x, float y);
+static int place_iv_scope_input_z(Circuit *circuit, float x, float y);
+static int place_iv_ac_coupling(Circuit *circuit, float x, float y);
+static int place_iv_shunt_sense(Circuit *circuit, float x, float y);
+static int place_iv_kelvin(Circuit *circuit, float x, float y);
 static int place_3ph_345_line(Circuit *circuit, float x, float y);
 static int place_3ph_rectifier(Circuit *circuit, float x, float y);
 static int place_3ph_unbalanced(Circuit *circuit, float x, float y);
@@ -6591,6 +6605,13 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_CAP_DCBIAS:         return place_cap_dcbias(circuit, x, y);
         case CIRCUIT_NE555_ASTABLE:      return place_ne555_astable(circuit, x, y);
         case CIRCUIT_PIERCE:             return place_pierce(circuit, x, y);
+        case CIRCUIT_IV_PROBE_COMP:      return place_iv_probe_comp(circuit, x, y);
+        case CIRCUIT_IV_PROBE_LOADING:   return place_iv_probe_loading(circuit, x, y);
+        case CIRCUIT_IV_GROUND_LEAD:     return place_iv_ground_lead(circuit, x, y);
+        case CIRCUIT_IV_SCOPE_INPUT_Z:   return place_iv_scope_input_z(circuit, x, y);
+        case CIRCUIT_IV_AC_COUPLING:     return place_iv_ac_coupling(circuit, x, y);
+        case CIRCUIT_IV_SHUNT_SENSE:     return place_iv_shunt_sense(circuit, x, y);
+        case CIRCUIT_IV_KELVIN:          return place_iv_kelvin(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6788,6 +6809,48 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "also rises with V_CE - the Early effect, I_C = I_S exp(V_BE/V_T)(1 + V_CE/V_AF) - so with V_AF = 80 V",
         "the current is ~9 % higher and the collector sits lower. It is the same effect that sets a stage's",
         "output resistance r_o = V_AF/I_C, so it is not a rounding error. PROBE: both collectors."},
+    [CIRCUIT_IV_PROBE_COMP] = {"PROBE COMPENSATION: a 10x probe is a 9M/1M divider, and a resistive divider is only",
+        "flat if the stray capacitance across each half divides the same way. The trimmer sets the",
+        "probe's own C so that 9M x Cp = 1M x 15 pF -> 1.67 pF. Under-compensated the edge rounds",
+        "with tau = 14 us; over-compensated it overshoots to 0.9 V and decays. Both are the probe,",
+        "not the circuit. Compensate on the CAL output in 10x - in 1x the trimmer is not in the",
+        "path. INTERVIEW: 'the scope shows ringing on a slow signal' - check this first."},
+    [CIRCUIT_IV_PROBE_LOADING] = {"PROBE LOADING: the probe is a capacitor you attach to the node. A 1 MHz square out of",
+        "10 k sees 5 pF of board stray on its own: tau = 50 ns. Hang a 1x probe (1M || 100 pF) on it",
+        "and tau becomes 1.05 us - the square is a triangle and the circuit never changed. A 10x probe",
+        "is 12 pF: tau = 170 ns, loaded but usable. That is the whole reason 10x is the default and",
+        "why you do not leave a probe in 1x for the bigger picture. INTERVIEW: 'why does the edge get",
+        "slower when you probe it' - and 'what would you use instead' (active or FET probe)."},
+    [CIRCUIT_IV_GROUND_LEAD] = {"GROUND LEAD RINGING: the signal goes down the probe and the return comes back through",
+        "the ground lead, and that loop has inductance. With the probe tip's 12 pF it is an LC tank at",
+        "f = 1/(2 pi sqrt(L C)). A 6 inch clip is about 150 nH: 119 MHz, right in the band you came to",
+        "measure, so every fast edge appears to ring. A half-inch spring tip is 15 nH: 375 MHz, above",
+        "the probe's own bandwidth, and the ring disappears. Nothing on the board changed. INTERVIEW:",
+        "'you see 100 MHz ringing on a 3.3 V edge - is it real?' Move the ground and find out."},
+    [CIRCUIT_IV_SCOPE_INPUT_Z] = {"SCOPE INPUT IMPEDANCE: a generator marked 1 V is 1 V INTO 50 OHMS - internally it is a",
+        "2 V source behind 50 ohms. Terminate the cable in the scope's 50 ohm input and you read 1 V.",
+        "Leave the scope on 1 M and the far end of the cable is open: the step reflects, adds to itself",
+        "and you read 2 V, with ringing from the cable resonating against the input capacitance. The",
+        "cable here is five L-C sections, Z0 = sqrt(15 nH / 6 pF) = 50 ohm, 1.5 ns of delay. INTERVIEW:",
+        "'the generator reads double' - and 'when may you NOT use the 50 ohm input?' (over 5 V, or DC)."},
+    [CIRCUIT_IV_AC_COUPLING] = {"AC COUPLING: 200 mVpp of ripple on a 12 V rail. DC-coupled you must fit 12 V on screen, so",
+        "at 5 V/div the ripple is a twentieth of a division and simply is not there. AC coupling puts",
+        "the scope's own 0.1 uF in series with its 1 M input - a high-pass at 1.6 Hz - which throws the",
+        "DC away so the gain can go to 50 mV/div and 200 mVpp becomes four divisions. The cost is that",
+        "the DC level is gone and anything under a few Hz is attenuated and phase-shifted. INTERVIEW:",
+        "'how would you measure 20 mV of ripple on a 12 V rail?' AC couple, and limit the bandwidth."},
+    [CIRCUIT_IV_SHUNT_SENSE] = {"CURRENT SENSE: 1 A through 100 mohm is 100 mV either way, but where the shunt goes decides",
+        "everything else. LOW SIDE (in the return) is single-ended and cheap, but the load's ground now",
+        "sits 100 mV above real ground and a short from the load to ground is invisible - no current",
+        "flows in the shunt. HIGH SIDE keeps the load grounded and sees that short, but the 100 mV rides",
+        "on 12 V of common mode, so it needs a difference amp and the CMRR of that amp becomes your",
+        "accuracy. Both pay the same burden voltage. INTERVIEW: asked at TI and Apple, almost verbatim."},
+    [CIRCUIT_IV_KELVIN] = {"4-WIRE (KELVIN) SENSING: 1 A forced through a 10 mohm shunt whose leads are 50 mohm each.",
+        "Measure at the connector and you read 110 mV: 110 mohm, eleven times the part, and the part is",
+        "the smallest thing in the measurement. Land two more wires directly on the resistor body and",
+        "feed them to a 10 M input: they carry no current, so their own 50 mohm drops nothing, and the",
+        "meter reads the 10 mV that is really across the part. This is why a milliohm meter and an LCR",
+        "bridge have four terminals, and why sense pads sit inside force pads. INTERVIEW: NI classic."},
     [CIRCUIT_PIERCE] = {"PIERCE CRYSTAL OSCILLATOR: an inverting amplifier with a pi network - C2, the crystal",
         "and C1 - closing the loop. The crystal is one component with a real quartz model: a motional",
         "arm (Ls 100 mH, Cs 25.33 pF, Rs 200) resonating at fs = 100.0 kHz with a Q of 314, in parallel",
@@ -11063,6 +11126,416 @@ static int place_ne555_astable(Circuit *circuit, float x, float y) {
     return 10;
 }
 
+/* =====================================================================================
+ * Interview prep: instrumentation and the oscilloscope.
+ *
+ * These are the measurement questions - the ones where the circuit is fine and the
+ * answer on the screen is wrong because of how it was measured. Every one of them is a
+ * real interview question at a company that builds or tests hardware, and every one is
+ * a mistake that costs a day in the lab the first time you make it.
+ *
+ * Nothing here duplicates an existing template: the signal-integrity templates
+ * (Signal Reflections, Impedance Matching, SPI Lines) are about what the BOARD does,
+ * and these are about what the INSTRUMENT does to what the board did.
+ * =================================================================================== */
+
+/* A 10x probe and a scope input, as a network: 9M in parallel with the compensation
+   trimmer, feeding the scope's 1M in parallel with its 15 pF. The divider is flat only
+   when 9M * Ccomp = 1M * 15 pF, i.e. Ccomp = 1.67 pF. */
+static void probe_channel(Circuit *circuit, float x, float y, double ccomp, int src_node, const char *tag) {
+    Component *rp = hres(circuit, x + 80, y, 9e6);                      // (40,0)-(120,0)
+    Component *cp = hcap(circuit, x + 80, y - 80, ccomp);               // (40,-80)-(120,-80)
+    int pl = TN(x + 40, y), pr = TN(x + 120, y);
+    int cl = TN(x + 40, y - 80), cr = TN(x + 120, y - 80);
+    TW(src_node, pl); TW(pl, cl); TW(pr, cr);
+    rp->node_ids[0] = pl; rp->node_ids[1] = pr;
+    cp->node_ids[0] = cl; cp->node_ids[1] = cr;
+
+    int tip = TN(x + 200, y);
+    TW(pr, tip);
+    Component *rin = vres(circuit, x + 200, y + 100, 1e6);              // (200,60)-(200,140)
+    Component *cin = vcap(circuit, x + 280, y + 100, 15e-12);           // (280,60)-(280,140)
+    int rt = TN(x + 200, y + 60), rb = TN(x + 200, y + 140);
+    int ct = TN(x + 280, y + 60), cb = TN(x + 280, y + 140);
+    TW(tip, rt); TW(rt, ct); TW(rb, cb);
+    rin->node_ids[0] = rt; rin->node_ids[1] = rb;
+    cin->node_ids[0] = ct; cin->node_ids[1] = cb;
+    Component *g = add_comp(circuit, COMP_GROUND, x + 200, y + 200, 0);
+    g->node_ids[0] = TN(x + 200, y + 180);
+    TW(rb, TN(x + 200, y + 180));
+    add_label(circuit, x + 340, y + 100, tag);
+}
+
+static int place_iv_probe_comp(Circuit *circuit, float x, float y) {
+    /* the scope's own CAL output: 1 kHz square, 0..5 V, out of about 1 k */
+    static const double ccomp[3] = { 0.8e-12, 1.67e-12, 3.3e-12 };
+    static const char *tag[3] = {
+        "UNDER-compensated (0.8 pF): the edge is rounded, tau = 14 us - you would report a slow driver that is not slow",
+        "CORRECT (1.67 pF): 9M x 1.67p = 1M x 15p, so the divider is 1/10 at every frequency and the top is flat",
+        "OVER-compensated (3.3 pF): the edge overshoots to 0.9 V and decays - you would report ringing that is not there"
+    };
+    for (int k = 0; k < 3; k++) {
+        float py = y + k * 320;
+        Component *cal = add_comp(circuit, COMP_SQUARE_WAVE, x, py + 60, 0);   // +(x,py+20) -(x,py+100)
+        if (!cal) return 0;
+        cal->props.square_wave.amplitude = 2.5; cal->props.square_wave.offset = 2.5;
+        cal->props.square_wave.frequency = 1000.0; cal->props.square_wave.duty = 0.5;
+        Component *gc = add_comp(circuit, COMP_GROUND, x, py + 160, 0);
+        connect_terminals(circuit, cal, 1, gc, 0);
+        int sp = TN(x, py + 20); cal->node_ids[0] = sp;
+        Component *rsrc = hres(circuit, x + 100, py + 20, 1000.0);             // (60,20)-(140,20)
+        int sl = TN(x + 60, py + 20), sr = TN(x + 140, py + 20);
+        TW(sp, sl); rsrc->node_ids[0] = sl; rsrc->node_ids[1] = sr;
+        probe_channel(circuit, x + 180, py + 20, ccomp[k], sr, tag[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "PROBE COMPENSATION: the same 1 kHz CAL square through three 10x probes - the only difference is the trimmer");
+    add_label(circuit, x - 40, y + 1000, "A 10x probe is a 9M/1M divider, and a divider made of resistors is only flat if the strays across them divide the");
+    add_label(circuit, x - 40, y + 1030, "same way. The trimmer sets the probe's own capacitance so that 9M x Cp equals 1M x 15 pF. Compensate on the");
+    add_label(circuit, x - 40, y + 1060, "CAL output before you trust an edge - and do it in 10x, never 1x: in 1x the trimmer is not in the path at all.");
+    add_label(circuit, x - 40, y + 1090, "ALSO SEE: Probe Loading (what the probe takes from the node) and Ground Lead Ringing (what the return adds).");
+    return 24;
+}
+
+static int place_iv_probe_loading(Circuit *circuit, float x, float y) {
+    /* 3.3 V, 1 MHz square out of 10 k with 5 pF of board stray: 50 ns natural edge */
+    static const double cprobe[3] = { 0.0, 100e-12, 12e-12 };
+    static const double rprobe[3] = { 0.0, 1e6, 10e6 };
+    static const char *tag[3] = {
+        "no probe: 10 k into the 5 pF of the board alone, tau = 50 ns - this is the edge that is really there",
+        "1x probe (1M || 100 pF): tau = 1.05 us. The 1 MHz square is now a triangle. The circuit did not change",
+        "10x probe (10M || 12 pF): tau = 170 ns. Still loaded, but you can see an edge - this is why 10x is the default"
+    };
+    for (int k = 0; k < 3; k++) {
+        float py = y + k * 260;
+        Component *src = add_comp(circuit, COMP_SQUARE_WAVE, x, py + 60, 0);
+        if (!src) return 0;
+        src->props.square_wave.amplitude = 1.65; src->props.square_wave.offset = 1.65;
+        src->props.square_wave.frequency = 1e6; src->props.square_wave.duty = 0.5;
+        Component *gs = add_comp(circuit, COMP_GROUND, x, py + 160, 0);
+        connect_terminals(circuit, src, 1, gs, 0);
+        int sp = TN(x, py + 20); src->node_ids[0] = sp;
+        Component *rs = hres(circuit, x + 100, py + 20, 10e3);
+        int sl = TN(x + 60, py + 20), sr = TN(x + 140, py + 20);
+        TW(sp, sl); rs->node_ids[0] = sl; rs->node_ids[1] = sr;
+        int node = TN(x + 220, py + 20); TW(sr, node);
+
+        Component *cstray = vcap(circuit, x + 220, py + 80, 5e-12);            // (220,20)-(220,140) wait: 40 tall each way
+        int st = TN(x + 220, py + 40), sb = TN(x + 220, py + 120);
+        TW(node, st); cstray->node_ids[0] = st; cstray->node_ids[1] = sb;
+        Component *g1 = add_comp(circuit, COMP_GROUND, x + 220, py + 180, 0);
+        g1->node_ids[0] = TN(x + 220, py + 160); TW(sb, TN(x + 220, py + 160));
+
+        if (cprobe[k] > 0) {
+            Component *rp = vres(circuit, x + 320, py + 80, rprobe[k]);
+            Component *cp = vcap(circuit, x + 400, py + 80, cprobe[k]);
+            int rt = TN(x + 320, py + 40), rb = TN(x + 320, py + 120);
+            int ct = TN(x + 400, py + 40), cb = TN(x + 400, py + 120);
+            TW(node, TN(x + 320, py + 20)); TW(TN(x + 320, py + 20), rt); TW(rt, ct); TW(rb, cb);
+            rp->node_ids[0] = rt; rp->node_ids[1] = rb;
+            cp->node_ids[0] = ct; cp->node_ids[1] = cb;
+            Component *g2 = add_comp(circuit, COMP_GROUND, x + 320, py + 180, 0);
+            g2->node_ids[0] = TN(x + 320, py + 160); TW(rb, TN(x + 320, py + 160));
+        }
+        add_label(circuit, x + 480, py + 80, tag[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "PROBE LOADING: one 1 MHz driver out of 10 k, measured three ways. The probe is part of the circuit");
+    add_label(circuit, x - 40, y + 820, "A probe is a capacitor you solder onto the node. On a 50 ohm node nobody notices; on a 10 k node a 1x probe's");
+    add_label(circuit, x - 40, y + 850, "100 pF is twenty times the board's own stray and the edge you came to measure is the probe's edge. Rule of");
+    add_label(circuit, x - 40, y + 880, "thumb: the probe must be small against the node's own C, or high against its R at the frequency of interest.");
+    add_label(circuit, x - 40, y + 910, "ALSO SEE: Probe Compensation, and Ideal vs Real Capacitor for what else a real part brings with it.");
+    return 20;
+}
+
+static int place_iv_ground_lead(Circuit *circuit, float x, float y) {
+    /* 12 pF of probe tip resonating with the inductance of the return path */
+    static const double lead[2] = { 150e-9, 15e-9 };
+    static const char *tag[2] = {
+        "6 inch ground clip, 150 nH: rings at 119 MHz. Every fast edge you probe will now have this on it",
+        "half inch spring tip, 15 nH: 375 MHz, above the probe's own bandwidth - the ring is simply not there"
+    };
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 300;
+        Component *src = add_comp(circuit, COMP_PULSE_SOURCE, x, py + 60, 0);
+        if (!src) return 0;
+        src->props.pulse_source.v_low = 0; src->props.pulse_source.v_high = 3.3;
+        src->props.pulse_source.pulse_width = 60e-9; src->props.pulse_source.period = 120e-9;
+        src->props.pulse_source.rise_time = 1e-9; src->props.pulse_source.fall_time = 1e-9;
+        Component *gs = add_comp(circuit, COMP_GROUND, x, py + 160, 0);
+        connect_terminals(circuit, src, 1, gs, 0);
+        int sp = TN(x, py + 20); src->node_ids[0] = sp;
+        Component *rs = hres(circuit, x + 100, py + 20, 50.0);
+        int sl = TN(x + 60, py + 20), sr = TN(x + 140, py + 20);
+        TW(sp, sl); rs->node_ids[0] = sl; rs->node_ids[1] = sr;
+        int tip = TN(x + 220, py + 20); TW(sr, tip);
+
+        Component *ctip = vcap(circuit, x + 220, py + 80, 12e-12);
+        int ct = TN(x + 220, py + 40), cb = TN(x + 220, py + 120);
+        TW(tip, ct); ctip->node_ids[0] = ct; ctip->node_ids[1] = cb;
+        Component *lg = add_comp(circuit, COMP_INDUCTOR, x + 220, py + 180, 90);   // (220,140)-(220,220)
+        lg->props.inductor.inductance = lead[k];
+        lg->props.inductor.dcr = 1.0;
+        int lt = TN(x + 220, py + 140), lb = TN(x + 220, py + 220);
+        TW(cb, lt); lg->node_ids[0] = lt; lg->node_ids[1] = lb;
+        Component *g2 = add_comp(circuit, COMP_GROUND, x + 220, py + 260, 0);
+        g2->node_ids[0] = TN(x + 220, py + 240); TW(lb, TN(x + 220, py + 240));
+        add_label(circuit, x + 300, py + 120, tag[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "GROUND LEAD RINGING: the same 1 ns edge into the same probe tip, with two different return paths");
+    add_label(circuit, x - 40, y + 640, "The signal goes down the probe and the return comes back through the ground lead, and that loop has inductance.");
+    add_label(circuit, x - 40, y + 670, "With the probe's 12 pF it is an LC tank: f = 1/(2 pi sqrt(L C)). A 6 inch clip puts it right in the band you are");
+    add_label(circuit, x - 40, y + 700, "trying to measure, so every edge appears to ring. Nothing on the board changed - shorten the return and it stops.");
+    add_label(circuit, x - 40, y + 730, "ALSO SEE: Signal Reflections and SPI Lines, where the ringing is real and the board is what has to change.");
+    return 14;
+}
+
+static int place_iv_scope_input_z(Circuit *circuit, float x, float y) {
+    /* a 50 ohm generator into 3 ft of 50 ohm coax (five LC sections), read two ways */
+    static const double rterm[2] = { 1e6, 50.0 };
+    static const char *tag[2] = {
+        "1 M input: the cable end is open, the edge doubles to 2 Vpk and rings. The generator is not putting out 2 V",
+        "50 ohm input: matched, 1 Vpk, flat. This is the setting the generator's amplitude is calibrated into"
+    };
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 340;
+        Component *src = add_comp(circuit, COMP_PULSE_SOURCE, x, py + 60, 0);
+        if (!src) return 0;
+        src->props.pulse_source.v_low = 0; src->props.pulse_source.v_high = 2.0;   /* 2 V open-circuit = 1 V into 50 */
+        src->props.pulse_source.pulse_width = 40e-9; src->props.pulse_source.period = 100e-9;
+        src->props.pulse_source.rise_time = 1e-9; src->props.pulse_source.fall_time = 1e-9;
+        Component *gs = add_comp(circuit, COMP_GROUND, x, py + 160, 0);
+        connect_terminals(circuit, src, 1, gs, 0);
+        int sp = TN(x, py + 20); src->node_ids[0] = sp;
+        Component *rout = hres(circuit, x + 100, py + 20, 50.0);
+        int sl = TN(x + 60, py + 20), sr = TN(x + 140, py + 20);
+        TW(sp, sl); rout->node_ids[0] = sl; rout->node_ids[1] = sr;
+
+        /* 3 ft of RG-58: 1.5 ns of delay as five L-C sections, Z0 = sqrt(L/C) = 50 ohm */
+        int prev = sr;
+        for (int s = 0; s < 5; s++) {
+            float sx = x + 220 + s * 160;
+            Component *ls = add_comp(circuit, COMP_INDUCTOR, sx, py + 20, 0);          // (sx-40,20)-(sx+40,20)
+            ls->props.inductor.inductance = 15e-9;
+            Component *cs = vcap(circuit, sx + 40, py + 80, 6e-12);
+            int a = TN(sx - 40, py + 20), b = TN(sx + 40, py + 20);
+            TW(prev, a); ls->node_ids[0] = a; ls->node_ids[1] = b;
+            int ct = TN(sx + 40, py + 40), cb = TN(sx + 40, py + 120);
+            TW(b, ct); cs->node_ids[0] = ct; cs->node_ids[1] = cb;
+            Component *gc = add_comp(circuit, COMP_GROUND, sx + 40, py + 180, 0);
+            gc->node_ids[0] = TN(sx + 40, py + 160); TW(cb, TN(sx + 40, py + 160));
+            prev = b;
+        }
+        Component *rin = vres(circuit, x + 1100, py + 80, rterm[k]);
+        int rt = TN(x + 1100, py + 40), rb = TN(x + 1100, py + 120);
+        TW(prev, TN(x + 1060, py + 20)); TW(TN(x + 1060, py + 20), TN(x + 1100, py + 20)); TW(TN(x + 1100, py + 20), rt);
+        rin->node_ids[0] = rt; rin->node_ids[1] = rb;
+        Component *g2 = add_comp(circuit, COMP_GROUND, x + 1100, py + 180, 0);
+        g2->node_ids[0] = TN(x + 1100, py + 160); TW(rb, TN(x + 1100, py + 160));
+        add_label(circuit, x + 1180, py + 80, tag[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "SCOPE INPUT: 1 M or 50 ohm. Same generator, same cable, two different answers");
+    add_label(circuit, x - 40, y + 740, "A signal generator marked 1 V is 1 V into 50 ohms - it is a 2 V source behind 50 ohms. Terminate the cable in");
+    add_label(circuit, x - 40, y + 770, "50 ohms and you read 1 V. Leave the scope on 1 M and the far end is open: the step reflects, adds to itself and");
+    add_label(circuit, x - 40, y + 800, "you read 2 V, with ringing from the cable's own resonance. The classic 'my generator is out of cal' bug report.");
+    add_label(circuit, x - 40, y + 830, "ALSO SEE: Signal Reflections and Impedance Matching - the same physics, in the board rather than the bench.");
+    return 30;
+}
+
+static int place_iv_ac_coupling(Circuit *circuit, float x, float y) {
+    /* 12 V rail with 40 mVpp of 100 kHz ripple on it, read DC-coupled and AC-coupled */
+    Component *rail = add_comp(circuit, COMP_DC_VOLTAGE, x, y + 60, 0);     // +(x,y+20) -(x,y+100)
+    if (!rail) return 0;
+    rail->props.dc_voltage.voltage = 12.0;
+    Component *gr = add_comp(circuit, COMP_GROUND, x, y + 160, 0);
+    connect_terminals(circuit, rail, 1, gr, 0);
+    int rp = TN(x, y + 20); rail->node_ids[0] = rp;
+    Component *ripple = add_comp(circuit, COMP_AC_VOLTAGE, x + 100, y + 20, 0);   // (60,20)-(140,20), in series
+    ripple->props.ac_voltage.amplitude = 0.1; ripple->props.ac_voltage.frequency = 100e3;
+    int a = TN(x + 60, y + 20), b = TN(x + 140, y + 20);
+    TW(rp, a); ripple->node_ids[0] = a; ripple->node_ids[1] = b;
+    int node = TN(x + 220, y + 20); TW(b, node);
+    Component *rload = vres(circuit, x + 220, y + 100, 1000.0);
+    int lt = TN(x + 220, y + 60), lb = TN(x + 220, y + 140);
+    TW(node, lt); rload->node_ids[0] = lt; rload->node_ids[1] = lb;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 220, y + 200, 0);
+    gl->node_ids[0] = TN(x + 220, y + 180); TW(lb, TN(x + 220, y + 180));
+
+    /* DC-coupled channel: straight to a 1 M input */
+    Component *rdc = vres(circuit, x + 360, y + 100, 1e6);
+    int dt = TN(x + 360, y + 60), db = TN(x + 360, y + 140);
+    TW(node, TN(x + 360, y + 20)); TW(TN(x + 360, y + 20), dt);
+    rdc->node_ids[0] = dt; rdc->node_ids[1] = db;
+    Component *gd = add_comp(circuit, COMP_GROUND, x + 360, y + 200, 0);
+    gd->node_ids[0] = TN(x + 360, y + 180); TW(db, TN(x + 360, y + 180));
+
+    /* AC-coupled channel: the scope's own 0.1 uF blocking cap ahead of the same 1 M */
+    Component *cblk = hcap(circuit, x + 520, y + 20, 0.1e-6);      // (480,20)-(560,20)
+    int cl = TN(x + 480, y + 20), cr = TN(x + 560, y + 20);
+    TW(node, cl); cblk->node_ids[0] = cl; cblk->node_ids[1] = cr;
+    Component *rac = vres(circuit, x + 640, y + 100, 1e6);
+    int at = TN(x + 640, y + 60), ab = TN(x + 640, y + 140);
+    TW(cr, TN(x + 640, y + 20)); TW(TN(x + 640, y + 20), at);
+    rac->node_ids[0] = at; rac->node_ids[1] = ab;
+    Component *ga = add_comp(circuit, COMP_GROUND, x + 640, y + 200, 0);
+    ga->node_ids[0] = TN(x + 640, y + 180); TW(ab, TN(x + 640, y + 180));
+
+    add_label(circuit, x - 40, y - 60, "AC COUPLING: 200 mVpp of ripple sitting on a 12 V rail - one node, two channels");
+    add_label(circuit, x + 300, y + 260, "DC-coupled: 12.00 V. At 5 V/div the ripple is a twentieth of a division");
+    add_label(circuit, x + 580, y + 260, "AC-coupled: 0 V mean. Now 50 mV/div fits, and 200 mVpp is four divisions");
+    add_label(circuit, x - 40, y + 340, "TRY IT: on the DC-coupled trace, work out what V/div you would need to see 200 mV on 12 V. You cannot - the rail");
+    add_label(circuit, x - 40, y + 370, "would be 60 divisions off screen before the ripple is one. AC coupling is a 0.1 uF cap into the 1 M input, a");
+    add_label(circuit, x - 40, y + 400, "high-pass at 1.6 Hz: it throws the DC away and keeps everything above it, so the gain can be turned all the way up.");
+    add_label(circuit, x - 40, y + 430, "The cost: you can no longer read the DC level, and anything slower than a couple of Hz is attenuated or shifted.");
+    add_label(circuit, x - 40, y + 460, "ALSO SEE: Power Delivery Network, where finding millivolts of ripple on a rail is the whole job.");
+    return 12;
+}
+
+static int place_iv_shunt_sense(Circuit *circuit, float x, float y) {
+    /* the same 12 V, 1 A load measured with a 100 mohm shunt, low side and high side */
+    Component *v1 = dc_rail(circuit, x, y, 12.0); if (!v1) return 0;
+    int rail1 = TN(x, y);
+    Component *rl1 = vres(circuit, x + 160, y + 220, 11.9);   // (160,180)-(160,260): 1 A with the shunt in series
+    rl1->props.resistor.power_rating = 15.0;                 /* a 12 W load, so rate it like one */
+    int l1t = TN(x + 160, y + 180), l1b = TN(x + 160, y + 260);
+    TW(rail1, TN(x + 160, y)); TW(TN(x + 160, y), l1t);
+    rl1->node_ids[0] = l1t; rl1->node_ids[1] = l1b;
+    Component *sh1 = vres(circuit, x + 160, y + 340, 0.1);    // (160,300)-(160,380): the LOW-SIDE shunt
+    int s1t = TN(x + 160, y + 300), s1b = TN(x + 160, y + 380);
+    TW(l1b, s1t); sh1->node_ids[0] = s1t; sh1->node_ids[1] = s1b;
+    Component *g1 = add_comp(circuit, COMP_GROUND, x + 160, y + 440, 0);
+    g1->node_ids[0] = TN(x + 160, y + 420); TW(s1b, TN(x + 160, y + 420));
+    add_label(circuit, x + 240, y + 300, "LOW SIDE: 100 mV across the shunt, referred to ground - a single-ended input reads it directly.");
+    add_label(circuit, x + 240, y + 330, "The price: the load's 'ground' now sits 100 mV up, and every other signal it shares is offset by that.");
+
+    /* high side: same shunt at the top of the rail, read by a difference amp */
+    float hx = x + 900;
+    Component *v2 = dc_rail(circuit, hx, y, 12.0);
+    int rail2 = TN(hx, y);
+    Component *sh2 = hres(circuit, hx + 100, y + 100, 0.1);   // (60,100)-(140,100): HIGH-SIDE shunt
+    int s2l = TN(hx + 60, y + 100), s2r = TN(hx + 140, y + 100);
+    TW(rail2, TN(hx + 60, y)); TW(TN(hx + 60, y), s2l);
+    sh2->node_ids[0] = s2l; sh2->node_ids[1] = s2r;
+    Component *rl2 = vres(circuit, hx + 200, y + 220, 11.9);
+    rl2->props.resistor.power_rating = 15.0;
+    int l2t = TN(hx + 200, y + 180), l2b = TN(hx + 200, y + 260);
+    TW(s2r, TN(hx + 200, y + 100)); TW(TN(hx + 200, y + 100), l2t);
+    rl2->node_ids[0] = l2t; rl2->node_ids[1] = l2b;
+    Component *g2 = add_comp(circuit, COMP_GROUND, hx + 200, y + 320, 0);
+    g2->node_ids[0] = TN(hx + 200, y + 300); TW(l2b, TN(hx + 200, y + 300));
+
+    /* difference amp, gain 20: 100 mV of difference on a 12 V common mode -> 2 V out */
+    Component *u = add_comp(circuit, COMP_OPAMP, hx + 500, y + 140, 0);   // -(460,120) +(460,160) out(540,140)
+    u->props.opamp.ideal = true; u->props.opamp.gain = 1e5;
+    Component *rin1 = hres(circuit, hx + 340, y + 120, 10e3);
+    Component *rin2 = hres(circuit, hx + 340, y + 160, 10e3);
+    Component *rfb = hres(circuit, hx + 500, y + 40, 200e3);
+    Component *rgn = vres(circuit, hx + 420, y + 240, 200e3);
+    int minus = TN(hx + 460, y + 120), plus = TN(hx + 460, y + 160);
+    int i1l = TN(hx + 300, y + 120), i1r = TN(hx + 380, y + 120);
+    int i2l = TN(hx + 300, y + 160), i2r = TN(hx + 380, y + 160);
+    /* load side to the inverting input, rail side to the non-inverting one, so a current
+       flowing INTO the load comes out of the amplifier positive */
+    TW(s2r, TN(hx + 140, y + 120)); TW(TN(hx + 140, y + 120), i1l);
+    TW(s2l, TN(hx + 60, y + 160)); TW(TN(hx + 60, y + 160), i2l);
+    TW(i1r, minus); TW(i2r, plus);
+    rin1->node_ids[0] = i1l; rin1->node_ids[1] = i1r;
+    rin2->node_ids[0] = i2l; rin2->node_ids[1] = i2r;
+    int out = TN(hx + 540, y + 140), o1 = TN(hx + 580, y + 140), o2 = TN(hx + 580, y + 40), fr = TN(hx + 540, y + 40), fl = TN(hx + 460, y + 40);
+    TW(out, o1); TW(o1, o2); TW(o2, fr); TW(fl, minus);
+    rfb->node_ids[0] = fl; rfb->node_ids[1] = fr;
+    int gt = TN(hx + 420, y + 200), gb = TN(hx + 420, y + 280);
+    TW(plus, TN(hx + 420, y + 160)); TW(TN(hx + 420, y + 160), gt);
+    rgn->node_ids[0] = gt; rgn->node_ids[1] = gb;
+    Component *g3 = add_comp(circuit, COMP_GROUND, hx + 420, y + 340, 0);
+    g3->node_ids[0] = TN(hx + 420, y + 320); TW(gb, TN(hx + 420, y + 320));
+    u->node_ids[0] = minus; u->node_ids[1] = plus; u->node_ids[2] = out;
+    add_label(circuit, hx + 620, y + 140, "HIGH SIDE: the load keeps a real ground, and a short to ground still shows up as current.");
+    add_label(circuit, hx + 620, y + 170, "The price: 100 mV of signal riding on 12 V of common mode - it takes a difference amp, and the");
+    add_label(circuit, hx + 620, y + 200, "CMRR of that amp is now your accuracy. Gain 20 here: 100 mV of shunt becomes 2 V at the output.");
+
+    add_label(circuit, x - 40, y - 100, "CURRENT SENSE: high side or low side. Same 1 A, same 100 mohm shunt, two different sets of problems");
+    add_label(circuit, x - 40, y + 560, "Interview answer: low side is cheap and single-ended but lifts the load's ground and cannot see a short to");
+    add_label(circuit, x - 40, y + 590, "ground; high side keeps the ground clean and catches that short, but needs common-mode rejection at the rail");
+    add_label(circuit, x - 40, y + 620, "voltage. Either way the shunt costs you burden voltage - 100 mV here - which is why it is not 1 ohm.");
+    add_label(circuit, x - 40, y + 650, "ALSO SEE: Difference Amp and Instrumentation Amp for the amplifier, and 4-Wire Sensing for the shunt itself.");
+    return 20;
+}
+
+static int place_iv_kelvin(Circuit *circuit, float x, float y) {
+    /* 1 A forced through a 10 mohm shunt that has 50 mohm of lead each side */
+    Component *isrc = add_comp(circuit, COMP_DC_CURRENT, x, y + 100, 0);   // (x,y+60)-(x,y+140)
+    if (!isrc) return 0;
+    isrc->props.dc_current.current = 1.0;
+    int itop = TN(x, y + 60), ibot = TN(x, y + 140);
+    isrc->node_ids[0] = ibot; isrc->node_ids[1] = itop;   /* source pushes 1 A up through the chain */
+    Component *gi = add_comp(circuit, COMP_GROUND, x, y + 200, 0);
+    gi->node_ids[0] = TN(x, y + 180); TW(ibot, TN(x, y + 180));
+
+    Component *lead1 = hres(circuit, x + 140, y + 60, 0.05);      // (100,60)-(180,60)
+    Component *rsh = hres(circuit, x + 300, y + 60, 0.010);       // (260,60)-(340,60): the part under test
+    Component *lead2 = hres(circuit, x + 460, y + 60, 0.05);      // (420,60)-(500,60)
+    int a = TN(x + 100, y + 60), b = TN(x + 180, y + 60), c = TN(x + 260, y + 60), d = TN(x + 340, y + 60), e = TN(x + 420, y + 60), f = TN(x + 500, y + 60);
+    TW(itop, a); TW(b, c); TW(d, e);
+    lead1->node_ids[0] = a; lead1->node_ids[1] = b;
+    rsh->node_ids[0] = c; rsh->node_ids[1] = d;
+    lead2->node_ids[0] = e; lead2->node_ids[1] = f;
+    Component *gf = add_comp(circuit, COMP_GROUND, x + 560, y + 60, 0);
+    gf->node_ids[0] = TN(x + 540, y + 60); TW(f, TN(x + 540, y + 60));
+
+    /* 2-wire: measure at the connector, outside both leads */
+    Component *m2 = vres(circuit, x + 100, y + 220, 10e6);
+    int m2t = TN(x + 100, y + 180), m2b = TN(x + 100, y + 260);
+    TW(a, TN(x + 100, y + 100)); TW(TN(x + 100, y + 100), m2t);
+    m2->node_ids[0] = m2t; m2->node_ids[1] = m2b;
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 100, y + 320, 0);
+    g2->node_ids[0] = TN(x + 100, y + 300); TW(m2b, TN(x + 100, y + 300));
+
+    /* 4-wire: two more leads land on the body of the part and go to a differential input.
+       They have the same 50 mohm, but they carry no current, so they drop nothing - and the
+       input has to be differential, because neither sense point is at ground. */
+    Component *s1 = vres(circuit, x + 260, y + 200, 0.05);        // sense lead from the shunt's high side
+    Component *s2 = vres(circuit, x + 340, y + 200, 0.05);        // sense lead from its low side
+    int s1t = TN(x + 260, y + 160), s1b = TN(x + 260, y + 240);
+    int s2t = TN(x + 340, y + 160), s2b = TN(x + 340, y + 240);
+    TW(c, TN(x + 260, y + 100)); TW(TN(x + 260, y + 100), s1t);
+    TW(d, TN(x + 340, y + 100)); TW(TN(x + 340, y + 100), s2t);
+    s1->node_ids[0] = s1t; s1->node_ids[1] = s1b;
+    s2->node_ids[0] = s2t; s2->node_ids[1] = s2b;
+
+    Component *u = add_comp(circuit, COMP_OPAMP, x + 500, y + 360, 0);   // -(460,340) +(460,380) out(540,360)
+    u->props.opamp.ideal = true; u->props.opamp.gain = 1e5;
+    Component *ri1 = hres(circuit, x + 380, y + 340, 100e3);
+    Component *ri2 = hres(circuit, x + 380, y + 380, 100e3);
+    Component *rf = hres(circuit, x + 500, y + 260, 100e3);
+    Component *rg = vres(circuit, x + 420, y + 460, 100e3);
+    int minus = TN(x + 460, y + 340), plus = TN(x + 460, y + 380);
+    int i1l = TN(x + 340, y + 340), i1r = TN(x + 420, y + 340);
+    int i2l = TN(x + 340, y + 380), i2r = TN(x + 420, y + 380);
+    TW(s2b, TN(x + 340, y + 300)); TW(TN(x + 340, y + 300), i1l);
+    TW(s1b, TN(x + 260, y + 380)); TW(TN(x + 260, y + 380), i2l);
+    TW(i1r, minus); TW(i2r, plus);
+    ri1->node_ids[0] = i1l; ri1->node_ids[1] = i1r;
+    ri2->node_ids[0] = i2l; ri2->node_ids[1] = i2r;
+    int out = TN(x + 540, y + 360), o1 = TN(x + 580, y + 360), o2 = TN(x + 580, y + 260), fr = TN(x + 540, y + 260), fl = TN(x + 460, y + 260);
+    TW(out, o1); TW(o1, o2); TW(o2, fr); TW(fl, minus);
+    rf->node_ids[0] = fl; rf->node_ids[1] = fr;
+    int gt = TN(x + 420, y + 420), gb = TN(x + 420, y + 500);
+    TW(plus, TN(x + 420, y + 380)); TW(TN(x + 420, y + 380), gt);
+    rg->node_ids[0] = gt; rg->node_ids[1] = gb;
+    Component *g4 = add_comp(circuit, COMP_GROUND, x + 420, y + 560, 0);
+    g4->node_ids[0] = TN(x + 420, y + 540); TW(gb, TN(x + 420, y + 540));
+    u->node_ids[0] = minus; u->node_ids[1] = plus; u->node_ids[2] = out;
+
+    add_label(circuit, x - 40, y - 60, "4-WIRE (KELVIN) SENSING: 1 A through a 10 mohm shunt with 50 mohm of lead at each end");
+    add_label(circuit, x + 620, y + 220, "2-wire: 110 mV at the connector -> 110 mohm. The leads are ten times the part");
+    add_label(circuit, x + 620, y + 360, "4-wire: the difference amp reads 10 mV -> 10 mohm. The sense leads carry no");
+    add_label(circuit, x + 620, y + 390, "current, so their own 50 mohm drops nothing - and the reading is the part");
+    add_label(circuit, x - 40, y + 560, "The force leads carry the current and the sense leads carry none, so IR drop in the sense path is zero and what");
+    add_label(circuit, x - 40, y + 590, "the meter sees is the part. This is why a milliohm meter, an LCR bridge and a good shunt all have four terminals,");
+    add_label(circuit, x - 40, y + 620, "and why a current-sense resistor is laid out with its sense pads inside its force pads.");
+    add_label(circuit, x - 40, y + 650, "ALSO SEE: High-side vs Low-side Current Sense, and Line Drop Basics for the same IR drop at another scale.");
+    return 22;
+}
+
 #undef TN
 #undef TW
 
@@ -11227,6 +11700,13 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_CAP_DCBIAS]       = { COMP_CAPACITOR, 0, 0 },
     [CIRCUIT_NE555_ASTABLE]    = { COMP_RESISTOR, 2, 0 },
     [CIRCUIT_PIERCE]           = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_IV_PROBE_COMP]    = { COMP_RESISTOR, 5, 0 },     /* the correctly compensated channel's scope input */
+    [CIRCUIT_IV_PROBE_LOADING] = { COMP_CAPACITOR, 0, 0 },    /* the unprobed node */
+    [CIRCUIT_IV_GROUND_LEAD]   = { COMP_CAPACITOR, 0, 0 },    /* probe tip, 6 inch clip */
+    [CIRCUIT_IV_SCOPE_INPUT_Z] = { COMP_RESISTOR, 1, 0 },     /* the 1 M input at the end of the cable */
+    [CIRCUIT_IV_AC_COUPLING]   = { COMP_RESISTOR, 2, 0 },     /* the AC-coupled channel */
+    [CIRCUIT_IV_SHUNT_SENSE]   = { COMP_OPAMP, 0, 2 },        /* high-side difference amp output */
+    [CIRCUIT_IV_KELVIN]        = { COMP_OPAMP, 0, 2 },        /* the 4-wire differential reading */
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -11349,6 +11829,9 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_ID_SOURCE] = 1e-3, [CIRCUIT_ID_DIODE] = 200e-6, [CIRCUIT_ID_CAP] = 10e-6,
     [CIRCUIT_ID_IND] = 200e-6, [CIRCUIT_ID_OPAMP] = 2e-6, [CIRCUIT_ID_BJT] = 1e-3, [CIRCUIT_ID_MOSFET] = 1e-3,
     [CIRCUIT_ID_OPAMP_ERR] = 1e-3, [CIRCUIT_PARTS_MOSFET] = 1e-3, [CIRCUIT_CAP_DCBIAS] = 10e-6, [CIRCUIT_NE555_ASTABLE] = 100e-6, [CIRCUIT_PIERCE] = 5e-6,
+    [CIRCUIT_IV_PROBE_COMP] = 200e-6, [CIRCUIT_IV_PROBE_LOADING] = 200e-9,
+    [CIRCUIT_IV_GROUND_LEAD] = 20e-9, [CIRCUIT_IV_SCOPE_INPUT_Z] = 20e-9,
+    [CIRCUIT_IV_AC_COUPLING] = 2e-6, [CIRCUIT_IV_SHUNT_SENSE] = 1e-3, [CIRCUIT_IV_KELVIN] = 1e-3,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -11395,6 +11878,9 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_ID_SOURCE] = 1.0, [CIRCUIT_ID_DIODE] = 0.2, [CIRCUIT_ID_CAP] = 0.1,
     [CIRCUIT_ID_IND] = 2.0, [CIRCUIT_ID_OPAMP] = 0.5, [CIRCUIT_ID_BJT] = 2.0, [CIRCUIT_ID_MOSFET] = 2.0,
     [CIRCUIT_ID_OPAMP_ERR] = 0.5, [CIRCUIT_PARTS_MOSFET] = 0.1, [CIRCUIT_CAP_DCBIAS] = 0.05, [CIRCUIT_NE555_ASTABLE] = 1.0, [CIRCUIT_PIERCE] = 5.0,
+    [CIRCUIT_IV_PROBE_COMP] = 0.2, [CIRCUIT_IV_PROBE_LOADING] = 1.0,
+    [CIRCUIT_IV_GROUND_LEAD] = 1.0, [CIRCUIT_IV_SCOPE_INPUT_Z] = 0.5,
+    [CIRCUIT_IV_AC_COUPLING] = 0.05, [CIRCUIT_IV_SHUNT_SENSE] = 0.5, [CIRCUIT_IV_KELVIN] = 0.05,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -11562,6 +12048,13 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_CAP_DCBIAS]       = { DEMO_WAVEFORM, 20e3 },
     [CIRCUIT_NE555_ASTABLE]    = { DEMO_OSC, 4800 },
     [CIRCUIT_PIERCE]           = { DEMO_OSC, 100000 },
+    [CIRCUIT_IV_PROBE_COMP]    = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_IV_PROBE_LOADING] = { DEMO_WAVEFORM, 1000000 },
+    [CIRCUIT_IV_GROUND_LEAD]   = { DEMO_WAVEFORM, 8333333 },
+    [CIRCUIT_IV_SCOPE_INPUT_Z] = { DEMO_WAVEFORM, 10000000 },
+    [CIRCUIT_IV_AC_COUPLING]   = { DEMO_WAVEFORM, 100000 },
+    [CIRCUIT_IV_SHUNT_SENSE]   = { DEMO_DC, 0 },
+    [CIRCUIT_IV_KELVIN]        = { DEMO_DC, 0 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -11606,6 +12099,11 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_CAP_DCBIAS] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_NE555_ASTABLE] = SCOPE_FLAG_STACK,
     [CIRCUIT_PIERCE] = SCOPE_FLAG_AC,
+    [CIRCUIT_IV_PROBE_COMP] = SCOPE_FLAG_STACK,
+    [CIRCUIT_IV_PROBE_LOADING] = SCOPE_FLAG_STACK,
+    [CIRCUIT_IV_GROUND_LEAD] = SCOPE_FLAG_STACK,
+    [CIRCUIT_IV_SCOPE_INPUT_Z] = SCOPE_FLAG_STACK,
+    [CIRCUIT_IV_AC_COUPLING] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */
     [CIRCUIT_COLPITTS] = SCOPE_FLAG_AC, [CIRCUIT_HARTLEY] = SCOPE_FLAG_AC, [CIRCUIT_CLAPP] = SCOPE_FLAG_AC,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
@@ -11737,7 +12235,9 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
 
 const char *circuit_template_group_name(TemplateGroup g) {
     static const char *names[TG_COUNT] = {
-        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients", "IC I/O & drivers", "Residential & commercial", "Grid standards & methods", "Hardware engineering", "Ideal vs real models"
+        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients", "IC I/O & drivers", "Residential & commercial", "Grid standards & methods", "Hardware engineering", "Ideal vs real models",
+        "Interview: instrumentation & scope", "Interview: fundamentals",
+        "Interview: power & converters", "Interview: I/O & signal integrity"
     };
     return (g >= 0 && g < TG_COUNT) ? names[g] : "?";
 }
