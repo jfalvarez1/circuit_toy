@@ -980,6 +980,12 @@ circuit_toy/
   a block with a voltage source inside it, and a block nested inside another block, which is
   expanded to eight levels deep.
 
+- **SPICE import covers the passive subset.** `.SUBCKT` bodies made of R, L, C and `X`
+  instances import and simulate; `.MODEL` cards, semiconductor instances, `.PARAM`
+  expressions and parameterised subcircuits do not, and each unsupported line is counted and
+  named in the import summary rather than being silently dropped. Import is on the command
+  line (`--import-spice`); there is no "Import model..." button in the properties panel yet.
+
 - **Current flow display** - the animation traces paths from sources to ground, sizing and
   timing each dot from the solved terminal currents, and `--flow-test` checks KCL at every
   node, conservation around each loop and equal current along a series path for all 161
