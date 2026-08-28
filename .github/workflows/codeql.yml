@@ -36,6 +36,11 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: c-cpp
+          # The build is spelled out below rather than autobuilt. Without this, CodeQL compiled
+          # all 562 targets and still reported "could not process any of it": meson shells out
+          # to ninja which shells out to cl, and the tracer has to be told that the step after
+          # init IS the build.
+          build-mode: manual
 
       - name: Build
         run: |
