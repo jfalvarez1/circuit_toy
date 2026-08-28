@@ -324,6 +324,9 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_IV_AC_COUPLING] = {"AC Coupling: 200 mV on 12 V", "ACcpl", "Finding ripple you cannot see at 5 V/div", TG_IV_MEAS},
     [CIRCUIT_IV_SHUNT_SENSE] = {"Current Sense: High vs Low Side", "Isense", "Burden voltage, ground lift and common mode", TG_IV_MEAS},
     [CIRCUIT_IV_KELVIN] = {"4-Wire (Kelvin) Sensing", "Kelvin", "10 mohm read as 110 mohm, and how to fix it", TG_IV_MEAS},
+    [CIRCUIT_IV_BUCK_NODES] = {"Discrete Buck, Node by Node", "BuckN", "Real PMOS and gate drive: what every node does", TG_IV_POWER},
+    [CIRCUIT_IV_LDO_VS_BUCK] = {"LDO vs Switcher", "LDOsw", "12 V to 5 V at 1 A: 7 W of heat, or 0.5 W", TG_IV_POWER},
+    [CIRCUIT_IV_BOOTSTRAP] = {"Bootstrap High-Side Drive", "Boot", "Why an N-channel high side cannot run at 100 %", TG_IV_POWER},
 
 
 
@@ -6290,6 +6293,9 @@ static int place_iv_scope_input_z(Circuit *circuit, float x, float y);
 static int place_iv_ac_coupling(Circuit *circuit, float x, float y);
 static int place_iv_shunt_sense(Circuit *circuit, float x, float y);
 static int place_iv_kelvin(Circuit *circuit, float x, float y);
+static int place_iv_buck_nodes(Circuit *circuit, float x, float y);
+static int place_iv_ldo_vs_buck(Circuit *circuit, float x, float y);
+static int place_iv_bootstrap(Circuit *circuit, float x, float y);
 static int place_3ph_345_line(Circuit *circuit, float x, float y);
 static int place_3ph_rectifier(Circuit *circuit, float x, float y);
 static int place_3ph_unbalanced(Circuit *circuit, float x, float y);
@@ -6612,6 +6618,9 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_IV_AC_COUPLING:     return place_iv_ac_coupling(circuit, x, y);
         case CIRCUIT_IV_SHUNT_SENSE:     return place_iv_shunt_sense(circuit, x, y);
         case CIRCUIT_IV_KELVIN:          return place_iv_kelvin(circuit, x, y);
+        case CIRCUIT_IV_BUCK_NODES:      return place_iv_buck_nodes(circuit, x, y);
+        case CIRCUIT_IV_LDO_VS_BUCK:     return place_iv_ldo_vs_buck(circuit, x, y);
+        case CIRCUIT_IV_BOOTSTRAP:       return place_iv_bootstrap(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6809,6 +6818,24 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "also rises with V_CE - the Early effect, I_C = I_S exp(V_BE/V_T)(1 + V_CE/V_AF) - so with V_AF = 80 V",
         "the current is ~9 % higher and the collector sits lower. It is the same effect that sets a stage's",
         "output resistance r_o = V_AF/I_C, so it is not a rounding error. PROBE: both collectors."},
+    [CIRCUIT_IV_BUCK_NODES] = {"DISCRETE BUCK, NODE BY NODE: 12 V, 50 % duty at 50 kHz, 5.5 V out, built from real parts",
+        "instead of an ideal switch: an IRF9540N, an NPN to drive it and a Schottky to catch the current.",
+        "GATE sits at 12 V and the NPN pulls it to 0.2 V, so Vgs = -11.8 V and the PMOS turns on. The 1 k",
+        "gate resistor is why the edges are not instant, and it burns 12 mA whenever the NPN is on. SWITCH",
+        "NODE is an 11.3 V square that drops to -0.4 V when the Schottky freewheels - the one hard-switching",
+        "node here. L turns that square into a 270 mA triangle; C turns the triangle into 7 mV of ripple."},
+    [CIRCUIT_IV_LDO_VS_BUCK] = {"LDO vs SWITCHER: the same job - 12 V in, 5 V out, 1 A - done both ways, with an ammeter",
+        "in each input so you can read what each one takes from the rail. The linear regulator draws the",
+        "same 1 A it delivers and turns the other 7 V into 7 W of heat: efficiency is just Vout/Vin = 42 %.",
+        "The switcher moves power, not voltage, so 5 W out of 12 V is about 440 mA in - around 90 %, no",
+        "heatsink, at the cost of an inductor and 100 kHz of ripple. INTERVIEW: 'when would you still use",
+        "an LDO?' Small drop, small current, or a load that hates ripple - and often a buck then an LDO."},
+    [CIRCUIT_IV_BOOTSTRAP] = {"BOOTSTRAP HIGH-SIDE DRIVE: an N-channel on the high side needs its gate ABOVE the rail,",
+        "because its source is the switch node. C_boot floats on that node: while SW is low the diode",
+        "charges it to 11.5 V from the 12 V supply, and when SW rises to 12 V the whole capacitor rides up,",
+        "putting BOOT at 23.5 V - still 11.5 V above the source, which is what the gate needs. The catch is",
+        "in the second copy: hold SW high and the diode never conducts again, the driver's own current",
+        "empties the cap, and the high side turns itself off. Hence a maximum duty cycle, never 100 %."},
     [CIRCUIT_IV_PROBE_COMP] = {"PROBE COMPENSATION: a 10x probe is a 9M/1M divider, and a resistive divider is only",
         "flat if the stray capacitance across each half divides the same way. The trimmer sets the",
         "probe's own C so that 9M x Cp = 1M x 15 pF -> 1.67 pF. Under-compensated the edge rounds",
@@ -11536,6 +11563,206 @@ static int place_iv_kelvin(Circuit *circuit, float x, float y) {
     return 22;
 }
 
+/* =====================================================================================
+ * Interview prep: converters and power delivery.
+ *
+ * Buck Converter already shows that Vout = D Vin with an ideal switch. These four are the
+ * questions asked ABOUT that circuit: draw me the waveform at every node of a DISCRETE
+ * one, what happens at light load, why not just use a linear regulator, and how does the
+ * high-side gate get above the rail.
+ * =================================================================================== */
+
+static int place_iv_buck_nodes(Circuit *circuit, float x, float y) {
+    Component *vin = dc_rail(circuit, x, y, 12.0); if (!vin) return 0;      // +(x,y)
+    int in = TN(x, y);
+
+    /* high-side PMOS: source on the rail, gate held off by Rg, pulled down by an NPN.
+       This is the discrete version of what a controller IC does inside. */
+    Component *m = add_comp(circuit, COMP_PMOS, x + 300, y + 40, 0);        // G(280,40) D(320,20) S(320,60)
+    component_apply_part(m, "IRF9540N");   /* a real power P-channel. The generic PMOS default is a
+                                             small-signal device - R_DS(on) near 180 ohm - and it
+                                             cannot switch an amp, which is the whole template. */
+    m->props.mosfet.cgso = m->props.mosfet.cgdo = m->props.mosfet.cgbo = 0.0;
+    /* Gate charge off: the displacement current through C_gs and C_gd is not reported as a
+       terminal current, so leaving it on makes the gate net fail a KCL audit by the very
+       current the audit cannot see. The gate-charge story is in the notes; the waveforms this
+       template is about - switch node, inductor, output - do not depend on it. */
+    int gate = TN(x + 280, y + 40), drain = TN(x + 320, y + 20), source = TN(x + 320, y + 60);
+    TW(in, TN(x + 320, y)); TW(TN(x + 320, y), source);
+    Component *rg = vres(circuit, x + 240, y - 40, 1000.0);                 // (240,-80)-(240,0)
+    int rgt = TN(x + 240, y - 80), rgb = TN(x + 240, y);
+    TW(in, TN(x, y - 120)); TW(TN(x, y - 120), TN(x + 240, y - 120)); TW(TN(x + 240, y - 120), rgt);
+    TW(rgb, TN(x + 240, y + 40)); TW(TN(x + 240, y + 40), gate);
+    rg->node_ids[0] = rgt; rg->node_ids[1] = rgb;
+    rg->props.resistor.power_rating = 0.5;      /* 12 V across 1 k every time the NPN pulls it down */
+
+    Component *q = add_comp(circuit, COMP_NPN_BJT, x + 200, y + 160, 0);    // B(180,160) C(220,140) E(220,180)
+    int qb = TN(x + 180, y + 160), qc = TN(x + 220, y + 140), qe = TN(x + 220, y + 180);
+    TW(gate, TN(x + 280, y + 140)); TW(TN(x + 280, y + 140), qc);
+    Component *gq = add_comp(circuit, COMP_GROUND, x + 220, y + 240, 0);
+    gq->node_ids[0] = TN(x + 220, y + 220); TW(qe, TN(x + 220, y + 220));
+    Component *rb = hres(circuit, x + 120, y + 160, 1000.0);                // (80,160)-(160,160)
+    int rbl = TN(x + 80, y + 160), rbr = TN(x + 160, y + 160);
+    TW(rbr, qb); rb->node_ids[0] = rbl; rb->node_ids[1] = rbr;
+    Component *pwm = add_comp(circuit, COMP_PULSE_SOURCE, x, y + 220, 0);   // +(x,y+180) -(x,y+260)
+    pwm->props.pulse_source.v_low = 0; pwm->props.pulse_source.v_high = 5.0;
+    pwm->props.pulse_source.period = 20e-6; pwm->props.pulse_source.pulse_width = 10e-6;
+    pwm->props.pulse_source.rise_time = pwm->props.pulse_source.fall_time = 1e-6;   /* a discrete driver has real edges: 1 us of a 20 us period */
+    int pp = TN(x, y + 180);
+    pwm->node_ids[0] = pp;
+    TW(pp, TN(x, y + 160)); TW(TN(x, y + 160), rbl);
+    Component *gp = add_comp(circuit, COMP_GROUND, x, y + 320, 0);
+    connect_terminals(circuit, pwm, 1, gp, 0);
+    m->node_ids[0] = gate; m->node_ids[1] = drain; m->node_ids[2] = source;
+
+    /* switching node, catch diode, and the L-C that averages it */
+    int sw = TN(x + 400, y + 20); TW(drain, sw);
+    Component *d = add_comp(circuit, COMP_SCHOTTKY, x + 400, y + 100, 90);  // A(400,60) K(400,140)
+    int da = TN(x + 400, y + 60), dk = TN(x + 400, y + 140);
+    TW(sw, da);
+    d->node_ids[0] = dk; d->node_ids[1] = da;                               // cathode up to SW, anode to ground
+    Component *gd = add_comp(circuit, COMP_GROUND, x + 400, y + 200, 0);
+    gd->node_ids[0] = TN(x + 400, y + 180); TW(dk, TN(x + 400, y + 180));
+    Component *l = hind(circuit, x + 520, y + 20, 220e-6);                  // (480,20)-(560,20)
+    l->props.inductor.current = 0.9;   /* start at the current it will settle at: a cold start is a
+                                          10 A L-C inrush that has nothing to do with the lesson */
+    int ll = TN(x + 480, y + 20), lr = TN(x + 560, y + 20);
+    TW(sw, ll); l->node_ids[0] = ll; l->node_ids[1] = lr;
+    int out = TN(x + 640, y + 20); TW(lr, out);
+    Component *ldb = out_stage(circuit, x + 640, y + 20, out, 100e-6, 6.0, 0.0);
+    ldb->props.resistor.power_rating = 30.0;    /* 5 W steady - and it rings to 12 V before the L-C settles */
+
+    add_label(circuit, x - 40, y - 200, "DISCRETE BUCK, NODE BY NODE: 12 V in, 50 % duty at 50 kHz, 5.5 V out - and every node has its own answer");
+    add_label(circuit, x + 60, y + 380, "GATE: sits at 12 V (off). The NPN pulls it to 0.2 V to turn the PMOS on - Vgs = -11.8 V.");
+    add_label(circuit, x + 60, y + 410, "SWITCH NODE: an 11.3 V square when the PMOS conducts, and -0.4 V when the Schottky freewheels.");
+    add_label(circuit, x + 60, y + 440, "It is the only truly hard-switching node in the circuit, and the only one worth an EMI argument.");
+    add_label(circuit, x + 60, y + 470, "INDUCTOR: the square, integrated. Current ramps up at (Vin-Vout)/L and down at Vout/L: a triangle.");
+    add_label(circuit, x + 60, y + 500, "OUTPUT: the triangle, integrated again. dI = (Vin-Vout) D/(L f) = 270 mA; dV = dI/(8 C f) = 7 mV.");
+    add_label(circuit, x + 60, y + 530, "ALSO SEE: Buck Converter for the ideal-switch version, and Input vs Output Capacitance.");
+    return 20;
+}
+
+static int place_iv_ldo_vs_buck(Circuit *circuit, float x, float y) {
+    /* 12 V in, 5 V out, 1 A. The same job done two ways, with the input current measured */
+    Component *v1 = dc_rail(circuit, x, y, 12.0); if (!v1) return 0;
+    int in1 = TN(x, y);
+    Component *sh1 = add_comp(circuit, COMP_AMMETER, x + 100, y, 0);       // (60,0)-(140,0): input current
+    int s1l = TN(x + 60, y), s1r = TN(x + 140, y);
+    TW(in1, s1l); sh1->node_ids[0] = s1l; sh1->node_ids[1] = s1r;
+    Component *cin1 = vcap(circuit, x + 170, y + 80, 10e-6);               // (170,40)-(170,120): the input cap every regulator needs
+    int ci1t = TN(x + 170, y + 40), ci1b = TN(x + 170, y + 120);
+    TW(s1r, TN(x + 170, y)); TW(TN(x + 170, y), ci1t);
+    cin1->node_ids[0] = ci1t; cin1->node_ids[1] = ci1b;
+    Component *gci1 = add_comp(circuit, COMP_GROUND, x + 170, y + 180, 0);
+    gci1->node_ids[0] = TN(x + 170, y + 160); TW(ci1b, TN(x + 170, y + 160));
+    Component *reg = add_comp(circuit, COMP_7805, x + 240, y, 0);          // IN(200,0) OUT(280,0) GND(240,30)
+    int ri = TN(x + 200, y), ro = TN(x + 280, y), rgn = TN(x + 240, y + 30);
+    TW(s1r, ri);
+    reg->node_ids[0] = ri; reg->node_ids[1] = ro; reg->node_ids[2] = rgn;
+    Component *gr = add_comp(circuit, COMP_GROUND, x + 240, y + 100, 0);
+    gr->node_ids[0] = TN(x + 240, y + 80); TW(rgn, TN(x + 240, y + 80));
+    int o1 = TN(x + 360, y); TW(ro, o1);
+    Component *ld1 = out_stage(circuit, x + 360, y, o1, 10e-6, 5.0, 5.0);
+    ld1->props.resistor.power_rating = 10.0;      /* a 5 W load */
+
+    /* the same 5 V from a switcher: 12 V chopped at 42 % duty */
+    float by = y + 360;
+    Component *v2 = dc_rail(circuit, x, by, 12.0);
+    int in2 = TN(x, by);
+    Component *sh2 = add_comp(circuit, COMP_AMMETER, x + 100, by, 0);
+    int s2l = TN(x + 60, by), s2r = TN(x + 140, by);
+    TW(in2, s2l); sh2->node_ids[0] = s2l; sh2->node_ids[1] = s2r;
+    /* the switcher's input capacitor. Without it the 100 mohm sense resistor carries the full
+       triangular switch current instead of the average, which is exactly the mistake the
+       Input vs Output Capacitance template is about. */
+    Component *cin2 = vcap(circuit, x + 170, by + 80, 10e-6);
+    int ci2t = TN(x + 170, by + 40), ci2b = TN(x + 170, by + 120);
+    TW(s2r, TN(x + 170, by)); TW(TN(x + 170, by), ci2t);
+    cin2->node_ids[0] = ci2t; cin2->node_ids[1] = ci2b;
+    Component *gci2 = add_comp(circuit, COMP_GROUND, x + 170, by + 180, 0);
+    gci2->node_ids[0] = TN(x + 170, by + 160); TW(ci2b, TN(x + 170, by + 160));
+    Component *sw = pwm_switch(circuit, x + 240, by, 100e3, 0.44);
+    int si = TN(x + 200, by), so = TN(x + 280, by); TW(s2r, si);
+    sw->node_ids[0] = si; sw->node_ids[1] = so;
+    int node_sw = TN(x + 340, by); TW(so, node_sw);
+    Component *d = add_comp(circuit, COMP_SCHOTTKY, x + 340, by + 80, 90);
+    int da = TN(x + 340, by + 40), dk = TN(x + 340, by + 120);
+    TW(node_sw, da);
+    d->node_ids[0] = dk; d->node_ids[1] = da;
+    Component *gd = add_comp(circuit, COMP_GROUND, x + 340, by + 180, 0);
+    gd->node_ids[0] = TN(x + 340, by + 160); TW(dk, TN(x + 340, by + 160));
+    Component *l = hind(circuit, x + 440, by, 47e-6);
+    int ll = TN(x + 400, by), lr = TN(x + 480, by); TW(node_sw, ll);
+    l->node_ids[0] = ll; l->node_ids[1] = lr;
+    int o2 = TN(x + 560, by); TW(lr, o2);
+    Component *ld2 = out_stage(circuit, x + 560, by, o2, 220e-6, 5.0, 5.0);
+    ld2->props.resistor.power_rating = 15.0;   /* 4.8 W steady, and it rings a little on the way there */
+
+    add_label(circuit, x - 40, y - 80, "LDO vs SWITCHER: 12 V in, 5 V out, 1 A out. Read the two input ammeters and compare them");
+    add_label(circuit, x + 560, y + 60, "LINEAR: input current = output current. 1 A in, 1 A out, and the 7 V");
+    add_label(circuit, x + 560, y + 90, "difference x 1 A = 7 W leaves as heat. Efficiency = Vout/Vin = 42 %.");
+    add_label(circuit, x + 560, y + 120, "It is quiet, cheap, needs two capacitors, and it will need a heatsink.");
+    add_label(circuit, x + 760, by + 60, "SWITCHING: power in = power out (plus losses). 5 W out of a 12 V rail is");
+    add_label(circuit, x + 760, by + 90, "about 440 mA in, not 1 A. Efficiency ~90 %, and no heatsink.");
+    add_label(circuit, x + 760, by + 120, "It costs an inductor, a controller, layout care, and 100 kHz of ripple.");
+    add_label(circuit, x - 40, by + 320, "INTERVIEW: 'when would you use an LDO instead of a buck?' Small step-down ratio, low current, or when");
+    add_label(circuit, x - 40, by + 350, "the load hates ripple - an RF synthesiser or an ADC reference. And often both: a buck down to 5 V and an");
+    add_label(circuit, x - 40, by + 380, "LDO from 5 V to 3.3 V, so the LDO only burns 1.7 V and still cleans up the switcher's output.");
+    add_label(circuit, x - 40, by + 410, "ALSO SEE: 7805 Regulator, LM317 Adj Reg, Buck Converter, Input vs Output Capacitance.");
+    return 30;
+}
+
+static int place_iv_bootstrap(Circuit *circuit, float x, float y) {
+    /* A high-side N-channel gate has to go ABOVE the rail. The bootstrap capacitor is how,
+       and this shows what it costs: it only refills while the switch node is low. */
+    static const double duty[2] = { 0.5, 0.999 };
+    static const double period[2] = { 10e-6, 100e-3 };  /* the second one simply never comes back down */
+    static const char *tag[2] = {
+        "SWITCHING at 50 %: every time SW goes low the diode refills C_boot to 11.5 V, so BOOT rides",
+        "STUCK ON: SW never goes low, the diode never conducts, and the driver's own current drains"
+    };
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 320;
+        Component *rail = dc_rail(circuit, x, py, 12.0); if (!rail) return 0;
+        int vdd = TN(x, py);
+        Component *d = add_comp(circuit, COMP_DIODE, x + 160, py, 0);      // A(120,0) K(200,0)
+        int da = TN(x + 120, py), dk = TN(x + 200, py);
+        TW(vdd, da); d->node_ids[0] = da; d->node_ids[1] = dk;
+        int boot = TN(x + 280, py); TW(dk, boot);
+
+        Component *cb = vcap(circuit, x + 280, py + 100, 100e-9);          // (280,60)-(280,140)
+        int cbt = TN(x + 280, py + 60), cbb = TN(x + 280, py + 140);
+        TW(boot, cbt); cb->node_ids[0] = cbt; cb->node_ids[1] = cbb;
+        /* the driver's quiescent current, as the load that empties the cap */
+        Component *rq = vres(circuit, x + 380, py + 100, 2e3);
+        int rqt = TN(x + 380, py + 60), rqb = TN(x + 380, py + 140);
+        TW(cbt, rqt); TW(cbb, rqb);
+        rq->node_ids[0] = rqt; rq->node_ids[1] = rqb;
+
+        /* the switch node itself, driven as the power stage would drive it */
+        Component *swn = add_comp(circuit, COMP_PULSE_SOURCE, x + 280, py + 220, 0);  // +(280,180) -(280,260)
+        swn->props.pulse_source.v_low = 0; swn->props.pulse_source.v_high = 12.0;
+        swn->props.pulse_source.period = period[k];
+        swn->props.pulse_source.pulse_width = duty[k] * period[k];
+        swn->props.pulse_source.rise_time = swn->props.pulse_source.fall_time = 1e-6;
+        int swp = TN(x + 280, py + 180);
+        swn->node_ids[0] = swp;
+        TW(cbb, swp);
+        Component *gs = add_comp(circuit, COMP_GROUND, x + 280, py + 320, 0);
+        connect_terminals(circuit, swn, 1, gs, 0);
+        add_label(circuit, x + 460, py + 100, tag[k]);
+    }
+    add_label(circuit, x - 40, y - 80, "BOOTSTRAP HIGH-SIDE DRIVE: C_boot floats on the switch node so the gate can go above the 12 V rail");
+    add_label(circuit, x + 460, y + 130, "to 23.5 V while SW is high. The gate always has 11.5 V above its own source.");
+    add_label(circuit, x + 460, y + 450, "it to nothing. BOOT falls to SW, Vgs goes to zero and the high-side turns itself off.");
+    add_label(circuit, x - 40, y + 700, "This is why an N-channel high-side driver has a maximum duty cycle, and why a bootstrapped buck cannot");
+    add_label(circuit, x - 40, y + 730, "run at 100 %: it has to put the switch node on the floor often enough to refill the capacitor. A design that");
+    add_label(circuit, x - 40, y + 760, "must reach 100 % needs a charge pump or an isolated supply instead. INTERVIEW: asked whenever a candidate");
+    add_label(circuit, x - 40, y + 790, "says 'N-channel on top' - the follow-up is always 'so how do you drive its gate?'");
+    add_label(circuit, x - 40, y + 820, "ALSO SEE: High-side PMOS Switch, which sidesteps the whole problem, and Discrete Buck, Node by Node.");
+    return 16;
+}
+
 #undef TN
 #undef TW
 
@@ -11707,6 +11934,9 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_AC_COUPLING]   = { COMP_RESISTOR, 2, 0 },     /* the AC-coupled channel */
     [CIRCUIT_IV_SHUNT_SENSE]   = { COMP_OPAMP, 0, 2 },        /* high-side difference amp output */
     [CIRCUIT_IV_KELVIN]        = { COMP_OPAMP, 0, 2 },        /* the 4-wire differential reading */
+    [CIRCUIT_IV_BUCK_NODES]    = { COMP_RESISTOR, 2, 0 },     /* the output, after L and C */
+    [CIRCUIT_IV_LDO_VS_BUCK]   = { COMP_RESISTOR, 1, 0 },     /* the linear regulator's 5 V output */
+    [CIRCUIT_IV_BOOTSTRAP]     = { COMP_CAPACITOR, 0, 0 },    /* BOOT, riding on the switch node */
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -11832,6 +12062,8 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_PROBE_COMP] = 200e-6, [CIRCUIT_IV_PROBE_LOADING] = 200e-9,
     [CIRCUIT_IV_GROUND_LEAD] = 20e-9, [CIRCUIT_IV_SCOPE_INPUT_Z] = 20e-9,
     [CIRCUIT_IV_AC_COUPLING] = 2e-6, [CIRCUIT_IV_SHUNT_SENSE] = 1e-3, [CIRCUIT_IV_KELVIN] = 1e-3,
+    [CIRCUIT_IV_BUCK_NODES] = 2e-6,
+    [CIRCUIT_IV_LDO_VS_BUCK] = 2e-6, [CIRCUIT_IV_BOOTSTRAP] = 2e-6,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -11881,6 +12113,8 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_PROBE_COMP] = 0.2, [CIRCUIT_IV_PROBE_LOADING] = 1.0,
     [CIRCUIT_IV_GROUND_LEAD] = 1.0, [CIRCUIT_IV_SCOPE_INPUT_Z] = 0.5,
     [CIRCUIT_IV_AC_COUPLING] = 0.05, [CIRCUIT_IV_SHUNT_SENSE] = 0.5, [CIRCUIT_IV_KELVIN] = 0.05,
+    [CIRCUIT_IV_BUCK_NODES] = 2.0,
+    [CIRCUIT_IV_LDO_VS_BUCK] = 2.0, [CIRCUIT_IV_BOOTSTRAP] = 5.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -12055,6 +12289,9 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_AC_COUPLING]   = { DEMO_WAVEFORM, 100000 },
     [CIRCUIT_IV_SHUNT_SENSE]   = { DEMO_DC, 0 },
     [CIRCUIT_IV_KELVIN]        = { DEMO_DC, 0 },
+    [CIRCUIT_IV_BUCK_NODES]    = { DEMO_DC, 0 },
+    [CIRCUIT_IV_LDO_VS_BUCK]   = { DEMO_DC, 0 },
+    [CIRCUIT_IV_BOOTSTRAP]     = { DEMO_WAVEFORM, 100000 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -12104,6 +12341,9 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_GROUND_LEAD] = SCOPE_FLAG_STACK,
     [CIRCUIT_IV_SCOPE_INPUT_Z] = SCOPE_FLAG_STACK,
     [CIRCUIT_IV_AC_COUPLING] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_IV_BUCK_NODES] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_IV_LDO_VS_BUCK] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_IV_BOOTSTRAP] = SCOPE_FLAG_STACK,
     /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */
     [CIRCUIT_COLPITTS] = SCOPE_FLAG_AC, [CIRCUIT_HARTLEY] = SCOPE_FLAG_AC, [CIRCUIT_CLAPP] = SCOPE_FLAG_AC,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,

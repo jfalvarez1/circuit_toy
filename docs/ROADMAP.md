@@ -92,13 +92,37 @@ Worth doing next in the same shape: a 741-level op-amp macromodel (input pair, g
 output stage) so its behaviour comes from its topology instead of the GBW/slew parameters; an
 optocoupler; and a 7-segment decoder. The 555's RESET and CONTROL pins are not exposed yet.
 
-## Crystal (Pierce) oscillator - not shipped yet (2026-08-24)
+## Crystal (Pierce) oscillator - shipped (2026-08-28)
 
-`place_pierce()` in src/circuits.c builds an op-amp Pierce loop around a "teaching crystal" (Ls 100 mH,
-Cs 25.33 pF, Rs 200, Cp 1 nF, f_s = 100 kHz, Q ~ 314) with a C2 / crystal / C1 pi network and an extra
-1k / 2.2 nF output pole. A phasor scan (loop gain ~24 at 100.63 kHz) says it should oscillate, and it
-does at dt <= 10 ns, but the theta = 0.6 integrator damps the motional arm enough that at the app's
-time steps (100-250 ns) the loop gain falls below 1 (or the stage latches at gain 1000). Options:
-pure trapezoidal (theta = 0.5) for L and C with a startup damping ramp, a dedicated crystal component
-that stamps the motional arm analytically, or accepting a lower-Q "crystal" and a 20 kHz f_s.
-Until then the template is not registered in the palette (hard rule: every template must demonstrate).
+Shipped as CIRCUIT_PIERCE. Two things had to be true. First, COMP_CRYSTAL integrates its motional
+arm with the trapezoidal rule (theta = 0.5) inside the component rather than through the general
+theta = 0.6 path, which was damping a Q of 314 away at the time steps these templates run at.
+Second - and this is the part that took the longest - the holder capacitance Cp had to come down
+from 1 nF to 33 pF. At 1 nF the arm is shunted hard enough that the loop either locks onto the
+parallel resonance (110.8 kHz, 1.6 V) or rings down and dies. A real HC-49 is 3 to 30 pF; the old
+value was three decades out. It now runs 30 V pk-pk at 100.6 kHz, just above f_s, pulled there by
+the 4.7 nF load caps. --xtal-test measures |Z| at, below and above resonance and the off-resonance
+ratio; --osc-test checks the frequency.
+
+## CCM vs DCM - not shipped (2026-08-28)
+
+An asynchronous buck in discontinuous conduction has a third interval where neither the switch nor
+the diode conducts. With an ideal analog switch (r_off 1e9) that leaves the switch node undefined:
+it runs away to hundreds or thousands of volts, and every attempt to define it made it worse - a
+snubber capacitor small enough to be realistic cannot be resolved at dt = 100 ns (0.8 A into 2.2 nF
+is 36 V per step), one large enough to be resolvable is not a snubber any more, and a leakage
+resistor gives the interrupted inductor current a 100 k path to push against. What it needs is
+either a switch model with a defined off-state capacitance, or a local time-step control that
+tightens dt across a commutation. Until then the DCM lesson lives in the CCM vs DCM notes of
+Discrete Buck, Node by Node rather than in a template of its own.
+
+## Terminal currents and displacement current (2026-08-28)
+
+--flow-test audits node KCL by comparing wire currents against terminal currents. Terminal currents
+are recovered by re-stamping the component and taking the row residual, and that recovers conduction
+current only: the charge flowing into a MOSFET gate or a reverse-biased junction is real current in
+the wires and appears in no terminal_current. On slow circuits it is under the noise floor; on a
+hard-switched power stage it is tens of microamps and the audit cannot close. The test now skips
+gate nets and bare wire corners on a MOSFET net, allows 0.5 % of a node's own current, and exempts
+Discrete Buck, Node by Node from the node sum with a NOTE line. The real fix is to report the
+capacitive terminal currents from the MOSFET and diode models.

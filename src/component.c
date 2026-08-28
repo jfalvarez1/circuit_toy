@@ -1964,6 +1964,13 @@ static void part_bs250(Component *c) {
     c->props.mosfet.lambda = 0.02;
     c->props.mosfet.ideal = false;
 }
+static void part_irf9540n(Component *c) {
+    c->props.mosfet.vth = -3.0;       /* P-channel, V_GS(th) -2 to -4 V */
+    c->props.mosfet.kp = 0.71;        /* R_DS(on) 0.2 ohm max at V_GS = -10 V, I_D = -14 A */
+    c->props.mosfet.w = 1e-6; c->props.mosfet.l = 1e-6;
+    c->props.mosfet.lambda = 0.01;
+    c->props.mosfet.ideal = false;
+}
 static void part_2n3904(Component *c) {
     c->props.bjt.bf = 200;            /* h_FE 100 - 300 at I_C = 10 mA */
     c->props.bjt.is = 6.7e-15;        /* gives V_BE ~ 0.66 V at 10 mA */
@@ -2088,6 +2095,7 @@ static const PartModel g_parts[] = {
     { "2N7002",  COMP_NMOS,    "SOT-23 NMOS, V_th 1.6 V, R_DS(on) 2 ohm at V_GS 10 V",        part_2n7002 },
     { "IRF540N", COMP_NMOS,    "power NMOS, V_th 4 V, R_DS(on) 44 mohm at V_GS 10 V",         part_irf540n },
     { "BS250",   COMP_PMOS,    "P-channel, V_th -3 V, R_DS(on) 14 ohm at V_GS -10 V",         part_bs250 },
+    { "IRF9540N",COMP_PMOS,    "power P-channel, V_th -3 V, R_DS(on) 0.2 ohm at V_GS -10 V",  part_irf9540n },
     { "2N3904",  COMP_NPN_BJT, "general-purpose NPN, h_FE 200 at 10 mA, V_AF 74 V",           part_2n3904 },
     { "BC547B",  COMP_NPN_BJT, "small-signal NPN, h_FE 290 (B grade), V_AF 63 V",             part_bc547b },
     { "2N3906",  COMP_PNP_BJT, "general-purpose PNP, h_FE 180 at 10 mA",                      part_2n3906 },
