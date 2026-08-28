@@ -5958,7 +5958,7 @@ static int place_clamper(Circuit *circuit, float x, float y) {
     vsrc->props.ac_voltage.amplitude_sweep.bidirectional = true;
 
     // Ground for AC source
-    Component *gnd1 = add_comp(circuit, COMP_GROUND, x, grid_y2 + 20, 0);
+    Component *gnd1 = add_comp(circuit, COMP_GROUND, x, grid_y2 + 60, 0);   // 40 px lower: clear of the source body
 
     // Coupling capacitor (horizontal, rotation 0)
     Component *cap = add_comp(circuit, COMP_CAPACITOR, x + 60, grid_y, 0);
@@ -7239,9 +7239,9 @@ static int place_pc_distance(Circuit *circuit, float x, float y) {
     Component *ct = add_comp(circuit, COMP_TRANSFORMER, x + 150, y + 40, 0);     // P1(100,20) P2(100,60) S1(200,20) S2(200,60)
     ct->props.transformer.turns_ratio = 400.0;
     Component *gs2 = add_comp(circuit, COMP_GROUND, x + 200, y + 80, 0);
-    Component *rrep = add_comp(circuit, COMP_RESISTOR, x + 320, y + 60, 90);     // replica (320,20)-(320,100)
+    Component *rrep = add_comp(circuit, COMP_RESISTOR, x + 260, y + 60, 90);     // replica (260,20)-(260,100)
     rrep->props.resistor.resistance = 3.35;
-    Component *grep_ = add_comp(circuit, COMP_GROUND, x + 320, y + 120, 0);
+    Component *grep_ = add_comp(circuit, COMP_GROUND, x + 260, y + 120, 0);     // clear of the line at y+140
     int vi = peak_hold(circuit, x + 320, y + 20, 2.2e-6, 10e3);                  // tau 22 ms -> (480,20)
     Component *vt = add_comp(circuit, COMP_TRANSFORMER, x + 150, y + 220, 180);  // rotated: P1(200,240) P2(200,200) S1(100,240) S2(100,200)
     vt->props.transformer.turns_ratio = 1.0 / 2875.0;
@@ -7287,7 +7287,8 @@ static int place_pc_distance(Circuit *circuit, float x, float y) {
     ls->node_ids[1] = p1; ct->node_ids[0] = p1; ct->node_ids[1] = p2;
     vt->node_ids[0] = vtp1; vt->node_ids[1] = vtp2; vt->node_ids[2] = vsec; vt->node_ids[3] = vts2;
     gvt->node_ids[0] = vtp1; gvs->node_ids[0] = vts2;
-    int s1 = TN(x + 200, y + 20), s2 = TN(x + 200, y + 60), rt = TN(x + 320, y + 20); TW(s1, rt);
+    int s1 = TN(x + 200, y + 20), s2 = TN(x + 200, y + 60), rt = TN(x + 260, y + 20), rj = TN(x + 320, y + 20);
+    TW(s1, rt); TW(rt, rj);   // the replica resistor moved left, clear of the line below
     ct->node_ids[2] = s1; ct->node_ids[3] = s2; gs2->node_ids[0] = s2; rrep->node_ids[0] = rt;
     connect_terminals(circuit, rrep, 1, grep_, 0);
     int e1 = TN(x + 380, y + 140), mid = TN(x + 400, y + 140), e2 = TN(x + 480, y + 140), f1 = TN(x + 400, y + 200);
@@ -7561,7 +7562,7 @@ static int place_tri_square_core(Circuit *circuit, float x, float y, int *tri_no
     if (!u1) return 0;
     Component *kick = add_comp(circuit, COMP_PULSE_SOURCE, x + 100, y + 20, 90); // rot 90: +(140,20) -(60,20)
     kick->props.pulse_source.v_low = 0; kick->props.pulse_source.v_high = 0.5; kick->props.pulse_source.pulse_width = 50e-6; kick->props.pulse_source.period = 100.0;
-    Component *gk = add_comp(circuit, COMP_GROUND, x + 60, y + 40, 0);          // terminal (60,20)
+    Component *gk = add_comp(circuit, COMP_GROUND, x + 20, y + 40, 0);          // terminal (20,20): clear of the pulse body
     Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 100, y + 60, 0);        // (60,60)-(140,60) tri -> +
     r1->props.resistor.resistance = 10e3;
     Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 220, y + 120, 0);       // (180,120)-(260,120) out -> +
@@ -7574,7 +7575,8 @@ static int place_tri_square_core(Circuit *circuit, float x, float y, int *tri_no
     Component *g2 = add_comp(circuit, COMP_GROUND, x + 340, y + 180, 0);         // integrator + at (360,160) -> (340,160)
     int minus1 = TN(x + 160, y + 20), kp = TN(x + 140, y + 20), kn = TN(x + 60, y + 20);
     TW(kp, minus1);
-    kick->node_ids[0] = kp; kick->node_ids[1] = kn; gk->node_ids[0] = kn;
+    kick->node_ids[0] = kp; kick->node_ids[1] = kn;
+    { int gkn = TN(x + 20, y + 20); TW(kn, gkn); gk->node_ids[0] = gkn; }
     int plus1 = TN(x + 160, y + 60), r1r = TN(x + 140, y + 60), r1l = TN(x + 60, y + 60);
     TW(r1r, plus1);
     int out1 = TN(x + 240, y + 40), o1 = TN(x + 280, y + 40), o2 = TN(x + 280, y + 120), r2r = TN(x + 260, y + 120), r2l = TN(x + 180, y + 120), p2 = TN(x + 160, y + 120);
@@ -7967,7 +7969,7 @@ static void gnd_below(Circuit *circuit, Component *c, int term, float x, float y
 
 // Single-tuned amplifier: CE stage (R1 47k, R2 10k, Re 1k || 10 uF), collector load L 1 mH || C 2.53 nF || Rq 10k
 static int place_single_tuned_amp(Circuit *circuit, float x, float y) {
-    Component *vcc = dc_rail(circuit, x, y - 100, 12.0); if (!vcc) return 0;               // +(0,-100)
+    Component *vcc = dc_rail(circuit, x - 180, y - 100, 12.0); if (!vcc) return 0;         // +(-180,-100): clear of the input cap
     Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 100, y + 80, 0);              // +(-100,40) -(-100,120)
     vin->props.ac_voltage.amplitude = 0.01; vin->props.ac_voltage.frequency = 100059.9;
     set_freq_sweep(vin, 20e3, 500e3, 0.5);                                               // fast sweep: 100 kHz needs sub-us steps
@@ -7998,7 +8000,7 @@ static int place_single_tuned_amp(Circuit *circuit, float x, float y) {
     int col = TN(x + 220, y - 20), lb = TN(x + 300, y - 20), ctb = TN(x + 360, y - 20), rqb = TN(x + 420, y - 20), col2 = TN(x + 440, y - 20);
     TW(col, lb); TW(lb, ctb); TW(ctb, rqb); TW(rqb, col2);
     int e = TN(x + 220, y + 20), cet = TN(x + 280, y + 20), ret = TN(x + 220, y + 40); TW(e, cet); TW(e, ret);
-    vcc->node_ids[0] = rail0; r1->node_ids[0] = rail1; r1->node_ids[1] = r1b; r2->node_ids[0] = r2t; q->node_ids[0] = base; q->node_ids[1] = col; q->node_ids[2] = e;
+    { int vt = TN(x - 180, y - 100); TW(vt, rail0); vcc->node_ids[0] = vt; } r1->node_ids[0] = rail1; r1->node_ids[1] = r1b; r2->node_ids[0] = r2t; q->node_ids[0] = base; q->node_ids[1] = col; q->node_ids[2] = e;
     re->node_ids[0] = ret; ce->node_ids[0] = cet; l->node_ids[0] = rail2; l->node_ids[1] = lb; ct->node_ids[0] = rail3; ct->node_ids[1] = ctb; rq->node_ids[0] = rail4; rq->node_ids[1] = rqb;
     co->node_ids[0] = col2; co->node_ids[1] = TN(x + 520, y - 20);
     { int rlt = TN(x + 560, y - 20); TW(co->node_ids[1], rlt); rl->node_ids[0] = rlt; } vin->node_ids[0] = sp; cc->node_ids[0] = ccl; cc->node_ids[1] = ccr;

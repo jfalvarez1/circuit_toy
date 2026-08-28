@@ -588,9 +588,14 @@ static int geom_overlap(Circuit *c, char *why, size_t whyn) {
             int brot = ((b->rotation % 360) + 360) % 360;
             double bw = (brot == 90 || brot == 270) ? ib->height : ib->width;
             double bh = (brot == 90 || brot == 270) ? ib->width : ib->height;
-            /* 6 px of slack: symbols that merely touch at a terminal are fine */
-            double dx = fabs(a->x - b->x) - (aw + bw) / 2 + 6;
-            double dy = fabs(a->y - b->y) - (ah + bh) / 2 + 6;
+            /* info->width/height is the box including the lead stubs; the drawn symbol occupies
+               roughly the middle 65 % across the leads and 85 % of the height. Compare the drawn
+               bodies, plus 4 px of slack, so a lead touching a neighbour is fine and only symbols
+               genuinely sitting on top of each other are reported. */
+            double sx_a = (arot == 90 || arot == 270) ? 0.85 : 0.65, sy_a = (arot == 90 || arot == 270) ? 0.65 : 0.85;
+            double sx_b = (brot == 90 || brot == 270) ? 0.85 : 0.65, sy_b = (brot == 90 || brot == 270) ? 0.65 : 0.85;
+            double dx = fabs(a->x - b->x) - (aw * sx_a + bw * sx_b) / 2 + 4;
+            double dy = fabs(a->y - b->y) - (ah * sy_a + bh * sy_b) / 2 + 4;
             if (dx < 0 && dy < 0) {
                 if (hits < 3) {
                     size_t l = strlen(why);
