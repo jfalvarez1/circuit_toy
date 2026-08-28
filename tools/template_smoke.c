@@ -14,6 +14,7 @@
  *        template_smoke --flow-test      (current-flow display invariants on all templates)
  *        template_smoke --burn-test      (no resistor/LED over its rating; HV templates must be clean)
  *        template_smoke --std-test       (bus voltages vs ERCOT / NERC / ANSI C84.1 / NEC limits)
+ *        template_smoke --switch-test    (every switch in both states, measured at the probed output)
  *        template_smoke --osc-test       (oscillator templates really oscillate, at the right frequency)
  *        template_smoke --probe-test     (probe each template's output node, compare with hand calculation)
  *        template_smoke --geom-test      (schematic audit: diagonals, crossings, wires through bodies)
@@ -1479,6 +1480,99 @@ static int std_test(void) {
     return fails ? 1 : 0;
 }
 
+
+/* --switch-test: every SPST switch in every template, in both states, measured at that template's
+   probed output. A switch that changes nothing is either mis-wired or pointless, so the default
+   expectation is that the output moves by more than 1 %; templates where a switch legitimately
+   does almost nothing to the probed node list their own tolerance here.  */
+typedef struct { CircuitTemplateType t; int sw_ord; double lo_expect, hi_expect, tol; const char *note; } SwitchCase;
+static const SwitchCase switch_cases[] = {
+    { CIRCUIT_GS_N1,        0, 250100.0, 273300.0, 0.05, "second 345 kV circuit: 0.925 pu open, 0.970 pu closed" },
+    { CIRCUIT_GS_FACRATE,   0, 111500.0, 110800.0, 0.05, "extra load block: 400 A open, 500 A closed" },
+    { CIRCUIT_GS_DERATE,    0, 9752.0,   9310.0,  0.05, "summer air-conditioning block" },
+    { CIRCUIT_COM_PFC,      0, 8.70,     6.90,    0.08, "capacitor bank: 0.75 pf open, 0.95 pf closed" },
+    { CIRCUIT_TX_WIND,      0, 29370.0,  29370.0, 0.10, "string B disconnect (collector bus barely moves)" },
+    { CIRCUIT_GS_PIDS,      0, 12.0,     8.775,   0.05, "cable integrity link: open = cable cut (12 V), closed = the loop cycling 8.5 / 9.2 V" },
+    /* switches that act on another phase or another branch than the probed one: no movement is correct */
+    { CIRCUIT_POWER_PLANT,  1, 252504.0, 252504.0, 0.05, "phase B breaker - the probe is on phase A" },
+    { CIRCUIT_POWER_PLANT,  2, 252504.0, 252504.0, 0.05, "phase C breaker - the probe is on phase A" },
+    { CIRCUIT_SUBSTATION,   2, 103700.0, 103700.0, 0.05, "phase B breaker - the probe is on phase A" },
+    { CIRCUIT_SUBSTATION,   3, 103700.0, 103700.0, 0.05, "phase C breaker - the probe is on phase A" },
+    { CIRCUIT_SUBSTATION,   4, 103700.0, 103700.0, 0.05, "phase B cap bank - the probe is on phase A" },
+    { CIRCUIT_SUBSTATION,   5, 103700.0, 103700.0, 0.05, "phase C cap bank - the probe is on phase A" },
+    { CIRCUIT_GS_RX,        1, 168.533,  168.533,  0.05, "the feeder's reactive block - the probe is on the transmission bus" },
+};
+static double switch_measure(CircuitTemplateType t, int sw_ord, int closed, int *ok_out) {
+    Circuit *c = circuit_create();
+    if (circuit_place_template(c, t, 0, 0) <= 0) { circuit_free(c); *ok_out = 0; return 0; }
+    int seen = 0;
+    for (int i = 0; i < c->num_components; i++)
+        if (c->components[i]->type == COMP_SPST_SWITCH && seen++ == sw_ord)
+            { c->components[i]->props.switch_spst.closed = closed ? true : false; break; }
+    ComponentType oct = COMP_NONE; int oord = 0, oterm = 0;
+    Component *out = NULL; seen = 0;
+    if (circuit_template_output_spec(t, &oct, &oord, &oterm) && oct)
+        for (int i = 0; i < c->num_components; i++)
+            if (c->components[i]->type == oct && seen++ == oord) { out = c->components[i]; break; }
+    if (!out) { circuit_free(c); *ok_out = 0; return 0; }
+    int node = out->node_ids[oterm];
+    Simulation *sim = simulation_create(c);
+    int ok = simulation_dc_analysis(sim);
+    double td = circuit_template_scope_time_div(t);
+    double t_end = td > 0 ? 10 * td : 0.05;
+    if (td > 0) { double dt = simulation_scope_time_step(sim, td); if (dt > 0) simulation_set_time_step(sim, dt); }
+    simulation_start(sim);
+    double mn = 1e300, mx = -1e300, sum = 0; long steps = 0, n = 0;
+    while (ok && sim->time < t_end && steps < 2000000) {
+        if (!simulation_step(sim)) { ok = 0; break; }
+        steps++;
+        if (sim->time > t_end * 0.5) { Node *nd = circuit_get_node(c, node); double v = nd ? nd->voltage : 0; if (v < mn) mn = v; if (v > mx) mx = v; sum += v; n++; }
+    }
+    double amp = (mx > mn) ? (mx - mn) / 2 : 0, mean = n ? sum / n : 0;
+    if (fabs(mean) > amp) amp = mean;                   /* DC / logic loops: report the level, not the ripple */
+    simulation_free(sim); circuit_free(c);
+    *ok_out = ok;
+    return amp;
+}
+static int switch_test(void) {
+    int fails = 0, total = 0;
+    printf("%-34s %-4s %14s %14s   %s\n", "template", "sw", "open", "closed", "note");
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        Circuit *probe = circuit_create();
+        if (circuit_place_template(probe, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(probe); continue; }
+        int nsw = 0;
+        for (int i = 0; i < probe->num_components; i++) if (probe->components[i]->type == COMP_SPST_SWITCH) nsw++;
+        circuit_free(probe);
+        for (int k = 0; k < nsw; k++) {
+            int ok1 = 1, ok2 = 1;
+            double a = switch_measure((CircuitTemplateType)t, k, 0, &ok1);
+            double b = switch_measure((CircuitTemplateType)t, k, 1, &ok2);
+            total++;
+            const SwitchCase *sc = NULL;
+            for (unsigned q = 0; q < sizeof switch_cases / sizeof switch_cases[0]; q++)
+                if (switch_cases[q].t == (CircuitTemplateType)t && switch_cases[q].sw_ord == k) sc = &switch_cases[q];
+            double biggest = fabs(a) > fabs(b) ? fabs(a) : fabs(b);
+            double moved = biggest > 0 ? fabs(a - b) / biggest : 0;
+            int bad = 0; char why[160] = "";
+            if (!ok1 || !ok2) { bad = 1; snprintf(why, sizeof why, "simulation failed"); }
+            else if (sc) {
+                if (fabs(a - sc->lo_expect) > sc->tol * fabs(sc->lo_expect) + 1e-9 ||
+                    fabs(b - sc->hi_expect) > sc->tol * fabs(sc->hi_expect) + 1e-9) {
+                    bad = 1; snprintf(why, sizeof why, "expected %.4g / %.4g", sc->lo_expect, sc->hi_expect);
+                }
+            } else if (moved < 0.01) {
+                bad = 1; snprintf(why, sizeof why, "the probed output does not move (%.3g %%) - mis-wired, or it needs a switch_cases entry", moved * 100);
+            }
+            if (bad) fails++;
+            printf("%s %-34s %-4d %14.6g %14.6g   %s%s\n", bad ? "[FAIL]" : "[ OK ]",
+                   ti ? ti->name : "?", k, a, b, sc ? sc->note : "", bad ? why : "");
+        }
+    }
+    printf("switch-test: %d switches over all templates, %d failed\n", total, fails);
+    return fails ? 1 : 0;
+}
+
 static int series_template(const char *filter, double t_end, int node_id) {
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
@@ -1516,6 +1610,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--flow-test")) return flow_test();
         else if (!strcmp(argv[i], "--burn-test")) return burn_test();
         else if (!strcmp(argv[i], "--std-test")) return std_test();
+        else if (!strcmp(argv[i], "--switch-test")) return switch_test();
         else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt = atof(argv[++i]);
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
