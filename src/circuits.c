@@ -304,6 +304,13 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_HW_MATCH] = {"Impedance Matching", "Zmatch", "5 / 50 / 500 ohm on a 50 ohm source", TG_HARDWARE},
     [CIRCUIT_HW_REFLECT] = {"Signal Reflections", "Refl", "Artificial 50 ohm line, terminated or not", TG_HARDWARE},
     [CIRCUIT_HW_LOOP] = {"Loop Stability & Phase Margin", "Loop", "The same stage with and without compensation", TG_HARDWARE},
+    [CIRCUIT_ID_SOURCE] = {"Ideal vs Real Source", "IdSrc", "Internal resistance: the terminal voltage sags", TG_IDEAL},
+    [CIRCUIT_ID_DIODE] = {"Ideal vs Real Diode", "IdDio", "0.7 V brick wall against the Shockley knee", TG_IDEAL},
+    [CIRCUIT_ID_CAP] = {"Ideal vs Real Capacitor", "IdCap", "ESR turns the ripple triangle into a square step", TG_IDEAL},
+    [CIRCUIT_ID_IND] = {"Ideal vs Real Inductor", "IdInd", "Winding resistance damps the ring", TG_IDEAL},
+    [CIRCUIT_ID_OPAMP] = {"Ideal vs Real Op-Amp", "IdOA", "Gain-bandwidth and slew rate against infinity", TG_IDEAL},
+    [CIRCUIT_ID_BJT] = {"Ideal vs Real BJT", "IdBJT", "The Early effect moves the operating point", TG_IDEAL},
+    [CIRCUIT_ID_MOSFET] = {"Ideal vs Real MOSFET", "IdMOS", "Channel-length modulation is not a rounding error", TG_IDEAL},
 
 
 
@@ -6248,6 +6255,13 @@ static int place_hw_caps(Circuit *circuit, float x, float y);
 static int place_hw_match(Circuit *circuit, float x, float y);
 static int place_hw_reflect(Circuit *circuit, float x, float y);
 static int place_hw_loop(Circuit *circuit, float x, float y);
+static int place_id_source(Circuit *circuit, float x, float y);
+static int place_id_diode(Circuit *circuit, float x, float y);
+static int place_id_cap(Circuit *circuit, float x, float y);
+static int place_id_ind(Circuit *circuit, float x, float y);
+static int place_id_opamp(Circuit *circuit, float x, float y);
+static int place_id_bjt(Circuit *circuit, float x, float y);
+static int place_id_mosfet(Circuit *circuit, float x, float y);
 static int place_template_body(Circuit *circuit, CircuitTemplateType type, float x, float y) {
     if (!circuit) return 0;
 
@@ -6456,6 +6470,13 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_HW_MATCH:           return place_hw_match(circuit, x, y);
         case CIRCUIT_HW_REFLECT:         return place_hw_reflect(circuit, x, y);
         case CIRCUIT_HW_LOOP:            return place_hw_loop(circuit, x, y);
+        case CIRCUIT_ID_SOURCE:          return place_id_source(circuit, x, y);
+        case CIRCUIT_ID_DIODE:           return place_id_diode(circuit, x, y);
+        case CIRCUIT_ID_CAP:             return place_id_cap(circuit, x, y);
+        case CIRCUIT_ID_IND:             return place_id_ind(circuit, x, y);
+        case CIRCUIT_ID_OPAMP:           return place_id_opamp(circuit, x, y);
+        case CIRCUIT_ID_BJT:             return place_id_bjt(circuit, x, y);
+        case CIRCUIT_ID_MOSFET:          return place_id_mosfet(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6613,10 +6634,52 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_HW_BUCK] = {"BUCK CONVERTER: an ideal switch chops the 12 V input at 100 kHz with 50 % duty, the diode", "freewheels the inductor current while the switch is open, and L-C average the result:", "Vout = D x Vin = 6 V. Inductor ripple is (Vin - Vout) D / (L fsw) = 300 mA and the output", "ripple that leaves behind is dI / (8 C fsw) = 3.8 mV.", "PROBE: the switch node (a 0-12 V square) and the output (a quiet 6 V).", "TRY: duty 0.5 -> 0.25 halves the output; L 100 -> 10 uH pushes it into discontinuous mode."},
     [CIRCUIT_HW_BOOST] = {"BOOST CONVERTER: the switch grounds the inductor to charge it, then opens so the inductor's", "collapsing field drives current through the diode into the output. Vout = Vin/(1-D) = 10 V at", "D = 0.5 - the output can only ever sit above the input. The input current is continuous but the", "output current arrives in pulses, which is why a boost needs far more output capacitance than a", "buck of the same power. PROBE: the switch node and the output.", "TRY: D 0.5 -> 0.75 gives 20 V; watch the input current stay smooth while the output pulses."},
     [CIRCUIT_HW_BUCKBOOST] = {"BUCK-BOOST: the inductor is the only path from input to output, and it is connected the other", "way round when it discharges - so the output is INVERTED: Vout = -D/(1-D) x Vin = -12 V at", "D = 0.5. Below D = 0.5 it steps down, above it steps up, which is what makes it useful when the", "input can be either side of the output. Neither the input nor the output current is continuous,", "so both ends need filtering. PROBE: the switch node and the negative output.", "TRY: D -> 0.67 for -24 V, D -> 0.33 for -6 V."},
-    [CIRCUIT_HW_CUK] = {"CUK CONVERTER: energy crosses from input to output through the 47 uF capacitor rather than", "through the inductor, and there is an inductor on BOTH sides. That makes the input and the", "output current continuous - the quietest of the basic topologies, at the cost of a capacitor", "that has to carry the full transfer current. Like the buck-boost the output is inverted:", "Vout = -D/(1-D) x Vin = -12 V at D = 0.5.", "TRY: shrink the transfer capacitor to 1 uF and its ripple starts to appear on the output."},
+    [CIRCUIT_HW_CUK] = {"CUK CONVERTER: energy crosses from input to output through the 47 uF capacitor rather than", "through the inductor, and there is an inductor on BOTH sides. That makes the input and the", "output current continuous - the quietest of the basic topologies, at the cost of a capacitor", "that has to carry the full transfer current. Like the buck-boost the output is inverted:", "Vout = -D/(1-D) x Vin = -12 V at D = 0.5. NOTE: this model settles on the right mean but its", "ripple is coarser than a real Cuk - the transfer loop wants a finer step than the preset. See ROADMAP."},
     [CIRCUIT_HW_INTERLEAVED] = {"TWO-PHASE INTERLEAVED BUCK: two 100 kHz buck stages sharing one output, switched 180 degrees", "apart. Each carries half the load, and because their inductor ripples are out of phase they", "partly cancel: the output sees ripple at 200 kHz with a much smaller amplitude than one phase", "would give. That is why every CPU and GPU rail is multiphase. Coupling the two inductors into", "one magnetic part - a coupled-inductor voltage regulator (CLVR) - cancels more of it again and", "shrinks the magnetics. TRY: set phase B's pulse delay to 0 and watch the ripple double."},
     [CIRCUIT_HW_PDN] = {"POWER DELIVERY NETWORK: a 1.8 V rail reaches the die through 20 mOhm of resistance and 2 nH of", "plane and via inductance, with 100 uF of bulk (20 mOhm ESR) and 1 uF of ceramic (5 mOhm) along", "the way. A 0.9 A load step every 80 us asks the network what it can actually deliver.", "The first nanoseconds belong to the ceramic - the plane inductance blocks everything upstream -", "then the bulk takes over, and only later the regulator. That is the whole reason decoupling is a", "hierarchy. TRY: delete the ceramic (sharp spike) or raise the plane inductance to 20 nH."},
     [CIRCUIT_HW_CAPS] = {"INPUT vs OUTPUT CAPACITANCE: two identical rails, the same 1 A load step, and the same 100 uF -", "the only difference is which side of the 1 uH lead inductance the capacitor sits on. On the", "source side it is useless against the step: the inductance stands between it and the load. On", "the load side it holds the rail up until the source can respond. This is why decoupling goes AT", "the part it feeds, and why an input capacitor's job is to keep the SOURCE quiet, not the load.", "PROBE: both rails. The two traces are the same experiment with one thing moved."},
+    [CIRCUIT_ID_SOURCE] = {"IDEAL vs REAL SOURCE: three copies of a 5 V supply into a load. The ideal one has no",
+        "internal resistance, so its terminal voltage is 5.000 V whatever it feeds. The other two are the",
+        "same 5 V behind r = 200 ohm: into 1k that divider gives 5 x 1000/1200 = 4.167 V, and into 100 ohm",
+        "only 5 x 100/300 = 1.667 V. The source has not changed - the LOAD decided the terminal voltage.",
+        "This is Thevenin from the source's side: every real supply, battery and signal generator is a",
+        "voltage behind a resistance. PROBE: all three loads. Set r_series or tick Ideal to move between them."},
+    [CIRCUIT_ID_DIODE] = {"IDEAL vs REAL DIODE: the same 1 Vpk 1 kHz half-wave rectifier twice. The ideal diode is a",
+        "switch behind a 0.7 V battery: nothing at all until 0.7 V, then a hard 0.7 V drop, so the peak is",
+        "1.0 - 0.7 = 0.30 V. The real one is Shockley, I = Is(exp(V/nVt) - 1): it is already passing",
+        "hundreds of microamps at 0.5 V, so it turns on softly around 0.52 V and the peak reaches ~0.48 V.",
+        "The ideal model is the one to use for a mental estimate; it is wrong exactly where the interesting",
+        "circuits live (log amps, temperature sensors, small-signal detectors). PROBE: both loads."},
+    [CIRCUIT_ID_CAP] = {"IDEAL vs REAL CAPACITOR (ESR): a +/-5 V 20 kHz square through 100 ohm into 5 uF. The current is",
+        "a 50 mA square, so the ideal capacitor integrates it into a triangle: dV = I(T/2)/C = 250 mVpp.",
+        "A real capacitor is C in series with its ESR, and that resistance turns the current square straight",
+        "into a voltage square ON TOP of the triangle: +/-25 mV at 0.5 ohm, +/-100 mV at 2 ohm.",
+        "This is why a supply's output ripple barely improves when you add capacitance but collapses when",
+        "you pick a low-ESR part. ESL does the same to the fast edges. PROBE: all three capacitors."},
+    [CIRCUIT_ID_IND] = {"IDEAL vs REAL INDUCTOR (DCR): a 5 V step into a series R-L-C, 10 ohm + 10 mH + 1 uF, so",
+        "f0 = 1/(2 pi sqrt(LC)) = 1592 Hz. With an ideal inductor the only loss is the 10 ohm resistor:",
+        "zeta = (R/2) sqrt(C/L) = 0.05 and the capacitor overshoots to 1.85 x 5 V = 9.3 V, ringing for many",
+        "cycles. Give the winding its real 50 ohm DCR and zeta = 0.30: the peak drops to 6.9 V and the ring",
+        "is gone in three cycles. An ideal inductor makes any L-C loop ring for ever, which is exactly how",
+        "switching converters run away in a simulator that ignores DCR. PROBE: both capacitors."},
+    [CIRCUIT_ID_OPAMP] = {"IDEAL vs REAL OP-AMP: three non-inverting stages, gain 1 + 9k/1k = 10, at 100 kHz. The ideal",
+        "op-amp has infinite gain and bandwidth, so 50 mVpk comes out as 500 mVpk however fast you drive it.",
+        "A real part has a gain-bandwidth product: at Acl = 10 a 1 MHz GBW leaves 100 kHz of bandwidth, so",
+        "at exactly 100 kHz the output is 3 dB down - 354 mV, not 500. Row 3 asks the same part for 5 V at",
+        "100 kHz, which needs 3.1 V/us; it can only do 0.5 V/us, so the sine comes out as a TRIANGLE about",
+        "1.25 V tall. Bandwidth is a small-signal limit, slew rate a large-signal one. PROBE: all three."},
+    [CIRCUIT_ID_BJT] = {"IDEAL vs REAL BJT (Early effect): the same fixed-bias stage twice. 1.13 M from 12 V sets",
+        "I_B = (12 - 0.7)/1.13M = 10 uA, and beta = 100 gives I_C = 1 mA, so V_C = 12 - 1 mA x 4.7k = 7.3 V.",
+        "That is the textbook answer, and the ideal model gives it. A real transistor's collector current",
+        "also rises with V_CE - the Early effect, I_C = I_S exp(V_BE/V_T)(1 + V_CE/V_AF) - so with V_AF = 80 V",
+        "the current is ~9 % higher and the collector sits lower. It is the same effect that sets a stage's",
+        "output resistance r_o = V_AF/I_C, so it is not a rounding error. PROBE: both collectors."},
+    [CIRCUIT_ID_MOSFET] = {"IDEAL vs REAL MOSFET (channel-length modulation): common source, V_GS = 3 V, V_th = 1.5 V,",
+        "K = u_Cox(W/L) = 2 mA/V^2. The square law gives I_D = K V_ov^2/2 = 2.25 mA and V_D = 12 - 2.2k x I_D",
+        "= 7.05 V, and with lambda = 0 that is exactly what the left device does. Switch lambda to 0.05 /V and",
+        "I_D picks up a (1 + lambda V_DS) term: the operating point moves to 5.65 V, a 1.4 V shift.",
+        "lambda is also what gives the device a finite output resistance r_o = 1/(lambda I_D) - without it the",
+        "saturation curves are flat and a current mirror would be perfect. PROBE: both drains."},
     [CIRCUIT_HW_MATCH] = {"IMPEDANCE MATCHING: one 2 Vpk source behind 50 ohm, feeding 5 ohm, 50 ohm and 500 ohm.", "The load voltage rises with R_L, but the load POWER does not: V^2/R gives 33 mW, 20 mW and", "3.3 mW... wait - work it through and the matched 50 ohm load takes the most, because power is", "(V_s R_L / (R_s + R_L))^2 / R_L, which peaks at R_L = R_s.", "Maximum power transfer is a match, not the biggest or smallest load. Maximum voltage would want", "an open circuit and maximum current a short; neither delivers power. PROBE: all three loads."},
     [CIRCUIT_HW_REFLECT] = {"SIGNAL REFLECTIONS: eight L-C sections (2.5 uH and 1 nF each) make an artificial line with", "Z0 = sqrt(L/C) = 50 ohm and a one-way delay of 8 sqrt(LC) = 400 ns, driven from 50 ohm.", "With the far-end switch OPEN the line is unterminated: the edge runs to the end, reflects with", "the same sign, and comes back - so the driver end shows the classic staircase and the far end", "overshoots to twice the incident step. CLOSE the switch for a matched 50 ohm termination and the", "reflection disappears. TRY: 10 ohm instead of 50 for an inverted reflection."},
     [CIRCUIT_HW_LOOP] = {"LOOP STABILITY AND PHASE MARGIN: two identical inverting stages (gain -10) driving 1 nF through", "1 k. The load pole and the amplifier's own pole both sit inside the loop, so by the time the", "loop gain reaches unity the phase has fallen close to -180 degrees: little phase margin, and the", "step response rings. The lower copy has 100 pF across the feedback resistor, which adds a zero,", "returns phase before crossover and damps the ringing - at the cost of bandwidth.", "PROBE: both outputs on the same step. Use the Bode button to see the margin directly."},
@@ -7198,7 +7261,7 @@ static int peak_hold(Circuit *circuit, float x0, float y, double C, double R) {
 // ideal op-amp comparator at (x,y): -(x-40,y-20) +(x-40,y+20) out(x+40,y); DC reference vref wired to the - input
 static Component *comparator_with_ref(Circuit *circuit, float x, float y, double vref, int plus_node) {
     Component *u = add_comp(circuit, COMP_OPAMP, x, y, 0);
-    u->props.opamp.ideal = false;                 // open-loop comparator: finite gain + rails (ideal = virtual short)
+    u->props.opamp.ideal = true;                  // open-loop comparator: finite gain (1e5) + hard rails, algebraic
     u->props.opamp.gain = 1e5;
     Component *v = add_comp(circuit, COMP_DC_VOLTAGE, x + 100, y - 100, 0);      // +(x+100,y-140) -(x+100,y-60)
     v->props.dc_voltage.voltage = vref;
@@ -7341,7 +7404,7 @@ static int place_pc_distance(Circuit *circuit, float x, float y) {
     int vsec = TN(x + 100, y + 240), vs1 = TN(x + 40, y + 240), vs2 = TN(x + 40, y + 320), vs3 = TN(x + 80, y + 320);
     TW(vsec, vs1); TW(vs1, vs2); TW(vs2, vs3);
     Component *u = add_comp(circuit, COMP_OPAMP, x + 640, y - 40, 0);            // -(600,-60) +(600,-20) out(680,-40)
-    u->props.opamp.ideal = false; u->props.opamp.gain = 1e5;
+    u->props.opamp.ideal = true; u->props.opamp.gain = 1e5;   /* algebraic model, finite gain: see sat_opamp */
     int plus = TN(x + 600, y - 20), i1 = TN(x + 560, y + 20), i2 = TN(x + 560, y - 20);
     TW(vi, i1); TW(i1, i2); TW(i2, plus);
     int minus = TN(x + 600, y - 60), m1 = TN(x + 240, y + 460), m2 = TN(x - 60, y + 460), m3 = TN(x - 60, y - 60);
@@ -7596,7 +7659,11 @@ static int place_3ph_rectifier(Circuit *circuit, float x, float y) {
 #define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
 static Component *sat_opamp(Circuit *circuit, float x, float y) {
     Component *u = add_comp(circuit, COMP_OPAMP, x, y, 0);
-    u->props.opamp.ideal = false; u->props.opamp.gain = 1e5;
+    /* Open-loop / comparator use: finite gain (1e5, not a virtual short) and hard rails.
+       `ideal` stays true so the part keeps the algebraic model: these templates are about
+       saturation and switching thresholds, not about a 741's GBW and slew rate. The
+       Ideal vs Real Op-Amp template is where the dynamic model is the point. */
+    u->props.opamp.ideal = true; u->props.opamp.gain = 1e5;
     return u;
 }
 // ground the op-amp terminal at (tx,ty) via a wire to (gx,ty) and a ground symbol there
@@ -7997,7 +8064,7 @@ static int place_opamp_sat(Circuit *circuit, float x, float y) {
     Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 80, y + 20, 0);         // (40,20)-(120,20)
     r1->props.resistor.resistance = 10e3;
     Component *u = add_comp(circuit, COMP_OPAMP, x + 200, y + 40, 0);           // -(160,20) +(160,60) out(240,40)
-    u->props.opamp.ideal = false; u->props.opamp.gain = 1e5;
+    u->props.opamp.ideal = true; u->props.opamp.gain = 1e5;   /* algebraic model, finite gain: see sat_opamp */
     Component *g = add_comp(circuit, COMP_GROUND, x + 140, y + 80, 0);          // + at (160,60) -> (140,60)
     Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 200, y - 40, 0);        // (160,-40)-(240,-40)
     r2->props.resistor.resistance = 100e3;
@@ -9495,10 +9562,12 @@ static int place_mos_cascode(Circuit *circuit, float x, float y) {
     int gate1 = mos_gate_bias(circuit, x - 60, y, y - 320, rail, 1e6, 330e3);
     TW(cr, gate1);
     Component *m1 = mos_dev(circuit, x, y, 1.5, 0.01); if (!m1) return 0;           // common source
+    m1->props.mosfet.ideal = true;
     int d1 = TN(x + 20, y - 20), s1n = TN(x + 20, y + 20);
     m1->node_ids[0] = gate1; m1->node_ids[1] = d1; m1->node_ids[2] = s1n;
     mos_source_leg(circuit, x + 40, y, s1n, 2.2e3, 10e-6);   // 0.62 mA leaves both devices saturated
     Component *m2 = mos_dev(circuit, x, y - 160, 1.5, 0.01);                        // common gate on top
+    if (m2) m2->props.mosfet.ideal = true;
     int d2 = TN(x + 20, y - 180), s2n = TN(x + 20, y - 140);
     TW(d1, TN(x + 40, y - 20)); TW(TN(x + 40, y - 20), TN(x + 40, y - 140)); TW(TN(x + 40, y - 140), s2n);
     int gate2 = mos_gate_bias(circuit, x - 160, y - 160, y - 320, rail, 470e3, 1e6);
@@ -9602,9 +9671,9 @@ static int place_cmos_inv(Circuit *circuit, float x, float y) {
     TW(inn, ij); TW(ij, TN(x - 100, y)); TW(TN(x - 100, y), TN(x - 100, y - 80)); TW(TN(x - 100, y - 80), gp);
     TW(TN(x - 100, y), TN(x - 100, y + 80)); TW(TN(x - 100, y + 80), gn);
     Component *mp = add_comp(circuit, COMP_PMOS, x, y - 80, 0);                     // G(-20,-80) D(20,-100) S(20,-60)
-    mp->props.mosfet.vth = -1.0; mp->props.mosfet.kp = 0.005; mp->props.mosfet.ideal = false;
+    mp->props.mosfet.vth = -1.0; mp->props.mosfet.kp = 0.005; mp->props.mosfet.ideal = true;
     Component *mn = add_comp(circuit, COMP_NMOS, x, y + 80, 0);                     // G(-20,80) D(20,60) S(20,100)
-    mn->props.mosfet.vth = 1.0; mn->props.mosfet.kp = 0.01; mn->props.mosfet.ideal = false;
+    mn->props.mosfet.vth = 1.0; mn->props.mosfet.kp = 0.01; mn->props.mosfet.ideal = true;
     int pd = TN(x + 20, y - 100), ps = TN(x + 20, y - 60), nd = TN(x + 20, y + 60), ns = TN(x + 20, y + 100);
     TW(ps, TN(x + 60, y - 60)); TW(TN(x + 60, y - 60), TN(x + 60, y - 180)); TW(TN(x + 60, y - 180), railA);
     int out = TN(x + 20, y);
@@ -9819,15 +9888,20 @@ static Component *pwm_switch(Circuit *circuit, float x, float y, double fsw, dou
 }
 // vertical inductor at (x,y): terminals (x,y-40),(x,y+40)
 static Component *vind(Circuit *circuit, float x, float y, double l) {
-    Component *c = add_comp(circuit, COMP_INDUCTOR, x, y, 90); c->props.inductor.inductance = l; return c;
+    Component *c = add_comp(circuit, COMP_INDUCTOR, x, y, 90); c->props.inductor.inductance = l;
+    c->props.inductor.dcr = 0.2; c->props.inductor.ideal = false;    /* real windings lose a little: without it an L-C loop rings for ever */
+    return c;
 }
 static Component *hind(Circuit *circuit, float x, float y, double l) {
-    Component *c = add_comp(circuit, COMP_INDUCTOR, x, y, 0); c->props.inductor.inductance = l; return c;
+    Component *c = add_comp(circuit, COMP_INDUCTOR, x, y, 0); c->props.inductor.inductance = l;
+    c->props.inductor.dcr = 0.2; c->props.inductor.ideal = false;
+    return c;
 }
 // output filter cap + load from node `n` at (x,y) to ground; returns the load component
-static Component *out_stage(Circuit *circuit, float x, float y, int n, double c_out, double r_load) {
+static Component *out_stage(Circuit *circuit, float x, float y, int n, double c_out, double r_load, double v0) {
     Component *c = add_comp(circuit, COMP_CAPACITOR, x, y + 60, 90);      // (x,y+20)-(x,y+100)
     c->props.capacitor.capacitance = c_out;
+    c->props.capacitor.voltage = v0;   /* start near steady state: a cold start rings for many ms */
     Component *gc = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
     int ct = TN(x, y + 20), cb = TN(x, y + 100), cg = TN(x, y + 120);
     TW(n, ct); TW(cb, cg);
@@ -9855,11 +9929,11 @@ static int place_hw_buck(Circuit *circuit, float x, float y) {
     TW(node_sw, da);
     d->node_ids[0] = dk; d->node_ids[1] = da;                              // K to the switch node, A to ground
     gd->node_ids[0] = dk;
-    Component *l = hind(circuit, x + 340, y, 100e-6);                      // (300,y)-(380,y)
+    Component *l = hind(circuit, x + 340, y, 22e-6);                       // (300,y)-(380,y)
     int ll = TN(x + 300, y), lr = TN(x + 380, y); TW(node_sw, ll);
     l->node_ids[0] = ll; l->node_ids[1] = lr;
     int out = TN(x + 440, y); TW(lr, out);
-    out_stage(circuit, x + 440, y, out, 100e-6, 6.0);
+    out_stage(circuit, x + 440, y, out, 47e-6, 6.0, 6.0);
     add_label(circuit, x - 40, y - 80, "BUCK CONVERTER: Vout = D x Vin = 0.5 x 12 = 6 V at 100 kHz. The switch chops, the diode freewheels, L and C average");
     add_label(circuit, x - 40, y + 220, "Inductor ripple dI = (Vin-Vout) D / (L fsw) = 300 mA; output ripple dV = dI / (8 C fsw) = 3.8 mV.");
     add_label(circuit, x - 40, y + 250, "TRY: duty 0.5 -> 0.25 halves Vout. Drop L to 10 uH and the inductor current goes discontinuous.");
@@ -9870,7 +9944,7 @@ static int place_hw_buck(Circuit *circuit, float x, float y) {
 static int place_hw_boost(Circuit *circuit, float x, float y) {
     Component *vin = dc_rail(circuit, x, y, 5.0); if (!vin) return 0;
     int in = TN(x, y);
-    Component *l = hind(circuit, x + 100, y, 100e-6);                      // (60,y)-(140,y)
+    Component *l = hind(circuit, x + 100, y, 22e-6);                       // (60,y)-(140,y)
     int ll = TN(x + 60, y), lr = TN(x + 140, y); TW(in, ll);
     l->node_ids[0] = ll; l->node_ids[1] = lr;
     int node_sw = TN(x + 200, y); TW(lr, node_sw);
@@ -9884,7 +9958,7 @@ static int place_hw_boost(Circuit *circuit, float x, float y) {
     int da = TN(x + 280, y), dk = TN(x + 360, y); TW(node_sw, da);
     d->node_ids[0] = da; d->node_ids[1] = dk;
     int out = TN(x + 420, y); TW(dk, out);
-    out_stage(circuit, x + 420, y, out, 220e-6, 100.0);
+    out_stage(circuit, x + 420, y, out, 47e-6, 20.0, 10.0);
     add_label(circuit, x - 40, y - 80, "BOOST CONVERTER: Vout = Vin / (1 - D) = 5 / 0.5 = 10 V. The switch charges L from the input, then L dumps into the output through the diode");
     add_label(circuit, x - 40, y + 240, "The output can only ever be ABOVE the input, and the input current is continuous while the output current is not -");
     add_label(circuit, x - 40, y + 270, "which is why a boost needs far more output capacitance than a buck. TRY: duty 0.5 -> 0.75 gives 20 V.");
@@ -9900,7 +9974,7 @@ static int place_hw_buckboost(Circuit *circuit, float x, float y) {
     sw->node_ids[0] = si; sw->node_ids[1] = so;
     int node_sw = TN(x + 240, y); TW(so, node_sw);
     Component *l = add_comp(circuit, COMP_INDUCTOR, x + 240, y + 80, 90);  // (240,40)-(240,120)
-    l->props.inductor.inductance = 100e-6;
+    l->props.inductor.inductance = 22e-6;
     int lt = TN(x + 240, y + 40), lb = TN(x + 240, y + 120);
     Component *gl = add_comp(circuit, COMP_GROUND, x + 240, y + 160, 0);
     TW(node_sw, lt); TW(lb, TN(x + 240, y + 140)); gl->node_ids[0] = TN(x + 240, y + 140);
@@ -9909,7 +9983,7 @@ static int place_hw_buckboost(Circuit *circuit, float x, float y) {
     int dk = TN(x + 300, y), da = TN(x + 380, y); TW(node_sw, dk);
     d->node_ids[0] = da; d->node_ids[1] = dk;
     int out = TN(x + 440, y); TW(da, out);
-    out_stage(circuit, x + 440, y, out, 220e-6, 20.0);
+    out_stage(circuit, x + 440, y, out, 47e-6, 20.0, -12.0);
     add_label(circuit, x - 40, y - 80, "BUCK-BOOST: Vout = -D/(1-D) x Vin = -12 V at D = 0.5. The output is INVERTED, and can be above or below the input");
     add_label(circuit, x - 40, y + 220, "The inductor is the only energy path: it charges from the input, then discharges into the output with the opposite");
     add_label(circuit, x - 40, y + 250, "polarity. Neither the input nor the output current is continuous. TRY: D 0.5 -> 0.67 gives -24 V.");
@@ -9920,7 +9994,7 @@ static int place_hw_buckboost(Circuit *circuit, float x, float y) {
 static int place_hw_cuk(Circuit *circuit, float x, float y) {
     Component *vin = dc_rail(circuit, x, y, 12.0); if (!vin) return 0;
     int in = TN(x, y);
-    Component *l1 = hind(circuit, x + 100, y, 220e-6);
+    Component *l1 = hind(circuit, x + 100, y, 47e-6);
     l1->props.inductor.dcr = 0.1; l1->props.inductor.ideal = false;
     int l1l = TN(x + 60, y), l1r = TN(x + 140, y); TW(in, l1l);
     l1->node_ids[0] = l1l; l1->node_ids[1] = l1r;
@@ -9932,25 +10006,25 @@ static int place_hw_cuk(Circuit *circuit, float x, float y) {
     TW(so, TN(x + 280, y + 80)); gs->node_ids[0] = TN(x + 280, y + 80);
     sw->node_ids[0] = si; sw->node_ids[1] = so;
     Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 300, y, 0);      // (260,y)-(340,y) transfer cap
-    c1->props.capacitor.capacitance = 47e-6;
+    c1->props.capacitor.capacitance = 220e-6;
     c1->props.capacitor.voltage = 24.0;   /* pre-charged to Vin + |Vout|: a Cuk started from zero rings hard */
     int c1l = TN(x + 260, y), c1r = TN(x + 340, y); TW(node_a, c1l);
     c1->node_ids[0] = c1l; c1->node_ids[1] = c1r;
-    Component *resr = hres(circuit, x + 400, y, 0.5);                      // (360,y)-(440,y): the cap's ESR
+    Component *resr = hres(circuit, x + 400, y, 0.2);                      // (360,y)-(440,y): the cap's ESR
     int esl = TN(x + 360, y), esr2 = TN(x + 440, y); TW(c1r, esl);
     resr->node_ids[0] = esl; resr->node_ids[1] = esr2;
     int node_b = TN(x + 500, y); TW(esr2, node_b);
-    Component *d = add_comp(circuit, COMP_DIODE, x + 500, y + 80, 270);    // A(500,120) K(500,40)
-    int dk2 = TN(x + 500, y + 40), da2 = TN(x + 500, y + 120);
+    Component *d = add_comp(circuit, COMP_DIODE, x + 500, y + 80, 90);     // rot 90: A(500,40) K(500,120)
+    int da2 = TN(x + 500, y + 40), dk2 = TN(x + 500, y + 120);
     Component *gd = add_comp(circuit, COMP_GROUND, x + 500, y + 160, 0);
-    TW(node_b, dk2); TW(da2, TN(x + 500, y + 140)); gd->node_ids[0] = TN(x + 500, y + 140);
-    d->node_ids[0] = da2; d->node_ids[1] = dk2;
-    Component *l2 = hind(circuit, x + 600, y, 220e-6);
+    TW(node_b, da2); TW(dk2, TN(x + 500, y + 140)); gd->node_ids[0] = TN(x + 500, y + 140);
+    d->node_ids[0] = da2; d->node_ids[1] = dk2;   // anode on the switch node, cathode to ground
+    Component *l2 = hind(circuit, x + 600, y, 47e-6);
     l2->props.inductor.dcr = 0.1; l2->props.inductor.ideal = false;
     int l2l = TN(x + 560, y), l2r = TN(x + 640, y); TW(node_b, l2l);
     l2->node_ids[0] = l2l; l2->node_ids[1] = l2r;
     int out = TN(x + 700, y); TW(l2r, out);
-    out_stage(circuit, x + 700, y, out, 220e-6, 20.0);
+    out_stage(circuit, x + 700, y, out, 470e-6, 20.0, -12.0);
     add_label(circuit, x - 40, y - 80, "CUK CONVERTER: energy moves through the 47 uF transfer capacitor instead of an inductor, so BOTH the input and");
     add_label(circuit, x - 40, y - 50, "output currents are continuous - the quietest of the basic topologies. Vout = -D/(1-D) x Vin = -12 V at D = 0.5.");
     add_label(circuit, x - 40, y + 220, "The 0.5 ohm with C1 is its ESR; with no real loss the C1-L2 loop rings away at start-up. TRY: C1 -> 1 uF.");
@@ -9980,12 +10054,12 @@ static int place_hw_interleaved(Circuit *circuit, float x, float y) {
         Component *gd = add_comp(circuit, COMP_GROUND, x + 240, py + 160, 0);
         TW(nsw, da);
         d->node_ids[0] = dk; d->node_ids[1] = da; gd->node_ids[0] = dk;
-        Component *l = hind(circuit, x + 340, py, 100e-6);
+        Component *l = hind(circuit, x + 340, py, 22e-6);
         int ll = TN(x + 300, py), lr = TN(x + 380, py); TW(nsw, ll);
         l->node_ids[0] = ll; l->node_ids[1] = lr;
         TW(lr, TN(x + 440, py)); TW(TN(x + 440, py), TN(x + 440, y)); TW(TN(x + 440, y), out);
     }
-    out_stage(circuit, x + 520, y, out, 47e-6, 3.0);
+    out_stage(circuit, x + 520, y, out, 47e-6, 3.0, 6.0);
     add_label(circuit, x - 40, y - 200, "TWO-PHASE INTERLEAVED BUCK: two 100 kHz buck stages 180 degrees out of phase into one output");
     add_label(circuit, x - 40, y + 460, "Each phase carries half the current, and their ripples partly cancel, so the output ripple is far smaller than one");
     add_label(circuit, x - 40, y + 490, "phase alone would give at 200 kHz effective. Coupling the two inductors (a CLVR) cancels more still and shrinks them.");
@@ -10015,7 +10089,7 @@ static int place_hw_pdn(Circuit *circuit, float x, float y) {
         r->props.resistor.resistance = esr[k];
         Component *g = add_comp(circuit, COMP_GROUND, px, y + 260, 0);
         int ct = TN(px, y + 40), cb = TN(px, y + 120), rt = TN(px, y + 140), rb = TN(px, y + 220), gt = TN(px, y + 240);
-        TW(rail, ct); TW(cb, rt); TW(rb, gt);
+        int tap = TN(px, y); TW(rail, tap); TW(tap, ct); TW(cb, rt); TW(rb, gt);
         c->node_ids[0] = ct; c->node_ids[1] = cb; r->node_ids[0] = rt; r->node_ids[1] = rb; g->node_ids[0] = gt;
     }
     /* the load: a steady 0.9 A plus a switched 0.9 A step */
@@ -10023,7 +10097,7 @@ static int place_hw_pdn(Circuit *circuit, float x, float y) {
     rdc->props.resistor.resistance = 2.0;
     Component *gdc = add_comp(circuit, COMP_GROUND, x + 560, y + 160, 0);
     int dt = TN(x + 560, y + 40), db = TN(x + 560, y + 120), dg = TN(x + 560, y + 140);
-    TW(rail, dt); TW(db, dg);
+    int dtap = TN(x + 560, y); TW(rail, dtap); TW(dtap, dt); TW(db, dg);
     rdc->node_ids[0] = dt; rdc->node_ids[1] = db; gdc->node_ids[0] = dg;
     Component *sw = fault_switch(circuit, x + 660, y, 20e-6, 20e-6, 80e-6);  // IN(620,y) OUT(700,y)
     TW(rail, TN(x + 620, y)); sw->node_ids[0] = TN(x + 620, y);
@@ -10208,6 +10282,313 @@ static int place_hw_loop(Circuit *circuit, float x, float y) {
     add_label(circuit, x - 40, y + 620, "the ringing disappears - at the cost of bandwidth. Use the Bode button on each to compare the two loops directly.");
     return 30;
 }
+
+/* ======================= Ideal vs real component models =======================
+   Each builder places the same circuit two or three times and swaps ONE part for its
+   non-ideal model, so both traces sit on the scope together. Every number quoted in the
+   notes is a hand calculation that --probe-test checks against the solver. */
+
+// 1. A source is a voltage BEHIND a resistance
+static int place_id_source(Circuit *circuit, float x, float y) {
+    static const double rl[3] = { 1000.0, 1000.0, 100.0 };
+    static const int idl[3] = { 1, 0, 0 };
+    static const char *nm[3] = { "IDEAL 5 V, 1k load -> 5.000 V",
+                                 "REAL 5 V (r = 200 ohm), 1k load -> 4.167 V",
+                                 "REAL 5 V (r = 200 ohm), 100 ohm load -> 1.667 V" };
+    for (int k = 0; k < 3; k++) {
+        float py = y + k * 220;
+        Component *v = add_comp(circuit, COMP_DC_VOLTAGE, x, py + 60, 0);       // +(x,py+20) -(x,py+100)
+        if (!v) return 0;
+        v->props.dc_voltage.voltage = 5.0;
+        v->props.dc_voltage.ideal = idl[k] ? true : false;
+        v->props.dc_voltage.r_series = 200.0;
+        Component *g = add_comp(circuit, COMP_GROUND, x, py + 140, 0);
+        connect_terminals(circuit, v, 1, g, 0);
+        int sp = TN(x, py + 20); v->node_ids[0] = sp;
+        int node = TN(x + 240, py + 20); TW(sp, node);
+        Component *r = add_comp(circuit, COMP_RESISTOR, x + 240, py + 80, 90);  // (240,py+40)-(240,py+120)
+        r->props.resistor.resistance = rl[k];
+        Component *g2 = add_comp(circuit, COMP_GROUND, x + 240, py + 160, 0);
+        int rt = TN(x + 240, py + 40), rb = TN(x + 240, py + 120), gt = TN(x + 240, py + 140);
+        TW(node, rt); TW(rb, gt);
+        r->node_ids[0] = rt; r->node_ids[1] = rb; g2->node_ids[0] = gt;
+        add_label(circuit, x + 300, py + 20, nm[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "IDEAL vs REAL SOURCE: one 5 V supply three times - ideal, then twice behind its 200 ohm internal resistance");
+    add_label(circuit, x - 40, y + 660, "A real supply, battery or signal generator is a voltage BEHIND a resistance, so the LOAD decides the terminal");
+    add_label(circuit, x - 40, y + 690, "voltage: 5 x 1000/1200 = 4.167 V into 1k, but only 5 x 100/300 = 1.667 V into 100 ohm. Tick Ideal on the second");
+    add_label(circuit, x - 40, y + 720, "source, or set its r_series to 0, and it climbs back to a flat 5.000 V whatever you hang on it.");
+    return 12;
+}
+
+// 2. The 0.7 V brick wall against the Shockley knee
+static int place_id_diode(Circuit *circuit, float x, float y) {
+    static const int idl[2] = { 1, 0 };
+    static const char *nm[2] = { "IDEAL diode: dead below 0.7 V, then a hard 0.7 V drop -> peak 0.30 V",
+                                 "REAL diode (Shockley): soft knee near 0.52 V -> peak ~0.48 V" };
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 220;
+        Component *v = add_comp(circuit, COMP_AC_VOLTAGE, x, py + 60, 0);
+        if (!v) return 0;
+        v->props.ac_voltage.amplitude = 1.0; v->props.ac_voltage.frequency = 1000.0;
+        Component *g = add_comp(circuit, COMP_GROUND, x, py + 140, 0);
+        connect_terminals(circuit, v, 1, g, 0);
+        int sp = TN(x, py + 20); v->node_ids[0] = sp;
+        Component *d = add_comp(circuit, COMP_DIODE, x + 140, py + 20, 0);      // A(100,py+20) K(180,py+20)
+        d->props.diode.ideal = idl[k] ? true : false;
+        int da = TN(x + 100, py + 20), dk = TN(x + 180, py + 20); TW(sp, da);
+        d->node_ids[0] = da; d->node_ids[1] = dk;
+        int node = TN(x + 240, py + 20); TW(dk, node);
+        Component *r = add_comp(circuit, COMP_RESISTOR, x + 240, py + 80, 90);
+        r->props.resistor.resistance = 1000.0;
+        Component *g2 = add_comp(circuit, COMP_GROUND, x + 240, py + 160, 0);
+        int rt = TN(x + 240, py + 40), rb = TN(x + 240, py + 120), gt = TN(x + 240, py + 140);
+        TW(node, rt); TW(rb, gt);
+        r->node_ids[0] = rt; r->node_ids[1] = rb; g2->node_ids[0] = gt;
+        add_label(circuit, x + 300, py + 20, nm[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "IDEAL vs REAL DIODE: the same 1 Vpk half-wave rectifier, one with the switch-plus-battery model, one with Shockley");
+    add_label(circuit, x - 40, y + 440, "The ideal model is a switch behind a 0.7 V battery, so a 1 V peak leaves 0.30 V. The real junction passes hundreds");
+    add_label(circuit, x - 40, y + 470, "of microamps well below 0.7 V, turns on around 0.52 V and leaves ~0.48 V - 60 % more. Use the ideal model for a");
+    add_label(circuit, x - 40, y + 500, "mental estimate; it is wrong exactly where log amps, temperature sensors and small-signal detectors live.");
+    return 10;
+}
+
+// 3. ESR: the resistance that turns ripple into a square
+static int place_id_cap(Circuit *circuit, float x, float y) {
+    static const double esr[3] = { 0.0, 0.5, 2.0 };
+    static const char *nm[3] = { "IDEAL 5 uF: pure triangle, 250 mVpp",
+                                 "REAL 5 uF, ESR = 0.5 ohm: a +/-25 mV square rides on the triangle",
+                                 "REAL 5 uF, ESR = 2 ohm: +/-100 mV - now the ESR dominates the ripple" };
+    for (int k = 0; k < 3; k++) {
+        float py = y + k * 220;
+        Component *v = add_comp(circuit, COMP_SQUARE_WAVE, x, py + 60, 0);
+        if (!v) return 0;
+        v->props.square_wave.amplitude = 5.0; v->props.square_wave.frequency = 20e3;
+        v->props.square_wave.duty = 0.5;
+        Component *g = add_comp(circuit, COMP_GROUND, x, py + 140, 0);
+        connect_terminals(circuit, v, 1, g, 0);
+        int sp = TN(x, py + 20); v->node_ids[0] = sp;
+        Component *rs = hres(circuit, x + 140, py + 20, 100.0);
+        rs->props.resistor.power_rating = 1.0;      /* 10 Vpp across 100 ohm: a real 1 W part */
+        int sl = TN(x + 100, py + 20), sr = TN(x + 180, py + 20); TW(sp, sl);
+        rs->node_ids[0] = sl; rs->node_ids[1] = sr;
+        int node = TN(x + 240, py + 20); TW(sr, node);
+        Component *cc = add_comp(circuit, COMP_CAPACITOR, x + 240, py + 80, 90);
+        cc->props.capacitor.capacitance = 5e-6;    /* RC = 0.5 ms, so the mean settles inside the run */
+        cc->props.capacitor.ideal = (k == 0);
+        cc->props.capacitor.esr = esr[k];
+        cc->props.capacitor.esl = 0.0;              /* ESR only, so the step is exactly I x ESR */
+        cc->props.capacitor.leakage = 1e9;
+        Component *g2 = add_comp(circuit, COMP_GROUND, x + 240, py + 160, 0);
+        int rt = TN(x + 240, py + 40), rb = TN(x + 240, py + 120), gt = TN(x + 240, py + 140);
+        TW(node, rt); TW(rb, gt);
+        cc->node_ids[0] = rt; cc->node_ids[1] = rb; g2->node_ids[0] = gt;
+        add_label(circuit, x + 300, py + 20, nm[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "IDEAL vs REAL CAPACITOR: a +/-5 V 20 kHz square through 100 ohm charges 5 uF - so the current is a +/-50 mA square");
+    add_label(circuit, x - 40, y + 660, "An ideal capacitor integrates that square into a triangle: dV = I(T/2)/C = 250 mVpp. A real one is C in SERIES with");
+    add_label(circuit, x - 40, y + 690, "its ESR, and the resistance copies the current square straight onto the output. That is why a supply's ripple barely");
+    add_label(circuit, x - 40, y + 720, "improves when you add capacitance but collapses when you pick a low-ESR part. ESL does the same to the fast edges.");
+    return 15;
+}
+
+// 4. DCR: the winding resistance that stops an L-C loop ringing for ever
+static int place_id_ind(Circuit *circuit, float x, float y) {
+    static const int idl[2] = { 1, 0 };
+    static const char *nm[2] = { "IDEAL inductor: only the 10 ohm damps it, zeta = 0.05, peak 9.3 V",
+                                 "REAL inductor, DCR = 50 ohm: zeta = 0.30, peak 6.9 V, ring gone in 3 cycles" };
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 260;
+        Component *v = add_comp(circuit, COMP_PULSE_SOURCE, x, py + 60, 0);
+        if (!v) return 0;
+        v->props.pulse_source.v_low = 0; v->props.pulse_source.v_high = 5.0;
+        v->props.pulse_source.period = 8e-3; v->props.pulse_source.pulse_width = 3e-3;
+        v->props.pulse_source.rise_time = v->props.pulse_source.fall_time = 1e-6;
+        Component *g = add_comp(circuit, COMP_GROUND, x, py + 140, 0);
+        connect_terminals(circuit, v, 1, g, 0);
+        int sp = TN(x, py + 20); v->node_ids[0] = sp;
+        Component *rs = hres(circuit, x + 140, py + 20, 10.0);
+        int sl = TN(x + 100, py + 20), sr = TN(x + 180, py + 20); TW(sp, sl);
+        rs->node_ids[0] = sl; rs->node_ids[1] = sr;
+        Component *l = add_comp(circuit, COMP_INDUCTOR, x + 280, py + 20, 0);   // (240,py+20)-(320,py+20)
+        l->props.inductor.inductance = 10e-3;
+        l->props.inductor.ideal = idl[k] ? true : false;
+        l->props.inductor.dcr = 50.0;
+        int ll = TN(x + 240, py + 20), lr = TN(x + 320, py + 20); TW(sr, ll);
+        l->node_ids[0] = ll; l->node_ids[1] = lr;
+        int node = TN(x + 400, py + 20); TW(lr, node);
+        Component *cc = add_comp(circuit, COMP_CAPACITOR, x + 400, py + 80, 90);
+        cc->props.capacitor.capacitance = 1e-6;
+        Component *g2 = add_comp(circuit, COMP_GROUND, x + 400, py + 160, 0);
+        int rt = TN(x + 400, py + 40), rb = TN(x + 400, py + 120), gt = TN(x + 400, py + 140);
+        TW(node, rt); TW(rb, gt);
+        cc->node_ids[0] = rt; cc->node_ids[1] = rb; g2->node_ids[0] = gt;
+        add_label(circuit, x + 460, py + 20, nm[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "IDEAL vs REAL INDUCTOR: a 5 V step into 10 ohm + 10 mH + 1 uF, so f0 = 1/(2 pi sqrt(LC)) = 1592 Hz");
+    add_label(circuit, x - 40, y + 480, "Damping is zeta = (R/2) sqrt(C/L). With an ideal inductor only the 10 ohm resistor counts: zeta = 0.05 and the");
+    add_label(circuit, x - 40, y + 510, "capacitor overshoots to 1.85 x 5 V = 9.3 V, ringing for many cycles. Give the winding its real 50 ohm DCR and");
+    add_label(circuit, x - 40, y + 540, "zeta = 0.30: the peak falls to 6.9 V and the ring is gone in three. A lossless inductor is how a switching");
+    add_label(circuit, x - 40, y + 570, "converter runs away in a simulator - the L-C loop it lives in has nothing to dissipate the energy.");
+    return 12;
+}
+
+// 5. Gain-bandwidth product and slew rate against an infinite op-amp
+static int place_id_opamp(Circuit *circuit, float x, float y) {
+    static const int idl[3] = { 1, 0, 0 };
+    static const double amp[3] = { 0.05, 0.05, 0.5 };
+    static const char *nm[3] = { "IDEAL: 50 mV in, 500 mV out, at any frequency you like",
+                                 "REAL (GBW 1 MHz): at Acl = 10 the bandwidth is 100 kHz, so 354 mV - 3 dB down",
+                                 "REAL, 500 mV in: 5 V at 100 kHz needs 3.1 V/us, the part slews at 0.5 - a TRIANGLE" };
+    for (int k = 0; k < 3; k++) {
+        float py = y + k * 300;
+        Component *v = add_comp(circuit, COMP_AC_VOLTAGE, x, py + 100, 0);      // +(x,py+60) -(x,py+140)
+        if (!v) return 0;
+        v->props.ac_voltage.amplitude = amp[k]; v->props.ac_voltage.frequency = 100e3;
+        Component *g = add_comp(circuit, COMP_GROUND, x, py + 180, 0);
+        connect_terminals(circuit, v, 1, g, 0);
+        int sp = TN(x, py + 60); v->node_ids[0] = sp;
+        Component *u = add_comp(circuit, COMP_OPAMP, x + 240, py + 40, 0);      // -(200,py+20) +(200,py+60) out(280,py+40)
+        u->props.opamp.ideal = idl[k] ? true : false;
+        u->props.opamp.gain = 1e5; u->props.opamp.gbw = 1e6; u->props.opamp.slew_rate = 0.5;
+        int plus = TN(x + 200, py + 60); TW(sp, plus);        /* clear corridor: nothing sits on py+60 */
+        int minus = TN(x + 200, py + 20);
+        /* The gain network lives in its own column to the LEFT of the source, so the wire that
+           feeds the + input never has to cross R1 (running the input along a resistor's own
+           line reads - correctly - as a wire straight through the part). */
+        Component *r1 = add_comp(circuit, COMP_RESISTOR, x - 100, py + 80, 90);  // (-100,py+40)-(-100,py+120)
+        r1->props.resistor.resistance = 1000.0;
+        Component *g1 = add_comp(circuit, COMP_GROUND, x - 100, py + 160, 0);
+        int mleft = TN(x - 100, py + 20);
+        int r1t = TN(x - 100, py + 40), r1b = TN(x - 100, py + 120), g1t = TN(x - 100, py + 140);
+        TW(minus, mleft); TW(mleft, r1t); TW(r1b, g1t);
+        r1->node_ids[0] = r1t; r1->node_ids[1] = r1b; g1->node_ids[0] = g1t;
+        /* feedback over the top: out -> right -> up -> left through R2 -> down the same column */
+        Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 235, py - 40, 0);   // (195,py-40)-(275,py-40)
+        r2->props.resistor.resistance = 9000.0;
+        int out = TN(x + 280, py + 40), oright = TN(x + 320, py + 40), otop = TN(x + 320, py - 40);
+        int r2r = TN(x + 275, py - 40), r2l = TN(x + 195, py - 40), fbl = TN(x - 100, py - 40);
+        TW(out, oright); TW(oright, otop); TW(otop, r2r); TW(r2l, fbl); TW(fbl, mleft);
+        r2->node_ids[0] = r2l; r2->node_ids[1] = r2r;
+        u->node_ids[0] = minus; u->node_ids[1] = plus; u->node_ids[2] = out;
+        int lnode = TN(x + 400, py + 40); TW(oright, lnode);
+        Component *rl = add_comp(circuit, COMP_RESISTOR, x + 400, py + 100, 90);  // (400,py+60)-(400,py+140)
+        rl->props.resistor.resistance = 10000.0;
+        Component *gl = add_comp(circuit, COMP_GROUND, x + 400, py + 180, 0);
+        int lt = TN(x + 400, py + 60), lb = TN(x + 400, py + 140), glt = TN(x + 400, py + 160);
+        TW(lnode, lt); TW(lb, glt);
+        rl->node_ids[0] = lt; rl->node_ids[1] = lb; gl->node_ids[0] = glt;
+        add_label(circuit, x + 470, py + 40, nm[k]);
+    }
+    add_label(circuit, x - 140, y - 100, "IDEAL vs REAL OP-AMP: three non-inverting stages, gain 1 + 9k/1k = 10, all driven at 100 kHz");
+    add_label(circuit, x - 140, y + 740, "An ideal op-amp has infinite gain and infinite bandwidth, so 50 mV in is 500 mV out however fast you drive it. A real");
+    add_label(circuit, x - 140, y + 770, "part has a gain-bandwidth PRODUCT: 1 MHz at a closed-loop gain of 10 leaves 100 kHz of bandwidth, so at exactly");
+    add_label(circuit, x - 140, y + 800, "100 kHz the output is 3 dB down. Row 3 asks the same part for 5 V at 100 kHz, which needs 2 pi f V = 3.1 V/us; it");
+    add_label(circuit, x - 140, y + 830, "can only manage 0.5, so the sine leaves as a triangle. Bandwidth is small-signal, slew rate is large-signal.");
+    return 24;
+}
+
+// 6. The Early effect moves the operating point
+static int place_id_bjt(Circuit *circuit, float x, float y) {
+    static const int idl[2] = { 1, 0 };
+    static const char *nm[2] = { "IDEAL BJT (no Early effect): I_C = beta I_B = 1.00 mA, V_C = 7.30 V",
+                                 "REAL BJT (V_AF = 80 V): I_C climbs with V_CE, so the collector settles lower" };
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 320;
+        Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x, py + 60, 0);     // +(x,py+20)
+        if (!vcc) return 0;
+        vcc->props.dc_voltage.voltage = 12.0;
+        Component *g0 = add_comp(circuit, COMP_GROUND, x, py + 140, 0);
+        connect_terminals(circuit, vcc, 1, g0, 0);
+        int rail = TN(x, py + 20); vcc->node_ids[0] = rail;
+        int rbtop = TN(x + 140, py + 20), rctop = TN(x + 340, py + 20);
+        TW(rail, rbtop); TW(rbtop, rctop);
+        Component *rb = add_comp(circuit, COMP_RESISTOR, x + 140, py + 80, 90); // (140,py+40)-(140,py+120)
+        rb->props.resistor.resistance = 1.13e6;
+        Component *rc = add_comp(circuit, COMP_RESISTOR, x + 340, py + 80, 90);
+        rc->props.resistor.resistance = 4700.0;
+        int rbt = TN(x + 140, py + 40), rbb = TN(x + 140, py + 120);
+        int rct = TN(x + 340, py + 40), rcb = TN(x + 340, py + 120);
+        TW(rbtop, rbt); TW(rctop, rct);
+        rb->node_ids[0] = rbt; rb->node_ids[1] = rbb;
+        rc->node_ids[0] = rct; rc->node_ids[1] = rcb;
+        Component *q = add_comp(circuit, COMP_NPN_BJT, x + 260, py + 160, 0);   // B(240,py+160) C(280,py+140) E(280,py+180)
+        q->props.bjt.bf = 100.0; q->props.bjt.vaf = 80.0;
+        q->props.bjt.ideal = idl[k] ? true : false;
+        int base = TN(x + 240, py + 160), bdrop = TN(x + 140, py + 160);
+        TW(rbb, bdrop); TW(bdrop, base);
+        int coll = TN(x + 280, py + 140), cdrop = TN(x + 340, py + 140);
+        TW(rcb, cdrop); TW(cdrop, coll);
+        int emit = TN(x + 280, py + 180), eb = TN(x + 280, py + 220);
+        TW(emit, eb);
+        Component *ge = add_comp(circuit, COMP_GROUND, x + 280, py + 240, 0);
+        ge->node_ids[0] = eb;
+        q->node_ids[0] = base; q->node_ids[1] = coll; q->node_ids[2] = emit;
+        add_label(circuit, x + 420, py + 140, nm[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "IDEAL vs REAL BJT: the same fixed-bias stage twice. 1.13 M sets I_B = (12 - 0.7)/1.13M = 10 uA, beta = 100");
+    add_label(circuit, x - 40, y + 620, "The textbook answer is I_C = beta I_B = 1 mA and V_C = 12 - 1 mA x 4.7k = 7.30 V, and that is what the ideal");
+    add_label(circuit, x - 40, y + 650, "model gives. A real transistor's collector current also rises with V_CE - the Early effect, the (1 + V_CE/V_AF)");
+    add_label(circuit, x - 40, y + 680, "term - so with V_AF = 80 V it draws ~9 % more and the collector sits lower. The same slope is the stage's output");
+    add_label(circuit, x - 40, y + 710, "resistance r_o = V_AF/I_C, so it decides the gain of every current-source-loaded amplifier you will build.");
+    return 12;
+}
+
+// 7. Channel-length modulation
+static int place_id_mosfet(Circuit *circuit, float x, float y) {
+    static const int idl[2] = { 1, 0 };
+    static const double lam[2] = { 0.0, 0.05 };
+    static const char *nm[2] = { "IDEAL (lambda = 0): I_D = K V_ov^2 / 2 = 2.25 mA, V_D = 7.05 V",
+                                 "REAL (lambda = 0.05 /V): the (1 + lambda V_DS) term pulls V_D down to 5.65 V" };
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 340;
+        Component *vdd = add_comp(circuit, COMP_DC_VOLTAGE, x, py + 60, 0);
+        if (!vdd) return 0;
+        vdd->props.dc_voltage.voltage = 12.0;
+        Component *g0 = add_comp(circuit, COMP_GROUND, x, py + 140, 0);
+        connect_terminals(circuit, vdd, 1, g0, 0);
+        int rail = TN(x, py + 20); vdd->node_ids[0] = rail;
+        int gtop = TN(x + 140, py + 20), rdtop = TN(x + 340, py + 20);
+        TW(rail, gtop); TW(gtop, rdtop);
+        Component *rg1 = add_comp(circuit, COMP_RESISTOR, x + 140, py + 80, 90);   // (140,py+40)-(140,py+120)
+        rg1->props.resistor.resistance = 900e3;
+        Component *rg2 = add_comp(circuit, COMP_RESISTOR, x + 140, py + 200, 90);  // (140,py+160)-(140,py+240)
+        rg2->props.resistor.resistance = 300e3;
+        Component *rd = add_comp(circuit, COMP_RESISTOR, x + 340, py + 80, 90);
+        rd->props.resistor.resistance = 2200.0;
+        int g1t = TN(x + 140, py + 40), g1b = TN(x + 140, py + 120);
+        int g2t = TN(x + 140, py + 160), g2b = TN(x + 140, py + 240);
+        int rdt = TN(x + 340, py + 40), rdb = TN(x + 340, py + 120);
+        TW(gtop, g1t); TW(rdtop, rdt); TW(g1b, g2t);
+        rg1->node_ids[0] = g1t; rg1->node_ids[1] = g1b;
+        rg2->node_ids[0] = g2t; rg2->node_ids[1] = g2b;
+        rd->node_ids[0] = rdt; rd->node_ids[1] = rdb;
+        Component *gg = add_comp(circuit, COMP_GROUND, x + 140, py + 260, 0);
+        gg->node_ids[0] = g2b;
+        Component *m = add_comp(circuit, COMP_NMOS, x + 260, py + 160, 0);         // G(240,py+160) D(280,py+140) S(280,py+180)
+        m->props.mosfet.vth = 1.5; m->props.mosfet.kp = 2e-3;
+        m->props.mosfet.w = 1e-6; m->props.mosfet.l = 1e-6;    /* W/L = 1, so K = u_Cox(W/L) = 2 mA/V^2 */
+        m->props.mosfet.lambda = lam[k];
+        m->props.mosfet.ideal = idl[k] ? true : false;
+        int gate = TN(x + 240, py + 160); TW(g2t, gate);
+        int drain = TN(x + 280, py + 140), ddrop = TN(x + 340, py + 140);
+        TW(rdb, ddrop); TW(ddrop, drain);
+        int src = TN(x + 280, py + 180), sb = TN(x + 280, py + 220);
+        TW(src, sb);
+        Component *gs = add_comp(circuit, COMP_GROUND, x + 280, py + 240, 0);
+        gs->node_ids[0] = sb;
+        m->node_ids[0] = gate; m->node_ids[1] = drain; m->node_ids[2] = src;
+        add_label(circuit, x + 420, py + 140, nm[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "IDEAL vs REAL MOSFET: common source, 900k/300k biases the gate at 3.0 V, V_th = 1.5 V, K = u_Cox(W/L) = 2 mA/V^2");
+    add_label(circuit, x - 40, y + 660, "The square law gives I_D = K V_ov^2/2 = 2.25 mA and V_D = 12 - 2.2k x I_D = 7.05 V, which is exactly what the");
+    add_label(circuit, x - 40, y + 690, "lambda = 0 device does. Switch lambda to 0.05 /V and the drain current picks up a (1 + lambda V_DS) factor: the");
+    add_label(circuit, x - 40, y + 720, "operating point moves to 5.65 V, a 1.4 V shift. lambda is also what gives the device a finite output resistance");
+    add_label(circuit, x - 40, y + 750, "r_o = 1/(lambda I_D); without it the saturation curves are flat and a current mirror would be perfect.");
+    return 16;
+}
+
 #undef TN
 #undef TW
 
@@ -10360,6 +10741,13 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_MATCH]         = { COMP_RESISTOR, 3, 0 },
     [CIRCUIT_HW_REFLECT]       = { COMP_INDUCTOR, 7, 1 },
     [CIRCUIT_HW_LOOP]          = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_ID_SOURCE]        = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_ID_DIODE]         = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_ID_CAP]           = { COMP_CAPACITOR, 0, 0 },
+    [CIRCUIT_ID_IND]           = { COMP_CAPACITOR, 0, 0 },
+    [CIRCUIT_ID_OPAMP]         = { COMP_RESISTOR, 2, 0 },
+    [CIRCUIT_ID_BJT]           = { COMP_RESISTOR, 1, 1 },
+    [CIRCUIT_ID_MOSFET]        = { COMP_RESISTOR, 2, 1 },
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -10411,6 +10799,14 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_HW_REFLECT]       = { { COMP_INDUCTOR, 0, 0 } },
     [CIRCUIT_HW_LOOP]          = { { COMP_OPAMP, 1, 2 } },
     [CIRCUIT_HW_PDN]           = { { COMP_RESISTOR, 0, 0 } },
+    /* ideal vs real: the whole point is seeing both models at once, so every copy is probed */
+    [CIRCUIT_ID_SOURCE]        = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 2, 0 } },
+    [CIRCUIT_ID_DIODE]         = { { COMP_RESISTOR, 1, 0 } },
+    [CIRCUIT_ID_CAP]           = { { COMP_CAPACITOR, 1, 0 }, { COMP_CAPACITOR, 2, 0 } },
+    [CIRCUIT_ID_IND]           = { { COMP_CAPACITOR, 1, 0 } },
+    [CIRCUIT_ID_OPAMP]         = { { COMP_RESISTOR, 5, 0 }, { COMP_RESISTOR, 8, 0 } },
+    [CIRCUIT_ID_BJT]           = { { COMP_RESISTOR, 3, 1 } },
+    [CIRCUIT_ID_MOSFET]        = { { COMP_RESISTOR, 5, 1 } },
     [CIRCUIT_CMOS_NAND]        = { { COMP_PULSE_SOURCE, 1, 0 } },
     // multi-input circuits: every input on its own channel
     [CIRCUIT_SUMMING_AMP]      = { { COMP_DC_VOLTAGE, 1, 0 }, { COMP_DC_VOLTAGE, 2, 0 } },    // V2, V3 (V1 = source probe)
@@ -10467,6 +10863,8 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_BUCK] = 5e-6, [CIRCUIT_HW_BOOST] = 5e-6, [CIRCUIT_HW_BUCKBOOST] = 5e-6, [CIRCUIT_HW_CUK] = 5e-6,
     [CIRCUIT_HW_INTERLEAVED] = 5e-6, [CIRCUIT_HW_PDN] = 20e-6, [CIRCUIT_HW_CAPS] = 50e-6,
     [CIRCUIT_HW_MATCH] = 500e-9, [CIRCUIT_HW_REFLECT] = 500e-9, [CIRCUIT_HW_LOOP] = 100e-6,
+    [CIRCUIT_ID_SOURCE] = 1e-3, [CIRCUIT_ID_DIODE] = 200e-6, [CIRCUIT_ID_CAP] = 10e-6,
+    [CIRCUIT_ID_IND] = 200e-6, [CIRCUIT_ID_OPAMP] = 2e-6, [CIRCUIT_ID_BJT] = 1e-3, [CIRCUIT_ID_MOSFET] = 1e-3,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -10510,6 +10908,8 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_BUCK] = 2.0, [CIRCUIT_HW_BOOST] = 5.0, [CIRCUIT_HW_BUCKBOOST] = 5.0, [CIRCUIT_HW_CUK] = 5.0,
     [CIRCUIT_HW_INTERLEAVED] = 2.0, [CIRCUIT_HW_PDN] = 0.5, [CIRCUIT_HW_CAPS] = 1.0,
     [CIRCUIT_HW_MATCH] = 0.5, [CIRCUIT_HW_REFLECT] = 1.0, [CIRCUIT_HW_LOOP] = 2.0,
+    [CIRCUIT_ID_SOURCE] = 1.0, [CIRCUIT_ID_DIODE] = 0.2, [CIRCUIT_ID_CAP] = 0.1,
+    [CIRCUIT_ID_IND] = 2.0, [CIRCUIT_ID_OPAMP] = 0.5, [CIRCUIT_ID_BJT] = 2.0, [CIRCUIT_ID_MOSFET] = 2.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -10658,13 +11058,20 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_BUCK]          = { DEMO_DC, 0 },
     [CIRCUIT_HW_BOOST]         = { DEMO_DC, 0 },
     [CIRCUIT_HW_BUCKBOOST]     = { DEMO_DC, 0 },
-    [CIRCUIT_HW_CUK]           = { DEMO_DC, 0 },
+    [CIRCUIT_HW_CUK]           = { DEMO_WAVEFORM, 100e3 },   // settles to the right mean but still ripples: see ROADMAP
     [CIRCUIT_HW_INTERLEAVED]   = { DEMO_DC, 0 },
     [CIRCUIT_HW_PDN]           = { DEMO_DC, 0 },
     [CIRCUIT_HW_CAPS]          = { DEMO_DC, 0 },
     [CIRCUIT_HW_MATCH]         = { DEMO_WAVEFORM, 1e6 },
     [CIRCUIT_HW_REFLECT]       = { DEMO_WAVEFORM, 250e3 },
     [CIRCUIT_HW_LOOP]          = { DEMO_WAVEFORM, 2e3 },
+    [CIRCUIT_ID_SOURCE]        = { DEMO_DC, 0 },
+    [CIRCUIT_ID_DIODE]         = { DEMO_WAVEFORM, 1e3 },
+    [CIRCUIT_ID_CAP]           = { DEMO_WAVEFORM, 20e3 },   /* the ripple rides the 20 kHz square */
+    [CIRCUIT_ID_IND]           = { DEMO_WAVEFORM, 1592 },   /* the ring, not the 125 Hz pulse rate */
+    [CIRCUIT_ID_OPAMP]         = { DEMO_WAVEFORM, 100e3 },
+    [CIRCUIT_ID_BJT]           = { DEMO_DC, 0 },
+    [CIRCUIT_ID_MOSFET]        = { DEMO_DC, 0 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -10700,6 +11107,10 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_PDN] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_HW_CAPS] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_HW_MATCH] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_HW_REFLECT] = SCOPE_FLAG_STACK,
     [CIRCUIT_HW_LOOP] = SCOPE_FLAG_STACK,
+    [CIRCUIT_ID_SOURCE] = SCOPE_FLAG_STACK, [CIRCUIT_ID_DIODE] = SCOPE_FLAG_STACK,
+    [CIRCUIT_ID_CAP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_ID_IND] = SCOPE_FLAG_STACK,
+    [CIRCUIT_ID_OPAMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_ID_BJT] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_ID_MOSFET] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */
     [CIRCUIT_COLPITTS] = SCOPE_FLAG_AC, [CIRCUIT_HARTLEY] = SCOPE_FLAG_AC, [CIRCUIT_CLAPP] = SCOPE_FLAG_AC,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
@@ -10773,11 +11184,12 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
     // low-voltage templates keep the normal resistor and its overload warning (--burn-test enforces).
     {
         const CircuitTemplateInfo *tinfo = circuit_template_get_info(type);
-        if (tinfo && (tinfo->group == TG_POWER_SYSTEMS || tinfo->group == TG_HIGH_VOLTAGE || tinfo->group == TG_BUILDING || tinfo->group == TG_GRID_STD)) {
+        if (tinfo && (tinfo->group == TG_POWER_SYSTEMS || tinfo->group == TG_HIGH_VOLTAGE || tinfo->group == TG_BUILDING || tinfo->group == TG_GRID_STD ||
+                      tinfo->group == TG_HARDWARE)) {
             // Building services: a resistor is either a load (>= 1 ohm: an appliance, a motor, a
             // lighting circuit - draw it as a load box) or a conductor / shunt (< 1 ohm: keep the
             // resistor symbol, but it is wire, not a 1/4 W part, so it has no thermal limit either).
-            bool building = (tinfo->group == TG_BUILDING || tinfo->group == TG_GRID_STD);
+            bool building = (tinfo->group == TG_BUILDING || tinfo->group == TG_GRID_STD || tinfo->group == TG_HARDWARE);
             for (int i = first; i < circuit->num_components; i++) {
                 Component *c = circuit->components[i];
                 if (c->type == COMP_RESISTOR && c->props.resistor.power_rating <= 0.2501) {   // an explicit rating (FAC-008) is left alone
@@ -10830,7 +11242,7 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
 
 const char *circuit_template_group_name(TemplateGroup g) {
     static const char *names[TG_COUNT] = {
-        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients", "IC I/O & drivers", "Residential & commercial", "Grid standards & methods", "Hardware engineering"
+        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients", "IC I/O & drivers", "Residential & commercial", "Grid standards & methods", "Hardware engineering", "Ideal vs real models"
     };
     return (g >= 0 && g < TG_COUNT) ? names[g] : "?";
 }

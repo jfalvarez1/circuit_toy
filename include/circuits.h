@@ -175,6 +175,14 @@ typedef enum {
     CIRCUIT_HW_MATCH,
     CIRCUIT_HW_REFLECT,
     CIRCUIT_HW_LOOP,
+    /* Ideal vs real: the same circuit twice, one part swapped for its non-ideal model */
+    CIRCUIT_ID_SOURCE,
+    CIRCUIT_ID_DIODE,
+    CIRCUIT_ID_CAP,
+    CIRCUIT_ID_IND,
+    CIRCUIT_ID_OPAMP,
+    CIRCUIT_ID_BJT,
+    CIRCUIT_ID_MOSFET,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 
@@ -194,6 +202,7 @@ typedef enum {
     TG_BUILDING,        // Residential and commercial services (ANSI C84.1, NEC, IEEE 1547)
     TG_GRID_STD,        // Reliability standards and simulation methods (NERC TPL/PRC/FAC, ERCOT BAL/NOGRR, CIP-014)
     TG_HARDWARE,        // Hardware engineering: switching converters, PDN, signal integrity, loop stability
+    TG_IDEAL,           // Ideal vs real: the same circuit with a textbook part and with its real model
     TG_COUNT
 } TemplateGroup;
 

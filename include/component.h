@@ -730,9 +730,11 @@ typedef struct Component {
     bool needs_voltage_var;
     double terminal_current[MAX_TERMINALS];  // Current entering each terminal (A), from the last solve
     double trap_i_prev;                      // Capacitors: current (terminal 0 -> 1) at the end of the last step (trapezoidal state)
+    double cap_vc;                           // Capacitors: voltage across the ideal C itself (terminal voltage minus ESR/ESL drops)
     double tline_ic_prev[2];   // transmission line: shunt-capacitor currents at each end after the last accepted step (theta method)
     int sat_last_rail;                       // Op-amps: rail chosen in the previous Newton iteration (+1/-1/0)
-    int sat_flips;                           // Op-amps: rail flip-flops seen in this solve (>=2 -> use the linear stamp)
+    int sat_flips;
+    int slew_latch;                          // Op-amps: -1/+1 while the output is slew-limited this step, 0 free                           // Op-amps: rail flip-flops seen in this solve (>=2 -> use the linear stamp)
     double sweep_phase;                      // AC sources with a frequency sweep: accumulated phase (rad)
 
     // Properties
@@ -789,6 +791,25 @@ void component_get_terminal_pos(Component *comp, int terminal_idx, float *x, flo
 
 // High-voltage helpers
 double toroid_capacitance(const Component *comp);      // Farads, from props.toroid dimensions
+
+/* Capacitor companion model for one step. The branch is  C in series with ESR and ESL,
+   with the leakage resistance in parallel across the whole branch:
+
+       i = G * v_branch - Ieq        (terminal 0 -> terminal 1, excluding leakage)
+       G_leak = 1/R_leak             (stamped in parallel, 0 in ideal mode)
+
+   `ideal` (the default) zeroes ESR, ESL and leakage, so an ideal capacitor stamps exactly
+   the theta-method companion it always did. */
+typedef struct {
+    double G;        // branch conductance to stamp
+    double Ieq;      // branch Norton current to stamp
+    double G_leak;   // parallel leakage conductance (0 when ideal)
+    double Geq;      // C / (theta dt): the ideal capacitor part alone
+    double K;        // (1 - theta) / theta, 0 at the operating point
+} CapCompanion;
+
+// dt = step, trans = a previous step exists (transient); v_prev = terminal voltage last step
+CapCompanion component_cap_companion(const Component *comp, double dt, bool trans, double v_prev);
 double spark_gap_breakdown(const Component *comp);     // Volts, from props.spark_gap.gap_mm
 void tline_params(const Component *comp, double *R, double *L, double *C_end);   // lumped values from the per-mile data
 int component_aux_count(const Component *comp);        // number of MNA auxiliary (current) variables the component needs

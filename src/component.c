@@ -202,7 +202,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
             .bv = 100.0,            // 100V reverse breakdown
             .ibv = 1e-10,           // Breakdown current
             .cjo = 1e-12,           // 1 pF junction capacitance
-            .ideal = true
+            .ideal = false          // Shockley by default; ideal = the 0.7 V switch model
         }}
     },
 
@@ -2362,6 +2362,68 @@ double sweep_get_value(const SweepConfig *sweep, double base_value, double time)
 // Stamp an op-amp output (VCVS auxiliary row) with rail saturation.
 //   plus_idx / minus_idx / out_idx are matrix indices (0 = ground), volt_idx is the row of
 //   the auxiliary current variable. Returns true if the output was stamped saturated.
+/* Real op-amps roll off. The open-loop gain has one pole at f_p = GBW / A_OL, i.e.
+       tau dVout/dt + Vout = A (V+ - V-),   tau = A / (2 pi GBW)
+   Backward Euler puts that straight into the output row the VCVS already owns:
+       (1 + tau/dt) Vout - A V+ + A V- = (tau/dt) Vout_prev
+   so the closed-loop bandwidth (GBW / closed-loop gain) falls out of the solve instead of
+   being imposed. Ideal mode (the default, and what every op-amp template uses) skips it, and
+   so does the operating point, where the algebraic answer is the right starting condition.
+   The slew-rate limit is applied after the solve, in simulation_clamp_opamps(). */
+/* ------------------------------------------------------------------------------------
+   Real op-amp: one-pole roll-off, slew rate and rails, all imposed inside the solve.
+
+     tau dVout/dt + Vout = A (V+ - V-),   tau = A / (2 pi GBW)
+   Backward Euler on the output row the VCVS already owns:
+     (1 + tau/dt) Vout - A V+ + A V- = (tau/dt) Vout_prev
+
+   The output can then only travel SR x dt per step and can never pass a rail, so instead of
+   the algebraic saturation test (which assumes V_out = A verr instantly and therefore fires
+   the moment the output lags its input at all) the limits are applied to the OUTPUT STATE:
+   if the last Newton iterate wants to go past the window [prev - SR dt, prev + SR dt] clipped
+   to the rails, the output is stamped as a source sitting on that edge. The choice latches for
+   the rest of the solve so Newton cannot oscillate between the free and pinned stamps.
+
+   Ideal mode - the default, and what every op-amp template uses - skips all of this and keeps
+   the algebraic VCVS with its rail hysteresis. So does the operating point, where the
+   algebraic answer is the right initial state for the integration. */
+static bool opamp_stamp_dynamic(Component *comp, Matrix *A, Vector *b, Vector *prev_solution,
+                                int plus_idx, int minus_idx, int out_idx, int volt_idx, double dt) {
+    if (!comp || comp->props.opamp.ideal) return false;
+    if (!g_stamp_prev_step || dt <= 0) return false;
+    double gain = comp->props.opamp.gain, gbw = comp->props.opamp.gbw;
+    if (gain <= 0 || gbw <= 0) return false;
+
+    if (out_idx > 0) {
+        matrix_add(A, volt_idx, out_idx-1, 1.0);
+        matrix_add(A, out_idx-1, volt_idx, 1.0);
+    }
+
+    double prev = comp->props.opamp.prev_output;
+    double k = (gain / (2.0 * M_PI * gbw)) / dt;                 /* tau / dt */
+    double sr = comp->props.opamp.slew_rate;
+    double hi = 1e30, lo = -1e30;
+    if (sr > 0) { hi = prev + sr * 1e6 * dt; lo = prev - sr * 1e6 * dt; }
+    double vmax = comp->props.opamp.vmax, vmin = comp->props.opamp.vmin;
+    if (vmax > vmin) { if (hi > vmax) hi = vmax; if (lo < vmin) lo = vmin; }
+
+    if (!comp->slew_latch && prev_solution && out_idx > 0) {
+        double vo_it = vector_get(prev_solution, out_idx-1);
+        if (vo_it > hi) comp->slew_latch = 1;
+        else if (vo_it < lo) comp->slew_latch = -1;
+    }
+    if (comp->slew_latch) {
+        vector_add(b, volt_idx, comp->slew_latch > 0 ? hi : lo);   /* on the limit, and no further */
+        return true;
+    }
+    /* free: the pole decides how far the output gets this step */
+    if (plus_idx > 0)  matrix_add(A, volt_idx, plus_idx-1,  -gain);
+    if (minus_idx > 0) matrix_add(A, volt_idx, minus_idx-1,  gain);
+    if (out_idx > 0)   matrix_add(A, volt_idx, out_idx-1,    k);
+    vector_add(b, volt_idx, k * prev);
+    return true;
+}
+
 static bool opamp_stamp_output(Component *comp, Matrix *A, Vector *b, Vector *prev_solution,
                                int plus_idx, int minus_idx, int out_idx, int volt_idx,
                                double gain, double vmax, double vmin) {
@@ -2407,6 +2469,47 @@ static bool opamp_stamp_output(Component *comp, Matrix *A, Vector *b, Vector *pr
     return saturated;
 }
 
+/* Capacitor branch companion: theta-method C, plus ESR / ESL / leakage when the part is
+   not in ideal mode. Derivation (i = terminal 0 -> 1, K = (1-theta)/theta):
+
+     v_C  = v_C,prev + (i + K i_prev) / Geq          theta-method on the capacitor
+     v_L  = R_L (i - i_prev),  R_L = ESL/dt          backward Euler on the parasitic inductance
+     v_br = v_C + i ESR + v_L
+   =>  i = (v_br - E) / R_tot,   R_tot = 1/Geq + ESR + R_L,   E = v_C,prev + K i_prev/Geq - R_L i_prev
+
+   At the operating point there is no history, so K = 0 and v_C,prev is the terminal voltage:
+   the expression collapses to the plain companion. */
+CapCompanion component_cap_companion(const Component *comp, double dt, bool trans, double v_prev) {
+    CapCompanion cc = { 0, 0, 0, 0, 0 };
+    if (!comp || dt <= 0) return cc;
+    double C = (comp->type == COMP_CAPACITOR)   ? comp->props.capacitor.capacitance :
+               (comp->type == COMP_TOROID)      ? toroid_capacitance(comp)
+                                                : comp->props.capacitor_elec.capacitance;
+    if (C <= 0) return cc;
+    const double THETA = 0.6;
+    cc.Geq = trans ? C / (THETA * dt) : C / dt;
+    cc.K   = trans ? (1.0 - THETA) / THETA : 0.0;
+
+    double esr = 0, esl = 0, leak = 0;
+    if (comp->type == COMP_CAPACITOR && !comp->props.capacitor.ideal) {
+        esr = comp->props.capacitor.esr; esl = comp->props.capacitor.esl; leak = comp->props.capacitor.leakage;
+    } else if (comp->type == COMP_CAPACITOR_ELEC && !comp->props.capacitor_elec.ideal) {
+        esr = comp->props.capacitor_elec.esr; leak = comp->props.capacitor_elec.leakage;
+    }
+    if (esr < 0) esr = 0;
+    if (esl < 0) esl = 0;
+    double R_L = trans ? esl / dt : 0.0;      /* a parasitic inductance has no operating-point drop */
+    double i_prev = trans ? comp->trap_i_prev : 0.0;
+    double vc_prev = trans ? comp->cap_vc : v_prev;
+
+    double Rtot = 1.0 / cc.Geq + esr + R_L;
+    double E = vc_prev + cc.K * i_prev / cc.Geq - R_L * i_prev;
+    cc.G = 1.0 / Rtot;
+    cc.Ieq = cc.G * E;
+    cc.G_leak = (leak > 0) ? 1.0 / leak : 0.0;
+    return cc;
+}
+
 void component_stamp(Component *comp, Matrix *A, Vector *b,
                      int *node_map, int num_nodes,
                      double time, Vector *prev_solution, double dt) {
@@ -2443,6 +2546,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 matrix_add(A, volt_idx, n[1]-1, -1);
                 matrix_add(A, n[1]-1, volt_idx, -1);
             }
+            /* Real sources have an internal resistance: v0 - v1 - R i = V, so the terminal
+               voltage sags with the load. Ideal mode (the default) leaves it out. */
+            if (!comp->props.dc_voltage.ideal && comp->props.dc_voltage.r_series > 0)
+                matrix_add(A, volt_idx, volt_idx, -comp->props.dc_voltage.r_series);
             vector_add(b, volt_idx, V);
             break;
         }
@@ -2487,6 +2594,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 matrix_add(A, volt_idx, n[1]-1, -1);
                 matrix_add(A, n[1]-1, volt_idx, -1);
             }
+            if (!comp->props.ac_voltage.ideal && comp->props.ac_voltage.r_series > 0)
+                matrix_add(A, volt_idx, volt_idx, -comp->props.ac_voltage.r_series);
             vector_add(b, volt_idx, V);
             break;
         }
@@ -2495,6 +2604,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double I = comp->props.dc_current.current;
             // Apply current sweep if enabled
             I = sweep_get_value(&comp->props.dc_current.current_sweep, I, time);
+            /* A real current source is a Norton pair: the shunt resistance carries some of the
+               current once the compliance voltage rises. Ideal mode (the default) omits it. */
+            if (!comp->props.dc_current.ideal && comp->props.dc_current.r_parallel > 0)
+                STAMP_CONDUCTANCE(n[0], n[1], 1.0 / comp->props.dc_current.r_parallel);
             if (n[0] > 0) vector_add(b, n[0]-1, -I);
             if (n[1] > 0) vector_add(b, n[1]-1, I);
             break;
@@ -2537,23 +2650,26 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // theta-method: theta = 0.5 is pure trapezoidal (undamped, rings at Nyquist after a
             // slope discontinuity), theta = 1 is backward Euler (heavily damped). 0.6 kills the
             // ringing within a few steps while keeping oscillators alive at coarse dt.
-            const double THETA = 0.6;
             bool trap = (g_stamp_prev_step != NULL);
-            double Geq = trap ? C / (THETA * dt) : C / dt;
-            double Ieq = 0;
-
             Vector *mem = g_stamp_prev_step ? g_stamp_prev_step : prev_solution;
+            double v_prev = 0;
             if (mem) {
                 double v1 = (n[0] > 0) ? vector_get(mem, n[0]-1) : 0;
                 double v2 = (n[1] > 0) ? vector_get(mem, n[1]-1) : 0;
-                Ieq = Geq * (v1 - v2) + (trap ? ((1.0 - THETA) / THETA) * comp->trap_i_prev : 0.0);
+                v_prev = v1 - v2;
             }
+            /* ESR / ESL / leakage are folded in here; in ideal mode (the default) this is the
+               plain theta-method companion. (void)C keeps the shared type dispatch above. */
+            (void)C;
+            CapCompanion cc = component_cap_companion(comp, dt, trap && mem, v_prev);
+            if (!mem) cc.Ieq = 0;
 
-            STAMP_CONDUCTANCE(n[0], n[1], Geq);
+            STAMP_CONDUCTANCE(n[0], n[1], cc.G);
+            if (cc.G_leak > 0) STAMP_CONDUCTANCE(n[0], n[1], cc.G_leak);
             // Ieq represents the capacitor's "memory" current
             // Positive Ieq means capacitor was charged (n1 > n2), so it sources current at n1
-            if (n[0] > 0) vector_add(b, n[0]-1, Ieq);
-            if (n[1] > 0) vector_add(b, n[1]-1, -Ieq);
+            if (n[0] > 0) vector_add(b, n[0]-1, cc.Ieq);
+            if (n[1] > 0) vector_add(b, n[1]-1, -cc.Ieq);
             break;
         }
 
@@ -2568,11 +2684,20 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             Vector *mem = g_stamp_prev_step ? g_stamp_prev_step : prev_solution;
             bool trans = (mem != NULL) && curr_idx < (int)mem->size;
             double Req = trans ? L / (TH * dt) : L / dt;
+            /* Winding resistance. Without it an inductor is lossless, so any L-C loop it sits in
+               rings for ever - which is what made the switching converters run away. The equation
+               becomes V = L di/dt + R_dcr i, i.e. one more term on the current variable. */
+            double Rdcr = comp->props.inductor.ideal ? 0.0 : comp->props.inductor.dcr;
+            if (Rdcr < 0) Rdcr = 0;
             double Veq = 0;
             if (trans) {
                 double Iprev = vector_get(mem, curr_idx);
                 double v0p = (n[0] > 0) ? vector_get(mem, n[0]-1) : 0, v1p = (n[1] > 0) ? vector_get(mem, n[1]-1) : 0;
-                Veq = -K * (v0p - v1p) - Req * Iprev;
+                /* The theta method integrates the INDUCTIVE voltage, so the resistive part of
+                   last step's terminal voltage has to come off first. Leaving it in adds a
+                   spurious +K R I_prev to the row, which cancels part of the DCR: a branch set
+                   to zeta = 0.30 then rings as if it were 0.21. */
+                Veq = -K * ((v0p - v1p) - Rdcr * Iprev) - Req * Iprev;
             }
 
             if (n[0] > 0) {
@@ -2583,12 +2708,31 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 matrix_add(A, curr_idx, n[1]-1, -1);
                 matrix_add(A, n[1]-1, curr_idx, -1);
             }
-            matrix_add(A, curr_idx, curr_idx, -Req);
+            matrix_add(A, curr_idx, curr_idx, -(Req + Rdcr));   /* the history term above uses the inductive part only */
             vector_add(b, curr_idx, Veq);
             break;
         }
 
         case COMP_DIODE: {
+            if (comp->props.diode.ideal) {
+                /* Textbook "ideal diode with a 0.7 V drop": a switch in series with a battery.
+                   Off it is a 1 MOhm leak, on it is 0.7 V behind 1 ohm - no exponential knee,
+                   which is exactly the difference the Ideal vs Real Diode template shows. */
+                const double Vf = 0.7, Ron = 1.0, Roff = 1e6;
+                double Vd_i = 0;
+                if (prev_solution) {
+                    double a_ = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
+                    double k_ = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
+                    Vd_i = a_ - k_;
+                }
+                double Gi, Ii;
+                if (Vd_i > Vf) { Gi = 1.0 / Ron; Ii = -Vf / Ron; }   /* i = (Vd - Vf)/Ron */
+                else           { Gi = 1.0 / Roff; Ii = 0; }          /* i = Vd / Roff */
+                STAMP_CONDUCTANCE(n[0], n[1], Gi);
+                if (n[0] > 0) vector_add(b, n[0]-1, -Ii);
+                if (n[1] > 0) vector_add(b, n[1]-1, Ii);
+                break;
+            }
             double Is = comp->props.diode.is;
             // Calculate thermal voltage from global environment temperature
             // Vt = k*T/q where k/q = 8.617e-5 V/K
@@ -2715,12 +2859,18 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
 
             double Vbe = 0.6 * sign;
             double Vbc = 0.0;
+            /* The junction voltages above are clamped to keep exp() finite, which caps Vbc at
+               about -0.13 V. The Early factor needs the REAL collector-emitter voltage, so it is
+               taken straight from the node voltages - reading it back out of the clamped Vbc
+               would cap V_CE near 0.8 V and shrink the effect to a tenth of its size. */
+            double Vce_real = 0.2 * sign;
             if (prev_solution) {
                 double vB = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
                 double vC = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
                 double vE = (n[2] > 0) ? vector_get(prev_solution, n[2]-1) : 0;
                 Vbe = sign * (vB - vE);
                 Vbc = sign * (vB - vC);
+                Vce_real = sign * (vC - vE);
                 Vbe = CLAMP(Vbe, -5*nf*Vt, 40*nf*Vt);
                 Vbc = CLAMP(Vbc, -5*nf*Vt, 40*nf*Vt);
             }
@@ -2773,8 +2923,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 // Collector current with Early effect
                 double early_factor = 1.0;
                 if (Vaf > 0) {
-                    double Vce = Vbe - Vbc;
-                    early_factor = 1.0 + Vce / Vaf;
+                    early_factor = 1.0 + Vce_real / Vaf;
+                    if (early_factor < 0.1) early_factor = 0.1;   /* never let it change sign */
                 }
                 double Ic_f = Is * (expBE - 1) * early_factor;
                 double Ic_r = Is * (expBC - 1);
@@ -3015,9 +3165,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // VCVS model with rail saturation: Vout = clamp(A * (V+ - V-), vmin, vmax)
             // For COMP_OPAMP: n[0]="-", n[1]="+", n[2]="OUT"
             int volt_idx = num_nodes + comp->voltage_var_idx;
-            opamp_stamp_output(comp, A, b, prev_solution, n[1], n[0], n[2], volt_idx,
-                               comp->props.opamp.gain,
-                               comp->props.opamp.vmax, comp->props.opamp.vmin);
+            if (!opamp_stamp_dynamic(comp, A, b, prev_solution, n[1], n[0], n[2], volt_idx, dt))
+                opamp_stamp_output(comp, A, b, prev_solution, n[1], n[0], n[2], volt_idx,
+                                   comp->props.opamp.gain,
+                                   comp->props.opamp.vmax, comp->props.opamp.vmin);
             break;
         }
 
@@ -3025,9 +3176,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // Same model as COMP_OPAMP; only the symbol's input order differs.
             // For COMP_OPAMP_FLIPPED: n[0]="+", n[1]="-", n[2]="OUT"
             int volt_idx = num_nodes + comp->voltage_var_idx;
-            opamp_stamp_output(comp, A, b, prev_solution, n[0], n[1], n[2], volt_idx,
-                               comp->props.opamp.gain,
-                               comp->props.opamp.vmax, comp->props.opamp.vmin);
+            if (!opamp_stamp_dynamic(comp, A, b, prev_solution, n[0], n[1], n[2], volt_idx, dt))
+                opamp_stamp_output(comp, A, b, prev_solution, n[0], n[1], n[2], volt_idx,
+                                   comp->props.opamp.gain,
+                                   comp->props.opamp.vmax, comp->props.opamp.vmin);
             break;
         }
 

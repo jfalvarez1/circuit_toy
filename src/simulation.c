@@ -45,7 +45,7 @@ static int subcircuit_count_internal_nodes(SubCircuitDef *def) {
 #define GMIN 1e-12
 
 // Forward declarations
-static void simulation_clamp_opamps(Circuit *circuit, Vector *solution);
+static void simulation_clamp_opamps(Circuit *circuit, Vector *solution, double dt);
 
 Simulation *simulation_create(Circuit *circuit) {
     Simulation *sim = calloc(1, sizeof(Simulation));
@@ -170,6 +170,8 @@ void simulation_reset(Simulation *sim) {
                 case COMP_CAPACITOR_ELEC:
                     // Reset capacitor voltage
                     comp->props.capacitor.voltage = 0.0;
+                    comp->cap_vc = 0.0;
+                    comp->trap_i_prev = 0.0;
                     break;
 
                 case COMP_INDUCTOR:
@@ -538,10 +540,17 @@ bool simulation_dc_analysis(Simulation *sim) {
     sim->prev_solution = vector_clone(solution);
 
     // Apply post-solve clamping as safety net
-    simulation_clamp_opamps(circuit, sim->solution);
+    simulation_clamp_opamps(circuit, sim->solution, 0.0);   /* operating point: no slew limit yet */
 
     // Capacitors carry no current at the operating point; swept sources restart their phase
     for (int i = 0; i < circuit->num_components; i++) {
+        Component *cc_ = circuit->components[i];
+        if (cc_->type == COMP_CAPACITOR || cc_->type == COMP_CAPACITOR_ELEC || cc_->type == COMP_TOROID) {
+            /* with no current flowing, the capacitor holds the whole terminal voltage */
+            int a_ = circuit->node_map[cc_->node_ids[0]];
+            int b_ = (cc_->type == COMP_TOROID) ? 0 : circuit->node_map[cc_->node_ids[1]];
+            cc_->cap_vc = ((a_ > 0) ? vector_get(solution, a_ - 1) : 0) - ((b_ > 0) ? vector_get(solution, b_ - 1) : 0);
+        }
         circuit->components[i]->trap_i_prev = 0.0;
         circuit->components[i]->tline_ic_prev[0] = circuit->components[i]->tline_ic_prev[1] = 0.0;
         if (circuit->components[i]->type == COMP_SPARK_GAP) circuit->components[i]->props.spark_gap.conducting = false;
@@ -839,7 +848,7 @@ static void thermal_update_components(Circuit *circuit, double dt, double sim_ti
 // 1. Lets the solver work without numerical instability
 // 2. Hard clamps outputs regardless of how far they've diverged
 // 3. Works correctly for high-gain positive feedback circuits (oscillators)
-static void simulation_clamp_opamps(Circuit *circuit, Vector *solution) {
+static void simulation_clamp_opamps(Circuit *circuit, Vector *solution, double dt) {
     if (!circuit || !solution) return;
 
     // Voltage-source auxiliary variables live after all node voltages
@@ -879,11 +888,15 @@ static void simulation_clamp_opamps(Circuit *circuit, Vector *solution) {
             clamped_value = vmin;
         }
 
+        /* The slew-rate limit lives in the stamp (opamp_slew_pin), so the solved node and its
+           branch currents stay consistent; here we only carry the output forward. */
         // Apply clamping to BOTH the node and the voltage variable
-        if (v_out_var > vmax || v_out_var < vmin) {
+        if (clamped_value != v_out_var) {
             vector_set(solution, volt_var_idx, clamped_value);
             vector_set(solution, out_idx - 1, clamped_value);
         }
+        comp->props.opamp.prev_output = clamped_value;   // one update per accepted solve; the stamp slews from it
+        comp->slew_latch = 0;                            // the next step decides afresh
     }
 }
 
@@ -981,8 +994,16 @@ void simulation_compute_terminal_currents(Simulation *sim) {
             continue;
 
         if ((comp->type == COMP_CAPACITOR || comp->type == COMP_CAPACITOR_ELEC) && sim->prev_step_solution) {
-            comp->terminal_current[0] = comp->trap_i_prev;
-            comp->terminal_current[1] = -comp->trap_i_prev;
+            double i_cap = comp->trap_i_prev;
+            double leak = (comp->type == COMP_CAPACITOR) ? (comp->props.capacitor.ideal ? 0 : comp->props.capacitor.leakage)
+                                                         : (comp->props.capacitor_elec.ideal ? 0 : comp->props.capacitor_elec.leakage);
+            if (leak > 0) {
+                int a_ = circuit->node_map[comp->node_ids[0]], b_ = circuit->node_map[comp->node_ids[1]];
+                double v_ = ((a_ > 0) ? vector_get(sim->solution, a_ - 1) : 0) - ((b_ > 0) ? vector_get(sim->solution, b_ - 1) : 0);
+                i_cap += v_ / leak;
+            }
+            comp->terminal_current[0] = i_cap;
+            comp->terminal_current[1] = -i_cap;
             continue;
         }
         if (comp->type == COMP_TLINE && sim->prev_step_solution) {
@@ -1212,15 +1233,23 @@ bool simulation_step(Simulation *sim) {
             double C = (comp->type == COMP_CAPACITOR) ? comp->props.capacitor.capacitance
                      : (comp->type == COMP_TOROID) ? toroid_capacitance(comp)
                                                       : comp->props.capacitor_elec.capacitance;
+            (void)C;
             int n0 = circuit->node_map[comp->node_ids[0]], n1 = (comp->type == COMP_TOROID) ? 0 : circuit->node_map[comp->node_ids[1]];
             double vn = ((n0 > 0) ? vector_get(sim->solution, n0 - 1) : 0) - ((n1 > 0) ? vector_get(sim->solution, n1 - 1) : 0);
             double vp = ((n0 > 0) ? vector_get(sim->prev_step_solution, n0 - 1) : 0) - ((n1 > 0) ? vector_get(sim->prev_step_solution, n1 - 1) : 0);
-            comp->trap_i_prev = (C / (0.6 * dt)) * (vn - vp) - (0.4 / 0.6) * comp->trap_i_prev;   // theta = 0.6, see capacitor stamp
+            /* Same companion the stamp used, so the state and the matrix can never disagree.
+               i = G v - Ieq is the branch current; the capacitor's own voltage then follows from
+               the theta-method relation. In ideal mode this is the old one-liner exactly. */
+            CapCompanion cc = component_cap_companion(comp, dt, true, vp);
+            double i_prev = comp->trap_i_prev;
+            double i_new = cc.G * vn - cc.Ieq;
+            comp->cap_vc += (i_new + cc.K * i_prev) / cc.Geq;
+            comp->trap_i_prev = i_new;
         }
 
         // Apply post-solve clamping as safety net (valid approach for educational simulators)
         // This prevents any remaining numerical drift from pushing outputs beyond rails
-        simulation_clamp_opamps(circuit, sim->solution);
+        simulation_clamp_opamps(circuit, sim->solution, dt);
 
         break;
     }
