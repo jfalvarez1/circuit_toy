@@ -1,8 +1,14 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.14.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.14.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.15.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.15.0)** (auto-updating from v3.4.0 on)
 
-A native desktop circuit simulator written in C with SDL2, featuring a synthwave-themed interface. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
+A native desktop circuit simulator written in C with SDL2. Build, simulate and analyse circuits
+with a drag-and-drop schematic and a bench oscilloscope.
+
+The look is deliberately **synthwave** - magenta and cyan on deep violet, a CRT-style graticule
+in a recessed bezel, and knobs that look like the front of an instrument from about 1984. It is
+an aesthetic choice, and it is also a legible one: every channel has its own colour, and the
+scope reads the way a scope reads.
 
 In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/), which is where a lot
 of us first watched current move through a schematic - here as a native app, with a bench
@@ -118,7 +124,7 @@ checked against a hand calculation.
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-162 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+173 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -196,6 +202,9 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **Hartley (MOSFET)** (`Hartly`) - Tapped-inductor tank L1 + L2 with C: 503 kHz
 - **Clapp (MOSFET)** (`Clapp`) - Colpitts with a small series cap setting f: 1.744 MHz
 - **555 Astable** (`555`) - The 555 as a block, built from its own comparators and latch
+- **Pierce Crystal Oscillator** (`Pierce`) - A real quartz model: motional arm (Ls 100 mH, Cs 25.33 pF,
+  Rs 200, Q 314) in parallel with 33 pF of holder. It runs at 100.6 kHz, just above f_s, where the arm
+  looks inductive - the only band where the pi network gives the inverter its 180 degrees
 
 **Power supplies**
 - **Half-Wave Rect** (`HW`) - Half-wave rectifier
@@ -497,7 +506,8 @@ circuit. All 23 checks pass, and the panel shows the data sheet line each parame
 
 `PopOut` detaches the oscilloscope into its own 1120 x 700 window laid out like a real
 instrument: the graticule sits in a recessed bezel with the whole width of the window, and a
-front panel runs down the right with six **working knobs**. Drag one up or down:
+front panel runs down the right with six **working knobs**, and an input strip below them with
+one knob per channel. Drag any of them up or down:
 
 | Knob | What it does |
 |------|--------------|
@@ -507,6 +517,14 @@ front panel runs down the right with six **working knobs**. Drag one up or down:
 | **TRIG LEVEL** | the trigger threshold, in volts |
 | **INTENSITY** | screen brightness, the same setting as the status bar's `Brt` |
 | **CHANNEL** | which channel the position knob and the trigger follow |
+
+Under the status plate is an **INPUTS** strip: one small knob per channel, wearing that channel's
+own trace colour and greyed out when the input is off. Turning one sets **that channel's own
+volts/div** and selects it, so POSITION and TRIG LEVEL follow the input you just touched - the way
+a bench scope works, where every input has its own vertical control. A channel you have not touched
+keeps `volt_div = 0`, meaning "follow the main VOLTS/DIV knob", so a scope nobody has adjusted
+draws exactly what it always drew. The name plate says 8-CHANNEL because `MAX_PROBES` is 8; it
+used to say DUAL-TRACE, which was never true.
 
 Each pointer sits where the value is on its travel, and the value is printed under the knob.
 Below them a status plate shows the settings that are switches rather than knobs - trigger mode
@@ -714,6 +732,45 @@ probes every signal that matters (Stack view) and its text says what to change t
 | ![High-side switch](screenshots/auto/high_side.png) High-side PMOS switch driven from 3.3 V through an NPN | ![GPIO input](screenshots/auto/gpio_input.png) Pull-up input, button, RC debounce, inverter |
 | ![Two-stage amp](screenshots/auto/two_stage_fit.png) Scope **Fit**: 10 mV input and 130 mV output on 6 V DC, each band on its own scale | ![SPI](screenshots/auto/spi.png) SPI at 10 MHz through 33 ohm into 200 pF of cable |
 | ![Single-tuned amplifier](screenshots/auto/single_tuned_amp.png) Single-tuned (LC collector load) amplifier | ![SR latch](screenshots/auto/sr_latch.png) SR latch from cross-coupled NOR gates |
+
+
+### Interview Prep
+
+Four groups of templates aimed at the questions a hardware interview actually asks - the kind
+Apple, Texas Instruments, Cirrus Logic and National Instruments put to board-level and analog
+candidates. Nothing in these groups repeats a circuit that already exists elsewhere in the
+library: where the ground is already covered, the notes name the template that covers it, so
+"how does a buck converter work" sends you to **Buck Converter** and the interview group adds
+the discrete version, the gate drive and the efficiency argument instead.
+
+**Interview: instrumentation & scope** - the measurement questions, where the circuit is fine
+and the answer on the screen is wrong because of how it was measured.
+
+- **Probe Compensation** (`PrbCmp`) - under, correct and over on one 1 kHz CAL square. The
+  trimmer sets 9M x Cp = 1M x 15 pF; get it wrong and you report ringing that is not there
+- **Probe Loading (1x vs 10x)** (`PrbLd`) - a 1 MHz square out of 10 k: 3.3 Vpp bare, 0.77 Vpp
+  once a 1x probe's 100 pF is on the node. The probe is part of the circuit
+- **Ground Lead Ringing** (`GndLd`) - a 6 inch clip is 150 nH and rings at 119 MHz against the
+  probe tip; a half-inch spring tip is 15 nH and does not
+- **Scope Input: 1 M vs 50 ohm** (`InpZ`) - a generator marked 1 V is 1 V *into 50 ohms*. Leave
+  the scope on 1 M and the cable end is open: you read 2.2 V and blame the generator
+- **AC Coupling: 200 mV on 12 V** (`ACcpl`) - the ripple you cannot see at 5 V/div, and the
+  0.1 uF into 1 M that lets you turn the gain up
+- **Current Sense: High vs Low Side** (`Isense`) - burden voltage, ground lift, common mode,
+  and why a short to ground is invisible to a low-side shunt
+- **4-Wire (Kelvin) Sensing** (`Kelvin`) - a 10 mohm shunt with 50 mohm leads reads 110 mohm
+  two-wire and 10 mohm four-wire, because the sense leads carry no current
+
+**Interview: power & converters**
+
+- **Discrete Buck, Node by Node** (`BuckN`) - an IRF9540N, an NPN driving its gate and a
+  Schottky catching the current, so the gate, switch node, inductor and output each have their
+  own answer to "draw me the waveform there"
+- **LDO vs Switcher** (`LDOsw`) - 12 V to 5 V at 1 A both ways, with an ammeter in each input:
+  1 A in and 7 W of heat, against about 440 mA
+- **Bootstrap High-Side Drive** (`Boot`) - C_boot rides the switch node to 23 V so an N-channel
+  gate can sit above the rail, and the second copy holds the node high until the cap drains and
+  the high side turns itself off. This is why a bootstrapped buck has a maximum duty cycle
 
 ### Ideal vs real models
 
