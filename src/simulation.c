@@ -168,8 +168,8 @@ void simulation_reset(Simulation *sim) {
 
                 case COMP_CAPACITOR:
                 case COMP_CAPACITOR_ELEC:
-                    // Reset capacitor voltage
-                    comp->props.capacitor.voltage = 0.0;
+                    /* The stored state is cap_vc; props.capacitor.voltage is the initial
+                       condition the circuit was built with, so a reset must not erase it. */
                     comp->cap_vc = 0.0;
                     comp->trap_i_prev = 0.0;
                     break;
@@ -546,10 +546,16 @@ bool simulation_dc_analysis(Simulation *sim) {
     for (int i = 0; i < circuit->num_components; i++) {
         Component *cc_ = circuit->components[i];
         if (cc_->type == COMP_CAPACITOR || cc_->type == COMP_CAPACITOR_ELEC || cc_->type == COMP_TOROID) {
-            /* with no current flowing, the capacitor holds the whole terminal voltage */
+            /* with no current flowing, the capacitor holds the whole terminal voltage - unless
+               it has been given an initial condition, which is what a converter template uses
+               to start its transfer and output capacitors where they will settle instead of
+               ringing its way there over several milliseconds */
             int a_ = circuit->node_map[cc_->node_ids[0]];
             int b_ = (cc_->type == COMP_TOROID) ? 0 : circuit->node_map[cc_->node_ids[1]];
-            cc_->cap_vc = ((a_ > 0) ? vector_get(solution, a_ - 1) : 0) - ((b_ > 0) ? vector_get(solution, b_ - 1) : 0);
+            double ic_ = (cc_->type == COMP_CAPACITOR)      ? cc_->props.capacitor.voltage :
+                         (cc_->type == COMP_CAPACITOR_ELEC) ? cc_->props.capacitor_elec.voltage : 0.0;
+            cc_->cap_vc = (ic_ != 0.0) ? ic_
+                        : ((a_ > 0) ? vector_get(solution, a_ - 1) : 0) - ((b_ > 0) ? vector_get(solution, b_ - 1) : 0);
         }
         circuit->components[i]->trap_i_prev = 0.0;
         circuit->components[i]->tline_ic_prev[0] = circuit->components[i]->tline_ic_prev[1] = 0.0;

@@ -220,7 +220,7 @@ typedef struct {
     int palette_scroll_drag_start_offset; // Scroll offset when drag started
 
     // Circuit template palette
-    CircuitPaletteItem circuit_items[160];  // generated from circuits.c; must be >= CIRCUIT_TYPE_COUNT
+    CircuitPaletteItem circuit_items[256];  // generated from circuits.c; must be >= CIRCUIT_TYPE_COUNT
     int num_circuit_items;
     bool circuit_group_collapsed[16];       // per TemplateGroup
     int circuit_group_header_y[16];         // content-space y of each group header (0 = not shown)

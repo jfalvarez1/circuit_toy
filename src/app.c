@@ -1080,6 +1080,10 @@ void app_handle_events(App *app) {
                             if (c->type == COMP_NMOS || c->type == COMP_PMOS) {
                                 snprintf(current_value, sizeof(current_value), "%.6g", c->props.mosfet.tox);
                             }
+                        } else if (prop_type == PROP_CAP_VHALF) {
+                            if (c->type == COMP_CAPACITOR) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.capacitor.v_half);
+                            }
                         } else if (prop_type == PROP_PART) {
                             component_cycle_part(c);
                             if (c->part[0]) {

@@ -159,6 +159,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
             .esr = 0.01,            // 10 mOhm ESR
             .esl = 1e-9,            // 1 nH ESL
             .leakage = 1e9,         // 1 GOhm leakage
+            .v_half = 0.0,          // no DC-bias capacitance loss unless a part model asks for it
             .ideal = true
         }}
     },
@@ -1994,6 +1995,28 @@ static void part_1n4733a(Component *c) {
     c->props.zener.rz = 7.0;          /* Z_ZT 7 ohm */
     c->props.zener.ideal = false;
 }
+static void part_x5r_10u(Component *c) {
+    c->props.capacitor.capacitance = 10e-6;   /* 10 uF 6.3 V X5R, 0805 */
+    c->props.capacitor.esr = 5e-3;            /* 5 mohm at 100 kHz */
+    c->props.capacitor.esl = 0.5e-9;
+    c->props.capacitor.leakage = 1e8;
+    c->props.capacitor.v_half = 2.0;          /* down to half its value near 2 V of bias */
+    c->props.capacitor.ideal = false;
+}
+static void part_c0g_10n(Component *c) {
+    c->props.capacitor.capacitance = 10e-9;   /* 10 nF C0G/NP0: class I, no bias loss */
+    c->props.capacitor.esr = 10e-3;
+    c->props.capacitor.esl = 0.4e-9;
+    c->props.capacitor.leakage = 1e10;
+    c->props.capacitor.v_half = 0.0;
+    c->props.capacitor.ideal = false;
+}
+static void part_alum_100u(Component *c) {
+    c->props.capacitor_elec.capacitance = 100e-6;  /* 100 uF 25 V aluminium electrolytic */
+    c->props.capacitor_elec.esr = 0.5;             /* the figure that decides a supply's ripple */
+    c->props.capacitor_elec.leakage = 1e5;
+    c->props.capacitor_elec.ideal = false;
+}
 static void part_lm358(Component *c) {
     c->props.opamp.gain = 100000;     /* A_VOL 100 V/mV */
     c->props.opamp.gbw = 1e6;         /* 1 MHz */
@@ -2064,6 +2087,9 @@ static const PartModel g_parts[] = {
     { "1N4148",  COMP_DIODE,   "small-signal silicon, V_F 0.72 V at 5 mA, V_R 100 V",         part_1n4148 },
     { "1N4001",  COMP_DIODE,   "1 A rectifier, V_F 1.1 V at 1 A, V_R 50 V",                   part_1n4001 },
     { "1N4733A", COMP_ZENER,   "5.1 V 1 W zener, Z_ZT 7 ohm at 49 mA",                        part_1n4733a },
+    { "X5R 10uF", COMP_CAPACITOR, "10 uF 6.3 V X5R: 5 mohm ESR, and half its value at 2 V bias", part_x5r_10u },
+    { "C0G 10nF", COMP_CAPACITOR, "10 nF C0G/NP0: class I, no capacitance lost to DC bias",      part_c0g_10n },
+    { "Alu 100uF", COMP_CAPACITOR_ELEC, "100 uF 25 V aluminium, ESR 0.5 ohm",                    part_alum_100u },
     { "LM358",   COMP_OPAMP,   "dual op-amp, 1 MHz, 0.5 V/us, V_os 2 mV, I_B 45 nA",          part_lm358 },
     { "LM741",   COMP_OPAMP,   "the classic, 1 MHz, 0.5 V/us, V_os 1 mV, I_B 80 nA",          part_lm741 },
     { "TL072",   COMP_OPAMP,   "JFET input, 3 MHz, 13 V/us, I_B 65 pA",                       part_tl072 },
@@ -2746,6 +2772,16 @@ CapCompanion component_cap_companion(const Component *comp, double dt, bool tran
                (comp->type == COMP_TOROID)      ? toroid_capacitance(comp)
                                                 : comp->props.capacitor_elec.capacitance;
     if (C <= 0) return cc;
+    /* DC bias. A class-II ceramic (X5R, X7R) loses capacitance as the voltage across it rises -
+       a 10 uF 6.3 V part can be down to a third of its marked value at 5 V, which is why a rail
+       decoupled with "22 uF" can ripple like 6 uF. The one parameter is the bias at which it has
+       halved. This is the effective capacitance at the operating point rather than a proper
+       Q(V) integration, so it is a teaching model, not a charge-conserving one; class-I parts
+       (C0G/NP0) leave v_half at 0 and are unaffected, as they are in life. */
+    if (comp->type == COMP_CAPACITOR && !comp->props.capacitor.ideal && comp->props.capacitor.v_half > 0) {
+        double vb = fabs(comp->cap_vc);
+        C = C / (1.0 + vb / comp->props.capacitor.v_half);
+    }
     const double THETA = 0.6;
     cc.Geq = trans ? C / (THETA * dt) : C / dt;
     cc.K   = trans ? (1.0 - THETA) / THETA : 0.0;
@@ -2758,6 +2794,18 @@ CapCompanion component_cap_companion(const Component *comp, double dt, bool tran
     }
     if (esr < 0) esr = 0;
     if (esl < 0) esl = 0;
+    /* Initial condition. At the operating point a capacitor that was given a starting voltage
+       is stamped as a stiff source of that value, so the NODES come out consistent with it. .
+       Seeding only the stored state would leave the first transient step with a companion that
+       believes 24 V while the node sits at 0, and the branch current that implies is enormous. */
+    double ic = (comp->type == COMP_CAPACITOR)      ? comp->props.capacitor.voltage :
+                (comp->type == COMP_CAPACITOR_ELEC) ? comp->props.capacitor_elec.voltage : 0.0;
+    if (!trans && ic != 0.0) {
+        cc.G = 1000.0;                        /* 1 mohm: stiff enough to hold it, soft enough to solve */
+        cc.Ieq = cc.G * ic;
+        cc.Geq = cc.G; cc.K = 0; cc.G_leak = 0;
+        return cc;
+    }
     double R_L = trans ? esl / dt : 0.0;      /* a parasitic inductance has no operating-point drop */
     double i_prev = trans ? comp->trap_i_prev : 0.0;
     double vc_prev = trans ? comp->cap_vc : v_prev;

@@ -2366,6 +2366,14 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             }
             break;
 
+        // Ceramic DC-bias: the voltage at which the capacitance has halved (0 = class I)
+        case PROP_CAP_VHALF:
+            if (value >= 0 && value <= 1e4 && comp->type == COMP_CAPACITOR) {
+                comp->props.capacitor.v_half = value;
+                applied = true;
+            }
+            break;
+
         // Capacitor ESR
         case PROP_ESR:
             if (value >= 0 && value <= 1e6) {

@@ -1785,6 +1785,18 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
 
                 // Non-ideal parameters (ESR, leakage)
                 if (!selected->props.capacitor.ideal) {
+                    bool edit_vh = input && input->editing_property && input->editing_prop_type == PROP_CAP_VHALF;
+                    if (selected->props.capacitor.v_half > 0)
+                        snprintf(buf, sizeof(buf), "%.3g V", selected->props.capacitor.v_half);
+                    else
+                        snprintf(buf, sizeof(buf), "none (C0G)");
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Bias 1/2:", buf, edit_vh, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_CAP_VHALF;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                if (!selected->props.capacitor.ideal) {
                     bool edit_esr = input && input->editing_property && input->editing_prop_type == PROP_ESR;
                     format_engineering(selected->props.capacitor.esr, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "ESR:", buf, edit_esr, edit_buf, cursor);

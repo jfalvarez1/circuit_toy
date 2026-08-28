@@ -72,6 +72,7 @@ typedef enum {
     PROP_MOS_TYPE,      // Enhancement <-> depletion (flips the sign of Vth)
     PROP_MOS_IDEAL,     // Ideal mode toggle
     PROP_PART,          // Named device: cycle 2N7000 / 2N7002 / ... / generic
+    PROP_CAP_VHALF,     // Ceramic DC-bias: the voltage at which the capacitance has halved
 
     // LED parameters
     PROP_LED_COLOR,     // Color selector (cycle through presets)

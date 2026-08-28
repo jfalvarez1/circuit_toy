@@ -313,6 +313,7 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_ID_MOSFET] = {"Ideal vs Real MOSFET", "IdMOS", "Channel-length modulation is not a rounding error", TG_IDEAL},
     [CIRCUIT_ID_OPAMP_ERR] = {"Op-Amp Error Sources", "OAerr", "Offset and bias current at DC, and how to cancel them", TG_IDEAL},
     [CIRCUIT_PARTS_MOSFET] = {"Named Parts: MOSFET Switches", "Parts", "2N7000 / 2N7002 / IRF540N doing the same job", TG_IDEAL},
+    [CIRCUIT_CAP_DCBIAS] = {"Ceramic DC Bias", "Cbias", "The same 10 uF X5R at 0, 2 and 5 V of bias", TG_IDEAL},
 
 
 
@@ -6266,6 +6267,7 @@ static int place_id_bjt(Circuit *circuit, float x, float y);
 static int place_id_mosfet(Circuit *circuit, float x, float y);
 static int place_id_opamp_err(Circuit *circuit, float x, float y);
 static int place_parts_mosfet(Circuit *circuit, float x, float y);
+static int place_cap_dcbias(Circuit *circuit, float x, float y);
 static int place_template_body(Circuit *circuit, CircuitTemplateType type, float x, float y) {
     if (!circuit) return 0;
 
@@ -6483,6 +6485,7 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_ID_MOSFET:          return place_id_mosfet(circuit, x, y);
         case CIRCUIT_ID_OPAMP_ERR:       return place_id_opamp_err(circuit, x, y);
         case CIRCUIT_PARTS_MOSFET:       return place_parts_mosfet(circuit, x, y);
+        case CIRCUIT_CAP_DCBIAS:         return place_cap_dcbias(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6680,6 +6683,12 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "also rises with V_CE - the Early effect, I_C = I_S exp(V_BE/V_T)(1 + V_CE/V_AF) - so with V_AF = 80 V",
         "the current is ~9 % higher and the collector sits lower. It is the same effect that sets a stage's",
         "output resistance r_o = V_AF/I_C, so it is not a rounding error. PROBE: both collectors."},
+    [CIRCUIT_CAP_DCBIAS] = {"CERAMIC DC BIAS: three copies of the same 10 uF 6.3 V X5R, each fed the same 25 mA",
+        "ripple current, each sitting on a different DC bias. A class-II ceramic loses capacitance",
+        "as the voltage across it rises - this one is down to half at 2 V - so the ripple grows:",
+        "62 mVpp with no bias, 125 mV at 2 V, 219 mV at 5 V. The part is still marked 10 uF.",
+        "This is why a rail decoupled with '22 uF' can ripple like 6 uF, and why a designer picks",
+        "a bigger case size or a higher voltage rating. C0G/NP0 parts do not do this. PROBE: all three."},
     [CIRCUIT_PARTS_MOSFET] = {"NAMED PARTS: the same low-side switch three times, with three real MOSFETs from the",
         "library. Each gate is held at 10 V - the voltage their data sheets specify R_DS(on) at -",
         "so the drop across each device is 12 V x R_DS(on) / (R_load + R_DS(on)): 143 mV for the",
@@ -10025,7 +10034,11 @@ static int place_hw_cuk(Circuit *circuit, float x, float y) {
     sw->node_ids[0] = si; sw->node_ids[1] = so;
     Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 300, y, 0);      // (260,y)-(340,y) transfer cap
     c1->props.capacitor.capacitance = 220e-6;
-    c1->props.capacitor.voltage = 24.0;   /* pre-charged to Vin + |Vout|: a Cuk started from zero rings hard */
+    /* No initial condition on the transfer capacitor. Its DC level is a slow free integrator
+       here - nothing in the loop forces the volt-second balance quickly - so pre-charging it to
+       the theoretical Vin + |Vout| = 24 V does not settle it faster, it settles it somewhere
+       else (15.5 V out instead of 13.3). See docs/ROADMAP.md; the output capacitors of the
+       other converters do take their initial condition, and it changes only their startup. */
     int c1l = TN(x + 260, y), c1r = TN(x + 340, y); TW(node_a, c1l);
     c1->node_ids[0] = c1l; c1->node_ids[1] = c1r;
     Component *resr = hres(circuit, x + 400, y, 0.2);                      // (360,y)-(440,y): the cap's ESR
@@ -10042,7 +10055,7 @@ static int place_hw_cuk(Circuit *circuit, float x, float y) {
     int l2l = TN(x + 560, y), l2r = TN(x + 640, y); TW(node_b, l2l);
     l2->node_ids[0] = l2l; l2->node_ids[1] = l2r;
     int out = TN(x + 700, y); TW(l2r, out);
-    out_stage(circuit, x + 700, y, out, 470e-6, 20.0, -12.0);
+    out_stage(circuit, x + 700, y, out, 100e-6, 20.0, -12.0);   /* 2 ms of output filter: the converter settles inside the visible window */
     add_label(circuit, x - 40, y - 80, "CUK CONVERTER: energy moves through the 47 uF transfer capacitor instead of an inductor, so BOTH the input and");
     add_label(circuit, x - 40, y - 50, "output currents are continuous - the quietest of the basic topologies. Vout = -D/(1-D) x Vin = -12 V at D = 0.5.");
     add_label(circuit, x - 40, y + 220, "The 0.5 ohm with C1 is its ESR; with no real loss the C1-L2 loop rings away at start-up. TRY: C1 -> 1 uF.");
@@ -10741,6 +10754,52 @@ static int place_parts_mosfet(Circuit *circuit, float x, float y) {
     return 24;
 }
 
+
+// 10. What a class-II ceramic actually gives you once there is voltage across it
+static int place_cap_dcbias(Circuit *circuit, float x, float y) {
+    static const double bias[3] = { 0.0, 2.0, 5.0 };
+    static const char *nm[3] = {
+        "no bias: the full 10 uF, 62 mVpp of ripple",
+        "2 V bias: half the capacitance, twice the ripple",
+        "5 V bias: 2.9 uF left of the marked 10 uF - 219 mVpp"
+    };
+    for (int k = 0; k < 3; k++) {
+        float py = y + k * 300;
+        Component *v = add_comp(circuit, COMP_SQUARE_WAVE, x, py + 60, 0);   // +(x,py+20)
+        if (!v) return 0;
+        v->props.square_wave.amplitude = 0.5; v->props.square_wave.frequency = 20e3;
+        v->props.square_wave.duty = 0.5;
+        Component *g0 = add_comp(circuit, COMP_GROUND, x, py + 140, 0);
+        connect_terminals(circuit, v, 1, g0, 0);
+        int sp = TN(x, py + 20); v->node_ids[0] = sp;
+        Component *rs = hres(circuit, x + 140, py + 20, 20.0);               /* 0.5 V / 20 ohm = 25 mA */
+        int sl = TN(x + 100, py + 20), sr = TN(x + 180, py + 20); TW(sp, sl);
+        rs->node_ids[0] = sl; rs->node_ids[1] = sr;
+        int node = TN(x + 240, py + 20); TW(sr, node);
+
+        Component *cc = add_comp(circuit, COMP_CAPACITOR, x + 240, py + 80, 90);  // (240,py+40)-(240,py+120)
+        component_apply_part(cc, "X5R 10uF");                                /* 10 uF, half at 2 V */
+        int ct = TN(x + 240, py + 40), cb = TN(x + 240, py + 120);
+        TW(node, ct);
+        cc->node_ids[0] = ct; cc->node_ids[1] = cb;
+
+        /* the bias sits under the capacitor, and is a short to the ripple */
+        Component *vb = add_comp(circuit, COMP_DC_VOLTAGE, x + 240, py + 180, 0);  // +(240,py+140) -(240,py+220)
+        vb->props.dc_voltage.voltage = bias[k];
+        Component *gb = add_comp(circuit, COMP_GROUND, x + 240, py + 260, 0);
+        connect_terminals(circuit, vb, 1, gb, 0);
+        int bp = TN(x + 240, py + 140); vb->node_ids[0] = bp;
+        TW(cb, bp);
+        add_label(circuit, x + 320, py + 20, nm[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "CERAMIC DC BIAS: the same 10 uF X5R three times, same 25 mA ripple current, three different DC biases");
+    add_label(circuit, x - 40, y + 900, "A class-II ceramic (X5R, X7R) is a ferroelectric, and its permittivity falls as the field across it rises. This part");
+    add_label(circuit, x - 40, y + 930, "is down to half its marked value at 2 V and under a third at 5 V, so the ripple on the same current triples - the");
+    add_label(circuit, x - 40, y + 960, "capacitor is still marked 10 uF. Set 'Bias 1/2' to 0 in the properties panel for a class-I part (C0G/NP0), which");
+    add_label(circuit, x - 40, y + 990, "does not do this at all; that is what you buy when the value has to be the value.");
+    return 18;
+}
+
 #undef TN
 #undef TW
 
@@ -10902,6 +10961,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_ID_MOSFET]        = { COMP_RESISTOR, 2, 1 },
     [CIRCUIT_ID_OPAMP_ERR]     = { COMP_OPAMP, 1, 2 },
     [CIRCUIT_PARTS_MOSFET]     = { COMP_NMOS, 0, 1 },
+    [CIRCUIT_CAP_DCBIAS]       = { COMP_CAPACITOR, 0, 0 },
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -10963,6 +11023,7 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_ID_MOSFET]        = { { COMP_RESISTOR, 5, 1 } },
     [CIRCUIT_ID_OPAMP_ERR]     = { { COMP_OPAMP, 0, 2 } },
     [CIRCUIT_PARTS_MOSFET]     = { { COMP_NMOS, 1, 1 }, { COMP_NMOS, 2, 1 } },
+    [CIRCUIT_CAP_DCBIAS]       = { { COMP_CAPACITOR, 1, 0 }, { COMP_CAPACITOR, 2, 0 } },
     [CIRCUIT_CMOS_NAND]        = { { COMP_PULSE_SOURCE, 1, 0 } },
     // multi-input circuits: every input on its own channel
     [CIRCUIT_SUMMING_AMP]      = { { COMP_DC_VOLTAGE, 1, 0 }, { COMP_DC_VOLTAGE, 2, 0 } },    // V2, V3 (V1 = source probe)
@@ -11021,7 +11082,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_MATCH] = 500e-9, [CIRCUIT_HW_REFLECT] = 500e-9, [CIRCUIT_HW_LOOP] = 100e-6,
     [CIRCUIT_ID_SOURCE] = 1e-3, [CIRCUIT_ID_DIODE] = 200e-6, [CIRCUIT_ID_CAP] = 10e-6,
     [CIRCUIT_ID_IND] = 200e-6, [CIRCUIT_ID_OPAMP] = 2e-6, [CIRCUIT_ID_BJT] = 1e-3, [CIRCUIT_ID_MOSFET] = 1e-3,
-    [CIRCUIT_ID_OPAMP_ERR] = 1e-3, [CIRCUIT_PARTS_MOSFET] = 1e-3,
+    [CIRCUIT_ID_OPAMP_ERR] = 1e-3, [CIRCUIT_PARTS_MOSFET] = 1e-3, [CIRCUIT_CAP_DCBIAS] = 10e-6,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -11067,7 +11128,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_MATCH] = 0.5, [CIRCUIT_HW_REFLECT] = 1.0, [CIRCUIT_HW_LOOP] = 2.0,
     [CIRCUIT_ID_SOURCE] = 1.0, [CIRCUIT_ID_DIODE] = 0.2, [CIRCUIT_ID_CAP] = 0.1,
     [CIRCUIT_ID_IND] = 2.0, [CIRCUIT_ID_OPAMP] = 0.5, [CIRCUIT_ID_BJT] = 2.0, [CIRCUIT_ID_MOSFET] = 2.0,
-    [CIRCUIT_ID_OPAMP_ERR] = 0.5, [CIRCUIT_PARTS_MOSFET] = 0.1,
+    [CIRCUIT_ID_OPAMP_ERR] = 0.5, [CIRCUIT_PARTS_MOSFET] = 0.1, [CIRCUIT_CAP_DCBIAS] = 0.05,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -11232,6 +11293,7 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_ID_MOSFET]        = { DEMO_DC, 0 },
     [CIRCUIT_ID_OPAMP_ERR]     = { DEMO_DC, 0 },
     [CIRCUIT_PARTS_MOSFET]     = { DEMO_DC, 0 },
+    [CIRCUIT_CAP_DCBIAS]       = { DEMO_WAVEFORM, 20e3 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -11273,6 +11335,7 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_ID_BJT] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_ID_MOSFET] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_ID_OPAMP_ERR] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_PARTS_MOSFET] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_CAP_DCBIAS] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */
     [CIRCUIT_COLPITTS] = SCOPE_FLAG_AC, [CIRCUIT_HARTLEY] = SCOPE_FLAG_AC, [CIRCUIT_CLAPP] = SCOPE_FLAG_AC,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,

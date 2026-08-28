@@ -63,10 +63,16 @@ typedef union {
     // Capacitor
     struct {
         double capacitance;     // Capacitance (F)
-        double voltage;         // Current voltage (state variable)
+        double voltage;         // Initial condition: the voltage the capacitor starts the run at
+                                // (0 = start from the operating point, which is the usual case).
+                                // A switching converter started from a flat capacitor rings for
+                                // milliseconds before it means anything; this is how a template
+                                // says "start it where it will settle".
         double esr;             // Equivalent Series Resistance (Ohm), default: 0.01
         double esl;             // Equivalent Series Inductance (H), default: 1e-9
         double leakage;         // Leakage resistance (Ohm), default: 1e9
+        double v_half;          // DC bias at which the capacitance has halved (0 = no bias loss,
+                                // which is right for C0G/NP0; a 6.3 V X5R halves near 2 V)
         bool ideal;             // Ideal mode (no parasitics)
     } capacitor;
 
