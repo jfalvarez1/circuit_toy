@@ -33,7 +33,7 @@ and note: build hash, steps, expected vs actual, stderr excerpt.
 | 0.16 | `[ ]` `template_smoke --probe-audit [NAME]` | "What the user will actually see": for every template the auto-placed probes exactly as the app places them (source, output, extra), the component terminals each probe sits on (owner list), and min / max over one scope screen at the preset time/div and V/div, with flags `DUP` (two probes on one node), `GND` (probe on ground), `FLAT` (waveform demo that does not move), `SMALL` (output < 0.25 div at the preset V/div), `CLIP` (beyond ±4 div before the one-shot autoscale), `NOOUT`. Current: **10/96 flagged, all physically expected** — HP / band-pass outputs SMALL at the start of their sweep, the 14.7 kV generator channel SMALL at 100 kV/div, etc. A *new* flag after a template or preset edit is the thing to chase; oscillators no longer auto-probe their kick source, so a `DUP`/`GND` on a kick is gone for good |
 | 0.17 | `[ ]` `template_smoke --series NAME T NODE` | Explorer: prints `time voltage` pairs for node id NODE over T seconds (node ids from `--nodes`) — paste into a plot, or diff two runs to see a sign / phase error (this is how the one-step phase error of the terminal-current re-stamp was localised). Use `--trace` first to pick the node |
 
-Smoke test modes: (none) template load+run · `--demo-test` · `--probe-test` (dt never coarser than the template's scope preset) · `--osc-test [--osc-dt X]` (per-case dt in `cases[]` wins over `--osc-dt`; output node from the template spec) · `--flow-test` (behavioural gates exempt) · `--burn-test` (no part over its rating; HV templates must be clean) · `--std-test` (bus voltages vs ERCOT / NERC / ANSI C84.1 / NEC) · `--switch-test` (every switch in both states at the probed output) ·
+Smoke test modes: (none) template load+run · `--demo-test` · `--probe-test` (dt never coarser than the template's scope preset) · `--osc-test [--osc-dt X]` (per-case dt in `cases[]` wins over `--osc-dt`; output node from the template spec) · `--flow-test` (behavioural gates exempt) · `--burn-test` (no part over its rating; HV templates must be clean) · `--std-test` (bus voltages vs ERCOT / NERC / ANSI C84.1 / NEC) · `--switch-test` (every switch in both states at the probed output) · `--geom-test` (also symbol overlap) ·
 `--geom-test` · `--scope-test` · `--sweep-check` · `--tesla-test` · `--param-test` · `--response NAME` · `--trace NAME T` · `--probe-audit [NAME]` · `--series NAME T NODE` ·
 flags `--verbose`, `--nodes`, `--svg DIR`, `--dc`, `--sim-time T`, and a bare NAME argument to filter templates.
 | 0.5 | `[ ]` Window resize to min size / maximized / 4K | Panels reflow, no overlapping text, neon border tracks edges |
@@ -481,6 +481,18 @@ three buses that sit outside their band on purpose). Every manual row is done **
 | 3.18.9 | `[ ]` Alarm loop: watch the contact open at 4 s; open the integrity switch; short the pair | 8.5 V normal, 9.2 V alarm, 12 V cut, 0 V short |
 | 3.18.10 | `[ ]` **Automated:** `template_smoke --switch-test` | Every SPST switch in every template, run in both states and measured at that template's probed output: **22 switches, 0 failed**. A switch that moves the output less than 1 % fails unless it has a `switch_cases` entry saying why (a phase-B breaker cannot move a phase-A probe). |
 | 3.18.11 | `[ ]` **Automated:** `--probe-test`, `--std-test`, `--demo-test`, `--burn-test`, `--flow-test`, `--knob-test`, `--geom-test` | 119/119, 23 buses 0 drifted, 129/129, 0 overloads, 129/129, 1652/0, all nine new templates clean |
+
+### 3.19 Schematic layout and oscillator audit (2026-08-28)
+
+Three checks were tightened after the Hartley/Colpitts report and a ground-under-capacitor overlap:
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.19.1 | `[ ]` **Automated:** `--geom-test` now also reports `overlap=` | No two component symbols may overlap (rotation-aware bounding boxes, text excluded, 6 px slack). A ground drawn under a capacitor is a layout bug even when the netlist is right. **Currently 72/131 clean — the remaining 59 are a tracked backlog.** |
+| 3.19.2 | `[ ]` **Automated:** `--osc-test` frequency tolerance | Was ±25 %, which let a Hartley running 10 % fast pass. Now **±5 %**, and it immediately caught the Phase Shift oscillator (−8 % from loading) and the Hartley (+6 %); both expectations are now the measured values with the physical reason documented on the canvas. |
+| 3.19.3 | `[ ]` **Automated:** `--osc-test` waveform shape | New: AC rms ÷ peak-to-peak over the **settled quarter** of the run — 0.354 sine, 0.5 square, 0.289 triangle, ±12 %. Nothing previously checked shape, so a clipped or notched "sine" passed as long as it crossed its mean. Colpitts 0.355, Clapp 0.339, Hartley 0.370, Ring 0.471, Tri/Square 0.299. |
+| 3.19.4 | `[ ]` LC oscillators on screen | Colpitts / Hartley / Clapp swing about a 12 V rail and were being clipped by the top of the graticule; all three now preset **AC coupling** so the tank waveform is centred and complete. |
+| 3.19.5 | `[ ]` Hartley coupling capacitor | 10 nF sat in series with the 1 nF tank cap (pulling f 10 % high) and resonated with L2 near 225 kHz, putting a notch on the falling edge. Now 220 nF. |
 
 ## 4. Oscilloscope
 

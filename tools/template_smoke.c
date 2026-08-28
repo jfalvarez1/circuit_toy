@@ -270,16 +270,19 @@ static int flow_test(void) {
 static Component *find_comp(Circuit *c, ComponentType t, int ord);
 static double g_osc_dt = 1e-6;
 static int osc_test(void) {
-    struct { CircuitTemplateType t; double run; double f_expect; double dt; } cases[] = {
-        { CIRCUIT_WIEN_OSCILLATOR, 0.040, 1591.5, 0 },
-        { CIRCUIT_PHASE_SHIFT_OSC, 0.010, 6497.0, 0 },
-        { CIRCUIT_RELAXATION_OSC, 0.040, 455.0, 0 },
-        { CIRCUIT_TRI_SQUARE_GEN, 0.004, 5000.0, 2e-7 },
-        { CIRCUIT_FUNCTION_GEN, 0.004, 5000.0, 2e-7 },
-        { CIRCUIT_COLPITTS, 60e-6, 712e3, 5e-9 },
-        { CIRCUIT_RING_OSC, 200e-6, 145e3, 2e-8 },
-        { CIRCUIT_HARTLEY, 80e-6, 503292, 5e-9 },
-        { CIRCUIT_CLAPP, 30e-6, 1743455, 2e-9 },
+    /* shape: the AC rms of the probed node divided by its peak-to-peak. A sine is 0.354,
+       a square 0.5 and a triangle 0.289 - so a clipped or notched 'sine' fails on shape
+       even when it still crosses its mean at roughly the right rate. 0 = do not check. */
+    struct { CircuitTemplateType t; double run; double f_expect; double dt; double shape; } cases[] = {
+        { CIRCUIT_WIEN_OSCILLATOR, 0.040, 1591.5, 0, 0.354 },
+        { CIRCUIT_PHASE_SHIFT_OSC, 0.010, 5973.0, 0, 0.354 },   /* ideal 1/(2 pi R C sqrt 6) = 6497; loading the last section pulls it down 8 % */
+        { CIRCUIT_RELAXATION_OSC, 0.040, 455.0, 0, 0.500 },
+        { CIRCUIT_TRI_SQUARE_GEN, 0.004, 5000.0, 2e-7, 0.289 },
+        { CIRCUIT_FUNCTION_GEN, 0.004, 5000.0, 2e-7, 0.354 },
+        { CIRCUIT_COLPITTS, 60e-6, 712e3, 5e-9, 0.354 },
+        { CIRCUIT_RING_OSC, 200e-6, 145e3, 2e-8, 0.500 },
+        { CIRCUIT_HARTLEY, 80e-6, 534188, 5e-9, 0.354 },        /* ideal 1/(2 pi sqrt((L1+L2)C)) = 503 kHz; the tap is only an AC ground through the supply */
+        { CIRCUIT_CLAPP, 30e-6, 1743455, 2e-9, 0.354 },
     };
     int fails = 0;
     for (unsigned k = 0; k < sizeof cases / sizeof cases[0]; k++) {
@@ -322,12 +325,26 @@ static int osc_test(void) {
             crossings = rising;
             if (rising >= 2) f_meas = (rising - 1) / (t_last - t_first);
         }
+        /* AC rms / peak-to-peak: 0.354 for a sine, 0.5 for a square, 0.289 for a triangle.
+           A clipped or notched 'sine' fails this even when it still crosses its mean at
+           roughly the right rate - which is how a distorted Hartley/Colpitts used to pass. */
+        double shape = 0;
+        if (ok && n > 40 && vmax > vmin) {
+            int i0 = (n * 3) / 4;                       /* settled quarter only: start-up drags rms down */
+            double m2 = 0, sq = 0, lo = 1e300, hi = -1e300;
+            for (int i = i0; i < n; i++) { m2 += vs[i]; if (vs[i] < lo) lo = vs[i]; if (vs[i] > hi) hi = vs[i]; }
+            m2 /= (n - i0);
+            for (int i = i0; i < n; i++) { double d = vs[i] - m2; sq += d * d; }
+            if (hi > lo) shape = sqrt(sq / (n - i0)) / (hi - lo);
+        }
         int osc = ok && crossings >= 3 && (vmax - vmin) > 0.5;
-        int f_ok = osc && fabs(f_meas - cases[k].f_expect) < 0.25 * cases[k].f_expect;
-        printf("[%s] osc   %-28s swing=%.2fV  rising-crossings=%d  f=%.0fHz (expect ~%.0f)%s\n",
-               (osc && f_ok) ? " OK " : "FAIL", ti ? ti->name : "?", vmax - vmin, crossings, f_meas, cases[k].f_expect,
-               !ok ? "  [sim error]" : !osc ? "  [NOT OSCILLATING: latched or dead loop]" : !f_ok ? "  [frequency off]" : "");
-        if (!(osc && f_ok)) fails++;
+        int f_ok = osc && fabs(f_meas - cases[k].f_expect) < 0.05 * cases[k].f_expect;   /* 25 % let a 10 %-off Hartley through */
+        int s_ok = !(cases[k].shape > 0) || (osc && fabs(shape - cases[k].shape) < 0.12 * cases[k].shape);
+        printf("[%s] osc   %-28s swing=%.2fV  rising-crossings=%d  f=%.0fHz (expect ~%.0f) shape=%.3f/%.3f%s\n",
+               (osc && f_ok && s_ok) ? " OK " : "FAIL", ti ? ti->name : "?", vmax - vmin, crossings, f_meas, cases[k].f_expect,
+               shape, cases[k].shape,
+               !ok ? "  [sim error]" : !osc ? "  [NOT OSCILLATING: latched or dead loop]" : !f_ok ? "  [frequency off]" : !s_ok ? "  [WAVEFORM SHAPE WRONG: clipped or distorted]" : "");
+        if (!(osc && f_ok && s_ok)) fails++;
         simulation_free(sim); circuit_free(c);
     }
     return fails;
@@ -453,6 +470,8 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_GS_RX,            COMP_RESISTOR,  1, 0, "amp", 168.8,   0.05, 100e-3, "transmission bus, R/X = 0.09" },
     { CIRCUIT_GS_GOVERNOR,      COMP_OPAMP,     0, 2, "min", -0.1432, 0.05, 4.0,    "settles at -0.05/(1/R + D) = -0.143 Hz" },
     { CIRCUIT_GS_PIDS,          COMP_RESISTOR,  1, 0, "max", 8.482,   0.03, 3.0,    "RTU input, loop normal" },
+    { CIRCUIT_MOS_IDVGS,        COMP_RESISTOR,  1, 0, "max", 0.1886,  0.05, 20e-3,  "2N7000 at Vgs 4 V: 189 mA through the 1 ohm sense" },
+    { CIRCUIT_MOS_IDVDS,        COMP_RESISTOR,  5, 0, "max", 0.1896,  0.05, 20e-3,  "Vgs 3.5 V curve: 95 mA through the 2 ohm sense" },
     { CIRCUIT_SCHMITT_BISTABLE, COMP_OPAMP,     0, 2, "max", 15.0,  0.05, 30e-3, "bistable output at the rail" },
     { CIRCUIT_TRI_SQUARE_GEN,   COMP_OPAMP,     1, 2, "amp", 7.5,   0.08, 3e-3,  "triangle peak = 15 R1/R2" },
     { CIRCUIT_FUNCTION_GEN,     COMP_RESISTOR,  3, 1, "amp", 4.9,   0.15, 3e-3,  "3-breakpoint sine ~4.9 V peak" },
@@ -546,6 +565,44 @@ static int seg_hits_box(float ax, float ay, float bx, float by, float x0, float 
     return 0;
 }
 
+
+/* Symbols must not sit on top of each other. Component bodies are info->width x height around
+   (x,y); text labels are excluded (they are annotation, not schematic symbols). Overlapping
+   symbols - a ground drawn under a capacitor, say - are a layout bug even when the netlist is
+   right, so --geom-test fails on them. */
+static int geom_overlap(Circuit *c, char *why, size_t whyn) {
+    int hits = 0;
+    for (int i = 0; i < c->num_components; i++) {
+        Component *a = c->components[i];
+        if (a->type == COMP_TEXT || a->type == COMP_LABEL) continue;
+        const ComponentTypeInfo *ia = component_get_info(a->type);
+        if (!ia) continue;
+        int arot = ((a->rotation % 360) + 360) % 360;
+        double aw = (arot == 90 || arot == 270) ? ia->height : ia->width;
+        double ah = (arot == 90 || arot == 270) ? ia->width : ia->height;
+        for (int j = i + 1; j < c->num_components; j++) {
+            Component *b = c->components[j];
+            if (b->type == COMP_TEXT || b->type == COMP_LABEL) continue;
+            const ComponentTypeInfo *ib = component_get_info(b->type);
+            if (!ib) continue;
+            int brot = ((b->rotation % 360) + 360) % 360;
+            double bw = (brot == 90 || brot == 270) ? ib->height : ib->width;
+            double bh = (brot == 90 || brot == 270) ? ib->width : ib->height;
+            /* 6 px of slack: symbols that merely touch at a terminal are fine */
+            double dx = fabs(a->x - b->x) - (aw + bw) / 2 + 6;
+            double dy = fabs(a->y - b->y) - (ah + bh) / 2 + 6;
+            if (dx < 0 && dy < 0) {
+                if (hits < 3) {
+                    size_t l = strlen(why);
+                    snprintf(why + l, whyn - l, " overlap:%s/%s@(%.0f,%.0f)", a->label, b->label, a->x, a->y);
+                }
+                hits++;
+            }
+        }
+    }
+    return hits;
+}
+
 static int geom_test(void) {
     int bad_templates = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -607,8 +664,9 @@ static int geom_test(void) {
                 }
             }
         }
-        int ok = (diag + cross + through + touch) == 0;
-        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d%s\n", ok ? " OK " : "WARN", ti ? ti->name : "?", diag, cross, through, touch, detail);
+        int overlap = geom_overlap(c, detail, sizeof detail);
+        int ok = (diag + cross + through + touch + overlap) == 0;
+        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d overlap=%d%s\n", ok ? " OK " : "WARN", ti ? ti->name : "?", diag, cross, through, touch, overlap, detail);
         if (!ok) bad_templates++;
         circuit_free(c);
     }

@@ -153,6 +153,8 @@ typedef enum {
     CIRCUIT_GS_RX,
     CIRCUIT_GS_GOVERNOR,
     CIRCUIT_GS_PIDS,
+    CIRCUIT_MOS_IDVGS,
+    CIRCUIT_MOS_IDVDS,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 

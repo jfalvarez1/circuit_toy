@@ -282,6 +282,8 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_GS_RX] = {"R/X Ratio and Decoupling", "R/X", "Why fast decoupled power flow diverges on feeders", TG_GRID_STD},
     [CIRCUIT_GS_GOVERNOR] = {"Governor Droop & Swing Equation", "Gov", "BAL-001-TRE-2 frequency nadir on an op-amp patch", TG_GRID_STD},
     [CIRCUIT_GS_PIDS] = {"Supervised Alarm Loop", "PIDS", "CIP-014-2: four states on one pair into the RTU", TG_GRID_STD},
+    [CIRCUIT_MOS_IDVGS] = {"MOSFET Transfer Curves", "IdVgs", "One gate ramp, three devices: Vth and kn compared", TG_TRANSISTORS},
+    [CIRCUIT_MOS_IDVDS] = {"MOSFET Output Curves", "IdVds", "Drain sweep at three gate voltages: triode to saturation", TG_TRANSISTORS},
 
 
 
@@ -6204,6 +6206,8 @@ static int place_gs_kron(Circuit *circuit, float x, float y);
 static int place_gs_rx(Circuit *circuit, float x, float y);
 static int place_gs_governor(Circuit *circuit, float x, float y);
 static int place_gs_pids(Circuit *circuit, float x, float y);
+static int place_mos_idvgs(Circuit *circuit, float x, float y);
+static int place_mos_idvds(Circuit *circuit, float x, float y);
 static int place_template_body(Circuit *circuit, CircuitTemplateType type, float x, float y) {
     if (!circuit) return 0;
 
@@ -6390,6 +6394,8 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_GS_RX:            return place_gs_rx(circuit, x, y);
         case CIRCUIT_GS_GOVERNOR:      return place_gs_governor(circuit, x, y);
         case CIRCUIT_GS_PIDS:          return place_gs_pids(circuit, x, y);
+        case CIRCUIT_MOS_IDVGS:    return place_mos_idvgs(circuit, x, y);
+        case CIRCUIT_MOS_IDVDS:    return place_mos_idvds(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6484,7 +6490,7 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_FUNCTION_GEN] = {"FUNCTION GENERATOR (S&S 18.8.2): the triangle from the generator above feeds R_in and a", "piecewise-linear diode network. Below 2.6 V nothing conducts (slope 1); above it the 22k branch", "to +2.0 V loads the node (slope 0.69); above 4.3 V the 5.6k branch to +3.7 V (slope 0.31).", "Mirror branches handle the negative half. Three breakpoints turn the triangle into a ~5 V sine", "(THD a few %). Frequency: edit R (10k) or C; amplitude: R2 of the bistable, then re-scale the bias V.", "PROBE: sine output (auto) and triangle (extra). Try the FFT button: 3rd harmonic > 30 dB down."},
     [CIRCUIT_COLPITTS] = {"COLPITTS (S&S 18.3.1): the tank is L with a capacitive divider C1-C2; the divider feeds back a", "fraction C1/C2 of the drain swing to the gate, so oscillation needs g_m R_tank > C2/C1 (= 1 here).", "f = 1/(2 pi sqrt(L C1C2/(C1+C2))) = 1/(2 pi sqrt(100u x 0.5n)) = 712 kHz. The 1 mH RFC is an open", "circuit at RF but passes the DC drain current; the 10 nF coupling cap keeps 12 V off the gate;", "1M/1M bias the gate at 6 V. Amplitude limits when the MOSFET cuts off each cycle (class C).", "PROBE: drain (auto). 500 ns/div. A 50 ns kick starts it; edit C1 to 2 nF -> 616 kHz."},
     [CIRCUIT_RING_OSC] = {"RING OSCILLATOR: an odd number of inverters in a loop can never settle - each stage inverts,", "so the signal returns inverted and the ring keeps flipping. Period = 2 N t_pd. Real gates delay by", "their own capacitance; here each stage has R 1k / C 1n, and a gate flips when its RC reaches the", "2.5 V threshold: t ~ 0.69 RC = 0.7 us -> f ~ 1/(2 x 5 x 0.7 us) ~ 145 kHz. Edit any C to retune.", "Probe several stages: five squares, each shifted by one fifth of a half period.", "PROBE: last stage (auto). 2 us/div. The 2 us kick pulse on the first RC breaks the symmetry."},
-    [CIRCUIT_HARTLEY] = {"HARTLEY (S&S 18.3.1): the Colpitts with the roles swapped - a tapped inductor (L1 = L2 = 50 uH,", "tap at Vdd = AC ground; L1 is the drain load) and C = 1 nF. f = 1/(2 pi sqrt((L1 + L2) C)) = 503 kHz;", "start-up needs g_m R_tank > L1/L2 (= 1). A 10 nF cap keeps the 6 V gate bias off L2.", "Retune with C; the 1M/1M bias is the same as the Colpitts (no RFC: L1 does that job).", "PROBE: drain (auto), 500 ns/div. Compare the waveform with the Colpitts at the same drive."},
+    [CIRCUIT_HARTLEY] = {"HARTLEY (S&S 18.3.1): the Colpitts with the roles swapped - a tapped inductor (L1 = L2 = 50 uH,", "tap at Vdd = AC ground; L1 is the drain load) and C = 1 nF. f = 1/(2 pi sqrt((L1 + L2) C)) = 503 kHz;", "start-up needs g_m R_tank > L1/L2 (= 1). A 220 nF cap keeps the 6 V gate bias off L2.", "It runs at 534 kHz, 6 % above the ideal: the tap is only an AC ground through the supply and", "the device capacitances sit across part of the tank. PROBE: drain, AC-coupled, 500 ns/div."},
     [CIRCUIT_CLAPP] = {"CLAPP: a Colpitts whose L has a small series capacitor C3 = 100 pF. The effective tank C is", "1/(1/C1 + 1/C2 + 1/C3) = 83 pF, dominated by C3, so f = 1/(2 pi sqrt(L C3_eff)) = 1.744 MHz and the", "transistor capacitances (which sit across C1, C2) hardly pull the frequency: better stability.", "C1 = C2 = 1 nF swamp the device; the price is a weaker feedback fraction, so g_m must be higher.", "PROBE: drain (auto), 200 ns/div. Change C3 to 47 pF -> 2.4 MHz."},
     [CIRCUIT_THEVENIN] = {"THEVENIN EQUIVALENT (A&L 3.6): everything left of the load is replaced by V_th (the open-circuit", "voltage, 10 x 3k/(2k+3k) = 6 V) in series with R_th (sources zeroed: 2k||3k + 1k = 2.2k).", "Then V_L = V_th R_L/(R_L + R_th) = 3.0 V, and the load gets the most power when R_L = R_th (4.1 mW).", "Norton: I_N = V_th/R_th = 2.73 mA. Edit R_L: 1k -> 1.875 V, open -> 6 V.", "PROBE: load node (auto): 3.00 V. The battery probe reads 10 V - the divider does the rest."},
     [CIRCUIT_SUPERPOSITION] = {"SUPERPOSITION (A&L 3.5): with linear elements the node voltage is the sum of each source acting", "alone (voltage sources shorted, current sources opened). 12 V alone: 12 x (4k||4k)/(4k + 4k||4k) = 4 V;", "6 V alone: 2 V; 1 mA alone into 4k||4k||4k = 1.33 V. Total 7.33 V. Zero one source and watch.", "Try it: set the current source to 0 -> 6.00 V; set V1 to 0 -> 3.33 V.", "PROBE: node N (auto). Turn the 1 mA source into an AC source to see the ripple ride on the DC."},
@@ -6532,6 +6538,8 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_GS_RX] = {"R/X AND FAST DECOUPLED POWER FLOW: FDPF (Stott-Alsac 1974) assumes lines are almost purely", "inductive, so active power moves the angle and reactive power moves the magnitude, and the", "Jacobian splits into two constant matrices. The top branch is transmission (1 + j11 ohm,", "R/X = 0.09) and the bottom is a distribution feeder (11 + j7.3 ohm, R/X = 1.5). Close each", "reactive block in turn: on the transmission branch the vars dominate the magnitude change; on", "the feeder watts and vars move it about equally - the cross-coupling that makes FDPF diverge."},
     [CIRCUIT_GS_GOVERNOR] = {"GOVERNOR DROOP AND THE SWING EQUATION (NERC BAL-001-TRE-2): ERCOT is an electrical island, so", "it has to arrest its own frequency excursions. This is the standard analog-computer patch:", "U1 integrates 2H/f0 dDf/dt = Pm - Pe - D Df/f0 (H = 4 s, D = 1 pu), U2 inverts the sign, and", "U3 is the 5 % droop with the 0.3 s steam-chest lag. Scale: 1 V = 1 Hz, 1 V = 0.1 pu of power.", "A 0.05 pu load step at 0.2 s gives the nadir, then recovery to -0.05/(1/R + D) = -0.143 Hz.", "PROBE: the load step and the frequency deviation. UFLS starts at 59.3 Hz, load resources 59.7."},
     [CIRCUIT_GS_PIDS] = {"SUPERVISED PERIMETER ZONE (NERC CIP-014-2, layers 2 'detect' and 5 'communicate'): a fence", "sensor is reported to the substation RTU as a dry contact on one twisted pair. The pair is", "supervised so that a cut or a short cannot look like 'all clear': the 5.6k end-of-line resistor", "and the 2.2k zone resistor give four distinct levels at the RTU input - normal 8.5 V, alarm", "9.2 V, cable cut 12 V, short 0 V. The contact opens at 4 s for 3 s. Passive loops and fibre are", "used here because ordinary wireless sensors false-alarm in the EMI around energised HV plant."},
+    [CIRCUIT_MOS_IDVGS] = {"MOSFET TRANSFER CURVES: a single 0-4 V triangle drives three gates, and every device sits", "over its own 1 ohm source sense resistor, so each probed node reads I_D directly (1 V = 1 A).", "The three parts are a 2N7000 (Vth 2.1 V, k_n 105 mA/V2), a 2N7002 (1.6 V, 60 mA/V2) and a", "textbook 1 um NMOS (0.7 V, 1.1 mA/V2) - each leaves cutoff at its own threshold and climbs with", "its own k_n. Press the scope's Y-T button for X-Y and CH1 becomes the x axis: real I_D-V_GS curves.", "TRY: select a device and edit Vth, W/L or Kn - the curve moves while you type."},
+    [CIRCUIT_MOS_IDVDS] = {"MOSFET OUTPUT CHARACTERISTICS: one 0-6 V triangle sweeps the drains of three identical", "2N7000-class devices held at V_GS = 2.5, 3.0 and 3.5 V. Each source sense resistor is 2 ohm, so", "the probes read 2 x I_D. In X-Y mode (the Y-T button) with the sweep on CH1 you get the classic", "family: a steep triode slope while V_DS < V_OV, then the knee, then the flat saturation region", "whose height goes as (V_GS - Vth)^2 - which is why the 3.5 V curve sits far above the 2.5 V one.", "TRY: raise lambda and saturation stops being flat; that tilt is channel-length modulation."},
 };
 
 
@@ -7684,7 +7692,7 @@ static int place_colpitts(Circuit *circuit, float x, float y) {
     return place_lc_core(circuit, x, y, 0, 10e-9, "Colpitts (common source): tank L 100 uH with C1 = C2 = 1 nF -> 712 kHz; 1 mH RFC feeds the drain");
 }
 static int place_hartley(Circuit *circuit, float x, float y) {
-    return place_lc_core(circuit, x, y, 1, 10e-9, "Hartley (common source): L1 = L2 = 50 uH with the tap at Vdd (AC ground), C = 1 nF -> 503 kHz");
+    return place_lc_core(circuit, x, y, 1, 220e-9, "Hartley (common source): L1 = L2 = 50 uH with the tap at Vdd (AC ground), C = 1 nF -> 503 kHz");
 }
 static int place_clapp(Circuit *circuit, float x, float y) {
     return place_lc_core(circuit, x, y, 0, 100e-12, "Clapp: Colpitts with 100 pF in series with L - the small cap sets f = 1.744 MHz");
@@ -7970,16 +7978,16 @@ static int place_single_tuned_amp(Circuit *circuit, float x, float y) {
     Component *r2 = vres(circuit, x + 100, y + 60, 10e3);                                  // (100,20)-(100,100)
     gnd_below(circuit, r2, 1, x + 100, y + 120);
     Component *q = add_comp(circuit, COMP_NPN_BJT, x + 200, y, 0);                        // B(180,0) C(220,-20) E(220,20)
-    Component *re = vres(circuit, x + 220, y + 60, 1e3);                                   // (220,20)-(220,100)
-    gnd_below(circuit, re, 1, x + 220, y + 120);
+    Component *re = vres(circuit, x + 220, y + 80, 1e3);                                   // (220,40)-(220,120)
+    gnd_below(circuit, re, 1, x + 220, y + 140);
     Component *ce = vcap(circuit, x + 280, y + 60, 10e-6);                                 // (280,20)-(280,100)
     gnd_below(circuit, ce, 1, x + 280, y + 120);
     Component *l = add_comp(circuit, COMP_INDUCTOR, x + 300, y - 60, 90); l->props.inductor.inductance = 1e-3;   // (300,-100)-(300,-20)
     Component *ct = vcap(circuit, x + 360, y - 60, 2.53e-9);                               // (360,-100)-(360,-20)
     Component *rq = vres(circuit, x + 420, y - 60, 10e3);                                  // (420,-100)-(420,-20)
     Component *co = hcap(circuit, x + 480, y - 20, 10e-9);                                 // (440,-20)-(520,-20)
-    Component *rl = vres(circuit, x + 520, y + 20, 100e3);                                 // (520,-20)-(520,60)
-    gnd_below(circuit, rl, 1, x + 520, y + 80);
+    Component *rl = vres(circuit, x + 560, y + 20, 100e3);                                 // (560,-20)-(560,60)
+    gnd_below(circuit, rl, 1, x + 560, y + 80);
     add_label(circuit, x - 80, y - 160, "Single-tuned amplifier: gain g_m (Rq || RL) only near f0 = 1/(2 pi sqrt(LC)) = 100 kHz; sweep 20-500 kHz");
     int rail0 = TN(x, y - 100), rail1 = TN(x + 100, y - 100), rail2 = TN(x + 300, y - 100), rail3 = TN(x + 360, y - 100), rail4 = TN(x + 420, y - 100);
     TW(rail0, rail1); TW(rail1, rail2); TW(rail2, rail3); TW(rail3, rail4);
@@ -7989,10 +7997,11 @@ static int place_single_tuned_amp(Circuit *circuit, float x, float y) {
     TW(sp, ccl); TW(ccr, j1); TW(j1, j2); TW(j2, bn);
     int col = TN(x + 220, y - 20), lb = TN(x + 300, y - 20), ctb = TN(x + 360, y - 20), rqb = TN(x + 420, y - 20), col2 = TN(x + 440, y - 20);
     TW(col, lb); TW(lb, ctb); TW(ctb, rqb); TW(rqb, col2);
-    int e = TN(x + 220, y + 20), cet = TN(x + 280, y + 20); TW(e, cet);
+    int e = TN(x + 220, y + 20), cet = TN(x + 280, y + 20), ret = TN(x + 220, y + 40); TW(e, cet); TW(e, ret);
     vcc->node_ids[0] = rail0; r1->node_ids[0] = rail1; r1->node_ids[1] = r1b; r2->node_ids[0] = r2t; q->node_ids[0] = base; q->node_ids[1] = col; q->node_ids[2] = e;
-    re->node_ids[0] = e; ce->node_ids[0] = cet; l->node_ids[0] = rail2; l->node_ids[1] = lb; ct->node_ids[0] = rail3; ct->node_ids[1] = ctb; rq->node_ids[0] = rail4; rq->node_ids[1] = rqb;
-    co->node_ids[0] = col2; co->node_ids[1] = TN(x + 520, y - 20); rl->node_ids[0] = co->node_ids[1]; vin->node_ids[0] = sp; cc->node_ids[0] = ccl; cc->node_ids[1] = ccr;
+    re->node_ids[0] = ret; ce->node_ids[0] = cet; l->node_ids[0] = rail2; l->node_ids[1] = lb; ct->node_ids[0] = rail3; ct->node_ids[1] = ctb; rq->node_ids[0] = rail4; rq->node_ids[1] = rqb;
+    co->node_ids[0] = col2; co->node_ids[1] = TN(x + 520, y - 20);
+    { int rlt = TN(x + 560, y - 20); TW(co->node_ids[1], rlt); rl->node_ids[0] = rlt; } vin->node_ids[0] = sp; cc->node_ids[0] = ccl; cc->node_ids[1] = ccr;
     return 16;
 }
 
@@ -9149,6 +9158,108 @@ static int place_gs_pids(Circuit *circuit, float x, float y) {
 #undef TN
 #undef TW
 
+// ---------------------------------------------------------------------------------------
+// MOSFET curve tracers. Each device sits over a small source-sense resistor, so the probed
+// node is I_D times that resistance - press the scope's Y-T button for X-Y and the traces
+// become real transfer and output characteristics.
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+
+// one device: gate on gate_node, drain through rd to the rail, source through rs to ground
+static Component *curve_device(Circuit *circuit, float x, float y, int gate_node, int rail_node,
+                               double vth, double kn, double rd, double rs) {
+    Component *m = add_comp(circuit, COMP_NMOS, x, y, 0);                    // G(x-20,y) D(x+20,y-20) S(x+20,y+20)
+    if (!m) return NULL;
+    m->props.mosfet.vth = vth;
+    m->props.mosfet.l = 1e-6;
+    m->props.mosfet.w = (kn / m->props.mosfet.kp) * m->props.mosfet.l;       // W/L set from the device k_n
+    m->props.mosfet.ideal = false;
+    Component *rdr = add_comp(circuit, COMP_RESISTOR, x + 40, y - 100, 90);  // (x+40,y-140)-(x+40,y-60)
+    rdr->props.resistor.resistance = rd;
+    rdr->props.resistor.power_rating = 5.0;                                  // a curve tracer's load resistor is a real 5 W part
+    Component *rsr = add_comp(circuit, COMP_RESISTOR, x + 40, y + 100, 90);  // (x+40,y+60)-(x+40,y+140)
+    rsr->props.resistor.resistance = rs;
+    Component *g = add_comp(circuit, COMP_GROUND, x + 40, y + 160, 0);
+    int gt = TN(x - 20, y), d = TN(x + 20, y - 20), sN = TN(x + 20, y + 20);
+    int dj = TN(x + 40, y - 20), dt = TN(x + 40, y - 60), rt = TN(x + 40, y - 140);
+    int sj = TN(x + 40, y + 20), st = TN(x + 40, y + 60), sb = TN(x + 40, y + 140), gnd = TN(x + 40, y + 160);
+    TW(gate_node, gt); TW(d, dj); TW(dj, dt); TW(rt, rail_node);
+    TW(sN, sj); TW(sj, st); TW(sb, gnd);
+    m->node_ids[0] = gt; m->node_ids[1] = d; m->node_ids[2] = sN;
+    rdr->node_ids[0] = rt; rdr->node_ids[1] = dt;
+    rsr->node_ids[0] = st; rsr->node_ids[1] = sb;
+    g->node_ids[0] = gnd;
+    return m;
+}
+
+// 1. Transfer curves: one gate ramp, three different devices, each over its own sense resistor
+static int place_mos_idvgs(Circuit *circuit, float x, float y) {
+    Component *vdd = dc_rail(circuit, x, y - 260, 10.0); if (!vdd) return 0;   // +(x,y-260)
+    int rail = TN(x, y - 260);
+    Component *sweep = add_comp(circuit, COMP_TRIANGLE_WAVE, x, y + 60, 0);    // +(x,y+20) -(x,y+100)
+    sweep->props.triangle_wave.amplitude = 2.0; sweep->props.triangle_wave.offset = 2.0;
+    sweep->props.triangle_wave.frequency = 100.0;
+    Component *gg = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    int gate = TN(x, y + 20); sweep->node_ids[0] = gate;
+    connect_terminals(circuit, sweep, 1, gg, 0);
+    static const double vth[3] = { 2.1,   1.6,   0.7 };
+    static const double kn[3]  = { 0.105, 0.060, 1.1e-3 };
+    static const double rd[3]  = { 22.0,  33.0,  1000.0 };
+    static const char *nm[3] = { "2N7000: Vth 2.1 V, kn 105 mA/V2", "2N7002: Vth 1.6 V, kn 60 mA/V2", "1 um NMOS: Vth 0.7 V, kn 1.1 mA/V2" };
+    int gb0 = TN(x + 60, y + 20), gb1 = TN(x + 60, y + 200);                  // gate bus runs below the devices
+    TW(gate, gb0); TW(gb0, gb1);
+    int gj = gb1;
+    for (int k = 0; k < 3; k++) {
+        float dx = x + 200 + k * 220;
+        int gn = TN(dx - 60, y + 200), gu = TN(dx - 60, y), gt = TN(dx - 20, y);
+        TW(gj, gn); TW(gn, gu); TW(gu, gt);
+        int rn = TN(dx + 40, y - 260); TW(rail, rn);
+        curve_device(circuit, dx, y, gt, rn, vth[k], kn[k], rd[k], 1.0);
+        add_label(circuit, dx - 80, y + 240, nm[k]);
+        gj = gn;
+        rail = rn;
+    }
+    add_label(circuit, x - 40, y - 320, "MOSFET TRANSFER CURVES: one 0-4 V gate ramp into three devices; each source sense resistor makes the probe read I_D");
+    add_label(circuit, x - 40, y + 300, "Press the scope's Y-T button for X-Y and CH1 (the gate) becomes the x axis: these are I_D vs V_GS curves.");
+    add_label(circuit, x - 40, y + 330, "Each channel is 1 ohm x I_D, so 1 V = 1 A. Watch each device leave cutoff at its own Vth and rise with its own kn.");
+    add_label(circuit, x - 40, y + 360, "TRY: select a device and edit Vth, W/L or Kn in the properties panel - the curve moves as you type.");
+    return 20;
+}
+
+// 2. Output characteristics: one drain sweep, the same device at three gate voltages
+static int place_mos_idvds(Circuit *circuit, float x, float y) {
+    Component *sweep = add_comp(circuit, COMP_TRIANGLE_WAVE, x, y - 200, 0);   // +(x,y-240) -(x,y-160)
+    if (!sweep) return 0;
+    sweep->props.triangle_wave.amplitude = 3.0; sweep->props.triangle_wave.offset = 3.0;
+    sweep->props.triangle_wave.frequency = 100.0;
+    Component *sg = add_comp(circuit, COMP_GROUND, x, y - 120, 0);
+    int rail = TN(x, y - 240); sweep->node_ids[0] = rail;
+    connect_terminals(circuit, sweep, 1, sg, 0);
+    static const double vgs[3] = { 2.5, 3.0, 3.5 };
+    static const char *nm[3] = { "Vgs 2.5 V", "Vgs 3.0 V", "Vgs 3.5 V" };
+    for (int k = 0; k < 3; k++) {
+        float dx = x + 220 + k * 220;
+        Component *vg = add_comp(circuit, COMP_DC_VOLTAGE, dx - 60, y + 60, 0);   // +(dx-60,y+20) -(dx-60,y+100)
+        vg->props.dc_voltage.voltage = vgs[k];
+        Component *gg = add_comp(circuit, COMP_GROUND, dx - 60, y + 140, 0);
+        int gp = TN(dx - 60, y + 20), gu = TN(dx - 60, y), gt = TN(dx - 20, y);
+        vg->node_ids[0] = gp; TW(gp, gu); TW(gu, gt);
+        connect_terminals(circuit, vg, 1, gg, 0);
+        int rn = TN(dx + 40, y - 240); TW(rail, rn);
+        curve_device(circuit, dx, y, gt, rn, 2.1, 0.105, 0.001, 2.0);             // drain straight onto the sweep
+        add_label(circuit, dx - 60, y + 200, nm[k]);
+        rail = rn;
+    }
+    add_label(circuit, x - 40, y - 300, "MOSFET OUTPUT CHARACTERISTICS: one 0-6 V drain sweep, the same 2N7000-class device held at three gate voltages");
+    add_label(circuit, x - 40, y + 260, "Press Y-T for X-Y with CH1 (the sweep) as the x axis and you get the classic I_D vs V_DS family:");
+    add_label(circuit, x - 40, y + 290, "a steep triode slope up to V_DS = V_OV, then the flat saturation region. Each channel is 2 ohm x I_D.");
+    add_label(circuit, x - 40, y + 320, "TRY: raise lambda on a device and its saturation region stops being flat - that is channel-length modulation.");
+    return 22;
+}
+#undef TN
+#undef TW
+
 static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_RC_LOWPASS]       = { COMP_CAPACITOR, 0, 0 },
     [CIRCUIT_RC_HIGHPASS]      = { COMP_RESISTOR, 0, 0 },
@@ -9276,6 +9387,8 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_GS_RX]            = { COMP_RESISTOR, 1, 0 },
     [CIRCUIT_GS_GOVERNOR]      = { COMP_OPAMP, 0, 2 },
     [CIRCUIT_GS_PIDS]          = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_MOS_IDVGS]        = { COMP_RESISTOR, 1, 0 },      // the first device's sense resistor
+    [CIRCUIT_MOS_IDVDS]        = { COMP_RESISTOR, 5, 0 },      // the Vgs 3.5 V device carries the most current
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -9316,6 +9429,8 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_GS_KRON]          = { { COMP_RESISTOR, 6, 0 }, { COMP_RESISTOR, 4, 0 } },        // the delta-side load (overlays the Y one) and the second Y load
     [CIRCUIT_GS_RX]            = { { COMP_RESISTOR, 4, 0 } },                                 // the feeder bus
     [CIRCUIT_GS_IBR]           = { { COMP_RESISTOR, 2, 0 } },                                 // the fault branch
+    [CIRCUIT_MOS_IDVGS]        = { { COMP_RESISTOR, 3, 0 }, { COMP_RESISTOR, 5, 0 } },        // the other two devices
+    [CIRCUIT_MOS_IDVDS]        = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 3, 0 } },
     // multi-input circuits: every input on its own channel
     [CIRCUIT_SUMMING_AMP]      = { { COMP_DC_VOLTAGE, 1, 0 }, { COMP_DC_VOLTAGE, 2, 0 } },    // V2, V3 (V1 = source probe)
     [CIRCUIT_DIFFERENCE_AMP]   = { { COMP_DC_VOLTAGE, 1, 0 } },                               // V2 (0.5 V DC)
@@ -9363,6 +9478,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_GS_N1] = 5e-3, [CIRCUIT_GS_IBR] = 50e-3, [CIRCUIT_GS_BOLD] = 5e-3, [CIRCUIT_GS_DERATE] = 5e-3,
     [CIRCUIT_GS_FACRATE] = 5e-3, [CIRCUIT_GS_KRON] = 5e-3, [CIRCUIT_GS_RX] = 5e-3, [CIRCUIT_GS_GOVERNOR] = 0.5,
     [CIRCUIT_GS_PIDS] = 1.0,
+    [CIRCUIT_MOS_IDVGS] = 1e-3, [CIRCUIT_MOS_IDVDS] = 1e-3,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -9398,6 +9514,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_GS_N1] = 100e3, [CIRCUIT_GS_IBR] = 100e3, [CIRCUIT_GS_BOLD] = 100e3, [CIRCUIT_GS_DERATE] = 5e3,
     [CIRCUIT_GS_FACRATE] = 50e3, [CIRCUIT_GS_KRON] = 50.0, [CIRCUIT_GS_RX] = 50.0, [CIRCUIT_GS_GOVERNOR] = 0.1,
     [CIRCUIT_GS_PIDS] = 2.0,
+    [CIRCUIT_MOS_IDVGS] = 0.1, [CIRCUIT_MOS_IDVDS] = 0.1,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -9531,6 +9648,8 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_GS_RX]            = { DEMO_WAVEFORM, 60 },
     [CIRCUIT_GS_GOVERNOR]      = { DEMO_WAVEFORM, 0.5 },
     [CIRCUIT_GS_PIDS]          = { DEMO_WAVEFORM, 0.2 },
+    [CIRCUIT_MOS_IDVGS]        = { DEMO_WAVEFORM, 100 },
+    [CIRCUIT_MOS_IDVDS]        = { DEMO_WAVEFORM, 100 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -9557,6 +9676,10 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_COM_480Y] = SCOPE_FLAG_STACK, [CIRCUIT_COM_208Y] = SCOPE_FLAG_STACK, [CIRCUIT_COM_ATS] = SCOPE_FLAG_STACK,
     [CIRCUIT_GS_BOLD] = SCOPE_FLAG_STACK, [CIRCUIT_GS_KRON] = SCOPE_FLAG_STACK, [CIRCUIT_GS_RX] = SCOPE_FLAG_STACK,
     [CIRCUIT_GS_IBR] = SCOPE_FLAG_STACK, [CIRCUIT_GS_GOVERNOR] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_MOS_IDVGS] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_MOS_IDVDS] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */
+    [CIRCUIT_COLPITTS] = SCOPE_FLAG_AC, [CIRCUIT_HARTLEY] = SCOPE_FLAG_AC, [CIRCUIT_CLAPP] = SCOPE_FLAG_AC,
+    [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_SUMMING_AMP] = SCOPE_FLAG_STACK, [CIRCUIT_DIFFERENCE_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_INSTR_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_SUPERPOSITION] = SCOPE_FLAG_STACK,
 };
 int circuit_template_scope_flags(CircuitTemplateType type) {
