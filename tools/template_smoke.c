@@ -284,6 +284,7 @@ static int osc_test(void) {
         { CIRCUIT_RING_OSC, 200e-6, 145e3, 2e-8, 0.500 },
         { CIRCUIT_HARTLEY, 80e-6, 534188, 5e-9, 0.354 },        /* ideal 1/(2 pi sqrt((L1+L2)C)) = 503 kHz; the tap is only an AC ground through the supply */
         { CIRCUIT_CLAPP, 30e-6, 1743455, 2e-9, 0.354 },
+        { CIRCUIT_NE555_ASTABLE, 0.004, 4800.0, 5e-8, 0.500 },   /* 1.44/((R_A + 2 R_B) C), square output */
     };
     int fails = 0;
     for (unsigned k = 0; k < sizeof cases / sizeof cases[0]; k++) {
@@ -521,6 +522,7 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_CAP_DCBIAS,       COMP_CAPACITOR, 0, 0, "amp", 0.03125, 0.10, 4e-3, "10 uF unbiased: I(T/2)/C = 62.5 mVpp" },
     { CIRCUIT_CAP_DCBIAS,       COMP_CAPACITOR, 1, 0, "amp", 0.0625,  0.10, 4e-3, "2 V bias halves it: twice the ripple" },
     { CIRCUIT_CAP_DCBIAS,       COMP_CAPACITOR, 2, 0, "amp", 0.1094,  0.12, 4e-3, "5 V bias leaves 2.86 uF: 3.5x the ripple" },
+    { CIRCUIT_NE555_ASTABLE,    COMP_RESISTOR,  2, 0, "amp", 2.475,   0.06, 4e-3, "the block swings its output rail to rail: 0 to ~5 V" },
     { CIRCUIT_SCHMITT_BISTABLE, COMP_OPAMP,     0, 2, "max", 15.0,  0.05, 30e-3, "bistable output at the rail" },
     { CIRCUIT_TRI_SQUARE_GEN,   COMP_OPAMP,     1, 2, "amp", 7.5,   0.08, 3e-3,  "triangle peak = 15 R1/R2" },
     { CIRCUIT_FUNCTION_GEN,     COMP_RESISTOR,  3, 1, "amp", 4.9,   0.15, 3e-3,  "3-breakpoint sine ~4.9 V peak" },
@@ -2572,6 +2574,9 @@ static int series_template(const char *filter, double t_end, int node_id) {
 }
 
 int main(int argc, char **argv) {
+    /* Unbuffered: when a template crashes the run, the last line printed has to be the
+       one that crashed. Block buffering hid it behind 4 KB of already-passed templates. */
+    setvbuf(stdout, NULL, _IONBF, 0);
     int dc_only = 0, verbose = 0, dump_nodes = 0;
     const char *svg_dir = NULL;
     double sim_time = 5e-3;

@@ -136,6 +136,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "circuits.h"
 #include "component.h"
@@ -314,6 +315,7 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_ID_OPAMP_ERR] = {"Op-Amp Error Sources", "OAerr", "Offset and bias current at DC, and how to cancel them", TG_IDEAL},
     [CIRCUIT_PARTS_MOSFET] = {"Named Parts: MOSFET Switches", "Parts", "2N7000 / 2N7002 / IRF540N doing the same job", TG_IDEAL},
     [CIRCUIT_CAP_DCBIAS] = {"Ceramic DC Bias", "Cbias", "The same 10 uF X5R at 0, 2 and 5 V of bias", TG_IDEAL},
+    [CIRCUIT_NE555_ASTABLE] = {"555 Astable", "555", "The 555 as a block, built from its own comparators and latch", TG_OSCILLATORS},
 
 
 
@@ -6268,6 +6270,7 @@ static int place_id_mosfet(Circuit *circuit, float x, float y);
 static int place_id_opamp_err(Circuit *circuit, float x, float y);
 static int place_parts_mosfet(Circuit *circuit, float x, float y);
 static int place_cap_dcbias(Circuit *circuit, float x, float y);
+static int place_ne555_astable(Circuit *circuit, float x, float y);
 static int place_template_body(Circuit *circuit, CircuitTemplateType type, float x, float y) {
     if (!circuit) return 0;
 
@@ -6486,6 +6489,7 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_ID_OPAMP_ERR:       return place_id_opamp_err(circuit, x, y);
         case CIRCUIT_PARTS_MOSFET:       return place_parts_mosfet(circuit, x, y);
         case CIRCUIT_CAP_DCBIAS:         return place_cap_dcbias(circuit, x, y);
+        case CIRCUIT_NE555_ASTABLE:      return place_ne555_astable(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6683,6 +6687,12 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "also rises with V_CE - the Early effect, I_C = I_S exp(V_BE/V_T)(1 + V_CE/V_AF) - so with V_AF = 80 V",
         "the current is ~9 % higher and the collector sits lower. It is the same effect that sets a stage's",
         "output resistance r_o = V_AF/I_C, so it is not a rounding error. PROBE: both collectors."},
+    [CIRCUIT_NE555_ASTABLE] = {"555 ASTABLE: the 555 here is a real subcircuit, not a box - inside it are the three 5k",
+        "divider resistors that set 1/3 and 2/3 of the supply, the two comparators that watch",
+        "TRIGGER and THRESHOLD against them, the NOR latch they drive, and the discharge transistor.",
+        "Outside, C charges from V+ through R_A + R_B and discharges through R_B into the DISCH pin,",
+        "so it oscillates between 1/3 and 2/3 of the supply: f = 1.44/((R_A + 2 R_B) C) = 4.8 kHz",
+        "with 10k, 10k and 10 nF. Open the block with Ctrl+G's library to see the parts. PROBE: OUT."},
     [CIRCUIT_CAP_DCBIAS] = {"CERAMIC DC BIAS: three copies of the same 10 uF 6.3 V X5R, each fed the same 25 mA",
         "ripple current, each sitting on a different DC bias. A class-II ceramic loses capacitance",
         "as the voltage across it rises - this one is down to half at 2 V - so the ripple grows:",
@@ -10800,6 +10810,149 @@ static int place_cap_dcbias(Circuit *circuit, float x, float y) {
     return 18;
 }
 
+
+/* ======================= The 555, as a subcircuit =======================
+   The block placed by the 555 template is a real definition: three 5k resistors setting 1/3
+   and 2/3 of the supply, two comparators watching TRIGGER and THRESHOLD against them, the NOR
+   latch they drive, and the discharge transistor. It is registered once and reused, so it
+   behaves like any block a user builds with Ctrl+G - including being visible in the library.
+
+   Internal node ids: 1 VCC, 2 TRIG, 3 THRES, 5 DISCH, 6 GND, 7 = 2/3 V+, 8 = 1/3 V+,
+   9 SET, 10 RESET, 11 Q (this is the OUT pin), 12 QBAR (drives the discharge transistor). */
+static int ne555_def_id(void) {
+    for (int i = 0; i < g_subcircuit_library.count; i++)
+        if (!strcmp(g_subcircuit_library.defs[i].name, "NE555")) return g_subcircuit_library.defs[i].id;
+    if (g_subcircuit_library.count >= MAX_SUBCIRCUIT_DEFS) return 0;
+
+    static const struct { ComponentType t; float x, y; int a, b, c2; } spec[8] = {
+        { COMP_RESISTOR, 100, 60,  1, 7, -1 },      /* R1  V+ -> 2/3 */
+        { COMP_RESISTOR, 100, 180, 7, 8, -1 },      /* R2  2/3 -> 1/3 */
+        { COMP_RESISTOR, 100, 300, 8, 6, -1 },      /* R3  1/3 -> GND */
+        { COMP_OPAMP,    300, 100, 7, 3, 10 },      /* comparator A: -=2/3, +=THRES, out=RESET */
+        { COMP_OPAMP,    300, 240, 2, 8, 9  },      /* comparator B: -=TRIG, +=1/3, out=SET */
+        { COMP_NOR_GATE, 480, 120, 9, 11, 12 },     /* QBAR = NOR(SET, Q) */
+        { COMP_NOR_GATE, 480, 240, 12, 10, 11 },    /* Q    = NOR(QBAR, RESET) */
+        { COMP_NMOS,     660, 240, 12, 5, 6 },      /* discharge: gate QBAR, drain DISCH */
+    };
+    const int NPARTS = 8;
+
+    SubCircuitDef *def = &g_subcircuit_library.defs[g_subcircuit_library.count];
+    memset(def, 0, sizeof *def);
+    def->component_data = calloc((size_t)NPARTS, sizeof(Component));
+    if (!def->component_data) return 0;
+    Component *parts = (Component *)def->component_data;
+
+    for (int i = 0; i < NPARTS; i++) {
+        Component *proto = component_create(spec[i].t, spec[i].x, spec[i].y);
+        if (!proto) { free(def->component_data); def->component_data = NULL; return 0; }
+        parts[i] = *proto;
+        free(proto);
+        Component *p = &parts[i];
+        if (spec[i].t == COMP_RESISTOR) { p->props.resistor.resistance = 5000.0; p->props.resistor.power_rating = 1.0; }
+        if (spec[i].t == COMP_OPAMP) {
+            /* a comparator, and its rails are the logic levels the gates expect */
+            p->props.opamp.ideal = true; p->props.opamp.gain = 1e5;
+            p->props.opamp.vmax = 5.0; p->props.opamp.vmin = 0.0;
+        }
+        if (spec[i].t == COMP_NMOS) {
+            p->props.mosfet.vth = 1.0; p->props.mosfet.kp = 0.05;
+            p->props.mosfet.w = 1e-6; p->props.mosfet.l = 1e-6; p->props.mosfet.ideal = false;
+        }
+        p->node_ids[0] = spec[i].a;
+        p->node_ids[1] = spec[i].b;
+        if (spec[i].c2 >= 0) p->node_ids[2] = spec[i].c2;
+        snprintf(p->label, sizeof p->label, "%c%d",
+                 (spec[i].t == COMP_RESISTOR) ? 'R' : (spec[i].t == COMP_OPAMP) ? 'U' :
+                 (spec[i].t == COMP_NOR_GATE) ? 'G' : 'M', i + 1);
+    }
+
+    def->id = ++g_subcircuit_library.next_id;
+    snprintf(def->name, sizeof def->name, "NE555");
+    def->component_data_size = (size_t)NPARTS * sizeof(Component);
+    def->num_components = NPARTS;
+
+    static const struct { const char *name; int node; } pins[6] = {
+        { "V+", 1 }, { "GND", 6 }, { "TRIG", 2 }, { "THRES", 3 }, { "OUT", 11 }, { "DISCH", 5 }
+    };
+    def->num_pins = 6;
+    for (int i = 0; i < 6; i++) {
+        snprintf(def->pins[i].name, sizeof def->pins[i].name, "%s", pins[i].name);
+        def->pins[i].internal_node_id = pins[i].node;
+        def->pins[i].side = (i < 3) ? 0 : 1;
+        def->pins[i].position = i % 3;
+    }
+    def->num_internal_nodes = 6;          /* 7, 8, 9, 10, 11, 12 */
+    def->internal_width = 760; def->internal_height = 400;
+    def->block_width = 120; def->block_height = 120;
+    g_subcircuit_library.count++;
+    return def->id;
+}
+
+// 11. The classic astable, with the 555 as a block that really contains a 555
+static int place_ne555_astable(Circuit *circuit, float x, float y) {
+    int def_id = ne555_def_id();
+    if (!def_id) return 0;
+
+    Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x, y + 60, 0);        // +(x,y+20)
+    if (!vcc) return 0;
+    vcc->props.dc_voltage.voltage = 5.0;
+    Component *g0 = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    connect_terminals(circuit, vcc, 1, g0, 0);
+    int rail = TN(x, y + 20), rt = TN(x + 160, y + 20); vcc->node_ids[0] = rail; TW(rail, rt);
+
+    Component *ra = add_comp(circuit, COMP_RESISTOR, x + 160, y + 80, 90);    // (160,y+40)-(160,y+120)
+    ra->props.resistor.resistance = 10e3;
+    int rab = TN(x + 160, y + 120);
+    ra->node_ids[0] = TN(x + 160, y + 40); ra->node_ids[1] = rab;
+    TW(rt, ra->node_ids[0]);
+
+    Component *rb = add_comp(circuit, COMP_RESISTOR, x + 160, y + 200, 90);   // (160,y+160)-(160,y+240)
+    rb->props.resistor.resistance = 10e3;
+    int rbt = TN(x + 160, y + 160), rbb = TN(x + 160, y + 240);
+    rb->node_ids[0] = rbt; rb->node_ids[1] = rbb;
+    TW(rab, rbt);
+
+    Component *ct = add_comp(circuit, COMP_CAPACITOR, x + 160, y + 320, 90);  // (160,y+280)-(160,y+360)
+    ct->props.capacitor.capacitance = 10e-9;
+    int ctt = TN(x + 160, y + 280), ctb = TN(x + 160, y + 360);
+    ct->node_ids[0] = ctt; ct->node_ids[1] = ctb;
+    TW(rbb, ctt);
+    Component *gc = add_comp(circuit, COMP_GROUND, x + 160, y + 400, 0);
+    gc->node_ids[0] = ctb;
+
+    /* the block: V+, GND, TRIG, THRES, OUT, DISCH */
+    Component *ic = add_comp(circuit, COMP_SUBCIRCUIT, x + 400, y + 200, 0);
+    ic->props.subcircuit.def_id = def_id;
+    ic->num_terminals = 6;
+    snprintf(ic->props.subcircuit.name, sizeof ic->props.subcircuit.name, "NE555");
+    int gnd_ic = TN(x + 400, y + 420), out_n = TN(x + 620, y + 200);
+    Component *gi = add_comp(circuit, COMP_GROUND, x + 400, y + 440, 0);
+    gi->node_ids[0] = gnd_ic;
+    /* V+ from the rail, TRIG and THRES both on the capacitor, DISCH between R_A and R_B */
+    int vp = TN(x + 320, y + 20); TW(rt, vp);
+    int trig_n = ctt;
+    ic->node_ids[0] = vp;        /* V+   */
+    ic->node_ids[1] = gnd_ic;    /* GND  */
+    ic->node_ids[2] = trig_n;    /* TRIG */
+    ic->node_ids[3] = trig_n;    /* THRES tied to TRIG, which is what makes it astable */
+    ic->node_ids[4] = out_n;     /* OUT  */
+    ic->node_ids[5] = rab;       /* DISCH, between R_A and R_B */
+
+    Component *rl = add_comp(circuit, COMP_RESISTOR, x + 700, y + 260, 90);   // (700,y+220)-(700,y+300)
+    rl->props.resistor.resistance = 10e3;
+    int lt = TN(x + 700, y + 220), lb = TN(x + 700, y + 300);
+    rl->node_ids[0] = lt; rl->node_ids[1] = lb;
+    TW(out_n, TN(x + 700, y + 200)); TW(TN(x + 700, y + 200), lt);
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 700, y + 340, 0);
+    gl->node_ids[0] = lb;
+
+    add_label(circuit, x - 40, y - 60, "555 ASTABLE: the block is a real subcircuit - comparators, divider, NOR latch and discharge transistor inside");
+    add_label(circuit, x - 40, y + 500, "C charges from V+ through R_A + R_B until THRESHOLD reaches 2/3 of the supply, then the latch flips, the");
+    add_label(circuit, x - 40, y + 530, "discharge transistor pulls the DISCH pin down and C empties through R_B alone until TRIGGER falls to 1/3.");
+    add_label(circuit, x - 40, y + 560, "f = 1.44/((R_A + 2 R_B) C) = 4.8 kHz here, and the duty cycle is (R_A + R_B)/(R_A + 2 R_B) = 67 %.");
+    return 10;
+}
+
 #undef TN
 #undef TW
 
@@ -10962,6 +11115,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_ID_OPAMP_ERR]     = { COMP_OPAMP, 1, 2 },
     [CIRCUIT_PARTS_MOSFET]     = { COMP_NMOS, 0, 1 },
     [CIRCUIT_CAP_DCBIAS]       = { COMP_CAPACITOR, 0, 0 },
+    [CIRCUIT_NE555_ASTABLE]    = { COMP_RESISTOR, 2, 0 },
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -11024,6 +11178,7 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_ID_OPAMP_ERR]     = { { COMP_OPAMP, 0, 2 } },
     [CIRCUIT_PARTS_MOSFET]     = { { COMP_NMOS, 1, 1 }, { COMP_NMOS, 2, 1 } },
     [CIRCUIT_CAP_DCBIAS]       = { { COMP_CAPACITOR, 1, 0 }, { COMP_CAPACITOR, 2, 0 } },
+    [CIRCUIT_NE555_ASTABLE]    = { { COMP_CAPACITOR, 0, 0 } },
     [CIRCUIT_CMOS_NAND]        = { { COMP_PULSE_SOURCE, 1, 0 } },
     // multi-input circuits: every input on its own channel
     [CIRCUIT_SUMMING_AMP]      = { { COMP_DC_VOLTAGE, 1, 0 }, { COMP_DC_VOLTAGE, 2, 0 } },    // V2, V3 (V1 = source probe)
@@ -11082,7 +11237,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_MATCH] = 500e-9, [CIRCUIT_HW_REFLECT] = 500e-9, [CIRCUIT_HW_LOOP] = 100e-6,
     [CIRCUIT_ID_SOURCE] = 1e-3, [CIRCUIT_ID_DIODE] = 200e-6, [CIRCUIT_ID_CAP] = 10e-6,
     [CIRCUIT_ID_IND] = 200e-6, [CIRCUIT_ID_OPAMP] = 2e-6, [CIRCUIT_ID_BJT] = 1e-3, [CIRCUIT_ID_MOSFET] = 1e-3,
-    [CIRCUIT_ID_OPAMP_ERR] = 1e-3, [CIRCUIT_PARTS_MOSFET] = 1e-3, [CIRCUIT_CAP_DCBIAS] = 10e-6,
+    [CIRCUIT_ID_OPAMP_ERR] = 1e-3, [CIRCUIT_PARTS_MOSFET] = 1e-3, [CIRCUIT_CAP_DCBIAS] = 10e-6, [CIRCUIT_NE555_ASTABLE] = 100e-6,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -11128,7 +11283,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_MATCH] = 0.5, [CIRCUIT_HW_REFLECT] = 1.0, [CIRCUIT_HW_LOOP] = 2.0,
     [CIRCUIT_ID_SOURCE] = 1.0, [CIRCUIT_ID_DIODE] = 0.2, [CIRCUIT_ID_CAP] = 0.1,
     [CIRCUIT_ID_IND] = 2.0, [CIRCUIT_ID_OPAMP] = 0.5, [CIRCUIT_ID_BJT] = 2.0, [CIRCUIT_ID_MOSFET] = 2.0,
-    [CIRCUIT_ID_OPAMP_ERR] = 0.5, [CIRCUIT_PARTS_MOSFET] = 0.1, [CIRCUIT_CAP_DCBIAS] = 0.05,
+    [CIRCUIT_ID_OPAMP_ERR] = 0.5, [CIRCUIT_PARTS_MOSFET] = 0.1, [CIRCUIT_CAP_DCBIAS] = 0.05, [CIRCUIT_NE555_ASTABLE] = 1.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -11294,6 +11449,7 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_ID_OPAMP_ERR]     = { DEMO_DC, 0 },
     [CIRCUIT_PARTS_MOSFET]     = { DEMO_DC, 0 },
     [CIRCUIT_CAP_DCBIAS]       = { DEMO_WAVEFORM, 20e3 },
+    [CIRCUIT_NE555_ASTABLE]    = { DEMO_OSC, 4800 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -11336,6 +11492,7 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_ID_OPAMP_ERR] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_PARTS_MOSFET] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_CAP_DCBIAS] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_NE555_ASTABLE] = SCOPE_FLAG_STACK,
     /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */
     [CIRCUIT_COLPITTS] = SCOPE_FLAG_AC, [CIRCUIT_HARTLEY] = SCOPE_FLAG_AC, [CIRCUIT_CLAPP] = SCOPE_FLAG_AC,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
