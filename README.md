@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.11.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.11.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.12.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.12.0)** (auto-updating from v3.4.0 on)
 
 A native desktop circuit simulator written in C with SDL2, featuring a synthwave-themed interface. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
 
@@ -118,7 +118,7 @@ checked against a hand calculation.
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-158 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+161 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -312,6 +312,9 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **Ideal vs Real Op-Amp** (`IdOA`) - Gain-bandwidth and slew rate against infinity
 - **Ideal vs Real BJT** (`IdBJT`) - The Early effect moves the operating point
 - **Ideal vs Real MOSFET** (`IdMOS`) - Channel-length modulation is not a rounding error
+- **Op-Amp Error Sources** (`OAerr`) - Offset and bias current at DC, and how to cancel them
+- **Named Parts: MOSFET Switches** (`Parts`) - 2N7000 / 2N7002 / IRF540N doing the same job
+- **Ceramic DC Bias** (`Cbias`) - The same 10 uF X5R at 0, 2 and 5 V of bias
 
 ### Power Systems & High Voltage
 
@@ -430,6 +433,29 @@ what is being left out:
 The **Ideal vs real models** group builds each of those into a side-by-side circuit: the same
 schematic two or three times with one part swapped, both on the scope at once. Every value in the
 notes is a hand calculation that the regression suite checks - both halves of every comparison.
+
+### Named Parts
+
+![Named parts](screenshots/auto/named_parts.png)
+
+A schematic says 2N7000, not "an NMOS with V_th = 2.1 V". Twenty real devices ship with their
+data sheet parameters, and picking one from the **Part** row in the properties panel loads the
+model and labels the symbol on the canvas:
+
+| | |
+|---|---|
+| **MOSFETs** | 2N7000, 2N7002, IRF540N, BS250 |
+| **BJTs** | 2N3904, BC547B, 2N3906 |
+| **Diodes** | 1N4148, 1N4001, 1N4733A (5.1 V zener) |
+| **Capacitors** | X5R 10uF, C0G 10nF, Alu 100uF |
+| **Op-amps** | LM358, LM741, TL072, MCP6001 |
+| **Regulators** | LM317, LM7805, TL431 |
+
+`template_smoke --part-test` rebuilds each device's own data sheet test condition and checks the
+model reproduces the number - R_DS(on) at the stated V_GS, I_D(on) off the transfer curve, h_FE
+and V_BE at a forced base current, V_F at a forced forward current, V_Z at I_ZT, an op-amp's
+offset out of a unity buffer and its slew rate off a 5 V step, each regulator in its reference
+circuit. All 23 checks pass, and the panel shows the data sheet line each parameter came from.
 
 ### The Pop-Out Bench Scope
 
@@ -739,7 +765,7 @@ point and a short transient, and reports solver errors, NaN/runaway voltages and
 point of every transistor / op-amp / regulator:
 
 ```bash
-build/tools/template_smoke.exe             # 158/158 templates passed
+build/tools/template_smoke.exe             # 161/161 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (159 oracles)

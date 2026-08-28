@@ -24,40 +24,43 @@ See `docs/RESEARCH_SIMULATORS.md` for the survey of formats and of how other sim
 drive the engine improvements (trapezoidal integration, LTE timestep control, junction
 voltage limiting, op-amp macro-model).
 
-## Named part models as schematic symbols (requested 2026-08-28)
+## Named part models - DONE 2026-08-28
 
-Add real parts - 2N7000, LM317, TL431, 1N4148, BC547, IRF540, NE555 - as palette items whose
-properties are preloaded from the datasheet, drawn with their own symbol and labelled with the
-part number. Each one needs: the parameter set (for the 2N7000: V_GS(th) 2.1 V typ, R_DS(on)
-1.2 ohm at V_GS = 10 V, K from the transfer curve), a `--probe-test` oracle taken from a
-datasheet operating point rather than from the simulator, and a `--param-test` entry checking
-the model against two points on the published curve. The MOSFET curve-tracer templates
-(#130, #131) already sweep three devices side by side and are the natural home for them.
+Shipped: 20 devices (2N7000, 2N7002, IRF540N, BS250, 2N3904, BC547B, 2N3906, 1N4148, 1N4001,
+1N4733A, X5R 10uF, C0G 10nF, Alu 100uF, LM358, LM741, TL072, MCP6001, LM317, LM7805, TL431),
+each with its data sheet parameters, a Part row in the properties panel, the part number on the
+canvas symbol, and `--part-test` rebuilding each one's own data sheet test condition.
 
-## Remaining unmodelled properties (2026-08-28)
+Still worth adding: an NE555 (needs a subcircuit, not a parameter set), a 78xx family beyond the
+7805, logic-level power parts (IRLZ44), and a way for Spotlight to place a named part directly
+rather than placing the generic symbol and then picking the device.
 
-The ESR / ESL / leakage, source resistance, ideal-diode and op-amp GBW / slew-rate properties
-now stamp (see TEST_PLAN 3.20). These are still editable but inert, and should either be
-implemented or removed from the panel:
+## Unmodelled properties - CLEARED 2026-08-28
 
-- **Op-amp**: input offset voltage, input bias current, CMRR, finite input and output
-  resistance, the rail-to-rail flag. `r_out` in particular changes what a stage does into a
-  heavy or capacitive load, so it is the most worth having.
-- **Capacitor**: DC-bias capacitance loss (a class-II ceramic loses more than half its value at
-  its rated voltage) - this is the one that surprises people, and it needs a C(V) table, which
-  is the same machinery the vendor-model import above wants.
-- **Resistor**: tolerance is used by Monte Carlo but not by the nominal solve, which is correct;
-  the temperature coefficient is honoured only when `ideal` is false, which is worth a note in
-  the panel.
+Everything on the previous list now stamps: capacitor ESR / ESL / leakage and DC-bias
+capacitance loss, source series resistance, the current source's shunt resistance, the ideal
+diode, and the op-amp's GBW, slew rate, offset voltage, bias current, CMRR, input resistance,
+output resistance and rail-to-rail flag. Each is gated on `ideal == false`, and the capacitor's
+starting voltage is an initial condition rather than a dead field. See TEST_PLAN 3.20 and 3.22.
 
-## Cuk converter ripple (2026-08-28)
+What is left is a note rather than a gap: the resistor's temperature coefficient is honoured
+only when `ideal` is false, which the panel does not say; and the DC-bias model is the effective
+capacitance at the operating point rather than a charge-conserving Q(V) integration, which is
+the right shape for teaching but would need the vendor-model machinery above to be exact.
 
-The Cuk template settles to the right mean (13.30 V against the ideal 12 V, and it moved much
-closer when the inductor's theta-method history term was fixed - see TEST_PLAN 3.20.9) but its
-ripple is still coarse: the transfer capacitor's current is reconstructed from a switch model
-that has no on-resistance, so the corners of each cycle are sharper than the part could
-manage. Worth revisiting with: a switch with real R_on, a finite diode recovery, and a smaller
-time step tied to the switching period rather than the scope's time/div.
+## Cuk converter - mostly resolved 2026-08-28
+
+It is now pinned at 12.69 V against the ideal 12 (it was 15.0, 25 % high). The diagnosis worth
+keeping: it was never a discretisation artifact - a 5x finer time step changes the answer by
+less than 1 % - it simply had not settled. The output filter alone was a 9 ms time constant and
+the transfer capacitor's DC level balances slowly on top of that, so a 10 ms run was measuring
+the startup. The output capacitor is now 100 uF and the oracle gives it 20 ms.
+
+Pre-charging the transfer capacitor to its theoretical V_in + |V_out| = 24 V makes the answer
+WORSE (15.5 V), which is the real remaining issue: nothing in the loop forces the volt-second
+balance quickly, so where that capacitor's DC level lands still depends on where it started.
+Worth revisiting with a switch that has a real R_on and a diode with a finite recovery, both of
+which add the loss that would pin it.
 
 ## Crystal (Pierce) oscillator - not shipped yet (2026-08-24)
 

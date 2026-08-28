@@ -539,6 +539,22 @@ button rows clear the status bar.
 | 3.21.8 | `[ ]` **Automated:** `circuit-playground --layout-test` | New section: all six knobs inside the panel column, each hit-tests at its own centre, none overlap, a click on the screen grabs none, they are inert when docked, the two detented knobs emit the same UI actions the buttons do, and the three continuous knobs move their value in the right direction |
 | 3.21.9 | `[ ]` **Automated:** `--popout` + `--shot` | A scripted run with `--popout` writes both windows: `name.bmp` and `name_scope.bmp`. `tools/make_media.py` uses it for the two README screenshots |
 
+### 3.22 Named parts, the rest of the op-amp, and ceramic DC bias (2026-08-28: templates #159-#161)
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.22.1 | `[ ]` **Automated:** `template_smoke --part-test` | Every named device at its own data sheet condition: R_DS(on) at the stated V_GS and I_D(on) off the transfer curve, h_FE and V_BE at a forced base current, V_F at a forced forward current, V_Z at I_ZT, an op-amp's offset out of a unity buffer and its slew rate off a 5 V step, and each regulator in its reference circuit. **23 checks over 20 devices, 0 failed** |
+| 3.22.2 | `[ ]` Select a transistor and click the **Part** row | It cycles the devices that fit that symbol and then back to generic; the canvas symbol is labelled with the part number and the panel shows the data sheet line the parameters came from |
+| 3.22.3 | `[ ]` Named Parts template: read the three drops | 143 mV (2N7000), 233 mV (2N7002), 5 mV (IRF540N) - each is 12 V x R_DS(on) / (100 + R_DS(on)) |
+| 3.22.4 | `[ ]` Named Parts: close the switch | Twice the current, twice the drop across the 2N7000 (143 -> 285 mV) and four times the heat in it |
+| 3.22.5 | `[ ]` Op-Amp Error Sources: both outputs, then close the switch | 0.000 V ideal, -0.89 V real; closing it matches R_s to R1||Rf and the bias errors cancel, leaving +0.10 V of offset |
+| 3.22.6 | `[ ]` Ceramic DC Bias: the three ripples | 62, 125 and 219 mVpp on the same 25 mA - the capacitance is halved at 2 V and down to 2.9 uF at 5 V. Set **Bias 1/2** to 0 for a class-I part and all three become equal |
+| 3.22.7 | `[ ]` **Model:** the op-amp's remaining properties | Input offset voltage, bias current, CMRR, differential input resistance and output resistance all stamp, and a part that is not rail-to-rail keeps 1.5 V of headroom. These apply at the operating point as well as in the transient - only the GBW pole and the slew limit are transient-only |
+| 3.22.8 | `[ ]` **Model:** MOSFET Newton limiting | A large-K device could be thrown by one linear solve to a V_DS hundreds of volts from anything reachable, and the solve settled where no KCL held (a 2N7000 switching 100 ohm read -42 V, reported as converged). The linearisation point is now bounded per iteration. V_GS is deliberately not limited - holding it back stalls the device in cutoff while the node voltages sit still, which the convergence test reads as success |
+| 3.22.9 | `[ ]` **Model:** capacitor initial conditions | Five converter templates set a starting voltage that was never read. At the operating point such a capacitor is stamped as a stiff source of that value so the nodes agree with it; their settled outputs are unchanged and only the startup is shorter |
+| 3.22.10 | `[ ]` **Automated:** `--layout-test` palette count | It caught the circuit palette silently dropping a template once the library passed its 160-item capacity. 161 templates, 161 palette items |
+| 3.22.11 | `[ ]` **Automated:** the full battery | 161/161 templates, 161/161 demos, **167/167 probe oracles**, 23/23 part checks, 25/25 switches, 0 burns, 2158 knob runs, 0 param failures, 0 layout failures |
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.

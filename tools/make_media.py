@@ -53,7 +53,9 @@ SHOTS = [
     ("power_plant", "Plant", 200, "circuits"),
     ("substation", "Substn", 200, "circuits"),
     ("single_tuned_amp", "Tuned", 200, "circuits"),
-    # ideal vs real models
+    # ideal vs real models and the named parts
+    ("named_parts", "Parts", 160, "circuits"),
+    ("cap_dcbias", "Cbias", 260, "circuits"),
     ("id_mosfet", "IdMOS", 160, "circuits"),
     ("id_cap", "IdCap", 220, "circuits"),
     ("id_opamp", "IdOA", 220, "circuits"),
