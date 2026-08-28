@@ -187,6 +187,7 @@ typedef enum {
     CIRCUIT_PARTS_MOSFET,
     CIRCUIT_CAP_DCBIAS,
     CIRCUIT_NE555_ASTABLE,
+    CIRCUIT_PIERCE,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 

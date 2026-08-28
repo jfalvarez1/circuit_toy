@@ -285,6 +285,7 @@ static int osc_test(void) {
         { CIRCUIT_HARTLEY, 80e-6, 534188, 5e-9, 0.354 },        /* ideal 1/(2 pi sqrt((L1+L2)C)) = 503 kHz; the tap is only an AC ground through the supply */
         { CIRCUIT_CLAPP, 30e-6, 1743455, 2e-9, 0.354 },
         { CIRCUIT_NE555_ASTABLE, 0.004, 4800.0, 5e-8, 0.500 },   /* 1.44/((R_A + 2 R_B) C), square output */
+        { CIRCUIT_PIERCE, 1e-3, 100000.0, 2.5e-7, 0 },           /* pulled to the crystal's fs = 100.0 kHz; the amp clips, so no shape check */
     };
     int fails = 0;
     for (unsigned k = 0; k < sizeof cases / sizeof cases[0]; k++) {
@@ -2550,6 +2551,101 @@ static int spice_test(void) {
     return fails ? 1 : 0;
 }
 
+
+/* ---------------------------------------------------------------------------------------
+ * --xtal-test: the crystal component on its own, before any oscillator is built around it.
+ * A quartz crystal is a very high Q series resonator, and the thing that goes wrong in a
+ * simulator is that the integration damps it: the impedance dip at series resonance comes
+ * out shallow and broad, and an oscillator built on it never starts. So this drives the part
+ * from a source through a sense resistor and measures |Z| at, below and above resonance, and
+ * separately measures how long a struck resonance takes to decay.
+ * ------------------------------------------------------------------------------------- */
+static double xtal_z(double freq, int *ok) {
+    Circuit *c = circuit_create();
+    Component *v = pt_add(c, COMP_AC_VOLTAGE, 0, 100, 0);
+    v->props.ac_voltage.amplitude = 1.0; v->props.ac_voltage.frequency = freq;
+    Component *g0 = pt_add(c, COMP_GROUND, 0, 200, 0);
+    Component *rs = pt_add(c, COMP_RESISTOR, 140, 60, 0);
+    rs->props.resistor.resistance = 1000.0;
+    rs->props.resistor.power_rating = 10.0;
+    Component *y = pt_add(c, COMP_CRYSTAL, 320, 60, 0);
+    Component *gy = pt_add(c, COMP_GROUND, 420, 200, 0);
+    int src = pt_node(c, 0, 60), mid = pt_node(c, 200, 60), gnd = pt_node(c, 0, 180), yg = pt_node(c, 420, 180);
+    v->node_ids[0] = src; v->node_ids[1] = gnd; g0->node_ids[0] = gnd;
+    rs->node_ids[0] = src; rs->node_ids[1] = mid;
+    y->node_ids[0] = mid; y->node_ids[1] = yg;
+    gy->node_ids[0] = yg;
+
+    Simulation *sim = simulation_create(c);
+    *ok = sim && simulation_dc_analysis(sim);
+    double vmin = 1e300, vmax = -1e300, imin = 1e300, imax = -1e300;
+    if (*ok) {
+        double dt = 1.0 / (freq * 200.0);
+        simulation_set_time_step(sim, dt);
+        simulation_start(sim);
+        double t_end = 400.0 / freq;                 /* Q = 314: the resonance needs ~Q cycles to build */
+        while (sim->time < t_end) {
+            if (!simulation_step(sim)) { *ok = 0; break; }
+            if (sim->time < t_end * 0.75) continue;
+            Node *nm = circuit_get_node(c, mid), *ns = circuit_get_node(c, src);
+            double vm = nm ? nm->voltage : 0, vs = ns ? ns->voltage : 0;
+            double i = (vs - vm) / 1000.0;
+            if (vm < vmin) vmin = vm;  if (vm > vmax) vmax = vm;
+            if (i < imin) imin = i;    if (i > imax) imax = i;
+        }
+    }
+    double z = 0;
+    if (*ok && (imax - imin) > 1e-15) z = (vmax - vmin) / (imax - imin);
+    if (!isfinite(z)) *ok = 0;
+    if (sim) simulation_free(sim);
+    circuit_free(c);
+    return z;
+}
+
+static int xtal_test(void) {
+    int fails = 0, total = 0;
+    printf("xtal-test: the crystal component, measured the way a data sheet specifies one\n\n");
+
+    /* fs = 1/(2 pi sqrt(Ls Cs)) with the defaults: 100 mH and 25.33 pF */
+    double fs = 1.0 / (2.0 * M_PI * sqrt(100e-3 * 25.33e-12));
+    /* The claims are about shape, not an exact Rs read-out: the holder capacitance shunts the
+       arm, and measuring peak-to-peak volts over peak-to-peak amps ignores the phase between
+       them, so the number at resonance sits somewhat above the 200 ohm the arm alone would give.
+       What matters - and what a damped integrator destroys - is that the dip is deep and that
+       the impedance climbs steeply on both sides. */
+    struct { double f; double limit; int below; const char *note; } cases[] = {
+        { fs,        450.0, 1, "at series resonance the motional arm dominates and Z collapses" },
+        { fs * 0.98, 800.0, 0, "2 % below: the arm is capacitive and Z climbs" },
+        { fs * 1.02, 800.0, 0, "2 % above: inductive, and it climbs the other way" },
+    };
+    for (unsigned i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        int ok = 1;
+        double z = xtal_z(cases[i].f, &ok);
+        total++;
+        int pass = ok && (cases[i].below ? z < cases[i].limit : z > cases[i].limit);
+        if (!pass) fails++;
+        printf("%s xtal |Z| at %9.4g Hz = %10.4g ohm  expect %s %-6g  %s%s\n", pass ? " OK " : "FAIL",
+               cases[i].f, z, cases[i].below ? "<" : ">", cases[i].limit, cases[i].note,
+               ok ? "" : "  [simulation failed]");
+    }
+
+    /* Q: the resonance must not be damped by the integrator. Compare the measured impedance
+       ratio between resonance and 2 % off it - a Q of 314 gives a very deep, narrow dip. */
+    {
+        int ok1 = 1, ok2 = 1;
+        double z_res = xtal_z(fs, &ok1), z_off = xtal_z(fs * 1.02, &ok2);
+        total++;
+        double ratio = (z_res > 0) ? z_off / z_res : 0;
+        int pass = ok1 && ok2 && ratio > 8.0;
+        if (!pass) fails++;
+        printf("%s xtal off-resonance / resonance = %.1fx  (a damped model flattens this toward 1)\n",
+               pass ? " OK " : "FAIL", ratio);
+    }
+
+    printf("\nxtal-test: %d checks, %d failed\n", total, fails);
+    return fails ? 1 : 0;
+}
+
 static int series_template(const char *filter, double t_end, int node_id) {
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
@@ -2595,6 +2691,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--op-test")) return op_test();
         else if (!strcmp(argv[i], "--sub-test")) return sub_test();
         else if (!strcmp(argv[i], "--spice-test")) return spice_test();
+        else if (!strcmp(argv[i], "--xtal-test")) return xtal_test();
         else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt = atof(argv[++i]);
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();

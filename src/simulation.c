@@ -1300,6 +1300,28 @@ bool simulation_step(Simulation *sim) {
            node_ids already hold matrix indices, so they skip the node_map. */
         for (int sub = 0; sub < circuit->num_components; sub++)
             subcircuit_advance_caps(circuit->components[sub], sim->solution, sim->prev_step_solution, dt);
+
+        /* Crystal: the motional capacitor's voltage and the holder capacitor's current, both
+           carried forward from the arm current the solve just produced. */
+        for (int i = 0; i < circuit->num_components; i++) {
+            Component *comp = circuit->components[i];
+            if (comp->type != COMP_CRYSTAL) continue;
+            int idx = circuit->num_matrix_nodes + comp->voltage_var_idx;
+            if (idx >= (int)sim->solution->size) continue;
+            double i_now = vector_get(sim->solution, idx);
+            double i_was = vector_get(sim->prev_step_solution, idx);
+            double Cs = comp->props.crystal.cs;
+            if (Cs > 0) comp->cap_vc += (dt / (2.0 * Cs)) * (i_now + i_was);   /* trapezoidal */
+            double Cp = comp->props.crystal.cp;
+            if (Cp > 0) {
+                int a2 = circuit->node_map[comp->node_ids[0]], b2 = circuit->node_map[comp->node_ids[1]];
+                double vn = ((a2 > 0) ? vector_get(sim->solution, a2 - 1) : 0)
+                          - ((b2 > 0) ? vector_get(sim->solution, b2 - 1) : 0);
+                double vp = ((a2 > 0) ? vector_get(sim->prev_step_solution, a2 - 1) : 0)
+                          - ((b2 > 0) ? vector_get(sim->prev_step_solution, b2 - 1) : 0);
+                comp->trap_i_prev = (Cp / (0.6 * dt)) * (vn - vp) - (0.4 / 0.6) * comp->trap_i_prev;
+            }
+        }
         for (int i = 0; i < circuit->num_components; i++) {
             Component *comp = circuit->components[i];
             if (comp->type != COMP_CAPACITOR && comp->type != COMP_CAPACITOR_ELEC && comp->type != COMP_TOROID) continue;

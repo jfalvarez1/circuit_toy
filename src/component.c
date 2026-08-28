@@ -599,9 +599,15 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         "Crystal", "Y", 2,
         {{ -40, 0, "1" }, { 40, 0, "2" }},
         80, 30,
-        { .capacitor = {
-            .capacitance = 20e-12,      // Equivalent series capacitance
-            .ideal = true
+        { .crystal = {
+            /* A 100 kHz teaching crystal: high enough Q (2 pi f Ls / Rs = 314) to behave like
+               quartz, low enough to integrate at the time steps these circuits run at. A real
+               32.768 kHz watch part is Ls ~ 7900 H, Rs ~ 40k, Q ~ 40000. */
+            .ls = 100e-3,               // 100 mH motional inductance
+            .cs = 25.33e-12,            // with Ls gives fs = 100.0 kHz
+            .rs = 200.0,                // Q = 314
+            .cp = 33e-12,               // holder capacitance - a real HC-49 is 3..30 pF
+            .ideal = false
         }}
     },
 
@@ -2331,7 +2337,8 @@ Component *component_create(ComponentType type, float x, float y) {
     snprintf(comp->label, MAX_LABEL_LEN, "%s%d", info->short_name, comp->id);
 
     // Determine if component needs voltage variable (voltage sources, inductors)
-    comp->needs_voltage_var = (type == COMP_DC_VOLTAGE ||
+    comp->needs_voltage_var = (type == COMP_CRYSTAL ||     /* the motional arm's current */
+                               type == COMP_DC_VOLTAGE ||
                                type == COMP_AC_VOLTAGE ||
                                type == COMP_ARB_SOURCE ||
                                type == COMP_INDUCTOR ||
@@ -3964,7 +3971,57 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             break;
         }
 
-        case COMP_CRYSTAL:
+        case COMP_CRYSTAL: {
+            /* Motional arm Ls-Rs-Cs in series, with Cp across the whole thing.
+
+               The arm is integrated with the TRAPEZOIDAL rule (theta = 0.5) rather than the
+               theta = 0.6 used elsewhere. That 0.6 exists to damp the ringing a slope
+               discontinuity leaves behind, and it costs a little amplitude every step - which
+               is exactly what a resonator with a Q in the hundreds cannot afford. Damping a
+               crystal numerically is how it fails to start.
+
+                 i_n (1/a + Rs + b) = v_n + v_prev + i_prev (1/a - Rs - b) - 2 vc_prev
+                 a = dt/(2 Ls),  b = dt/(2 Cs),  vc = the motional capacitor's own voltage
+
+               so the auxiliary row carries -(1/a + Rs + b) on the current and the history on
+               the right. vc is advanced after the step in simulation.c. */
+            double Ls = comp->props.crystal.ls, Cs = comp->props.crystal.cs;
+            double Rs = comp->props.crystal.ideal ? 0.0 : comp->props.crystal.rs;
+            double Cp = comp->props.crystal.cp;
+            if (Ls <= 0 || Cs <= 0) break;
+            int idx = num_nodes + comp->voltage_var_idx;
+            Vector *mem = g_stamp_prev_step ? g_stamp_prev_step : prev_solution;
+            bool trans = (mem != NULL) && dt > 0 && idx < (int)mem->size;
+
+            if (n[0] > 0) { matrix_add(A, idx, n[0]-1, 1.0);  matrix_add(A, n[0]-1, idx, 1.0); }
+            if (n[1] > 0) { matrix_add(A, idx, n[1]-1, -1.0); matrix_add(A, n[1]-1, idx, -1.0); }
+
+            if (trans) {
+                double ka = dt / (2.0 * Ls), kb = dt / (2.0 * Cs);
+                double i_prev = vector_get(mem, idx);
+                double v0p = (n[0] > 0) ? vector_get(mem, n[0]-1) : 0;
+                double v1p = (n[1] > 0) ? vector_get(mem, n[1]-1) : 0;
+                matrix_add(A, idx, idx, -(1.0 / ka + Rs + kb));
+                vector_add(b, idx, -(v0p - v1p) - (1.0 / ka - Rs - kb) * i_prev + 2.0 * comp->cap_vc);
+            } else {
+                /* operating point: the arm is an open circuit (its capacitor blocks DC), so a
+                   large resistance keeps the row solvable without passing current */
+                matrix_add(A, idx, idx, -1e12);
+            }
+
+            /* the holder capacitance sits across the part and is an ordinary capacitor */
+            if (Cp > 0 && trans) {
+                double Geq = Cp / (0.6 * dt);
+                double v0p = (n[0] > 0) ? vector_get(mem, n[0]-1) : 0;
+                double v1p = (n[1] > 0) ? vector_get(mem, n[1]-1) : 0;
+                double Ieq = Geq * (v0p - v1p) + (0.4 / 0.6) * comp->trap_i_prev;
+                STAMP_CONDUCTANCE(n[0], n[1], Geq);
+                if (n[0] > 0) vector_add(b, n[0]-1, Ieq);
+                if (n[1] > 0) vector_add(b, n[1]-1, -Ieq);
+            }
+            break;
+        }
+
         case COMP_SOURCE_3PH: {
             // Three voltage sources A, B, C referenced to N, each with its own current variable
             // (voltage_var_idx + k) and a small series R (+ optional L, backward Euler) per phase.

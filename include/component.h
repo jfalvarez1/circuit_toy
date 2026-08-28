@@ -202,6 +202,19 @@ typedef union {
         // Mode
         bool ideal;        // Use ideal (simplified) model, default: true
     } mosfet;
+    /* Quartz crystal: the motional arm (Ls, Cs, Rs in series - the mechanical resonance seen
+       electrically) in parallel with Cp, the capacitance of the plates and the holder. The
+       series resonance is 1/(2 pi sqrt(Ls Cs)) and the Q is 2 pi f Ls / Rs, which for a real
+       part is tens of thousands: that is what makes a crystal a crystal, and what makes it
+       hard to integrate without damping it numerically (see the stamp). */
+    struct {
+        double ls;              // motional inductance (H)
+        double cs;              // motional capacitance (F)
+        double rs;              // motional resistance / ESR (Ohm)
+        double cp;              // shunt (holder) capacitance (F)
+        bool ideal;             // Ideal mode: lossless motional arm
+    } crystal;
+
     // Op-Amp
     struct {
         double gain;            // Open-loop DC gain, default: 100000 (100dB)

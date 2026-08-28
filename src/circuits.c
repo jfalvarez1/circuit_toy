@@ -316,6 +316,7 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_PARTS_MOSFET] = {"Named Parts: MOSFET Switches", "Parts", "2N7000 / 2N7002 / IRF540N doing the same job", TG_IDEAL},
     [CIRCUIT_CAP_DCBIAS] = {"Ceramic DC Bias", "Cbias", "The same 10 uF X5R at 0, 2 and 5 V of bias", TG_IDEAL},
     [CIRCUIT_NE555_ASTABLE] = {"555 Astable", "555", "The 555 as a block, built from its own comparators and latch", TG_OSCILLATORS},
+    [CIRCUIT_PIERCE] = {"Pierce Crystal Oscillator", "Pierce", "A real quartz model: it only oscillates between fs and fp", TG_OSCILLATORS},
 
 
 
@@ -6589,6 +6590,7 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_PARTS_MOSFET:       return place_parts_mosfet(circuit, x, y);
         case CIRCUIT_CAP_DCBIAS:         return place_cap_dcbias(circuit, x, y);
         case CIRCUIT_NE555_ASTABLE:      return place_ne555_astable(circuit, x, y);
+        case CIRCUIT_PIERCE:             return place_pierce(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6786,6 +6788,12 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "also rises with V_CE - the Early effect, I_C = I_S exp(V_BE/V_T)(1 + V_CE/V_AF) - so with V_AF = 80 V",
         "the current is ~9 % higher and the collector sits lower. It is the same effect that sets a stage's",
         "output resistance r_o = V_AF/I_C, so it is not a rounding error. PROBE: both collectors."},
+    [CIRCUIT_PIERCE] = {"PIERCE CRYSTAL OSCILLATOR: an inverting amplifier with a pi network - C2, the crystal",
+        "and C1 - closing the loop. The crystal is one component with a real quartz model: a motional",
+        "arm (Ls 100 mH, Cs 25.33 pF, Rs 200) resonating at fs = 100.0 kHz with a Q of 314, in parallel",
+        "with the 33 pF of its holder. Between fs and the parallel resonance fp the arm looks INDUCTIVE,",
+        "and that band is the only place the pi network gives the 180 deg the inverter needs - so it",
+        "settles at 100.5 kHz, pulled off fs by the load caps. PROBE: op-amp output, a clipped square."},
     [CIRCUIT_NE555_ASTABLE] = {"555 ASTABLE: the 555 here is a real subcircuit, not a box - inside it are the three 5k",
         "divider resistors that set 1/3 and 2/3 of the supply, the two comparators that watch",
         "TRIGGER and THRESHOLD against them, the NOR latch they drive, and the discharge transistor.",
@@ -7985,58 +7993,61 @@ static int place_clapp(Circuit *circuit, float x, float y) {
 
 // Pierce with a "teaching crystal": Ls 100 mH, Cs 25.33 pF (f_s = 100.0 kHz), Rs 200 (Q ~ 314), Cp 1 nF;
 // inverting op-amp stage (gain -100) + 100 ohm drive R + C2 / crystal / C1 pi network. f = f_s (1 + Cs/(2(Cp + C_L))) = 100.63 kHz
-static int place_pierce(Circuit *circuit, float x, float y);   // kept for the crystal work in docs/ROADMAP.md (not in the palette yet)
+static int place_pierce(Circuit *circuit, float x, float y);
 static int place_pierce(Circuit *circuit, float x, float y) {
     Component *u = sat_opamp(circuit, x + 200, y + 40);                          // -(160,20) +(160,60) out(240,40)
     if (!u) return 0;
     Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 100, y + 20, 0);        // (60,20)-(140,20)
-    r1->props.resistor.resistance = 10e3;
+    r1->props.resistor.resistance = 22e3;                                     // 100k, not 10k: at 100 kHz a 10k input would load the pi network down below unity loop gain
     Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 200, y - 40, 0);        // (160,-40)-(240,-40)
-    r2->props.resistor.resistance = 10e6;                                      // gain -1000: the network and the numerical damping eat most of it
+    r2->props.resistor.resistance = 10e6;                                      // gain -100, well past the network's loss
     Component *gp = add_comp(circuit, COMP_GROUND, x + 140, y + 80, 0);         // + input grounded at (140,60)
     Component *ro = add_comp(circuit, COMP_RESISTOR, x + 320, y + 40, 0);        // (280,40)-(360,40): output R (with C3: the extra pole a real inverter has)
-    ro->props.resistor.resistance = 1e3;
+    ro->props.resistor.resistance = 220.0;
     Component *c3 = add_comp(circuit, COMP_CAPACITOR, x + 360, y + 80, 90);      // (360,40)-(360,120)
-    c3->props.capacitor.capacitance = 2.2e-9;
+    c3->props.capacitor.capacitance = 100e-12;                                 // just the inverter's own output capacitance - 2.2 nF here was a 72 kHz pole sitting on top of the crystal
     Component *g3 = add_comp(circuit, COMP_GROUND, x + 360, y + 140, 0);
     Component *rd = add_comp(circuit, COMP_RESISTOR, x + 400, y + 40, 0);        // (360,40)-(440,40)
     rd->props.resistor.resistance = 100.0;
     Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 440, y + 80, 90);      // (440,40)-(440,120)
-    c2->props.capacitor.capacitance = 2.2e-9;
+    c2->props.capacitor.capacitance = 4.7e-9;                                 // C2 of the pi network: with C1 the pair sets the load capacitance the crystal is pulled by
     Component *kick = add_comp(circuit, COMP_PULSE_SOURCE, x + 440, y + 160, 0); // +(440,120) -(440,200): start-up kick under C2
     kick->props.pulse_source.v_low = 0; kick->props.pulse_source.v_high = 0.5; kick->props.pulse_source.pulse_width = 2e-6; kick->props.pulse_source.period = 100.0;
     Component *gk = add_comp(circuit, COMP_GROUND, x + 440, y + 220, 0);
-    Component *ls = add_comp(circuit, COMP_INDUCTOR, x + 500, y + 40, 0);        // (460,40)-(540,40)
-    ls->props.inductor.inductance = 100e-3;
-    Component *cs = add_comp(circuit, COMP_CAPACITOR, x + 580, y + 40, 0);       // (540,40)-(620,40)
-    cs->props.capacitor.capacitance = 2.5330e-11;
-    Component *rs = add_comp(circuit, COMP_RESISTOR, x + 660, y + 40, 0);        // (620,40)-(700,40)
-    rs->props.resistor.resistance = 200.0;
-    Component *cp = add_comp(circuit, COMP_CAPACITOR, x + 580, y - 20, 0);       // (540,-20)-(620,-20)
-    cp->props.capacitor.capacitance = 1e-9;
+    /* One crystal, not four parts pretending to be one: the component integrates its motional
+       arm trapezoidally, which is what keeps a Q of 314 alive at these time steps. */
+    Component *xtal = add_comp(circuit, COMP_CRYSTAL, x + 580, y + 40, 0);       // (540,40)-(620,40)
+    xtal->props.crystal.ls = 100e-3;
+    xtal->props.crystal.cs = 2.5330e-11;    /* fs = 100.0 kHz */
+    xtal->props.crystal.rs = 200.0;         /* Q = 2 pi fs Ls / Rs = 314 */
+    xtal->props.crystal.cp = 33e-12;        /* holder capacitance. This one matters: at 1 nF it shunts
+                                               the motional arm hard enough that the loop locks onto the
+                                               parallel resonance instead, or dies - which is exactly the
+                                               reason a data sheet gives you C0 and a maximum load. */
+    xtal->props.crystal.ideal = false;
     Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 780, y + 80, 90);      // (780,40)-(780,120)
-    c1->props.capacitor.capacitance = 2.2e-9;
+    c1->props.capacitor.capacitance = 4.7e-9;                                 // C1 of the pi network
     Component *g1 = add_comp(circuit, COMP_GROUND, x + 780, y + 140, 0);
-    add_label(circuit, x + 20, y - 100, "Pierce crystal oscillator (teaching crystal, f_s = 100 kHz, Q ~ 300): oscillates only between f_s and f_p");
+    add_label(circuit, x + 20, y - 100, "Pierce crystal oscillator: f_s = 100 kHz, Q = 314, C1 = C2 = 4.7 nF - it runs just above f_s, where the crystal looks inductive");
     int minus = TN(x + 160, y + 20), r1r = TN(x + 140, y + 20), r1l = TN(x + 60, y + 20), plus = TN(x + 160, y + 60), gpt = TN(x + 140, y + 60);
     TW(r1r, minus); TW(plus, gpt); gp->node_ids[0] = gpt;
     int out = TN(x + 240, y + 40), o1 = TN(x + 280, y + 40), o2 = TN(x + 280, y - 40), r2r = TN(x + 240, y - 40), r2l = TN(x + 160, y - 40);
     TW(out, o1); TW(o1, o2); TW(o2, r2r); TW(r2l, minus);
     int n3 = TN(x + 360, y + 40), na = TN(x + 440, y + 40), lsl = TN(x + 460, y + 40), rsr = TN(x + 700, y + 40), nb = TN(x + 740, y + 40), c1t = TN(x + 780, y + 40);
     TW(na, lsl); TW(rsr, nb); TW(nb, c1t);
-    int cpl = TN(x + 540, y - 20), cpr = TN(x + 620, y - 20), a2 = TN(x + 460, y - 20), b2 = TN(x + 740, y - 20);
-    TW(lsl, a2); TW(a2, cpl); TW(cpr, b2); TW(b2, nb);
+    int xl = TN(x + 540, y + 40), xr = TN(x + 620, y + 40);
+    TW(lsl, xl); TW(xr, rsr);
+    xtal->node_ids[0] = xl; xtal->node_ids[1] = xr;
     int f1 = TN(x + 740, y + 260), f2 = TN(x + 20, y + 260), f3 = TN(x + 20, y + 20);
     TW(nb, f1); TW(f1, f2); TW(f2, f3); TW(f3, r1l);
     u->node_ids[0] = minus; u->node_ids[1] = plus; u->node_ids[2] = out;
     r1->node_ids[0] = r1l; r1->node_ids[1] = r1r; r2->node_ids[0] = r2l; r2->node_ids[1] = r2r;
     ro->node_ids[0] = o1; ro->node_ids[1] = n3; c3->node_ids[0] = n3; rd->node_ids[0] = n3; rd->node_ids[1] = na; c2->node_ids[0] = na; int c2b = TN(x + 440, y + 120); c2->node_ids[1] = c2b; kick->node_ids[0] = c2b;
-    ls->node_ids[0] = lsl; int lsr = TN(x + 540, y + 40); ls->node_ids[1] = lsr; cs->node_ids[0] = lsr;
-    int csr = TN(x + 620, y + 40); cs->node_ids[1] = csr; rs->node_ids[0] = csr; rs->node_ids[1] = rsr; cp->node_ids[0] = cpl; cp->node_ids[1] = cpr; c1->node_ids[0] = c1t;
+    c1->node_ids[0] = c1t;
     connect_terminals(circuit, c3, 1, g3, 0);
     connect_terminals(circuit, kick, 1, gk, 0);
     connect_terminals(circuit, c1, 1, g1, 0);
-    return 17;
+    return 14;
 }
 
 // ring oscillator: five inverters, each followed by R 1k / C 1 nF -> f ~ 1/(2 N 0.69 RC) ~ 145 kHz
@@ -11215,6 +11226,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_PARTS_MOSFET]     = { COMP_NMOS, 0, 1 },
     [CIRCUIT_CAP_DCBIAS]       = { COMP_CAPACITOR, 0, 0 },
     [CIRCUIT_NE555_ASTABLE]    = { COMP_RESISTOR, 2, 0 },
+    [CIRCUIT_PIERCE]           = { COMP_OPAMP, 0, 2 },
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -11336,7 +11348,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_MATCH] = 500e-9, [CIRCUIT_HW_REFLECT] = 500e-9, [CIRCUIT_HW_LOOP] = 100e-6,
     [CIRCUIT_ID_SOURCE] = 1e-3, [CIRCUIT_ID_DIODE] = 200e-6, [CIRCUIT_ID_CAP] = 10e-6,
     [CIRCUIT_ID_IND] = 200e-6, [CIRCUIT_ID_OPAMP] = 2e-6, [CIRCUIT_ID_BJT] = 1e-3, [CIRCUIT_ID_MOSFET] = 1e-3,
-    [CIRCUIT_ID_OPAMP_ERR] = 1e-3, [CIRCUIT_PARTS_MOSFET] = 1e-3, [CIRCUIT_CAP_DCBIAS] = 10e-6, [CIRCUIT_NE555_ASTABLE] = 100e-6,
+    [CIRCUIT_ID_OPAMP_ERR] = 1e-3, [CIRCUIT_PARTS_MOSFET] = 1e-3, [CIRCUIT_CAP_DCBIAS] = 10e-6, [CIRCUIT_NE555_ASTABLE] = 100e-6, [CIRCUIT_PIERCE] = 5e-6,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -11382,7 +11394,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_MATCH] = 0.5, [CIRCUIT_HW_REFLECT] = 1.0, [CIRCUIT_HW_LOOP] = 2.0,
     [CIRCUIT_ID_SOURCE] = 1.0, [CIRCUIT_ID_DIODE] = 0.2, [CIRCUIT_ID_CAP] = 0.1,
     [CIRCUIT_ID_IND] = 2.0, [CIRCUIT_ID_OPAMP] = 0.5, [CIRCUIT_ID_BJT] = 2.0, [CIRCUIT_ID_MOSFET] = 2.0,
-    [CIRCUIT_ID_OPAMP_ERR] = 0.5, [CIRCUIT_PARTS_MOSFET] = 0.1, [CIRCUIT_CAP_DCBIAS] = 0.05, [CIRCUIT_NE555_ASTABLE] = 1.0,
+    [CIRCUIT_ID_OPAMP_ERR] = 0.5, [CIRCUIT_PARTS_MOSFET] = 0.1, [CIRCUIT_CAP_DCBIAS] = 0.05, [CIRCUIT_NE555_ASTABLE] = 1.0, [CIRCUIT_PIERCE] = 5.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -11549,6 +11561,7 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_PARTS_MOSFET]     = { DEMO_DC, 0 },
     [CIRCUIT_CAP_DCBIAS]       = { DEMO_WAVEFORM, 20e3 },
     [CIRCUIT_NE555_ASTABLE]    = { DEMO_OSC, 4800 },
+    [CIRCUIT_PIERCE]           = { DEMO_OSC, 100000 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -11592,6 +11605,7 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_PARTS_MOSFET] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_CAP_DCBIAS] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_NE555_ASTABLE] = SCOPE_FLAG_STACK,
+    [CIRCUIT_PIERCE] = SCOPE_FLAG_AC,
     /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */
     [CIRCUIT_COLPITTS] = SCOPE_FLAG_AC, [CIRCUIT_HARTLEY] = SCOPE_FLAG_AC, [CIRCUIT_CLAPP] = SCOPE_FLAG_AC,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
