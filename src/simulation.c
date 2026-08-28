@@ -1019,8 +1019,11 @@ void simulation_compute_terminal_currents(Simulation *sim) {
     for (int i = 0; i < circuit->num_components; i++) {
         Component *comp = circuit->components[i];
         for (int t = 0; t < MAX_TERMINALS; t++) comp->terminal_current[t] = 0.0;
+        /* A subcircuit is included: stamping the block stamps everything inside it, so the
+           residual at a pin's row is the current entering that pin, and the flow animation
+           carries on through the block instead of stopping dead at its edge. */
         if (comp->type == COMP_GROUND || comp->type == COMP_TEXT || comp->type == COMP_LABEL ||
-            comp->type == COMP_PIN || comp->type == COMP_SUBCIRCUIT || comp->num_terminals < 2)
+            comp->type == COMP_PIN || comp->num_terminals < 2)
             continue;
 
         if ((comp->type == COMP_CAPACITOR || comp->type == COMP_CAPACITOR_ELEC) && sim->prev_step_solution) {
@@ -1052,7 +1055,7 @@ void simulation_compute_terminal_currents(Simulation *sim) {
             int idx = (id >= 0 && id < MAX_NODES) ? circuit->node_map[id] : 0;
             if (idx > 0) rows[nrows++] = idx - 1;
         }
-        if (comp->needs_voltage_var)
+        if (component_aux_count(comp) > 0)      /* a subcircuit's rows belong to what is inside it */
             for (int k = 0; k < component_aux_count(comp); k++) {   // only this component's own aux rows
                 int r = num_nodes + comp->voltage_var_idx + k;
                 if (r < M) rows[nrows++] = r;

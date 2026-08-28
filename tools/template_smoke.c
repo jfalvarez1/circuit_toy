@@ -2201,8 +2201,13 @@ static void sub_fill_def(SubCircuitDef *def, Circuit *inner, const int *pin_node
     g_subcircuit_library.count++;
 }
 
-/* 10 V source -> the block's IN pin; the block's GND pin to ground; measure OUT. */
+/* 10 V source -> the block's IN pin; the block's GND pin to ground; measure OUT, and
+   optionally the current the block draws at its IN pin (what the flow animation draws). */
+static double sub_drive_i(SubCircuitDef *def, int npins, int *ok, double t_end, double *pin_i);
 static double sub_drive(SubCircuitDef *def, int npins, int *ok, double t_end) {
+    return sub_drive_i(def, npins, ok, t_end, NULL);
+}
+static double sub_drive_i(SubCircuitDef *def, int npins, int *ok, double t_end, double *pin_i) {
     Circuit *c = circuit_create();
     Component *v = pt_add(c, COMP_DC_VOLTAGE, 0, 100, 0);
     v->props.dc_voltage.voltage = 10.0;
@@ -2233,6 +2238,10 @@ static double sub_drive(SubCircuitDef *def, int npins, int *ok, double t_end) {
         Node *n = circuit_get_node(c, out);
         vout = n ? n->voltage : 0;
         if (!isfinite(vout)) *ok = 0;
+        if (pin_i) {
+            simulation_compute_terminal_currents(sim);
+            *pin_i = blk->terminal_current[0];      /* into the IN pin */
+        }
     }
     if (sim) simulation_free(sim);
     circuit_free(c);
@@ -2319,6 +2328,33 @@ static int sub_test(void) {
         printf("%s sub  internal 3.3 V reference   OUT = %8.4f V   expect 3.3000  %s\n",
                pass ? " OK " : "FAIL", v,
                ok ? "(a source inside the block needs its own matrix row)" : "[simulation failed]");
+    }
+
+    /* ---- 4. the pins carry current, so the flow animation continues through the block ---- */
+    {
+        Circuit *inner = circuit_create();
+        Component *r1 = pt_add(inner, COMP_RESISTOR, 100, 60, 90);
+        r1->props.resistor.resistance = 1000.0;
+        Component *r2 = pt_add(inner, COMP_RESISTOR, 100, 220, 90);
+        r2->props.resistor.resistance = 1000.0;
+        int nin = pt_node(inner, 100, 20), nmid = pt_node(inner, 100, 140), ngnd = pt_node(inner, 100, 260);
+        r1->node_ids[0] = nin; r1->node_ids[1] = nmid;
+        r2->node_ids[0] = nmid; r2->node_ids[1] = ngnd;
+        SubCircuitDef *def = sub_new_def("DIV2");
+        int pins[3] = { nin, nmid, ngnd };
+        const char *names[3] = { "IN", "OUT", "GND" };
+        sub_fill_def(def, inner, pins, names, 3);
+        circuit_free(inner);
+
+        int ok = 1; double pin = 0;
+        sub_drive_i(def, 3, &ok, 0, &pin);
+        total++;
+        /* 10 V across two 1k in series: 5 mA into the IN pin */
+        int pass = ok && fabs(fabs(pin) - 5e-3) < 5e-4;
+        if (!pass) fails++;
+        printf("%s sub  pin current (flow display) IN  = %8.4f mA  expect 5.0000  %s\n",
+               pass ? " OK " : "FAIL", pin * 1e3,
+               ok ? "(the block conducts, so the dots do not stop at its edge)" : "[simulation failed]");
     }
 
     printf("\nsub-test: %d checks, %d failed\n", total, fails);

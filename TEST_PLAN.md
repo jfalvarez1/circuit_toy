@@ -570,6 +570,20 @@ one that would have caught it.
 | 3.23.5 | `[ ]` Interactive: select a MOSFET in Named Parts with the simulation running, cycle the Part row | Region, V_GS, V_DS, I_D and g_m all update as each device is applied, and the simulation keeps running |
 | 3.23.6 | `[ ]` Interactive: edit a resistor value mid-run | The waveform responds and the run continues from where it was. Adding, moving or deleting a part still pauses with "Circuit changed - simulation paused" |
 
+### 3.24 Subcircuits, and the CI gate (2026-08-28)
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.24.1 | `[ ]` **Automated:** `template_smoke --sub-test` | Definitions built the way the Ctrl+G dialog builds them, each placed as a block and driven: resistive divider **4.9975 V** of 5; RC low-pass **9.99 V** of 10 after ten time constants (needs per-instance state); a block with a 3.3 V source inside it **3.2997 V** (needs its own matrix row); and **5.0025 mA** at the IN pin, which is what the flow animation draws. 4 checks, 0 failed |
+| 3.24.2 | `[ ]` **Bug:** internal state was shared with the definition | Every stamp copied the components out of the definition, so an internal capacitor never charged (0.03 V after 10 tau) and two blocks of one type shared a template. Each block now owns live copies |
+| 3.24.3 | `[ ]` **Bug:** internal sources had no matrix row | An internal voltage source or inductor stamped into a row belonging to something else and read 0 V. `component_aux_count()` now reports what a block needs |
+| 3.24.4 | `[ ]` **Bug:** internal node ids were off by one | They were allocated from `num_nodes + num_volt_vars`, but a node id addresses row id-1, so the first internal node sat on the last auxiliary row. Fixed with +1 |
+| 3.24.5 | `[ ]` **Bug:** blocks carried no pin current | The terminal-current pass skipped subcircuits, so the flow animation stopped at the block's edge. Stamping the block gives the residual at each pin |
+| 3.24.6 | `[ ]` Interactive: build a divider, Ctrl+G, place two blocks on one canvas | Both solve; giving one a different internal value does not change the other |
+| 3.24.7 | `[ ]` **CI:** every workflow had been failing since it was added | `configure_file(copy: true)` read SDL2-8.dll from the source tree at configure time - an untracked file that happened to be in my working copy - so every clean checkout died before compiling. The copy now comes from what the SDL2 subproject builds, at build time, and is skipped for static builds |
+| 3.24.8 | `[ ]` **CI:** the gate failed on warnings | `--geom-test` returned the count of templates with ANY geometry remark, and `set -e` read 31 tracked cosmetic warnings as 31 failures. Only the two hard rules - overlapping symbols, diagonal wires - set the exit status now |
+| 3.24.9 | `[ ]` **CI:** the audit runs the new suites | `--part-test`, `--op-test` and `--sub-test` are in the workflow, so a model regression cannot reach a release |
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.

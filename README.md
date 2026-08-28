@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.12.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.12.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.13.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.13.0)** (auto-updating from v3.4.0 on)
 
 A native desktop circuit simulator written in C with SDL2, featuring a synthwave-themed interface. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
 
@@ -951,9 +951,20 @@ circuit_toy/
 
 ## Known Issues / Work in Progress
 
-- **Subcircuit Simulation (WIP)** - Subcircuits can be created and placed as IC blocks, but internal simulation is still under development. Currently subcircuits function as visual placeholders - full hierarchical simulation with internal node expansion is planned for a future release.
+- **Subcircuits now simulate.** Select some components, press Ctrl+G, and the block you place
+  is solved along with everything else: each instance owns its internal components (so two
+  blocks of the same type keep separate capacitor charges), internal sources and inductors get
+  their own matrix rows, and the pins carry current so the flow animation runs through the
+  block instead of stopping at its edge. `template_smoke --sub-test` builds three definitions
+  the way the dialog does and drives each one: a divider, an RC that has to hold its charge,
+  and a block with a voltage source inside it. What is still missing is nesting - a subcircuit
+  inside a subcircuit is skipped rather than expanded.
 
-- **Current Flow Visualization** - The animated current flow now uses BFS-based path tracing from sources to ground, with improved handling for voltage source negative terminal connections and dual voltage source configurations.
+- **Current flow display** - the animation traces paths from sources to ground, sizing and
+  timing each dot from the solved terminal currents, and `--flow-test` checks KCL at every
+  node, conservation around each loop and equal current along a series path for all 161
+  templates. It is a display of the solution, not part of it: a circuit whose currents are
+  right can still be drawn oddly where a net has many branches meeting at one point.
 
 ## License
 
