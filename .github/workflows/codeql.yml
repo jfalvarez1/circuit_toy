@@ -1,0 +1,48 @@
+name: CodeQL
+
+# Static analysis for the C sources. GitHub's suggested C/C++ starter assumes Make or CMake;
+# this project builds with meson + MSVC and an SDL2 wrap, so the build step is spelled out here.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    name: analyze (c-cpp)
+    runs-on: windows-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install meson and ninja
+        run: python -m pip install --upgrade meson ninja
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: c-cpp
+
+      - name: Build
+        run: |
+          meson setup build
+          meson compile -C build
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:c-cpp

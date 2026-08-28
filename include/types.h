@@ -214,6 +214,7 @@ typedef enum {
     COMP_TLINE,             // Power transmission line: length x per-mile R, X, B (R / R-L / pi model)
     COMP_SOURCE_3PH,        // Three-phase generator block: A, B, C at 0 / -120 / +120 deg, common neutral N
     COMP_LOAD_HP,           // High-power load: a resistor with no thermal limit (becomes COMP_RESISTOR with high_power set)
+    COMP_ARB_SOURCE,        // Arbitrary waveform source: replays a table of samples (X-Y plotting, uploaded data)
 
     COMP_TYPE_COUNT
 } ComponentType;

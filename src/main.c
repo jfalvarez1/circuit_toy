@@ -82,6 +82,7 @@ static void usage(void) {
            "  --record DIR N EVERY save N frames, one every EVERY frames, as DIR/frame_XXX.bmp\n"
            "  --scroll PX          scroll the left palette by PX pixels (screenshots)\n"
            "  --keys S FRAME EVERY type S one char every EVERY frames from FRAME (^ opens Spotlight, | is Enter)\n"
+           "  --xy FILE            load 'x y' coordinate pairs into the X-Y Plotter template\n"
            "  --tab parts|circuits left panel tab\n"
            "  --exit               quit when the shot / recording is done\n"
            "  --no-update-check    do not query GitHub for a newer release (also CIRCUIT_TOY_NO_UPDATE=1)\n"
@@ -94,6 +95,7 @@ int main(int argc, char *argv[]) {
     const char *cli_template = NULL, *cli_shot = NULL, *cli_record = NULL, *cli_size = NULL;
     int cli_frame = 90, cli_rec_n = 0, cli_rec_every = 1, cli_scroll = -1, cli_tab = -1; bool cli_exit = false, no_update = false;
     const char *cli_keys = NULL; int cli_keys_frame = 30, cli_keys_every = 6;
+    const char *cli_xy = NULL;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--template") && i + 1 < argc) cli_template = argv[++i];
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) cli_shot = argv[++i];
@@ -116,6 +118,7 @@ int main(int argc, char *argv[]) {
         }
         else if (!strcmp(argv[i], "--scroll") && i + 1 < argc) cli_scroll = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--keys") && i + 3 < argc) { cli_keys = argv[++i]; cli_keys_frame = atoi(argv[++i]); cli_keys_every = atoi(argv[++i]); }
+        else if (!strcmp(argv[i], "--xy") && i + 1 < argc) cli_xy = argv[++i];
         else if (!strcmp(argv[i], "--tab") && i + 1 < argc) cli_tab = !strcmp(argv[++i], "circuits") ? 1 : 0;
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
         else if (!strcmp(argv[i], "--layout-test")) return layout_test();
@@ -142,6 +145,11 @@ int main(int argc, char *argv[]) {
     printf("Application initialized successfully\n");
     printf("Press F1 for keyboard shortcuts\n\n");
 
+    if (cli_xy) {
+        int n = arb_load_xy_file(cli_xy);
+        if (n) printf("Loaded %d X-Y points from %s\n", n, cli_xy);
+        else fprintf(stderr, "Could not read X-Y data from %s\n", cli_xy);
+    }
     if (cli_size) {
         int w = 0, h = 0;
         if (sscanf(cli_size, "%dx%d", &w, &h) == 2 && w > 200 && h > 200) SDL_SetWindowSize(app.window, w, h);

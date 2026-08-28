@@ -81,6 +81,18 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         }}
     },
 
+    [COMP_ARB_SOURCE] = {
+        "Arb Source", "ARB", 2,
+        {{ 0, -40, "+" }, { 0, 40, "-" }},
+        40, 80,
+        { .arb_source = {
+            .table = 0,
+            .period = 0.01,
+            .amplitude = 1.0,
+            .offset = 0.0
+        }}
+    },
+
     [COMP_AC_VOLTAGE] = {
         "AC Voltage", "~V", 2,
         {{ 0, -40, "+" }, { 0, 40, "-" }},
@@ -1791,6 +1803,85 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
 
 static int next_component_id = 1;
 
+static double g_arb[ARB_TABLES][ARB_MAX];
+static int g_arb_n[ARB_TABLES];
+
+void arb_table_set(int idx, const double *v, int n) {
+    if (idx < 0 || idx >= ARB_TABLES || !v) return;
+    if (n > ARB_MAX) n = ARB_MAX;
+    for (int i = 0; i < n; i++) g_arb[idx][i] = v[i];
+    g_arb_n[idx] = n;
+}
+int arb_table_len(int idx) { return (idx >= 0 && idx < ARB_TABLES) ? g_arb_n[idx] : 0; }
+
+/* Tables 0 and 1 hold a built-in outline until a file is loaded, so the X-Y Plotter draws
+   something the moment it is placed. The curve is the classic heart parametrisation. */
+static void arb_default_tables(void) {
+    static int done = 0;
+    if (done) return;
+    done = 1;
+    static double xs[256], ys[256];
+    for (int i = 0; i < 256; i++) {
+        double t = 2.0 * M_PI * i / 256.0;
+        double st = sin(t);
+        xs[i] = 16.0 * st * st * st;
+        ys[i] = 13.0 * cos(t) - 5.0 * cos(2 * t) - 2.0 * cos(3 * t) - cos(4 * t);
+    }
+    double xm = 0, ym = 0;
+    for (int i = 0; i < 256; i++) { if (fabs(xs[i]) > xm) xm = fabs(xs[i]); if (fabs(ys[i]) > ym) ym = fabs(ys[i]); }
+    for (int i = 0; i < 256; i++) { xs[i] /= xm; ys[i] /= ym; }
+    arb_table_set(0, xs, 256);
+    arb_table_set(1, ys, 256);
+}
+
+double arb_table_value(int idx, double phase) {
+    if (idx < 2 && g_arb_n[idx] == 0) arb_default_tables();
+    int n = arb_table_len(idx);
+    if (n <= 0) return 0.0;
+    if (n == 1) return g_arb[idx][0];
+    phase = phase - floor(phase);
+    double fp = phase * n;
+    int i = (int)fp;
+    if (i < 0) i = 0;
+    if (i >= n) i = n - 1;
+    int j = (i + 1) % n;                       /* wrap: the table is a closed loop */
+    double f = fp - i;
+    return g_arb[idx][i] * (1.0 - f) + g_arb[idx][j] * f;
+}
+
+int arb_load_xy_file(const char *path) {
+    FILE *f = fopen(path, "r");
+    if (!f) return 0;
+    static double xs[ARB_MAX], ys[ARB_MAX];
+    int n = 0;
+    char line[256];
+    while (n < ARB_MAX && fgets(line, sizeof line, f)) {
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '#' || *p == ';' || *p == '\n' || *p == '\r' || *p == 0) continue;
+        double a, b2;
+        for (char *q = p; *q; q++) if (*q == ',' || *q == ';') *q = ' ';
+        if (sscanf(p, "%lf %lf", &a, &b2) == 2) { xs[n] = a; ys[n] = b2; n++; }
+    }
+    fclose(f);
+    if (n < 2) return 0;
+    /* normalise both axes to -1..1 so any input scale plots sensibly */
+    double xmin = xs[0], xmax = xs[0], ymin = ys[0], ymax = ys[0];
+    for (int i = 1; i < n; i++) {
+        if (xs[i] < xmin) xmin = xs[i]; if (xs[i] > xmax) xmax = xs[i];
+        if (ys[i] < ymin) ymin = ys[i]; if (ys[i] > ymax) ymax = ys[i];
+    }
+    double xr = (xmax - xmin) > 1e-12 ? (xmax - xmin) : 1.0;
+    double yr = (ymax - ymin) > 1e-12 ? (ymax - ymin) : 1.0;
+    for (int i = 0; i < n; i++) {
+        xs[i] = 2.0 * (xs[i] - xmin) / xr - 1.0;
+        ys[i] = 2.0 * (ys[i] - ymin) / yr - 1.0;
+    }
+    arb_table_set(0, xs, n);
+    arb_table_set(1, ys, n);
+    return n;
+}
+
 const char *component_search_keywords(ComponentType type) {
     switch (type) {
         case COMP_RESISTOR:        return "resistor res ohm";
@@ -1810,6 +1901,7 @@ const char *component_search_keywords(ComponentType type) {
         case COMP_OPAMP: case COMP_OPAMP_FLIPPED: return "opamp op-amp amplifier operational";
         case COMP_DC_VOLTAGE:      return "battery dc voltage source supply";
         case COMP_AC_VOLTAGE:      return "ac voltage source sine generator";
+        case COMP_ARB_SOURCE:      return "arbitrary waveform table xy plot data";
         case COMP_DC_CURRENT: case COMP_AC_CURRENT: return "current source";
         case COMP_GROUND:          return "ground gnd earth";
         case COMP_TRANSFORMER: case COMP_TRANSFORMER_CT: return "transformer xfmr coil";
@@ -1924,6 +2016,7 @@ Component *component_create(ComponentType type, float x, float y) {
     // Determine if component needs voltage variable (voltage sources, inductors)
     comp->needs_voltage_var = (type == COMP_DC_VOLTAGE ||
                                type == COMP_AC_VOLTAGE ||
+                               type == COMP_ARB_SOURCE ||
                                type == COMP_INDUCTOR ||
                                type == COMP_OPAMP ||
                                type == COMP_OPAMP_FLIPPED ||
@@ -2351,6 +2444,19 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 matrix_add(A, n[1]-1, volt_idx, -1);
             }
             vector_add(b, volt_idx, V);
+            break;
+        }
+
+        case COMP_ARB_SOURCE: {
+            /* replay a sample table: one pass per period, linearly interpolated and wrapped */
+            double per = comp->props.arb_source.period > 1e-12 ? comp->props.arb_source.period : 1e-3;
+            double ph = time / per;
+            double V = comp->props.arb_source.amplitude * arb_table_value(comp->props.arb_source.table, ph)
+                     + comp->props.arb_source.offset;
+            int vi = num_nodes + comp->voltage_var_idx;
+            if (n[0] > 0) { matrix_add(A, vi, n[0]-1, 1); matrix_add(A, n[0]-1, vi, 1); }
+            if (n[1] > 0) { matrix_add(A, vi, n[1]-1, -1); matrix_add(A, n[1]-1, vi, -1); }
+            vector_add(b, vi, V);
             break;
         }
 
@@ -5007,6 +5113,9 @@ void component_get_value_string(Component *comp, char *buf, size_t buf_size) {
             break;
         case COMP_AC_VOLTAGE:
             format_engineering(comp->props.ac_voltage.amplitude, "V", buf, buf_size);
+            break;
+        case COMP_ARB_SOURCE:
+            snprintf(buf, buf_size, "tbl%d %d pts", comp->props.arb_source.table, arb_table_len(comp->props.arb_source.table));
             break;
         case COMP_DC_CURRENT:
             format_engineering(comp->props.dc_current.current, "A", buf, buf_size);

@@ -155,6 +155,26 @@ typedef enum {
     CIRCUIT_GS_PIDS,
     CIRCUIT_MOS_IDVGS,
     CIRCUIT_MOS_IDVDS,
+    CIRCUIT_MOS_TUNED,
+    CIRCUIT_MOS_CG,
+    CIRCUIT_MOS_CASCODE,
+    CIRCUIT_MOS_DIFF,
+    CIRCUIT_MOS_MIRROR,
+    CIRCUIT_CMOS_INV,
+    CIRCUIT_CMOS_NAND,
+    CIRCUIT_CMOS_TGATE,
+    CIRCUIT_XY_LISSAJOUS,
+    CIRCUIT_XY_PLOTTER,
+    CIRCUIT_HW_BUCK,
+    CIRCUIT_HW_BOOST,
+    CIRCUIT_HW_BUCKBOOST,
+    CIRCUIT_HW_CUK,
+    CIRCUIT_HW_INTERLEAVED,
+    CIRCUIT_HW_PDN,
+    CIRCUIT_HW_CAPS,
+    CIRCUIT_HW_MATCH,
+    CIRCUIT_HW_REFLECT,
+    CIRCUIT_HW_LOOP,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 
@@ -173,6 +193,7 @@ typedef enum {
     TG_IC_IO,           // IC output / input structures, buses and drivers (GPIO, I2C, SPI, UART, RS-485, SPMI)
     TG_BUILDING,        // Residential and commercial services (ANSI C84.1, NEC, IEEE 1547)
     TG_GRID_STD,        // Reliability standards and simulation methods (NERC TPL/PRC/FAC, ERCOT BAL/NOGRR, CIP-014)
+    TG_HARDWARE,        // Hardware engineering: switching converters, PDN, signal integrity, loop stability
     TG_COUNT
 } TemplateGroup;
 

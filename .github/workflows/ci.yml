@@ -1,0 +1,73 @@
+name: build and test
+
+# Builds on a clean Windows runner and runs the whole template audit as a gate, so a
+# regression cannot reach a release. The shared build proves the normal developer setup;
+# the static build proves the portable, DLL-free binary that runs on any supported Windows.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: windows-${{ matrix.link }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-latest]
+        link: [shared, static]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install meson and ninja
+        run: python -m pip install --upgrade meson ninja
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: meson setup build -Ddefault_library=${{ matrix.link }}
+
+      - name: Build
+        run: meson compile -C build
+
+      - name: Template audit
+        shell: bash
+        run: |
+          set -e
+          T=./build/tools/template_smoke.exe
+          echo "--- load and run every template"      && $T
+          echo "--- expected output per template"     && $T --probe-test
+          echo "--- demo contracts"                   && $T --demo-test
+          echo "--- oscillators (frequency + shape)"  && $T --osc-test
+          echo "--- current-flow invariants"          && $T --flow-test
+          echo "--- switch states"                    && $T --switch-test
+          echo "--- standards limits"                 && $T --std-test
+          echo "--- power ratings"                    && $T --burn-test
+          echo "--- every adjustable knob"            && $T --knob-test
+          echo "--- schematic geometry"               && $T --geom-test
+
+      - name: Headless UI checks
+        shell: bash
+        env:
+          SDL_VIDEODRIVER: dummy
+          CIRCUIT_TOY_NO_UPDATE: '1'
+        run: ./build/circuit-playground.exe --layout-test
+
+      - name: Upload binary
+        if: matrix.link == 'static' && matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: circuit-playground-static
+          path: |
+            build/circuit-playground.exe
+            README.md
+            guide.html

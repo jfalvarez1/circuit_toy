@@ -456,6 +456,14 @@ typedef union {
         bool ideal;             // Ideal mode
     } analog_switch;
 
+    // Arbitrary waveform source: replays one of the global sample tables
+    struct {
+        int table;              // which global table (0..ARB_TABLES-1)
+        double period;          // seconds for one pass through the table
+        double amplitude;       // table values are scaled by this
+        double offset;          // added after scaling (V)
+    } arb_source;
+
     // Voltmeter
     struct {
         double r_in;            // Input resistance (Ohm), default: 10e6
@@ -752,6 +760,17 @@ typedef struct {
 const ComponentTypeInfo *component_get_info(ComponentType type);
 // Extra search words for the Spotlight / palette filter ("mosfet", "coil", "transistor" ...); "" if none
 const char *component_search_keywords(ComponentType type);
+
+// Global sample tables for COMP_ARB_SOURCE. Two of them (0 = X, 1 = Y) back the X-Y plotter:
+// load a file of coordinate pairs and the scope draws the shape in X-Y mode.
+#define ARB_TABLES 4
+#define ARB_MAX 2048
+void arb_table_set(int idx, const double *v, int n);
+int  arb_table_len(int idx);
+double arb_table_value(int idx, double phase);   // phase 0..1, linearly interpolated
+// Load a two-column text file ("x y" per line, blank/# lines ignored) into tables 0 and 1.
+// Returns the number of points, or 0 on failure.
+int arb_load_xy_file(const char *path);
 
 // Create a new component
 Component *component_create(ComponentType type, float x, float y);

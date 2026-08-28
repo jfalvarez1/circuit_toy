@@ -284,6 +284,26 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_GS_PIDS] = {"Supervised Alarm Loop", "PIDS", "CIP-014-2: four states on one pair into the RTU", TG_GRID_STD},
     [CIRCUIT_MOS_IDVGS] = {"MOSFET Transfer Curves", "IdVgs", "One gate ramp, three devices: Vth and kn compared", TG_TRANSISTORS},
     [CIRCUIT_MOS_IDVDS] = {"MOSFET Output Curves", "IdVds", "Drain sweep at three gate voltages: triode to saturation", TG_TRANSISTORS},
+    [CIRCUIT_MOS_TUNED] = {"MOSFET Tuned Amplifier", "MTund", "Common-source stage with the same 100 kHz LC tank", TG_TRANSISTORS},
+    [CIRCUIT_MOS_CG] = {"Common Gate (MOSFET)", "CG", "Signal into the source, output in phase, low R_in", TG_TRANSISTORS},
+    [CIRCUIT_MOS_CASCODE] = {"Cascode (MOSFET)", "Casc", "CS under CG: high gain, almost no Miller effect", TG_TRANSISTORS},
+    [CIRCUIT_MOS_DIFF] = {"MOSFET Differential Pair", "MDiff", "Tail resistor sets the current, gates steer it", TG_TRANSISTORS},
+    [CIRCUIT_MOS_MIRROR] = {"MOSFET Current Mirror", "MMirr", "Diode-connected reference copied by a matched device", TG_TRANSISTORS},
+    [CIRCUIT_CMOS_INV] = {"CMOS Inverter (VTC)", "CMOSi", "Sweep the gates and read the transfer characteristic", TG_DIGITAL},
+    [CIRCUIT_CMOS_NAND] = {"CMOS NAND (transistor level)", "CMOSn", "PMOS in parallel, NMOS in series", TG_DIGITAL},
+    [CIRCUIT_CMOS_TGATE] = {"Transmission Gate", "TGate", "Complementary pair vs a lone NMOS pass transistor", TG_DIGITAL},
+    [CIRCUIT_XY_LISSAJOUS] = {"Lissajous Figures", "Lissa", "Two sines into X-Y: the figure counts the frequency ratio", TG_BASICS},
+    [CIRCUIT_XY_PLOTTER] = {"X-Y Plotter (upload)", "XYplt", "Replay a file of coordinates through two arb sources", TG_BASICS},
+    [CIRCUIT_HW_BUCK] = {"Buck Converter", "Buck", "Vout = D Vin: 12 V to 6 V at 100 kHz", TG_HARDWARE},
+    [CIRCUIT_HW_BOOST] = {"Boost Converter", "Boost", "Vout = Vin/(1-D): 5 V to 10 V", TG_HARDWARE},
+    [CIRCUIT_HW_BUCKBOOST] = {"Buck-Boost Converter", "BuckB", "Inverted output, above or below the input", TG_HARDWARE},
+    [CIRCUIT_HW_CUK] = {"Cuk Converter", "Cuk", "Capacitive transfer: both currents continuous", TG_HARDWARE},
+    [CIRCUIT_HW_INTERLEAVED] = {"Two-Phase Interleaved Buck", "2Ph", "180 deg phases cancel ripple (the CLVR idea)", TG_HARDWARE},
+    [CIRCUIT_HW_PDN] = {"Power Delivery Network", "PDN", "Bulk, ceramic and plane inductance against a load step", TG_HARDWARE},
+    [CIRCUIT_HW_CAPS] = {"Input vs Output Capacitance", "Ccomp", "Same cap, two places, very different result", TG_HARDWARE},
+    [CIRCUIT_HW_MATCH] = {"Impedance Matching", "Zmatch", "5 / 50 / 500 ohm on a 50 ohm source", TG_HARDWARE},
+    [CIRCUIT_HW_REFLECT] = {"Signal Reflections", "Refl", "Artificial 50 ohm line, terminated or not", TG_HARDWARE},
+    [CIRCUIT_HW_LOOP] = {"Loop Stability & Phase Margin", "Loop", "The same stage with and without compensation", TG_HARDWARE},
 
 
 
@@ -6208,6 +6228,26 @@ static int place_gs_governor(Circuit *circuit, float x, float y);
 static int place_gs_pids(Circuit *circuit, float x, float y);
 static int place_mos_idvgs(Circuit *circuit, float x, float y);
 static int place_mos_idvds(Circuit *circuit, float x, float y);
+static int place_mos_tuned(Circuit *circuit, float x, float y);
+static int place_mos_cg(Circuit *circuit, float x, float y);
+static int place_mos_cascode(Circuit *circuit, float x, float y);
+static int place_mos_diff(Circuit *circuit, float x, float y);
+static int place_mos_mirror(Circuit *circuit, float x, float y);
+static int place_cmos_inv(Circuit *circuit, float x, float y);
+static int place_cmos_nand(Circuit *circuit, float x, float y);
+static int place_cmos_tgate(Circuit *circuit, float x, float y);
+static int place_xy_lissajous(Circuit *circuit, float x, float y);
+static int place_xy_plotter(Circuit *circuit, float x, float y);
+static int place_hw_buck(Circuit *circuit, float x, float y);
+static int place_hw_boost(Circuit *circuit, float x, float y);
+static int place_hw_buckboost(Circuit *circuit, float x, float y);
+static int place_hw_cuk(Circuit *circuit, float x, float y);
+static int place_hw_interleaved(Circuit *circuit, float x, float y);
+static int place_hw_pdn(Circuit *circuit, float x, float y);
+static int place_hw_caps(Circuit *circuit, float x, float y);
+static int place_hw_match(Circuit *circuit, float x, float y);
+static int place_hw_reflect(Circuit *circuit, float x, float y);
+static int place_hw_loop(Circuit *circuit, float x, float y);
 static int place_template_body(Circuit *circuit, CircuitTemplateType type, float x, float y) {
     if (!circuit) return 0;
 
@@ -6396,6 +6436,26 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_GS_PIDS:          return place_gs_pids(circuit, x, y);
         case CIRCUIT_MOS_IDVGS:    return place_mos_idvgs(circuit, x, y);
         case CIRCUIT_MOS_IDVDS:    return place_mos_idvds(circuit, x, y);
+        case CIRCUIT_MOS_TUNED:          return place_mos_tuned(circuit, x, y);
+        case CIRCUIT_MOS_CG:             return place_mos_cg(circuit, x, y);
+        case CIRCUIT_MOS_CASCODE:        return place_mos_cascode(circuit, x, y);
+        case CIRCUIT_MOS_DIFF:           return place_mos_diff(circuit, x, y);
+        case CIRCUIT_MOS_MIRROR:         return place_mos_mirror(circuit, x, y);
+        case CIRCUIT_CMOS_INV:           return place_cmos_inv(circuit, x, y);
+        case CIRCUIT_CMOS_NAND:          return place_cmos_nand(circuit, x, y);
+        case CIRCUIT_CMOS_TGATE:         return place_cmos_tgate(circuit, x, y);
+        case CIRCUIT_XY_LISSAJOUS:  return place_xy_lissajous(circuit, x, y);
+        case CIRCUIT_XY_PLOTTER:    return place_xy_plotter(circuit, x, y);
+        case CIRCUIT_HW_BUCK:            return place_hw_buck(circuit, x, y);
+        case CIRCUIT_HW_BOOST:           return place_hw_boost(circuit, x, y);
+        case CIRCUIT_HW_BUCKBOOST:       return place_hw_buckboost(circuit, x, y);
+        case CIRCUIT_HW_CUK:             return place_hw_cuk(circuit, x, y);
+        case CIRCUIT_HW_INTERLEAVED:     return place_hw_interleaved(circuit, x, y);
+        case CIRCUIT_HW_PDN:             return place_hw_pdn(circuit, x, y);
+        case CIRCUIT_HW_CAPS:            return place_hw_caps(circuit, x, y);
+        case CIRCUIT_HW_MATCH:           return place_hw_match(circuit, x, y);
+        case CIRCUIT_HW_REFLECT:         return place_hw_reflect(circuit, x, y);
+        case CIRCUIT_HW_LOOP:            return place_hw_loop(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6540,6 +6600,26 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_GS_PIDS] = {"SUPERVISED PERIMETER ZONE (NERC CIP-014-2, layers 2 'detect' and 5 'communicate'): a fence", "sensor is reported to the substation RTU as a dry contact on one twisted pair. The pair is", "supervised so that a cut or a short cannot look like 'all clear': the 5.6k end-of-line resistor", "and the 2.2k zone resistor give four distinct levels at the RTU input - normal 8.5 V, alarm", "9.2 V, cable cut 12 V, short 0 V. The contact opens at 4 s for 3 s. Passive loops and fibre are", "used here because ordinary wireless sensors false-alarm in the EMI around energised HV plant."},
     [CIRCUIT_MOS_IDVGS] = {"MOSFET TRANSFER CURVES: a single 0-4 V triangle drives three gates, and every device sits", "over its own 1 ohm source sense resistor, so each probed node reads I_D directly (1 V = 1 A).", "The three parts are a 2N7000 (Vth 2.1 V, k_n 105 mA/V2), a 2N7002 (1.6 V, 60 mA/V2) and a", "textbook 1 um NMOS (0.7 V, 1.1 mA/V2) - each leaves cutoff at its own threshold and climbs with", "its own k_n. Press the scope's Y-T button for X-Y and CH1 becomes the x axis: real I_D-V_GS curves.", "TRY: select a device and edit Vth, W/L or Kn - the curve moves while you type."},
     [CIRCUIT_MOS_IDVDS] = {"MOSFET OUTPUT CHARACTERISTICS: one 0-6 V triangle sweeps the drains of three identical", "2N7000-class devices held at V_GS = 2.5, 3.0 and 3.5 V. Each source sense resistor is 2 ohm, so", "the probes read 2 x I_D. In X-Y mode (the Y-T button) with the sweep on CH1 you get the classic", "family: a steep triode slope while V_DS < V_OV, then the knee, then the flat saturation region", "whose height goes as (V_GS - Vth)^2 - which is why the 3.5 V curve sits far above the 2.5 V one.", "TRY: raise lambda and saturation stops being flat; that tilt is channel-length modulation."},
+    [CIRCUIT_MOS_TUNED] = {"MOSFET SINGLE-TUNED AMPLIFIER: the MOSFET counterpart of the BJT tuned stage. A common-source", "device (1M/330k gate bias, 470 ohm source bypassed by 10 uF) drives an L-C-Rq tank: 1 mH,", "2.53 nF and 10 k, so f0 = 1/(2 pi sqrt(LC)) = 100 kHz. Away from resonance the tank impedance", "collapses and so does the gain; at f0 the gain is g_m (Rq || RL). The source sweeps 20-500 kHz.", "PROBE: input and output. Turn on Trk so the time base follows the sweep.", "TRY: change C to move f0; raise Rq for a narrower, taller peak (higher Q)."},
+    [CIRCUIT_MOS_CG] = {"COMMON GATE: the signal drives the SOURCE and the gate is held at AC ground by a 10 uF cap.", "Input resistance is only 1/g_m - a few tens of ohms - so it loads a source badly, but there is", "no Miller capacitance and the output at the drain is IN PHASE with the input. That combination", "makes it the RF input stage and the top half of a cascode.", "PROBE: the input at the source and the output at the drain: same polarity, gain g_m R_D.", "TRY: raise the source resistor and watch the input divide down before it ever reaches the device."},
+    [CIRCUIT_MOS_CASCODE] = {"CASCODE: a common-source device with a common-gate device stacked on its drain. The lower", "device sees an almost constant drain voltage because the upper one holds that node, so its", "gate-drain capacitance is never multiplied by the gain - the Miller effect that limits a plain", "common-source stage practically disappears, and the bandwidth goes up with it.", "The pair still delivers the full g_m R_D gain because the upper device passes the current on.", "PROBE: input and the top drain. TRY: compare with the plain Common Source at the same drive."},
+    [CIRCUIT_MOS_DIFF] = {"MOSFET DIFFERENTIAL PAIR: both gates sit at 3 V and share a 2.2 k tail resistor. The two", "sources are driven in antiphase (20 mV each), so the tail current is steered from one device", "to the other and the drains swing in opposite directions with gain g_m R_D / 2. Anything", "common to both gates moves the tail node instead and cancels - the front end of every op-amp.", "PROBE: one gate and both drains: two mirror-image swings.", "TRY: drive both gates in phase (set one phase to 0) and watch the output collapse."},
+    [CIRCUIT_MOS_MIRROR] = {"MOSFET CURRENT MIRROR: M1 has its gate tied to its drain, so it is forced into saturation and", "the 10 k reference resistor sets its current. M2 shares the same gate-source voltage, so it", "carries the same current into whatever load it is given - within the compliance limit set by", "keeping M2 in saturation (V_DS > V_GS - Vth).", "PROBE: the reference node and the mirrored drain.", "TRY: change the load resistor - the mirrored current barely moves until M2 leaves saturation."},
+    [CIRCUIT_CMOS_INV] = {"CMOS INVERTER: a PMOS pull-up and an NMOS pull-down sharing a gate. A 0-5 V triangle on the", "input walks the pair through all five regions, and the output is the voltage transfer", "characteristic: flat at 5 V while the NMOS is off, a steep near-vertical transition where both", "devices are saturated, then flat at 0 V. Press Y-T for X-Y and CH1 becomes the x axis: the VTC", "appears directly. Both devices conduct only in that narrow middle band, which is the crossbar", "current - the reason CMOS burns power while switching and almost none while it sits still."},
+    [CIRCUIT_CMOS_NAND] = {"CMOS NAND AT THE TRANSISTOR LEVEL: two PMOS devices in PARALLEL from the rail and two NMOS", "devices in SERIES to ground, all four gates driven by the two inputs. Either input low turns", "on a PMOS and pulls the output up; only both inputs high can turn both NMOS devices on and", "pull it down. That is the NAND function falling straight out of the topology - and the series", "NMOS stack is why a NAND is slower falling than rising, and why wide gates get slow.", "PROBE: A, B and the output. A runs at 1 kHz and B at 500 Hz, so all four input codes appear."},
+    [CIRCUIT_CMOS_TGATE] = {"TRANSMISSION GATE vs a LONE NMOS: the same 0-5 V ramp is passed by a complementary pair (NMOS", "gate at Vdd, PMOS gate at ground) and by a single NMOS. The pair passes the whole rail: the", "NMOS carries the low end well and the PMOS takes over at the top. The lone NMOS stops one", "threshold short - it cannot pull its source above Vdd - Vth, so the top of the ramp is clipped", "and its on-resistance rises badly as the signal approaches that limit.", "PROBE: the input and both outputs. That threshold drop is why CMOS switches come in pairs."},
+    [CIRCUIT_XY_LISSAJOUS] = {"LISSAJOUS FIGURES: two independent sine sources, each into its own 10 k load, so CH1 is the x", "axis and CH2 the y axis once you press the scope's Y-T button to reach X-Y mode. The shape", "counts the ratio for you: the number of horizontal tangents divided by the number of vertical", "ones is f_y / f_x. 1:1 draws a straight line at 0 deg, a circle at 90 deg and an ellipse in", "between; 1:2 is a figure of eight; 2:3 is the classic pretzel. Before frequency counters this", "was how you measured an unknown frequency against a reference. TRY: edit CH2's frequency/phase."},
+    [CIRCUIT_XY_PLOTTER] = {"X-Y PLOTTER: two arbitrary-waveform sources (ARB) replay sample tables 0 and 1 - one for x, one", "for y - so in X-Y mode the scope draws whatever shape those tables describe. Load your own with", "  circuit-playground.exe --xy points.txt", "where the file holds 'x y' pairs one per line (commas and semicolons also work, # lines are", "ignored, up to 2048 points). Both axes are normalised to -1..1 and then scaled by each source's", "amplitude, so any units plot sensibly. The period property sets how fast the shape is traced."},
+    [CIRCUIT_HW_BUCK] = {"BUCK CONVERTER: an ideal switch chops the 12 V input at 100 kHz with 50 % duty, the diode", "freewheels the inductor current while the switch is open, and L-C average the result:", "Vout = D x Vin = 6 V. Inductor ripple is (Vin - Vout) D / (L fsw) = 300 mA and the output", "ripple that leaves behind is dI / (8 C fsw) = 3.8 mV.", "PROBE: the switch node (a 0-12 V square) and the output (a quiet 6 V).", "TRY: duty 0.5 -> 0.25 halves the output; L 100 -> 10 uH pushes it into discontinuous mode."},
+    [CIRCUIT_HW_BOOST] = {"BOOST CONVERTER: the switch grounds the inductor to charge it, then opens so the inductor's", "collapsing field drives current through the diode into the output. Vout = Vin/(1-D) = 10 V at", "D = 0.5 - the output can only ever sit above the input. The input current is continuous but the", "output current arrives in pulses, which is why a boost needs far more output capacitance than a", "buck of the same power. PROBE: the switch node and the output.", "TRY: D 0.5 -> 0.75 gives 20 V; watch the input current stay smooth while the output pulses."},
+    [CIRCUIT_HW_BUCKBOOST] = {"BUCK-BOOST: the inductor is the only path from input to output, and it is connected the other", "way round when it discharges - so the output is INVERTED: Vout = -D/(1-D) x Vin = -12 V at", "D = 0.5. Below D = 0.5 it steps down, above it steps up, which is what makes it useful when the", "input can be either side of the output. Neither the input nor the output current is continuous,", "so both ends need filtering. PROBE: the switch node and the negative output.", "TRY: D -> 0.67 for -24 V, D -> 0.33 for -6 V."},
+    [CIRCUIT_HW_CUK] = {"CUK CONVERTER: energy crosses from input to output through the 47 uF capacitor rather than", "through the inductor, and there is an inductor on BOTH sides. That makes the input and the", "output current continuous - the quietest of the basic topologies, at the cost of a capacitor", "that has to carry the full transfer current. Like the buck-boost the output is inverted:", "Vout = -D/(1-D) x Vin = -12 V at D = 0.5.", "TRY: shrink the transfer capacitor to 1 uF and its ripple starts to appear on the output."},
+    [CIRCUIT_HW_INTERLEAVED] = {"TWO-PHASE INTERLEAVED BUCK: two 100 kHz buck stages sharing one output, switched 180 degrees", "apart. Each carries half the load, and because their inductor ripples are out of phase they", "partly cancel: the output sees ripple at 200 kHz with a much smaller amplitude than one phase", "would give. That is why every CPU and GPU rail is multiphase. Coupling the two inductors into", "one magnetic part - a coupled-inductor voltage regulator (CLVR) - cancels more of it again and", "shrinks the magnetics. TRY: set phase B's pulse delay to 0 and watch the ripple double."},
+    [CIRCUIT_HW_PDN] = {"POWER DELIVERY NETWORK: a 1.8 V rail reaches the die through 20 mOhm of resistance and 2 nH of", "plane and via inductance, with 100 uF of bulk (20 mOhm ESR) and 1 uF of ceramic (5 mOhm) along", "the way. A 0.9 A load step every 80 us asks the network what it can actually deliver.", "The first nanoseconds belong to the ceramic - the plane inductance blocks everything upstream -", "then the bulk takes over, and only later the regulator. That is the whole reason decoupling is a", "hierarchy. TRY: delete the ceramic (sharp spike) or raise the plane inductance to 20 nH."},
+    [CIRCUIT_HW_CAPS] = {"INPUT vs OUTPUT CAPACITANCE: two identical rails, the same 1 A load step, and the same 100 uF -", "the only difference is which side of the 1 uH lead inductance the capacitor sits on. On the", "source side it is useless against the step: the inductance stands between it and the load. On", "the load side it holds the rail up until the source can respond. This is why decoupling goes AT", "the part it feeds, and why an input capacitor's job is to keep the SOURCE quiet, not the load.", "PROBE: both rails. The two traces are the same experiment with one thing moved."},
+    [CIRCUIT_HW_MATCH] = {"IMPEDANCE MATCHING: one 2 Vpk source behind 50 ohm, feeding 5 ohm, 50 ohm and 500 ohm.", "The load voltage rises with R_L, but the load POWER does not: V^2/R gives 33 mW, 20 mW and", "3.3 mW... wait - work it through and the matched 50 ohm load takes the most, because power is", "(V_s R_L / (R_s + R_L))^2 / R_L, which peaks at R_L = R_s.", "Maximum power transfer is a match, not the biggest or smallest load. Maximum voltage would want", "an open circuit and maximum current a short; neither delivers power. PROBE: all three loads."},
+    [CIRCUIT_HW_REFLECT] = {"SIGNAL REFLECTIONS: eight L-C sections (2.5 uH and 1 nF each) make an artificial line with", "Z0 = sqrt(L/C) = 50 ohm and a one-way delay of 8 sqrt(LC) = 400 ns, driven from 50 ohm.", "With the far-end switch OPEN the line is unterminated: the edge runs to the end, reflects with", "the same sign, and comes back - so the driver end shows the classic staircase and the far end", "overshoots to twice the incident step. CLOSE the switch for a matched 50 ohm termination and the", "reflection disappears. TRY: 10 ohm instead of 50 for an inverted reflection."},
+    [CIRCUIT_HW_LOOP] = {"LOOP STABILITY AND PHASE MARGIN: two identical inverting stages (gain -10) driving 1 nF through", "1 k. The load pole and the amplifier's own pole both sit inside the loop, so by the time the", "loop gain reaches unity the phase has fallen close to -180 degrees: little phase margin, and the", "step response rings. The lower copy has 100 pF across the feedback resistor, which adds a zero,", "returns phase before crossover and damps the ringing - at the cost of bandwidth.", "PROBE: both outputs on the same step. Use the Bode button to see the margin directly."},
 };
 
 
@@ -9262,6 +9342,875 @@ static int place_mos_idvds(Circuit *circuit, float x, float y) {
 #undef TN
 #undef TW
 
+// ---------------------------------------------------------------------------------------
+// MOSFET amplifier family and CMOS logic at the transistor level. Shared geometry: the gate
+// line is y, the NMOS sits at (x,y) with G(x-20,y) D(x+20,y-20) S(x+20,y+20), the supply rail
+// runs at y-180 and ground returns are at y+160 or below.
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+
+// gate bias divider from rail to ground, gate taken at (gx, y); returns the gate node
+static int mos_gate_bias(Circuit *circuit, float gx, float y, float rail_y, int rail, double r1, double r2) {
+    Component *rg1 = add_comp(circuit, COMP_RESISTOR, gx, y - 100, 90);   // (gx,y-140)-(gx,y-60)
+    rg1->props.resistor.resistance = r1;
+    Component *rg2 = add_comp(circuit, COMP_RESISTOR, gx, y + 60, 90);    // (gx,y+20)-(gx,y+100)
+    rg2->props.resistor.resistance = r2;
+    Component *g = add_comp(circuit, COMP_GROUND, gx, y + 120, 0);        // terminal (gx,y+100)
+    int t1 = TN(gx, y - 140), b1 = TN(gx, y - 60), gate = TN(gx, y), t2 = TN(gx, y + 20), b2 = TN(gx, y + 100);
+    int up = TN(gx, rail_y); TW(rail, up); TW(up, t1);   // along the rail, then down: no diagonal
+    TW(b1, gate); TW(gate, t2);
+    rg1->node_ids[0] = t1; rg1->node_ids[1] = b1; rg2->node_ids[0] = t2; rg2->node_ids[1] = b2; g->node_ids[0] = b2;
+    return gate;
+}
+// source resistor (optionally bypassed) from the device source at (sx,y+20) down to ground
+static void mos_source_leg(Circuit *circuit, float sx, float y, int src_node, double rs, double cbyp) {
+    Component *r = add_comp(circuit, COMP_RESISTOR, sx, y + 100, 90);     // (sx,y+60)-(sx,y+140)
+    r->props.resistor.resistance = rs;
+    Component *g = add_comp(circuit, COMP_GROUND, sx, y + 160, 0);        // terminal (sx,y+140)
+    int t = TN(sx, y + 60), b = TN(sx, y + 140), j = TN(sx, y + 20);
+    TW(src_node, j); TW(j, t);
+    r->node_ids[0] = t; r->node_ids[1] = b; g->node_ids[0] = b;
+    if (cbyp > 0) {
+        Component *c = add_comp(circuit, COMP_CAPACITOR, sx + 80, y + 100, 90);
+        c->props.capacitor.capacitance = cbyp;
+        Component *g2 = add_comp(circuit, COMP_GROUND, sx + 80, y + 160, 0);
+        int ct = TN(sx + 80, y + 60), cb = TN(sx + 80, y + 140);
+        TW(t, ct);
+        c->node_ids[0] = ct; c->node_ids[1] = cb; g2->node_ids[0] = cb;
+    }
+}
+static Component *mos_dev(Circuit *circuit, float x, float y, double vth, double kp) {
+    Component *m = add_comp(circuit, COMP_NMOS, x, y, 0);
+    if (m) { m->props.mosfet.vth = vth; m->props.mosfet.kp = kp; m->props.mosfet.ideal = false; }
+    return m;
+}
+
+// 1. MOSFET single-tuned amplifier: the MOSFET counterpart of the BJT one, LC tank drain load
+static int place_mos_tuned(Circuit *circuit, float x, float y) {
+    Component *vdd = dc_rail(circuit, x - 320, y - 180, 12.0); if (!vdd) return 0;   // +(-320,-180)
+    int rail = TN(x - 320, y - 180), rgb = TN(x - 60, y - 180); TW(rail, rgb);   // chained taps
+    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 260, y + 60, 0);        // +(-260,20) -(-260,100)
+    vin->props.ac_voltage.amplitude = 0.01; vin->props.ac_voltage.frequency = 100059.9;
+    set_freq_sweep(vin, 20e3, 500e3, 0.5);
+    Component *gi = add_comp(circuit, COMP_GROUND, x - 260, y + 140, 0);
+    connect_terminals(circuit, vin, 1, gi, 0);
+    int sp = TN(x - 260, y + 20), s1 = TN(x - 200, y + 20), s2 = TN(x - 200, y); TW(sp, s1); TW(s1, s2);
+    vin->node_ids[0] = sp;
+    Component *cin = add_comp(circuit, COMP_CAPACITOR, x - 160, y, 0);              // (-200,0)-(-120,0)
+    cin->props.capacitor.capacitance = 10e-9;
+    int cl = TN(x - 200, y), cr = TN(x - 120, y);
+    cin->node_ids[0] = cl; cin->node_ids[1] = cr;
+    int gate = mos_gate_bias(circuit, x - 60, y, y - 180, rgb, 1e6, 330e3);
+    TW(cr, gate);
+    Component *m = mos_dev(circuit, x, y, 1.5, 0.01); if (!m) return 0;
+    int d = TN(x + 20, y - 20), dj = TN(x + 40, y - 20), tankb = TN(x + 40, y - 60);
+    TW(d, dj); TW(dj, tankb);
+    m->node_ids[0] = gate; m->node_ids[1] = d; m->node_ids[2] = TN(x + 20, y + 20);
+    static const double val[3] = { 1e-3, 2.53e-9, 10e3 };
+    int rprev = rgb;
+    for (int k = 0; k < 3; k++) {                                                   // L, C, Rq in parallel
+        float px = x + 40 + k * 60;
+        Component *c = add_comp(circuit, k == 0 ? COMP_INDUCTOR : (k == 1 ? COMP_CAPACITOR : COMP_RESISTOR), px, y - 100, 90);
+        if (k == 0) c->props.inductor.inductance = val[0];
+        else if (k == 1) c->props.capacitor.capacitance = val[1];
+        else c->props.resistor.resistance = val[2];
+        int t = TN(px, y - 140), b = TN(px, y - 60), rn = TN(px, y - 180);
+        TW(rprev, rn); TW(rn, t); TW(b, tankb);
+        rprev = rn;
+        c->node_ids[0] = t; c->node_ids[1] = b;
+    }
+    mos_source_leg(circuit, x + 40, y, TN(x + 20, y + 20), 470.0, 10e-6);
+    Component *co = add_comp(circuit, COMP_CAPACITOR, x + 280, y - 60, 0);          // (240,-60)-(320,-60)
+    co->props.capacitor.capacitance = 10e-9;
+    int col = TN(x + 240, y - 60), cor = TN(x + 320, y - 60); TW(tankb, TN(x + 200, y - 60)); TW(TN(x + 200, y - 60), col);
+    co->node_ids[0] = col; co->node_ids[1] = cor;
+    Component *rl = add_comp(circuit, COMP_RESISTOR, x + 360, y - 20, 90);          // (360,-60)-(360,20)
+    rl->props.resistor.resistance = 100e3;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 360, y + 40, 0);
+    int rt = TN(x + 360, y - 60), rb = TN(x + 360, y + 20); TW(cor, rt);
+    rl->node_ids[0] = rt; rl->node_ids[1] = rb; gl->node_ids[0] = rb;
+    add_label(circuit, x - 320, y - 260, "MOSFET single-tuned amplifier: the same 100 kHz tank as the BJT version, driven by a common-source stage");
+    return 20;
+}
+
+// 2. Common gate: signal into the source, gate held at AC ground, output at the drain
+static int place_mos_cg(Circuit *circuit, float x, float y) {
+    Component *vdd = dc_rail(circuit, x - 320, y - 180, 12.0); if (!vdd) return 0;
+    int rail = TN(x - 320, y - 180), rail2 = TN(x + 40, y - 180); TW(rail, rail2);
+    int gate = mos_gate_bias(circuit, x - 60, y, y - 180, rail, 1e6, 470e3);
+    TW(gate, TN(x - 20, y));
+    Component *cg = add_comp(circuit, COMP_CAPACITOR, x - 140, y + 60, 90);         // (-140,20)-(-140,100) gate bypass
+    cg->props.capacitor.capacitance = 10e-6;
+    Component *gg = add_comp(circuit, COMP_GROUND, x - 140, y + 120, 0);
+    int ct = TN(x - 140, y + 20), cb = TN(x - 140, y + 100);
+    TW(gate, TN(x - 140, y)); TW(TN(x - 140, y), ct);
+    cg->node_ids[0] = ct; cg->node_ids[1] = cb; gg->node_ids[0] = cb;
+    Component *m = mos_dev(circuit, x, y, 1.5, 0.01); if (!m) return 0;
+    int d = TN(x + 20, y - 20), sN = TN(x + 20, y + 20);
+    m->node_ids[0] = gate; m->node_ids[1] = d; m->node_ids[2] = sN;
+    Component *rd = add_comp(circuit, COMP_RESISTOR, x + 40, y - 100, 90);
+    rd->props.resistor.resistance = 2.2e3;
+    int rt = TN(x + 40, y - 140), rb = TN(x + 40, y - 60);
+    TW(rt, rail2); TW(d, TN(x + 40, y - 20)); TW(TN(x + 40, y - 20), rb);
+    rd->node_ids[0] = rt; rd->node_ids[1] = rb;
+    mos_source_leg(circuit, x + 40, y, sN, 3.3e3, 0);   // 0.65 mA keeps V_DS ~9 V, well into saturation
+    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x + 200, y + 220, 0);       // +(200,180) -(200,260)
+    vin->props.ac_voltage.amplitude = 0.02; vin->props.ac_voltage.frequency = 10e3;
+    Component *gvi = add_comp(circuit, COMP_GROUND, x + 200, y + 300, 0);
+    connect_terminals(circuit, vin, 1, gvi, 0);
+    Component *ci = add_comp(circuit, COMP_CAPACITOR, x + 120, y + 180, 0);         // (80,180)-(160,180)
+    ci->props.capacitor.capacitance = 10e-6;
+    int il = TN(x + 80, y + 180), ir = TN(x + 160, y + 180), vp = TN(x + 200, y + 180);
+    TW(ir, vp); TW(il, TN(x + 40, y + 180)); TW(TN(x + 40, y + 180), TN(x + 40, y + 60));
+    ci->node_ids[0] = il; ci->node_ids[1] = ir; vin->node_ids[0] = vp;
+    Component *co = add_comp(circuit, COMP_CAPACITOR, x + 160, y - 60, 0);          // (120,-60)-(200,-60)
+    co->props.capacitor.capacitance = 10e-6;
+    int ol = TN(x + 120, y - 60), orr = TN(x + 200, y - 60);
+    TW(rb, ol);
+    co->node_ids[0] = ol; co->node_ids[1] = orr;
+    Component *rl = add_comp(circuit, COMP_RESISTOR, x + 240, y - 20, 90);
+    rl->props.resistor.resistance = 100e3;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 240, y + 40, 0);
+    int lt = TN(x + 240, y - 60), lb = TN(x + 240, y + 20); TW(orr, lt);
+    rl->node_ids[0] = lt; rl->node_ids[1] = lb; gl->node_ids[0] = lb;
+    add_label(circuit, x - 320, y - 260, "COMMON GATE: the signal drives the SOURCE, the gate is an AC ground, the output leaves the drain IN PHASE");
+    return 18;
+}
+
+// 3. Cascode: a common-source device with a common-gate device stacked on its drain
+static int place_mos_cascode(Circuit *circuit, float x, float y) {
+    Component *vdd = dc_rail(circuit, x - 320, y - 320, 12.0); if (!vdd) return 0;
+    int rail = TN(x - 320, y - 320), rail2 = TN(x + 40, y - 320); TW(rail, rail2);
+    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 260, y + 60, 0);
+    vin->props.ac_voltage.amplitude = 0.01; vin->props.ac_voltage.frequency = 10e3;
+    Component *gi = add_comp(circuit, COMP_GROUND, x - 260, y + 140, 0);
+    connect_terminals(circuit, vin, 1, gi, 0);
+    int sp = TN(x - 260, y + 20), s2 = TN(x - 200, y + 20); TW(sp, s2); TW(s2, TN(x - 200, y));
+    vin->node_ids[0] = sp;
+    Component *cin = add_comp(circuit, COMP_CAPACITOR, x - 160, y, 0);
+    cin->props.capacitor.capacitance = 10e-6;
+    int cl = TN(x - 200, y), cr = TN(x - 120, y);
+    cin->node_ids[0] = cl; cin->node_ids[1] = cr;
+    int gate1 = mos_gate_bias(circuit, x - 60, y, y - 320, rail, 1e6, 330e3);
+    TW(cr, gate1);
+    Component *m1 = mos_dev(circuit, x, y, 1.5, 0.01); if (!m1) return 0;           // common source
+    int d1 = TN(x + 20, y - 20), s1n = TN(x + 20, y + 20);
+    m1->node_ids[0] = gate1; m1->node_ids[1] = d1; m1->node_ids[2] = s1n;
+    mos_source_leg(circuit, x + 40, y, s1n, 2.2e3, 10e-6);   // 0.62 mA leaves both devices saturated
+    Component *m2 = mos_dev(circuit, x, y - 160, 1.5, 0.01);                        // common gate on top
+    int d2 = TN(x + 20, y - 180), s2n = TN(x + 20, y - 140);
+    TW(d1, TN(x + 40, y - 20)); TW(TN(x + 40, y - 20), TN(x + 40, y - 140)); TW(TN(x + 40, y - 140), s2n);
+    int gate2 = mos_gate_bias(circuit, x - 160, y - 160, y - 320, rail, 470e3, 1e6);
+    TW(gate2, TN(x - 20, y - 160));
+    m2->node_ids[0] = gate2; m2->node_ids[1] = d2; m2->node_ids[2] = s2n;
+    Component *rd = add_comp(circuit, COMP_RESISTOR, x + 40, y - 260, 90);          // (40,-300)-(40,-220)
+    rd->props.resistor.resistance = 3.3e3;
+    int rt = TN(x + 40, y - 300), rb = TN(x + 40, y - 220);
+    TW(rt, rail2); TW(d2, TN(x + 40, y - 180)); TW(TN(x + 40, y - 180), rb);
+    rd->node_ids[0] = rt; rd->node_ids[1] = rb;
+    Component *co = add_comp(circuit, COMP_CAPACITOR, x + 160, y - 220, 0);
+    co->props.capacitor.capacitance = 10e-6;
+    int ol = TN(x + 120, y - 220), orr = TN(x + 200, y - 220); TW(rb, TN(x + 80, y - 220)); TW(TN(x + 80, y - 220), ol);
+    co->node_ids[0] = ol; co->node_ids[1] = orr;
+    Component *rl = add_comp(circuit, COMP_RESISTOR, x + 240, y - 180, 90);
+    rl->props.resistor.resistance = 100e3;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 240, y - 120, 0);
+    int lt = TN(x + 240, y - 220), lb = TN(x + 240, y - 140); TW(orr, lt);
+    rl->node_ids[0] = lt; rl->node_ids[1] = lb; gl->node_ids[0] = lb;
+    add_label(circuit, x - 320, y - 400, "CASCODE: a common-source device under a common-gate device. The lower drain barely moves, so Miller feedback nearly vanishes");
+    return 22;
+}
+
+// 4. MOSFET differential pair
+static int place_mos_diff(Circuit *circuit, float x, float y) {
+    Component *vdd = dc_rail(circuit, x - 260, y - 180, 12.0); if (!vdd) return 0;
+    int rail = TN(x - 260, y - 180), railA = TN(x + 40, y - 180), railB = TN(x + 240, y - 180);
+    TW(rail, railA); TW(railA, railB);
+    int tail = TN(x + 140, y + 60);
+    for (int k = 0; k < 2; k++) {
+        float dx = x + k * 200;
+        Component *m = mos_dev(circuit, dx, y, 1.5, 0.01); if (!m) return 0;
+        int d = TN(dx + 20, y - 20), sN = TN(dx + 20, y + 20), gt = TN(dx - 20, y);
+        Component *rd = add_comp(circuit, COMP_RESISTOR, dx + 40, y - 100, 90);
+        rd->props.resistor.resistance = 2.2e3;
+        int rt = TN(dx + 40, y - 140), rb = TN(dx + 40, y - 60);
+        TW(rt, TN(dx + 40, y - 180)); TW(d, TN(dx + 40, y - 20)); TW(TN(dx + 40, y - 20), rb);
+        rd->node_ids[0] = rt; rd->node_ids[1] = rb;
+        m->node_ids[1] = d; m->node_ids[2] = sN;
+        TW(sN, TN(dx + 20, y + 60)); TW(TN(dx + 20, y + 60), tail);
+        Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, dx - 120, y + 60, 0);   // +(dx-120,y+20)
+        vin->props.ac_voltage.amplitude = 0.02; vin->props.ac_voltage.frequency = 1000.0;
+        vin->props.ac_voltage.phase = k ? 180.0 : 0.0; vin->props.ac_voltage.offset = 3.0;
+        Component *gv = add_comp(circuit, COMP_GROUND, dx - 120, y + 140, 0);
+        connect_terminals(circuit, vin, 1, gv, 0);
+        int vp = TN(dx - 120, y + 20), vj = TN(dx - 120, y);
+        TW(vp, vj); TW(vj, gt);
+        vin->node_ids[0] = vp; m->node_ids[0] = gt;
+    }
+    Component *rt2 = add_comp(circuit, COMP_RESISTOR, x + 140, y + 140, 90);        // tail resistor
+    rt2->props.resistor.resistance = 2.2e3;
+    Component *gt2 = add_comp(circuit, COMP_GROUND, x + 140, y + 200, 0);
+    int tt = TN(x + 140, y + 100), tb = TN(x + 140, y + 180); TW(tail, tt);
+    rt2->node_ids[0] = tt; rt2->node_ids[1] = tb; gt2->node_ids[0] = tb;
+    add_label(circuit, x - 260, y - 260, "MOSFET DIFFERENTIAL PAIR: the tail resistor sets the current, a difference between the gates steers it one way or the other");
+    return 20;
+}
+
+// 5. MOSFET current mirror: a diode-connected reference device copied into a load
+static int place_mos_mirror(Circuit *circuit, float x, float y) {
+    Component *vdd = dc_rail(circuit, x - 260, y - 180, 12.0); if (!vdd) return 0;
+    int rail = TN(x - 260, y - 180), railA = TN(x - 60, y - 180), railB = TN(x + 200, y - 180);
+    TW(rail, railA); TW(railA, railB);
+    Component *rref = add_comp(circuit, COMP_RESISTOR, x - 60, y - 100, 90);
+    rref->props.resistor.resistance = 10e3;
+    int rt = TN(x - 60, y - 140), rb = TN(x - 60, y - 60); TW(rt, railA);
+    rref->node_ids[0] = rt; rref->node_ids[1] = rb;
+    Component *m1 = mos_dev(circuit, x, y, 1.5, 0.01); if (!m1) return 0;
+    int d1 = TN(x + 20, y - 20), s1 = TN(x + 20, y + 20), g1 = TN(x - 20, y);
+    TW(rb, TN(x - 60, y - 20)); TW(TN(x - 60, y - 20), TN(x + 40, y - 20)); TW(TN(x + 40, y - 20), d1);
+    TW(TN(x - 60, y - 20), TN(x - 60, y)); TW(TN(x - 60, y), g1);                   // diode connection
+    m1->node_ids[0] = g1; m1->node_ids[1] = d1; m1->node_ids[2] = s1;
+    Component *gs1 = add_comp(circuit, COMP_GROUND, x + 20, y + 60, 0);
+    gs1->node_ids[0] = s1;
+    Component *m2 = mos_dev(circuit, x + 200, y, 1.5, 0.01);
+    int d2 = TN(x + 220, y - 20), s2 = TN(x + 220, y + 20), g2 = TN(x + 180, y);
+    TW(g1, TN(x - 20, y + 100)); TW(TN(x - 20, y + 100), TN(x + 180, y + 100)); TW(TN(x + 180, y + 100), g2);
+    m2->node_ids[0] = g2; m2->node_ids[1] = d2; m2->node_ids[2] = s2;
+    Component *gs2 = add_comp(circuit, COMP_GROUND, x + 220, y + 60, 0);
+    gs2->node_ids[0] = s2;
+    Component *rl = add_comp(circuit, COMP_RESISTOR, x + 240, y - 100, 90);
+    rl->props.resistor.resistance = 4.7e3;
+    int lt = TN(x + 240, y - 140), lb = TN(x + 240, y - 60);
+    TW(lt, TN(x + 240, y - 180)); TW(TN(x + 240, y - 180), railB); TW(d2, TN(x + 240, y - 20)); TW(TN(x + 240, y - 20), lb);
+    rl->node_ids[0] = lt; rl->node_ids[1] = lb;
+    add_label(circuit, x - 260, y - 260, "MOSFET CURRENT MIRROR: M1 is diode-connected so Rref sets its current; M2 shares the gate-source voltage and copies it");
+    return 14;
+}
+
+// 6. CMOS inverter: sweep the input and read the voltage transfer characteristic
+static int place_cmos_inv(Circuit *circuit, float x, float y) {
+    Component *vdd = dc_rail(circuit, x - 200, y - 180, 5.0); if (!vdd) return 0;
+    int rail = TN(x - 200, y - 180), railA = TN(x + 20, y - 180); TW(rail, railA);
+    Component *sweep = add_comp(circuit, COMP_TRIANGLE_WAVE, x - 200, y + 60, 0);   // +(-200,20) -(-200,100)
+    sweep->props.triangle_wave.amplitude = 2.5; sweep->props.triangle_wave.offset = 2.5;
+    sweep->props.triangle_wave.frequency = 1000.0;
+    Component *gs = add_comp(circuit, COMP_GROUND, x - 200, y + 140, 0);
+    int inn = TN(x - 200, y + 20); sweep->node_ids[0] = inn;
+    connect_terminals(circuit, sweep, 1, gs, 0);
+    int ij = TN(x - 200, y), gp = TN(x - 20, y - 80), gn = TN(x - 20, y + 80);
+    TW(inn, ij); TW(ij, TN(x - 100, y)); TW(TN(x - 100, y), TN(x - 100, y - 80)); TW(TN(x - 100, y - 80), gp);
+    TW(TN(x - 100, y), TN(x - 100, y + 80)); TW(TN(x - 100, y + 80), gn);
+    Component *mp = add_comp(circuit, COMP_PMOS, x, y - 80, 0);                     // G(-20,-80) D(20,-100) S(20,-60)
+    mp->props.mosfet.vth = -1.0; mp->props.mosfet.kp = 0.005; mp->props.mosfet.ideal = false;
+    Component *mn = add_comp(circuit, COMP_NMOS, x, y + 80, 0);                     // G(-20,80) D(20,60) S(20,100)
+    mn->props.mosfet.vth = 1.0; mn->props.mosfet.kp = 0.01; mn->props.mosfet.ideal = false;
+    int pd = TN(x + 20, y - 100), ps = TN(x + 20, y - 60), nd = TN(x + 20, y + 60), ns = TN(x + 20, y + 100);
+    TW(ps, TN(x + 60, y - 60)); TW(TN(x + 60, y - 60), TN(x + 60, y - 180)); TW(TN(x + 60, y - 180), railA);
+    int out = TN(x + 20, y);
+    TW(pd, TN(x - 20, y - 100)); TW(TN(x - 20, y - 100), TN(x - 20, y - 120));      /* keep the PMOS drain clear */
+    TW(pd, out); TW(out, nd);
+    Component *gnd = add_comp(circuit, COMP_GROUND, x + 20, y + 140, 0);
+    gnd->node_ids[0] = ns;
+    mp->node_ids[0] = gp; mp->node_ids[1] = pd; mp->node_ids[2] = ps;
+    mn->node_ids[0] = gn; mn->node_ids[1] = nd; mn->node_ids[2] = ns;
+    Component *cl = add_comp(circuit, COMP_CAPACITOR, x + 140, y + 40, 90);         // (140,0)-(140,80)
+    cl->props.capacitor.capacitance = 20e-12;
+    Component *gc = add_comp(circuit, COMP_GROUND, x + 140, y + 140, 0);
+    int clt = TN(x + 140, y), clb = TN(x + 140, y + 80), gct = TN(x + 140, y + 120);
+    TW(out, clt); TW(clb, gct);
+    cl->node_ids[0] = clt; cl->node_ids[1] = clb; gc->node_ids[0] = gct;
+    add_label(circuit, x - 200, y - 260, "CMOS INVERTER: a 0-5 V triangle on the gates. Press Y-T for X-Y and CH1 becomes the x axis: that is the VTC");
+    add_label(circuit, x - 200, y + 200, "Both devices conduct only in the narrow middle band - that is the crossbar current, and why CMOS burns power only while switching.");
+    return 14;
+}
+
+// 7. CMOS NAND: two PMOS in parallel above, two NMOS in series below
+static int place_cmos_nand(Circuit *circuit, float x, float y) {
+    Component *vdd = dc_rail(circuit, x - 260, y - 200, 5.0); if (!vdd) return 0;
+    int rail = TN(x - 260, y - 200), railA = TN(x + 60, y - 200); TW(rail, railA);
+    Component *pa = logic_pulse(circuit, x - 260, y + 60, 5.0, 1e3, 0.5, 0);        // A
+    Component *pb = logic_pulse(circuit, x - 260, y + 260, 5.0, 500.0, 0.5, 0);     // B, half the rate
+    int an = TN(x - 260, y + 60), bn = TN(x - 260, y + 260);
+    pa->node_ids[0] = an; pb->node_ids[0] = bn;
+    Component *mp1 = add_comp(circuit, COMP_PMOS, x, y - 120, 0);                   // G(-20,-120) D(20,-140) S(20,-100)
+    Component *mp2 = add_comp(circuit, COMP_PMOS, x + 120, y - 120, 0);
+    Component *mn1 = add_comp(circuit, COMP_NMOS, x, y + 40, 0);                    // G(-20,40) D(20,20) S(20,60)
+    Component *mn2 = add_comp(circuit, COMP_NMOS, x, y + 160, 0);
+    mp1->props.mosfet.vth = -1.0; mp2->props.mosfet.vth = -1.0;
+    mp1->props.mosfet.kp = 0.005; mp2->props.mosfet.kp = 0.005;
+    mn1->props.mosfet.kp = 0.01; mn2->props.mosfet.kp = 0.01;
+    mp1->props.mosfet.ideal = mp2->props.mosfet.ideal = mn1->props.mosfet.ideal = mn2->props.mosfet.ideal = true;   // logic demo: the plain square-law model converges cleanly
+    int out = TN(x + 20, y - 40);
+    int p1d = TN(x + 20, y - 140), p1s = TN(x + 20, y - 100), p2d = TN(x + 140, y - 140), p2s = TN(x + 140, y - 100);
+    TW(p1s, TN(x + 60, y - 100)); TW(TN(x + 60, y - 100), railA); TW(p2s, TN(x + 140, y - 200)); TW(TN(x + 140, y - 200), railA);
+    TW(p1d, out); TW(p2d, TN(x + 140, y - 40)); TW(TN(x + 140, y - 40), out);
+    int n1d = TN(x + 20, y + 20), n1s = TN(x + 20, y + 60), n2d = TN(x + 20, y + 140), n2s = TN(x + 20, y + 180);
+    TW(out, n1d); TW(n1s, n2d);
+    Component *gnd = add_comp(circuit, COMP_GROUND, x + 20, y + 220, 0);
+    gnd->node_ids[0] = n2s;
+    Component *rbl = add_comp(circuit, COMP_RESISTOR, x + 100, y + 100, 90);        // (100,60)-(100,140): keeps the
+    rbl->props.resistor.resistance = 1e6;                                           // series-stack mid node defined
+    Component *gbl = add_comp(circuit, COMP_GROUND, x + 100, y + 180, 0);
+    int bt = TN(x + 100, y + 60), bb = TN(x + 100, y + 140), bg = TN(x + 100, y + 160);
+    TW(n1s, bt); TW(bb, bg);
+    rbl->node_ids[0] = bt; rbl->node_ids[1] = bb; gbl->node_ids[0] = bg;
+    int ga1 = TN(x - 20, y - 120), ga2 = TN(x - 20, y + 40), gb1 = TN(x - 20, y + 160), gb2 = TN(x + 100, y - 120);
+    TW(an, TN(x - 160, y + 60)); TW(TN(x - 160, y + 60), TN(x - 160, y - 120)); TW(TN(x - 160, y - 120), ga1);
+    TW(TN(x - 160, y + 60), TN(x - 160, y + 40)); TW(TN(x - 160, y + 40), ga2);
+    TW(bn, TN(x - 200, y + 260)); TW(TN(x - 200, y + 260), TN(x - 200, y + 160)); TW(TN(x - 200, y + 160), gb1);
+    TW(TN(x - 200, y + 260), TN(x - 200, y - 260)); TW(TN(x - 200, y - 260), TN(x + 100, y - 260)); TW(TN(x + 100, y - 260), gb2);
+    mp1->node_ids[0] = ga1; mp1->node_ids[1] = p1d; mp1->node_ids[2] = p1s;
+    mp2->node_ids[0] = gb2; mp2->node_ids[1] = p2d; mp2->node_ids[2] = p2s;
+    mn1->node_ids[0] = ga2; mn1->node_ids[1] = n1d; mn1->node_ids[2] = n1s;
+    mn2->node_ids[0] = gb1; mn2->node_ids[1] = n2d; mn2->node_ids[2] = n2s;
+    Component *rl = add_comp(circuit, COMP_RESISTOR, x + 240, y - 40, 90);
+    rl->props.resistor.resistance = 100e3;
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 240, y + 40, 0);
+    int lt = TN(x + 240, y - 80), lb = TN(x + 240, y), lg = TN(x + 240, y + 20);
+    TW(out, TN(x + 240, y - 40)); TW(TN(x + 240, y - 40), lt); TW(lb, lg);
+    rl->node_ids[0] = lt; rl->node_ids[1] = lb; gl->node_ids[0] = lg;
+    Component *cld = add_comp(circuit, COMP_CAPACITOR, x + 320, y - 40, 90);        // (320,-80)-(320,0)
+    cld->props.capacitor.capacitance = 20e-12;
+    Component *gcl = add_comp(circuit, COMP_GROUND, x + 320, y + 40, 0);
+    int ct2 = TN(x + 320, y - 80), cb2 = TN(x + 320, y), cg2 = TN(x + 320, y + 20);
+    TW(lt, ct2); TW(cb2, cg2);
+    cld->node_ids[0] = ct2; cld->node_ids[1] = cb2; gcl->node_ids[0] = cg2;
+    add_label(circuit, x - 260, y - 300, "CMOS NAND: the PMOS pair is in PARALLEL (either input low pulls the output up), the NMOS pair in SERIES (both must be high to pull it down)");
+    return 20;
+}
+
+// 8. Transmission gate against a lone NMOS pass transistor
+static int place_cmos_tgate(Circuit *circuit, float x, float y) {
+    Component *vdd = dc_rail(circuit, x - 300, y - 200, 5.0); if (!vdd) return 0;
+    int rail = TN(x - 300, y - 200);
+    Component *vin = add_comp(circuit, COMP_TRIANGLE_WAVE, x - 300, y + 60, 0);
+    vin->props.triangle_wave.amplitude = 2.5; vin->props.triangle_wave.offset = 2.5;
+    vin->props.triangle_wave.frequency = 1000.0;
+    Component *gi = add_comp(circuit, COMP_GROUND, x - 300, y + 140, 0);
+    int sp = TN(x - 300, y + 20); vin->node_ids[0] = sp;
+    connect_terminals(circuit, vin, 1, gi, 0);
+    int sig = TN(x - 200, y + 20); TW(sp, sig);
+    // -- transmission gate: NMOS gate at Vdd, PMOS gate at ground, in parallel
+    Component *mn = add_comp(circuit, COMP_NMOS, x, y, 90);                          // rot 90: G(0,-20) D(-20,20) S(20,20)
+    Component *mp = add_comp(circuit, COMP_PMOS, x, y + 120, 90);
+    mn->props.mosfet.kp = 0.01; mp->props.mosfet.vth = -1.0; mp->props.mosfet.kp = 0.005;
+    mn->props.mosfet.ideal = mp->props.mosfet.ideal = true;
+    int ns = TN(x - 20, y + 20), nd = TN(x + 20, y + 20), ng = TN(x, y - 20);   // rot 90: S left, D right
+    int ps = TN(x - 20, y + 140), pd = TN(x + 20, y + 140), pg = TN(x, y + 100);
+    TW(sig, TN(x - 60, y + 20)); TW(TN(x - 60, y + 20), ns);
+    TW(TN(x - 60, y + 20), TN(x - 60, y + 140)); TW(TN(x - 60, y + 140), ps);
+    int tout = TN(x + 80, y + 20); TW(nd, tout); TW(pd, TN(x + 80, y + 140)); TW(TN(x + 80, y + 140), tout);
+    TW(ng, TN(x, y - 200)); TW(TN(x, y - 200), rail);                                // NMOS gate to Vdd
+    Component *gpg = add_comp(circuit, COMP_GROUND, x, y + 180, 0);
+    gpg->node_ids[0] = pg;                                                           // PMOS gate to ground
+    mn->node_ids[0] = ng; mn->node_ids[1] = nd; mn->node_ids[2] = ns;
+    mp->node_ids[0] = pg; mp->node_ids[1] = pd; mp->node_ids[2] = ps;
+    Component *rl1 = add_comp(circuit, COMP_RESISTOR, x + 140, y + 60, 90);
+    rl1->props.resistor.resistance = 100e3;
+    Component *gl1 = add_comp(circuit, COMP_GROUND, x + 140, y + 120, 0);
+    int l1t = TN(x + 140, y + 20), l1b = TN(x + 140, y + 100); TW(tout, l1t);
+    rl1->node_ids[0] = l1t; rl1->node_ids[1] = l1b; gl1->node_ids[0] = l1b;
+    Component *cg1 = add_comp(circuit, COMP_CAPACITOR, x + 220, y + 60, 90);        // (220,20)-(220,100)
+    cg1->props.capacitor.capacitance = 20e-12;
+    Component *ggc1 = add_comp(circuit, COMP_GROUND, x + 220, y + 140, 0);
+    int cc1t = TN(x + 220, y + 20), cc1b = TN(x + 220, y + 100), cc1g = TN(x + 220, y + 120);
+    TW(tout, cc1t); TW(cc1b, cc1g);
+    cg1->node_ids[0] = cc1t; cg1->node_ids[1] = cc1b; ggc1->node_ids[0] = cc1g;
+    // -- lone NMOS pass transistor for comparison
+    Component *mn2 = add_comp(circuit, COMP_NMOS, x, y + 320, 90);
+    mn2->props.mosfet.kp = 0.01; mn2->props.mosfet.ideal = true;
+    int n2s = TN(x - 20, y + 340), n2d = TN(x + 20, y + 340), n2g = TN(x, y + 300);
+    TW(TN(x - 60, y + 140), TN(x - 60, y + 340)); TW(TN(x - 60, y + 340), n2s);
+    TW(n2g, TN(x - 120, y + 300)); TW(TN(x - 120, y + 300), TN(x - 120, y - 200)); TW(TN(x - 120, y - 200), rail);
+    mn2->node_ids[0] = n2g; mn2->node_ids[1] = n2d; mn2->node_ids[2] = n2s;
+    Component *rl2 = add_comp(circuit, COMP_RESISTOR, x + 140, y + 380, 90);
+    rl2->props.resistor.resistance = 100e3;
+    Component *gl2 = add_comp(circuit, COMP_GROUND, x + 140, y + 440, 0);
+    int l2t = TN(x + 140, y + 340), l2b = TN(x + 140, y + 420); TW(n2d, TN(x + 80, y + 340)); TW(TN(x + 80, y + 340), l2t);
+    rl2->node_ids[0] = l2t; rl2->node_ids[1] = l2b; gl2->node_ids[0] = l2b;
+    Component *cg2 = add_comp(circuit, COMP_CAPACITOR, x + 220, y + 380, 90);       // (220,340)-(220,420)
+    cg2->props.capacitor.capacitance = 20e-12;
+    Component *ggc2 = add_comp(circuit, COMP_GROUND, x + 220, y + 460, 0);
+    int cc2t = TN(x + 220, y + 340), cc2b = TN(x + 220, y + 420), cc2g = TN(x + 220, y + 440);
+    TW(l2t, cc2t); TW(cc2b, cc2g);
+    cg2->node_ids[0] = cc2t; cg2->node_ids[1] = cc2b; ggc2->node_ids[0] = cc2g;
+    add_label(circuit, x - 300, y - 280, "TRANSMISSION GATE vs a LONE NMOS: both pass the same 0-5 V ramp");
+    add_label(circuit, x - 300, y + 500, "The complementary pair passes the whole rail; the single NMOS stops one threshold below Vdd - that is why CMOS switches come in pairs.");
+    return 18;
+}
+#undef TN
+#undef TW
+
+// ---------------------------------------------------------------------------------------
+// X-Y mode: Lissajous figures from two sources, and a plotter that replays an uploaded
+// table of coordinates through two arbitrary-waveform sources.
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+
+// a source driving its own load, probed at the load: one scope channel
+static Component *xy_channel(Circuit *circuit, float x, float y, ComponentType t) {
+    Component *v = add_comp(circuit, t, x, y + 60, 0);                    // +(x,y+20) -(x,y+100)
+    if (!v) return NULL;
+    Component *g = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    connect_terminals(circuit, v, 1, g, 0);
+    Component *r = add_comp(circuit, COMP_RESISTOR, x + 140, y + 60, 90); // (140,20)-(140,100)
+    r->props.resistor.resistance = 10e3;
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 140, y + 160, 0);
+    int sp = TN(x, y + 20), rt = TN(x + 140, y + 20), rb = TN(x + 140, y + 100), gt = TN(x + 140, y + 140);
+    TW(sp, rt); TW(rb, gt);
+    v->node_ids[0] = sp; r->node_ids[0] = rt; r->node_ids[1] = rb; g2->node_ids[0] = gt;
+    return v;
+}
+
+// 1. Lissajous: two sine sources whose ratio and phase you edit
+static int place_xy_lissajous(Circuit *circuit, float x, float y) {
+    Component *vx = xy_channel(circuit, x, y, COMP_AC_VOLTAGE); if (!vx) return 0;
+    vx->props.ac_voltage.amplitude = 5.0; vx->props.ac_voltage.frequency = 1000.0;
+    Component *vy = xy_channel(circuit, x, y + 260, COMP_AC_VOLTAGE);
+    vy->props.ac_voltage.amplitude = 5.0; vy->props.ac_voltage.frequency = 2000.0;
+    vy->props.ac_voltage.phase = 90.0;
+    add_label(circuit, x - 40, y - 60, "LISSAJOUS: CH1 is 1 kHz, CH2 is 2 kHz at 90 deg. Press the scope's Y-T button for X-Y.");
+    add_label(circuit, x - 40, y + 460, "The figure counts the ratio: horizontal tangents / vertical tangents = f_y / f_x. 1:1 gives a line, circle or");
+    add_label(circuit, x - 40, y + 490, "ellipse depending on phase; 1:2 a figure of eight; 2:3 the classic pretzel. Edit CH2's frequency and phase and watch.");
+    return 10;
+}
+
+// 2. X-Y plotter: two arbitrary sources replaying an uploaded coordinate table
+static int place_xy_plotter(Circuit *circuit, float x, float y) {
+    Component *vx = xy_channel(circuit, x, y, COMP_ARB_SOURCE); if (!vx) return 0;
+    vx->props.arb_source.table = 0; vx->props.arb_source.period = 0.01; vx->props.arb_source.amplitude = 5.0;
+    Component *vy = xy_channel(circuit, x, y + 260, COMP_ARB_SOURCE);
+    vy->props.arb_source.table = 1; vy->props.arb_source.period = 0.01; vy->props.arb_source.amplitude = 5.0;
+    add_label(circuit, x - 40, y - 60, "X-Y PLOTTER: two arbitrary-waveform sources replay a table of coordinates. Press Y-T for X-Y mode.");
+    add_label(circuit, x - 40, y + 460, "Load your own shape with  circuit-playground.exe --xy points.txt  - a text file of 'x y' pairs, one per line");
+    add_label(circuit, x - 40, y + 490, "(commas or semicolons work too, # comments are ignored). Both axes are normalised to -1..1 and scaled by the");
+    add_label(circuit, x - 40, y + 520, "source amplitude, so any units plot sensibly. Without a file both sources hold the built-in demo outline.");
+    return 10;
+}
+#undef TN
+#undef TW
+
+// ---------------------------------------------------------------------------------------
+// Hardware engineering: switching converters, power delivery, signal integrity and loop
+// stability. The converters use an ideal switch (COMP_ANALOG_SWITCH driven by a PWM pulse)
+// the way a textbook does, so the waveforms are the converter's, not a gate driver's.
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+
+// PWM-driven ideal switch between (x-40,y) and (x+40,y); duty 0..1 at f_sw
+static Component *pwm_switch(Circuit *circuit, float x, float y, double fsw, double duty) {
+    Component *sw = add_comp(circuit, COMP_ANALOG_SWITCH, x, y, 0);       // IN(x-40,y) OUT(x+40,y) CTL(x,y+20)
+    if (!sw) return NULL;
+    sw->props.analog_switch.r_on = 0.05; sw->props.analog_switch.r_off = 1e9;
+    sw->props.analog_switch.v_on = 2.5; sw->props.analog_switch.ideal = false;
+    Component *p = add_comp(circuit, COMP_PULSE_SOURCE, x, y + 100, 0);   // +(x,y+60) -(x,y+140)
+    p->props.pulse_source.v_low = 0; p->props.pulse_source.v_high = 5.0;
+    p->props.pulse_source.period = 1.0 / fsw; p->props.pulse_source.pulse_width = duty / fsw;
+    p->props.pulse_source.rise_time = p->props.pulse_source.fall_time = 0.002 / fsw;
+    Component *g = add_comp(circuit, COMP_GROUND, x, y + 180, 0);
+    int ctl = TN(x, y + 20), pp = TN(x, y + 60);
+    TW(ctl, pp);
+    sw->node_ids[2] = ctl; p->node_ids[0] = pp;
+    connect_terminals(circuit, p, 1, g, 0);
+    return sw;
+}
+// vertical inductor at (x,y): terminals (x,y-40),(x,y+40)
+static Component *vind(Circuit *circuit, float x, float y, double l) {
+    Component *c = add_comp(circuit, COMP_INDUCTOR, x, y, 90); c->props.inductor.inductance = l; return c;
+}
+static Component *hind(Circuit *circuit, float x, float y, double l) {
+    Component *c = add_comp(circuit, COMP_INDUCTOR, x, y, 0); c->props.inductor.inductance = l; return c;
+}
+// output filter cap + load from node `n` at (x,y) to ground; returns the load component
+static Component *out_stage(Circuit *circuit, float x, float y, int n, double c_out, double r_load) {
+    Component *c = add_comp(circuit, COMP_CAPACITOR, x, y + 60, 90);      // (x,y+20)-(x,y+100)
+    c->props.capacitor.capacitance = c_out;
+    Component *gc = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    int ct = TN(x, y + 20), cb = TN(x, y + 100), cg = TN(x, y + 120);
+    TW(n, ct); TW(cb, cg);
+    c->node_ids[0] = ct; c->node_ids[1] = cb; gc->node_ids[0] = cg;
+    Component *r = add_comp(circuit, COMP_RESISTOR, x + 100, y + 60, 90); // (x+100,y+20)-(x+100,y+100)
+    r->props.resistor.resistance = r_load;
+    Component *gr = add_comp(circuit, COMP_GROUND, x + 100, y + 140, 0);
+    int rt = TN(x + 100, y + 20), rb = TN(x + 100, y + 100), rg = TN(x + 100, y + 120);
+    TW(ct, rt); TW(rb, rg);
+    r->node_ids[0] = rt; r->node_ids[1] = rb; gr->node_ids[0] = rg;
+    return r;
+}
+
+// 1. Buck: switch chops Vin, the diode freewheels, L-C averages. Vout = D Vin
+static int place_hw_buck(Circuit *circuit, float x, float y) {
+    Component *vin = dc_rail(circuit, x, y, 12.0); if (!vin) return 0;      // +(x,y)
+    int in = TN(x, y);
+    Component *sw = pwm_switch(circuit, x + 140, y, 100e3, 0.5);
+    int si = TN(x + 100, y), so = TN(x + 180, y); TW(in, si);
+    sw->node_ids[0] = si; sw->node_ids[1] = so;
+    int node_sw = TN(x + 240, y); TW(so, node_sw);
+    Component *d = add_comp(circuit, COMP_DIODE, x + 240, y + 80, 90);     // A(240,40) K(240,120) -> cathode up
+    int da = TN(x + 240, y + 40), dk = TN(x + 240, y + 120);
+    Component *gd = add_comp(circuit, COMP_GROUND, x + 240, y + 160, 0);
+    TW(node_sw, da);
+    d->node_ids[0] = dk; d->node_ids[1] = da;                              // K to the switch node, A to ground
+    gd->node_ids[0] = dk;
+    Component *l = hind(circuit, x + 340, y, 100e-6);                      // (300,y)-(380,y)
+    int ll = TN(x + 300, y), lr = TN(x + 380, y); TW(node_sw, ll);
+    l->node_ids[0] = ll; l->node_ids[1] = lr;
+    int out = TN(x + 440, y); TW(lr, out);
+    out_stage(circuit, x + 440, y, out, 100e-6, 6.0);
+    add_label(circuit, x - 40, y - 80, "BUCK CONVERTER: Vout = D x Vin = 0.5 x 12 = 6 V at 100 kHz. The switch chops, the diode freewheels, L and C average");
+    add_label(circuit, x - 40, y + 220, "Inductor ripple dI = (Vin-Vout) D / (L fsw) = 300 mA; output ripple dV = dI / (8 C fsw) = 3.8 mV.");
+    add_label(circuit, x - 40, y + 250, "TRY: duty 0.5 -> 0.25 halves Vout. Drop L to 10 uH and the inductor current goes discontinuous.");
+    return 16;
+}
+
+// 2. Boost: Vout = Vin / (1 - D)
+static int place_hw_boost(Circuit *circuit, float x, float y) {
+    Component *vin = dc_rail(circuit, x, y, 5.0); if (!vin) return 0;
+    int in = TN(x, y);
+    Component *l = hind(circuit, x + 100, y, 100e-6);                      // (60,y)-(140,y)
+    int ll = TN(x + 60, y), lr = TN(x + 140, y); TW(in, ll);
+    l->node_ids[0] = ll; l->node_ids[1] = lr;
+    int node_sw = TN(x + 200, y); TW(lr, node_sw);
+    Component *sw = pwm_switch(circuit, x + 200, y + 80, 100e3, 0.5);      // IN(160,80) OUT(240,80)
+    int si = TN(x + 160, y + 80), so = TN(x + 240, y + 80);
+    TW(node_sw, TN(x + 160, y)); TW(TN(x + 160, y), si);
+    Component *gs = add_comp(circuit, COMP_GROUND, x + 280, y + 100, 0);
+    TW(so, TN(x + 280, y + 80)); gs->node_ids[0] = TN(x + 280, y + 80);
+    sw->node_ids[0] = si; sw->node_ids[1] = so;
+    Component *d = add_comp(circuit, COMP_DIODE, x + 320, y, 0);           // A(280,y) K(360,y)
+    int da = TN(x + 280, y), dk = TN(x + 360, y); TW(node_sw, da);
+    d->node_ids[0] = da; d->node_ids[1] = dk;
+    int out = TN(x + 420, y); TW(dk, out);
+    out_stage(circuit, x + 420, y, out, 220e-6, 100.0);
+    add_label(circuit, x - 40, y - 80, "BOOST CONVERTER: Vout = Vin / (1 - D) = 5 / 0.5 = 10 V. The switch charges L from the input, then L dumps into the output through the diode");
+    add_label(circuit, x - 40, y + 240, "The output can only ever be ABOVE the input, and the input current is continuous while the output current is not -");
+    add_label(circuit, x - 40, y + 270, "which is why a boost needs far more output capacitance than a buck. TRY: duty 0.5 -> 0.75 gives 20 V.");
+    return 16;
+}
+
+// 3. Buck-boost: Vout = -D/(1-D) Vin
+static int place_hw_buckboost(Circuit *circuit, float x, float y) {
+    Component *vin = dc_rail(circuit, x, y, 12.0); if (!vin) return 0;
+    int in = TN(x, y);
+    Component *sw = pwm_switch(circuit, x + 140, y, 100e3, 0.5);
+    int si = TN(x + 100, y), so = TN(x + 180, y); TW(in, si);
+    sw->node_ids[0] = si; sw->node_ids[1] = so;
+    int node_sw = TN(x + 240, y); TW(so, node_sw);
+    Component *l = add_comp(circuit, COMP_INDUCTOR, x + 240, y + 80, 90);  // (240,40)-(240,120)
+    l->props.inductor.inductance = 100e-6;
+    int lt = TN(x + 240, y + 40), lb = TN(x + 240, y + 120);
+    Component *gl = add_comp(circuit, COMP_GROUND, x + 240, y + 160, 0);
+    TW(node_sw, lt); TW(lb, TN(x + 240, y + 140)); gl->node_ids[0] = TN(x + 240, y + 140);
+    l->node_ids[0] = lt; l->node_ids[1] = lb;
+    Component *d = add_comp(circuit, COMP_DIODE, x + 340, y, 180);         // rotated: K(300,y) A(380,y)
+    int dk = TN(x + 300, y), da = TN(x + 380, y); TW(node_sw, dk);
+    d->node_ids[0] = da; d->node_ids[1] = dk;
+    int out = TN(x + 440, y); TW(da, out);
+    out_stage(circuit, x + 440, y, out, 220e-6, 20.0);
+    add_label(circuit, x - 40, y - 80, "BUCK-BOOST: Vout = -D/(1-D) x Vin = -12 V at D = 0.5. The output is INVERTED, and can be above or below the input");
+    add_label(circuit, x - 40, y + 220, "The inductor is the only energy path: it charges from the input, then discharges into the output with the opposite");
+    add_label(circuit, x - 40, y + 250, "polarity. Neither the input nor the output current is continuous. TRY: D 0.5 -> 0.67 gives -24 V.");
+    return 16;
+}
+
+// 4. Cuk: capacitive energy transfer, both currents continuous, inverted output
+static int place_hw_cuk(Circuit *circuit, float x, float y) {
+    Component *vin = dc_rail(circuit, x, y, 12.0); if (!vin) return 0;
+    int in = TN(x, y);
+    Component *l1 = hind(circuit, x + 100, y, 220e-6);
+    l1->props.inductor.dcr = 0.1; l1->props.inductor.ideal = false;
+    int l1l = TN(x + 60, y), l1r = TN(x + 140, y); TW(in, l1l);
+    l1->node_ids[0] = l1l; l1->node_ids[1] = l1r;
+    int node_a = TN(x + 200, y); TW(l1r, node_a);
+    Component *sw = pwm_switch(circuit, x + 200, y + 80, 100e3, 0.5);
+    int si = TN(x + 160, y + 80), so = TN(x + 240, y + 80);
+    TW(node_a, TN(x + 160, y)); TW(TN(x + 160, y), si);
+    Component *gs = add_comp(circuit, COMP_GROUND, x + 280, y + 100, 0);
+    TW(so, TN(x + 280, y + 80)); gs->node_ids[0] = TN(x + 280, y + 80);
+    sw->node_ids[0] = si; sw->node_ids[1] = so;
+    Component *c1 = add_comp(circuit, COMP_CAPACITOR, x + 300, y, 0);      // (260,y)-(340,y) transfer cap
+    c1->props.capacitor.capacitance = 47e-6;
+    c1->props.capacitor.voltage = 24.0;   /* pre-charged to Vin + |Vout|: a Cuk started from zero rings hard */
+    int c1l = TN(x + 260, y), c1r = TN(x + 340, y); TW(node_a, c1l);
+    c1->node_ids[0] = c1l; c1->node_ids[1] = c1r;
+    Component *resr = hres(circuit, x + 400, y, 0.5);                      // (360,y)-(440,y): the cap's ESR
+    int esl = TN(x + 360, y), esr2 = TN(x + 440, y); TW(c1r, esl);
+    resr->node_ids[0] = esl; resr->node_ids[1] = esr2;
+    int node_b = TN(x + 500, y); TW(esr2, node_b);
+    Component *d = add_comp(circuit, COMP_DIODE, x + 500, y + 80, 270);    // A(500,120) K(500,40)
+    int dk2 = TN(x + 500, y + 40), da2 = TN(x + 500, y + 120);
+    Component *gd = add_comp(circuit, COMP_GROUND, x + 500, y + 160, 0);
+    TW(node_b, dk2); TW(da2, TN(x + 500, y + 140)); gd->node_ids[0] = TN(x + 500, y + 140);
+    d->node_ids[0] = da2; d->node_ids[1] = dk2;
+    Component *l2 = hind(circuit, x + 600, y, 220e-6);
+    l2->props.inductor.dcr = 0.1; l2->props.inductor.ideal = false;
+    int l2l = TN(x + 560, y), l2r = TN(x + 640, y); TW(node_b, l2l);
+    l2->node_ids[0] = l2l; l2->node_ids[1] = l2r;
+    int out = TN(x + 700, y); TW(l2r, out);
+    out_stage(circuit, x + 700, y, out, 220e-6, 20.0);
+    add_label(circuit, x - 40, y - 80, "CUK CONVERTER: energy moves through the 47 uF transfer capacitor instead of an inductor, so BOTH the input and");
+    add_label(circuit, x - 40, y - 50, "output currents are continuous - the quietest of the basic topologies. Vout = -D/(1-D) x Vin = -12 V at D = 0.5.");
+    add_label(circuit, x - 40, y + 220, "The 0.5 ohm with C1 is its ESR; with no real loss the C1-L2 loop rings away at start-up. TRY: C1 -> 1 uF.");
+    return 22;
+}
+
+// 5. Two-phase interleaved buck: the ripple the CLVR idea is built on
+static int place_hw_interleaved(Circuit *circuit, float x, float y) {
+    Component *vin = dc_rail(circuit, x, y - 120, 12.0); if (!vin) return 0;
+    int in = TN(x, y - 120);
+    int out = TN(x + 520, y);
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 220;
+        Component *sw = pwm_switch(circuit, x + 140, py, 100e3, 0.5);
+        int si = TN(x + 100, py), so = TN(x + 180, py);
+        TW(in, TN(x + 100, y - 120)); TW(TN(x + 100, y - 120), TN(x + 100, py));
+        sw->node_ids[0] = si; sw->node_ids[1] = so;
+        if (k) {   /* phase B runs 180 degrees later */
+            Component *p = NULL;
+            for (int i = circuit->num_components - 1; i >= 0 && !p; i--)
+                if (circuit->components[i]->type == COMP_PULSE_SOURCE) p = circuit->components[i];
+            if (p) p->props.pulse_source.delay = 5e-6;
+        }
+        int nsw = TN(x + 240, py); TW(so, nsw);
+        Component *d = add_comp(circuit, COMP_DIODE, x + 240, py + 80, 90);
+        int da = TN(x + 240, py + 40), dk = TN(x + 240, py + 120);
+        Component *gd = add_comp(circuit, COMP_GROUND, x + 240, py + 160, 0);
+        TW(nsw, da);
+        d->node_ids[0] = dk; d->node_ids[1] = da; gd->node_ids[0] = dk;
+        Component *l = hind(circuit, x + 340, py, 100e-6);
+        int ll = TN(x + 300, py), lr = TN(x + 380, py); TW(nsw, ll);
+        l->node_ids[0] = ll; l->node_ids[1] = lr;
+        TW(lr, TN(x + 440, py)); TW(TN(x + 440, py), TN(x + 440, y)); TW(TN(x + 440, y), out);
+    }
+    out_stage(circuit, x + 520, y, out, 47e-6, 3.0);
+    add_label(circuit, x - 40, y - 200, "TWO-PHASE INTERLEAVED BUCK: two 100 kHz buck stages 180 degrees out of phase into one output");
+    add_label(circuit, x - 40, y + 460, "Each phase carries half the current, and their ripples partly cancel, so the output ripple is far smaller than one");
+    add_label(circuit, x - 40, y + 490, "phase alone would give at 200 kHz effective. Coupling the two inductors (a CLVR) cancels more still and shrinks them.");
+    add_label(circuit, x - 40, y + 520, "TRY: set phase B's pulse delay to 0 so both switch together - the ripple doubles.");
+    return 26;
+}
+
+// 6. Power delivery network: bulk, ceramic and plane inductance against a load step
+static int place_hw_pdn(Circuit *circuit, float x, float y) {
+    Component *vin = dc_rail(circuit, x, y, 1.8); if (!vin) return 0;
+    int in = TN(x, y);
+    Component *rp = hres(circuit, x + 100, y, 0.02);                       // regulator + plane resistance
+    int rl = TN(x + 60, y), rr = TN(x + 140, y); TW(in, rl);
+    rp->node_ids[0] = rl; rp->node_ids[1] = rr;
+    Component *lp = hind(circuit, x + 200, y, 2e-9);                       // 2 nH of plane/via inductance
+    int lpl = TN(x + 160, y), lpr = TN(x + 240, y); TW(rr, lpl);
+    lp->node_ids[0] = lpl; lp->node_ids[1] = lpr;
+    int rail = TN(x + 300, y); TW(lpr, rail);
+    /* bulk 100 uF with 20 mOhm ESR, then a 1 uF ceramic with 5 mOhm, right at the die */
+    static const double cval[2] = { 100e-6, 1e-6 };
+    static const double esr[2]  = { 0.02, 0.005 };
+    for (int k = 0; k < 2; k++) {
+        float px = x + 300 + k * 120;
+        Component *c = add_comp(circuit, COMP_CAPACITOR, px, y + 80, 90);   // (px,y+40)-(px,y+120)
+        c->props.capacitor.capacitance = cval[k];
+        Component *r = add_comp(circuit, COMP_RESISTOR, px, y + 180, 90);   // (px,y+140)-(px,y+220)
+        r->props.resistor.resistance = esr[k];
+        Component *g = add_comp(circuit, COMP_GROUND, px, y + 260, 0);
+        int ct = TN(px, y + 40), cb = TN(px, y + 120), rt = TN(px, y + 140), rb = TN(px, y + 220), gt = TN(px, y + 240);
+        TW(rail, ct); TW(cb, rt); TW(rb, gt);
+        c->node_ids[0] = ct; c->node_ids[1] = cb; r->node_ids[0] = rt; r->node_ids[1] = rb; g->node_ids[0] = gt;
+    }
+    /* the load: a steady 0.9 A plus a switched 0.9 A step */
+    Component *rdc = add_comp(circuit, COMP_RESISTOR, x + 560, y + 80, 90);
+    rdc->props.resistor.resistance = 2.0;
+    Component *gdc = add_comp(circuit, COMP_GROUND, x + 560, y + 160, 0);
+    int dt = TN(x + 560, y + 40), db = TN(x + 560, y + 120), dg = TN(x + 560, y + 140);
+    TW(rail, dt); TW(db, dg);
+    rdc->node_ids[0] = dt; rdc->node_ids[1] = db; gdc->node_ids[0] = dg;
+    Component *sw = fault_switch(circuit, x + 660, y, 20e-6, 20e-6, 80e-6);  // IN(620,y) OUT(700,y)
+    TW(rail, TN(x + 620, y)); sw->node_ids[0] = TN(x + 620, y);
+    Component *rstep = add_comp(circuit, COMP_RESISTOR, x + 740, y + 80, 90);
+    rstep->props.resistor.resistance = 2.0;
+    Component *gst = add_comp(circuit, COMP_GROUND, x + 740, y + 160, 0);
+    int st = TN(x + 740, y + 40), sb = TN(x + 740, y + 120), sg = TN(x + 740, y + 140);
+    TW(TN(x + 700, y), TN(x + 740, y)); TW(TN(x + 740, y), st); TW(sb, sg);
+    sw->node_ids[1] = TN(x + 700, y);
+    rstep->node_ids[0] = st; rstep->node_ids[1] = sb; gst->node_ids[0] = sg;
+    add_label(circuit, x - 40, y - 80, "POWER DELIVERY NETWORK: a 1.8 V rail through 20 mOhm and 2 nH of plane into 100 uF bulk (20 mOhm ESR)");
+    add_label(circuit, x - 40, y - 50, "and 1 uF of ceramic (5 mOhm) at the die. A 0.9 A load step every 80 us shows what the rail actually does.");
+    add_label(circuit, x - 40, y + 320, "The first nanoseconds are the ceramic's job (the plane inductance blocks everything else), then the bulk takes over,");
+    add_label(circuit, x - 40, y + 350, "and finally the regulator. TRY: delete the ceramic and the step edge gets a sharp spike; raise the plane L to 20 nH.");
+    return 22;
+}
+
+// 7. Input vs output capacitance: the same 1 A step with the cap in each place
+static int place_hw_caps(Circuit *circuit, float x, float y) {
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 300;
+        Component *v = dc_rail(circuit, x, py, 5.0); if (!v) return 0;
+        int in = TN(x, py);
+        Component *r = hres(circuit, x + 100, py, 0.5);                    // source/wiring impedance
+        int rl = TN(x + 60, py), rr = TN(x + 140, py); TW(in, rl);
+        r->node_ids[0] = rl; r->node_ids[1] = rr;
+        Component *l = hind(circuit, x + 200, py, 1e-6);                   // 1 uH of lead inductance
+        int ll = TN(x + 160, py), lr = TN(x + 240, py); TW(rr, ll);
+        l->node_ids[0] = ll; l->node_ids[1] = lr;
+        int rail = TN(x + 300, py); TW(lr, rail);
+        float cx = k ? x + 300 : x + 60;                                   /* output side vs input side */
+        Component *c = add_comp(circuit, COMP_CAPACITOR, cx, py + 80, 90);
+        c->props.capacitor.capacitance = 100e-6;
+        Component *g = add_comp(circuit, COMP_GROUND, cx, py + 160, 0);
+        int ct = TN(cx, py + 40), cb = TN(cx, py + 120), gt = TN(cx, py + 140);
+        TW(k ? rail : rl, ct); TW(cb, gt);
+        c->node_ids[0] = ct; c->node_ids[1] = cb; g->node_ids[0] = gt;
+        Component *sw = fault_switch(circuit, x + 400, py, 50e-6, 50e-6, 200e-6);
+        TW(rail, TN(x + 360, py)); sw->node_ids[0] = TN(x + 360, py);
+        Component *rs = add_comp(circuit, COMP_RESISTOR, x + 480, py + 80, 90);
+        rs->props.resistor.resistance = 5.0;
+        Component *gs = add_comp(circuit, COMP_GROUND, x + 480, py + 160, 0);
+        int st = TN(x + 480, py + 40), sb = TN(x + 480, py + 120), sg = TN(x + 480, py + 140);
+        TW(TN(x + 440, py), TN(x + 480, py)); TW(TN(x + 480, py), st); TW(sb, sg);
+        sw->node_ids[1] = TN(x + 440, py);
+        rs->node_ids[0] = st; rs->node_ids[1] = sb; gs->node_ids[0] = sg;
+        add_label(circuit, x - 40, py - 50, k ? "OUTPUT capacitance: the 100 uF sits at the load, after the 1 uH lead"
+                                              : "INPUT capacitance: the same 100 uF sits at the source, before the lead");
+    }
+    add_label(circuit, x - 40, y - 110, "INPUT vs OUTPUT CAPACITANCE: identical rails, identical 1 A load step, the only difference is which side of the");
+    add_label(circuit, x - 40, y + 520, "lead inductance the 100 uF sits on. At the source it can do nothing about the step - the 1 uH is between it and the");
+    add_label(circuit, x - 40, y + 550, "load. At the load it holds the rail up. This is why decoupling goes AT the part, and why input caps are for the source.");
+    return 26;
+}
+
+// 8. Impedance matching: a source into three loads, one of them matched
+static int place_hw_match(Circuit *circuit, float x, float y) {
+    static const double rl[3] = { 5.0, 50.0, 500.0 };
+    static const char *nm[3] = { "R_L = 5 ohm (too low)", "R_L = 50 ohm (matched)", "R_L = 500 ohm (too high)" };
+    for (int k = 0; k < 3; k++) {
+        float py = y + k * 220;
+        Component *v = add_comp(circuit, COMP_AC_VOLTAGE, x, py + 60, 0);   // +(x,py+20)
+        if (!v) return 0;
+        v->props.ac_voltage.amplitude = 2.0; v->props.ac_voltage.frequency = 1e6;
+        Component *g = add_comp(circuit, COMP_GROUND, x, py + 140, 0);
+        connect_terminals(circuit, v, 1, g, 0);
+        int sp = TN(x, py + 20);
+        v->node_ids[0] = sp;
+        Component *rs = hres(circuit, x + 140, py + 20, 50.0);              // source resistance
+        int sl = TN(x + 100, py + 20), sr = TN(x + 180, py + 20); TW(sp, sl);
+        rs->node_ids[0] = sl; rs->node_ids[1] = sr;
+        int node = TN(x + 240, py + 20); TW(sr, node);
+        Component *r = add_comp(circuit, COMP_RESISTOR, x + 240, py + 80, 90);
+        r->props.resistor.resistance = rl[k];
+        Component *g2 = add_comp(circuit, COMP_GROUND, x + 240, py + 160, 0);
+        int rt = TN(x + 240, py + 40), rb = TN(x + 240, py + 120), gt = TN(x + 240, py + 140);
+        TW(node, rt); TW(rb, gt);
+        r->node_ids[0] = rt; r->node_ids[1] = rb; g2->node_ids[0] = gt;
+        add_label(circuit, x + 300, py + 20, nm[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "IMPEDANCE MATCHING: the same 2 Vpk source behind 50 ohm feeding 5, 50 and 500 ohm");
+    add_label(circuit, x - 40, y + 680, "Power in the load is V^2/R after the divider: 0.033 W, 0.020 W, 0.0033 W - the MATCHED load takes the most power");
+    add_label(circuit, x - 40, y + 710, "even though it does not have the highest voltage across it. Maximum power transfer is R_L = R_S, not R_L as large as");
+    add_label(circuit, x - 40, y + 740, "possible (that maximises voltage) nor as small as possible (that maximises current).");
+    return 22;
+}
+
+// 9. Reflections on an artificial (lumped LC) line with a switchable termination
+static int place_hw_reflect(Circuit *circuit, float x, float y) {
+    Component *src = add_comp(circuit, COMP_PULSE_SOURCE, x, y + 60, 0);    // +(x,y+20) -(x,y+100)
+    if (!src) return 0;
+    src->props.pulse_source.v_low = 0; src->props.pulse_source.v_high = 5.0;
+    src->props.pulse_source.period = 4e-6; src->props.pulse_source.pulse_width = 2e-6;
+    src->props.pulse_source.rise_time = src->props.pulse_source.fall_time = 20e-9;
+    Component *g = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    int sp = TN(x, y + 20); src->node_ids[0] = sp;
+    connect_terminals(circuit, src, 1, g, 0);
+    Component *rs = hres(circuit, x + 100, y + 20, 50.0);                   // source termination
+    int sl = TN(x + 60, y + 20), sr = TN(x + 140, y + 20); TW(sp, sl);
+    rs->node_ids[0] = sl; rs->node_ids[1] = sr;
+    /* eight LC sections: Z0 = sqrt(L/C) = 50 ohm, delay = 8 sqrt(LC) = 400 ns */
+    int n = sr;
+    for (int k = 0; k < 8; k++) {
+        float px = x + 220 + k * 120;
+        Component *l = hind(circuit, px, y + 20, 2.5e-6);
+        int ll = TN(px - 40, y + 20), lr = TN(px + 40, y + 20);
+        if (n != ll) TW(n, ll);
+        l->node_ids[0] = ll; l->node_ids[1] = lr;
+        Component *c = add_comp(circuit, COMP_CAPACITOR, px + 40, y + 80, 90);
+        c->props.capacitor.capacitance = 1e-9;
+        Component *gc = add_comp(circuit, COMP_GROUND, px + 40, y + 160, 0);
+        int ct = TN(px + 40, y + 40), cb = TN(px + 40, y + 120), gt = TN(px + 40, y + 140);
+        TW(lr, ct); TW(cb, gt);
+        c->node_ids[0] = ct; c->node_ids[1] = cb; gc->node_ids[0] = gt;
+        n = lr;
+    }
+    Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 1220, y + 20, 0);   // termination switch (open = reflect)
+    sw->props.switch_spst.closed = false;
+    int swl = TN(x + 1180, y + 20), swr = TN(x + 1260, y + 20); TW(n, swl);
+    sw->node_ids[0] = swl; sw->node_ids[1] = swr;
+    Component *rt = add_comp(circuit, COMP_RESISTOR, x + 1320, y + 80, 90);
+    rt->props.resistor.resistance = 50.0;
+    Component *gt2 = add_comp(circuit, COMP_GROUND, x + 1320, y + 160, 0);
+    int tt = TN(x + 1320, y + 40), tb = TN(x + 1320, y + 120), tg = TN(x + 1320, y + 140);
+    TW(swr, TN(x + 1320, y + 20)); TW(TN(x + 1320, y + 20), tt); TW(tb, tg);
+    rt->node_ids[0] = tt; rt->node_ids[1] = tb; gt2->node_ids[0] = tg;
+    add_label(circuit, x - 40, y - 60, "SIGNAL REFLECTIONS: eight L-C sections make an artificial 50 ohm line with a 400 ns delay, driven through 50 ohm");
+    add_label(circuit, x - 40, y + 240, "With the termination switch OPEN the far end is unterminated: the edge reflects back with the same sign, and the");
+    add_label(circuit, x - 40, y + 270, "source end shows the classic staircase. CLOSE the switch for a matched 50 ohm end and the reflection disappears.");
+    add_label(circuit, x - 40, y + 300, "PROBE: the driver end and the far end. TRY: make the termination 10 ohm for a negative (inverted) reflection.");
+    return 30;
+}
+
+// 10. Loop stability: the same amplifier with and without a compensation capacitor
+static int place_hw_loop(Circuit *circuit, float x, float y) {
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 320;
+        Component *v = add_comp(circuit, COMP_SQUARE_WAVE, x, py + 60, 0);  // +(x,py+20)
+        if (!v) return 0;
+        v->props.square_wave.amplitude = 0.5; v->props.square_wave.offset = 0.5;
+        v->props.square_wave.frequency = 2e3; v->props.square_wave.duty = 0.5;
+        Component *g = add_comp(circuit, COMP_GROUND, x, py + 140, 0);
+        int sp = TN(x, py + 20); v->node_ids[0] = sp;
+        connect_terminals(circuit, v, 1, g, 0);
+        Component *u = sat_opamp(circuit, x + 260, py + 20);                // -(220,0) +(220,40) out(300,20)
+        Component *rin = hres(circuit, x + 140, py, 10e3);                  // (100,py)-(180,py)
+        int il = TN(x + 100, py), ir = TN(x + 180, py), minus = TN(x + 220, py);
+        TW(sp, TN(x + 60, py + 20)); TW(TN(x + 60, py + 20), TN(x + 60, py)); TW(TN(x + 60, py), il);
+        TW(ir, minus);
+        rin->node_ids[0] = il; rin->node_ids[1] = ir;
+        Component *rf = hres(circuit, x + 260, py - 100, 100e3);            // (220,py-100)-(300,py-100)
+        int fl = TN(x + 220, py - 100), fr = TN(x + 300, py - 100), out = TN(x + 300, py + 20);
+        TW(fl, TN(x + 220, py - 60)); TW(TN(x + 220, py - 60), minus);
+        TW(fr, TN(x + 340, py - 100)); TW(TN(x + 340, py - 100), TN(x + 340, py + 20)); TW(TN(x + 340, py + 20), out);
+        rf->node_ids[0] = fl; rf->node_ids[1] = fr;
+        Component *gp = add_comp(circuit, COMP_GROUND, x + 220, py + 100, 0);
+        int plus = TN(x + 220, py + 40), pg = TN(x + 220, py + 80);
+        TW(plus, pg); gp->node_ids[0] = pg;
+        u->node_ids[0] = minus; u->node_ids[1] = plus; u->node_ids[2] = out;
+        /* the load the loop has to drive: 1 nF, which adds the extra pole */
+        Component *rl2 = hres(circuit, x + 420, py + 20, 1e3);
+        int rll = TN(x + 380, py + 20), rlr = TN(x + 460, py + 20); TW(out, rll);
+        rl2->node_ids[0] = rll; rl2->node_ids[1] = rlr;
+        Component *cl = add_comp(circuit, COMP_CAPACITOR, x + 520, py + 80, 90);
+        cl->props.capacitor.capacitance = 1e-9;
+        Component *gc = add_comp(circuit, COMP_GROUND, x + 520, py + 160, 0);
+        int ct = TN(x + 520, py + 40), cb = TN(x + 520, py + 120), gt = TN(x + 520, py + 140);
+        TW(rlr, TN(x + 520, py + 20)); TW(TN(x + 520, py + 20), ct); TW(cb, gt);
+        cl->node_ids[0] = ct; cl->node_ids[1] = cb; gc->node_ids[0] = gt;
+        if (k) {   /* compensated: a feedback capacitor across Rf adds a zero and lifts the phase margin */
+            Component *cf = add_comp(circuit, COMP_CAPACITOR, x + 260, py - 180, 0);
+            cf->props.capacitor.capacitance = 100e-12;
+            int cfl = TN(x + 220, py - 180), cfr = TN(x + 300, py - 180);
+            TW(cfl, fl); TW(cfr, fr);
+            cf->node_ids[0] = cfl; cf->node_ids[1] = cfr;
+        }
+        add_label(circuit, x + 560, py + 20, k ? "compensated: 100 pF across Rf" : "uncompensated: rings on every edge");
+    }
+    add_label(circuit, x - 40, y - 240, "LOOP STABILITY AND PHASE MARGIN: two identical x10 inverting stages driving 1 nF, one with a feedback capacitor");
+    add_label(circuit, x - 40, y + 560, "The load capacitance and the amplifier's own pole put two poles inside the loop, so the phase reaches -180 deg near");
+    add_label(circuit, x - 40, y + 590, "the crossover and the step response rings. 100 pF across the feedback resistor adds a zero, pulls the phase back and");
+    add_label(circuit, x - 40, y + 620, "the ringing disappears - at the cost of bandwidth. Use the Bode button on each to compare the two loops directly.");
+    return 30;
+}
+#undef TN
+#undef TW
+
 static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_RC_LOWPASS]       = { COMP_CAPACITOR, 0, 0 },
     [CIRCUIT_RC_HIGHPASS]      = { COMP_RESISTOR, 0, 0 },
@@ -9391,6 +10340,26 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_GS_PIDS]          = { COMP_RESISTOR, 1, 0 },
     [CIRCUIT_MOS_IDVGS]        = { COMP_RESISTOR, 1, 0 },      // the first device's sense resistor
     [CIRCUIT_MOS_IDVDS]        = { COMP_RESISTOR, 5, 0 },      // the Vgs 3.5 V device carries the most current
+    [CIRCUIT_MOS_TUNED]        = { COMP_RESISTOR, 4, 0 },
+    [CIRCUIT_MOS_CG]           = { COMP_RESISTOR, 4, 0 },
+    [CIRCUIT_MOS_CASCODE]      = { COMP_RESISTOR, 6, 0 },
+    [CIRCUIT_MOS_DIFF]         = { COMP_RESISTOR, 0, 1 },
+    [CIRCUIT_MOS_MIRROR]       = { COMP_RESISTOR, 1, 1 },
+    [CIRCUIT_CMOS_INV]         = { COMP_CAPACITOR, 0, 0 },
+    [CIRCUIT_CMOS_NAND]        = { COMP_RESISTOR, 1, 0 },      // the load, not the stack bleed
+    [CIRCUIT_CMOS_TGATE]       = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_XY_LISSAJOUS]     = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_XY_PLOTTER]       = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_HW_BUCK]          = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_HW_BOOST]         = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_HW_BUCKBOOST]     = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_HW_CUK]           = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_HW_INTERLEAVED]   = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_HW_PDN]           = { COMP_RESISTOR, 3, 0 },
+    [CIRCUIT_HW_CAPS]          = { COMP_RESISTOR, 2, 0 },
+    [CIRCUIT_HW_MATCH]         = { COMP_RESISTOR, 3, 0 },
+    [CIRCUIT_HW_REFLECT]       = { COMP_INDUCTOR, 7, 1 },
+    [CIRCUIT_HW_LOOP]          = { COMP_OPAMP, 0, 2 },
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -9433,6 +10402,16 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_GS_IBR]           = { { COMP_RESISTOR, 2, 0 } },                                 // the fault branch
     [CIRCUIT_MOS_IDVGS]        = { { COMP_RESISTOR, 3, 0 }, { COMP_RESISTOR, 5, 0 } },        // the other two devices
     [CIRCUIT_MOS_IDVDS]        = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 3, 0 } },
+    [CIRCUIT_MOS_DIFF]         = { { COMP_RESISTOR, 1, 1 } },
+    [CIRCUIT_CMOS_TGATE]       = { { COMP_RESISTOR, 1, 0 } },
+    [CIRCUIT_XY_LISSAJOUS]     = { { COMP_RESISTOR, 0, 0 } },
+    [CIRCUIT_XY_PLOTTER]       = { { COMP_RESISTOR, 0, 0 } },
+    [CIRCUIT_HW_CAPS]          = { { COMP_RESISTOR, 6, 0 } },
+    [CIRCUIT_HW_MATCH]         = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 5, 0 } },
+    [CIRCUIT_HW_REFLECT]       = { { COMP_INDUCTOR, 0, 0 } },
+    [CIRCUIT_HW_LOOP]          = { { COMP_OPAMP, 1, 2 } },
+    [CIRCUIT_HW_PDN]           = { { COMP_RESISTOR, 0, 0 } },
+    [CIRCUIT_CMOS_NAND]        = { { COMP_PULSE_SOURCE, 1, 0 } },
     // multi-input circuits: every input on its own channel
     [CIRCUIT_SUMMING_AMP]      = { { COMP_DC_VOLTAGE, 1, 0 }, { COMP_DC_VOLTAGE, 2, 0 } },    // V2, V3 (V1 = source probe)
     [CIRCUIT_DIFFERENCE_AMP]   = { { COMP_DC_VOLTAGE, 1, 0 } },                               // V2 (0.5 V DC)
@@ -9481,6 +10460,13 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_GS_FACRATE] = 5e-3, [CIRCUIT_GS_KRON] = 5e-3, [CIRCUIT_GS_RX] = 5e-3, [CIRCUIT_GS_GOVERNOR] = 0.5,
     [CIRCUIT_GS_PIDS] = 1.0,
     [CIRCUIT_MOS_IDVGS] = 1e-3, [CIRCUIT_MOS_IDVDS] = 1e-3,
+    [CIRCUIT_MOS_TUNED] = 2e-6, [CIRCUIT_MOS_CG] = 20e-6, [CIRCUIT_MOS_CASCODE] = 20e-6,
+    [CIRCUIT_MOS_DIFF] = 200e-6, [CIRCUIT_MOS_MIRROR] = 1e-3, [CIRCUIT_CMOS_INV] = 200e-6,
+    [CIRCUIT_CMOS_NAND] = 500e-6, [CIRCUIT_CMOS_TGATE] = 200e-6,
+    [CIRCUIT_XY_LISSAJOUS] = 200e-6, [CIRCUIT_XY_PLOTTER] = 1e-3,
+    [CIRCUIT_HW_BUCK] = 5e-6, [CIRCUIT_HW_BOOST] = 5e-6, [CIRCUIT_HW_BUCKBOOST] = 5e-6, [CIRCUIT_HW_CUK] = 5e-6,
+    [CIRCUIT_HW_INTERLEAVED] = 5e-6, [CIRCUIT_HW_PDN] = 20e-6, [CIRCUIT_HW_CAPS] = 50e-6,
+    [CIRCUIT_HW_MATCH] = 500e-9, [CIRCUIT_HW_REFLECT] = 500e-9, [CIRCUIT_HW_LOOP] = 100e-6,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -9517,6 +10503,13 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_GS_FACRATE] = 50e3, [CIRCUIT_GS_KRON] = 50.0, [CIRCUIT_GS_RX] = 50.0, [CIRCUIT_GS_GOVERNOR] = 0.1,
     [CIRCUIT_GS_PIDS] = 2.0,
     [CIRCUIT_MOS_IDVGS] = 0.1, [CIRCUIT_MOS_IDVDS] = 0.1,
+    [CIRCUIT_MOS_TUNED] = 2.0, [CIRCUIT_MOS_CG] = 1.0, [CIRCUIT_MOS_CASCODE] = 1.0,
+    [CIRCUIT_MOS_DIFF] = 5.0, [CIRCUIT_MOS_MIRROR] = 5.0, [CIRCUIT_CMOS_INV] = 2.0,
+    [CIRCUIT_CMOS_NAND] = 2.0, [CIRCUIT_CMOS_TGATE] = 2.0,
+    [CIRCUIT_XY_LISSAJOUS] = 2.0, [CIRCUIT_XY_PLOTTER] = 2.0,
+    [CIRCUIT_HW_BUCK] = 2.0, [CIRCUIT_HW_BOOST] = 5.0, [CIRCUIT_HW_BUCKBOOST] = 5.0, [CIRCUIT_HW_CUK] = 5.0,
+    [CIRCUIT_HW_INTERLEAVED] = 2.0, [CIRCUIT_HW_PDN] = 0.5, [CIRCUIT_HW_CAPS] = 1.0,
+    [CIRCUIT_HW_MATCH] = 0.5, [CIRCUIT_HW_REFLECT] = 1.0, [CIRCUIT_HW_LOOP] = 2.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -9652,6 +10645,26 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_GS_PIDS]          = { DEMO_WAVEFORM, 0.2 },
     [CIRCUIT_MOS_IDVGS]        = { DEMO_WAVEFORM, 100 },
     [CIRCUIT_MOS_IDVDS]        = { DEMO_WAVEFORM, 100 },
+    [CIRCUIT_MOS_TUNED]        = { DEMO_BANDPASS, 100e3 },
+    [CIRCUIT_MOS_CG]           = { DEMO_WAVEFORM, 10e3 },
+    [CIRCUIT_MOS_CASCODE]      = { DEMO_WAVEFORM, 10e3 },
+    [CIRCUIT_MOS_DIFF]         = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_MOS_MIRROR]       = { DEMO_DC, 0 },
+    [CIRCUIT_CMOS_INV]         = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_CMOS_NAND]        = { DEMO_WAVEFORM, 500 },
+    [CIRCUIT_CMOS_TGATE]       = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_XY_LISSAJOUS]     = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_XY_PLOTTER]       = { DEMO_WAVEFORM, 100 },
+    [CIRCUIT_HW_BUCK]          = { DEMO_DC, 0 },
+    [CIRCUIT_HW_BOOST]         = { DEMO_DC, 0 },
+    [CIRCUIT_HW_BUCKBOOST]     = { DEMO_DC, 0 },
+    [CIRCUIT_HW_CUK]           = { DEMO_DC, 0 },
+    [CIRCUIT_HW_INTERLEAVED]   = { DEMO_DC, 0 },
+    [CIRCUIT_HW_PDN]           = { DEMO_DC, 0 },
+    [CIRCUIT_HW_CAPS]          = { DEMO_DC, 0 },
+    [CIRCUIT_HW_MATCH]         = { DEMO_WAVEFORM, 1e6 },
+    [CIRCUIT_HW_REFLECT]       = { DEMO_WAVEFORM, 250e3 },
+    [CIRCUIT_HW_LOOP]          = { DEMO_WAVEFORM, 2e3 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -9679,6 +10692,14 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_GS_BOLD] = SCOPE_FLAG_STACK, [CIRCUIT_GS_KRON] = SCOPE_FLAG_STACK, [CIRCUIT_GS_RX] = SCOPE_FLAG_STACK,
     [CIRCUIT_GS_IBR] = SCOPE_FLAG_STACK, [CIRCUIT_GS_GOVERNOR] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_MOS_IDVGS] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_MOS_IDVDS] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_MOS_TUNED] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_MOS_CG] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_MOS_CASCODE] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_MOS_DIFF] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_CMOS_INV] = SCOPE_FLAG_STACK, [CIRCUIT_CMOS_NAND] = SCOPE_FLAG_STACK, [CIRCUIT_CMOS_TGATE] = SCOPE_FLAG_STACK,
+    [CIRCUIT_HW_BUCK] = SCOPE_FLAG_STACK, [CIRCUIT_HW_BOOST] = SCOPE_FLAG_STACK, [CIRCUIT_HW_BUCKBOOST] = SCOPE_FLAG_STACK,
+    [CIRCUIT_HW_CUK] = SCOPE_FLAG_STACK, [CIRCUIT_HW_INTERLEAVED] = SCOPE_FLAG_STACK,
+    [CIRCUIT_HW_PDN] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_HW_CAPS] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_HW_MATCH] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_HW_REFLECT] = SCOPE_FLAG_STACK,
+    [CIRCUIT_HW_LOOP] = SCOPE_FLAG_STACK,
     /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */
     [CIRCUIT_COLPITTS] = SCOPE_FLAG_AC, [CIRCUIT_HARTLEY] = SCOPE_FLAG_AC, [CIRCUIT_CLAPP] = SCOPE_FLAG_AC,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
@@ -9809,7 +10830,7 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
 
 const char *circuit_template_group_name(TemplateGroup g) {
     static const char *names[TG_COUNT] = {
-        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients", "IC I/O & drivers", "Residential & commercial", "Grid standards & methods"
+        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients", "IC I/O & drivers", "Residential & commercial", "Grid standards & methods", "Hardware engineering"
     };
     return (g >= 0 && g < TG_COUNT) ? names[g] : "?";
 }

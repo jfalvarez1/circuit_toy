@@ -12,6 +12,10 @@
 void render_fuse(RenderContext *ctx, float x, float y, int rotation, bool blown, double heat_level);
 void render_crystal(RenderContext *ctx, float x, float y, int rotation);
 void render_spark_gap(RenderContext *ctx, float x, float y, int rotation);
+static void render_draw_line_rotated(RenderContext *ctx, float cx, float cy,
+                                     float x1, float y1, float x2, float y2, int rotation);
+static void render_draw_circle_rotated(RenderContext *ctx, float cx, float cy,
+                                       float dx, float dy, float r, int rotation);
 void render_load_hp(RenderContext *ctx, float x, float y, int rotation);
 // Value label next to a component: R / C / L / source volts / line miles / transformer ratio ...
 static void render_component_value(RenderContext *ctx, Component *comp) {
@@ -723,6 +727,17 @@ void render_component(RenderContext *ctx, Component *comp) {
         case COMP_DC_VOLTAGE:
             render_voltage_source(ctx, comp->x, comp->y, comp->rotation, false);
             break;
+        case COMP_ARB_SOURCE: {
+            // circle with a little arbitrary squiggle inside, so it reads as "table replay"
+            render_draw_circle_rotated(ctx, comp->x, comp->y, 0, 0, 20, comp->rotation);
+            render_draw_line_rotated(ctx, comp->x, comp->y, 0, -40, 0, -20, comp->rotation);
+            render_draw_line_rotated(ctx, comp->x, comp->y, 0, 20, 0, 40, comp->rotation);
+            render_draw_line_rotated(ctx, comp->x, comp->y, -11, 4, -6, -6, comp->rotation);
+            render_draw_line_rotated(ctx, comp->x, comp->y, -6, -6, -1, 6, comp->rotation);
+            render_draw_line_rotated(ctx, comp->x, comp->y, -1, 6, 4, -8, comp->rotation);
+            render_draw_line_rotated(ctx, comp->x, comp->y, 4, -8, 9, 2, comp->rotation);
+            break;
+        }
         case COMP_AC_VOLTAGE:
             render_voltage_source(ctx, comp->x, comp->y, comp->rotation, true);
             // Live readout of a sweeping source: instantaneous frequency / amplitude
