@@ -54,6 +54,7 @@ SHOTS = [
     ("substation", "Substn", 200, "circuits"),
     ("single_tuned_amp", "Tuned", 200, "circuits"),
     # ideal vs real models and the named parts
+    ("ne555", "555", 260, "circuits"),
     ("named_parts", "Parts", 160, "circuits"),
     ("cap_dcbias", "Cbias", 260, "circuits"),
     ("id_mosfet", "IdMOS", 160, "circuits"),

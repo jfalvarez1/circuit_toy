@@ -118,7 +118,7 @@ checked against a hand calculation.
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-161 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+162 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -195,6 +195,7 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **Ring Oscillator** (`Ring`) - Five inverters with RC delay stages, ~145 kHz
 - **Hartley (MOSFET)** (`Hartly`) - Tapped-inductor tank L1 + L2 with C: 503 kHz
 - **Clapp (MOSFET)** (`Clapp`) - Colpitts with a small series cap setting f: 1.744 MHz
+- **555 Astable** (`555`) - The 555 as a block, built from its own comparators and latch
 
 **Power supplies**
 - **Half-Wave Rect** (`HW`) - Half-wave rectifier
@@ -433,6 +434,19 @@ what is being left out:
 The **Ideal vs real models** group builds each of those into a side-by-side circuit: the same
 schematic two or three times with one part swapped, both on the scope at once. Every value in the
 notes is a hand calculation that the regression suite checks - both halves of every comparison.
+
+### Subcircuits That Contain Real Circuits
+
+![555 astable](screenshots/auto/ne555.png)
+
+The **555 Astable** template places a 555 that really is one: inside the block are the three
+5k resistors that set 1/3 and 2/3 of the supply, the two comparators watching TRIGGER and
+THRESHOLD against them, the NOR latch they drive, and the discharge transistor. Nothing about
+its behaviour is hard-coded - it oscillates at **4818 Hz** because 1.44/((R_A + 2 R_B) C) says
+4800, and the capacitor ramps between 1.67 V and 3.33 V because the divider inside says so.
+
+Change R_A, R_B or C on the canvas and the frequency follows. This is the same machinery
+`Ctrl+G` gives you and the same machinery a SPICE import lands in.
 
 ### Vendor Models (SPICE .SUBCKT import)
 
@@ -785,7 +799,7 @@ point and a short transient, and reports solver errors, NaN/runaway voltages and
 point of every transistor / op-amp / regulator:
 
 ```bash
-build/tools/template_smoke.exe             # 161/161 templates passed
+build/tools/template_smoke.exe             # 162/162 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (159 oracles)

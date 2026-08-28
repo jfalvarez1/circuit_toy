@@ -596,6 +596,21 @@ one that would have caught it.
 | 3.25.6 | `[ ]` **Bug:** nested capacitors never advanced | The per-step state pass walked only top-level blocks, so a nested capacitor's stored voltage stayed at zero and the part acted as a near short (0.09 ohm). The walk recurses now, and so does the operating-point seeding |
 | 3.25.7 | `[ ]` Unsupported lines | A `.MODEL` card, a semiconductor instance or an unparseable value is counted and the first one is named in the summary, rather than being silently dropped or guessed at |
 
+### 3.26 The 555 as a subcircuit (2026-08-28: template #162)
+
+The first built-in part that is a *circuit* rather than a parameter set - and the first real
+exercise of the subcircuit engine by a shipped template.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.26.1 | `[ ]` **Automated:** `--osc-test` on 555 Astable | **4818 Hz** against 1.44/((R_A + 2 R_B) C) = 4800 with 10k, 10k and 10 nF - 0.4 % - and a square output (shape 0.472; a symmetric square is 0.500, and this one is 67 % duty by design) |
+| 3.26.2 | `[ ]` **Automated:** `--probe-test` | The output swings the rail: amp 2.475 V of a 5 V supply |
+| 3.26.3 | `[ ]` Watch the capacitor node | It ramps between 1/3 and 2/3 of the supply - 1.67 V and 3.33 V - which is the divider inside the block doing its job |
+| 3.26.4 | `[ ]` Change R_A, R_B or C and re-run | f follows 1.44/((R_A + 2 R_B) C); doubling R_B roughly halves it and moves the duty cycle toward 50 % |
+| 3.26.5 | `[ ]` **Bug:** the whole suite segfaulted | `src/circuits.c` includes `<stdio.h>` and `<string.h>` but not `<stdlib.h>`, so the `calloc` added for the definition was implicitly declared returning `int` and the pointer came back sign-extended (0xFFFFFFFF8F3F10B0). MSVC warns C4013 and it scrolls past in a 562-target build. Other C4013 warnings remain in that file for `place_*` functions used before their declarations - harmless (they do return int) but the same hazard |
+| 3.26.6 | `[ ]` **Tooling:** `template_smoke` stdout is unbuffered | A crash used to show the last 4 KB of already-passed templates, so the culprit looked 14 places earlier than it was |
+| 3.26.7 | `[ ]` **Bug:** two burn warnings on R_A and R_B | The discharge transistor was in ideal mode, where saturation output conductance is 1e-12; the DISCH node was barely defined while the latch flipped and threw a 58 V startup spike. A real output conductance settles it |
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.

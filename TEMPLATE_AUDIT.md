@@ -1324,9 +1324,6 @@ Common building blocks (`src/circuits.c`, batch 5):
 | 127 | R/X Ratio and Decoupling | | | | | | | R/X 0.09 vs 1.5; why FDPF diverges on feeders |
 | 128 | Governor Droop & Swing Equation | | | | | | | nadir -0.168 Hz, settles -0.143 Hz = -0.05/(1/R+D) (BAL-001-TRE-2) |
 | 129 | Supervised Alarm Loop | | | | | | | four states on one pair: 8.5 / 9.2 / 12 / 0 V (CIP-014-2) |
-| 159 | Op-Amp Error Sources | | | | | | | -0.8892 dc (100 (V_os - I_B (100k - 990)) with the switch open) |
-| 160 | Named Parts: MOSFET Switches | | | | | | | 0.1442 dc (2N7000: 12 x 1.2 / (100 + 1.2) at V_GS = 10 V); 0.234 dc (2N7002); 0.00526 dc (IRF540N); switch doubles the drop |
-| 161 | Ceramic DC Bias | | | | | | | 0.03125 amp (10 uF unbiased: I(T/2)/C = 62.5 mVpp); 0.0625 amp (2 V bias halves it: twice the ripple); 0.1094 amp (5 V bias leaves 2.86 uF: 3.5x th... |
 | 130 | MOSFET Transfer Curves | | | | | | | 0.1886 max (2N7000 at Vgs 4 V: 189 mA through the 1 ohm sense) |
 | 131 | MOSFET Output Curves | | | | | | | 0.1896 max (Vgs 3.5 V curve: 95 mA through the 2 ohm sense) |
 | 132 | MOSFET Tuned Amplifier | | | | | | | 1.2458 amp (gain peaks as the sweep passes the 100 kHz tank) |
@@ -1356,13 +1353,15 @@ Common building blocks (`src/circuits.c`, batch 5):
 | 156 | Ideal vs Real Op-Amp | | | | | | | 0.5 amp (ideal op-amp: gain 10 at any frequency); 0.354 amp (GBW 1 MHz at Acl 10: -3 dB at exactly 100 kHz); 1.25 amp (slew limited: a triangle of ... |
 | 157 | Ideal vs Real BJT | | | | | | | 7.28 dc (no Early effect: V_C = 12 - beta I_B x 4.7k); 6.874 dc (V_AF = 80 V: (1 + V_CE/V_AF) adds ~9 % of collector current) |
 | 158 | Ideal vs Real MOSFET | | | | | | | 7.05 dc (square law: I_D = K V_ov^2/2 = 2.25 mA into 2.2k); 5.652 dc (lambda = 0.05: V_D solves 12 - 2.2k I_D (1 + lambda V_D)) |
+| 159 | Op-Amp Error Sources | | | | | | | -0.8892 dc (100 (V_os - I_B (100k - 990)) with the switch open) |
+| 160 | Named Parts: MOSFET Switches | | | | | | | 0.1442 dc (2N7000: 12 x 1.2 / (100 + 1.2) at V_GS = 10 V); 0.234 dc (2N7002); 0.00526 dc (IRF540N); switch doubles the drop |
+| 161 | Ceramic DC Bias | | | | | | | 0.03125 amp (10 uF unbiased: I(T/2)/C = 62.5 mVpp); 0.0625 amp (2 V bias halves it: twice the ripple); 0.1094 amp (5 V bias leaves 2.86 uF: 3.5x th... |
+| 162 | 555 Astable | | | | | | | 2.475 amp (the block swings its output rail to rail: 0 to ~5 V) |
 
-(Rows 130-158 cover the MOSFET amplifier set, transistor-level CMOS, the X-Y and
-arbitrary-waveform pair, the hardware-engineering lab and the ideal-vs-real comparisons;
-their notes are the `--probe-test` oracles, so a row and its check cannot disagree.)
+(Rows 130-162 cover the MOSFET amplifier set, transistor-level CMOS, the X-Y and
+arbitrary-waveform pair, the hardware-engineering lab, the ideal-vs-real comparisons and
+the 555 built as a subcircuit; their notes are the `--probe-test` oracles, so a row and
+its check cannot disagree.)
 
-(Rows 130-161 cover the MOSFET amplifier set, transistor-level CMOS, the X-Y and
-arbitrary-waveform pair, the hardware-engineering lab and the ideal-vs-real comparisons;
-their notes are the `--probe-test` oracles, so a row and its check cannot disagree.)
 
 (96 blocks = the 96 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`; #48-#65 follow the enum order after `CIRCUIT_PHASE_SHIFT_OSC`, #66-#72 the enum order after `CIRCUIT_DC_LINE_DROP`, #73-#81 the enum order after `CIRCUIT_HV_765_LINE`, #82-#90 the enum order after `CIRCUIT_RING_OSC`, #91-#96 the enum order after `CIRCUIT_OPAMP_SAT`.)

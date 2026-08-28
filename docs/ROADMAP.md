@@ -81,6 +81,17 @@ balance quickly, so where that capacitor's DC level lands still depends on where
 Worth revisiting with a switch that has a real R_on and a diode with a finite recovery, both of
 which add the loss that would pin it.
 
+## Built-in parts that are circuits - first one shipped 2026-08-28
+
+The NE555 is a subcircuit definition registered by the template that uses it: three 5k divider
+resistors, two comparators, a NOR latch and the discharge transistor. It oscillates at 4818 Hz
+against 4800 on the page. The pattern generalises - anything that is a circuit rather than a
+parameter set can ship this way now that subcircuits simulate.
+
+Worth doing next in the same shape: a 741-level op-amp macromodel (input pair, gain stage,
+output stage) so its behaviour comes from its topology instead of the GBW/slew parameters; an
+optocoupler; and a 7-segment decoder. The 555's RESET and CONTROL pins are not exposed yet.
+
 ## Crystal (Pierce) oscillator - not shipped yet (2026-08-24)
 
 `place_pierce()` in src/circuits.c builds an op-amp Pierce loop around a "teaching crystal" (Ls 100 mH,
