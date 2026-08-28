@@ -141,8 +141,13 @@ typedef enum {
     KNOB_TRIGGER,     // trigger level (volts)
     KNOB_INTENSITY,   // screen brightness
     KNOB_CHANNEL,     // selected / trigger channel, detented
+    /* One knob per input, the way a bench scope has one per input: it sets that channel's
+       own volts/div and selects it, so POSITION and TRIG LEVEL follow. A channel left at
+       zero tracks the main VOLTS/DIV knob, which is how they all start. */
+    KNOB_CH1, KNOB_CH2, KNOB_CH3, KNOB_CH4, KNOB_CH5, KNOB_CH6, KNOB_CH7, KNOB_CH8,
     KNOB_COUNT
 } ScopeKnobKind;
+#define KNOB_CH_BASE KNOB_CH1
 
 typedef struct {
     Rect bounds;         // the knob's cell, including its label
@@ -156,6 +161,7 @@ typedef struct {
     Color color;
     int probe_idx;
     double offset;      // vertical offset in volts
+    double volt_div;    // this channel's own volts/div; 0 = follow the main VOLTS/DIV knob
 } ScopeChannel;
 
 // Predefined probe colors for oscilloscope channels

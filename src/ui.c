@@ -3114,10 +3114,19 @@ static bool scope_gated_stats(UIState *ui, int ch, double ta, double tb,
     return true;
 }
 
+/* The volts/div this channel is drawn at. Channels start at 0, meaning "follow the main
+   knob", so a scope nobody has touched behaves exactly as it always did. */
+double ui_channel_volt_div(const UIState *ui, int ch) {
+    if (!ui) return 1.0;
+    if (ch >= 0 && ch < MAX_PROBES && ui->scope_channels[ch].volt_div > 0)
+        return ui->scope_channels[ch].volt_div;
+    return ui->scope_volt_div;
+}
+
 // Band geometry of channel ch (matches the Y-T plotting code, incl. stacked view)
 static void scope_channel_frame(UIState *ui, Rect *r, int ch, int *top, int *h, int *center, double *scale) {
     *top = r->y; *h = r->h; *center = r->y + r->h / 2;
-    *scale = (r->h / 8.0) / ui->scope_volt_div;
+    *scale = (r->h / 8.0) / ui_channel_volt_div(ui, ch);
     if (!ui->scope_stacked) return;
     int n_en = 0, idx = 0;
     for (int c = 0; c < ui->scope_num_channels && c < MAX_PROBES; c++) {
@@ -3129,7 +3138,7 @@ static void scope_channel_frame(UIState *ui, Rect *r, int ch, int *top, int *h, 
     *top = r->y + (idx * r->h) / n_en;
     *h = r->y + ((idx + 1) * r->h) / n_en - *top;
     *center = *top + *h / 2;
-    *scale = (*h / 8.0) / ui->scope_volt_div;
+    *scale = (*h / 8.0) / ui_channel_volt_div(ui, ch);
 }
 
 static void format_volt_value(char *buf, size_t size, double val) {
@@ -3736,12 +3745,12 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     // Per-channel drawing frame (whole scope, or this channel's band)
                     int band_y = r->y, band_h = r->h;
                     int ch_center = center_y;
-                    double ch_scale = scale;
+                    double ch_scale = (r->h / 8.0) / ui_channel_volt_div(ui, ch);
                     if (stacked) {
                         band_y = r->y + (band_index * r->h) / n_enabled;
                         band_h = r->y + ((band_index + 1) * r->h) / n_enabled - band_y;
                         ch_center = band_y + band_h / 2;
-                        ch_scale = (band_h / 8.0) / ui->scope_volt_div;
+                        ch_scale = (band_h / 8.0) / ui_channel_volt_div(ui, ch);
                         // Band separator and zero line
                         if (band_index > 0) {
                             SDL_SetRenderDrawColor(renderer, 0x50, 0x60, 0x50, 0xff);
@@ -3857,7 +3866,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 if (trig_ch < ui->scope_num_channels && ui->scope_channels[trig_ch].enabled) {
                     double trig_offset = ui->scope_channels[trig_ch].offset;
                     int t_center = center_y, t_top = r->y, t_h = r->h;
-                    double t_scale = scale;
+                    double t_scale = (r->h / 8.0) / ui_channel_volt_div(ui, trig_ch);
                     if (ui->scope_stacked) {
                         int n_en = 0, idx = 0;
                         for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
@@ -3869,7 +3878,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                             t_top = r->y + (idx * r->h) / n_en;
                             t_h = r->y + ((idx + 1) * r->h) / n_en - t_top;
                             t_center = t_top + t_h / 2;
-                            t_scale = (t_h / 8.0) / ui->scope_volt_div;
+                            t_scale = (t_h / 8.0) / ui_channel_volt_div(ui, trig_ch);
                         }
                     }
                     if (ui->scope_stacked && ui->scope_stack_fit) t_scale = ui->scope_ch_scale[trig_ch];
@@ -7656,6 +7665,8 @@ void ui_scope_controls_scroll(UIState *ui, int direction) {
 #define SCOPE_PANEL_W   250      /* right-hand column of knobs */
 
 static const char *knob_label(int k) {
+    static char chbuf[8];
+    if (k >= KNOB_CH_BASE) { snprintf(chbuf, sizeof chbuf, "CH%d", k - KNOB_CH_BASE + 1); return chbuf; }
     switch (k) {
         case KNOB_VOLTS:     return "VOLTS/DIV";
         case KNOB_TIME:      return "TIME/DIV";
@@ -7668,6 +7679,12 @@ static const char *knob_label(int k) {
 
 /* 0..1 along the knob's travel, for the pointer angle */
 static double knob_fraction(UIState *ui, int k) {
+    if (k >= KNOB_CH_BASE) {
+        double v = ui_channel_volt_div(ui, k - KNOB_CH_BASE);
+        if (v <= 0) return 0.5;
+        double f = (log10(v) + 3.0) / 8.7;
+        return f < 0 ? 0 : (f > 1 ? 1 : f);
+    }
     switch (k) {
         case KNOB_VOLTS: {
             double v = ui->scope_volt_div;
@@ -7708,6 +7725,15 @@ static double knob_fraction(UIState *ui, int k) {
 }
 
 static void knob_value_text(UIState *ui, int k, char *buf, size_t n) {
+    if (k >= KNOB_CH_BASE) {
+        int ch = k - KNOB_CH_BASE;
+        if (ch >= ui->scope_num_channels || !ui->scope_channels[ch].enabled) { snprintf(buf, n, "--"); return; }
+        double v = ui_channel_volt_div(ui, ch);
+        if (v >= 1000)     snprintf(buf, n, "%.4g kV", v / 1000.0);
+        else if (v >= 1)   snprintf(buf, n, "%.4g V", v);
+        else               snprintf(buf, n, "%.4g mV", v * 1000.0);
+        return;
+    }
     switch (k) {
         case KNOB_VOLTS: {
             double v = ui->scope_volt_div;
@@ -7741,13 +7767,24 @@ void ui_layout_scope_panel(UIState *ui, int win_w, int win_h) {
     int px = win_w - SCOPE_PANEL_W + 14;
     int py = 74;                                   /* below the panel's name plate */
     int cell_w = (SCOPE_PANEL_W - 34) / 2, cell_h = 104;
-    for (int i = 0; i < KNOB_COUNT; i++) {
+    for (int i = 0; i < KNOB_CH_BASE; i++) {
         int col = i % 2, row = i / 2;
         ScopeKnob *k = &ui->scope_knobs[i];
         k->bounds = (Rect){ px + col * cell_w, py + row * cell_h, cell_w - 6, cell_h - 8 };
         k->r = 25;
         k->cx = k->bounds.x + k->bounds.w / 2;
         k->cy = k->bounds.y + 16 + k->r;
+    }
+    /* the input strip: one small knob per channel, four across, below the status plate */
+    int sy = py + ((KNOB_CH_BASE + 1) / 2) * cell_h + 10 + 92 + 32;
+    int scw = (SCOPE_PANEL_W - 34) / 4, sch = 64;
+    for (int i = KNOB_CH_BASE; i < KNOB_COUNT; i++) {
+        int idx = i - KNOB_CH_BASE, col = idx % 4, row = idx / 4;
+        ScopeKnob *k = &ui->scope_knobs[i];
+        k->bounds = (Rect){ px + col * scw, sy + row * sch, scw - 4, sch - 6 };
+        k->r = 14;
+        k->cx = k->bounds.x + k->bounds.w / 2;
+        k->cy = k->bounds.y + 12 + k->r;
     }
     (void)win_h;
 }
@@ -7779,7 +7816,7 @@ void ui_render_scope_panel(UIState *ui, SDL_Renderer *renderer) {
     SDL_SetRenderDrawColor(renderer, 0xe6, 0xdc, 0xff, 0xff);
     ui_draw_text(renderer, "CIRCUIT PLAYGROUND", body.x + 16, 16);
     SDL_SetRenderDrawColor(renderer, 0xff, 0x2d, 0x95, 0xff);
-    ui_draw_text(renderer, "DUAL-TRACE OSCILLOSCOPE", body.x + 16, 34);
+    ui_draw_text(renderer, "8-CHANNEL OSCILLOSCOPE", body.x + 16, 34);
     SDL_SetRenderDrawColor(renderer, 0x39, 0x2b, 0x5c, 0xff);
     SDL_RenderDrawLine(renderer, body.x + 12, 56, win_w - 12, 56);
 
@@ -7795,19 +7832,38 @@ void ui_render_scope_panel(UIState *ui, SDL_Renderer *renderer) {
         SDL_RenderDrawRect(renderer, &o);
     }
 
+    /* heading over the input strip */
+    {
+        const ScopeKnob *first = &ui->scope_knobs[KNOB_CH_BASE];
+        SDL_SetRenderDrawColor(renderer, 0x39, 0x2b, 0x5c, 0xff);
+        SDL_RenderDrawLine(renderer, body.x + 12, first->bounds.y - 12, win_w - 12, first->bounds.y - 12);
+        SDL_SetRenderDrawColor(renderer, 0xb9, 0xa6, 0xe6, 0xff);
+        ui_draw_text(renderer, "INPUTS  V/DIV", body.x + 16, first->bounds.y - 26);
+    }
+
     for (int i = 0; i < KNOB_COUNT; i++) {
         ScopeKnob *k = &ui->scope_knobs[i];
         bool active = (ui->scope_knob_active == i), hot = active || (ui->scope_knob_hover == i);
+        /* an input knob wears its channel's trace colour, and greys out when that input is off */
+        bool is_ch = (i >= KNOB_CH_BASE);
+        int ch_idx = is_ch ? i - KNOB_CH_BASE : -1;
+        bool ch_live = is_ch && ch_idx < ui->scope_num_channels && ui->scope_channels[ch_idx].enabled;
+        bool ch_sel = ch_live && ch_idx == ui->scope_selected_channel;
+        if (is_ch && !ch_live) hot = false;
 
         /* body: a filled disc, brighter when the pointer is on it */
         Color face = hot ? (Color){0x3a, 0x2c, 0x60, 0xff} : (Color){0x2a, 0x20, 0x44, 0xff};
+        if (is_ch && !ch_live) face = (Color){0x22, 0x1b, 0x36, 0xff};
         SDL_SetRenderDrawColor(renderer, face.r, face.g, face.b, 0xff);
         for (int dy = -k->r; dy <= k->r; dy++) {
             int dx = (int)sqrt((double)(k->r * k->r - dy * dy));
             SDL_RenderDrawLine(renderer, k->cx - dx, k->cy + dy, k->cx + dx, k->cy + dy);
         }
-        knob_ring(renderer, k->cx, k->cy, k->r, hot ? (Color){0x00, 0xff, 0xd5, 0xff}
-                                                   : (Color){0x6a, 0x52, 0x9c, 0xff});
+        Color ring = hot ? (Color){0x00, 0xff, 0xd5, 0xff} : (Color){0x6a, 0x52, 0x9c, 0xff};
+        if (is_ch && ch_live) ring = PROBE_COLORS[ch_idx];
+        if (is_ch && !ch_live) ring = (Color){0x40, 0x36, 0x5c, 0xff};
+        knob_ring(renderer, k->cx, k->cy, k->r, ring);
+        if (ch_sel) knob_ring(renderer, k->cx, k->cy, k->r + 3, ring);   /* the selected input gets a second ring */
 
         /* travel ticks: 270 degrees, 7 o'clock round to 5 o'clock */
         SDL_SetRenderDrawColor(renderer, 0x9c, 0x82, 0xd8, 0xff);
@@ -7822,6 +7878,7 @@ void ui_render_scope_panel(UIState *ui, SDL_Renderer *renderer) {
         double f = knob_fraction(ui, i);
         double a = (135.0 + 270.0 * f) * M_PI / 180.0;
         Color ptr = hot ? (Color){0x00, 0xff, 0xd5, 0xff} : (Color){0xff, 0xd7, 0x4a, 0xff};
+        if (is_ch) ptr = ch_live ? PROBE_COLORS[ch_idx] : (Color){0x50, 0x46, 0x6c, 0xff};
         SDL_SetRenderDrawColor(renderer, ptr.r, ptr.g, ptr.b, 0xff);
         for (int w = -1; w <= 1; w++)
             SDL_RenderDrawLine(renderer, k->cx + w, k->cy,
@@ -7860,7 +7917,10 @@ void ui_render_scope_panel(UIState *ui, SDL_Renderer *renderer) {
     ui_draw_text(renderer, line, plate.x + 8, sy + 60);
 
     SDL_SetRenderDrawColor(renderer, 0x7d, 0x6d, 0xa8, 0xff);
-    ui_draw_text(renderer, "drag a knob up / down", body.x + 16, sy + 104);
+    {   /* the hint goes under everything, including the input strip */
+        const ScopeKnob *last = &ui->scope_knobs[KNOB_COUNT - 1];
+        ui_draw_text(renderer, "drag a knob up / down", body.x + 16, last->bounds.y + last->bounds.h + 8);
+    }
 }
 
 int ui_scope_knob_at(UIState *ui, int x, int y) {
@@ -7877,6 +7937,29 @@ int ui_scope_knob_drag(UIState *ui, int knob, int dy) {
     if (!ui || knob < 0 || knob >= KNOB_COUNT) return 0;
     ScopeKnob *k = &ui->scope_knobs[knob];
     double up = -(double)dy;                       /* dragging up increases */
+    if (knob >= KNOB_CH_BASE) {
+        int ch = knob - KNOB_CH_BASE;
+        if (ch >= ui->scope_num_channels || !ui->scope_channels[ch].enabled) return 0;
+        ui->scope_selected_channel = ch;           /* touching an input selects it */
+        k->detent += up;
+        const double STEP = 14.0;
+        int dir = (k->detent >= STEP) ? 1 : (k->detent <= -STEP) ? -1 : 0;
+        if (!dir) return 0;
+        k->detent = 0;
+        /* 1-2-5 from 1 mV/div to 500 kV/div, the same sequence the main knob uses */
+        static const double steps[] = { 1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 0.1, 0.2, 0.5,
+                                        1, 2, 5, 10, 20, 50, 100, 200, 500, 1e3, 2e3, 5e3,
+                                        1e4, 2e4, 5e4, 1e5, 2e5, 5e5 };
+        const int n = (int)(sizeof steps / sizeof steps[0]);
+        double cur = ui_channel_volt_div(ui, ch);
+        int i = 0;
+        while (i < n - 1 && steps[i] < cur * 0.99) i++;
+        i += (dir > 0) ? 1 : -1;
+        if (i < 0) i = 0;
+        if (i > n - 1) i = n - 1;
+        ui->scope_channels[ch].volt_div = steps[i];
+        return 0;
+    }
     switch (knob) {
         case KNOB_VOLTS:
         case KNOB_TIME:
@@ -7906,7 +7989,7 @@ int ui_scope_knob_drag(UIState *ui, int knob, int dy) {
             return 0;
         }
         case KNOB_TRIGGER: {
-            double span = ui->scope_volt_div * 4.0;
+            double span = ui_channel_volt_div(ui, ui->trigger_channel) * 4.0;
             double v = ui->trigger_level + up * span / 120.0;
             if (v >  2 * span) v =  2 * span;
             if (v < -2 * span) v = -2 * span;
