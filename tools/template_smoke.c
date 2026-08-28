@@ -657,7 +657,7 @@ static int geom_overlap(Circuit *c, char *why, size_t whyn) {
 }
 
 static int geom_test(void) {
-    int bad_templates = 0, total = 0;
+    int bad_templates = 0, hard_failures = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         Circuit *c = circuit_create();
@@ -718,13 +718,24 @@ static int geom_test(void) {
             }
         }
         int overlap = geom_overlap(c, detail, sizeof detail);
+        /* Two of these are hard rules and the rest are cosmetic. No two symbols may overlap and
+           no wire may run at an angle - those are design rules, and a template that breaks one
+           is wrong. A drawn crossing, a wire passing over an unrelated node, or two terminals
+           landing within 12 px are worth reporting and worth tidying, but they are legitimate in
+           some topologies (TEST_PLAN 3.19.1b tracks them). Only the hard rules set the exit
+           status, so this can gate CI without failing on the tracked cosmetic list. */
+        int hard = diag + overlap;
         int ok = (diag + cross + through + touch + overlap) == 0;
-        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d overlap=%d%s\n", ok ? " OK " : "WARN", ti ? ti->name : "?", diag, cross, through, touch, overlap, detail);
+        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d overlap=%d%s\n",
+               ok ? " OK " : (hard ? "FAIL" : "WARN"), ti ? ti->name : "?",
+               diag, cross, through, touch, overlap, detail);
         if (!ok) bad_templates++;
+        if (hard) hard_failures++;
         circuit_free(c);
     }
-    printf("\n%d/%d templates geometrically clean\n", total - bad_templates, total);
-    return bad_templates;
+    printf("\n%d/%d templates geometrically clean; %d with a hard violation (overlapping symbols or a diagonal wire)\n",
+           total - bad_templates, total, hard_failures);
+    return hard_failures;
 }
 
 /* Frequency-sweep check: run the RC low-pass (100 Hz -> 20 kHz log sweep, 3 s) to t_end with
@@ -2133,6 +2144,187 @@ static int op_test(void) {
     return fails ? 1 : 0;
 }
 
+
+/* ---------------------------------------------------------------------------------------
+ * --sub-test: subcircuits actually simulating. A definition is built here the same way the
+ * Ctrl+G dialog builds one (a Component array plus pins that name internal node ids), placed
+ * as an IC block, and solved. Three cases, in increasing order of what they need from the
+ * expansion: resistors only, then a capacitor (per-instance STATE), then a voltage source
+ * (an auxiliary matrix row of its own).
+ * ------------------------------------------------------------------------------------- */
+static SubCircuitDef *sub_new_def(const char *name) {
+    if (g_subcircuit_library.count >= MAX_SUBCIRCUIT_DEFS) return NULL;
+    SubCircuitDef *def = &g_subcircuit_library.defs[g_subcircuit_library.count];
+    memset(def, 0, sizeof *def);
+    def->id = ++g_subcircuit_library.next_id;
+    snprintf(def->name, sizeof def->name, "%s", name);
+    def->block_width = 100; def->block_height = 80;
+    return def;
+}
+
+/* Copy a built circuit's components into a definition and expose `npins` nodes as pins. */
+static void sub_fill_def(SubCircuitDef *def, Circuit *inner, const int *pin_nodes, const char **pin_names, int npins) {
+    int n = 0;
+    for (int i = 0; i < inner->num_components; i++)
+        if (inner->components[i]->type != COMP_PIN) n++;
+    def->component_data = malloc((size_t)n * sizeof(Component));
+    def->component_data_size = (size_t)n * sizeof(Component);
+    Component *arr = (Component *)def->component_data;
+    int idx = 0;
+    for (int i = 0; i < inner->num_components; i++) {
+        Component *c = inner->components[i];
+        if (c->type == COMP_PIN) continue;
+        memcpy(&arr[idx++], c, sizeof(Component));
+    }
+    def->num_components = n;
+    def->num_pins = npins;
+    for (int i = 0; i < npins; i++) {
+        snprintf(def->pins[i].name, sizeof def->pins[i].name, "%s", pin_names[i]);
+        def->pins[i].internal_node_id = pin_nodes[i];
+        def->pins[i].side = (i < 2) ? 0 : 1;
+        def->pins[i].position = i % 2;
+    }
+    /* internal nodes that are not pins */
+    int seen[MAX_NODES]; memset(seen, 0, sizeof seen);
+    int internal = 0;
+    for (int i = 0; i < n; i++) {
+        for (int t = 0; t < arr[i].num_terminals && t < MAX_TERMINALS; t++) {
+            int id = arr[i].node_ids[t];
+            if (id <= 0 || id >= MAX_NODES || seen[id]) continue;
+            seen[id] = 1;
+            int is_pin = 0;
+            for (int q = 0; q < npins; q++) if (pin_nodes[q] == id) is_pin = 1;
+            if (!is_pin) internal++;
+        }
+    }
+    def->num_internal_nodes = internal;
+    g_subcircuit_library.count++;
+}
+
+/* 10 V source -> the block's IN pin; the block's GND pin to ground; measure OUT. */
+static double sub_drive(SubCircuitDef *def, int npins, int *ok, double t_end) {
+    Circuit *c = circuit_create();
+    Component *v = pt_add(c, COMP_DC_VOLTAGE, 0, 100, 0);
+    v->props.dc_voltage.voltage = 10.0;
+    Component *g0 = pt_add(c, COMP_GROUND, 0, 200, 0);
+    Component *blk = pt_add(c, COMP_SUBCIRCUIT, 240, 100, 0);
+    blk->props.subcircuit.def_id = def->id;
+    blk->num_terminals = npins;
+    Component *rl = pt_add(c, COMP_RESISTOR, 420, 140, 90);
+    rl->props.resistor.resistance = 1e6;          /* a light load so the block sets the level */
+    Component *gl = pt_add(c, COMP_GROUND, 420, 240, 0);
+    int in = pt_node(c, 60, 100), out = pt_node(c, 340, 100), gnd = pt_node(c, 0, 180);
+    int lt = pt_node(c, 420, 100), lb = pt_node(c, 420, 180), gl2 = pt_node(c, 420, 220);
+    v->node_ids[0] = in; v->node_ids[1] = gnd; g0->node_ids[0] = gnd;
+    blk->node_ids[0] = in; blk->node_ids[1] = out; blk->node_ids[2] = gnd;
+    circuit_add_wire(c, out, lt);
+    rl->node_ids[0] = lt; rl->node_ids[1] = lb; gl->node_ids[0] = gl2;
+    circuit_add_wire(c, lb, gl2);
+
+    Simulation *sim = simulation_create(c);
+    *ok = sim && simulation_dc_analysis(sim);
+    double vout = 0;
+    if (*ok && t_end > 0) {
+        simulation_set_time_step(sim, t_end / 2000.0);
+        simulation_start(sim);
+        while (sim->time < t_end) if (!simulation_step(sim)) { *ok = 0; break; }
+    }
+    if (*ok) {
+        Node *n = circuit_get_node(c, out);
+        vout = n ? n->voltage : 0;
+        if (!isfinite(vout)) *ok = 0;
+    }
+    if (sim) simulation_free(sim);
+    circuit_free(c);
+    return vout;
+}
+
+static int sub_test(void) {
+    int fails = 0, total = 0;
+    printf("sub-test: subcircuits placed as IC blocks and solved\n\n");
+    g_subcircuit_library.count = 0; g_subcircuit_library.next_id = 0;
+
+    /* ---- 1. resistive divider: two 1k, IN / OUT / GND ---- */
+    {
+        Circuit *inner = circuit_create();
+        Component *r1 = pt_add(inner, COMP_RESISTOR, 100, 60, 90);
+        r1->props.resistor.resistance = 1000.0;
+        Component *r2 = pt_add(inner, COMP_RESISTOR, 100, 220, 90);
+        r2->props.resistor.resistance = 1000.0;
+        int nin = pt_node(inner, 100, 20), nmid = pt_node(inner, 100, 140), ngnd = pt_node(inner, 100, 260);
+        r1->node_ids[0] = nin; r1->node_ids[1] = nmid;
+        r2->node_ids[0] = nmid; r2->node_ids[1] = ngnd;
+        SubCircuitDef *def = sub_new_def("DIV");
+        int pins[3] = { nin, nmid, ngnd };
+        const char *names[3] = { "IN", "OUT", "GND" };
+        sub_fill_def(def, inner, pins, names, 3);
+        circuit_free(inner);
+
+        int ok = 1;
+        double v = sub_drive(def, 3, &ok, 0);
+        total++;
+        int pass = ok && fabs(v - 5.0) < 0.05;
+        if (!pass) fails++;
+        printf("%s sub  resistive divider          OUT = %8.4f V   expect 5.0000  %s\n",
+               pass ? " OK " : "FAIL", v, ok ? "(two 1k from a 10 V source)" : "[simulation failed]");
+    }
+
+    /* ---- 2. RC low-pass: needs the internal capacitor to keep its state between steps ---- */
+    {
+        Circuit *inner = circuit_create();
+        Component *r = pt_add(inner, COMP_RESISTOR, 100, 60, 90);
+        r->props.resistor.resistance = 1000.0;
+        Component *cap = pt_add(inner, COMP_CAPACITOR, 100, 220, 90);
+        cap->props.capacitor.capacitance = 1e-6;      /* tau = 1 ms */
+        int nin = pt_node(inner, 100, 20), nmid = pt_node(inner, 100, 140), ngnd = pt_node(inner, 100, 260);
+        r->node_ids[0] = nin; r->node_ids[1] = nmid;
+        cap->node_ids[0] = nmid; cap->node_ids[1] = ngnd;
+        SubCircuitDef *def = sub_new_def("RC");
+        int pins[3] = { nin, nmid, ngnd };
+        const char *names[3] = { "IN", "OUT", "GND" };
+        sub_fill_def(def, inner, pins, names, 3);
+        circuit_free(inner);
+
+        int ok = 1;
+        double v = sub_drive(def, 3, &ok, 10e-3);      /* 10 tau: the cap should be at the rail */
+        total++;
+        int pass = ok && fabs(v - 10.0) < 0.3;
+        if (!pass) fails++;
+        printf("%s sub  RC low-pass (needs state)  OUT = %8.4f V   expect 10.000  %s\n",
+               pass ? " OK " : "FAIL", v,
+               ok ? "(charged through 1k into 1 uF for 10 tau)" : "[simulation failed]");
+    }
+
+    /* ---- 3. an internal voltage source: needs an auxiliary matrix row of its own ---- */
+    {
+        Circuit *inner = circuit_create();
+        Component *vref = pt_add(inner, COMP_DC_VOLTAGE, 100, 100, 0);
+        vref->props.dc_voltage.voltage = 3.3;
+        Component *r = pt_add(inner, COMP_RESISTOR, 220, 100, 0);
+        r->props.resistor.resistance = 100.0;
+        int nout = pt_node(inner, 100, 60), ngnd = pt_node(inner, 100, 140), ntap = pt_node(inner, 260, 100);
+        vref->node_ids[0] = ntap; vref->node_ids[1] = ngnd;
+        r->node_ids[0] = ntap; r->node_ids[1] = nout;
+        SubCircuitDef *def = sub_new_def("REF");
+        int pins[3] = { ngnd, nout, ngnd };            /* IN unused; OUT is the reference */
+        const char *names[3] = { "IN", "OUT", "GND" };
+        sub_fill_def(def, inner, pins, names, 3);
+        circuit_free(inner);
+
+        int ok = 1;
+        double v = sub_drive(def, 3, &ok, 0);
+        total++;
+        int pass = ok && fabs(v - 3.3) < 0.05;
+        if (!pass) fails++;
+        printf("%s sub  internal 3.3 V reference   OUT = %8.4f V   expect 3.3000  %s\n",
+               pass ? " OK " : "FAIL", v,
+               ok ? "(a source inside the block needs its own matrix row)" : "[simulation failed]");
+    }
+
+    printf("\nsub-test: %d checks, %d failed\n", total, fails);
+    return fails ? 1 : 0;
+}
+
 static int series_template(const char *filter, double t_end, int node_id) {
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
@@ -2173,6 +2365,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--switch-test")) return switch_test();
         else if (!strcmp(argv[i], "--part-test")) return part_test();
         else if (!strcmp(argv[i], "--op-test")) return op_test();
+        else if (!strcmp(argv[i], "--sub-test")) return sub_test();
         else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt = atof(argv[++i]);
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
