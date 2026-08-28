@@ -81,6 +81,9 @@ bool app_place_template_centered(App *app, CircuitTemplateType type);
 void app_update_check(App *app);
 // Save the current window contents as a BMP (used by --shot / --record)
 bool app_save_window_bmp(App *app, const char *path);
+// Pop the oscilloscope into its own window (or dock it again). Used by the PopOut button and
+// by --popout, so a scripted screenshot gets the same window a user gets.
+void app_scope_popout(App *app, bool on);
 
 // Shutdown application
 void app_shutdown(App *app);

@@ -443,8 +443,10 @@ void ui_init(UIState *ui) {
     ui->palette_visible_height = WINDOW_HEIGHT - TOOLBAR_HEIGHT - PALETTE_TOP_H - STATUSBAR_HEIGHT;
     ui->palette_scrolling = false;
 
-    // Oscilloscope settings - larger default size for better visibility
-    ui->scope_rect = (Rect){WINDOW_WIDTH - ui->properties_width + 10, 250, 330, 300};
+    // Oscilloscope settings - larger default size for better visibility. The scope starts
+    // higher and taller than the properties list needs; the clamp in ui_update_layout still
+    // shrinks it on a small window so its three button rows always clear the status bar.
+    ui->scope_rect = (Rect){WINDOW_WIDTH - ui->properties_width + 10, 220, 330, 375};
     ui->scope_default_h = ui->scope_rect.h;
     ui->scope_num_channels = 0;
     ui->scope_time_div = 0.001;   // 1ms per division
@@ -554,6 +556,10 @@ void ui_init(UIState *ui) {
     ui->dragging_trigger_position = false;
 
     // Initialize pop-out oscilloscope window
+    ui->scope_knob_active = -1;
+    ui->scope_knob_hover = -1;
+    ui->scope_knob_last_y = 0;
+    ui->scope_panel_active = false;
     ui->scope_popup_window = NULL;
     ui->scope_popup_renderer = NULL;
     ui->scope_popup_window_id = 0;
@@ -7588,6 +7594,278 @@ void ui_scope_controls_scroll(UIState *ui, int direction) {
 
 // Pop-out scope: swap in the popup window's rect and button layout, returning the main
 // window's coordinates so they can be restored after the event / render.
+
+/* ======================= Pop-out bench-scope front panel =======================
+   A real scope is a screen in a bezel with a column of knobs beside it. The pop-out window
+   draws that, and every knob moves a value the docked controls also reach: there is no second
+   copy of the state, so the two views can never disagree. */
+
+#define SCOPE_PANEL_W   250      /* right-hand column of knobs */
+
+static const char *knob_label(int k) {
+    switch (k) {
+        case KNOB_VOLTS:     return "VOLTS/DIV";
+        case KNOB_TIME:      return "TIME/DIV";
+        case KNOB_POSITION:  return "POSITION";
+        case KNOB_TRIGGER:   return "TRIG LEVEL";
+        case KNOB_INTENSITY: return "INTENSITY";
+        default:             return "CHANNEL";
+    }
+}
+
+/* 0..1 along the knob's travel, for the pointer angle */
+static double knob_fraction(UIState *ui, int k) {
+    switch (k) {
+        case KNOB_VOLTS: {
+            double v = ui->scope_volt_div;
+            if (v <= 0) return 0.5;
+            double f = (log10(v) + 3.0) / 8.7;            /* 1 mV .. 500 kV per division */
+            return f < 0 ? 0 : (f > 1 ? 1 : f);
+        }
+        case KNOB_TIME: {
+            double t = ui->scope_time_div;
+            if (t <= 0) return 0.5;
+            double f = (log10(t) + 9.0) / 11.0;           /* 1 ns .. 100 s per division */
+            return f < 0 ? 0 : (f > 1 ? 1 : f);
+        }
+        case KNOB_POSITION: {
+            int ch = ui->scope_selected_channel;
+            if (ch < 0 || ch >= MAX_PROBES) return 0.5;
+            double span = ui->scope_volt_div * 4.0;
+            if (span <= 0) return 0.5;
+            double f = 0.5 + ui->scope_channels[ch].offset / (2.0 * span);
+            return f < 0 ? 0 : (f > 1 ? 1 : f);
+        }
+        case KNOB_TRIGGER: {
+            double span = ui->scope_volt_div * 4.0;
+            if (span <= 0) return 0.5;
+            double f = 0.5 + ui->trigger_level / (2.0 * span);
+            return f < 0 ? 0 : (f > 1 ? 1 : f);
+        }
+        case KNOB_INTENSITY:
+            return (ui->brightness - 0.25) / 0.75;
+        default: {
+            int n = ui->scope_num_channels > 0 ? ui->scope_num_channels : 1;
+            if (n < 2) return 0.5;
+            int ch = ui->scope_selected_channel;
+            if (ch < 0) ch = 0;
+            return (double)ch / (double)(n - 1);
+        }
+    }
+}
+
+static void knob_value_text(UIState *ui, int k, char *buf, size_t n) {
+    switch (k) {
+        case KNOB_VOLTS: {
+            double v = ui->scope_volt_div;
+            if (v >= 1000)     snprintf(buf, n, "%.4g kV", v / 1000.0);
+            else if (v >= 1)   snprintf(buf, n, "%.4g V", v);
+            else               snprintf(buf, n, "%.4g mV", v * 1000.0);
+            break;
+        }
+        case KNOB_TIME: {
+            double t = ui->scope_time_div;
+            if (t >= 1)         snprintf(buf, n, "%.4g s", t);
+            else if (t >= 1e-3) snprintf(buf, n, "%.4g ms", t * 1e3);
+            else if (t >= 1e-6) snprintf(buf, n, "%.4g us", t * 1e6);
+            else                snprintf(buf, n, "%.4g ns", t * 1e9);
+            break;
+        }
+        case KNOB_POSITION: {
+            int ch = ui->scope_selected_channel;
+            double o = (ch >= 0 && ch < MAX_PROBES) ? ui->scope_channels[ch].offset : 0.0;
+            snprintf(buf, n, "%+.3g V", o);
+            break;
+        }
+        case KNOB_TRIGGER:   snprintf(buf, n, "%+.3g V", ui->trigger_level); break;
+        case KNOB_INTENSITY: snprintf(buf, n, "%d %%", (int)(ui->brightness * 100.0 + 0.5)); break;
+        default:             snprintf(buf, n, "CH%d", ui->scope_selected_channel + 1); break;
+    }
+}
+
+void ui_layout_scope_panel(UIState *ui, int win_w, int win_h) {
+    if (!ui) return;
+    int px = win_w - SCOPE_PANEL_W + 14;
+    int py = 74;                                   /* below the panel's name plate */
+    int cell_w = (SCOPE_PANEL_W - 34) / 2, cell_h = 104;
+    for (int i = 0; i < KNOB_COUNT; i++) {
+        int col = i % 2, row = i / 2;
+        ScopeKnob *k = &ui->scope_knobs[i];
+        k->bounds = (Rect){ px + col * cell_w, py + row * cell_h, cell_w - 6, cell_h - 8 };
+        k->r = 25;
+        k->cx = k->bounds.x + k->bounds.w / 2;
+        k->cy = k->bounds.y + 16 + k->r;
+    }
+    (void)win_h;
+}
+
+static void knob_ring(SDL_Renderer *r, int cx, int cy, int rad, Color c) {
+    SDL_SetRenderDrawColor(r, c.r, c.g, c.b, c.a);
+    int prev_x = cx + rad, prev_y = cy;
+    for (int a = 6; a <= 360; a += 6) {
+        double t = a * M_PI / 180.0;
+        int x = cx + (int)(rad * cos(t)), y = cy + (int)(rad * sin(t));
+        SDL_RenderDrawLine(r, prev_x, prev_y, x, y);
+        prev_x = x; prev_y = y;
+    }
+}
+
+void ui_render_scope_panel(UIState *ui, SDL_Renderer *renderer) {
+    if (!ui || !renderer || !ui->scope_panel_active) return;
+    int win_w = 0, win_h = 0;
+    SDL_GetRendererOutputSize(renderer, &win_w, &win_h);
+
+    /* instrument body */
+    SDL_SetRenderDrawColor(renderer, 0x1b, 0x16, 0x28, 0xff);
+    SDL_Rect body = { win_w - SCOPE_PANEL_W, 0, SCOPE_PANEL_W, win_h };
+    SDL_RenderFillRect(renderer, &body);
+    SDL_SetRenderDrawColor(renderer, 0x39, 0x2b, 0x5c, 0xff);
+    SDL_RenderDrawLine(renderer, body.x, 0, body.x, win_h);
+
+    /* name plate */
+    SDL_SetRenderDrawColor(renderer, 0xe6, 0xdc, 0xff, 0xff);
+    ui_draw_text(renderer, "CIRCUIT PLAYGROUND", body.x + 16, 16);
+    SDL_SetRenderDrawColor(renderer, 0xff, 0x2d, 0x95, 0xff);
+    ui_draw_text(renderer, "DUAL-TRACE OSCILLOSCOPE", body.x + 16, 34);
+    SDL_SetRenderDrawColor(renderer, 0x39, 0x2b, 0x5c, 0xff);
+    SDL_RenderDrawLine(renderer, body.x + 12, 56, win_w - 12, 56);
+
+    /* screen bezel: a bright inner lip and a darker outer one, so the graticule reads as a
+       recessed CRT rather than a rectangle of the background */
+    SDL_Rect bez = { ui->scope_rect.x - 6, ui->scope_rect.y - 6,
+                     ui->scope_rect.w + 12, ui->scope_rect.h + 12 };
+    SDL_SetRenderDrawColor(renderer, 0x6a, 0x52, 0x9c, 0xff);
+    SDL_RenderDrawRect(renderer, &bez);
+    for (int i = 1; i <= 3; i++) {
+        SDL_Rect o = { bez.x - i, bez.y - i, bez.w + 2 * i, bez.h + 2 * i };
+        SDL_SetRenderDrawColor(renderer, 0x39 - i * 6, 0x2b - i * 4, 0x5c - i * 8, 0xff);
+        SDL_RenderDrawRect(renderer, &o);
+    }
+
+    for (int i = 0; i < KNOB_COUNT; i++) {
+        ScopeKnob *k = &ui->scope_knobs[i];
+        bool active = (ui->scope_knob_active == i), hot = active || (ui->scope_knob_hover == i);
+
+        /* body: a filled disc, brighter when the pointer is on it */
+        Color face = hot ? (Color){0x3a, 0x2c, 0x60, 0xff} : (Color){0x2a, 0x20, 0x44, 0xff};
+        SDL_SetRenderDrawColor(renderer, face.r, face.g, face.b, 0xff);
+        for (int dy = -k->r; dy <= k->r; dy++) {
+            int dx = (int)sqrt((double)(k->r * k->r - dy * dy));
+            SDL_RenderDrawLine(renderer, k->cx - dx, k->cy + dy, k->cx + dx, k->cy + dy);
+        }
+        knob_ring(renderer, k->cx, k->cy, k->r, hot ? (Color){0x00, 0xff, 0xd5, 0xff}
+                                                   : (Color){0x6a, 0x52, 0x9c, 0xff});
+
+        /* travel ticks: 270 degrees, 7 o'clock round to 5 o'clock */
+        SDL_SetRenderDrawColor(renderer, 0x9c, 0x82, 0xd8, 0xff);
+        for (int t = 0; t <= 8; t++) {
+            double a = (135.0 + 270.0 * t / 8.0) * M_PI / 180.0;
+            int x0 = k->cx + (int)((k->r + 3) * cos(a)), y0 = k->cy + (int)((k->r + 3) * sin(a));
+            int x1 = k->cx + (int)((k->r + 6) * cos(a)), y1 = k->cy + (int)((k->r + 6) * sin(a));
+            SDL_RenderDrawLine(renderer, x0, y0, x1, y1);
+        }
+
+        /* pointer */
+        double f = knob_fraction(ui, i);
+        double a = (135.0 + 270.0 * f) * M_PI / 180.0;
+        Color ptr = hot ? (Color){0x00, 0xff, 0xd5, 0xff} : (Color){0xff, 0xd7, 0x4a, 0xff};
+        SDL_SetRenderDrawColor(renderer, ptr.r, ptr.g, ptr.b, 0xff);
+        for (int w = -1; w <= 1; w++)
+            SDL_RenderDrawLine(renderer, k->cx + w, k->cy,
+                               k->cx + w + (int)((k->r - 4) * cos(a)), k->cy + (int)((k->r - 4) * sin(a)));
+
+        /* label above, value below */
+        const char *lab = knob_label(i);
+        SDL_SetRenderDrawColor(renderer, 0xb9, 0xa6, 0xe6, 0xff);
+        ui_draw_text(renderer, lab, k->cx - (int)(strlen(lab) * 4), k->bounds.y + 2);
+        char val[32]; knob_value_text(ui, i, val, sizeof(val));
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xd5, 0xff);
+        ui_draw_text(renderer, val, k->cx - (int)(strlen(val) * 4), k->cy + k->r + 8);
+    }
+
+    /* status plate: the settings that are switches rather than knobs */
+    int sy = 74 + 3 * 104 + 10;
+    SDL_SetRenderDrawColor(renderer, 0x39, 0x2b, 0x5c, 0xff);
+    SDL_Rect plate = { body.x + 14, sy, SCOPE_PANEL_W - 28, 92 };
+    SDL_RenderDrawRect(renderer, &plate);
+    const char *tm = ui->trigger_mode == TRIG_AUTO ? "AUTO" :
+                     ui->trigger_mode == TRIG_NORMAL ? "NORM" : "SINGLE";
+    const char *te = ui->trigger_edge == TRIG_EDGE_RISING ? "RISING" :
+                     ui->trigger_edge == TRIG_EDGE_FALLING ? "FALLING" : "BOTH";
+    char line[64];
+    SDL_SetRenderDrawColor(renderer, 0xb9, 0xa6, 0xe6, 0xff);
+    snprintf(line, sizeof line, "TRIG  %s %s", tm, te);
+    ui_draw_text(renderer, line, plate.x + 8, sy + 8);
+    snprintf(line, sizeof line, "MODE  %s %s", ui->display_mode == SCOPE_MODE_XY ? "X-Y" : "Y-T",
+             ui->scope_ac_coupling ? "AC" : "DC");
+    ui_draw_text(renderer, line, plate.x + 8, sy + 24);
+    snprintf(line, sizeof line, "VIEW  %s", ui->scope_stacked ? "STACKED" : "OVERLAY");
+    ui_draw_text(renderer, line, plate.x + 8, sy + 40);
+    if (ui->scope_paused) SDL_SetRenderDrawColor(renderer, 0xff, 0xd7, 0x4a, 0xff);
+    else                  SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xd5, 0xff);
+    snprintf(line, sizeof line, "%s   %d CH", ui->scope_paused ? "HOLD" : "RUN ", ui->scope_num_channels);
+    ui_draw_text(renderer, line, plate.x + 8, sy + 60);
+
+    SDL_SetRenderDrawColor(renderer, 0x7d, 0x6d, 0xa8, 0xff);
+    ui_draw_text(renderer, "drag a knob up / down", body.x + 16, sy + 104);
+}
+
+int ui_scope_knob_at(UIState *ui, int x, int y) {
+    if (!ui || !ui->scope_panel_active) return -1;
+    for (int i = 0; i < KNOB_COUNT; i++) {
+        ScopeKnob *k = &ui->scope_knobs[i];
+        int dx = x - k->cx, dy = y - k->cy;
+        if (dx * dx + dy * dy <= (k->r + 6) * (k->r + 6)) return i;
+    }
+    return -1;
+}
+
+int ui_scope_knob_drag(UIState *ui, int knob, int dy) {
+    if (!ui || knob < 0 || knob >= KNOB_COUNT) return 0;
+    ScopeKnob *k = &ui->scope_knobs[knob];
+    double up = -(double)dy;                       /* dragging up increases */
+    switch (knob) {
+        case KNOB_VOLTS:
+        case KNOB_TIME:
+        case KNOB_CHANNEL: {
+            k->detent += up;
+            const double STEP = 14.0;              /* pixels per detent */
+            if (k->detent >= STEP) {
+                k->detent = 0;
+                return knob == KNOB_VOLTS ? UI_ACTION_SCOPE_VOLT_UP :
+                       knob == KNOB_TIME  ? UI_ACTION_SCOPE_TIME_UP : UI_ACTION_SCOPE_TRIG_CH;
+            }
+            if (k->detent <= -STEP) {
+                k->detent = 0;
+                return knob == KNOB_VOLTS ? UI_ACTION_SCOPE_VOLT_DOWN :
+                       knob == KNOB_TIME  ? UI_ACTION_SCOPE_TIME_DOWN : UI_ACTION_SCOPE_TRIG_CH;
+            }
+            return 0;
+        }
+        case KNOB_POSITION: {
+            int ch = ui->scope_selected_channel;
+            if (ch < 0 || ch >= MAX_PROBES) return 0;
+            double span = ui->scope_volt_div * 4.0;
+            double v = ui->scope_channels[ch].offset + up * span / 120.0;
+            if (v >  2 * span) v =  2 * span;
+            if (v < -2 * span) v = -2 * span;
+            ui->scope_channels[ch].offset = v;
+            return 0;
+        }
+        case KNOB_TRIGGER: {
+            double span = ui->scope_volt_div * 4.0;
+            double v = ui->trigger_level + up * span / 120.0;
+            if (v >  2 * span) v =  2 * span;
+            if (v < -2 * span) v = -2 * span;
+            ui->trigger_level = v;
+            return 0;
+        }
+        default:
+            ui_set_brightness(ui, ui->brightness + (float)(up / 300.0));
+            return 0;
+    }
+}
+
 ScopeCoordsBackup ui_setup_popup_scope_coords(UIState *ui) {
     ScopeCoordsBackup backup = {0};
     if (!ui || !ui->scope_popped_out || !ui->scope_popup_window) return backup;
@@ -7598,13 +7876,20 @@ ScopeCoordsBackup ui_setup_popup_scope_coords(UIState *ui) {
     for (int i = 0; i < SCOPE_BTN_N; i++) backup.b[i] = list[i]->bounds;
     int popup_w, popup_h;
     SDL_GetWindowSize(ui->scope_popup_window, &popup_w, &popup_h);
-    ui->scope_rect = (Rect){10, 30, popup_w - 20, popup_h - 130};
+    /* front panel down the right, screen and its button rows on the left */
+    int screen_w = popup_w - SCOPE_PANEL_W - 36;
+    if (screen_w < 260) screen_w = 260;            /* a very narrow window keeps a usable screen */
+    ui->scope_rect = (Rect){18, 30, screen_w, popup_h - 130};
+    if (ui->scope_rect.h < 120) ui->scope_rect.h = 120;
+    ui->scope_panel_active = true;
+    ui_layout_scope_panel(ui, popup_w, popup_h);
     ui_layout_scope_buttons(ui, ui->scope_rect.x, ui->scope_rect.y + ui->scope_rect.h + 5, ui->scope_rect.x + ui->scope_rect.w);
     return backup;
 }
 
 void ui_restore_popup_scope_coords(UIState *ui, const ScopeCoordsBackup *backup) {
     if (!ui || !backup) return;
+    ui->scope_panel_active = false;
     Button *list[SCOPE_BTN_N];
     scope_button_list(ui, list);
     ui->scope_rect = backup->scope_rect;

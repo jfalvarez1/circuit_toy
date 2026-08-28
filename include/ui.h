@@ -131,6 +131,25 @@ typedef struct {
     int prop_type;  // PropertyType enum value (PROP_VALUE, PROP_FREQUENCY, etc.)
 } PropertyField;
 
+/* Pop-out bench-scope front panel: the knobs down the right-hand side. Each one drives a
+   value that already exists - the panel is a different way to reach the same controls, not a
+   second set of state. */
+typedef enum {
+    KNOB_VOLTS = 0,   // volts/div, detented through the 1-2-5 sequence
+    KNOB_TIME,        // time/div, same
+    KNOB_POSITION,    // vertical position of the selected channel (volts)
+    KNOB_TRIGGER,     // trigger level (volts)
+    KNOB_INTENSITY,   // screen brightness
+    KNOB_CHANNEL,     // selected / trigger channel, detented
+    KNOB_COUNT
+} ScopeKnobKind;
+
+typedef struct {
+    Rect bounds;         // the knob's cell, including its label
+    int cx, cy, r;       // the knob body
+    double detent;       // accumulated drag since the last detent step
+} ScopeKnob;
+
 // Oscilloscope channel
 typedef struct {
     bool enabled;
@@ -276,6 +295,13 @@ typedef struct {
     int scope_ctl_tab;               // active tab (0 Display, 1 Trigger, 2 Analysis)
     int scope_buttons_bottom;        // screen y just below the last button row (info rows start here)
     int scope_default_h;             // scope height when the user has not resized it (shrinks on small windows)
+
+    // Pop-out bench-scope front panel
+    ScopeKnob scope_knobs[KNOB_COUNT];
+    int scope_knob_active;               // index of the knob being dragged, -1 when none
+    int scope_knob_hover;                // index under the pointer, -1 when none
+    int scope_knob_last_y;               // last pointer y while dragging
+    bool scope_panel_active;             // the pop-out panel layout is in effect
 
     // Pop-out oscilloscope window
     SDL_Window *scope_popup_window;      // Separate window for oscilloscope
@@ -589,6 +615,16 @@ typedef struct {
 // (x0, y0), wrapping at max_x; sets ui->scope_buttons_bottom. Used for the main window and
 // the pop-out window so there is exactly one layout.
 void ui_layout_scope_buttons(UIState *ui, int x0, int y0, int max_x);
+
+/* Bench-scope front panel (pop-out window only). Layout runs from
+   ui_setup_popup_scope_coords, so the knobs sit in the same coordinate space the input path
+   already swaps in and a click lands where it looks like it should. */
+void ui_layout_scope_panel(UIState *ui, int win_w, int win_h);
+void ui_render_scope_panel(UIState *ui, SDL_Renderer *renderer);
+int  ui_scope_knob_at(UIState *ui, int x, int y);          // knob index or -1
+// Drag: dy is pointer movement in pixels (up = increase). Returns a UI action to queue for
+// the detented knobs (volts/div, time/div, channel) or 0 when the knob changed a value itself.
+int  ui_scope_knob_drag(UIState *ui, int knob, int dy);
 // Fill out[] with every scope control button (SCOPE_BTN_N entries)
 void ui_scope_buttons(UIState *ui, Button *out[]);
 // Hover tooltip, drawn after everything else

@@ -518,6 +518,27 @@ no pre-existing template sets - the check below is that nothing else moved.
 | 3.20.10 | `[ ]` **Automated:** the full battery | 158/158 templates, 158/158 demos, **159/159 probe oracles** (17 new: both halves of every ideal-vs-real comparison), 9/9 oscillators, 23/23 switches, 0 burns, 2104 knob runs 0 failed, 23 std buses 0 drifted, 158/158 flow, 0 param-preset failures, 0 layout failures |
 | 3.20.11 | `[ ]` **Automated:** `--geom-test` on the new templates | All seven ideal-vs-real templates report `diag=0 cross=0 through=0 touch=0 overlap=0`. The op-amp rows were rewired to get there: the wire feeding the + input ran along R1's own column, which reads - correctly - as a wire straight through the resistor |
 
+### 3.21 Pop-out bench scope (2026-08-28)
+
+`PopOut` now opens a 1120 x 700 window (it was 600 x 400, which made the popped-out screen
+smaller than the docked one) laid out as an instrument: the graticule in a recessed bezel, a
+front panel of six working knobs down the right, and a status plate for the settings that are
+switches rather than knobs. The docked scope also starts taller (375 px from y = 220, was
+300 px from y = 250); the existing clamp still shrinks it on a small window so its three
+button rows clear the status bar.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.21.1 | `[ ]` Pop the scope out with a template loaded | Full-width graticule in a bezel, six knobs, and a status plate reading TRIG / MODE / VIEW / RUN with the channel count |
+| 3.21.2 | `[ ]` Drag VOLTS/DIV and TIME/DIV up and down | Detented: each ~14 px of drag steps one 1-2-5 position, and the docked V+/V-/T+/T- buttons show the same value. Time/div still re-maps the simulation step |
+| 3.21.3 | `[ ]` Drag POSITION, then switch CHANNEL and drag again | Each channel moves independently; the value under the knob is that channel's offset in volts |
+| 3.21.4 | `[ ]` Drag TRIG LEVEL | The trigger line on the screen follows it, and the reading at the bottom of the window agrees |
+| 3.21.5 | `[ ]` Drag INTENSITY | Both windows dim together - it is the same setting as the status bar's `Brt` slider, and it persists to settings.json |
+| 3.21.6 | `[ ]` Click on the graticule, then on the button rows | Neither grabs a knob; the buttons keep working exactly as they do docked |
+| 3.21.7 | `[ ]` Dock the scope again and click where a knob was | Nothing happens - the knobs are only live while the panel is shown |
+| 3.21.8 | `[ ]` **Automated:** `circuit-playground --layout-test` | New section: all six knobs inside the panel column, each hit-tests at its own centre, none overlap, a click on the screen grabs none, they are inert when docked, the two detented knobs emit the same UI actions the buttons do, and the three continuous knobs move their value in the right direction |
+| 3.21.9 | `[ ]` **Automated:** `--popout` + `--shot` | A scripted run with `--popout` writes both windows: `name.bmp` and `name_scope.bmp`. `tools/make_media.py` uses it for the two README screenshots |
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.

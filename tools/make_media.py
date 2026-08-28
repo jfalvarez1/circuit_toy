@@ -114,6 +114,13 @@ GIFS = [
 GIF_FRAME_MS = 200
 
 
+# name, template, frame - captured from the popped-out scope window (the bench front panel)
+POPOUT_SHOTS = [
+    ("scope_panel", "IdOA", 200),
+    ("scope_panel_xy", "Lissa", 220),
+]
+
+
 def run(args, timeout=120, size=SIZE):
     cmd = [EXE, "--size", size, "--exit"] + args
     r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=timeout)
@@ -134,6 +141,18 @@ def shots():
         if os.path.exists(bmp):
             Image.open(bmp).save(os.path.join(SHOT_DIR, name + ".png"), optimize=True)
             os.remove(bmp)
+
+    # the pop-out scope window: its own front panel, captured from the second renderer
+    for name, tpl, frame in POPOUT_SHOTS:
+        bmp = os.path.join(SHOT_DIR, name + ".bmp")
+        scope_bmp = os.path.join(SHOT_DIR, name + "_scope.bmp")
+        print("shot", name, "(pop-out)")
+        run(["--tab", "circuits", "--template", tpl, "--popout", "--frame", str(frame), "--shot", bmp])
+        if os.path.exists(scope_bmp):
+            Image.open(scope_bmp).save(os.path.join(SHOT_DIR, name + ".png"), optimize=True)
+            os.remove(scope_bmp)
+        if os.path.exists(bmp):
+            os.remove(bmp)      # the main window is not what this shot is about
 
 
 def gifs():

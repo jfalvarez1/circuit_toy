@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.10.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.10.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.11.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.11.0)** (auto-updating from v3.4.0 on)
 
 A native desktop circuit simulator written in C with SDL2, featuring a synthwave-themed interface. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
 
@@ -403,7 +403,7 @@ Full-featured virtual oscilloscope with:
 - **Persistence Mode** - Phosphor-like trace decay for visualizing signal variations
 - **Autoset** - Automatic scale adjustment
 - **Screenshot** - Save oscilloscope display as BMP
-- **Pop-out Window** - Detach oscilloscope to separate resizable window
+- **Pop-out Window** - Detach the oscilloscope into its own resizable window, laid out as a bench instrument with working knobs (see below)
 
 ### Device Models You Can Actually Edit
 
@@ -430,6 +430,34 @@ what is being left out:
 The **Ideal vs real models** group builds each of those into a side-by-side circuit: the same
 schematic two or three times with one part swapped, both on the scope at once. Every value in the
 notes is a hand calculation that the regression suite checks - both halves of every comparison.
+
+### The Pop-Out Bench Scope
+
+![Pop-out bench scope](screenshots/auto/scope_panel.png)
+
+`PopOut` detaches the oscilloscope into its own 1120 x 700 window laid out like a real
+instrument: the graticule sits in a recessed bezel with the whole width of the window, and a
+front panel runs down the right with six **working knobs**. Drag one up or down:
+
+| Knob | What it does |
+|------|--------------|
+| **VOLTS/DIV** | detented through the 1-2-5 sequence, 1 mV to 500 kV per division |
+| **TIME/DIV** | detented, 1 ns to 100 s per division (the simulation step follows it) |
+| **POSITION** | moves the selected channel up and down the screen |
+| **TRIG LEVEL** | the trigger threshold, in volts |
+| **INTENSITY** | screen brightness, the same setting as the status bar's `Brt` |
+| **CHANNEL** | which channel the position knob and the trigger follow |
+
+Each pointer sits where the value is on its travel, and the value is printed under the knob.
+Below them a status plate shows the settings that are switches rather than knobs - trigger mode
+and edge, Y-T or X-Y, AC or DC, stacked or overlay, and RUN / HOLD with the channel count.
+
+The knobs are not a second copy of the state: they move the same variables the docked buttons
+do, so the two views can never disagree. `--layout-test` checks every knob is inside the panel,
+hit-tests at its own centre, does not overlap its neighbours, is inert while the scope is
+docked, and actually moves its value in the right direction.
+
+![Pop-out scope in X-Y mode](screenshots/auto/scope_panel_xy.png)
 
 ### Bode Plot Analysis
 

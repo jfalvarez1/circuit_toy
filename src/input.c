@@ -91,6 +91,15 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             ScopeCoordsBackup backup = {0};
             if (is_popup_event) {
                 backup = ui_setup_popup_scope_coords(ui);
+                /* A knob takes the press before anything else in the panel column. */
+                int knob = ui_scope_knob_at(ui, x, y);
+                if (knob >= 0) {
+                    ui->scope_knob_active = knob;
+                    ui->scope_knob_last_y = y;
+                    ui->scope_knobs[knob].detent = 0;
+                    ui_restore_popup_scope_coords(ui, &backup);
+                    return true;
+                }
             }
 
             // If spotlight is open, handle spotlight clicks first
@@ -739,6 +748,10 @@ bool input_handle_event(InputState *input, SDL_Event *event,
 
         case SDL_MOUSEBUTTONUP: {
             int button = event->button.button;
+            if (ui && ui->scope_knob_active >= 0 && button == SDL_BUTTON_LEFT) {
+                ui->scope_knob_active = -1;
+                return true;
+            }
             if (button == SDL_BUTTON_LEFT) {
                 // Auto-wire when dropping a component near other terminals
                 if (input->is_dragging && input->dragging_component) {
@@ -907,6 +920,14 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             if (is_popup_motion) {
                 backup_motion = ui_setup_popup_scope_coords(ui);
             }
+            if (is_popup_motion && ui->scope_knob_active >= 0) {
+                int act = ui_scope_knob_drag(ui, ui->scope_knob_active, y - ui->scope_knob_last_y);
+                ui->scope_knob_last_y = y;
+                if (act) input->pending_ui_action = act;
+                ui_restore_popup_scope_coords(ui, &backup_motion);
+                return true;
+            }
+            if (is_popup_motion) ui->scope_knob_hover = ui_scope_knob_at(ui, x, y);
             ui_handle_motion(ui, x, y, is_popup_motion);
             if (is_popup_motion) {
                 ui_restore_popup_scope_coords(ui, &backup_motion);

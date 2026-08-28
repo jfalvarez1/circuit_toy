@@ -639,46 +639,7 @@ void app_handle_events(App *app) {
                 break;
 
             case UI_ACTION_SCOPE_POPUP:
-                // Toggle pop-out oscilloscope window
-                if (app->ui.scope_popped_out) {
-                    // Close the popup window
-                    if (app->ui.scope_popup_renderer) {
-                        SDL_DestroyRenderer(app->ui.scope_popup_renderer);
-                        app->ui.scope_popup_renderer = NULL;
-                    }
-                    if (app->ui.scope_popup_window) {
-                        SDL_DestroyWindow(app->ui.scope_popup_window);
-                        app->ui.scope_popup_window = NULL;
-                    }
-                    app->ui.scope_popup_window_id = 0;
-                    app->ui.scope_popped_out = false;
-                    ui_set_status(&app->ui, "Oscilloscope docked");
-                } else {
-                    // Create popup window
-                    app->ui.scope_popup_window = SDL_CreateWindow(
-                        "Oscilloscope",
-                        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                        600, 400,
-                        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
-                    );
-                    if (app->ui.scope_popup_window) {
-                        app->ui.scope_popup_renderer = SDL_CreateRenderer(
-                            app->ui.scope_popup_window, -1,
-                            SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
-                        );
-                        if (app->ui.scope_popup_renderer) {
-                            app->ui.scope_popup_window_id = SDL_GetWindowID(app->ui.scope_popup_window);
-                            app->ui.scope_popped_out = true;
-                            ui_set_status(&app->ui, "Oscilloscope popped out");
-                        } else {
-                            SDL_DestroyWindow(app->ui.scope_popup_window);
-                            app->ui.scope_popup_window = NULL;
-                            ui_set_status(&app->ui, "Failed to create popup renderer");
-                        }
-                    } else {
-                        ui_set_status(&app->ui, "Failed to create popup window");
-                    }
-                }
+                app_scope_popout(app, !app->ui.scope_popped_out);
                 break;
 
             case UI_ACTION_SWEEP_PANEL:
@@ -2058,6 +2019,54 @@ bool app_save_window_bmp(App *app, const char *path) {
     return ok;
 }
 
+void app_scope_popout(App *app, bool on) {
+    if (!app) return;
+    if (!on) {
+        if (app->ui.scope_popup_renderer) { SDL_DestroyRenderer(app->ui.scope_popup_renderer); app->ui.scope_popup_renderer = NULL; }
+        if (app->ui.scope_popup_window)   { SDL_DestroyWindow(app->ui.scope_popup_window);     app->ui.scope_popup_window = NULL; }
+        app->ui.scope_popup_window_id = 0;
+        app->ui.scope_popped_out = false;
+        ui_set_status(&app->ui, "Oscilloscope docked");
+        return;
+    }
+    if (app->ui.scope_popped_out) return;
+    app->ui.scope_popup_window = SDL_CreateWindow("Oscilloscope",
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        1120, 700,                     /* screen plus the knob column, both usable at once */
+        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+    if (!app->ui.scope_popup_window) { ui_set_status(&app->ui, "Failed to create popup window"); return; }
+    app->ui.scope_popup_renderer = SDL_CreateRenderer(app->ui.scope_popup_window, -1,
+        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if (!app->ui.scope_popup_renderer) {
+        SDL_DestroyWindow(app->ui.scope_popup_window);
+        app->ui.scope_popup_window = NULL;
+        ui_set_status(&app->ui, "Failed to create popup renderer");
+        return;
+    }
+    app->ui.scope_popup_window_id = SDL_GetWindowID(app->ui.scope_popup_window);
+    app->ui.scope_popped_out = true;
+    ui_set_status(&app->ui, "Oscilloscope popped out");
+}
+
+/* Save any renderer's contents; the popped-out scope is a second window, so a scripted
+   screenshot has to be able to read from it too. */
+static bool app_save_renderer_bmp(SDL_Renderer *r, const char *path) {
+    int w = 0, h = 0;
+    if (!r) return false;
+    SDL_GetRendererOutputSize(r, &w, &h);
+    if (w <= 0 || h <= 0) return false;
+    SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
+    if (!surf) return false;
+    bool ok = SDL_RenderReadPixels(r, NULL, SDL_PIXELFORMAT_ARGB8888, surf->pixels, surf->pitch) == 0
+              && SDL_SaveBMP(surf, path) == 0;
+    SDL_FreeSurface(surf);
+    return ok;
+}
+
+
+/* Save any renderer's contents; the popped-out scope is a second window, so a scripted
+   screenshot has to be able to read from it too. */
+
 static void app_cli_capture(App *app) {
     app->cli_frame++;
     // Scripted typing (--keys): feed characters through the normal SDL event path so the
@@ -2081,6 +2090,13 @@ static void app_cli_capture(App *app) {
         if (app->cli_frame == app->cli_shot_frame) {
             if (app_save_window_bmp(app, app->cli_shot_path)) printf("Saved %s\n", app->cli_shot_path);
             else fprintf(stderr, "Screenshot failed: %s\n", SDL_GetError());
+            if (app->ui.scope_popped_out && app->ui.scope_popup_renderer) {
+                char scope_path[352];
+                const char *dot = strrchr(app->cli_shot_path, '.');
+                int stem = dot ? (int)(dot - app->cli_shot_path) : (int)strlen(app->cli_shot_path);
+                snprintf(scope_path, sizeof scope_path, "%.*s_scope%s", stem, app->cli_shot_path, dot ? dot : ".bmp");
+                if (app_save_renderer_bmp(app->ui.scope_popup_renderer, scope_path)) printf("Saved %s\n", scope_path);
+            }
         }
         if (app->cli_frame < app->cli_shot_frame) done = false;
     }
@@ -2243,6 +2259,7 @@ void app_render(App *app) {
         // Swap in the popup layout (shared with the input path), render, restore
         ScopeCoordsBackup popup_backup = ui_setup_popup_scope_coords(&app->ui);
         ui_render_oscilloscope(&app->ui, popup_r, app->simulation, &app->analysis);
+        ui_render_scope_panel(&app->ui, popup_r);
         ui_restore_popup_scope_coords(&app->ui, &popup_backup);
         { int pw = 0, ph = 0; SDL_GetRendererOutputSize(popup_r, &pw, &ph); ui_render_brightness(&app->ui, popup_r, pw, ph); }
 

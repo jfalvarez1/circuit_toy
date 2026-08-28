@@ -48,6 +48,87 @@ static int layout_test(void) {
             printf("[ OK ] layout %dx%d tab %d: %d visible scope buttons, none overlap, bottom %d\n", sizes[k][0], sizes[k][1], tab, visible, ui->scope_buttons_bottom);
         }
     }
+    /* ---- pop-out front panel: every knob is hit-testable and every knob moves something ----
+       The panel is laid out in the pop-out window's coordinates, so this drives
+       ui_layout_scope_panel directly with a window size and then does what a drag does. */
+    {
+        const int PW = 1120, PH = 700;
+        ui->scope_panel_active = true;
+        ui->scope_rect = (Rect){18, 30, PW - 250 - 36, PH - 130};
+        ui_layout_scope_panel(ui, PW, PH);
+        ui->scope_num_channels = 4;
+        ui->scope_selected_channel = 0;
+        ui->scope_volt_div = 1.0;
+        ui->scope_time_div = 1e-3;
+        ui->trigger_level = 0.0;
+        ui->scope_channels[0].offset = 0.0;
+        ui_set_brightness(ui, 1.0f);
+
+        int knobs_ok = 0;
+        for (int k = 0; k < KNOB_COUNT; k++) {
+            ScopeKnob *kn = &ui->scope_knobs[k];
+            /* the knob must be inside the panel column and clear of the screen */
+            if (kn->cx - kn->r < PW - 250 || kn->cx + kn->r > PW ||
+                kn->cy - kn->r < 0 || kn->cy + kn->r > PH) {
+                printf("[FAIL] knob %d outside the panel column\n", k); fails++;
+            }
+            if (ui_scope_knob_at(ui, kn->cx, kn->cy) != k) {
+                printf("[FAIL] knob %d does not hit-test at its own centre\n", k); fails++;
+            }
+            for (int j = 0; j < KNOB_COUNT; j++) {
+                if (j == k) continue;
+                ScopeKnob *o = &ui->scope_knobs[j];
+                int dx = kn->cx - o->cx, dy = kn->cy - o->cy;
+                if (dx * dx + dy * dy < (kn->r + o->r) * (kn->r + o->r)) {
+                    printf("[FAIL] knobs %d and %d overlap\n", k, j); fails++;
+                }
+            }
+            knobs_ok++;
+        }
+
+        /* volts/div and time/div are detented: a long drag has to emit an action */
+        int act = 0;
+        for (int i = 0; i < 40 && !act; i++) act = ui_scope_knob_drag(ui, KNOB_VOLTS, -1);
+        if (act != UI_ACTION_SCOPE_VOLT_UP) { printf("[FAIL] VOLTS/DIV knob emitted %d, not VOLT_UP\n", act); fails++; }
+        act = 0;
+        for (int i = 0; i < 40 && !act; i++) act = ui_scope_knob_drag(ui, KNOB_VOLTS, +1);
+        if (act != UI_ACTION_SCOPE_VOLT_DOWN) { printf("[FAIL] VOLTS/DIV knob down emitted %d\n", act); fails++; }
+        act = 0;
+        for (int i = 0; i < 40 && !act; i++) act = ui_scope_knob_drag(ui, KNOB_TIME, -1);
+        if (act != UI_ACTION_SCOPE_TIME_UP) { printf("[FAIL] TIME/DIV knob emitted %d, not TIME_UP\n", act); fails++; }
+        act = 0;
+        for (int i = 0; i < 40 && !act; i++) act = ui_scope_knob_drag(ui, KNOB_CHANNEL, -1);
+        if (act != UI_ACTION_SCOPE_TRIG_CH) { printf("[FAIL] CHANNEL knob emitted %d, not TRIG_CH\n", act); fails++; }
+
+        /* the continuous knobs move their own value, and dragging up increases it */
+        double t0 = ui->trigger_level;
+        ui_scope_knob_drag(ui, KNOB_TRIGGER, -30);
+        if (!(ui->trigger_level > t0)) { printf("[FAIL] TRIG LEVEL knob did not rise on an upward drag\n"); fails++; }
+        ui_scope_knob_drag(ui, KNOB_TRIGGER, +60);
+        if (!(ui->trigger_level < t0)) { printf("[FAIL] TRIG LEVEL knob did not fall on a downward drag\n"); fails++; }
+
+        double o0 = ui->scope_channels[0].offset;
+        ui_scope_knob_drag(ui, KNOB_POSITION, -30);
+        if (!(ui->scope_channels[0].offset > o0)) { printf("[FAIL] POSITION knob did not move the channel offset\n"); fails++; }
+
+        float b0 = ui->brightness;
+        ui_scope_knob_drag(ui, KNOB_INTENSITY, +200);
+        if (!(ui->brightness < b0)) { printf("[FAIL] INTENSITY knob did not dim\n"); fails++; }
+        ui_scope_knob_drag(ui, KNOB_INTENSITY, -400);
+        if (!(ui->brightness > 0.9f)) { printf("[FAIL] INTENSITY knob did not come back up\n"); fails++; }
+
+        /* a click away from every knob must not grab one */
+        if (ui_scope_knob_at(ui, ui->scope_rect.x + 10, ui->scope_rect.y + 10) != -1) {
+            printf("[FAIL] a click on the screen grabbed a knob\n"); fails++;
+        }
+        ui->scope_panel_active = false;
+        if (ui_scope_knob_at(ui, ui->scope_knobs[0].cx, ui->scope_knobs[0].cy) != -1) {
+            printf("[FAIL] knobs are live while the panel is not shown (docked scope)\n"); fails++;
+        }
+        printf("[ OK ] scope panel: %d knobs laid out, hit-tested and driven\n", knobs_ok);
+        ui_set_brightness(ui, 1.0f);
+    }
+
     /* every template is in the Circuits palette, exactly once */
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
         int n = 0;
@@ -96,6 +177,7 @@ int main(int argc, char *argv[]) {
     int cli_frame = 90, cli_rec_n = 0, cli_rec_every = 1, cli_scroll = -1, cli_tab = -1; bool cli_exit = false, no_update = false;
     const char *cli_keys = NULL; int cli_keys_frame = 30, cli_keys_every = 6;
     const char *cli_xy = NULL;
+    bool cli_popout = false;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--template") && i + 1 < argc) cli_template = argv[++i];
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) cli_shot = argv[++i];
@@ -120,13 +202,14 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--keys") && i + 3 < argc) { cli_keys = argv[++i]; cli_keys_frame = atoi(argv[++i]); cli_keys_every = atoi(argv[++i]); }
         else if (!strcmp(argv[i], "--xy") && i + 1 < argc) cli_xy = argv[++i];
         else if (!strcmp(argv[i], "--tab") && i + 1 < argc) cli_tab = !strcmp(argv[++i], "circuits") ? 1 : 0;
+        else if (!strcmp(argv[i], "--popout")) cli_popout = true;
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
         else if (!strcmp(argv[i], "--layout-test")) return layout_test();
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); usage(); return 2; }
     }
 
     printf("Circuit Playground v%s\n", APP_VERSION);
-    printf("A circuit simulator inspired by The Powder Toy\n\n");
+    printf("A circuit simulator inspired by Paul Falstad's circuit.js and The Powder Toy\n\n");
 
     // Initialize SDL (video + timer; audio subsystem was removed with the microphone feature)
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
@@ -163,6 +246,7 @@ int main(int argc, char *argv[]) {
     if (cli_scroll >= 0) app.ui.palette_scroll_offset = cli_scroll;
     if (cli_tab >= 0) app.ui.left_tab = cli_tab;
     app.cli_exit = cli_exit;
+    if (cli_popout) app_scope_popout(&app, true);   /* --shot then also writes <name>_scope.bmp */
     if (cli_template) {
         CircuitTemplateType found = CIRCUIT_NONE;
         for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
