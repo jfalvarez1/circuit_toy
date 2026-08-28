@@ -182,6 +182,9 @@ typedef union {
         double cj;         // CJ - Junction capacitance (F/m²), default: 1e-4
 
         // State variables for capacitor integration
+        // Operating point, refreshed every solve so the properties panel can show it
+        double op_vgs, op_vds, op_id, op_gm;   // V, V, A, A/V
+        int op_region;          // 0 cutoff, 1 triode, 2 saturation
         double vgs_prev;   // Previous Vgs for capacitor integration
         double vgd_prev;   // Previous Vgd for capacitor integration
         double i_cgs;      // Gate-source capacitor current

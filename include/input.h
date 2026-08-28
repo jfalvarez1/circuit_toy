@@ -66,6 +66,10 @@ typedef enum {
     PROP_MOS_LAMBDA,    // Channel length modulation
     PROP_MOS_W,         // Channel width
     PROP_MOS_L,         // Channel length
+    PROP_MOS_WL,        // W/L ratio (keeps L, scales W)
+    PROP_MOS_KN,        // Device transconductance Kn = Kp (W/L) (keeps Kp and L, scales W)
+    PROP_MOS_TOX,       // Gate oxide thickness (sets Cox, and so u*Cox)
+    PROP_MOS_TYPE,      // Enhancement <-> depletion (flips the sign of Vth)
     PROP_MOS_IDEAL,     // Ideal mode toggle
 
     // LED parameters

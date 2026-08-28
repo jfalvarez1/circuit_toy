@@ -2811,6 +2811,11 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             Gds = MAX(Gds, 1e-12);
             Gm = MAX(Gm, 0);
 
+            // Cache the operating point for the properties panel (Vov <= 0 cutoff, Vds < Vov triode)
+            comp->props.mosfet.op_vgs = Vgs; comp->props.mosfet.op_vds = Vds;
+            comp->props.mosfet.op_id = Id;   comp->props.mosfet.op_gm = Gm;
+            comp->props.mosfet.op_region = (Vov <= 0) ? 0 : (Vds < Vov ? 1 : 2);
+
             // Equivalent current source: Ieq = Id - Gm*Vgs - Gds*Vds
             Ieq = Id - Gm * Vgs - Gds * Vds;
 

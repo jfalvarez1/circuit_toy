@@ -716,6 +716,7 @@
                     <a href="#ic-io">7j. IC I/O &amp; Drivers</a>
                     <a href="#building">7k. Texas Voltages, Residential &amp; Commercial</a>
                     <a href="#grid-std">7l. Reliability Standards &amp; Simulation Methods</a>
+                    <a href="#mos-params">7m. MOSFET Parameters &amp; Operating Point</a>
 
                     <div class="toc-section">Theory & Concepts</div>
                     <a href="#theory">8. Circuit Theory Fundamentals</a>
@@ -1549,6 +1550,34 @@ templates where a regulatory limit, not a textbook equation, is the thing being 
 <div class="tip"><strong>Automated:</strong> <code>template_smoke --std-test</code> measures 23 steady-state
 buses against their bands and pins each measured value, so a template cannot drift off its documented
 design point. Rows that sit outside a band on purpose print as <code>[NOTE] ... (documented exception)</code>.</div>
+</section>
+
+<!-- 7m. MOSFET parameters -->
+<section id="mos-params" class="section">
+<h2>7m. MOSFET Parameters &amp; Operating Point</h2>
+<p>Textbooks hand you a MOSFET's parameters in whichever form suits the problem: sometimes
+&mu;<sub>n</sub>C<sub>ox</sub> with W and L, sometimes W/L on its own, sometimes the device
+transconductance k<sub>n</sub> = &mu;<sub>n</sub>C<sub>ox</sub>(W/L) already multiplied out, and
+sometimes t<sub>ox</sub> and a mobility. Select a MOSFET and the properties panel accepts all of
+them - each field back-solves the others, so you can type in exactly what the problem gives you.</p>
+<table>
+<tr><th>Field</th><th>Is</th><th>Editing it</th></tr>
+<tr><td><strong>Vth</strong></td><td>Threshold voltage</td><td>Direct. Its sign decides enhancement or depletion.</td></tr>
+<tr><td><strong>u*Cox</strong></td><td>Process transconductance &mu;<sub>n</sub>C<sub>ox</sub> (A/V&sup2;)</td><td>Direct; k<sub>n</sub> follows.</td></tr>
+<tr><td><strong>W</strong>, <strong>L</strong></td><td>Channel width and length (m)</td><td>Direct; W/L and k<sub>n</sub> follow.</td></tr>
+<tr><td><strong>W/L</strong></td><td>Aspect ratio</td><td>Holds L and scales W.</td></tr>
+<tr><td><strong>Kn</strong></td><td>Device transconductance &mu;<sub>n</sub>C<sub>ox</sub>(W/L)</td><td>Holds &mu;<sub>n</sub>C<sub>ox</sub> and L, scales W.</td></tr>
+<tr><td><strong>lambda</strong></td><td>Channel-length modulation (1/V)</td><td>Direct. Zero in the ideal model.</td></tr>
+<tr><td><strong>tox</strong></td><td>Gate oxide thickness</td><td>Holds mobility and rescales &mu;<sub>n</sub>C<sub>ox</sub> through C<sub>ox</sub> = &epsilon;<sub>ox</sub>/t<sub>ox</sub>.</td></tr>
+<tr><td><strong>Type</strong></td><td>Enhancement or depletion</td><td>Click to flip the sign of V<sub>th</sub>: a depletion device conducts at V<sub>GS</sub> = 0.</td></tr>
+</table>
+<p>Below the parameters the panel shows the <strong>live operating point</strong> straight out of the
+solver - the region the device is in (CUTOFF / TRIODE / SATURATION), V<sub>GS</sub>, V<sub>DS</sub>,
+I<sub>D</sub>, g<sub>m</sub> and the overdrive V<sub>OV</sub> = V<sub>GS</sub> &minus; V<sub>th</sub>.
+That is usually the answer a homework problem is asking for, and it updates as you edit.</p>
+<div class="tip">C<sub>ox</sub> and &mu; are shown as derived read-outs, so a problem that quotes
+&mu;<sub>n</sub> = 0.05 m&sup2;/Vs and t<sub>ox</sub> = 10 nm can be checked against one that quotes
+&mu;<sub>n</sub>C<sub>ox</sub> = 172 &micro;A/V&sup2; directly.</div>
 </section>
 
 <!-- Circuit Theory -->

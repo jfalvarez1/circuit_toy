@@ -2665,7 +2665,7 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 // Transconductance parameter (Kp)
                 bool editing_kp = input && input->editing_property && input->editing_prop_type == PROP_MOS_KP;
                 format_engineering(selected->props.mosfet.kp, "A/V2", buf, sizeof(buf));
-                draw_property_field(renderer, x + 10, prop_y, prop_w, "Kp:", buf,
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "u*Cox:", buf,
                                    editing_kp, edit_buf, cursor);
                 ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                 ui->properties[ui->num_properties].prop_type = PROP_MOS_KP;
@@ -2691,6 +2691,95 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui->properties[ui->num_properties].prop_type = PROP_MOS_L;
                 ui->num_properties++;
                 prop_y += 18;
+
+                // W/L ratio - the form textbooks actually quote
+                bool editing_wl = input && input->editing_property && input->editing_prop_type == PROP_MOS_WL;
+                snprintf(buf, sizeof(buf), "%.4g", selected->props.mosfet.l > 0 ? selected->props.mosfet.w / selected->props.mosfet.l : 0);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "W/L:", buf, editing_wl, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_MOS_WL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Device transconductance Kn = Kp (W/L): the other form a problem may give you
+                bool editing_kn = input && input->editing_property && input->editing_prop_type == PROP_MOS_KN;
+                format_engineering(selected->props.mosfet.kp * (selected->props.mosfet.l > 0 ? selected->props.mosfet.w / selected->props.mosfet.l : 0), "A/V2", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Kn:", buf, editing_kn, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_MOS_KN;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Channel-length modulation
+                bool editing_lam = input && input->editing_property && input->editing_prop_type == PROP_MOS_LAMBDA;
+                snprintf(buf, sizeof(buf), "%.4g /V", selected->props.mosfet.lambda);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "lambda:", buf, editing_lam, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_MOS_LAMBDA;
+                ui->num_properties++;
+                prop_y += 18;
+
+                // Gate oxide: t_ox sets Cox = eps_ox / t_ox, and u*Cox follows at constant mobility
+                bool editing_tox = input && input->editing_property && input->editing_prop_type == PROP_MOS_TOX;
+                format_engineering(selected->props.mosfet.tox, "m", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "tox:", buf, editing_tox, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_MOS_TOX;
+                ui->num_properties++;
+                prop_y += 18;
+                {
+                    double cox = selected->props.mosfet.tox > 0 ? 3.45e-11 / selected->props.mosfet.tox : 0;
+                    char c1[24], c2[24];
+                    format_engineering(cox, "F/m2", c1, sizeof c1);
+                    format_engineering(cox > 0 ? selected->props.mosfet.kp / cox : 0, "m2/Vs", c2, sizeof c2);
+                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                    snprintf(buf, sizeof(buf), "Cox %s", c1);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2); prop_y += 14;
+                    snprintf(buf, sizeof(buf), "u   %s", c2);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2); prop_y += 16;
+                }
+
+                // Enhancement or depletion mode: click to flip the sign of Vth
+                {
+                    bool depl = (selected->type == COMP_NMOS) ? (selected->props.mosfet.vth < 0) : (selected->props.mosfet.vth > 0);
+                    SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                    ui_draw_text(renderer, "Type:", x + 10, prop_y + 2);
+                    SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                    ui_draw_text(renderer, depl ? "[Depletion]" : "[Enhancement]", x + 100, prop_y + 2);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_MOS_TYPE;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+
+                // Live operating point: region, Vgs, Vds, Id, gm, and Vov = Vgs - Vth
+                {
+                    static const char *regions[3] = { "CUTOFF", "TRIODE", "SATURATION" };
+                    int rg = selected->props.mosfet.op_region;
+                    if (rg < 0 || rg > 2) rg = 0;
+                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                    ui_draw_text(renderer, "Operating point", x + 10, prop_y + 2);
+                    prop_y += 16;
+                    SDL_SetRenderDrawColor(renderer, rg == 2 ? 0x00 : 0xff, rg == 2 ? 0xff : 0xc0, 0x66, 0xff);
+                    ui_draw_text(renderer, regions[rg], x + 10, prop_y + 2);
+                    prop_y += 16;
+                    SDL_SetRenderDrawColor(renderer, 0x00, 0xcc, 0xff, 0xff);
+                    char v1[24], v2[24];
+                    format_engineering(selected->props.mosfet.op_vgs, "V", v1, sizeof v1);
+                    format_engineering(selected->props.mosfet.op_vds, "V", v2, sizeof v2);
+                    snprintf(buf, sizeof(buf), "Vgs %s  Vds %s", v1, v2);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                    prop_y += 16;
+                    format_engineering(selected->props.mosfet.op_id, "A", v1, sizeof v1);
+                    format_engineering(selected->props.mosfet.op_gm, "A/V", v2, sizeof v2);
+                    snprintf(buf, sizeof(buf), "Id %s  gm %s", v1, v2);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                    prop_y += 16;
+                    format_engineering(selected->props.mosfet.op_vgs - fabs(selected->props.mosfet.vth), "V", v1, sizeof v1);
+                    snprintf(buf, sizeof(buf), "Vov %s", v1);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                    prop_y += 18;
+                }
 
                 // Ideal/Non-ideal mode toggle
                 SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);

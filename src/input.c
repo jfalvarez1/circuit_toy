@@ -2211,6 +2211,38 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             }
             break;
 
+        case PROP_MOS_WL:   /* textbooks quote W/L, not W and L separately: keep L and scale W */
+            if ((comp->type == COMP_NMOS || comp->type == COMP_PMOS) && value > 0 && value <= 1e6) {
+                comp->props.mosfet.w = value * comp->props.mosfet.l;
+                applied = true;
+            }
+            break;
+
+        case PROP_MOS_LAMBDA:
+            if ((comp->type == COMP_NMOS || comp->type == COMP_PMOS) && value >= 0 && value < 10) {
+                comp->props.mosfet.lambda = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_MOS_KN:   /* a problem that gives k_n = k_n'(W/L) directly: hold Kp and L, scale W */
+            if ((comp->type == COMP_NMOS || comp->type == COMP_PMOS) && value > 0 && comp->props.mosfet.kp > 0) {
+                comp->props.mosfet.w = (value / comp->props.mosfet.kp) * comp->props.mosfet.l;
+                applied = true;
+            }
+            break;
+
+        case PROP_MOS_TOX:  /* some problems give t_ox and mobility instead of u*Cox: hold u, rescale u*Cox */
+            if ((comp->type == COMP_NMOS || comp->type == COMP_PMOS) && value > 1e-10 && value < 1e-5) {
+                double cox_old = 3.45e-11 / comp->props.mosfet.tox;      /* eps_ox = 3.45e-11 F/m */
+                double mu = cox_old > 0 ? comp->props.mosfet.kp / cox_old : 0;
+                comp->props.mosfet.tox = value;
+                if (mu > 0) comp->props.mosfet.kp = mu * (3.45e-11 / value);
+                applied = true;
+            }
+            break;
+
+
         case PROP_MOS_IDEAL:
             // Toggle ideal mode for MOSFET (doesn't use value, just toggles)
             if (comp->type == COMP_NMOS || comp->type == COMP_PMOS) {

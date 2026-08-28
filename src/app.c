@@ -1103,6 +1103,32 @@ void app_handle_events(App *app) {
                             if (c->type == COMP_NMOS || c->type == COMP_PMOS) {
                                 snprintf(current_value, sizeof(current_value), "%.6g", c->props.mosfet.l);
                             }
+                        } else if (prop_type == PROP_MOS_WL) {
+                            if (c->type == COMP_NMOS || c->type == COMP_PMOS) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.mosfet.w / c->props.mosfet.l);
+                            }
+                        } else if (prop_type == PROP_MOS_KN) {
+                            if (c->type == COMP_NMOS || c->type == COMP_PMOS) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.mosfet.kp * c->props.mosfet.w / c->props.mosfet.l);
+                            }
+                        } else if (prop_type == PROP_MOS_LAMBDA) {
+                            if (c->type == COMP_NMOS || c->type == COMP_PMOS) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.mosfet.lambda);
+                            }
+                        } else if (prop_type == PROP_MOS_TOX) {
+                            if (c->type == COMP_NMOS || c->type == COMP_PMOS) {
+                                snprintf(current_value, sizeof(current_value), "%.6g", c->props.mosfet.tox);
+                            }
+                        } else if (prop_type == PROP_MOS_TYPE) {
+                            // Enhancement <-> depletion: flip the sign of the threshold
+                            if (c->type == COMP_NMOS || c->type == COMP_PMOS) {
+                                c->props.mosfet.vth = -c->props.mosfet.vth;
+                                bool depl = (c->type == COMP_NMOS) ? (c->props.mosfet.vth < 0) : (c->props.mosfet.vth > 0);
+                                ui_set_status(&app->ui, depl ? "MOSFET: depletion mode (conducts at Vgs = 0)"
+                                                             : "MOSFET: enhancement mode (off at Vgs = 0)");
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
                         } else if (prop_type == PROP_MOS_IDEAL) {
                             // Ideal mode toggle - just toggle immediately, no text input
                             if (c->type == COMP_NMOS || c->type == COMP_PMOS) {
