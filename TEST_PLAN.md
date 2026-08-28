@@ -466,6 +466,21 @@ three buses that sit outside their band on purpose). Every manual row is done **
 | 3.17.14 | `[ ]` **Automated:** `template_smoke --std-test` | 19 buses, **0 drifted**, 3 outside their band (all printed as documented exceptions) |
 | 3.17.15 | `[ ]` **Automated:** `--probe-test`, `--demo-test`, `--burn-test`, `--flow-test`, `--knob-test`, `--geom-test` | 110/110, 120/120, 0 overloads, 120/120, 1518/0, all twelve new templates geometrically clean |
 
+### 3.18 Batch eight: reliability standards and simulation methods (new 2026-08-28: templates #121–#129, palette group **Grid standards & methods**, `docs/RESEARCH_GRID_STANDARDS.md`)
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.18.1 | `[ ]` N-1: open the second circuit's breaker live | 0.970 → 0.925 pu; below the P0 floor, inside the 0.92 post-contingency envelope; 4.8 % deviation |
+| 3.18.2 | `[ ]` IBR: watch the 150 ms fault at 100 ms; then open the inverter breaker | POI falls to ≈ 0.29 pu and the inverter keeps injecting; with the breaker open it stops (the legacy trip) |
+| 3.18.3 | `[ ]` BOLD: compare the two receiving buses; Stack | conventional 0.921 pu, BOLD 0.989 pu on the same corridor and load |
+| 3.18.4 | `[ ]` Derating: **drag the Tmp slider 25 → 75 °C**; then close the summer block | conductor 6.0 → 7.2 Ω and the bus falls; with both, ≈ 0.915 pu — neither alone breaks Range A |
+| 3.18.5 | `[ ]` Facility Rating: close the extra-load switch and watch each element's label | only the CT shows an overload marker (125 %); the conductor is at 63 % |
+| 3.18.6 | `[ ]` Kron: compare the Y and delta load traces | they overlay exactly — 91.38 V and 81.59 V on both halves |
+| 3.18.7 | `[ ]` R/X: close each reactive block in turn | the transmission bus moves mostly with vars; the feeder bus moves comparably with watts and vars |
+| 3.18.8 | `[ ]` Governor: read the nadir and the settling value; then droop 90 k → 180 k, and the integrator cap 10 → 5 µF | nadir ≈ −0.168 Hz at 1.2 s, settles −0.143 Hz; doubled droop doubles the deviation; halved H deepens the nadir |
+| 3.18.9 | `[ ]` Alarm loop: watch the contact open at 4 s; open the integrity switch; short the pair | 8.5 V normal, 9.2 V alarm, 12 V cut, 0 V short |
+| 3.18.10 | `[ ]` **Automated:** `--probe-test`, `--std-test`, `--demo-test`, `--burn-test`, `--flow-test`, `--knob-test`, `--geom-test` | 119/119, 23 buses 0 drifted, 129/129, 0 overloads, 129/129, 1652/0, all nine new templates clean |
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.

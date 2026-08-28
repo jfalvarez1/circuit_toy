@@ -396,9 +396,24 @@ bool input_handle_event(InputState *input, SDL_Event *event,
 
                                 // Check if this is a switch component and simulation is running
                                 // If so, toggle the switch state instead of starting a drag
-                                if (input->sim_running) {
+                                if (input->sim_running || input->sim_paused) {
                                     bool is_switch = false;
                                     switch (comp->type) {
+                                        case COMP_ANALOG_SWITCH:
+                                            // Contactors and analog switches follow their control pin. A click
+                                            // takes manual control of one; shift-click hands it back.
+                                            if (input->shift_down) {
+                                                comp->props.analog_switch.manual = false;
+                                                ui_set_status(ui, "Analog switch back on its control input");
+                                            } else {
+                                                comp->props.analog_switch.manual = true;
+                                                comp->props.analog_switch.state = !comp->props.analog_switch.state;
+                                                ui_set_status(ui, comp->props.analog_switch.state
+                                                    ? "Analog switch CLOSED (manual - shift-click for automatic)"
+                                                    : "Analog switch OPEN (manual - shift-click for automatic)");
+                                            }
+                                            is_switch = true;
+                                            break;
                                         case COMP_SPST_SWITCH:
                                             comp->props.switch_spst.closed = !comp->props.switch_spst.closed;
                                             ui_set_status(ui, comp->props.switch_spst.closed ?

@@ -76,6 +76,15 @@ SHOTS = [
     ("com_208y", "208Y", 200, "circuits"),
     ("ats", "ATS", 200, "circuits"),
     ("plant_13k8", "13k8", 200, "circuits"),
+    ("governor", "Gov", 300, "circuits"),
+    ("n1_contingency", "N-1", 200, "circuits"),
+    ("bold_line", "BOLD", 200, "circuits"),
+    ("kron", "Kron", 200, "circuits"),
+    ("pids_loop", "PIDS", 260, "circuits"),
+    ("ibr_ride", "IBR", 200, "circuits"),
+    ("facility_rating", "FacRt", 200, "circuits"),
+    ("rx_ratio", "R/X", 200, "circuits"),
+    ("temp_derate", "Derate", 200, "circuits"),
 ]
 # name, template, first frame, frames, every
 # Full resolution, full 256-colour palette; low frame rate (5 fps) keeps the files small.
@@ -94,6 +103,7 @@ GIFS = [
     ("rs485", "RS485", 60, 15, 6),
     ("ac_start", "ACstart", 40, 20, 5),
     ("ats", "ATS", 30, 18, 4),
+    ("governor", "Gov", 30, 20, 6),
 ]
 GIF_FRAME_MS = 200
 

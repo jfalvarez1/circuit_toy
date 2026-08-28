@@ -443,6 +443,15 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_COM_208Y,         COMP_RESISTOR,  1, 0, "amp", 168.3,  0.05, 100e-3, "208Y phase A branch bus, 20 A" },
     { CIRCUIT_COM_PFC,          COMP_RESISTOR,  0, 0, "amp", 8.7,    0.08, 100e-3, "supply shunt: 174 Apk at 0.75 pf, bank open" },
     { CIRCUIT_COM_ATS,          COMP_RESISTOR,  1, 0, "max", 328.8,  0.05, 300e-3, "life-safety load re-energised by the generator" },
+    { CIRCUIT_GS_N1,            COMP_RESISTOR,  0, 0, "amp", 273300.0, 0.05, 100e-3, "both circuits in service: 0.970 pu" },
+    { CIRCUIT_GS_IBR,           COMP_RESISTOR,  1, 0, "max", 275900.0, 0.05, 90e-3,  "POI before the fault" },
+    { CIRCUIT_GS_BOLD,          COMP_RESISTOR,  0, 0, "amp", 259500.0, 0.05, 100e-3, "conventional line at 600 MW: 0.921 pu" },
+    { CIRCUIT_GS_DERATE,        COMP_RESISTOR,  1, 0, "amp", 9752.0,  0.05, 100e-3, "12.47 kV feeder bus at 25 degC" },
+    { CIRCUIT_GS_FACRATE,       COMP_RESISTOR,  4, 0, "amp", 111500.0, 0.05, 100e-3, "138 kV bus at 400 A" },
+    { CIRCUIT_GS_KRON,          COMP_RESISTOR,  2, 0, "amp", 91.38,   0.02, 100e-3, "Y-side load 1" },
+    { CIRCUIT_GS_RX,            COMP_RESISTOR,  1, 0, "amp", 168.8,   0.05, 100e-3, "transmission bus, R/X = 0.09" },
+    { CIRCUIT_GS_GOVERNOR,      COMP_OPAMP,     0, 2, "min", -0.1432, 0.05, 4.0,    "settles at -0.05/(1/R + D) = -0.143 Hz" },
+    { CIRCUIT_GS_PIDS,          COMP_RESISTOR,  1, 0, "max", 8.482,   0.03, 3.0,    "RTU input, loop normal" },
     { CIRCUIT_SCHMITT_BISTABLE, COMP_OPAMP,     0, 2, "max", 15.0,  0.05, 30e-3, "bistable output at the rail" },
     { CIRCUIT_TRI_SQUARE_GEN,   COMP_OPAMP,     1, 2, "amp", 7.5,   0.08, 3e-3,  "triangle peak = 15 R1/R2" },
     { CIRCUIT_FUNCTION_GEN,     COMP_RESISTOR,  3, 1, "amp", 4.9,   0.15, 3e-3,  "3-breakpoint sine ~4.9 V peak" },
@@ -494,6 +503,7 @@ static int probe_test(void) {
         if (ok && n > 0) {
             if (!strcmp(pc->metric, "amp")) got = (mx - mn) / 2;
             else if (!strcmp(pc->metric, "max")) got = mx;
+            else if (!strcmp(pc->metric, "min")) got = mn;
             else if (!strcmp(pc->metric, "absmean")) got = asum / n;
             else got = sum / n;
         }
@@ -1422,6 +1432,10 @@ static const StdCase std_cases[] = {
     { CIRCUIT_RES_SOLAR,    COMP_RESISTOR, 1, 0, 339.41,   1.029, 0.95, 1.05, "IEEE 1547 / ANSI C84.1",       "PCC raised by the 7.6 kW export" },
     { CIRCUIT_COM_480Y,     COMP_RESISTOR, 1, 0, 391.9,    0.992, 0.95, 1.05, "ANSI C84.1 Range A (480 V)",   "480Y phase A bus" },
     { CIRCUIT_COM_208Y,     COMP_RESISTOR, 1, 0, 169.71,   0.992, 0.95, 1.05, "ANSI C84.1 Range A",           "208Y phase A, the 20 A branch" },
+    { CIRCUIT_GS_N1,        COMP_RESISTOR, 0, 0, 281700.0, 0.970, 0.95, 1.05, "NERC TPL-001-5.1 P0",          "both 345 kV circuits in service" },
+    { CIRCUIT_GS_BOLD,      COMP_RESISTOR, 0, 0, 281700.0, 0.921, 0.95, 1.05, "NERC TPL-001-5.1 P0",          "conventional line at 600 MW - past SIL, a documented case" },
+    { CIRCUIT_GS_BOLD,      COMP_RESISTOR, 1, 0, 281700.0, 0.989, 0.95, 1.05, "AEP BOLD",                     "the same corridor and load on a BOLD line" },
+    { CIRCUIT_GS_FACRATE,   COMP_RESISTOR, 4, 0, 112670.0, 0.990, 0.95, 1.05, "NERC FAC-008-5",               "138 kV bus at 400 A" },
     { CIRCUIT_HV_345_LINE,  COMP_RESISTOR, 0, 0, 281700.0, 0.937, 0.95, 1.05, "ERCOT PG 4 / NERC TPL-001 P0", "100 mi at 600 MW: past SIL, a documented heavy-load case" },
     { CIRCUIT_HV_765_LINE,  COMP_RESISTOR, 0, 0, 624600.0, 0.957, 0.95, 1.05, "AEP 765 kV backbone",          "765 kV, 200 mi, 2 GW at 0.957 pu" },
     { CIRCUIT_FERRANTI_LINE, COMP_TLINE,   0, 1, 281700.0, 1.139, 0.95, 1.05, "ERCOT PG 4",                   "open-ended 200 mi: +13.9 % Ferranti rise, a documented exception" },

@@ -4041,7 +4041,9 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 v_ctl = vector_get(prev_solution, n[2]-1);
             }
 
-            bool on = v_ctl >= comp->props.analog_switch.v_on;
+            bool on = comp->props.analog_switch.manual ? comp->props.analog_switch.state
+                                                       : (v_ctl >= comp->props.analog_switch.v_on);
+            comp->props.analog_switch.state = on;   // so a manual click starts from the state it is in
             double R = on ? comp->props.analog_switch.r_on : comp->props.analog_switch.r_off;
             STAMP_CONDUCTANCE(n[0], n[1], 1.0/R);
             break;

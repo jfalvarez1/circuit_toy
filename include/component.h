@@ -448,7 +448,8 @@ typedef union {
         double v_off;           // Control voltage for off (V)
         double r_on;            // On-resistance (Ohm)
         double r_off;           // Off-resistance (Ohm)
-        bool state;             // Current state
+        bool state;             // Current state (tracks the control voltage unless manual is set)
+        bool manual;            // Manual override: click the switch to force it; shift-click returns it to the control signal
         bool ideal;             // Ideal mode
     } analog_switch;
 

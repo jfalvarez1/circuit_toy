@@ -715,6 +715,7 @@
                     <a href="#power-systems">7i. Power Systems &amp; High Voltage</a>
                     <a href="#ic-io">7j. IC I/O &amp; Drivers</a>
                     <a href="#building">7k. Texas Voltages, Residential &amp; Commercial</a>
+                    <a href="#grid-std">7l. Reliability Standards &amp; Simulation Methods</a>
 
                     <div class="toc-section">Theory & Concepts</div>
                     <a href="#theory">8. Circuit Theory Fundamentals</a>
@@ -1524,6 +1525,30 @@ need an LTC?".</div>
 <tr><td><strong>Power Factor Correction</strong></td><td>A 33 kVA motor at 0.75 pf draws 123 A for only 25 kW. The shunt sits in the <em>supply return</em>, so a single-ended scope channel reads line current at 50 mV per amp.</td><td>Close the cap-bank switch: 478 &micro;F supplies 13.8 kvar locally and the same kW now needs 95 A. 956 &micro;F over-corrects and the current climbs again.</td></tr>
 <tr><td><strong>Standby Generator Transfer</strong></td><td>An open-transition transfer - the utility contactor opens at 50 ms, the generator closes at 70 ms, and the load is dead for 20 ms. The two sources are never closed together, which is what stops a generator being back-fed into the utility.</td><td>Overlap the contactors and watch the two sources fight - the closed-transition case that needs synchronising.</td></tr>
 </table>
+</section>
+
+
+<!-- 7l. Reliability standards & simulation methods -->
+<section id="grid-std" class="section">
+<h2>7l. Reliability Standards &amp; Simulation Methods</h2>
+<p>The <em>Grid standards &amp; methods</em> group is built directly from utility technical reports;
+every citation and number is collected in <code>docs/RESEARCH_GRID_STANDARDS.md</code>. These are the
+templates where a regulatory limit, not a textbook equation, is the thing being demonstrated.</p>
+<table>
+<tr><th>Template</th><th>Standard</th><th>What it shows / try</th></tr>
+<tr><td><strong>N-1 Contingency</strong></td><td>NERC TPL-001-5.1, AEP FERC Form 715</td><td>Two 200 mi 345 kV circuits at 0.970 pu. <strong>Open the breaker</strong>: 0.925 pu - below the 0.95 pre-contingency floor but inside the 0.92-1.05 post-contingency envelope, and the 4.8 % deviation stays under the 8 % engineering-review threshold.</td></tr>
+<tr><td><strong>IBR Ride-Through</strong></td><td>NERC PRC-029-1, ERCOT NOGRR-245, IEEE 2800-2022</td><td>A 150 ms fault drags the POI to 0.29 pu. From October 2026 the question is no longer "were the relay settings right" but "did the plant stay on and keep injecting". Open the inverter breaker to see the legacy trip behaviour.</td></tr>
+<tr><td><strong>AEP BOLD</strong></td><td>NERC FAC-008-5, AEP BOLD</td><td>Compact triangular phasing raises C and lowers L, so Zc = &radic;(L/C) falls from 262 to 162 &Omega; and SIL = V&sup2;/Zc rises 62 %. Same corridor, same 600 MW: 0.921 pu conventional against 0.989 pu BOLD - and no series capacitors, so no sub-synchronous resonance.</td></tr>
+<tr><td><strong>Extreme Temperature Derating</strong></td><td>NERC TPL-008-1, PUCT 16 TAC 25.55</td><td>The only template driven by the environment: the conductor carries a real 4030 ppm/&deg;C aluminium coefficient. <strong>Drag the Tmp slider</strong> from 25 to 75 &deg;C (6.0 &rarr; 7.2 &Omega;), then close the summer air-conditioning block. Neither effect alone breaks Range A; together they do.</td></tr>
+<tr><td><strong>Facility Rating</strong></td><td>NERC FAC-008-5</td><td>Line conductor, breaker, CT and buswork in one path, each with its own rating. At 500 A only the CT crosses 100 % - the most limiting element sets the rating of the whole path.</td></tr>
+<tr><td><strong>Kron Reduction</strong></td><td>Schur complement / Y-&Delta;</td><td>Eliminating a zero-injection bus with Y<sub>red</sub> = Y<sub>aa</sub> &minus; Y<sub>ab</sub>Y<sub>bb</sub><sup>-1</sup>Y<sub>ba</sub> is exactly the Y-to-delta transform. The two halves are driven identically and their load voltages agree to the last digit.</td></tr>
+<tr><td><strong>R/X Ratio and Decoupling</strong></td><td>Fast decoupled power flow</td><td>A transmission branch at R/X = 0.09 beside a feeder at R/X = 1.5. Close each reactive block in turn: the assumption that P moves angle and Q moves magnitude holds on one and not the other, which is why FDPF diverges below 100 kV.</td></tr>
+<tr><td><strong>Governor Droop &amp; Swing Equation</strong></td><td>NERC BAL-001-TRE-2</td><td>An op-amp analog computer for ERCOT frequency response: 1 V = 1 Hz. A 0.05 pu load step gives a &minus;0.168 Hz nadir at 1.2 s and settles at &minus;0.143 Hz = &minus;0.05/(1/R + D). Double the droop resistor to double the deviation; halve the integrator capacitor (H 4 &rarr; 2 s) to deepen the nadir.</td></tr>
+<tr><td><strong>Supervised Alarm Loop</strong></td><td>NERC CIP-014-2 R5</td><td>A fence zone reported to the substation RTU on one supervised pair: normal 8.5 V, alarm 9.2 V, cable cut 12 V, short 0 V. Passive loops and fibre are used because wireless sensors false-alarm in substation EMI.</td></tr>
+</table>
+<div class="tip"><strong>Automated:</strong> <code>template_smoke --std-test</code> measures 23 steady-state
+buses against their bands and pins each measured value, so a template cannot drift off its documented
+design point. Rows that sit outside a band on purpose print as <code>[NOTE] ... (documented exception)</code>.</div>
 </section>
 
 <!-- Circuit Theory -->

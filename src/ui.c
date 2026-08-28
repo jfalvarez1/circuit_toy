@@ -3667,7 +3667,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     double v_range = v_max - v_min;
                     bool is_dc = (v_range < 0.01);  // Less than 10mV variation = DC
                     if (ui->scope_ac_coupling || fit) offset -= v_avg;   // AC view / fitted band: centre on the channel's own mean
-                    else if (stacked && v_min >= -0.05 * ui->scope_volt_div) offset += 3.0 * ui->scope_volt_div;   // unipolar (logic) signal: put 0 V one division above the band bottom
+                    else if (stacked && v_min >= -0.05 * ui->scope_volt_div) offset -= 3.0 * ui->scope_volt_div;   // unipolar (logic) signal: 0 V one division above the band bottom (negative shifts the trace down)
                     ui->scope_ch_shift[ch] = offset - ui->scope_channels[ch].offset;
                     ui->scope_ch_scale[ch] = ch_scale;
 

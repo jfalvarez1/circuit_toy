@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.6.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.6.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.7.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.7.0)** (auto-updating from v3.4.0 on)
 
 A native desktop circuit simulator written in C with SDL2, featuring a synthwave-themed interface. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
 
@@ -112,7 +112,7 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-112 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+129 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -252,6 +252,27 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **UART 5 V <-> 3.3 V** (`UART`) - Divider one way, direct the other way (TTL V_IH = 2 V)
 - **RS-485 Differential Link** (`RS485`) - A/B antiphase, 120 ohm both ends, common-mode noise rejected
 - **SPMI Bus (1.8 V)** (`SPMI`) - MIPI two-wire: 1.8 V SCLK 5 MHz + SDATA, 33 ohm into 15 pF
+
+**Residential & commercial**
+- **240/120 V Service** (`Split`) - Centre-tapped pole transformer, unbalanced legs, neutral
+- **120 V Branch Circuits** (`Branch`) - #14 vs #10, 100 ft, 12 A: the NEC 3 % voltage drop
+- **AC Compressor Start** (`ACstart`) - LRA 104 A on a weak service: a 10 % flicker dip
+- **Rooftop Solar Backfeed** (`Solar`) - 7.6 kW export raises the PCC (IEEE 1547 / C84.1)
+- **480Y/277 V Service** (`480Y`) - 3-phase 30 hp motor plus 277 V lighting
+- **208Y/120 V Panel** (`208Y`) - Unbalanced 20/12/6 A and the shared neutral (NEC 220.61)
+- **Power Factor Correction** (`PFC`) - 0.75 -> 0.95 pf with a switched 478 uF bank
+- **Standby Generator Transfer** (`ATS`) - Utility drops, the generator picks the load up (NEC 700)
+
+**Grid standards & methods**
+- **N-1 Contingency** (`N-1`) - Two 345 kV circuits: open one and watch the P0 envelope break
+- **IBR Ride-Through** (`IBR`) - PRC-029-1 / NOGRR-245: a 150 ms fault at the POI
+- **AEP BOLD vs Conventional** (`BOLD`) - Compact phasing lowers Zc and raises SIL by 62 %
+- **Extreme Temperature Derating** (`Derate`) - TPL-008-1: conductor R rises with the Tmp slider
+- **Facility Rating (limiting element)** (`FacRt`) - FAC-008-5: the CT, not the conductor, sets the rating
+- **Kron Reduction (Y to delta)** (`Kron`) - Eliminating an interior bus leaves the boundary identical
+- **R/X Ratio and Decoupling** (`R/X`) - Why fast decoupled power flow diverges on feeders
+- **Governor Droop & Swing Equation** (`Gov`) - BAL-001-TRE-2 frequency nadir on an op-amp patch
+- **Supervised Alarm Loop** (`PIDS`) - CIP-014-2: four states on one pair into the RTU
 
 ### Power Systems & High Voltage
 
@@ -464,6 +485,38 @@ command line. Releases are built with `pwsh tools/make_release.ps1 -Publish` (ve
 | ![Damping ladder](screenshots/auto/damping_ladder.png) Under / critical / over-damped on one screen | ![Op-amp saturation](screenshots/auto/opamp_saturation.png) Clipping at the rails and the lost virtual ground |
 | ![Power plant](screenshots/auto/power_plant.png) Three-phase power plant: generator, GSU bank, breakers, lines | ![Substation](screenshots/auto/substation.png) Transmission substation: 345/138 kV autos, feeders, cap banks |
 
+### Reliability Standards & Simulation Methods
+
+![Governor droop](screenshots/auto/governor.png)
+
+Nine templates built directly from utility technical reports, with the citations and numbers in
+`docs/RESEARCH_GRID_STANDARDS.md`:
+
+- **N-1 Contingency** - NERC TPL-001-5.1: two 345 kV circuits at 0.970 pu; open one breaker and the
+  bus goes to 0.925 pu, below the P0 floor but inside the 0.92-1.05 post-contingency envelope.
+- **IBR Ride-Through** - PRC-029-1 / ERCOT NOGRR-245 / IEEE 2800: a 150 ms fault holds the point of
+  interconnection near 0.29 pu while the inverter keeps injecting. Open its breaker for the legacy trip.
+- **AEP BOLD vs Conventional** - the same 150 mi corridor at 600 MW built twice. Compact phasing takes
+  Zc from 262 to 162 ohm, SIL from 454 to 735 MW (+62 %), and the bus from 0.921 to 0.989 pu - and with
+  no series capacitors there is no sub-synchronous resonance to worry about.
+- **Extreme Temperature Derating** - TPL-008-1 / PUCT 25.55: a real 4030 ppm/degC aluminium conductor
+  driven by the status-bar **Tmp slider**, plus a switchable summer air-conditioning block.
+- **Facility Rating** - FAC-008-5: four elements in one path; at 500 A only the CT crosses 100 %, so it
+  sets the rating no matter how strong the conductor is.
+- **Kron Reduction** - a Y network and its delta equivalent driven identically; the boundary voltages
+  match to the last digit (91.38 V and 81.59 V on both halves).
+- **R/X Ratio and Decoupling** - a transmission branch at R/X = 0.09 beside a feeder at R/X = 1.5:
+  the cross-coupling that makes fast decoupled power flow diverge below 100 kV.
+- **Governor Droop & Swing Equation** - BAL-001-TRE-2 patched as an op-amp analog computer (1 V = 1 Hz).
+  A 0.05 pu load step gives a -0.168 Hz nadir and settles at -0.143 Hz, the analytic -0.05/(1/R + D).
+- **Supervised Alarm Loop** - CIP-014-2: one twisted pair into the substation RTU carrying four
+  distinguishable states, so a cut or a short cannot look like "all clear".
+
+| | |
+|---|---|
+| ![N-1 contingency](screenshots/auto/n1_contingency.png) Open a breaker and watch the bus leave the P0 envelope | ![AEP BOLD](screenshots/auto/bold_line.png) BOLD against a conventional 345 kV line, same corridor and load |
+| ![Kron reduction](screenshots/auto/kron.png) Y and delta halves overlay exactly | ![Supervised loop](screenshots/auto/pids_loop.png) Four states on one pair into the RTU |
+
 ### Texas Voltages, Residential & Commercial
 
 ![Texas voltage ladder](screenshots/auto/tx_ladder.png)
@@ -585,7 +638,7 @@ point and a short transient, and reports solver errors, NaN/runaway voltages and
 point of every transistor / op-amp / regulator:
 
 ```bash
-build/tools/template_smoke.exe             # 112/112 templates passed
+build/tools/template_smoke.exe             # 129/129 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (66 oracles)
@@ -604,6 +657,15 @@ build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
 build/tools/template_smoke.exe --response "RC BP"   # amplitude vs frequency of every node during the sweep
 build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
 build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template in the palette)
+```
+
+The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
+which produced the images in this README):
+
+```bash
+build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
+build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
+build/circuit-playground.exe --help
 ```
 
 The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,

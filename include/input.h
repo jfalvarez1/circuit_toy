@@ -265,6 +265,7 @@ typedef struct InputState {
 
     // Simulation state (set by app to prevent editing during simulation)
     bool sim_running;
+    bool sim_paused;                // simulation started but paused: switches still toggle on click
 
     // Auto-start flag for oscillator circuits
     bool should_autostart_sim;

@@ -878,6 +878,19 @@ Current status: 96/96 templates, 96/96 `--demo-test`, 86/86 `--probe-test`, 96/9
 (all six of #91–#96 are clean), `--osc-test` 9/9, `--param-test` all OK, `--tesla-test` 3/3, knob test 1182 runs 0 failed,
 `--probe-audit` 10/96 flagged — every flag physically expected (HP outputs SMALL at the start of a sweep, etc.; see the tool note).
 
+**Batch eight (2026-08-28) — reliability standards and simulation methods, templates #121–#129,
+palette group "Grid standards & methods" (13th).** Built from four utility technical reports (see
+`docs/RESEARCH_GRID_STANDARDS.md`): NERC TPL-001-5.1 contingency envelopes, TPL-008-1 extreme
+temperature, PRC-029-1 / ERCOT NOGRR-245 / IEEE 2800 inverter ride-through, FAC-008-5 facility
+ratings and AEP BOLD line physics, BAL-001-TRE-2 governor droop and the swing equation, Kron
+reduction and the R/X limits of fast decoupled power flow, and the CIP-014-2 supervised perimeter
+loop. `--std-test` grew to 23 buses. Two bugs were found and fixed while building this batch: a node
+created on top of an existing wire is **not** electrically joined to it, which left the second branch
+of four templates dead until each one tapped its source node explicitly; and the FAC-008 template
+exposed that the overload marker compares *instantaneous* dissipation, so its element ratings are
+entered as peak limits (2× the average rating quoted on the canvas). A new `"min"` probe metric was
+added for the governor's settling point.
+
 **Batch seven (2026-08-27) — Texas voltage levels and building services, templates #109–#120, palette
 group "Residential & commercial" (12th).** Every voltage in Texas from 765 kV down to 120 V now has a
 template, and the numbers are sized against published criteria rather than chosen to look good — see
@@ -1124,6 +1137,58 @@ Common building blocks (`src/circuits.c`, batch 5):
 - **Demo:** `DEMO_WAVEFORM`, f_char 60. Probe: load bus (`COMP_RESISTOR` 1, term 0) — "max" **328.8 V ±5 %** over 300 ms; utility auto; **extra** the generator (`COMP_AC_VOLTAGE` 1). Preset 20 ms/div, 100 V/div, Stack.
 - **N:** CH2 is a clean 240 V sine, dead from 50 to 70 ms, then back. **V:** **overlap the contactors** (generator delay 70 → 40 ms) and the two sources fight through 0.1 Ω — the closed-transition case that needs synchronising. Widen the gap to see a longer outage. **M:** contactor timings via the two pulse sources.
 
+
+### 121. N-1 Contingency — 281.7 kVpk source, two 200 mi 345 kV `COMP_TLINE` model 1 (12 + j110 Ω each) in parallel through a `COMP_SPST_SWITCH` (closed) into a 350 Ω load
+- **Standard:** NERC TPL-001-5.1 / AEP FERC Form 715 — P0 0.95–1.05 pu, P1–P7 0.92–1.05 pu, >8 % deviation forces an engineering review.
+- **Measured:** both circuits **0.970 pu**; open the breaker and the single circuit gives **0.925 pu** — below the P0 floor, inside the post-contingency envelope, 4.8 % deviation.
+- **Demo/probe:** `DEMO_WAVEFORM` 60 Hz; output = load bus (`COMP_RESISTOR` 0, term 0), "amp" **273.3 kVpk ±5 %**; `--std-test` pins the P0 case. 5 ms/div, 100 kV/div.
+- **V:** open/close the breaker live; lengthen a circuit to 300 mi to push P1 under 0.92.
+
+### 122. IBR Ride-Through — 345 kV grid behind 20 Ω, 400 Ω local load, `fault_switch` (100 ms, 150 ms wide) into 8 Ω, a `COMP_SPST_SWITCH` inverter breaker and a 400 Apk `COMP_AC_CURRENT`
+- **Standard:** NERC PRC-029-1 (from 1 Oct 2026), ERCOT NOGRR-245, IEEE 2800-2022 Table 2.1 — continuous 0.90–1.10 pu, 0.15 s at zero volts, active current restored within 1.0 s.
+- **Measured:** POI 275.9 kVpk (0.98 pu) pre-fault, **80.7 kVpk ≈ 0.29 pu** during the fault, with the inverter still injecting.
+- **Demo/probe:** output = POI (`COMP_RESISTOR` 1, term 0), "max" **275.9 kVpk ±5 %** over the first 90 ms; extra = the fault branch. 50 ms/div, Stack.
+- **V:** open the inverter breaker for the legacy trip; widen the fault beyond 150 ms.
+
+### 123. AEP BOLD vs Conventional — the same 150 mi 345 kV corridor at 600 MW built twice: 0.06 + j0.55 Ω/mi with 8 µS/mi, and 0.036 + j0.38 Ω/mi with 14.5 µS/mi, both `COMP_TLINE` model 2
+- **Standard:** NERC FAC-008-5 and AEP BOLD. Zc = √(L/C): 262 Ω conventional, 162 Ω BOLD; SIL = V²/Zc = 454 MW vs 735 MW (+62 %); losses −40 %; no series capacitors, so no SSR.
+- **Measured:** conventional **259.5 kVpk = 0.921 pu** (a documented past-SIL case), BOLD **278.5 kVpk = 0.989 pu**. Both pinned by `--std-test`.
+- **Demo/probe:** output = the conventional bus (`COMP_RESISTOR` 0), "amp" **259.5 kVpk ±5 %**; extra = the BOLD bus (`COMP_RESISTOR` 1). Stack.
+
+### 124. Extreme Temperature Derating — 12.47 kV feeder, a 6 Ω conductor with `ideal = false` and `temp_coeff` 4030 ppm/°C, 34.5 mH of reactance, a 150 Ω base load and a switchable 150 Ω summer block
+- **Standard:** NERC TPL-008-1 R3–R4 (temperature coupled with load growth and derating) and PUCT 16 TAC 25.55.
+- **Measured:** 9.75 kVpk (0.958 pu) at 25 °C; the conductor rises to 7.2 Ω at 75 °C; closing the summer block takes the bus to ≈ 0.915 pu.
+- **Demo/probe:** output = feeder bus (`COMP_RESISTOR` 1, term 0), "amp" **9.75 kVpk ±5 %**.
+- **V:** **drag the status-bar Tmp slider** — this is the only template driven by the environment temperature. Neither effect alone breaks Range A; together they do.
+
+### 125. Facility Rating (limiting element) — 138 kV source into four series elements (2 Ω line, 0.05 Ω breaker, 0.02 Ω CT, 0.03 Ω buswork), a 199 Ω load (400 A) and a switchable 799 Ω block (500 A)
+- **Standard:** NERC FAC-008-5 — the path rating is the rating of its most limiting element.
+- **Ratings:** 800 kW / 20 kW / 4 kW / 25 kW average, entered as 2× peak limits because the simulator compares instantaneous dissipation. At 400 A everything is inside; at 500 A **only the CT crosses 100 %** (125 %) while the conductor sits at 63 %.
+- **Demo/probe:** output = load bus (`COMP_RESISTOR` 4, term 0), "amp" **111.5 kVpk ±5 %**; `--std-test` pins 0.990 pu. Explicit ratings are exempt from the load-box conversion so the overload marker still appears.
+
+### 126. Kron Reduction (Y to delta) — a Y network (three 10 Ω arms, loads 40 Ω and 25 Ω) and its delta equivalent (three 30 Ω arms, same loads), each with its own 120 V source
+- **Method:** Y_red = Y_aa − Y_ab Y_bb⁻¹ Y_ba is the Schur complement; for one interior node it is exactly the Y→Δ transform, R12 = Ra + Rb + Ra·Rb/Rc = 30 Ω.
+- **Measured:** Y side 91.38 V and 81.59 V; delta side **91.38 V and 81.59 V** — identical, which is the "effective resistance invariance" the reduction guarantees.
+- **Demo/probe:** output = Y load 1 (`COMP_RESISTOR` 2), "amp" **91.38 V ±2 %**; extras = the delta load 1 (`COMP_RESISTOR` 6, overlays it exactly) and Y load 2. Stack.
+
+### 127. R/X Ratio and Decoupling — a transmission branch (1 + j10.9 Ω, R/X = 0.09) and a feeder branch (11 + j7.3 Ω, R/X = 1.5), each with a 200 Ω load and a switchable mostly-reactive block
+- **Method:** fast decoupled power flow assumes G ≪ B so that ΔP/|V| = B′Δθ and ΔQ/|V| = B″Δ|V|. Above R/X ≈ 1 the cross-coupling grows and the decoupled Jacobian diverges; granular per-bus axis rotation is the fix.
+- **Demo/probe:** output = the transmission bus (`COMP_RESISTOR` 1), "amp" **168.8 V ±5 %**; extra = the feeder bus (`COMP_RESISTOR` 4). Stack.
+- **V:** close each reactive block in turn and compare how far each bus moves — comparable on the feeder, var-dominated on the transmission branch.
+
+### 128. Governor Droop & Swing Equation — three `sat_opamp` stages: an integrator with damping (133 kΩ inputs, 800 kΩ ∥ 10 µF), a unity inverter, and a 5 % droop lag (90 kΩ in, 300 kΩ ∥ 1 µF); a 0.5 V pulse at 0.2 s is a 0.05 pu load step
+- **Standard:** NERC BAL-001-TRE-2 (deadband ±0.017/±0.034 Hz, droop 5 %, PFR performance ≥ 0.75) and the ERCOT ancillary-service stack.
+- **Scaling:** 1 V = 1 Hz of deviation, 1 V = 0.1 pu of power. H = 4 s, D = 1 pu, Tch = 0.3 s.
+- **Measured:** nadir **−0.168 Hz at ≈ 1.2 s**, settling at **−0.143 Hz** = −0.05/(1/R + D) — the analytic answer to three digits. UFLS first stage is 59.3 Hz, load resources 59.7 Hz.
+- **Demo/probe:** output = U1 (`COMP_OPAMP` 0, term 2), metric **"min" −0.1432 ±5 %** over 4 s (a new metric added for this). 0.5 s/div, Stack + Fit.
+- **V:** droop 5 → 10 % (U3 input 90 k → 180 k) doubles the deviation; H 4 → 2 s (U1 cap 10 → 5 µF) deepens and quickens the nadir.
+
+### 129. Supervised Alarm Loop — 12 V RTU supply, 2.2 kΩ pull-up, 100 kΩ input, a `COMP_SPST_SWITCH` cable-integrity link, a 2.2 kΩ zone resistor shorted by a `fault_switch` contact (closed 0–4 s, open 4–7 s) and a 5.6 kΩ end-of-line resistor
+- **Standard:** NERC CIP-014-2 R5 layers 2 (detect) and 5 (communicate); passive loops and fibre are used because wireless sensors false-alarm in substation EMI.
+- **Measured:** normal **8.48 V**, alarm **9.20 V**, cable cut 12 V, short 0 V — four states on one pair, so neither failure mode looks like "all clear".
+- **Demo/probe:** output = the RTU input (`COMP_RESISTOR` 1, term 0), "max" **8.482 V ±3 %** over 3 s. 1 s/div.
+- **V:** open the integrity switch (cable cut → 12 V); short the pair; watch the contact open at 4 s.
+
 ---
 
 ## Result log
@@ -1250,5 +1315,14 @@ Common building blocks (`src/circuits.c`, batch 5):
 | 118 | 208Y/120 V Panel | | | | | | | 119.0 V on the 20 A phase; neutral carries 12.2 A, not 38 A (NEC 220.61) |
 | 119 | Power Factor Correction | | | | | | | shunt in the supply return: 123 A -> 95 A when the bank closes |
 | 120 | Standby Generator Transfer | | | | | | | 20 ms open transition; overlap the contactors to see them fight |
+| 121 | N-1 Contingency | | | | | | | P0 0.970 pu, P1 0.925 pu, 4.8 % deviation (TPL-001-5.1) |
+| 122 | IBR Ride-Through | | | | | | | POI 0.29 pu for 150 ms, inverter keeps injecting (PRC-029-1) |
+| 123 | AEP BOLD vs Conventional | | | | | | | Zc 262 -> 162 ohm, SIL +62 %, 0.921 vs 0.989 pu |
+| 124 | Extreme Temperature Derating | | | | | | | 6.0 -> 7.2 ohm on the Tmp slider; summer block takes it to 0.915 pu |
+| 125 | Facility Rating | | | | | | | only the CT crosses 100 % at 500 A (FAC-008-5) |
+| 126 | Kron Reduction | | | | | | | Y and delta boundary voltages identical: 91.38 / 81.59 V |
+| 127 | R/X Ratio and Decoupling | | | | | | | R/X 0.09 vs 1.5; why FDPF diverges on feeders |
+| 128 | Governor Droop & Swing Equation | | | | | | | nadir -0.168 Hz, settles -0.143 Hz = -0.05/(1/R+D) (BAL-001-TRE-2) |
+| 129 | Supervised Alarm Loop | | | | | | | four states on one pair: 8.5 / 9.2 / 12 / 0 V (CIP-014-2) |
 
 (96 blocks = the 96 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`; #48-#65 follow the enum order after `CIRCUIT_PHASE_SHIFT_OSC`, #66-#72 the enum order after `CIRCUIT_DC_LINE_DROP`, #73-#81 the enum order after `CIRCUIT_HV_765_LINE`, #82-#90 the enum order after `CIRCUIT_RING_OSC`, #91-#96 the enum order after `CIRCUIT_OPAMP_SAT`.)

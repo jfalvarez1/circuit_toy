@@ -273,6 +273,15 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_COM_208Y] = {"208Y/120 V Panel", "208Y", "Unbalanced 20/12/6 A and the shared neutral (NEC 220.61)", TG_BUILDING},
     [CIRCUIT_COM_PFC] = {"Power Factor Correction", "PFC", "0.75 -> 0.95 pf with a switched 478 uF bank", TG_BUILDING},
     [CIRCUIT_COM_ATS] = {"Standby Generator Transfer", "ATS", "Utility drops, the generator picks the load up (NEC 700)", TG_BUILDING},
+    [CIRCUIT_GS_N1] = {"N-1 Contingency", "N-1", "Two 345 kV circuits: open one and watch the P0 envelope break", TG_GRID_STD},
+    [CIRCUIT_GS_IBR] = {"IBR Ride-Through", "IBR", "PRC-029-1 / NOGRR-245: a 150 ms fault at the POI", TG_GRID_STD},
+    [CIRCUIT_GS_BOLD] = {"AEP BOLD vs Conventional", "BOLD", "Compact phasing lowers Zc and raises SIL by 62 %", TG_GRID_STD},
+    [CIRCUIT_GS_DERATE] = {"Extreme Temperature Derating", "Derate", "TPL-008-1: conductor R rises with the Tmp slider", TG_GRID_STD},
+    [CIRCUIT_GS_FACRATE] = {"Facility Rating (limiting element)", "FacRt", "FAC-008-5: the CT, not the conductor, sets the rating", TG_GRID_STD},
+    [CIRCUIT_GS_KRON] = {"Kron Reduction (Y to delta)", "Kron", "Eliminating an interior bus leaves the boundary identical", TG_GRID_STD},
+    [CIRCUIT_GS_RX] = {"R/X Ratio and Decoupling", "R/X", "Why fast decoupled power flow diverges on feeders", TG_GRID_STD},
+    [CIRCUIT_GS_GOVERNOR] = {"Governor Droop & Swing Equation", "Gov", "BAL-001-TRE-2 frequency nadir on an op-amp patch", TG_GRID_STD},
+    [CIRCUIT_GS_PIDS] = {"Supervised Alarm Loop", "PIDS", "CIP-014-2: four states on one pair into the RTU", TG_GRID_STD},
 
 
 
@@ -6186,6 +6195,15 @@ static int place_com_480y(Circuit *circuit, float x, float y);
 static int place_com_208y(Circuit *circuit, float x, float y);
 static int place_com_pfc(Circuit *circuit, float x, float y);
 static int place_com_ats(Circuit *circuit, float x, float y);
+static int place_gs_n1(Circuit *circuit, float x, float y);
+static int place_gs_ibr(Circuit *circuit, float x, float y);
+static int place_gs_bold(Circuit *circuit, float x, float y);
+static int place_gs_derate(Circuit *circuit, float x, float y);
+static int place_gs_facrate(Circuit *circuit, float x, float y);
+static int place_gs_kron(Circuit *circuit, float x, float y);
+static int place_gs_rx(Circuit *circuit, float x, float y);
+static int place_gs_governor(Circuit *circuit, float x, float y);
+static int place_gs_pids(Circuit *circuit, float x, float y);
 static int place_template_body(Circuit *circuit, CircuitTemplateType type, float x, float y) {
     if (!circuit) return 0;
 
@@ -6363,6 +6381,15 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_COM_208Y:         return place_com_208y(circuit, x, y);
         case CIRCUIT_COM_PFC:          return place_com_pfc(circuit, x, y);
         case CIRCUIT_COM_ATS:          return place_com_ats(circuit, x, y);
+        case CIRCUIT_GS_N1:            return place_gs_n1(circuit, x, y);
+        case CIRCUIT_GS_IBR:           return place_gs_ibr(circuit, x, y);
+        case CIRCUIT_GS_BOLD:          return place_gs_bold(circuit, x, y);
+        case CIRCUIT_GS_DERATE:        return place_gs_derate(circuit, x, y);
+        case CIRCUIT_GS_FACRATE:       return place_gs_facrate(circuit, x, y);
+        case CIRCUIT_GS_KRON:          return place_gs_kron(circuit, x, y);
+        case CIRCUIT_GS_RX:            return place_gs_rx(circuit, x, y);
+        case CIRCUIT_GS_GOVERNOR:      return place_gs_governor(circuit, x, y);
+        case CIRCUIT_GS_PIDS:          return place_gs_pids(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6496,6 +6523,15 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_COM_208Y] = {"208Y/120 V PANEL: three 120 V branches loaded 20 / 12 / 6 A. Because the phases are 120 deg", "apart the neutral carries the vector unbalance, not the sum: sqrt(a^2+b^2+c^2-ab-bc-ca) =", "12.2 A, not 38 A. That is why NEC 220.61 lets the neutral be sized on the unbalance.", "The 0.05 ohm shared neutral lifts the panel neutral slightly, so the loaded phase sags and", "the light one rises. PROBE: source A and the three branch buses.", "TRY: neutral 0.05 -> 1 ohm and the three 120 V branches spread apart badly."},
     [CIRCUIT_COM_PFC] = {"POWER FACTOR CORRECTION: a 33 kVA motor at 0.75 pf lagging on a 277 V phase draws 120 A,", "but only 25 kW of that is real. Close the switch and a 478 uF bank supplies 13.8 kvar", "locally: the same kW now needs 95 A, a 21 % smaller supply current. The scope watches a", "0.05 ohm shunt in the supply return, so 50 mV on CH1 is one amp.", "ERCOT / AEP tariffs price reactive power and NERC VAR-001 makes it a planning obligation.", "TRY: 956 uF over-corrects into a leading pf and the current climbs again."},
     [CIRCUIT_COM_ATS] = {"STANDBY GENERATOR TRANSFER: the utility contactor opens at 50 ms (an outage) and the", "generator contactor closes at 70 ms, so the life-safety load is dead for 20 ms. This is an", "open-transition transfer - the two sources are never closed together, which is what keeps a", "generator from being back-fed into the utility. NEC 700 gives emergency systems 10 s to", "transfer, NEC 701 gives legally required standby 60 s; NFPA 110 Type 10 is the 10 s class.", "PROBE: utility, the load bus and the generator. TRY: overlap the contactors and watch them fight."},
+    [CIRCUIT_GS_N1] = {"N-1 CONTINGENCY (NERC TPL-001-5.1): two 200 mi 345 kV circuits feed one 340 MW bus.", "System intact (category P0) the parallel pair is 6 + j27.5 ohm and the bus sits at 0.972 pu,", "inside the 0.95-1.05 pu envelope AEP files under FERC Form 715. Open the breaker and the", "single remaining circuit doubles the impedance: 0.925 pu - below the P0 floor, but inside the", "0.92-1.05 pu post-contingency envelope, and the 4.8 % deviation is under the 8 % threshold that", "would force a documented engineering review. PROBE: source and the load bus."},
+    [CIRCUIT_GS_IBR] = {"INVERTER RIDE-THROUGH (NERC PRC-029-1, ERCOT NOGRR-245, IEEE 2800-2022): a fault 100 ms in", "holds the point of interconnection near 0.3 pu for 150 ms. Under the old settings-based", "PRC-024-3 an inverter was allowed to trip on its own relay curve; from October 2026 the", "performance-based rule asks whether the plant actually stayed on, kept injecting current", "through the sag, and restored its pre-disturbance power within 1.0 s of recovery.", "PROBE: grid, the POI and the inverter branch. TRY: open the inverter breaker (the old behaviour)."},
+    [CIRCUIT_GS_BOLD] = {"AEP BOLD: the same 150 mi 345 kV corridor at 600 MW, built twice. A conventional double-circuit", "tower gives 0.06 + j0.55 ohm/mi and 8 uS/mi, so Zc = sqrt(L/C) = 262 ohm and SIL = V^2/Zc =", "454 MW. BOLD's arch crossarm compacts the phases into a tight triangle, which raises the line's", "capacitance and lowers its inductance: Zc falls to 162 ohm and SIL rises to 735 MW (+62 %),", "with 40 % lower I^2R losses. Carrying the transfer naturally means no series capacitors - and", "therefore no sub-synchronous resonance risk. PROBE: source and both receiving buses. Stack."},
+    [CIRCUIT_GS_DERATE] = {"EXTREME TEMPERATURE (NERC TPL-008-1, PUCT 16 TAC 25.55): weather-related outages are up 67 %", "since 2000, so planners now build cases that couple a benchmark temperature with load growth", "and equipment derating. This 20 mi 12.47 kV feeder uses a real aluminium conductor coefficient", "(4030 ppm/degC): 6.0 ohm at 25 degC, 7.2 ohm at 75 degC. Drag the Tmp slider in the status bar", "and watch the bus fall; close the switch to add the summer air-conditioning block on top.", "PROBE: source and the feeder bus. The two effects arrive together, which is the point."},
+    [CIRCUIT_GS_FACRATE] = {"FACILITY RATING (NERC FAC-008-5): a circuit's rating is set by its MOST LIMITING ELEMENT, not", "by the conductor. Four series elements each carry their own rating: line conductor 800 kW,", "breaker 20 kW, CT 4 kW, buswork 25 kW (the simulator compares instantaneous power, so it holds", "twice those as peak limits). At 400 A everything is inside its rating; close the switch to push", "500 A and only the CT crosses 100 % - so 500 A is past the path rating even though the conductor", "sits at 63 % and could carry far more. PROBE: the source and the load bus; watch the CT label."},
+    [CIRCUIT_GS_KRON] = {"KRON REDUCTION: bulk grid models eliminate zero-injection buses with Y_red = Y_aa -", "Y_ab Y_bb^-1 Y_ba, the Schur complement of the admittance matrix. For a single interior node", "that is exactly the Y-to-delta transform: three 10 ohm arms become three 30 ohm arms", "(R12 = Ra + Rb + Ra Rb / Rc). The two halves here are driven identically and loaded", "identically, and their load voltages match digit for digit - the 'effective resistance", "invariance' that makes the reduction exact. PROBE: both load buses; they overlay perfectly."},
+    [CIRCUIT_GS_RX] = {"R/X AND FAST DECOUPLED POWER FLOW: FDPF (Stott-Alsac 1974) assumes lines are almost purely", "inductive, so active power moves the angle and reactive power moves the magnitude, and the", "Jacobian splits into two constant matrices. The top branch is transmission (1 + j11 ohm,", "R/X = 0.09) and the bottom is a distribution feeder (11 + j7.3 ohm, R/X = 1.5). Close each", "reactive block in turn: on the transmission branch the vars dominate the magnitude change; on", "the feeder watts and vars move it about equally - the cross-coupling that makes FDPF diverge."},
+    [CIRCUIT_GS_GOVERNOR] = {"GOVERNOR DROOP AND THE SWING EQUATION (NERC BAL-001-TRE-2): ERCOT is an electrical island, so", "it has to arrest its own frequency excursions. This is the standard analog-computer patch:", "U1 integrates 2H/f0 dDf/dt = Pm - Pe - D Df/f0 (H = 4 s, D = 1 pu), U2 inverts the sign, and", "U3 is the 5 % droop with the 0.3 s steam-chest lag. Scale: 1 V = 1 Hz, 1 V = 0.1 pu of power.", "A 0.05 pu load step at 0.2 s gives the nadir, then recovery to -0.05/(1/R + D) = -0.143 Hz.", "PROBE: the load step and the frequency deviation. UFLS starts at 59.3 Hz, load resources 59.7."},
+    [CIRCUIT_GS_PIDS] = {"SUPERVISED PERIMETER ZONE (NERC CIP-014-2, layers 2 'detect' and 5 'communicate'): a fence", "sensor is reported to the substation RTU as a dry contact on one twisted pair. The pair is", "supervised so that a cut or a short cannot look like 'all clear': the 5.6k end-of-line resistor", "and the 2.2k zone resistor give four distinct levels at the RTU input - normal 8.5 V, alarm", "9.2 V, cable cut 12 V, short 0 V. The contact opens at 4 s for 3 s. Passive loops and fibre are", "used here because ordinary wireless sensors false-alarm in the EMI around energised HV plant."},
 };
 
 
@@ -8797,6 +8833,322 @@ static int place_com_ats(Circuit *circuit, float x, float y) {
 #undef TN
 #undef TW
 
+// ---------------------------------------------------------------------------------------
+// Reliability standards and simulation methods, built from four utility technical reports
+// (see docs/RESEARCH_GRID_STANDARDS.md):
+//   NERC TPL-001-5.1 contingency voltage envelopes, TPL-008-1 extreme temperature,
+//   PRC-029-1 / ERCOT NOGRR-245 / IEEE 2800 inverter ride-through, FAC-008-5 facility
+//   ratings, AEP BOLD line geometry, BAL-001-TRE-2 governor droop and the swing equation,
+//   Kron reduction and the R/X limits of fast decoupled power flow, and the CIP-014-2
+//   supervised perimeter alarm loop.
+// ---------------------------------------------------------------------------------------
+#define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
+#define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+
+// 1. NERC TPL-001-5.1: two parallel 345 kV lines; open one and the bus leaves the P0 envelope
+static int place_gs_n1(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 281700.0); if (!v) return 0;
+    int sp = TN(x, y + 20); v->node_ids[0] = sp;
+    int tap = TN(x + 60, y + 20); TW(sp, tap);                                      // shared tap for both circuits
+    int a = line_seg(circuit, x + 160, y + 20, tap, 200.0, 0.06, 0.55, 8.0, 1);     // circuit 1
+    Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 300, y + 180, 0);       // circuit 2 breaker (closed)
+    sw->props.switch_spst.closed = true;
+    int b1 = TN(x + 60, y + 180); TW(tap, b1);
+    int b = line_seg(circuit, x + 160, y + 180, b1, 200.0, 0.06, 0.55, 8.0, 1);      // circuit 2
+    int swl = TN(x + 260, y + 180), swr = TN(x + 340, y + 180); TW(b, swl);
+    sw->node_ids[0] = swl; sw->node_ids[1] = swr;
+    int bus = TN(x + 400, y + 20), bj = TN(x + 400, y + 180); TW(a, bus); TW(swr, bj); TW(bj, bus);
+    rl_load(circuit, x + 400, y + 20, bus, 350.0, 0);                                // 340 MW three-phase
+    add_label(circuit, x - 40, y - 60, "NERC TPL-001-5.1: two 200 mi 345 kV circuits into one load bus. Open the breaker to run the P1 (N-1) case.");
+    add_label(circuit, x + 60, y + 320, "Both in service (P0): 0.972 pu - inside 0.95-1.05. One out (P1): 0.925 pu - below the P0 floor but");
+    add_label(circuit, x + 60, y + 350, "inside the 0.92-1.05 post-contingency envelope. The 4.8 % deviation is under the 8 % review threshold.");
+    return 12;
+}
+
+// 2. PRC-029-1 / ERCOT NOGRR-245: a fault drags the POI down; the inverter must keep injecting
+static int place_gs_ibr(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 281700.0); if (!v) return 0;             // 345 kV grid
+    int sp = TN(x, y + 20); v->node_ids[0] = sp;
+    int poi = res_seg(circuit, x + 120, y + 20, sp, 20.0);                           // grid source impedance
+    int bus = TN(x + 220, y + 20); TW(poi, bus);
+    rl_load(circuit, x + 220, y + 20, bus, 400.0, 0);                                // local load
+    Component *fs = fault_switch(circuit, x + 380, y + 20, 0.100, 0.150, 1.0);       // 150 ms fault at 100 ms
+    TW(bus, TN(x + 340, y + 20)); fs->node_ids[0] = TN(x + 340, y + 20);
+    int fo = TN(x + 420, y + 20); fs->node_ids[1] = fo;
+    Component *rf = add_comp(circuit, COMP_RESISTOR, x + 460, y + 60, 90);           // fault impedance
+    rf->props.resistor.resistance = 8.0;
+    int rft = TN(x + 460, y + 20), rfb = TN(x + 460, y + 100); TW(fo, rft);
+    Component *gf = add_comp(circuit, COMP_GROUND, x + 460, y + 120, 0);
+    rf->node_ids[0] = rft; rf->node_ids[1] = rfb; gf->node_ids[0] = rfb;
+    Component *trip = add_comp(circuit, COMP_SPST_SWITCH, x + 620, y + 20, 0);       // inverter breaker (closed)
+    trip->props.switch_spst.closed = true;
+    int tl = TN(x + 580, y + 20), tr = TN(x + 660, y + 20);
+    int tap0 = TN(x + 280, y + 20), tap1 = TN(x + 280, y + 220), tap2 = TN(x + 560, y + 220), tap3 = TN(x + 560, y + 20);
+    TW(bus, tap0); TW(tap0, tap1); TW(tap1, tap2); TW(tap2, tap3); TW(tap3, tl);   // route clear of the fault switch
+    trip->node_ids[0] = tl; trip->node_ids[1] = tr;
+    Component *inv = add_comp(circuit, COMP_AC_CURRENT, x + 720, y + 100, 180);      // -(720,60) +(720,140)
+    inv->props.ac_current.amplitude = 400.0; inv->props.ac_current.frequency = 60.0;
+    Component *gi = add_comp(circuit, COMP_GROUND, x + 720, y + 160, 0);
+    int it = TN(x + 720, y + 60), ib = TN(x + 720, y + 140), ig = TN(x + 720, y + 160);
+    TW(tr, TN(x + 720, y + 20)); TW(TN(x + 720, y + 20), it); TW(ib, ig);
+    inv->node_ids[0] = ib; inv->node_ids[1] = it; gi->node_ids[0] = ig;
+    add_label(circuit, x - 40, y - 60, "IBR RIDE-THROUGH (NERC PRC-029-1 / ERCOT NOGRR-245 / IEEE 2800): a 150 ms fault at 100 ms drags the POI to ~0.3 pu");
+    add_label(circuit, x + 60, y + 300, "0.90-1.10 pu is the continuous envelope; below 0.90 the inverter must ride through and inject current,");
+    add_label(circuit, x + 60, y + 330, "and must be back to its pre-disturbance real power within 1.0 s. Open the inverter breaker for the non-compliant case.");
+    return 16;
+}
+
+// 3. AEP BOLD: compacted phase spacing lowers Zc = sqrt(L/C) and raises SIL by ~60 %
+static int place_gs_bold(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 281700.0); if (!v) return 0;
+    int sp = TN(x, y + 20); v->node_ids[0] = sp;
+    int tap = TN(x + 60, y + 20); TW(sp, tap);
+    int a = line_seg(circuit, x + 200, y + 20, tap, 150.0, 0.06, 0.55, 8.0, 2);      // conventional: Zc 262 ohm
+    int ba = TN(x + 320, y + 20); TW(a, ba);
+    rl_load(circuit, x + 320, y + 20, ba, 198.4, 0);                                 // 600 MW
+    int d1 = TN(x + 60, y + 260); TW(tap, d1);
+    int b = line_seg(circuit, x + 200, y + 260, d1, 150.0, 0.036, 0.38, 14.5, 2);    // BOLD: Zc 162 ohm
+    int bb = TN(x + 320, y + 260); TW(b, bb);
+    rl_load(circuit, x + 320, y + 260, bb, 198.4, 0);
+    add_label(circuit, x - 40, y - 60, "AEP BOLD (Breakthrough Overhead Line Design): the same 150 mi 345 kV corridor at 600 MW, twice");
+    add_label(circuit, x + 120, y - 20, "conventional: 0.06 + j0.55 ohm/mi, 8 uS/mi  ->  Zc = sqrt(L/C) = 262 ohm, SIL = 345^2/Zc = 454 MW");
+    add_label(circuit, x + 120, y + 220, "BOLD: compact triangular phasing raises C and lowers L  ->  Zc = 162 ohm, SIL = 735 MW (+62 %), losses -40 %");
+    add_label(circuit, x + 60, y + 420, "Because BOLD carries the transfer naturally it needs no series capacitors - and so has no sub-synchronous resonance risk.");
+    return 14;
+}
+
+// 4. NERC TPL-008-1 / PUCT 25.55: conductor resistance rises with temperature (drag the Tmp slider)
+static int place_gs_derate(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 10182.0); if (!v) return 0;              // 12.47 kV feeder
+    int sp = TN(x, y + 20); v->node_ids[0] = sp;
+    Component *rc = hres(circuit, x + 140, y + 20, 6.0);                             // 20 mi of 1/0 ACSR
+    rc->props.resistor.ideal = false;                                                // enable the temperature model
+    rc->props.resistor.temp_coeff = 4030.0;                                          // aluminium: 0.00403 /degC
+    int cl = TN(x + 100, y + 20), cr = TN(x + 180, y + 20); TW(sp, cl);
+    rc->node_ids[0] = cl; rc->node_ids[1] = cr;
+    Component *lx = add_comp(circuit, COMP_INDUCTOR, x + 260, y + 20, 0); lx->props.inductor.inductance = 34.5e-3;
+    int ll = TN(x + 220, y + 20), lr = TN(x + 300, y + 20); TW(cr, ll);
+    lx->node_ids[0] = ll; lx->node_ids[1] = lr;
+    int bus = TN(x + 360, y + 20); TW(lr, bus);
+    rl_load(circuit, x + 360, y + 20, bus, 150.0, 0);                                // 1 MW base feeder load
+    Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 500, y + 20, 0);         // summer peak block (open)
+    sw->props.switch_spst.closed = false;
+    int swl = TN(x + 460, y + 20), swr = TN(x + 540, y + 20); TW(bus, swl);
+    sw->node_ids[0] = swl; sw->node_ids[1] = swr;
+    rl_load(circuit, x + 600, y + 20, swr, 150.0, 0);                                // the summer air-conditioning block
+    add_label(circuit, x - 40, y - 60, "EXTREME TEMPERATURE (NERC TPL-008-1 / PUCT 25.55): the conductor carries a real 4030 ppm/degC aluminium coefficient");
+    add_label(circuit, x + 60, y + 240, "Drag the Tmp slider in the status bar: at 25 degC the conductor is 6.0 ohm, at 75 degC it is 7.2 ohm (+20 %).");
+    add_label(circuit, x + 60, y + 270, "Close the switch for the summer-peak air-conditioning block - hotter conductor and heavier load arrive together.");
+    return 14;
+}
+
+// 5. NERC FAC-008-5: the rating of a path is the rating of its most limiting element
+static int place_gs_facrate(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 112670.0); if (!v) return 0;             // 138 kV
+    int sp = TN(x, y + 20); v->node_ids[0] = sp;
+    static const double R[4]   = { 2.0, 0.05, 0.02, 0.03 };
+    static const double rate[4] = { 1600e3, 40e3, 8e3, 50e3 };   // peak limits: the simulator compares instantaneous P, which is 2x the average for a sine
+    static const char *nm[4] = { "line conductor 800 kW", "breaker 20 kW", "CT 4 kW", "buswork 25 kW" };   // average ratings, shown to the reader
+    int n = sp;
+    for (int k = 0; k < 4; k++) {
+        Component *r = hres(circuit, x + 140 + k * 160, y + 20, R[k]);
+        r->props.resistor.power_rating = rate[k];                                    // explicit: the post-pass leaves these alone
+        int l = TN(x + 100 + k * 160, y + 20), rr = TN(x + 180 + k * 160, y + 20);
+        if (n != l) TW(n, l);
+        r->node_ids[0] = l; r->node_ids[1] = rr;
+        add_label(circuit, x + 100 + k * 160, y - 20, nm[k]);
+        n = rr;
+    }
+    int bus = TN(x + 800, y + 20); TW(n, bus);
+    rl_load(circuit, x + 800, y + 20, bus, 199.0, 0);                                // 400 A
+    Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 900, y + 20, 0);         // extra block (open)
+    sw->props.switch_spst.closed = false;
+    int swl = TN(x + 860, y + 20), swr = TN(x + 940, y + 20); TW(bus, swl);
+    sw->node_ids[0] = swl; sw->node_ids[1] = swr;
+    rl_load(circuit, x + 1000, y + 20, swr, 799.0, 0);                               // closing the switch takes the path to 500 A
+    add_label(circuit, x - 40, y - 80, "FACILITY RATING (NERC FAC-008-5): four elements in one path, each with its own rating");
+    add_label(circuit, x + 60, y + 240, "At 400 A everything is inside its rating. Close the switch (500 A) and only the CT crosses 100 % - it is the");
+    add_label(circuit, x + 60, y + 270, "most limiting element, so it sets the rating of the whole path no matter how strong the conductor is.");
+    return 16;
+}
+
+// 6. Kron reduction: eliminating an interior node is exactly the Y -> delta transform
+static int place_gs_kron(Circuit *circuit, float x, float y) {
+    // -- Y network: source -> Ra -> interior -> Rb -> load 1, interior -> Rc -> load 2
+    Component *v1 = ac_source(circuit, x, y, 169.71); if (!v1) return 0;
+    int s1 = TN(x, y + 20); v1->node_ids[0] = s1;
+    int ia = res_seg(circuit, x + 140, y + 20, s1, 10.0);                            // Ra
+    int mid = TN(x + 220, y + 20); TW(ia, mid);                                      // the interior (zero-injection) node
+    int b1 = res_seg(circuit, x + 320, y + 20, mid, 10.0);                           // Rb
+    int l1 = TN(x + 400, y + 20); TW(b1, l1);
+    rl_load(circuit, x + 400, y + 20, l1, 40.0, 0);
+    int mj = TN(x + 220, y + 140); TW(mid, mj);
+    int c1 = res_seg(circuit, x + 320, y + 140, mj, 10.0);                           // Rc
+    int l2 = TN(x + 400, y + 140); TW(c1, l2);
+    rl_load(circuit, x + 400, y + 140, l2, 25.0, 0);
+    add_label(circuit, x + 60, y - 20, "Y network: the interior node is a zero-injection bus");
+    // -- the Kron-reduced (delta) equivalent, driven identically
+    Component *v2 = ac_source(circuit, x, y + 320, 169.71);
+    int s2 = TN(x, y + 340); v2->node_ids[0] = s2;
+    int s2b = TN(x + 60, y + 340), s2c = TN(x + 60, y + 460); TW(s2, s2b); TW(s2b, s2c);
+    int d1 = res_seg(circuit, x + 200, y + 340, s2b, 30.0);                          // R12 = Ra + Rb + Ra Rb / Rc
+    int m1 = TN(x + 280, y + 340); TW(d1, m1);
+    rl_load(circuit, x + 280, y + 340, m1, 40.0, 0);
+    int d2 = res_seg(circuit, x + 200, y + 460, s2c, 30.0);                          // R13
+    int m2 = TN(x + 280, y + 460); TW(d2, m2);
+    rl_load(circuit, x + 280, y + 460, m2, 25.0, 0);
+    Component *r23 = add_comp(circuit, COMP_RESISTOR, x + 400, y + 400, 90);         // R23 between the two boundary buses
+    r23->props.resistor.resistance = 30.0;
+    int rt = TN(x + 400, y + 360), rb = TN(x + 400, y + 440);
+    TW(m1, TN(x + 400, y + 340)); TW(TN(x + 400, y + 340), rt);
+    TW(rb, TN(x + 400, y + 460)); TW(TN(x + 400, y + 460), m2);
+    r23->node_ids[0] = rt; r23->node_ids[1] = rb;
+    add_label(circuit, x + 60, y + 300, "Kron-reduced equivalent: the interior node is gone, the boundary sees the same network");
+    add_label(circuit, x - 40, y - 60, "KRON REDUCTION: Y_red = Y_aa - Y_ab Y_bb^-1 Y_ba is the Schur complement - for one interior node it is the Y-to-delta transform");
+    add_label(circuit, x + 60, y + 600, "Both halves are driven identically: the two load voltages match to the last digit, which is what 'effective resistance invariance' means.");
+    return 22;
+}
+
+// 7. Fast decoupled power flow assumes R/X << 1: watch it break on a distribution feeder
+static int place_gs_rx(Circuit *circuit, float x, float y) {
+    Component *v = ac_source(circuit, x, y, 169.71); if (!v) return 0;
+    int sp = TN(x, y + 20); v->node_ids[0] = sp;
+    int rxtap = TN(x + 60, y + 20); TW(sp, rxtap);
+    Component *rt = hres(circuit, x + 140, y + 20, 1.0);                             // transmission-like: R/X = 0.09
+    int tl = TN(x + 100, y + 20), tr = TN(x + 180, y + 20); TW(rxtap, tl);
+    rt->node_ids[0] = tl; rt->node_ids[1] = tr;
+    Component *lt = add_comp(circuit, COMP_INDUCTOR, x + 260, y + 20, 0); lt->props.inductor.inductance = 29.0e-3;
+    int ll = TN(x + 220, y + 20), lr = TN(x + 300, y + 20); TW(tr, ll);
+    lt->node_ids[0] = ll; lt->node_ids[1] = lr;
+    int bt = TN(x + 360, y + 20); TW(lr, bt);
+    rl_load(circuit, x + 360, y + 20, bt, 200.0, 0);
+    Component *sw1 = add_comp(circuit, COMP_SPST_SWITCH, x + 480, y + 20, 0);        // reactive block (open)
+    sw1->props.switch_spst.closed = false;
+    int s1l = TN(x + 440, y + 20), s1r = TN(x + 520, y + 20); TW(bt, s1l);
+    sw1->node_ids[0] = s1l; sw1->node_ids[1] = s1r;
+    rl_load(circuit, x + 580, y + 20, s1r, 0.1, 32.0e-3);                            // mostly reactive
+    int d1 = TN(x + 60, y + 300); TW(rxtap, d1);
+    Component *rd = hres(circuit, x + 140, y + 300, 11.0);                           // distribution-like: R/X = 1.5
+    int dl = TN(x + 100, y + 300), dr = TN(x + 180, y + 300); TW(d1, dl);
+    rd->node_ids[0] = dl; rd->node_ids[1] = dr;
+    Component *ld = add_comp(circuit, COMP_INDUCTOR, x + 260, y + 300, 0); ld->props.inductor.inductance = 19.4e-3;
+    int l2l = TN(x + 220, y + 300), l2r = TN(x + 300, y + 300); TW(dr, l2l);
+    ld->node_ids[0] = l2l; ld->node_ids[1] = l2r;
+    int bd = TN(x + 360, y + 300); TW(l2r, bd);
+    rl_load(circuit, x + 360, y + 300, bd, 200.0, 0);
+    Component *sw2 = add_comp(circuit, COMP_SPST_SWITCH, x + 480, y + 300, 0);
+    sw2->props.switch_spst.closed = false;
+    int s2l = TN(x + 440, y + 300), s2r = TN(x + 520, y + 300); TW(bd, s2l);
+    sw2->node_ids[0] = s2l; sw2->node_ids[1] = s2r;
+    rl_load(circuit, x + 580, y + 300, s2r, 0.1, 32.0e-3);
+    add_label(circuit, x - 40, y - 60, "R/X AND FAST DECOUPLED POWER FLOW: the top branch is transmission (1 + j11 ohm, R/X = 0.09), the bottom");
+    add_label(circuit, x + 60, y - 20, "is a distribution feeder (11 + j7.3 ohm, R/X = 1.5). Both carry the same 12 ohm load.");
+    add_label(circuit, x + 60, y + 560, "FDPF assumes R/X ~ 0 so that P moves angle and Q moves magnitude. Close each reactive block in turn:");
+    add_label(circuit, x + 60, y + 590, "on the transmission branch the extra vars move the magnitude much more than the watts do; on the feeder the");
+    add_label(circuit, x + 60, y + 620, "two effects are comparable, which is the coupling that makes the decoupled Jacobian diverge below 100 kV.");
+    return 24;
+}
+
+// inverting op-amp stage: Rin from in_node (input and output share y so stages chain with one wire),
+// Rf and optional Cf in feedback, + input grounded. Returns the output node.
+static int inv_stage(Circuit *circuit, float x, float y, int in_node, double rin, double rf, double cf) {
+    Component *u = sat_opamp(circuit, x, y);                                         // -(x-40,y-20) +(x-40,y+20) OUT(x+40,y)
+    if (!u) return -1;
+    Component *ri = add_comp(circuit, COMP_RESISTOR, x - 100, y, 0);                 // (x-140,y)-(x-60,y)
+    ri->props.resistor.resistance = rin;
+    Component *rff = add_comp(circuit, COMP_RESISTOR, x - 20, y - 100, 0);           // (x-60,y-100)-(x+20,y-100)
+    rff->props.resistor.resistance = rf;
+    int inl = TN(x - 140, y), sj = TN(x - 60, y), sj2 = TN(x - 60, y - 20), minus = TN(x - 40, y - 20);
+    int fl = TN(x - 60, y - 100), fr = TN(x + 20, y - 100), out = TN(x + 40, y);
+    int oj2 = TN(x + 80, y - 100), oj = TN(x + 80, y);
+    if (in_node >= 0 && in_node != inl) TW(in_node, inl);
+    TW(sj, sj2); TW(sj2, minus); TW(fl, sj2); TW(fr, oj2); TW(oj2, oj); TW(oj, out);
+    ri->node_ids[0] = inl; ri->node_ids[1] = sj; rff->node_ids[0] = fl; rff->node_ids[1] = fr;
+    if (cf > 0) {
+        Component *cc = add_comp(circuit, COMP_CAPACITOR, x - 20, y - 160, 0);       // (x-60,y-160)-(x+20,y-160)
+        cc->props.capacitor.capacitance = cf;
+        int cl = TN(x - 60, y - 160), cr = TN(x + 20, y - 160);
+        TW(cl, fl); TW(cr, fr);
+        cc->node_ids[0] = cl; cc->node_ids[1] = cr;
+    }
+    Component *g = add_comp(circuit, COMP_GROUND, x - 40, y + 60, 0);                // terminal (x-40,y+40)
+    int gp = TN(x - 40, y + 20), gt = TN(x - 40, y + 40);
+    TW(gp, gt);
+    u->node_ids[0] = minus; u->node_ids[1] = gp; u->node_ids[2] = out; g->node_ids[0] = gt;
+    return out;
+}
+
+// 8. BAL-001-TRE-2: the swing equation and a droop governor as an op-amp analog computer
+static int place_gs_governor(Circuit *circuit, float x, float y) {
+    // 1 V = 1 Hz of frequency deviation, 1 V = 0.1 pu of power
+    Component *step = add_comp(circuit, COMP_PULSE_SOURCE, x, y + 60, 0);            // +(x,y+20) -(x,y+100)
+    if (!step) return 0;
+    step->props.pulse_source.v_low = 0; step->props.pulse_source.v_high = 0.5;       // 0.05 pu load step
+    step->props.pulse_source.delay = 0.2; step->props.pulse_source.pulse_width = 8.0; step->props.pulse_source.period = 20.0;
+    step->props.pulse_source.rise_time = 1e-3; step->props.pulse_source.fall_time = 1e-3;
+    Component *gs = add_comp(circuit, COMP_GROUND, x, y + 140, 0);
+    int sp = TN(x, y + 20); step->node_ids[0] = sp;
+    connect_terminals(circuit, step, 1, gs, 0);
+    int s0 = TN(x, y), in0 = TN(x + 160, y); TW(sp, s0); TW(s0, in0);
+    // swing equation: 2H/f0 dDf/dt = Pm - Pe - D Df/f0   (H = 4 s, D = 1 pu, f0 = 60)
+    int df = inv_stage(circuit, x + 300, y, in0, 133e3, 800e3, 10e-6);               // integrator with damping
+    if (df < 0) return 0;
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 200, y - 60, 0);            // the governor's summing input
+    r2->props.resistor.resistance = 133e3;
+    int r2l = TN(x + 160, y - 60), r2r = TN(x + 240, y - 60);
+    r2->node_ids[0] = r2l; r2->node_ids[1] = r2r;
+    TW(r2r, TN(x + 240, y));                                                         // straight down onto the summing junction
+    int nf = inv_stage(circuit, x + 620, y, df, 100e3, 100e3, 0);                    // unity inverter -> -Df
+    if (nf < 0) return 0;
+    int pm = inv_stage(circuit, x + 940, y, nf, 90e3, 300e3, 1e-6);                  // 5 % droop + 0.3 s steam chest
+    if (pm < 0) return 0;
+    int f1 = TN(x + 980, y + 180), f2 = TN(x - 100, y + 180), f3 = TN(x - 100, y - 60);
+    TW(pm, f1); TW(f1, f2); TW(f2, f3); TW(f3, r2l);
+    add_label(circuit, x - 40, y - 280, "GOVERNOR DROOP AND THE SWING EQUATION (NERC BAL-001-TRE-2): an analog-computer patch of the ERCOT frequency response");
+    add_label(circuit, x + 60, y + 200, "1 V = 1 Hz of deviation, 1 V = 0.1 pu of power. U1 integrates 2H/f0 dDf/dt = Pm - Pe - D Df/f0 (H = 4 s, D = 1);");
+    add_label(circuit, x + 60, y + 230, "U2 inverts the sign; U3 is the 5 % droop with the 0.3 s steam-chest lag, fed back into U1's summing junction.");
+    add_label(circuit, x + 60, y + 260, "A 0.05 pu load step at 0.2 s gives the nadir, then recovery to -0.05/(1/R + D) = -0.143 Hz (59.857 Hz).");
+    add_label(circuit, x + 60, y + 290, "TRY: droop 5 -> 10 % (U3 input 90k -> 180k) doubles the deviation; H 4 -> 2 s (U1 cap 10 -> 5 uF) deepens the nadir.");
+    return 26;
+}
+
+// 9. CIP-014-2: a supervised fence-zone loop reporting to the substation RTU
+static int place_gs_pids(Circuit *circuit, float x, float y) {
+    Component *v = dc_rail(circuit, x, y, 12.0); if (!v) return 0;                   // +(x,y) RTU supply
+    int rail = TN(x, y);
+    Component *rp = hres(circuit, x + 140, y, 2.2e3);                                // RTU input pull-up
+    int pl = TN(x + 100, y), pr = TN(x + 180, y); TW(rail, pl);
+    rp->node_ids[0] = pl; rp->node_ids[1] = pr;
+    int di = TN(x + 240, y); TW(pr, di);                                             // the RTU digital input
+    Component *rin = vres(circuit, x + 240, y + 100, 100e3);                          // RTU input impedance
+    gnd_below(circuit, rin, 1, x + 240, y + 180);
+    rin->node_ids[0] = TN(x + 240, y + 60); TW(di, rin->node_ids[0]);
+    Component *cut = add_comp(circuit, COMP_SPST_SWITCH, x + 340, y, 0);             // fibre / cable integrity (closed)
+    cut->props.switch_spst.closed = true;
+    int cl = TN(x + 300, y), cr = TN(x + 380, y); TW(di, cl);
+    cut->node_ids[0] = cl; cut->node_ids[1] = cr;
+    Component *rz = hres(circuit, x + 460, y, 2.2e3);                                 // zone resistor, shorted by the contact
+    int zl = TN(x + 420, y), zr = TN(x + 500, y); TW(cr, zl);
+    rz->node_ids[0] = zl; rz->node_ids[1] = zr;
+    Component *zone = fault_switch(circuit, x + 460, y + 120, 0.0, 4.0, 7.0);        // closed 0-4 s, open (alarm) 4-7 s
+    zone->props.analog_switch.r_on = 1.0;
+    TW(zl, TN(x + 420, y + 120)); zone->node_ids[0] = TN(x + 420, y + 120);
+    TW(TN(x + 500, y + 120), zr); zone->node_ids[1] = TN(x + 500, y + 120);
+    Component *eol = vres(circuit, x + 560, y + 100, 5.6e3);                          // end-of-line supervision resistor
+    int et = TN(x + 560, y + 60), eb = TN(x + 560, y + 140);
+    TW(zr, TN(x + 560, y)); TW(TN(x + 560, y), et);
+    Component *ge = add_comp(circuit, COMP_GROUND, x + 560, y + 160, 0);
+    eol->node_ids[0] = et; eol->node_ids[1] = eb; ge->node_ids[0] = eb;
+    add_label(circuit, x - 40, y - 80, "SUPERVISED PERIMETER ZONE (NERC CIP-014-2 layers 2 and 5): a fence sensor reported to the substation RTU");
+    add_label(circuit, x + 60, y + 260, "One wire carries four states, so a cut or a short cannot be mistaken for 'all clear':");
+    add_label(circuit, x + 60, y + 290, "  normal (contact shorts the zone resistor, 5.6k end-of-line) = 8.5 V     alarm (contact opens, 2.2k + 5.6k) = 9.2 V");
+    add_label(circuit, x + 60, y + 320, "  cable cut (open the integrity switch) = 12 V                            short across the pair = 0 V");
+    add_label(circuit, x + 60, y + 350, "The contact opens at 4 s for 3 s. Passive loops and fibre are used because wireless sensors fail in substation EMI.");
+    return 18;
+}
+#undef TN
+#undef TW
+
 static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_RC_LOWPASS]       = { COMP_CAPACITOR, 0, 0 },
     [CIRCUIT_RC_HIGHPASS]      = { COMP_RESISTOR, 0, 0 },
@@ -8915,6 +9267,15 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_COM_208Y]         = { COMP_RESISTOR, 1, 0 },
     [CIRCUIT_COM_PFC]          = { COMP_RESISTOR, 0, 0 },
     [CIRCUIT_COM_ATS]          = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_GS_N1]            = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_GS_IBR]           = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_GS_BOLD]          = { COMP_RESISTOR, 0, 0 },      // the conventional line
+    [CIRCUIT_GS_DERATE]        = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_GS_FACRATE]       = { COMP_RESISTOR, 4, 0 },
+    [CIRCUIT_GS_KRON]          = { COMP_RESISTOR, 2, 0 },
+    [CIRCUIT_GS_RX]            = { COMP_RESISTOR, 1, 0 },
+    [CIRCUIT_GS_GOVERNOR]      = { COMP_OPAMP, 0, 2 },
+    [CIRCUIT_GS_PIDS]          = { COMP_RESISTOR, 1, 0 },
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -8951,6 +9312,10 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_COM_480Y]         = { { COMP_RESISTOR, 4, 0 }, { COMP_RESISTOR, 6, 0 } },        // phase B, phase C buses
     [CIRCUIT_COM_208Y]         = { { COMP_RESISTOR, 3, 0 }, { COMP_RESISTOR, 5, 0 } },        // phase B, C branch buses
     [CIRCUIT_COM_ATS]          = { { COMP_AC_VOLTAGE, 1, 0 } },                               // the standby generator
+    [CIRCUIT_GS_BOLD]          = { { COMP_RESISTOR, 1, 0 } },                                 // the BOLD receiving bus
+    [CIRCUIT_GS_KRON]          = { { COMP_RESISTOR, 6, 0 }, { COMP_RESISTOR, 4, 0 } },        // the delta-side load (overlays the Y one) and the second Y load
+    [CIRCUIT_GS_RX]            = { { COMP_RESISTOR, 4, 0 } },                                 // the feeder bus
+    [CIRCUIT_GS_IBR]           = { { COMP_RESISTOR, 2, 0 } },                                 // the fault branch
     // multi-input circuits: every input on its own channel
     [CIRCUIT_SUMMING_AMP]      = { { COMP_DC_VOLTAGE, 1, 0 }, { COMP_DC_VOLTAGE, 2, 0 } },    // V2, V3 (V1 = source probe)
     [CIRCUIT_DIFFERENCE_AMP]   = { { COMP_DC_VOLTAGE, 1, 0 } },                               // V2 (0.5 V DC)
@@ -8995,6 +9360,9 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_TX_69KV] = 5e-3, [CIRCUIT_TX_LADDER] = 5e-3, [CIRCUIT_TX_WIND] = 5e-3, [CIRCUIT_TX_PLANT] = 5e-3,
     [CIRCUIT_RES_SERVICE] = 5e-3, [CIRCUIT_RES_BRANCH] = 5e-3, [CIRCUIT_RES_ACSTART] = 20e-3, [CIRCUIT_RES_SOLAR] = 5e-3,
     [CIRCUIT_COM_480Y] = 5e-3, [CIRCUIT_COM_208Y] = 5e-3, [CIRCUIT_COM_PFC] = 5e-3, [CIRCUIT_COM_ATS] = 20e-3,
+    [CIRCUIT_GS_N1] = 5e-3, [CIRCUIT_GS_IBR] = 50e-3, [CIRCUIT_GS_BOLD] = 5e-3, [CIRCUIT_GS_DERATE] = 5e-3,
+    [CIRCUIT_GS_FACRATE] = 5e-3, [CIRCUIT_GS_KRON] = 5e-3, [CIRCUIT_GS_RX] = 5e-3, [CIRCUIT_GS_GOVERNOR] = 0.5,
+    [CIRCUIT_GS_PIDS] = 1.0,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -9027,6 +9395,9 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_TX_69KV] = 20e3, [CIRCUIT_TX_LADDER] = 100e3, [CIRCUIT_TX_WIND] = 100e3, [CIRCUIT_TX_PLANT] = 5e3,
     [CIRCUIT_RES_SERVICE] = 100.0, [CIRCUIT_RES_BRANCH] = 50.0, [CIRCUIT_RES_ACSTART] = 200.0, [CIRCUIT_RES_SOLAR] = 100.0,
     [CIRCUIT_COM_480Y] = 100.0, [CIRCUIT_COM_208Y] = 50.0, [CIRCUIT_COM_PFC] = 5.0, [CIRCUIT_COM_ATS] = 100.0,
+    [CIRCUIT_GS_N1] = 100e3, [CIRCUIT_GS_IBR] = 100e3, [CIRCUIT_GS_BOLD] = 100e3, [CIRCUIT_GS_DERATE] = 5e3,
+    [CIRCUIT_GS_FACRATE] = 50e3, [CIRCUIT_GS_KRON] = 50.0, [CIRCUIT_GS_RX] = 50.0, [CIRCUIT_GS_GOVERNOR] = 0.1,
+    [CIRCUIT_GS_PIDS] = 2.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -9151,6 +9522,15 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_COM_208Y]         = { DEMO_WAVEFORM, 60 },
     [CIRCUIT_COM_PFC]          = { DEMO_WAVEFORM, 60 },
     [CIRCUIT_COM_ATS]          = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_GS_N1]            = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_GS_IBR]           = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_GS_BOLD]          = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_GS_DERATE]        = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_GS_FACRATE]       = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_GS_KRON]          = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_GS_RX]            = { DEMO_WAVEFORM, 60 },
+    [CIRCUIT_GS_GOVERNOR]      = { DEMO_WAVEFORM, 0.5 },
+    [CIRCUIT_GS_PIDS]          = { DEMO_WAVEFORM, 0.2 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -9175,6 +9555,8 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_RES_BRANCH] = SCOPE_FLAG_STACK, [CIRCUIT_RES_SOLAR] = SCOPE_FLAG_STACK,
     [CIRCUIT_RES_ACSTART] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_COM_PFC] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_COM_480Y] = SCOPE_FLAG_STACK, [CIRCUIT_COM_208Y] = SCOPE_FLAG_STACK, [CIRCUIT_COM_ATS] = SCOPE_FLAG_STACK,
+    [CIRCUIT_GS_BOLD] = SCOPE_FLAG_STACK, [CIRCUIT_GS_KRON] = SCOPE_FLAG_STACK, [CIRCUIT_GS_RX] = SCOPE_FLAG_STACK,
+    [CIRCUIT_GS_IBR] = SCOPE_FLAG_STACK, [CIRCUIT_GS_GOVERNOR] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_SUMMING_AMP] = SCOPE_FLAG_STACK, [CIRCUIT_DIFFERENCE_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_INSTR_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_SUPERPOSITION] = SCOPE_FLAG_STACK,
 };
 int circuit_template_scope_flags(CircuitTemplateType type) {
@@ -9245,14 +9627,14 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
     // low-voltage templates keep the normal resistor and its overload warning (--burn-test enforces).
     {
         const CircuitTemplateInfo *tinfo = circuit_template_get_info(type);
-        if (tinfo && (tinfo->group == TG_POWER_SYSTEMS || tinfo->group == TG_HIGH_VOLTAGE || tinfo->group == TG_BUILDING)) {
+        if (tinfo && (tinfo->group == TG_POWER_SYSTEMS || tinfo->group == TG_HIGH_VOLTAGE || tinfo->group == TG_BUILDING || tinfo->group == TG_GRID_STD)) {
             // Building services: a resistor is either a load (>= 1 ohm: an appliance, a motor, a
             // lighting circuit - draw it as a load box) or a conductor / shunt (< 1 ohm: keep the
             // resistor symbol, but it is wire, not a 1/4 W part, so it has no thermal limit either).
-            bool building = (tinfo->group == TG_BUILDING);
+            bool building = (tinfo->group == TG_BUILDING || tinfo->group == TG_GRID_STD);
             for (int i = first; i < circuit->num_components; i++) {
                 Component *c = circuit->components[i];
-                if (c->type == COMP_RESISTOR) {
+                if (c->type == COMP_RESISTOR && c->props.resistor.power_rating <= 0.2501) {   // an explicit rating (FAC-008) is left alone
                     if (!building || c->props.resistor.resistance >= 1.0) c->props.resistor.high_power = true;
                     c->props.resistor.power_rating = 1e12;
                     c->thermal.max_temperature = 0.0;
@@ -9302,7 +9684,7 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
 
 const char *circuit_template_group_name(TemplateGroup g) {
     static const char *names[TG_COUNT] = {
-        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients", "IC I/O & drivers", "Residential & commercial"
+        "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients", "IC I/O & drivers", "Residential & commercial", "Grid standards & methods"
     };
     return (g >= 0 && g < TG_COUNT) ? names[g] : "?";
 }

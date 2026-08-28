@@ -144,6 +144,15 @@ typedef enum {
     CIRCUIT_COM_208Y,
     CIRCUIT_COM_PFC,
     CIRCUIT_COM_ATS,
+    CIRCUIT_GS_N1,
+    CIRCUIT_GS_IBR,
+    CIRCUIT_GS_BOLD,
+    CIRCUIT_GS_DERATE,
+    CIRCUIT_GS_FACRATE,
+    CIRCUIT_GS_KRON,
+    CIRCUIT_GS_RX,
+    CIRCUIT_GS_GOVERNOR,
+    CIRCUIT_GS_PIDS,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 
@@ -161,6 +170,7 @@ typedef enum {
     TG_TRANSIENTS,      // step responses (Agarwal & Lang ch. 10/12)
     TG_IC_IO,           // IC output / input structures, buses and drivers (GPIO, I2C, SPI, UART, RS-485, SPMI)
     TG_BUILDING,        // Residential and commercial services (ANSI C84.1, NEC, IEEE 1547)
+    TG_GRID_STD,        // Reliability standards and simulation methods (NERC TPL/PRC/FAC, ERCOT BAL/NOGRR, CIP-014)
     TG_COUNT
 } TemplateGroup;
 
