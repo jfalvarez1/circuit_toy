@@ -1,8 +1,13 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.8.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.8.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.10.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.10.0)** (auto-updating from v3.4.0 on)
 
 A native desktop circuit simulator written in C with SDL2, featuring a synthwave-themed interface. Build, simulate, and analyze electronic circuits with an intuitive drag-and-drop interface.
+
+In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/), which is where a lot
+of us first watched current move through a schematic - here as a native app, with a bench
+oscilloscope, textbook-parameter device models, and a template library whose every number is
+checked against a hand calculation.
 
 ![Circuit Playground Screenshot](screenshot.png)
 
@@ -25,6 +30,7 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 - Triangle Wave Generator (frequency, amplitude)
 - Sawtooth Wave Generator (frequency, amplitude)
 - Noise Source (white noise)
+- Arbitrary waveform source (`ARB`) - replays a sample table; load your own x/y coordinate list and the scope draws it in X-Y mode
 
 **Passive Components**
 - Resistor (with optional temperature coefficient)
@@ -112,7 +118,7 @@ A native desktop circuit simulator written in C with SDL2, featuring a synthwave
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-129 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+158 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -128,6 +134,8 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **Line Drop Basics** (`Drop`) - Battery, wire resistance, load: the simplest voltage drop
 - **Thevenin Equivalent** (`Thev`) - Divider + series R seen by a load: Vth 6 V, Rth 2.2 k
 - **Superposition** (`Super`) - Two voltage sources + a current source: responses add
+- **Lissajous Figures** (`Lissa`) - Two sines into X-Y: the figure counts the frequency ratio
+- **X-Y Plotter (upload)** (`XYplt`) - Replay a file of coordinates through two arb sources
 
 **Filters**
 - **RC Low Pass** (`LP`) - RC low-pass filter (fc=1.6kHz)
@@ -168,6 +176,13 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **Single-Tuned Amplifier** (`Tuned`) - CE stage with an LC tank load: gain peaks at f0 = 100 kHz
 - **Common Base** (`CB`) - Non-inverting, low input resistance, gain g_m R_C
 - **Darlington Follower** (`Darl`) - beta^2 input resistance: a 100k source still drives 100 ohm
+- **MOSFET Transfer Curves** (`IdVgs`) - One gate ramp, three devices: Vth and kn compared
+- **MOSFET Output Curves** (`IdVds`) - Drain sweep at three gate voltages: triode to saturation
+- **MOSFET Tuned Amplifier** (`MTund`) - Common-source stage with the same 100 kHz LC tank
+- **Common Gate (MOSFET)** (`CG`) - Signal into the source, output in phase, low R_in
+- **Cascode (MOSFET)** (`Casc`) - CS under CG: high gain, almost no Miller effect
+- **MOSFET Differential Pair** (`MDiff`) - Tail resistor sets the current, gates steer it
+- **MOSFET Current Mirror** (`MMirr`) - Diode-connected reference copied by a matched device
 
 **Oscillators**
 - **Wien Oscillator** (`Wien`) - Wien bridge sine wave oscillator
@@ -200,6 +215,9 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 **Digital**
 - **CMOS Inverter** (`CMOS`) - CMOS logic inverter
 - **SR Latch (NOR)** (`SRlat`) - Cross-coupled NOR gates remember S and R pulses
+- **CMOS Inverter (VTC)** (`CMOSi`) - Sweep the gates and read the transfer characteristic
+- **CMOS NAND (transistor level)** (`CMOSn`) - PMOS in parallel, NMOS in series
+- **Transmission Gate** (`TGate`) - Complementary pair vs a lone NMOS pass transistor
 
 **Power systems (Texas / ERCOT numbers)**
 - **345 kV Line** (`345kV`) - 100-mile 345 kV line, 600 MW load (per-phase)
@@ -273,6 +291,27 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **R/X Ratio and Decoupling** (`R/X`) - Why fast decoupled power flow diverges on feeders
 - **Governor Droop & Swing Equation** (`Gov`) - BAL-001-TRE-2 frequency nadir on an op-amp patch
 - **Supervised Alarm Loop** (`PIDS`) - CIP-014-2: four states on one pair into the RTU
+
+**Hardware engineering**
+- **Buck Converter** (`Buck`) - Vout = D Vin: 12 V to 6 V at 100 kHz
+- **Boost Converter** (`Boost`) - Vout = Vin/(1-D): 5 V to 10 V
+- **Buck-Boost Converter** (`BuckB`) - Inverted output, above or below the input
+- **Cuk Converter** (`Cuk`) - Capacitive transfer: both currents continuous
+- **Two-Phase Interleaved Buck** (`2Ph`) - 180 deg phases cancel ripple (the CLVR idea)
+- **Power Delivery Network** (`PDN`) - Bulk, ceramic and plane inductance against a load step
+- **Input vs Output Capacitance** (`Ccomp`) - Same cap, two places, very different result
+- **Impedance Matching** (`Zmatch`) - 5 / 50 / 500 ohm on a 50 ohm source
+- **Signal Reflections** (`Refl`) - Artificial 50 ohm line, terminated or not
+- **Loop Stability & Phase Margin** (`Loop`) - The same stage with and without compensation
+
+**Ideal vs real models**
+- **Ideal vs Real Source** (`IdSrc`) - Internal resistance: the terminal voltage sags
+- **Ideal vs Real Diode** (`IdDio`) - 0.7 V brick wall against the Shockley knee
+- **Ideal vs Real Capacitor** (`IdCap`) - ESR turns the ripple triangle into a square step
+- **Ideal vs Real Inductor** (`IdInd`) - Winding resistance damps the ring
+- **Ideal vs Real Op-Amp** (`IdOA`) - Gain-bandwidth and slew rate against infinity
+- **Ideal vs Real BJT** (`IdBJT`) - The Early effect moves the operating point
+- **Ideal vs Real MOSFET** (`IdMOS`) - Channel-length modulation is not a rounding error
 
 ### Power Systems & High Voltage
 
@@ -365,6 +404,32 @@ Full-featured virtual oscilloscope with:
 - **Autoset** - Automatic scale adjustment
 - **Screenshot** - Save oscilloscope display as BMP
 - **Pop-out Window** - Detach oscilloscope to separate resizable window
+
+### Device Models You Can Actually Edit
+
+![Ideal vs real MOSFET](screenshots/auto/id_mosfet.png)
+
+Every part carries the parameters a textbook gives you, and an **Ideal** switch that says exactly
+what is being left out:
+
+- **MOSFET** - type `u*Cox`, `W`, `L`, `W/L`, `Kn = u*Cox(W/L)`, `lambda` or `tox` and each field
+  back-solves the others, so a problem set's numbers go straight in whichever form it states them.
+  Below them is the live operating point: region (cutoff / triode / saturation), Vgs, Vds, Id, gm
+  and the overdrive Vov. `Type:` flips between enhancement and depletion.
+- **BJT** - beta, Is, the forward Early voltage VAF, emission coefficients and leakage currents;
+  ideal mode is Ebers-Moll transport with no Early effect.
+- **Capacitor** - ESR, ESL and leakage resistance, all in the solve: ESR puts the current square
+  straight onto the ripple, ESL sharpens the edges, leakage bleeds the charge away.
+- **Inductor** - winding resistance (DCR), saturation current.
+- **Source** - internal series resistance, so the terminal voltage sags with the load.
+- **Diode** - Shockley by default; ideal mode is the switch-behind-a-0.7 V-battery model.
+- **Op-amp** - open-loop gain, gain-bandwidth product, slew rate and rails. The GBW pole and the
+  slew limit are imposed inside the solve, not clamped afterwards, so the node voltages and the
+  branch currents stay consistent with each other.
+
+The **Ideal vs real models** group builds each of those into a side-by-side circuit: the same
+schematic two or three times with one part swapped, both on the scope at once. Every value in the
+notes is a hand calculation that the regression suite checks - both halves of every comparison.
 
 ### Bode Plot Analysis
 
@@ -562,6 +627,14 @@ probes every signal that matters (Stack view) and its text says what to change t
 | ![Two-stage amp](screenshots/auto/two_stage_fit.png) Scope **Fit**: 10 mV input and 130 mV output on 6 V DC, each band on its own scale | ![SPI](screenshots/auto/spi.png) SPI at 10 MHz through 33 ohm into 200 pF of cable |
 | ![Single-tuned amplifier](screenshots/auto/single_tuned_amp.png) Single-tuned (LC collector load) amplifier | ![SR latch](screenshots/auto/sr_latch.png) SR latch from cross-coupled NOR gates |
 
+### Ideal vs real models
+
+| | |
+|---|---|
+| ![Ideal vs real capacitor](screenshots/auto/id_cap.png) ESR turns the ripple triangle into a square step | ![Ideal vs real op-amp](screenshots/auto/id_opamp.png) Gain-bandwidth, then slew rate: the sine leaves as a triangle |
+| ![Ideal vs real inductor](screenshots/auto/id_ind.png) Winding resistance takes the ring from zeta 0.05 to 0.30 | ![Ideal vs real diode](screenshots/auto/id_diode.png) The 0.7 V brick wall against the Shockley knee |
+
+
 ![Function generator](gifs/auto_function_generator.gif)
 
 ![Three-phase](gifs/auto_three_phase_balanced.gif)
@@ -638,10 +711,10 @@ point and a short transient, and reports solver errors, NaN/runaway voltages and
 point of every transistor / op-amp / regulator:
 
 ```bash
-build/tools/template_smoke.exe             # 129/129 templates passed
+build/tools/template_smoke.exe             # 158/158 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
-build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (66 oracles)
+build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (159 oracles)
 build/tools/template_smoke.exe --knob-test       # every template still converges with every value x0.5 and x2
 build/tools/template_smoke.exe --trace "87 " 0.3 # per-node min/max over a run (debugging a template)
 build/tools/template_smoke.exe --demo-test       # every template demonstrates its DemoKind contract
@@ -652,156 +725,13 @@ build/tools/template_smoke.exe --flow-test       # current-flow display: KCL, co
 build/tools/template_smoke.exe --burn-test       # no resistor/LED over its rating (HV templates use R_HP loads)
 build/tools/template_smoke.exe --std-test        # bus voltages vs ERCOT / NERC / ANSI C84.1 / NEC limits
 build/tools/template_smoke.exe --switch-test     # every switch in both states, measured at the probed output
+build/tools/template_smoke.exe --param-test      # scope presets: the window really shows the circuit's own frequency
 build/circuit-playground.exe --keys "^mosfet|" 24 8 --record DIR N EVERY   # scripted typing: ^ opens Spotlight, | is Enter
 build/tools/template_smoke.exe --geom-test       # schematic audit: diagonals, crossings, wires through bodies
 build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
 build/tools/template_smoke.exe --response "RC BP"   # amplitude vs frequency of every node during the sweep
 build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
 build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template in the palette)
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
-```
-
-The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
-which produced the images in this README):
-
-```bash
-build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
-build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
-build/circuit-playground.exe --help
 ```
 
 The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
@@ -975,6 +905,12 @@ MIT License - See LICENSE file for details.
 
 ## Acknowledgments
 
+- Inspired by **[Paul Falstad's circuit.js](https://www.falstad.com/circuit/)** (source:
+  [pfalstad/circuitjs1](https://github.com/pfalstad/circuitjs1)) - the simulator that made circuit
+  theory something you learn by dragging parts around and watching the current move. Its
+  example-first library, its animated current dots and its click-anything-and-watch-it-respond
+  feel are the model this project works from; the Circuits tab, the current-flow display and the
+  on-canvas theory notes all exist because circuit.js showed how much a learner gets from them.
 - Inspired by [The Powder Toy](https://github.com/The-Powder-Toy/The-Powder-Toy) particle simulation game
 - Architecture follows the same C/SDL2 pattern
 - Synthwave color theme inspired by 1980s aesthetics

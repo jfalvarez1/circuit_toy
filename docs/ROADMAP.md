@@ -24,6 +24,41 @@ See `docs/RESEARCH_SIMULATORS.md` for the survey of formats and of how other sim
 drive the engine improvements (trapezoidal integration, LTE timestep control, junction
 voltage limiting, op-amp macro-model).
 
+## Named part models as schematic symbols (requested 2026-08-28)
+
+Add real parts - 2N7000, LM317, TL431, 1N4148, BC547, IRF540, NE555 - as palette items whose
+properties are preloaded from the datasheet, drawn with their own symbol and labelled with the
+part number. Each one needs: the parameter set (for the 2N7000: V_GS(th) 2.1 V typ, R_DS(on)
+1.2 ohm at V_GS = 10 V, K from the transfer curve), a `--probe-test` oracle taken from a
+datasheet operating point rather than from the simulator, and a `--param-test` entry checking
+the model against two points on the published curve. The MOSFET curve-tracer templates
+(#130, #131) already sweep three devices side by side and are the natural home for them.
+
+## Remaining unmodelled properties (2026-08-28)
+
+The ESR / ESL / leakage, source resistance, ideal-diode and op-amp GBW / slew-rate properties
+now stamp (see TEST_PLAN 3.20). These are still editable but inert, and should either be
+implemented or removed from the panel:
+
+- **Op-amp**: input offset voltage, input bias current, CMRR, finite input and output
+  resistance, the rail-to-rail flag. `r_out` in particular changes what a stage does into a
+  heavy or capacitive load, so it is the most worth having.
+- **Capacitor**: DC-bias capacitance loss (a class-II ceramic loses more than half its value at
+  its rated voltage) - this is the one that surprises people, and it needs a C(V) table, which
+  is the same machinery the vendor-model import above wants.
+- **Resistor**: tolerance is used by Monte Carlo but not by the nominal solve, which is correct;
+  the temperature coefficient is honoured only when `ideal` is false, which is worth a note in
+  the panel.
+
+## Cuk converter ripple (2026-08-28)
+
+The Cuk template settles to the right mean (13.30 V against the ideal 12 V, and it moved much
+closer when the inductor's theta-method history term was fixed - see TEST_PLAN 3.20.9) but its
+ripple is still coarse: the transfer capacitor's current is reconstructed from a switch model
+that has no on-resistance, so the corners of each cycle are sharper than the part could
+manage. Worth revisiting with: a switch with real R_on, a finite diode recovery, and a smaller
+time step tied to the switching period rather than the scope's time/div.
+
 ## Crystal (Pierce) oscillator - not shipped yet (2026-08-24)
 
 `place_pierce()` in src/circuits.c builds an op-amp Pierce loop around a "teaching crystal" (Ls 100 mH,

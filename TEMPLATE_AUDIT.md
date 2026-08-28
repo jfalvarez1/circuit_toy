@@ -1324,5 +1324,38 @@ Common building blocks (`src/circuits.c`, batch 5):
 | 127 | R/X Ratio and Decoupling | | | | | | | R/X 0.09 vs 1.5; why FDPF diverges on feeders |
 | 128 | Governor Droop & Swing Equation | | | | | | | nadir -0.168 Hz, settles -0.143 Hz = -0.05/(1/R+D) (BAL-001-TRE-2) |
 | 129 | Supervised Alarm Loop | | | | | | | four states on one pair: 8.5 / 9.2 / 12 / 0 V (CIP-014-2) |
+| 130 | MOSFET Transfer Curves | | | | | | | 0.1886 max (2N7000 at Vgs 4 V: 189 mA through the 1 ohm sense) |
+| 131 | MOSFET Output Curves | | | | | | | 0.1896 max (Vgs 3.5 V curve: 95 mA through the 2 ohm sense) |
+| 132 | MOSFET Tuned Amplifier | | | | | | | 1.2458 amp (gain peaks as the sweep passes the 100 kHz tank) |
+| 133 | Common Gate (MOSFET) | | | | | | | 0.5519 amp (common gate: 20 mV in, g_m R_D = 28x, in phase) |
+| 134 | Cascode (MOSFET) | | | | | | | 0.3553 amp (cascode: 10 mV in, gain 36 with almost no Miller) |
+| 135 | MOSFET Differential Pair | | | | | | | 0.3943 amp (one drain of the pair, 20 mV antiphase drive) |
+| 136 | MOSFET Current Mirror | | | | | | | 6.2820 max (mirrored drain sits mid-rail, load current copied) |
+| 137 | CMOS Inverter (VTC) | | | | | | | 5.0 max (inverter reaches the full rail) |
+| 138 | CMOS NAND (transistor level) | | | | | | | 5.0 max (NAND output pulls to the rail unless both inputs are high) |
+| 139 | Transmission Gate | | | | | | | 5.0 max (transmission gate passes the whole rail); 4.266 max (the lone NMOS stops one threshold short - the point of the template) |
+| 140 | Lissajous Figures | | | | | | | 5.0 amp (CH2 of the Lissajous pair: 5 V at twice CH1's frequency) |
+| 141 | X-Y Plotter (upload) | | | | | | | 4.2532 amp (the y table drives the full 5 V, so the shape fills the screen) |
+| 142 | Buck Converter | | | | | | | 5.5152 absmean (Vout = D Vin minus the switch and diode drops) |
+| 143 | Boost Converter | | | | | | | 9.0353 absmean (Vin/(1-D) minus the diode drop) |
+| 144 | Buck-Boost Converter | | | | | | | 12.3182 absmean (-D/(1-D) Vin = -12 V (magnitude)) |
+| 145 | Cuk Converter | | | | | | | 13.3024 absmean (settles near -12 V; closer since the DCR history fix, ripple still coarse (ROADMAP)) |
+| 146 | Two-Phase Interleaved Buck | | | | | | | 5.5145 absmean (same 6 V rail, ripple shared between two phases) |
+| 147 | Power Delivery Network | | | | | | | 1.5921 absmean (1.8 V rail sagging under the load step (deeper since the DCR history fix)) |
+| 148 | Input vs Output Capacitance | | | | | | | 5.0 absmean (the input-capacitor rail) |
+| 149 | Impedance Matching | | | | | | | 1.0 amp (matched 50 ohm load takes half the source voltage) |
+| 150 | Signal Reflections | | | | | | | 5.0101 max (open far end doubles the incident 2.5 V step) |
+| 151 | Loop Stability & Phase Margin | | | | | | | 4.9995 amp (uncompensated stage: x10 on a 1 Vpp step) |
+| 152 | Ideal vs Real Source | | | | | | | 5.0 dc (ideal source: 5.000 V into 1k, no droop); 4.1667 dc (real source into 1k: 5 x 1000/1200); 1.6667 dc (same source into 100 ohm: 5 x 100/300) |
+| 153 | Ideal vs Real Diode | | | | | | | 0.30 max (ideal diode: 1 Vpk - 0.7 V brick wall); 0.486 max (Shockley: soft knee near 0.52 V leaves 60 % more) |
+| 154 | Ideal vs Real Capacitor | | | | | | | 0.125 amp (ideal 5 uF: I(T/2)/C = 250 mVpp triangle); 0.1495 amp (ESR 0.5 ohm adds a +/-25 mV square to the triangle); 0.2225 amp (ESR 2 ohm: +/-10... |
+| 155 | Ideal vs Real Inductor | | | | | | | 8.94 max (lossless L: zeta = 0.05, overshoot to ~9.3 V (theta method shaves 3 %)); 6.86 max (DCR 50 ohm: zeta = 0.30, overshoot exp(-pi zeta/sqrt(1... |
+| 156 | Ideal vs Real Op-Amp | | | | | | | 0.5 amp (ideal op-amp: gain 10 at any frequency); 0.354 amp (GBW 1 MHz at Acl 10: -3 dB at exactly 100 kHz); 1.25 amp (slew limited: a triangle of ... |
+| 157 | Ideal vs Real BJT | | | | | | | 7.28 dc (no Early effect: V_C = 12 - beta I_B x 4.7k); 6.874 dc (V_AF = 80 V: (1 + V_CE/V_AF) adds ~9 % of collector current) |
+| 158 | Ideal vs Real MOSFET | | | | | | | 7.05 dc (square law: I_D = K V_ov^2/2 = 2.25 mA into 2.2k); 5.652 dc (lambda = 0.05: V_D solves 12 - 2.2k I_D (1 + lambda V_D)) |
+
+(Rows 130-158 cover the MOSFET amplifier set, transistor-level CMOS, the X-Y and
+arbitrary-waveform pair, the hardware-engineering lab and the ideal-vs-real comparisons;
+their notes are the `--probe-test` oracles, so a row and its check cannot disagree.)
 
 (96 blocks = the 96 `CIRCUIT_*` entries in `include/circuits.h` excluding `CIRCUIT_NONE`/`_COUNT`; #48-#65 follow the enum order after `CIRCUIT_PHASE_SHIFT_OSC`, #66-#72 the enum order after `CIRCUIT_DC_LINE_DROP`, #73-#81 the enum order after `CIRCUIT_HV_765_LINE`, #82-#90 the enum order after `CIRCUIT_RING_OSC`, #91-#96 the enum order after `CIRCUIT_OPAMP_SAT`.)

@@ -489,11 +489,34 @@ Three checks were tightened after the Hartley/Colpitts report and a ground-under
 | # | Check | Expected |
 |---|-------|----------|
 | 3.19.1 | `[ ]` **Automated:** `--geom-test` now also reports `overlap=` | No two component symbols may overlap. The check compares the **drawn bodies** (65 % of the box across the leads, 85 % of the height, rotation aware, text excluded, 4 px slack) rather than the full bounding box, which includes lead stubs. **131/131 have overlap = 0** and **0 diagonal wires**, so the two hard layout rules hold everywhere. Five real collisions were fixed to get there: the kick source's ground in the Triangle/Square and Function Generator cores, the replica resistor's ground sitting on the line section in 21 Distance Zone 1, the AC source's ground in Neg Clamper, and the emitter resistor, load resistor and 12 V rail ground in the Single-Tuned Amplifier. |
-| 3.19.1b | `[ ]` Remaining geometry warnings | 25 templates still report `cross=` (13 drawn wire crossings, which are legitimate in some topologies) or `through=` (43 wires passing over a node they do not connect to — cosmetic, tracked). |
+| 3.19.1b | `[ ]` Remaining geometry warnings | 32 of 158 templates still report `cross=` (13 drawn wire crossings, which are legitimate in some topologies) or `through=` (43 wires passing over a node they do not connect to — cosmetic, tracked). |
 | 3.19.2 | `[ ]` **Automated:** `--osc-test` frequency tolerance | Was ±25 %, which let a Hartley running 10 % fast pass. Now **±5 %**, and it immediately caught the Phase Shift oscillator (−8 % from loading) and the Hartley (+6 %); both expectations are now the measured values with the physical reason documented on the canvas. |
 | 3.19.3 | `[ ]` **Automated:** `--osc-test` waveform shape | New: AC rms ÷ peak-to-peak over the **settled quarter** of the run — 0.354 sine, 0.5 square, 0.289 triangle, ±12 %. Nothing previously checked shape, so a clipped or notched "sine" passed as long as it crossed its mean. Colpitts 0.355, Clapp 0.339, Hartley 0.370, Ring 0.471, Tri/Square 0.299. |
 | 3.19.4 | `[ ]` LC oscillators on screen | Colpitts / Hartley / Clapp swing about a 12 V rail and were being clipped by the top of the graticule; all three now preset **AC coupling** so the tank waveform is centred and complete. |
 | 3.19.5 | `[ ]` Hartley coupling capacitor | 10 nF sat in series with the 1 nF tank cap (pulling f 10 % high) and resonated with L2 near 225 kHz, putting a notch on the falling edge. Now 220 nF. |
+
+### 3.20 Batch nine: MOSFET / CMOS / X-Y / hardware, and the ideal-vs-real models (2026-08-28: templates #130-#158)
+
+Templates #130-#151 (MOSFET amplifier set, transistor-level CMOS, X-Y and arbitrary waveform,
+the hardware-engineering lab) and #152-#158 (palette group **Ideal vs real models**).
+
+Six component properties were editable in the panel but never reached the solver, so changing
+them did nothing. All six now stamp, and every one of them is gated on `ideal == false`, which
+no pre-existing template sets - the check below is that nothing else moved.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.20.1 | `[ ]` Ideal vs Real Source: read all three loads; then untick **Ideal** on the first source | 5.000 / 4.167 / 1.667 V. Unticking drops the first to 4.167 V - the divider with r_series = 200 |
+| 3.20.2 | `[ ]` Ideal vs Real Diode: compare the two peaks; then tick **Ideal** on the second diode | 0.30 V against 0.486 V; ticking collapses the second onto the first |
+| 3.20.3 | `[ ]` Ideal vs Real Capacitor: the three ripple shapes | a clean 250 mVpp triangle, then the same triangle with a +/-25 mV and a +/-100 mV square added by ESR. Set ESL to 1 uH on the third to round the edges instead |
+| 3.20.4 | `[ ]` Ideal vs Real Inductor: overshoot on the rising edge | 8.94 V (zeta = 0.05) against 6.80 V (DCR 50 ohm, zeta = 0.30); the second ring is gone within three cycles |
+| 3.20.5 | `[ ]` Ideal vs Real Op-Amp: the three rows at 100 kHz | 500 mV (ideal), 354 mV (GBW 1 MHz at Acl 10 = -3 dB at exactly 100 kHz), and a **triangle** ~1.25 V tall where 5 V was asked for. Drop the source to 10 kHz and the third becomes a clean 1 V sine |
+| 3.20.6 | `[ ]` Ideal vs Real BJT / MOSFET: both collector and both drain voltages | 7.28 / 6.87 V (Early effect, V_AF = 80 V) and 7.05 / 5.65 V (lambda = 0.05). Set V_AF to 1e9 or lambda to 0 and the halves meet |
+| 3.20.7 | `[ ]` **Regression:** no existing template changes | Every part defaults to `ideal = true` except the diode, whose default flips to `false` - which is what the solver has always done. `--probe-test`, `--demo-test`, `--osc-test` all unchanged except the two noted below |
+| 3.20.8 | `[ ]` **Model fix:** BJT Early effect | It read V_CE back out of the CLAMPED V_bc (clamped to ~0.13 V so exp() stays finite), so V_AF = 80 V produced a 1 % effect instead of 9 %. Now taken from the node voltages |
+| 3.20.9 | `[ ]` **Model fix:** inductor theta-method history | The history term used the whole previous terminal voltage, including the DCR drop, adding a spurious +K R I_prev that cancelled part of the winding resistance: a branch set to zeta = 0.30 rang as if it were 0.21. Both converter oracles moved (Cuk 14.996 -> 13.302, closer to the ideal 12 V; PDN 1.6605 -> 1.5921) |
+| 3.20.10 | `[ ]` **Automated:** the full battery | 158/158 templates, 158/158 demos, **159/159 probe oracles** (17 new: both halves of every ideal-vs-real comparison), 9/9 oscillators, 23/23 switches, 0 burns, 2104 knob runs 0 failed, 23 std buses 0 drifted, 158/158 flow, 0 param-preset failures, 0 layout failures |
+| 3.20.11 | `[ ]` **Automated:** `--geom-test` on the new templates | All seven ideal-vs-real templates report `diag=0 cross=0 through=0 touch=0 overlap=0`. The op-amp rows were rewired to get there: the wire feeding the + input ran along R1's own column, which reads - correctly - as a wire straight through the resistor |
 
 ## 4. Oscilloscope
 

@@ -53,6 +53,12 @@ SHOTS = [
     ("power_plant", "Plant", 200, "circuits"),
     ("substation", "Substn", 200, "circuits"),
     ("single_tuned_amp", "Tuned", 200, "circuits"),
+    # ideal vs real models
+    ("id_mosfet", "IdMOS", 160, "circuits"),
+    ("id_cap", "IdCap", 220, "circuits"),
+    ("id_opamp", "IdOA", 220, "circuits"),
+    ("id_ind", "IdInd", 260, "circuits"),
+    ("id_diode", "IdDio", 220, "circuits"),
     ("sr_latch", "SRlat", 160, "circuits"),
     ("common_base", "CB", 140, "circuits"),
     ("i2c_bus", "I2C", 200, "circuits"),
