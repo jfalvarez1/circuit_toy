@@ -24,9 +24,25 @@ static void render_component_value(RenderContext *ctx, Component *comp) {
         case COMP_GROUND: case COMP_TEXT: case COMP_LABEL: case COMP_PIN: case COMP_SUBCIRCUIT:
         case COMP_VOLTMETER: case COMP_AMMETER: case COMP_WATTMETER: case COMP_TEST_POINT:
         case COMP_NOT_GATE: case COMP_AND_GATE: case COMP_OR_GATE: case COMP_NAND_GATE: case COMP_NOR_GATE: case COMP_XOR_GATE: case COMP_XNOR_GATE:
-        case COMP_OPAMP: case COMP_OPAMP_FLIPPED: case COMP_SPST_SWITCH: case COMP_SPDT_SWITCH: case COMP_DPDT_SWITCH: case COMP_ANALOG_SWITCH:
+        case COMP_OPAMP: case COMP_OPAMP_FLIPPED: case COMP_DPDT_SWITCH:
         case COMP_DIODE: case COMP_SCHOTTKY: case COMP_NPN_BJT: case COMP_PNP_BJT: case COMP_NMOS: case COMP_PMOS:
             return;
+        /* Switches say what state they are in. A closed switch is a straight line between two
+           small circles, which on a busy schematic is a wire - and then a template that says
+           "open the breaker" gives you nothing to look for. */
+        case COMP_SPST_SWITCH:
+            snprintf(buf, sizeof buf, comp->props.switch_spst.closed ? "CLOSED" : "OPEN");
+            break;
+        case COMP_SPDT_SWITCH:
+            snprintf(buf, sizeof buf, "POS %d", comp->props.switch_spdt.position + 1);
+            break;
+        case COMP_PUSH_BUTTON:
+            snprintf(buf, sizeof buf, comp->props.push_button.pressed ? "PRESSED" : "BUTTON");
+            break;
+        case COMP_ANALOG_SWITCH:
+            snprintf(buf, sizeof buf, "%s%s", comp->props.analog_switch.state ? "ON" : "OFF",
+                     comp->props.analog_switch.manual ? " MAN" : "");
+            break;
         case COMP_TRANSFORMER: case COMP_TRANSFORMER_CT:
             snprintf(buf, sizeof buf, "1:%.4g", comp->props.transformer.turns_ratio);
             break;
@@ -1074,7 +1090,10 @@ void render_component(RenderContext *ctx, Component *comp) {
             render_relay(ctx, comp->x, comp->y, comp->rotation, false);
             break;
         case COMP_ANALOG_SWITCH:
-            render_analog_switch(ctx, comp->x, comp->y, comp->rotation, false);
+            /* Draw the blade where it actually is. It used to be hard-coded open, so a switch
+               that was conducting - manually or from its control pin - looked identical to one
+               that was not, and clicking it appeared to do nothing at all. */
+            render_analog_switch(ctx, comp->x, comp->y, comp->rotation, comp->props.analog_switch.state);
             break;
         case COMP_LAMP:
             render_lamp(ctx, comp->x, comp->y, comp->rotation);
