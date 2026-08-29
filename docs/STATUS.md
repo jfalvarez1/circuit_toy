@@ -58,6 +58,42 @@ Written at v3.18.0 plus the unreleased work on `main`.
 - **`permissions: contents: write`** — v3.17.0's build was green and the upload still failed with
   `Resource not accessible by integration`. GitHub's default token is read-only.
 
+### v3.19.2 — the update crash, and the counter that never counted
+
+- **Update no longer closes the app and leaves it closed.** Two separate faults. A tag is
+  published the moment it is pushed and CI attaches the binary a quarter of an hour later, so
+  for that window the app saw a newer version, quit itself, and downloaded a file that did not
+  exist; the updater now requires the zip to be on the release, and CI creates the release as a
+  draft and publishes it only after the upload. Then the deeper one: the app shipped as a
+  **console subsystem** binary and the updater relaunches it from a PowerShell console that
+  closes a moment later — a console process attached to a console that is going away either
+  takes the close event and dies ("reopens and just crashes instantly") or fails during DLL init
+  with 0xC0000142 ("the application was unable to start correctly"). Both reports match. It is a
+  GUI subsystem binary now; `main()` attaches to the parent console when given arguments, so
+  `--version` and the rest still print and CI still captures output through its pipes.
+- **The Counter is a real part.** It had no logic behind it at all: two output pins driven from a
+  single shared bool, and nothing in the program incremented it — `logic_init_component` had no
+  caller anywhere, so `is_logic_component` was false for everything and the whole
+  sample → propagate → drive pass in `logic.c` did nothing. Four bits, a reset, a carry and a
+  settable modulus now, driven once per time step. The engine is woken for the counter alone;
+  switching the rest over would change how every existing logic template behaves.
+- **The 7-segment display lights.** The renderer was never handed the segment currents, so it
+  drew the same dead outline whatever it was driven with, with `7SEG` printed across the middle
+  of the digit. Segments are drawn from their own current now and the label sits under the
+  package.
+- **Four new templates.** 7-Segment Segment Test (every segment on its own switch), BCD Counter
+  to 7-Segment (ten counts light every segment, so a stuck one reads as a wrong digit), Digital
+  Clock HH:MM:SS (six digit blocks carry-chained; 130 s of simulation reads 02:10, and an AND
+  gate watching for tens=2 with units=4 resets the hours at 24), and Wireless Link (what the TX
+  and RX antenna parts actually do).
+- **TX and RX are out of the Display palette section** and into one of their own.
+- **Labels printed across symbols are checked.** Nothing measured where a label lands; fourteen
+  of them were sitting on a part, across eleven templates. All moved, count now zero.
+- **Wiring:** Differential Pair had Q2 at 180 degrees, which turns an NPN upside down — collector
+  at the bottom, emitter at the top — so RC2's wire ran down past Q2's own emitter and the
+  emitter bus landed inside the netlist's 10 px merge radius of the collector, shorting them.
+  Comparator's input ran through R2's body.
+
 ### On `main`, not yet released
 
 - **Every cable that needs propagation now propagates.** Signal Reflections, Termination and
@@ -76,15 +112,15 @@ Written at v3.18.0 plus the unreleased work on `main`.
 
 | Mode | Result |
 |---|---|
-| `template_smoke` | 183/183 |
-| `--probe-test` | 205 oracles |
-| `--demo-test` | 183 demo contracts |
+| `template_smoke` | 187/187 |
+| `--probe-test` | 208 oracles |
+| `--demo-test` | 187 demo contracts |
 | `--conn-test` | 0 loose pins, 0 parts connected to nothing |
-| `--view-test` | 183 templates show something; 50 switches clickable |
+| `--view-test` | 187 templates show something; 58 switches clickable |
 | `--line-test` | 5 transmission-line checks |
 | `--xtal-test` | 4 crystal checks |
-| `--flow-test` | 183/183 |
-| `--geom-test` | 159/183 clean, 0 hard violations |
+| `--flow-test` | 187/187 |
+| `--geom-test` | 162/187 clean, 0 hard violations, 0 labels on symbols |
 | `--knob-test` | 2670 runs |
 | `--part-test` | 25 checks over 21 named devices |
 | `--layout-test` | palette, scope knobs, zoom and SPICE buttons, probe naming |
@@ -111,12 +147,15 @@ Written at v3.18.0 plus the unreleased work on `main`.
 
 Cosmetic, all named per template with their endpoints by `--geom-test`:
 
-- **17 wires still cross a component body.** Down from 49. The remaining ones are mostly
-  op-amp templates where the bias divider sits in the lane the input and feedback resistors use
-  to reach the amplifier — Schmitt Trigger, Window Comp, Difference Amp, Sallen-Key. Each needs
-  its own look; moving the divider is not enough, the wires have to be rerouted around it.
-- **23 wire crossings.** A crossing without a junction dot is what a real schematic does, so
-  these are the lower priority of the two.
+- **12 wires still cross a component body.** Down from 49. The remaining ones are op-amp
+  templates where the bias divider sits in the lane the input and feedback resistors use to
+  reach the amplifier — Schmitt Trigger, Window Comp, Sallen-Key, and the MOSFET stages. Each
+  needs its own look; moving the divider is not enough, the wires have to be rerouted around it.
+- **121 wire crossings**, most of them in the two new digit templates: a 7-segment display has
+  four segment pins on one side of the package and four on the other, so any driver has to wrap
+  three wires around the body, and a crossing is what that costs. A crossing without a junction
+  dot is what a real schematic does, so these stay the lower priority of the two.
+- **0 labels printed across a symbol**, checked since the label-box measurement went in.
 
 ### Known limitations, written up rather than worked around
 
