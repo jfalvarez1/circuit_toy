@@ -3444,13 +3444,13 @@ static int place_difference_amp(Circuit *circuit, float x, float y) {
     component_get_terminal_pos(c_dec, 0, &cdec_top_x, &cdec_top_y);
     component_get_terminal_pos(c_dec, 1, &cdec_bot_x, &cdec_bot_y);
 
-    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 120, 5.0f);
+    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 160, 5.0f);   /* above the source body, not across it */
     int vcc_node = circuit_find_or_create_node(circuit, vcc_pos_x, vcc_pos_y, 5.0f);
     circuit_add_wire(circuit, vcc_node, vcc_rail);
     vcc->node_ids[0] = vcc_node;
 
     int cdec_top_node = circuit_find_or_create_node(circuit, cdec_top_x, cdec_top_y, 5.0f);
-    int corner_cdec = circuit_find_or_create_node(circuit, cdec_top_x, y - 120, 5.0f);
+    int corner_cdec = circuit_find_or_create_node(circuit, cdec_top_x, y - 160, 5.0f);
     circuit_add_wire(circuit, vcc_rail, corner_cdec);
     circuit_add_wire(circuit, corner_cdec, cdec_top_node);
     c_dec->node_ids[0] = cdec_top_node;
@@ -3632,13 +3632,13 @@ static int place_transimpedance(Circuit *circuit, float x, float y) {
     float cdec_top_x, cdec_top_y;
     component_get_terminal_pos(c_dec, 0, &cdec_top_x, &cdec_top_y);
 
-    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 120, 5.0f);
+    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 160, 5.0f);   /* above the source body, not across it */
     int vcc_node = circuit_find_or_create_node(circuit, vcc_pos_x, vcc_pos_y, 5.0f);
     circuit_add_wire(circuit, vcc_node, vcc_rail);
     vcc->node_ids[0] = vcc_node;
 
     int cdec_top_node = circuit_find_or_create_node(circuit, cdec_top_x, cdec_top_y, 5.0f);
-    int corner_cdec = circuit_find_or_create_node(circuit, cdec_top_x, y - 120, 5.0f);
+    int corner_cdec = circuit_find_or_create_node(circuit, cdec_top_x, y - 160, 5.0f);
     circuit_add_wire(circuit, vcc_rail, corner_cdec);
     circuit_add_wire(circuit, corner_cdec, cdec_top_node);
     c_dec->node_ids[0] = cdec_top_node;
@@ -3937,13 +3937,13 @@ static int place_sallen_key_lp(Circuit *circuit, float x, float y) {
     float cdec_top_x, cdec_top_y;
     component_get_terminal_pos(c_dec, 0, &cdec_top_x, &cdec_top_y);
 
-    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 120, 5.0f);
+    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 160, 5.0f);   /* above the source body, not across it */
     int vcc_node = circuit_find_or_create_node(circuit, vcc_pos_x, vcc_pos_y, 5.0f);
     circuit_add_wire(circuit, vcc_node, vcc_rail);
     vcc->node_ids[0] = vcc_node;
 
     int cdec_top_node = circuit_find_or_create_node(circuit, cdec_top_x, cdec_top_y, 5.0f);
-    int corner_cdec = circuit_find_or_create_node(circuit, cdec_top_x, y - 120, 5.0f);
+    int corner_cdec = circuit_find_or_create_node(circuit, cdec_top_x, y - 160, 5.0f);
     circuit_add_wire(circuit, vcc_rail, corner_cdec);
     circuit_add_wire(circuit, corner_cdec, cdec_top_node);
     c_dec->node_ids[0] = cdec_top_node;
@@ -4115,13 +4115,13 @@ static int place_bandpass_active(Circuit *circuit, float x, float y) {
     float cdec_top_x, cdec_top_y;
     component_get_terminal_pos(c_dec, 0, &cdec_top_x, &cdec_top_y);
 
-    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 120, 5.0f);
+    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 160, 5.0f);   /* above the source body, not across it */
     int vcc_node = circuit_find_or_create_node(circuit, vcc_pos_x, vcc_pos_y, 5.0f);
     wire_ortho(circuit, vcc_node, vcc_rail);
     vcc->node_ids[0] = vcc_node;
 
     int cdec_top_node = circuit_find_or_create_node(circuit, cdec_top_x, cdec_top_y, 5.0f);
-    int corner_cdec = circuit_find_or_create_node(circuit, cdec_top_x, y - 120, 5.0f);
+    int corner_cdec = circuit_find_or_create_node(circuit, cdec_top_x, y - 160, 5.0f);
     wire_ortho(circuit, vcc_rail, corner_cdec);
     wire_ortho(circuit, corner_cdec, cdec_top_node);
     c_dec->node_ids[0] = cdec_top_node;
@@ -4376,12 +4376,12 @@ static int place_wien_oscillator(Circuit *circuit, float x, float y) {
     component_get_terminal_pos(c_dec, 1, &cdec_bot_x, &cdec_bot_y);
 
     int vcc_node = circuit_find_or_create_node(circuit, vcc_pos_x, vcc_pos_y, 5.0f);
-    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 120, 5.0f);
+    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 160, 5.0f);   /* above the source body, not across it */
     circuit_add_wire(circuit, vcc_node, vcc_rail);
     vcc->node_ids[0] = vcc_node;
 
     int cdec_top_node = circuit_find_or_create_node(circuit, cdec_top_x, cdec_top_y, 5.0f);
-    int corner_vcc = circuit_find_or_create_node(circuit, cdec_top_x, y - 120, 5.0f);
+    int corner_vcc = circuit_find_or_create_node(circuit, cdec_top_x, y - 160, 5.0f);
     circuit_add_wire(circuit, vcc_rail, corner_vcc);
     circuit_add_wire(circuit, corner_vcc, cdec_top_node);
     c_dec->node_ids[0] = cdec_top_node;
@@ -4606,26 +4606,26 @@ static int place_current_source(Circuit *circuit, float x, float y) {
     float cdec_top_x, cdec_top_y;
     component_get_terminal_pos(c_dec, 0, &cdec_top_x, &cdec_top_y);
 
-    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 120, 5.0f);
+    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 160, 5.0f);   /* above the source body, not across it */
     int vcc_node = circuit_find_or_create_node(circuit, vcc_pos_x, vcc_pos_y, 5.0f);
     circuit_add_wire(circuit, vcc_node, vcc_rail);
     vcc->node_ids[0] = vcc_node;
 
     // Decoupling cap to power rail
     int cdec_top_node = circuit_find_or_create_node(circuit, cdec_top_x, cdec_top_y, 5.0f);
-    int corner_dec = circuit_find_or_create_node(circuit, cdec_top_x, y - 120, 5.0f);
+    int corner_dec = circuit_find_or_create_node(circuit, cdec_top_x, y - 160, 5.0f);
     circuit_add_wire(circuit, vcc_rail, corner_dec);
     circuit_add_wire(circuit, corner_dec, cdec_top_node);
     c_dec->node_ids[0] = cdec_top_node;
 
     int r1_top_node = circuit_find_or_create_node(circuit, r1_top_x, r1_top_y, 5.0f);
-    int corner1 = circuit_find_or_create_node(circuit, r1_top_x, y - 120, 5.0f);
+    int corner1 = circuit_find_or_create_node(circuit, r1_top_x, y - 160, 5.0f);
     circuit_add_wire(circuit, corner_dec, corner1);
     circuit_add_wire(circuit, corner1, r1_top_node);
     r1->node_ids[0] = r1_top_node;
 
     int rload_top_node = circuit_find_or_create_node(circuit, rload_top_x, rload_top_y, 5.0f);
-    int corner2 = circuit_find_or_create_node(circuit, rload_top_x, y - 120, 5.0f);
+    int corner2 = circuit_find_or_create_node(circuit, rload_top_x, y - 160, 5.0f);
     circuit_add_wire(circuit, corner1, corner2);
     circuit_add_wire(circuit, corner2, rload_top_node);
     rload->node_ids[0] = rload_top_node;
@@ -4889,12 +4889,12 @@ static int place_hysteresis_comp(Circuit *circuit, float x, float y) {
     component_get_terminal_pos(c_dec, 0, &cdec_top_x, &cdec_top_y);
 
     int vcc_node = circuit_find_or_create_node(circuit, vcc_pos_x, vcc_pos_y, 5.0f);
-    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 120, 5.0f);
+    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 160, 5.0f);   /* above the source body, not across it */
     circuit_add_wire(circuit, vcc_node, vcc_rail);
     vcc->node_ids[0] = vcc_node;
 
     int cdec_top_node = circuit_find_or_create_node(circuit, cdec_top_x, cdec_top_y, 5.0f);
-    int corner_vcc = circuit_find_or_create_node(circuit, cdec_top_x, y - 120, 5.0f);
+    int corner_vcc = circuit_find_or_create_node(circuit, cdec_top_x, y - 160, 5.0f);
     circuit_add_wire(circuit, vcc_rail, corner_vcc);
     circuit_add_wire(circuit, corner_vcc, cdec_top_node);
     c_dec->node_ids[0] = cdec_top_node;
@@ -4994,7 +4994,7 @@ static int place_hysteresis_comp(Circuit *circuit, float x, float y) {
     component_get_terminal_pos(r1, 0, &r1_top_x, &r1_top_y);
 
     int r1_top_node = circuit_find_or_create_node(circuit, r1_top_x, r1_top_y, 5.0f);
-    int corner_pwr = circuit_find_or_create_node(circuit, r1_top_x, y - 120, 5.0f);
+    int corner_pwr = circuit_find_or_create_node(circuit, r1_top_x, y - 160, 5.0f);
     circuit_add_wire(circuit, corner_vcc, corner_pwr);
     circuit_add_wire(circuit, corner_pwr, r1_top_node);
     r1->node_ids[0] = r1_top_node;

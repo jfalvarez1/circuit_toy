@@ -989,9 +989,17 @@ static int geom_test(void) {
             for (int i = 0; i < c->num_components; i++) {
                 Component *comp = c->components[i];
                 if (comp->type == COMP_TEXT || comp->type == COMP_GROUND) continue;
+                /* A component owns the wire if either end lands on one of its terminals -
+                   by node id OR by position. Two node ids at the same coordinates are the same
+                   point on the schematic (the builder merges them at solve time), and a wire
+                   drawn to a transistor's base is not a wire through the transistor. */
                 int owns = 0;
-                for (int k = 0; k < comp->num_terminals; k++)
-                    if (comp->node_ids[k] == c->wires[w].start_node_id || comp->node_ids[k] == c->wires[w].end_node_id) owns = 1;
+                for (int k = 0; k < comp->num_terminals && !owns; k++) {
+                    if (comp->node_ids[k] == c->wires[w].start_node_id || comp->node_ids[k] == c->wires[w].end_node_id) { owns = 1; break; }
+                    float tx, ty; component_get_terminal_pos(comp, k, &tx, &ty);
+                    if ((fabs(tx - a->x) < 6 && fabs(ty - a->y) < 6) ||
+                        (fabs(tx - b->x) < 6 && fabs(ty - b->y) < 6)) owns = 1;
+                }
                 if (owns) continue;
                 const ComponentTypeInfo *info = component_get_info(comp->type);
                 float hw = (info ? info->width : 40) / 2.0f - 6, hh = (info ? info->height : 40) / 2.0f - 6;
@@ -999,7 +1007,8 @@ static int geom_test(void) {
                 if (hw < 4) hw = 4; if (hh < 4) hh = 4;
                 if (seg_hits_box(a->x, a->y, b->x, b->y, comp->x - hw, comp->y - hh, comp->x + hw, comp->y + hh)) {
                     through++;
-                    if (strlen(detail) < 300) snprintf(detail + strlen(detail), sizeof detail - strlen(detail), " through:%s", comp->label);
+                    if (strlen(detail) < 300) snprintf(detail + strlen(detail), sizeof detail - strlen(detail),
+                        " through:%s@wire(%g,%g)-(%g,%g)", comp->label, a->x, a->y, b->x, b->y);
                 }
             }
         }
