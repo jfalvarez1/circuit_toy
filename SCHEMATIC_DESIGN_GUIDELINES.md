@@ -243,6 +243,30 @@ Compute a heuristic score (0–100):
 
 ---
 
+## 11a. Probes must say what they are on (checked by `--label-test`)
+
+Every circuit places probes, and every probe carries a name. The name is drawn at the probe on
+the schematic and is the oscilloscope's channel name, so it is the same word in both places.
+
+- **Name what the node is, not which channel it is.** `IN`, `OUT`, `GATE`, `SW OUT`, `NEUT`,
+  `138KV`. `CH1` says which trace it is and nothing about the circuit, which is no help to
+  someone reading a schematic they did not draw.
+- **Seven characters**, the width of the label field. Longer names are a failure, not a
+  truncation.
+- **Unique within the circuit.** The names are the scope's channel names: two traces both called
+  `VCAP` cannot be told apart.
+- **A new template names its probes in the tables it already fills in** - `template_output` and
+  `template_extra_probes` each take a name beside the part and terminal. Left out, a name is
+  derived from the part and terminal the probe sits on, which is correct but generic; prefer the
+  specific one.
+- **Probe both halves of a comparison.** A circuit that exists to show two things side by side -
+  two regulator topologies, ideal against real - with a probe on only one half is missing the
+  point of the drawing.
+
+`--label-test` enforces the first four over all templates on every build.
+
+---
+
 ## 12. Final checklist (must pass before output)
 
 - [ ] Profile A enforced: orthogonal wires only (or Profile B rules enforced).
@@ -253,6 +277,8 @@ Compute a heuristic score (0–100):
 - [ ] All important nets labeled; cross-sheet connectivity uses ports/labels appropriately.
 - [ ] All unused pins explicitly NC; unused logic inputs not floating.
 - [ ] Title block + sheet metadata present and consistent.
+- [ ] Every probe named for the node it sits on, unique, within seven characters.
+- [ ] Both halves probed on any circuit that exists to compare two things.
 
 ---
 

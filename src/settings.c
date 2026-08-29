@@ -39,6 +39,8 @@ void settings_load(App *app) {
     if (get_num(buf, "show_grid", &v)) app->render->show_grid = v != 0;
     if (get_num(buf, "left_tab", &v)) app->ui.left_tab = v != 0;
     if (get_num(buf, "properties_collapsed", &v)) app->ui.properties_collapsed = v != 0;
+    /* knobs or sliders on the pop-out panel: a preference, so it is remembered */
+    if (get_num(buf, "scope_sliders", &v)) app->ui.scope_sliders = v != 0;
     if (get_num(buf, "speed", &v) && v >= 1 && v <= 100) app->ui.speed_value = (float)v;
     if (get_num(buf, "light_level", &v) && v >= 0 && v <= 1) g_environment.light_level = v;
     if (get_num(buf, "temperature", &v) && v >= -40 && v <= 125) g_environment.temperature = v;
@@ -58,6 +60,7 @@ int settings_save(App *app) {
     fprintf(f, "  \"show_values\": %d,\n", app->render->show_values ? 1 : 0);
     fprintf(f, "  \"show_voltages\": %d,\n", app->render->show_voltages ? 1 : 0);
     fprintf(f, "  \"show_current\": %d,\n", app->render->show_current ? 1 : 0);
+    fprintf(f, "  \"scope_sliders\": %d,\n", app->ui.scope_sliders ? 1 : 0);
     fprintf(f, "  \"show_grid\": %d,\n", app->render->show_grid ? 1 : 0);
     fprintf(f, "  \"left_tab\": %d,\n", app->ui.left_tab);
     fprintf(f, "  \"properties_collapsed\": %d,\n", app->ui.properties_collapsed ? 1 : 0);

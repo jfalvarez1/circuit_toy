@@ -285,6 +285,12 @@ typedef struct {
     // Oscilloscope control buttons
     Button btn_scope_volt_up;
     Button btn_scope_volt_down;
+    /* Which channel V+ / V- and the wheel act on. ALL moves the shared scale and drops every
+       per-channel override; a channel chip gives that one channel its own volts/div, which is
+       the only way to put a 5 V rail and a 50 mV ripple on the same screen. */
+    Button btn_scope_ch_all;
+    Button btn_scope_ch[MAX_PROBES];
+    bool scope_scale_all;
     Button btn_scope_time_up;
     Button btn_scope_time_down;
     Button btn_scope_trig_mode;      // Cycle through trigger modes
@@ -315,6 +321,11 @@ typedef struct {
     int scope_knob_hover;                // index under the pointer, -1 when none
     int scope_knob_last_x;               // last pointer x while dragging (right turns it up)
     int scope_knob_last_y;               // last pointer y while dragging
+    /* The pop-out's controls as sliders instead of knobs. A knob is what the instrument has, but
+       a slider says which way it goes without having to be turned, and it is a straight
+       left-right drag. The same values, the same drag maths - only the drawing differs. */
+    bool scope_sliders;
+    Rect scope_style_btn;                /* the KNOBS / SLIDERS toggle on the pop-out panel */
     bool scope_panel_active;             // the pop-out panel layout is in effect
 
     // Pop-out oscilloscope window
@@ -591,6 +602,10 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode);
 #define UI_ACTION_IMPORT_SPICE  51   // Toolbar SPICE: pick a .cir / .lib and import its .SUBCKTs   // Toolbar Fit: frame everything that is placed
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type (supports up to 300 component types)
+/* + 1 + channel index; the base itself means ALL. Its own range for the same reason as the rest. */
+#define UI_ACTION_SCOPE_CH_SEL 700
+#define UI_ACTION_SCOPE_CH_SEL_MAX 16
+
 /* + circuit template type. 500 left room for a hundred templates and there are 187 of them, so
    every template past the hundredth landed in the subcircuit range at 600 and was not recognised
    as a circuit at all: picking I2C or Button Debounce armed a click instead of placing the
@@ -613,9 +628,12 @@ typedef enum {
     UIA_CIRCUIT,      /* index = circuit template type */
     UIA_SUBCIRCUIT,   /* index = subcircuit definition id */
     UIA_PROP_APPLY,
-    UIA_PROP_EDIT     /* index = property type */
+    UIA_PROP_EDIT,    /* index = property type */
+    UIA_SCOPE_CH      /* index = 0 for ALL, else 1 + channel */
 } UIActionKind;
 UIActionKind ui_action_kind(int action, int *index);
+/* One 1-2-5 step of the vertical scale, on the channel the ALL / channel chips point at. */
+void ui_scope_volt_step(UIState *ui, int dir);
 
 // Set status message
 void ui_set_status(UIState *ui, const char *msg);

@@ -413,6 +413,15 @@ Full-featured virtual oscilloscope with:
   - Trigger-centered data capture
   - Adjustable trigger level
   - Per-channel trigger source selection
+- **Mouse control** - left-drag inside the screen sets the trigger level where you drop it, the
+  wheel is volts/div, shift-wheel is time/div, and middle-drag pans: sideways moves the time
+  window, up and down moves every channel
+- **A scale per channel** - the `ALL` / channel chips under V+ / V- say what the vertical
+  controls move. Pick a channel by its probe name and V+ / V- and the wheel move that one
+  alone, which is how a 5 V rail and the 50 mV of ripple on it are legible at once; its band
+  still centres itself, so it cannot drift off the screen
+- **Knobs or sliders** - the pop-out panel's `KNOBS / SLIDERS` button swaps its controls
+  between the two; both drag the same way and the choice is remembered
 - **Display Modes**
   - Y-T (voltage vs time)
   - X-Y (Lissajous patterns)

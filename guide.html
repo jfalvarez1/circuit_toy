@@ -1784,8 +1784,44 @@ Probe readouts, the scope channel labels and the measurements switch to kV autom
                     <tr><td>Pan view</td><td>Middle mouse drag</td></tr>
                     <tr><td>Zoom in/out</td><td>Scroll wheel</td></tr>
                     <tr><td>Adjust selected value</td><td>Scroll wheel over properties panel</td></tr>
+                    <tr><td>Set the trigger level</td><td>Left-drag on the scope screen</td></tr>
+                    <tr><td>Volts per division</td><td>Scroll wheel over the scope screen</td></tr>
+                    <tr><td>Time per division</td><td>Shift + scroll wheel over the scope screen</td></tr>
+                    <tr><td>Pan the scope</td><td>Middle-drag on the scope screen: across moves the time window, down moves every channel</td></tr>
                 </tbody>
             </table>
+
+            <h3>Working the scope with the mouse</h3>
+            <p>
+                The scope screen takes the mouse directly, so the controls you reach for most do not
+                need a button. <strong>Left-drag inside the screen</strong> puts the trigger level
+                where you drop it - you can see it land, which is the part a knob cannot do. The
+                <strong>wheel</strong> is volts per division and <strong>shift-wheel</strong> is
+                time per division: the vertical scale is the one a hand reaches for, and the wheel
+                is the nearest thing to a knob. <strong>Middle-drag</strong> pans - sideways moves
+                the time window, up and down moves every channel together.
+            </p>
+
+            <h3>Two channels, two scales</h3>
+            <p>
+                Under the scope's V+ / V- row is a strip of chips: <strong>ALL</strong> and then one
+                per channel, named after the probe - <code>ALL</code> <code>IN</code>
+                <code>OUT</code>. With ALL selected, V+ / V- and the wheel move the shared scale.
+                Click a channel's chip and they move that channel alone, which is how a 5 V rail and
+                the 50 mV of ripple riding on it end up legible on the same screen. A channel you
+                have scaled by hand keeps that scale; its band still centres itself, so nothing
+                drifts off the screen while you zoom in. Click ALL to hand every channel back to the
+                shared setting.
+            </p>
+
+            <h3>Knobs or sliders</h3>
+            <p>
+                The pop-out scope's front panel draws its controls as knobs by default. The
+                <strong>KNOBS / SLIDERS</strong> button in the status plate swaps them for sliders,
+                which show where a setting sits in its travel without having to be turned. Both
+                drag the same way - right or up turns a control up, left or down turns it down - and
+                the choice is remembered.
+            </p>
         </section>
 
         <!-- 10. Editing Properties -->

@@ -108,6 +108,15 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             ScopeCoordsBackup backup = {0};
             if (is_popup_event) {
                 backup = ui_setup_popup_scope_coords(ui);
+                /* KNOBS / SLIDERS: the same controls drawn either way, for whichever reads
+                   better under a hand. */
+                if (ui->scope_style_btn.w > 0 && x >= ui->scope_style_btn.x &&
+                    x < ui->scope_style_btn.x + ui->scope_style_btn.w &&
+                    y >= ui->scope_style_btn.y && y < ui->scope_style_btn.y + ui->scope_style_btn.h) {
+                    ui->scope_sliders = !ui->scope_sliders;
+                    ui_restore_popup_scope_coords(ui, &backup);
+                    return true;
+                }
                 /* A knob takes the press before anything else in the panel column. */
                 int row = ui_scope_input_row_at(ui, x, y);
                 if (row >= 0) { ui->scope_selected_channel = row; return true; }

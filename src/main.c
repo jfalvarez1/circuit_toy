@@ -124,6 +124,13 @@ static int place_test(void) {
     if (ui_action_kind(UI_ACTION_PROP_APPLY, NULL) != UIA_PROP_APPLY) {
         printf("[FAIL] applying a property edit reads as something else\n"); fails++;
     }
+    for (int ch = 0; ch <= MAX_PROBES; ch++) {   /* 0 is the ALL chip, then one per channel */
+        checks++;
+        int idx = -1;
+        if (ui_action_kind(UI_ACTION_SCOPE_CH_SEL + ch, &idx) != UIA_SCOPE_CH || idx != ch) {
+            printf("[FAIL] the scope's channel chip %d reads as something else\n", ch); fails++;
+        }
+    }
     for (int c = 0; c < COMP_TYPE_COUNT; c++) {
         checks++;
         int idx = -1;

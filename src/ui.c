@@ -504,6 +504,10 @@ void ui_init(UIState *ui) {
     scope_btn_x += scope_btn_w + 3;
     ui->btn_scope_time_down = (Button){{scope_btn_x, scope_btn_y, scope_btn_w, scope_btn_h}, "T-", "Decrease time/div", false, false, true, false};
     scope_btn_x += scope_btn_w + 10;
+    ui->scope_scale_all = true;
+    ui->btn_scope_ch_all = (Button){{0, 0, 0, 0}, "ALL", "V+/V- and the wheel move every channel", false, false, true};
+    for (int ch = 0; ch < MAX_PROBES; ch++)
+        ui->btn_scope_ch[ch] = (Button){{0, 0, 0, 0}, "", "Give this channel its own volts/div", false, false, true};
     ui->btn_scope_autoset = (Button){{scope_btn_x, scope_btn_y, 60, scope_btn_h}, "Autoset", "Auto-configure scope settings", false, false, true, false};
 
     // Row 2: Trigger controls
@@ -3882,12 +3886,17 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                         char tag[24];
                         snprintf(tag, sizeof(tag), "%s", ui_channel_name(ui, ch));
                         if (fit) {
+                            /* A channel the user has scaled by hand keeps that scale; the band
+                               still centres itself on the channel's own mean, which is what
+                               keeps a 5 V rail on the screen while you zoom into its ripple. */
+                            double manual = ui->scope_channels[ch].volt_div;
                             double v_lo = ui->scope_capture_values[ch][0], v_hi = v_lo;
                             for (int i = 1; i < ui->scope_capture_count; i++) { double v = ui->scope_capture_values[ch][i]; if (v < v_lo) v_lo = v; if (v > v_hi) v_hi = v; }
                             double amp = (v_hi - v_lo) / 2.0; if (amp < 0.01) amp = 0.01;   // DC / tiny: 10 mV floor keeps the band readable
                             double vd = amp / 3.0;   // ~6 of the 8 divisions
                             double dec = pow(10.0, floor(log10(vd))); double m = vd / dec;
                             vd = (m <= 1.0 ? 1.0 : m <= 2.0 ? 2.0 : m <= 5.0 ? 5.0 : 10.0) * dec;
+                            if (manual > 0) vd = manual;
                             ui->scope_band_vdiv[ch] = vd;
                             ch_scale = (band_h / 8.0) / vd;
                             char vs[16]; format_volt_value(vs, sizeof vs, vd);
@@ -4243,6 +4252,16 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     draw_button(renderer, &ui->btn_scope_volt_down);
     draw_button(renderer, &ui->btn_scope_time_up);
     draw_button(renderer, &ui->btn_scope_time_down);
+    /* the channel the vertical controls act on: ALL, or one channel by its own name */
+    ui->btn_scope_ch_all.toggled = ui->scope_scale_all;
+    draw_button(renderer, &ui->btn_scope_ch_all);
+    for (int ch = 0; ch < MAX_PROBES; ch++) {
+        if (ui->btn_scope_ch[ch].bounds.w <= 0) continue;
+        if (ch >= ui->scope_num_channels || !ui->scope_channels[ch].enabled) continue;
+        ui->btn_scope_ch[ch].label = ui_channel_name(ui, ch);
+        ui->btn_scope_ch[ch].toggled = !ui->scope_scale_all && ui->scope_selected_channel == ch;
+        draw_button(renderer, &ui->btn_scope_ch[ch]);
+    }
     for (int t = 0; t < 3; t++) {
         ui->btn_scope_tab[t].toggled = (ui->scope_ctl_tab == t);
         draw_button(renderer, &ui->btn_scope_tab[t]);
@@ -6668,6 +6687,13 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_scope_volt_down.bounds) && ui->btn_scope_volt_down.enabled) {
             return UI_ACTION_SCOPE_VOLT_DOWN;
         }
+        /* which channel the vertical controls move: the ALL chip, or a channel by name */
+        if (ui->btn_scope_ch_all.bounds.w > 0 && point_in_rect(x, y, &ui->btn_scope_ch_all.bounds))
+            return UI_ACTION_SCOPE_CH_SEL;
+        for (int ch = 0; ch < MAX_PROBES && ch < ui->scope_num_channels; ch++)
+            if (ui->scope_channels[ch].enabled && ui->btn_scope_ch[ch].bounds.w > 0 &&
+                point_in_rect(x, y, &ui->btn_scope_ch[ch].bounds))
+                return UI_ACTION_SCOPE_CH_SEL + 1 + ch;
         if (point_in_rect(x, y, &ui->btn_scope_time_up.bounds) && ui->btn_scope_time_up.enabled) {
             return UI_ACTION_SCOPE_TIME_UP;
         }
@@ -7424,6 +7450,21 @@ void ui_layout_scope_buttons(UIState *ui, int x0, int y0, int max_x) {
     PUT(&ui->btn_scope_time_up, 30); PUT(&ui->btn_scope_time_down, 30); x += 4;
     PUT(&ui->btn_scope_autoset, 52); x += 4;
     PUT(&ui->btn_scope_cursor, 34); PUT(&ui->btn_scope_stack, 40); PUT(&ui->btn_scope_track, 30); PUT(&ui->btn_scope_popup, 46);
+    /* Which channel the vertical controls move. Named after the probe, so the row reads
+       ALL IN OUT rather than ALL CH1 CH2. */
+    y += row; x = x0;
+    /* Laid out for every channel the scope can have, because this runs when the window is sized
+       and not per frame - at that point the circuit's channel count is not known yet. Drawing
+       and hit-testing skip the chips of channels that do not exist. */
+    PUT(&ui->btn_scope_ch_all, 34);
+    for (int ch = 0; ch < MAX_PROBES; ch++) {
+        const char *nm = ui_channel_name(ui, ch);
+        int w = (int)strlen(nm) * 8 + 10;
+        if (w < 30) w = 30;
+        if (w > 74) w = 74;
+        PUT(&ui->btn_scope_ch[ch], w);
+    }
+
     // tab strip
     y += row; x = x0;
     for (int t = 0; t < 3; t++) PUT(&ui->btn_scope_tab[t], 62);
@@ -7501,9 +7542,11 @@ void ui_update_layout(UIState *ui) {
     if (ui->scope_rect.y > max_scope_y && max_scope_y > min_scope_y) {
         ui->scope_rect.y = max_scope_y;
     }
-    // Unless the user sized it, the scope shrinks so its three button rows always fit above the status bar
+    /* Unless the user sized it, the scope shrinks so its button rows always fit above the status
+       bar. Four rows now: the channel strip that says which channel the vertical controls move
+       sits between the scale row and the tabs. */
     if (!ui->scope_user_sized) {
-        int need_below = 5 + 3 * 26 + 8;
+        int need_below = 5 + 4 * 26 + 8;
         int max_h = ui->window_height - STATUSBAR_HEIGHT - ui->scope_rect.y - need_below;
         int h = ui->scope_default_h > 0 ? ui->scope_default_h : ui->scope_rect.h;
         if (h > max_h) h = max_h;
@@ -7557,6 +7600,47 @@ void ui_scope_reset_for_template(UIState *ui) {
     ui->scope_capture_valid = false;
 }
 
+/* One 1-2-5 step of the vertical scale, on whatever the ALL / channel chips point at. With ALL
+   selected it moves the shared scale and drops the per-channel overrides, so everything follows
+   it again; with a channel selected only that channel moves, which is how a 5 V rail and a 50 mV
+   ripple end up legible on the same screen. */
+void ui_scope_volt_step(UIState *ui, int dir) {
+    static const double steps[] = {
+        0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0,
+        100.0, 200.0, 500.0, 1e3, 2e3, 5e3, 10e3, 20e3, 50e3, 100e3, 200e3, 500e3
+    };
+    const int n = (int)(sizeof steps / sizeof steps[0]);
+    if (!ui || dir == 0) return;
+    int ch = ui->scope_scale_all ? -1 : ui->scope_selected_channel;
+    if (ch >= MAX_PROBES) ch = -1;
+    /* Start from what the channel is actually showing. In a fitted band that is the scale the
+       fit chose, not the shared one - stepping from the shared scale jumped a 10 mV ripple
+       straight to volts per division. */
+    double cur;
+    if (ch < 0) cur = ui->scope_volt_div;
+    else if (ui->scope_channels[ch].volt_div > 0) cur = ui->scope_channels[ch].volt_div;
+    else if (ui->scope_stacked && ui->scope_stack_fit && ui->scope_band_vdiv[ch] > 0)
+        cur = ui->scope_band_vdiv[ch];
+    else cur = ui_channel_volt_div(ui, ch);
+    double next = cur;
+    if (dir > 0) {
+        for (int i = 0; i < n - 1; i++) if (cur <= steps[i] * 1.01) { next = steps[i + 1]; break; }
+    } else {
+        for (int i = n - 1; i > 0; i--) if (cur >= steps[i] * 0.99) { next = steps[i - 1]; break; }
+    }
+    if (ch >= 0) {
+        ui->scope_channels[ch].volt_div = next;
+    } else {
+        ui->scope_volt_div = next;
+        for (int i = 0; i < MAX_PROBES; i++) ui->scope_channels[i].volt_div = 0.0;
+    }
+    /* The one-shot autoscale would otherwise overwrite this a frame later. The per-band fit is
+       left alone: it is what centres each band on its own channel, and the scale set here is
+       used in place of the fitted one. */
+    ui->scope_auto_vdiv_pending = false;
+    ui->scope_capture_valid = false;
+}
+
 UIActionKind ui_action_kind(int action, int *index) {
     int idx = 0;
     UIActionKind k = UIA_NONE;
@@ -7572,6 +7656,9 @@ UIActionKind ui_action_kind(int action, int *index) {
         k = UIA_CIRCUIT; idx = action - UI_ACTION_SELECT_CIRCUIT;
     } else if (action >= UI_ACTION_SELECT_SUBCIRCUIT && action < UI_ACTION_SELECT_SUBCIRCUIT + 1000) {
         k = UIA_SUBCIRCUIT; idx = action - UI_ACTION_SELECT_SUBCIRCUIT;
+    } else if (action >= UI_ACTION_SCOPE_CH_SEL &&
+               action < UI_ACTION_SCOPE_CH_SEL + UI_ACTION_SCOPE_CH_SEL_MAX) {
+        k = UIA_SCOPE_CH; idx = action - UI_ACTION_SCOPE_CH_SEL;
     }
     if (index) *index = idx;
     return k;
@@ -8082,6 +8169,36 @@ void ui_render_scope_panel(UIState *ui, SDL_Renderer *renderer) {
         ScopeKnob *k = &ui->scope_knobs[i];
         bool active = (ui->scope_knob_active == i), hot = active || (ui->scope_knob_hover == i);
 
+        /* Sliders: the same control drawn as a track and a handle, for anyone who would rather
+           see where a setting sits in its travel than read it off a pointer. Drag is identical -
+           right or up turns it up - so nothing else in the panel changes. */
+        if (ui->scope_sliders) {
+            int half = k->r + 10, tx = k->cx - half, tw = half * 2, ty = k->cy - 3;
+            SDL_SetRenderDrawColor(renderer, 0x1c, 0x14, 0x30, 0xff);
+            SDL_Rect track = { tx, ty, tw, 7 };
+            SDL_RenderFillRect(renderer, &track);
+            Color rail = hot ? (Color){0x00, 0xff, 0xd5, 0xff} : (Color){0x6a, 0x52, 0x9c, 0xff};
+            int rsel = ui->scope_selected_channel;
+            if ((i == KNOB_VOLTS || i == KNOB_POSITION || i == KNOB_CHANNEL) && !hot &&
+                rsel >= 0 && rsel < MAX_PROBES && rsel < ui->scope_num_channels &&
+                ui->scope_channels[rsel].enabled)
+                rail = PROBE_COLORS[rsel];
+            SDL_SetRenderDrawColor(renderer, rail.r, rail.g, rail.b, 0xff);
+            SDL_RenderDrawRect(renderer, &track);
+            for (int t = 0; t <= 4; t++) {
+                int gx = tx + tw * t / 4;
+                SDL_RenderDrawLine(renderer, gx, ty + 9, gx, ty + 12);
+            }
+            int hx = tx + (int)(knob_fraction(ui, i) * (tw - 10));
+            Color hcol = hot ? (Color){0x00, 0xff, 0xd5, 0xff} : (Color){0xff, 0xd7, 0x4a, 0xff};
+            SDL_SetRenderDrawColor(renderer, hcol.r, hcol.g, hcol.b, 0xff);
+            SDL_Rect handle = { hx, ty - 6, 10, 19 };
+            SDL_RenderFillRect(renderer, &handle);
+            SDL_SetRenderDrawColor(renderer, 0x1c, 0x14, 0x30, 0xff);
+            SDL_RenderDrawRect(renderer, &handle);
+            goto knob_caption;
+        }
+
         /* body: a filled disc, brighter when the pointer is on it */
         Color face = hot ? (Color){0x3a, 0x2c, 0x60, 0xff} : (Color){0x2a, 0x20, 0x44, 0xff};
         SDL_SetRenderDrawColor(renderer, face.r, face.g, face.b, 0xff);
@@ -8116,13 +8233,16 @@ void ui_render_scope_panel(UIState *ui, SDL_Renderer *renderer) {
             SDL_RenderDrawLine(renderer, k->cx + w, k->cy,
                                k->cx + w + (int)((k->r - 4) * cos(a)), k->cy + (int)((k->r - 4) * sin(a)));
 
+    knob_caption:
         /* label above, value below */
+        {
         const char *lab = knob_label(ui, i);
         SDL_SetRenderDrawColor(renderer, 0xb9, 0xa6, 0xe6, 0xff);
         ui_draw_text(renderer, lab, k->cx - (int)(strlen(lab) * 4), k->bounds.y + 2);
         char val[32]; knob_value_text(ui, i, val, sizeof(val));
         SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xd5, 0xff);
         ui_draw_text(renderer, val, k->cx - (int)(strlen(val) * 4), k->cy + k->r + 8);
+        }
     }
 
     /* status plate: the settings that are switches rather than knobs */
@@ -8148,10 +8268,23 @@ void ui_render_scope_panel(UIState *ui, SDL_Renderer *renderer) {
     snprintf(line, sizeof line, "%s   %d CH", ui->scope_paused ? "HOLD" : "RUN ", ui->scope_num_channels);
     ui_draw_text(renderer, line, plate.x + 8, sy + 60);
 
-    SDL_SetRenderDrawColor(renderer, 0x7d, 0x6d, 0xa8, 0xff);
-    {   /* the hint goes under everything, including the input strip */
+    {   /* KNOBS / SLIDERS sits in the plate's own corner, beside the RUN line, so it cannot
+           land on top of anything; the hint goes under everything as it always did. */
+        ui->scope_style_btn = (Rect){ plate.x + plate.w - 84, sy + 54, 76, 20 };
+        SDL_Rect sb = { ui->scope_style_btn.x, ui->scope_style_btn.y,
+                        ui->scope_style_btn.w, ui->scope_style_btn.h };
+        SDL_SetRenderDrawColor(renderer, 0x2a, 0x20, 0x44, 0xff);
+        SDL_RenderFillRect(renderer, &sb);
+        SDL_SetRenderDrawColor(renderer, 0x6a, 0x52, 0x9c, 0xff);
+        SDL_RenderDrawRect(renderer, &sb);
+        SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0xd5, 0xff);
+        ui_draw_text(renderer, ui->scope_sliders ? "SLIDERS" : " KNOBS", sb.x + 6, sb.y + 6);
+
         const ScopeKnob *last = &ui->scope_knobs[KNOB_COUNT - 1];
-        ui_draw_text(renderer, "drag a knob up / down", body.x + 16, last->bounds.y + last->bounds.h + 8);
+        SDL_SetRenderDrawColor(renderer, 0x7d, 0x6d, 0xa8, 0xff);
+        ui_draw_text(renderer, ui->scope_sliders ? "drag a slider left / right"
+                                                 : "drag a knob up / down",
+                     body.x + 16, last->bounds.y + last->bounds.h + 8);
     }
 }
 
@@ -8172,6 +8305,13 @@ int ui_scope_knob_at(UIState *ui, int x, int y) {
     if (!ui || !ui->scope_panel_active) return -1;
     for (int i = 0; i < KNOB_COUNT; i++) {
         ScopeKnob *k = &ui->scope_knobs[i];
+        if (ui->scope_sliders) {
+            /* the track and its handle, which is a wider target than the disc it replaces */
+            int half = k->r + 12;
+            if (x >= k->cx - half && x <= k->cx + half && y >= k->cy - 12 && y <= k->cy + 14)
+                return i;
+            continue;
+        }
         int dx = x - k->cx, dy = y - k->cy;
         if (dx * dx + dy * dy <= (k->r + 6) * (k->r + 6)) return i;
     }

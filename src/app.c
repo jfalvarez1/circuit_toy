@@ -411,38 +411,12 @@ void app_handle_events(App *app) {
                 }
                 break;
             case UI_ACTION_SCOPE_VOLT_UP:
-                // Increase volts/div using 1-2-5 sequence (like real scopes)
-                {
-                    static const double volt_steps[] = {
-                        0.001, 0.002, 0.005, 0.01, 0.02, 0.05,
-                        0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0,
-                        200.0, 500.0, 1e3, 2e3, 5e3, 10e3, 20e3, 50e3, 100e3, 200e3, 500e3
-                    };
-                    int n = sizeof(volt_steps) / sizeof(volt_steps[0]);
-                    for (int i = 0; i < n - 1; i++) {
-                        if (app->ui.scope_volt_div <= volt_steps[i] * 1.01) {
-                            app->ui.scope_volt_div = volt_steps[i + 1];
-                            break;
-                        }
-                    }
-                }
+                /* on whatever the ALL / channel chips point at, so one channel can be scaled
+                   without moving the others */
+                ui_scope_volt_step(&app->ui, +1);
                 break;
             case UI_ACTION_SCOPE_VOLT_DOWN:
-                // Decrease volts/div using 1-2-5 sequence
-                {
-                    static const double volt_steps[] = {
-                        0.001, 0.002, 0.005, 0.01, 0.02, 0.05,
-                        0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0,
-                        200.0, 500.0, 1e3, 2e3, 5e3, 10e3, 20e3, 50e3, 100e3, 200e3, 500e3
-                    };
-                    int n = sizeof(volt_steps) / sizeof(volt_steps[0]);
-                    for (int i = n - 1; i > 0; i--) {
-                        if (app->ui.scope_volt_div >= volt_steps[i] * 0.99) {
-                            app->ui.scope_volt_div = volt_steps[i - 1];
-                            break;
-                        }
-                    }
-                }
+                ui_scope_volt_step(&app->ui, -1);
                 break;
             case UI_ACTION_SCOPE_TIME_UP:
                 // Increase time/div using 1-2-5 sequence
@@ -1047,7 +1021,23 @@ void app_handle_events(App *app) {
             default:
                 // Handle circuit template selection (UI_ACTION_SELECT_CIRCUIT + circuit_type)
                 int sel_idx = 0;
-                if (ui_action_kind(app->input.pending_ui_action, &sel_idx) == UIA_CIRCUIT &&
+                UIActionKind sel_kind = ui_action_kind(app->input.pending_ui_action, &sel_idx);
+                if (sel_kind == UIA_SCOPE_CH) {
+                    /* index 0 is the ALL chip; 1 + channel is one channel's own scale */
+                    if (sel_idx == 0) {
+                        app->ui.scope_scale_all = true;
+                        ui_set_status(&app->ui, "V+ / V- and the wheel move every channel");
+                    } else {
+                        app->ui.scope_scale_all = false;
+                        app->ui.scope_selected_channel = sel_idx - 1;
+                        char m[96];
+                        snprintf(m, sizeof m, "V+ / V- and the wheel move %s alone",
+                                 ui_channel_name(&app->ui, sel_idx - 1));
+                        ui_set_status(&app->ui, m);
+                    }
+                    app->ui.scope_capture_valid = false;
+                }
+                else if (sel_kind == UIA_CIRCUIT &&
                     sel_idx > CIRCUIT_NONE && sel_idx < CIRCUIT_TYPE_COUNT) {
                     /* Picking a circuit from the list places it, on its own, framed and running.
                        It used to arm a click: choose the circuit, find a clear patch of canvas,
