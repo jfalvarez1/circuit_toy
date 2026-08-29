@@ -45,42 +45,12 @@ jobs:
       - name: Build
         run: meson compile -C build
 
+      # Every suite is its own process over its own copy of the templates, so they run several
+      # at a time. Sequentially this step was seventeen minutes of a twenty-minute job whose
+      # compile takes thirty-five seconds. The same script runs locally: bash tools/run_audits.sh
       - name: Template audit
         shell: bash
-        run: |
-          set -e
-          T=./build/tools/template_smoke.exe
-          echo "--- load and run every template"      && $T
-          echo "--- expected output per template"     && $T --probe-test
-          echo "--- demo contracts"                   && $T --demo-test
-          echo "--- oscillators (frequency + shape)"  && $T --osc-test
-          echo "--- current-flow invariants"          && $T --flow-test
-          echo "--- switch states"                    && $T --switch-test
-          echo "--- named parts vs data sheets"       && $T --part-test
-          echo "--- device operating points"          && $T --op-test
-          echo "--- subcircuits as IC blocks"         && $T --sub-test
-          echo "--- SPICE .SUBCKT import"             && $T --spice-test
-          echo "--- crystal impedance vs frequency"   && $T --xtal-test
-          echo "--- what the scope actually shows"    && $T --view-test
-          echo "--- every pin wired to something"     && $T --conn-test
-          echo "--- save and load every template"   && $T --file-test
-          echo "--- transmission line reflections"    && $T --line-test
-          echo "--- standards limits"                 && $T --std-test
-          echo "--- power ratings"                    && $T --burn-test
-          echo "--- every adjustable knob"            && $T --knob-test
-          echo "--- schematic geometry"               && $T --geom-test
-          echo "--- every probe named for its node"   && $T --label-test
-          echo "--- a wider time/div keeps the trace" && $T --span-test
-
-      - name: Headless UI checks
-        shell: bash
-        env:
-          SDL_VIDEODRIVER: dummy
-          CIRCUIT_TOY_NO_UPDATE: '1'
-        run: |
-          ./build/circuit-playground.exe --layout-test
-          ./build/circuit-playground.exe --autoset-test
-          ./build/circuit-playground.exe --place-test
+        run: bash tools/run_audits.sh build
 
       # Start the binary this job is about to ship: window, renderer, a template placed, frames
       # drawn, screenshot written. --layout-test above returns before SDL_Init and never builds
@@ -161,7 +131,13 @@ jobs:
           cp build/circuit-playground.exe README.md guide.html dist/circuit-playground/
           (cd dist && 7z a -tzip "circuit-playground-windows-$tag.zip" circuit-playground >/dev/null)
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "$tag" --generate-notes
-          gh release upload "$tag" "dist/circuit-playground-windows-$tag.zip" --clobber
+          # A release cut by hand carries a binary somebody built, started and looked at. Do not
+          # overwrite that with this one: same source, different machine, and nobody has run it.
+          if gh release view "$tag" --json assets -q '.assets[].name' | grep -qx "circuit-playground-windows-$tag.zip"; then
+            echo "the release already has its zip - leaving it alone"
+          else
+            gh release upload "$tag" "dist/circuit-playground-windows-$tag.zip"
+          fi
           # Publish only now. A release is what the updater calls "latest": while it exists
           # without its zip, every app that checks for updates quits itself to download a file
           # that is not there. The draft is invisible to the API until this line runs.
