@@ -1058,6 +1058,52 @@ static int seg_hits_box(float ax, float ay, float bx, float by, float x0, float 
    (x,y); text labels are excluded (they are annotation, not schematic symbols). Overlapping
    symbols - a ground drawn under a capacitor, say - are a layout bug even when the netlist is
    right, so --geom-test fails on them. */
+/* Text sitting on a symbol. Annotations are drawn from their anchor down and to the right, one
+   glyph 8 px wide per font size step, so the box a label occupies is predictable - and a label
+   printed across a component is unreadable in exactly the way a wire through one is. Nothing
+   checked this before, so labels drifting onto a part only showed up by looking at screenshots. */
+static int geom_text_on_symbol(Circuit *c, char *why, size_t whyn) {
+    int hits = 0;
+    for (int i = 0; i < c->num_components; i++) {
+        Component *t = c->components[i];
+        if (t->type != COMP_TEXT) continue;
+        const char *str = t->props.text.text;
+        int n = (int)strlen(str);
+        if (n <= 0) continue;
+        int fs = t->props.text.font_size;
+        if (fs < 1) fs = 1; if (fs > 3) fs = 3;
+        float tx0 = t->x, tx1 = t->x + 8.0f * fs * n;
+        float ty0 = t->y, ty1 = t->y + 8.0f * fs;
+
+        for (int j = 0; j < c->num_components; j++) {
+            Component *b = c->components[j];
+            if (b->type == COMP_TEXT || b->type == COMP_LABEL) continue;
+            const ComponentTypeInfo *ib = component_get_info(b->type);
+            if (!ib) continue;
+            int rot = ((b->rotation % 360) + 360) % 360;
+            double bw = (rot == 90 || rot == 270) ? ib->height : ib->width;
+            double bh = (rot == 90 || rot == 270) ? ib->width : ib->height;
+            /* the drawn body, same proportions the symbol-on-symbol check uses */
+            double sxb = (rot == 90 || rot == 270) ? 0.85 : 0.65;
+            double syb = (rot == 90 || rot == 270) ? 0.65 : 0.85;
+            float bx0 = (float)(b->x - bw * sxb / 2), bx1 = (float)(b->x + bw * sxb / 2);
+            float by0 = (float)(b->y - bh * syb / 2), by1 = (float)(b->y + bh * syb / 2);
+
+            if (tx0 < bx1 && bx0 < tx1 && ty0 < by1 && by0 < ty1) {
+                hits++;
+                if (strlen(why) < whyn - 90) {
+                    char head[24];
+                    snprintf(head, sizeof head, "%.18s", str);
+                    snprintf(why + strlen(why), whyn - strlen(why),
+                             " text:'%s'@(%g,%g)over:%s@(%g,%g)", head, t->x, t->y, b->label, b->x, b->y);
+                }
+                break;   /* one report per label is enough */
+            }
+        }
+    }
+    return hits;
+}
+
 static int geom_overlap(Circuit *c, char *why, size_t whyn) {
     int hits = 0;
     for (int i = 0; i < c->num_components; i++) {
@@ -1172,6 +1218,7 @@ static int geom_test(void) {
             }
         }
         int overlap = geom_overlap(c, detail, sizeof detail);
+        int texton = geom_text_on_symbol(c, tdetail, sizeof tdetail);
         /* Two of these are hard rules and the rest are cosmetic. No two symbols may overlap and
            no wire may run at an angle - those are design rules, and a template that breaks one
            is wrong. A drawn crossing, a wire passing over an unrelated node, or two terminals
@@ -1179,10 +1226,10 @@ static int geom_test(void) {
            some topologies (TEST_PLAN 3.19.1b tracks them). Only the hard rules set the exit
            status, so this can gate CI without failing on the tracked cosmetic list. */
         int hard = diag + overlap;
-        int ok = (diag + cross + through + touch + overlap) == 0;
-        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d overlap=%d%s%s\n",
+        int ok = (diag + cross + through + touch + overlap + texton) == 0;
+        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d overlap=%d texton=%d%s%s\n",
                ok ? " OK " : (hard ? "FAIL" : "WARN"), ti ? ti->name : "?",
-               diag, cross, through, touch, overlap, tdetail, detail);
+               diag, cross, through, touch, overlap, texton, tdetail, detail);
         if (!ok) bad_templates++;
         if (hard) hard_failures++;
         circuit_free(c);

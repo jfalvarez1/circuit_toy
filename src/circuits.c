@@ -1751,7 +1751,7 @@ static int place_differential_pair(Circuit *circuit, float x, float y) {
     // Input sources on far left/right (DC-biased), base resistors feed into bases
 
     // Label at top
-    Component *label = add_comp(circuit, COMP_TEXT, x + 60, y - 140, 0);
+    Component *label = add_comp(circuit, COMP_TEXT, x - 160, y - 220, 0);
     if (!label) return 0;
     strncpy(label->props.text.text, "Differential Pair", sizeof(label->props.text.text)-1);
     label->props.text.font_size = 2;
@@ -2549,7 +2549,7 @@ static int place_summing_amp(Circuit *circuit, float x, float y) {
     Component *rf = add_comp(circuit, COMP_RESISTOR, x + 180, y + 20, 0);
     rf->props.resistor.resistance = 10000.0;
 
-    Component *label = add_comp(circuit, COMP_TEXT, x + 60, y - 100, 0);
+    Component *label = add_comp(circuit, COMP_TEXT, x - 40, y - 180, 0);
     strncpy(label->props.text.text, "Summing Amp (Vout = -(V1+V2+V3))", sizeof(label->props.text.text)-1);
     label->props.text.font_size = 2;
 
@@ -7501,7 +7501,7 @@ static int place_line_model_ladder(Circuit *circuit, float x, float y) {
         TW(bl, tl); TW(tr, n);
         connect_terminals(circuit, ld, 1, g, 0);
         t->node_ids[0] = tl; t->node_ids[1] = tr; ld->node_ids[0] = n;
-        add_label(circuit, x + 100, ry - 30, names[row]);
+        add_label(circuit, x + 40, ry - 60, names[row]);
     }
     add_label(circuit, x + 20, y - 60, "Line model ladder: 138 kV, 30 mi, 90 MW - probe the three load buses");
     return 13;
@@ -7873,7 +7873,7 @@ static int place_pc_breaker_fail(Circuit *circuit, float x, float y) {
     Component *rl = add_comp(circuit, COMP_RESISTOR, x + 700, y + 110, 90);      // (700,70)-(700,150)
     rl->props.resistor.resistance = 100e3;
     Component *gl = add_comp(circuit, COMP_GROUND, x + 700, y + 170, 0);
-    add_label(circuit, x + 20, y - 40, "50BF: TRIP at 50 ms, breaker current still present -> BFT 150 ms later (stuck breaker)");
+    add_label(circuit, x + 20, y - 90, "50BF: TRIP at 50 ms, breaker current still present -> BFT 150 ms later (stuck breaker)");
     add_label(circuit, x + 720, y + 60, "BFT");
     add_label(circuit, x + 20, y + 310, "TRIP (top pulse) and 50BF current detector (bottom pulse); shorten the 50BF pulse to 83 ms for a healthy breaker");
     // wiring
@@ -9329,7 +9329,7 @@ static int place_com_480y(Circuit *circuit, float x, float y) {
         int f = res_seg(circuit, x + 240, py, out[k], 0.03);                 // 200 ft feeder per phase
         int bus = TN(x + 320, py); TW(f, bus);
         rl_load(circuit, x + 320, py, bus, 3.62, 6.42e-3);                   // 30 hp motor, 0.85 pf, per phase
-        add_label(circuit, x + 300, py - 30, ph[k]);
+        add_label(circuit, x + 270, py - 30, ph[k]);
         if (k == 0) {                                                        // 277 V lighting on phase A only
             int lt = TN(x + 480, py); TW(bus, TN(x + 440, py)); TW(TN(x + 440, py), lt);
             rl_load(circuit, x + 480, py, lt, 12.8, 0);                      // 6 kW of 277 V lighting
@@ -9731,7 +9731,7 @@ static int place_gs_pids(Circuit *circuit, float x, float y) {
     Component *ge = add_comp(circuit, COMP_GROUND, x + 560, y + 160, 0);
     eol->node_ids[0] = et; eol->node_ids[1] = eb; ge->node_ids[0] = eb;
     add_label(circuit, x - 40, y - 80, "SUPERVISED PERIMETER ZONE (NERC CIP-014-2 layers 2 and 5): a fence sensor reported to the substation RTU");
-    add_label(circuit, x + 60, y + 260, "One wire carries four states, so a cut or a short cannot be mistaken for 'all clear':");
+    add_label(circuit, x + 60, y + 310, "One wire carries four states, so a cut or a short cannot be mistaken for 'all clear':");
     add_label(circuit, x + 60, y + 290, "  normal (contact shorts the zone resistor, 5.6k end-of-line) = 8.5 V     alarm (contact opens, 2.2k + 5.6k) = 9.2 V");
     add_label(circuit, x + 60, y + 320, "  cable cut (open the integrity switch) = 12 V                            short across the pair = 0 V");
     add_label(circuit, x + 60, y + 350, "The contact opens at 4 s for 3 s. Passive loops and fibre are used because wireless sensors fail in substation EMI.");
@@ -10393,8 +10393,8 @@ static int place_hw_boost(Circuit *circuit, float x, float y) {
     int out = TN(x + 420, y); TW(dk, out);
     out_stage(circuit, x + 420, y, out, 47e-6, 20.0, 10.0);
     add_label(circuit, x - 40, y - 80, "BOOST CONVERTER: Vout = Vin / (1 - D) = 5 / 0.5 = 10 V. The switch charges L from the input, then L dumps into the output through the diode");
-    add_label(circuit, x - 40, y + 240, "The output can only ever be ABOVE the input, and the input current is continuous while the output current is not -");
-    add_label(circuit, x - 40, y + 270, "which is why a boost needs far more output capacitance than a buck. TRY: duty 0.5 -> 0.75 gives 20 V.");
+    add_label(circuit, x - 40, y + 320, "The output can only ever be ABOVE the input, and the input current is continuous while the output current is not -");
+    add_label(circuit, x - 40, y + 350, "which is why a boost needs far more output capacitance than a buck. TRY: duty 0.5 -> 0.75 gives 20 V.");
     return 16;
 }
 
@@ -10916,8 +10916,8 @@ static int place_id_opamp(Circuit *circuit, float x, float y) {
         add_label(circuit, x + 470, py + 40, nm[k]);
     }
     add_label(circuit, x - 140, y - 100, "IDEAL vs REAL OP-AMP: three non-inverting stages, gain 1 + 9k/1k = 10, all driven at 100 kHz");
-    add_label(circuit, x - 140, y + 740, "An ideal op-amp has infinite gain and infinite bandwidth, so 50 mV in is 500 mV out however fast you drive it. A real");
-    add_label(circuit, x - 140, y + 770, "part has a gain-bandwidth PRODUCT: 1 MHz at a closed-loop gain of 10 leaves 100 kHz of bandwidth, so at exactly");
+    add_label(circuit, x - 140, y + 840, "An ideal op-amp has infinite gain and infinite bandwidth, so 50 mV in is 500 mV out however fast you drive it. A real");
+    add_label(circuit, x - 140, y + 870, "part has a gain-bandwidth PRODUCT: 1 MHz at a closed-loop gain of 10 leaves 100 kHz of bandwidth, so at exactly");
     add_label(circuit, x - 140, y + 800, "100 kHz the output is 3 dB down. Row 3 asks the same part for 5 V at 100 kHz, which needs 2 pi f V = 3.1 V/us; it");
     add_label(circuit, x - 140, y + 830, "can only manage 0.5, so the sine leaves as a triangle. Bandwidth is small-signal, slew rate is large-signal.");
     return 24;
@@ -11408,7 +11408,7 @@ static int place_iv_probe_comp(Circuit *circuit, float x, float y) {
         TW(sp, sl); rsrc->node_ids[0] = sl; rsrc->node_ids[1] = sr;
         probe_channel(circuit, x + 180, py + 20, ccomp[k], sr, tag[k]);
     }
-    add_label(circuit, x - 40, y - 60, "PROBE COMPENSATION: the same 1 kHz CAL square through three 10x probes - the only difference is the trimmer");
+    add_label(circuit, x - 40, y - 120, "PROBE COMPENSATION: the same 1 kHz CAL square through three 10x probes - the only difference is the trimmer");
     add_label(circuit, x - 40, y + 1000, "A 10x probe is a 9M/1M divider, and a divider made of resistors is only flat if the strays across them divide the");
     add_label(circuit, x - 40, y + 1030, "same way. The trimmer sets the probe's own capacitance so that 9M x Cp equals 1M x 15 pF. Compensate on the");
     add_label(circuit, x - 40, y + 1060, "CAL output before you trust an edge - and do it in 10x, never 1x: in 1x the trimmer is not in the path at all.");
@@ -11745,7 +11745,7 @@ static int place_iv_kelvin(Circuit *circuit, float x, float y) {
     add_label(circuit, x + 620, y + 220, "2-wire: 110 mV at the connector -> 110 mohm. The leads are ten times the part");
     add_label(circuit, x + 620, y + 360, "4-wire: the difference amp reads 10 mV -> 10 mohm. The sense leads carry no");
     add_label(circuit, x + 620, y + 390, "current, so their own 50 mohm drops nothing - and the reading is the part");
-    add_label(circuit, x - 40, y + 560, "The force leads carry the current and the sense leads carry none, so IR drop in the sense path is zero and what");
+    add_label(circuit, x - 40, y + 620, "The force leads carry the current and the sense leads carry none, so IR drop in the sense path is zero and what");
     add_label(circuit, x - 40, y + 590, "the meter sees is the part. This is why a milliohm meter, an LCR bridge and a good shunt all have four terminals,");
     add_label(circuit, x - 40, y + 620, "and why a current-sense resistor is laid out with its sense pads inside its force pads.");
     add_label(circuit, x - 40, y + 650, "ALSO SEE: High-side vs Low-side Current Sense, and Line Drop Basics for the same IR drop at another scale.");
@@ -12445,7 +12445,7 @@ static int place_iv_switch_choice(Circuit *circuit, float x, float y) {
 
     add_label(circuit, x - 40, y - 100, "BJT OR MOSFET AS A SWITCH: the same 12 V, 100 ohm load, the same 5 V of logic to drive it");
     add_label(circuit, x + 320, y + 180, "2N3904 saturated: V_CE(sat) about 0.2 V, so the load gets 11.8 V.");
-    add_label(circuit, x + 320, y + 210, "It costs 9 mA of base current the whole time it is on, forever.");
+    add_label(circuit, x + 320, y + 390, "It costs 9 mA of base current the whole time it is on, forever.");
     add_label(circuit, mx + 320, y + 180, "2N7000 at V_GS = 5 V: about 3.4 ohm, so 0.41 V. The data sheet's 1.2 ohm");
     add_label(circuit, mx + 320, y + 210, "is at V_GS = 10 V - and the gate takes current only while it changes.");
     add_label(circuit, x - 40, y + 420, "The interview answer is not 'MOSFETs are better'. A saturated BJT holds a fixed 0.2 V whatever the current,");
