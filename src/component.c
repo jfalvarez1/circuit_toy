@@ -2593,6 +2593,14 @@ void component_adopt_props(Component *comp, const ComponentProps *p) {
         comp->props.delay_line.head = head;
         comp->props.delay_line.count = count;
     }
+    if (comp->type == COMP_SUBCIRCUIT) {
+        /* The other one that owns memory through the union. It is rebuilt from the definition
+           on the next solve, so start it empty rather than pointing at whatever the array was
+           at in the process that wrote the file. */
+        comp->props.subcircuit.inst_data = NULL;
+        comp->props.subcircuit.inst_count = 0;
+        comp->props.subcircuit.inst_def_id = 0;
+    }
 }
 
 void component_free(Component *comp) {
