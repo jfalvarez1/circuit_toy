@@ -73,6 +73,7 @@ typedef enum {
     PCAT_MIXED,
     PCAT_REGULATORS,
     PCAT_DISPLAY,
+    PCAT_WIRELESS,      // Antenna pair: a signal published on a channel and picked up off it
     PCAT_MEASUREMENT,
     PCAT_SUBPARTS,      // Pin markers, IC blocks, buses, lamp
     PCAT_CIRCUITS,

@@ -387,6 +387,16 @@ void logic_sample_inputs(Simulation *sim, Circuit *circuit) {
                 }
                 break;
 
+            case COMP_COUNTER:
+                // CLK on node_ids[0], RST on node_ids[1]
+                for (int j = 0; j < 2; j++) {
+                    if (comp->node_ids[j] > 0) {
+                        double v = get_node_voltage(circuit, comp->node_ids[j]);
+                        ls->inputs[j] = logic_voltage_to_state(v, &ls->levels, ls->prev_inputs[j]);
+                    }
+                }
+                break;
+
             case COMP_BCD_DECODER:
                 // 4 BCD inputs: D(MSB) on node_ids[0], C on node_ids[1], B on node_ids[2], A(LSB) on node_ids[3]
                 for (int j = 0; j < 4; j++) {
@@ -499,6 +509,9 @@ bool logic_propagate_component(Component *comp, double time) {
             break;
         case COMP_SR_LATCH:
             logic_propagate_sr_latch(comp);
+            break;
+        case COMP_COUNTER:
+            logic_propagate_counter(comp, time);
             break;
         case COMP_BCD_DECODER:
             logic_propagate_bcd_decoder(comp);
@@ -784,6 +797,31 @@ void logic_propagate_t_flipflop(Component *comp, double time) {
     ls->outputs[1] = ls->q_bar;
 }
 
+void logic_propagate_counter(Component *comp, double time) {
+    (void)time;
+    LogicGateState *ls = &comp->logic_state;
+
+    int mod = comp->props.counter.modulus > 0 ? comp->props.counter.modulus : 10;
+
+    if (ls->inputs[1] == LOGIC_HIGH) {            /* RST is level sensitive, like a real one */
+        comp->props.counter.count = 0;
+        comp->props.counter.wrapped = false;
+    } else if (logic_detect_edge(ls->inputs[0], ls->prev_inputs[0]) == EDGE_RISING) {
+        int next = comp->props.counter.count + 1;
+        if (next >= mod) { next = 0; comp->props.counter.wrapped = true; }
+        comp->props.counter.count = next;
+    }
+
+    int cnt = comp->props.counter.count;
+    for (int bit = 0; bit < 4; bit++)
+        ls->outputs[bit] = (cnt & (1 << bit)) ? LOGIC_HIGH : LOGIC_LOW;
+
+    /* CARRY is high for the whole of count 0, so the next digit up sees one rising edge exactly
+       when this one rolls over. Gated on having actually wrapped: every counter starts at 0, and
+       without the gate the whole chain would clock itself once on the first time step. */
+    ls->outputs[4] = (cnt == 0 && comp->props.counter.wrapped) ? LOGIC_HIGH : LOGIC_LOW;
+}
+
 void logic_propagate_sr_latch(Component *comp) {
     LogicGateState *ls = &comp->logic_state;
 
@@ -848,12 +886,14 @@ uint8_t logic_decode_7seg(LogicState d, LogicState c, LogicState b, LogicState a
 void logic_propagate_bcd_decoder(Component *comp) {
     LogicGateState *ls = &comp->logic_state;
 
-    // Inputs: D(MSB), C, B, A(LSB) on inputs[0..3]
+    /* Terminal 0 is the pin labelled A, and on a 7447 A is the LSB. This used to hand inputs[0]
+       over as D, so the pin marked A weighted 8 and the pin marked D weighted 1 - the electrical
+       stamp had it the right way round, and the two disagreed. */
     uint8_t segments = logic_decode_7seg(
-        ls->inputs[0],  // D
-        ls->inputs[1],  // C
-        ls->inputs[2],  // B
-        ls->inputs[3]   // A
+        ls->inputs[3],  // D (MSB)
+        ls->inputs[2],  // C
+        ls->inputs[1],  // B
+        ls->inputs[0]   // A (LSB)
     );
 
     // Outputs: segments a-g on outputs[0..6]

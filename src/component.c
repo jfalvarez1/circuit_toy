@@ -1375,16 +1375,24 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         }}
     },
 
+    /* Four bits, a reset and a carry, so it can actually drive a BCD decoder and chain into the
+       next digit. It used to be two output pins with no logic behind them at all - nothing ever
+       incremented it. */
     [COMP_COUNTER] = {
-        "Counter", "CNT", 3,
-        {{ -40, 0, "CLK" }, { 40, -20, "Q0" }, { 40, 20, "Q1" }},
-        80, 60,
-        { .logic_gate = {
+        /* Q0..Q3 sit on the same 40 px pitch as the BCD decoder's A..D, so a counter feeding a
+           decoder is four straight wires. CARRY goes on the bottom edge, out of their way. */
+        "Counter", "CNT", 7,
+        {{ -40, -40, "CLK" }, { -40, 40, "RST" },
+         { 40, -60, "Q0" }, { 40, -20, "Q1" }, { 40, 20, "Q2" }, { 40, 60, "Q3" }, { 0, 70, "CY" }},
+        80, 140,
+        { .counter = {
+            .modulus = 10,          // a decade counter by default: 0..9
+            .count = 0,
+            .wrapped = false,
             .v_low = 0.0,
             .v_high = 5.0,
             .v_threshold = 2.5,
             .r_out = 100.0,
-            .state = false,
             .ideal = true
         }}
     },
@@ -2363,6 +2371,18 @@ Component *component_create(ComponentType type, float x, float y) {
     comp->num_terminals = info->num_terminals;
     comp->props = info->default_props;
     if (comp->type == COMP_DELAY_LINE) delay_line_alloc(comp);
+
+    /* Wake the mixed-signal logic engine up for the counter. logic_init_component had no caller
+       anywhere in the program, so is_logic_component was false for everything and the whole
+       sample -> propagate -> drive pass in logic.c did nothing; every digital part that works
+       today does so because its own stamp reads the input voltages directly. The counter cannot
+       work that way - it is sequential, and a stamp runs many times per time step, so it would
+       count once per Newton iteration. Only the counter is switched on here: flipping the rest
+       over would change how every existing logic template behaves and belongs on its own. */
+    if (comp->type == COMP_COUNTER) {
+        logic_init_component(comp);
+        comp->props = info->default_props;   /* logic_init must not stamp on the counter state */
+    }
 
     // Special initialization for text component (char array needs explicit copy)
     if (type == COMP_TEXT) {
@@ -5126,11 +5146,32 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
 
         // === DIGITAL ICs - Simplified behavioral models ===
 
+        case COMP_COUNTER: {
+            /* CLK and RST are high impedance; Q0..Q3 and CARRY are driven from the count that
+               logic_propagate_counter maintains. Five independent outputs, so this cannot use
+               the shared two-output block below. */
+            double v_high = comp->props.counter.v_high;
+            double v_low = comp->props.counter.v_low;
+            double G = 1.0 / (comp->props.counter.r_out > 0 ? comp->props.counter.r_out : 100.0);
+            for (int i = 0; i < 2; i++)
+                if (n[i] > 0) matrix_add(A, n[i]-1, n[i]-1, 1e-12);
+
+            int mod = comp->props.counter.modulus > 0 ? comp->props.counter.modulus : 10;
+            int cnt = comp->props.counter.count % mod;
+            for (int bit = 0; bit < 4; bit++) {
+                double V = (cnt & (1 << bit)) ? v_high : v_low;
+                int t = 2 + bit;
+                if (n[t] > 0) { matrix_add(A, n[t]-1, n[t]-1, G); vector_add(b, n[t]-1, G * V); }
+            }
+            double V_cy = (cnt == 0 && comp->props.counter.wrapped) ? v_high : v_low;
+            if (n[6] > 0) { matrix_add(A, n[6]-1, n[6]-1, G); vector_add(b, n[6]-1, G * V_cy); }
+            break;
+        }
+
         case COMP_D_FLIPFLOP:
         case COMP_JK_FLIPFLOP:
         case COMP_T_FLIPFLOP:
         case COMP_SR_LATCH:
-        case COMP_COUNTER:
         case COMP_SHIFT_REG:
         case COMP_MUX_2TO1:
         case COMP_DEMUX_1TO2:

@@ -337,6 +337,10 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_IV_SWITCH_CHOICE] = {"BJT or MOSFET as a Switch", "SwSel", "V_CE(sat) against R_DS(on), and what each costs", TG_IV_FUND},
     [CIRCUIT_IV_INRUSH] = {"Hot-Plug Inrush", "Inrush", "An empty capacitor is a short circuit", TG_IV_FUND},
     [CIRCUIT_TLINE_REAL] = {"Transmission Line (real delay)", "TLdly", "One 5 ns cable, three terminations, actual propagation", TG_HARDWARE},
+    [CIRCUIT_SEVENSEG_TEST] = {"7-Segment Segment Test", "7Seg", "Every segment on its own switch", TG_DIGITAL},
+    [CIRCUIT_WIRELESS_LINK] = {"Wireless Link (TX/RX)", "Wless", "Antenna pair on a shared channel, 50 ohm both ends", TG_IC_IO},
+    [CIRCUIT_BCD_COUNTER] = {"BCD Counter to 7-Segment", "Count", "Clock, decade counter, decoder, digit", TG_DIGITAL},
+    [CIRCUIT_DIGITAL_CLOCK] = {"Digital Clock (HH:MM:SS)", "Clock", "Six digits, carry chained, reset at 24", TG_DIGITAL},
 
 
 
@@ -6352,6 +6356,10 @@ static int place_iv_miller(Circuit *circuit, float x, float y);
 static int place_iv_switch_choice(Circuit *circuit, float x, float y);
 static int place_iv_inrush(Circuit *circuit, float x, float y);
 static int place_tline_real(Circuit *circuit, float x, float y);
+static int place_sevenseg_test(Circuit *circuit, float x, float y);
+static int place_wireless_link(Circuit *circuit, float x, float y);
+static int place_bcd_counter(Circuit *circuit, float x, float y);
+static int place_digital_clock(Circuit *circuit, float x, float y);
 static int place_3ph_345_line(Circuit *circuit, float x, float y);
 static int place_3ph_rectifier(Circuit *circuit, float x, float y);
 static int place_3ph_unbalanced(Circuit *circuit, float x, float y);
@@ -6687,6 +6695,10 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_IV_SWITCH_CHOICE:   return place_iv_switch_choice(circuit, x, y);
         case CIRCUIT_IV_INRUSH:          return place_iv_inrush(circuit, x, y);
         case CIRCUIT_TLINE_REAL:         return place_tline_real(circuit, x, y);
+        case CIRCUIT_SEVENSEG_TEST:      return place_sevenseg_test(circuit, x, y);
+        case CIRCUIT_WIRELESS_LINK:      return place_wireless_link(circuit, x, y);
+        case CIRCUIT_BCD_COUNTER:        return place_bcd_counter(circuit, x, y);
+        case CIRCUIT_DIGITAL_CLOCK:      return place_digital_clock(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6890,6 +6902,30 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "for a lossless line at any time step. So the delay is a property of the cable, not of the solver:",
         "the far end sits at exactly zero for 5 ns and then steps. Matched, it arrives once and stays;",
         "shorted it comes back inverted at 10 ns; open it doubles. PROBE: the far end of the matched line."},
+    [CIRCUIT_SEVENSEG_TEST] = {"7-SEGMENT SEGMENT TEST: the eight segments of a common-cathode display, each on its own",
+        "switch and its own 150 ohm resistor from a 5 V rail. All eight are closed on load, so the digit",
+        "reads 8 with its decimal point; open any switch and that one segment goes out and the rest do not",
+        "care. Each segment is an ordinary LED to the shared cathode - about 2.2 V forward at 19 mA - so",
+        "the brightness on screen follows the current through it, and dropping the rail dims all eight together.",
+        "PROBE: segment a's pin, which sits at the forward drop while it is lit and near zero when it is not."},
+    [CIRCUIT_WIRELESS_LINK] = {"WIRELESS LINK: what the TX and RX antenna parts actually do. TX measures the voltage",
+        "across its own two terminals and publishes it on a channel number; RX, set to the same channel,",
+        "becomes a source of that voltage. There is no distance, no path loss and no carrier - the channel",
+        "is just a name the two of them share, and changing either one silences the link. Both present",
+        "50 ohm, so a 50 ohm load gets half of what was sent: 2 V in, 1 V across the load.",
+        "PROBE: the load resistor. Set both channels to 1 and it goes quiet; set them both back and it returns."},
+    [CIRCUIT_BCD_COUNTER] = {"BCD COUNTER DRIVING A 7-SEGMENT DISPLAY: a clock, a decade counter, a decoder and a",
+        "digit. Every rising clock edge steps the counter 0,1,2..9 and back to 0; the decoder turns",
+        "that four-bit value into the seven segments that spell it. This is the real test of the",
+        "display, because ten counts light every segment in a different combination - a segment that",
+        "is stuck or mis-wired reads as a wrong digit rather than as a dark bar you have to hunt for.",
+        "PROBE: segment a, which is lit for every digit except 1 and 4. CARRY is the pin that chains digits."},
+    [CIRCUIT_DIGITAL_CLOCK] = {"DIGITAL CLOCK: six digits of the same counter-decoder-display block, one pulse a second",
+        "into the right-hand one, and every digit clocking the one to its left when it rolls over. The",
+        "moduli do most of the work - 10 and 6 give 0-59 twice over - but the hours would run to 29 on",
+        "10 and 3, so an AND gate watching for tens=2 with units=4 resets both hour digits the instant",
+        "they read 24. That gate is the entire difference between a chain of counters and a clock.",
+        "PROBE: segment a of the seconds digit. Raise the speed to watch the minutes and hours turn over."},
     [CIRCUIT_IV_CAP_ENERGY] = {"THE TWO-CAPACITOR PROBLEM: 100 uF charged to 10 V is switched onto an equal empty one.",
         "Charge is conserved, so both settle at 5 V. Energy is not: 1/2 C V^2 was 5 mJ and is now 2 x 1/2 x",
         "100 uF x 25 = 2.5 mJ. Half has gone - and it goes for ANY resistance, including the 1 ohm copy that",
@@ -12537,6 +12573,428 @@ static int place_iv_inrush(Circuit *circuit, float x, float y) {
     return 15;
 }
 
+/* === 7-SEGMENT SEGMENT TEST ===
+   One switch and one resistor per segment, so every one of the eight can be lit and blanked by
+   hand. The display had no template at all before this, which is how it kept a renderer that
+   was never handed the segment currents and therefore lit nothing, whatever it was driven with.
+   a,b,c,d leave the package on the left and e,f,g,DP on the right, so each side fans out to its
+   own column of drivers: the pin nearest the top turns first and travels furthest up, which is
+   what keeps the eight feeds from crossing one another. */
+static int place_sevenseg_test(Circuit *circuit, float x, float y) {
+    Component *disp = add_comp(circuit, COMP_7SEG_DISPLAY, x, y, 0);
+    if (!disp) return 0;
+    disp->props.seven_seg.common_cathode = true;
+
+    add_label(circuit, x - 150, y - 320, "7-SEGMENT SEGMENT TEST - every segment on its own switch");
+
+    /* terminal index on the package, and which side of it that pin comes out on */
+    static const struct { int term; int side; const char *name; } seg[8] = {
+        { 0, -1, "a" }, { 1, -1, "b" }, { 2, -1, "c" }, { 3, -1, "d" },
+        { 5, +1, "e" }, { 6, +1, "f" }, { 7, +1, "g" }, { 8, +1, "DP" },
+    };
+
+    Component *gnd = add_comp(circuit, COMP_GROUND, x - 40, y + 160, 0);
+    int gnd_node = TN(x - 40, y + 140);
+    gnd->node_ids[0] = gnd_node;
+
+    /* COM straight down to ground - common cathode, so every segment returns through it */
+    float com_x, com_y;
+    component_get_terminal_pos(disp, 4, &com_x, &com_y);
+    TW(TN(com_x, com_y), gnd_node);
+    disp->node_ids[4] = gnd_node;
+
+    for (int i = 0; i < 8; i++) {
+        int s = seg[i].side;
+        int k = i % 4;                              /* position within its side, top to bottom */
+        float px, py;
+        component_get_terminal_pos(disp, seg[i].term, &px, &py);
+        float tx = x + s * (80.0f + 20.0f * k);     /* turn column: innermost pin turns first */
+        float ry = y - 180.0f + 40.0f * k;          /* driver row: innermost pin goes highest */
+
+        Component *r = add_comp(circuit, COMP_RESISTOR, x + s * 280.0f, ry, 0);
+        r->props.resistor.resistance = 150.0;       /* (5 - 2.2) / 150 = 19 mA, a normal segment */
+        Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + s * 420.0f, ry, 0);
+        sw->props.switch_spst.closed = true;        /* all eight lit on load; open one to blank it */
+
+        int pin = TN(px, py);
+        disp->node_ids[seg[i].term] = pin;
+        TW(pin, TN(tx, py));
+        TW(TN(tx, py), TN(tx, ry));
+        TW(TN(tx, ry), TN(x + s * 240.0f, ry));
+
+        int r_in = (s < 0) ? 1 : 0;                 /* the resistor terminal facing the display */
+        r->node_ids[r_in] = TN(x + s * 240.0f, ry);
+        r->node_ids[1 - r_in] = TN(x + s * 320.0f, ry);
+        TW(TN(x + s * 320.0f, ry), TN(x + s * 380.0f, ry));
+
+        int sw_in = (s < 0) ? 1 : 0;
+        sw->node_ids[sw_in] = TN(x + s * 380.0f, ry);
+        sw->node_ids[1 - sw_in] = TN(x + s * 460.0f, ry);
+        TW(TN(x + s * 460.0f, ry), TN(x + s * 540.0f, ry));
+
+        add_label(circuit, tx - 12.0f, py - 26.0f, seg[i].name);
+
+        /* Rail column, drawn as a chain between the rows that tap it. A node sitting on top of
+           a wire is not a connection here - only wire ends and coincident nodes are - so the
+           rail has to be built one segment at a time. */
+        if (k > 0) TW(TN(x + s * 540.0f, ry - 40.0f), TN(x + s * 540.0f, ry));
+    }
+
+    /* The two rails join over the top of the display */
+    TW(TN(x - 540, y - 180), TN(x - 540, y - 260));
+    TW(TN(x - 540, y - 260), TN(x + 540, y - 260));
+    TW(TN(x + 540, y - 260), TN(x + 540, y - 180));
+
+    /* 5 V supply at the foot of the left rail */
+    Component *v5 = add_comp(circuit, COMP_DC_VOLTAGE, x - 540, y + 20, 0);
+    v5->props.dc_voltage.voltage = 5.0;
+    int vpos = TN(x - 540, y - 20);
+    v5->node_ids[0] = vpos;
+    TW(vpos, TN(x - 540, y - 60));
+    TW(TN(x - 540, y + 60), TN(x - 540, y + 140));
+    TW(TN(x - 540, y + 140), gnd_node);
+    v5->node_ids[1] = gnd_node;
+
+    add_label(circuit, x - 150, y + 210, "Open any switch and that segment goes out. All eight closed lights the 8 and the point.");
+    add_label(circuit, x - 150, y + 240, "Each segment is a diode to the common cathode: 150 ohm sets 19 mA, and the glow follows the current.");
+    return 12;
+}
+
+/* One digit: a BCD decoder at (dx,dy) and a 7-segment display to the right of it, wired
+   together and to the counter that feeds it. Six of these make a clock, which is why it is a
+   helper rather than another 200 lines of duplicated wiring.
+
+   a,b,c,d come out of the left of the display and e,f,g out of the right, so a-d run straight
+   across on a descending staircase of turn columns (each one turns further left than the one
+   above it, which is what stops them meeting) and e,f,g wrap underneath and come back up on the
+   far side. The wrap costs a few crossings; three wires reversing around a body cannot avoid it. */
+static Component *digit_block(Circuit *circuit, float dx, float dy, Component *cnt) {
+    Component *dec = add_comp(circuit, COMP_BCD_DECODER, dx, dy, 0);
+    if (!dec) return NULL;
+    dec->props.bcd_decoder.active_low = false;   /* drive the segment high to light it */
+    Component *disp = add_comp(circuit, COMP_7SEG_DISPLAY, dx + 300, dy, 0);
+    if (!disp) return NULL;
+    disp->props.seven_seg.common_cathode = true;
+
+    /* counter Q0..Q3 straight into A..D - same pitch, same rows */
+    for (int b = 0; b < 4; b++) {
+        float qx, qy, ax, ay;
+        component_get_terminal_pos(cnt, 2 + b, &qx, &qy);
+        component_get_terminal_pos(dec, b, &ax, &ay);
+        int q = TN(qx, qy), a = TN(ax, ay);
+        TW(q, a);
+        cnt->node_ids[2 + b] = q;
+        dec->node_ids[b] = q;
+    }
+
+    /* COM of the display to the ground the rest of the circuit already uses */
+    float comx, comy;
+    component_get_terminal_pos(disp, 4, &comx, &comy);
+    int com = TN(comx, comy);
+    disp->node_ids[4] = com;
+    TW(com, TN(comx, dy + 200));
+
+    /* segments a,b,c,d: decoder rows -60,-40,-20,0 into display rows -40,-20,0,+20 */
+    static const int left_seg[4] = { 0, 1, 2, 3 };
+    for (int i = 0; i < 4; i++) {
+        float ox, oy, px, py;
+        component_get_terminal_pos(dec, 4 + i, &ox, &oy);          /* decoder a,b,c,d */
+        component_get_terminal_pos(disp, left_seg[i], &px, &py);   /* display a,b,c,d */
+        float turn = dx + 220.0f - 20.0f * i;                      /* descending staircase */
+        int o = TN(ox, oy), p = TN(px, py);
+        TW(o, TN(turn, oy));
+        TW(TN(turn, oy), TN(turn, py));
+        TW(TN(turn, py), p);
+        dec->node_ids[4 + i] = o;
+        disp->node_ids[left_seg[i]] = o;
+    }
+
+    /* segments e,f,g: down, under the display, and back up the far side */
+    static const int right_seg[3] = { 5, 6, 7 };
+    for (int i = 0; i < 3; i++) {
+        float ox, oy, px, py;
+        component_get_terminal_pos(dec, 8 + i, &ox, &oy);           /* decoder e,f,g */
+        component_get_terminal_pos(disp, right_seg[i], &px, &py);   /* display e,f,g */
+        /* Clear of the decoder body, clear of the a-d staircase, under the display and back up
+           on the far side. e keeps to the right of f and g the whole way, which is the order
+           their pins are in at both ends. */
+        float drop = dx + 100.0f - 20.0f * i;
+        float bus  = dy + 90.0f + 20.0f * i;
+        float rise = dx + 420.0f - 20.0f * i;
+        int o = TN(ox, oy), p = TN(px, py);
+        TW(o, TN(drop, oy));
+        TW(TN(drop, oy), TN(drop, bus));
+        TW(TN(drop, bus), TN(rise, bus));
+        TW(TN(rise, bus), TN(rise, py));
+        TW(TN(rise, py), p);
+        dec->node_ids[8 + i] = o;
+        disp->node_ids[right_seg[i]] = o;
+    }
+    return disp;
+}
+
+/* === BCD COUNTER DRIVING A 7-SEGMENT DISPLAY === */
+static int place_bcd_counter(Circuit *circuit, float x, float y) {
+    Component *clk = add_comp(circuit, COMP_CLOCK, x - 200, y, 0);
+    if (!clk) return 0;
+    clk->props.clock.frequency = 2.0;            /* two digits a second: watchable */
+    clk->props.clock.v_high = 5.0;
+
+    Component *cnt = add_comp(circuit, COMP_COUNTER, x, y, 0);
+    cnt->props.counter.modulus = 10;
+
+    Component *gnd = add_comp(circuit, COMP_GROUND, x - 200, y + 220, 0);
+    int gnd_node = TN(x - 200, y + 200);
+    gnd->node_ids[0] = gnd_node;
+
+    /* clock into CLK on its own row */
+    int ck = TN(x - 200, y - 40);
+    clk->node_ids[0] = ck;
+    TW(ck, TN(x - 40, y - 40));
+    cnt->node_ids[0] = ck;
+
+    /* clock return and RST both to the bottom rail - RST tied low so it free-runs */
+    TW(TN(x - 200, y + 40), gnd_node);
+    clk->node_ids[1] = gnd_node;
+    TW(TN(x - 40, y + 40), TN(x - 40, y + 200));
+    TW(TN(x - 40, y + 200), gnd_node);
+    cnt->node_ids[1] = gnd_node;
+
+    Component *disp = digit_block(circuit, x + 200, y, cnt);
+    /* the display's common cathode comes down to the same rail */
+    float comx, comy;
+    component_get_terminal_pos(disp, 4, &comx, &comy);
+    TW(TN(comx, y + 200), TN(x - 40, y + 200));
+
+    /* CARRY lights the decimal point: it goes high for one count in ten, so the point marks
+       every rollover. It is also the pin you would feed into the next digit's clock, and it
+       gives both otherwise unused pins - the carry and the DP - something to do. */
+    Component *rdp = add_comp(circuit, COMP_RESISTOR, x + 300, y + 160, 0);
+    rdp->props.resistor.resistance = 150.0;
+    int cy = TN(x, y + 70);
+    cnt->node_ids[6] = cy;
+    TW(cy, TN(x, y + 160));
+    TW(TN(x, y + 160), TN(x + 260, y + 160));
+    rdp->node_ids[0] = TN(x + 260, y + 160);
+    rdp->node_ids[1] = TN(x + 340, y + 160);
+    float dpx, dpy;
+    component_get_terminal_pos(disp, 8, &dpx, &dpy);
+    float dp_rise = x + 660;                 /* outside the e,f,g risers */
+    TW(TN(x + 340, y + 160), TN(dp_rise, y + 160));
+    TW(TN(dp_rise, y + 160), TN(dp_rise, dpy));
+    TW(TN(dp_rise, dpy), TN(dpx, dpy));
+    disp->node_ids[8] = TN(x + 340, y + 160);
+
+    add_label(circuit, x - 220, y - 200, "BCD COUNTER DRIVING A 7-SEGMENT DISPLAY");
+    add_label(circuit, x - 220, y + 250, "The counter steps 0-9 on every rising clock edge and the decoder turns each value into");
+    add_label(circuit, x - 220, y + 280, "the seven segments that spell it. Watch it run: every segment is exercised over ten counts,");
+    add_label(circuit, x - 220, y + 310, "which is what makes this the honest test of the display - a stuck segment shows up as a digit");
+    add_label(circuit, x - 220, y + 340, "that reads wrong, not as a dark bar you have to look for.");
+    return 14;
+}
+
+/* === DIGITAL CLOCK, HH:MM:SS ===
+   Six digits, each one a counter, a decoder and a display. One second in, and each digit clocks
+   the one to its left when it rolls over - which is all a digital clock is. The moduli do the
+   work: 10 and 6 give 0-59 for seconds and minutes, and the hours would run 0-29 on 10 and 3, so
+   an AND gate watching for 2 and 4 resets both hour digits at 24:00:00. That gate is the whole
+   difference between a counter chain and a clock. */
+static int place_digital_clock(Circuit *circuit, float x, float y) {
+    /* left to right: HH tens, HH ones, MM tens, MM ones, SS tens, SS ones */
+    static const int modulus[6] = { 3, 10, 6, 10, 6, 10 };
+    static const char *const digit_name[6] = { "H10", "H1", "M10", "M1", "S10", "S1" };
+    Component *cnt[6];
+    Component *disp[6];
+    const float pitch = 760.0f;
+    const float carry_bus = y + 320.0f;      /* below every digit's own wiring */
+    const float gnd_rail  = y + 420.0f;
+
+    Component *gnd = add_comp(circuit, COMP_GROUND, x - 260, gnd_rail + 20.0f, 0);
+    if (!gnd) return 0;
+    int gnd_node = TN(x - 260, gnd_rail);
+    gnd->node_ids[0] = gnd_node;
+
+    for (int i = 0; i < 6; i++) {
+        float cx = x + i * pitch;
+        cnt[i] = add_comp(circuit, COMP_COUNTER, cx, y, 0);
+        if (!cnt[i]) return 0;
+        cnt[i]->props.counter.modulus = modulus[i];
+        disp[i] = digit_block(circuit, cx + 200.0f, y, cnt[i]);
+        if (!disp[i]) return 0;
+
+        /* every display's common cathode down to the bottom rail */
+        float comx, comy;
+        component_get_terminal_pos(disp[i], 4, &comx, &comy);
+        TW(TN(comx, y + 200), TN(comx, gnd_rail));
+        TW(TN(comx, gnd_rail), TN(cx - 140, gnd_rail));
+        disp[i]->node_ids[4] = gnd_node;
+
+        /* the DP of every digit is off: tie it to the cathode it sits above */
+        float dpx, dpy;
+        component_get_terminal_pos(disp[i], 8, &dpx, &dpy);
+        TW(TN(dpx, dpy), TN(dpx + 40.0f, dpy));
+        TW(TN(dpx + 40.0f, dpy), TN(dpx + 40.0f, y + 240));
+        TW(TN(dpx + 40.0f, y + 240), TN(comx, y + 240));
+        TW(TN(comx, y + 240), TN(comx, y + 200));
+        disp[i]->node_ids[8] = gnd_node;
+
+        add_label(circuit, cx - 40, y - 160, digit_name[i]);
+    }
+
+    /* the bottom rail, chained left to right between the columns that land on it */
+    for (int i = 0; i < 6; i++) {
+        float cx = x + i * pitch;
+        TW(TN(cx - 140, gnd_rail), TN(i == 0 ? x - 260 : cx - pitch - 140, gnd_rail));
+    }
+
+    /* one second in, at the right-hand end */
+    Component *src = add_comp(circuit, COMP_CLOCK, x + 5 * pitch + 800.0f, y, 0);
+    src->props.clock.frequency = 1.0;
+    src->props.clock.v_high = 5.0;
+    int tick = TN(x + 5 * pitch + 800.0f, y - 40);
+    src->node_ids[0] = tick;
+    TW(TN(x + 5 * pitch + 800.0f, y + 40), TN(x + 5 * pitch + 800.0f, gnd_rail));
+    TW(TN(x + 5 * pitch + 800.0f, gnd_rail), TN(x + 5 * pitch - 140, gnd_rail));
+    src->node_ids[1] = gnd_node;
+
+    /* seconds' units take the tick; every other digit takes the carry of the one to its right */
+    for (int i = 5; i >= 0; i--) {
+        float cx = x + i * pitch;
+        float clk_x = cx - 40.0f, clk_y = y - 40.0f;
+        float riser = cx - 100.0f;
+        if (i == 5) {
+            /* over the top of the digit: straight along this row would run the tick through the
+               last decoder and display */
+            float top = y - 380.0f, src_x = x + 5 * pitch + 800.0f;
+            TW(tick, TN(src_x, top));
+            TW(TN(src_x, top), TN(cx - 100.0f, top));
+            TW(TN(cx - 100.0f, top), TN(cx - 100.0f, clk_y));
+            TW(TN(cx - 100.0f, clk_y), TN(clk_x, clk_y));
+            cnt[i]->node_ids[0] = tick;
+        } else {
+            float sx2 = cx + pitch;                     /* the digit to the right */
+            int cy = TN(sx2, y + 70);
+            cnt[i + 1]->node_ids[6] = cy;
+            TW(cy, TN(sx2, carry_bus));
+            TW(TN(sx2, carry_bus), TN(riser, carry_bus));
+            TW(TN(riser, carry_bus), TN(riser, clk_y));
+            TW(TN(riser, clk_y), TN(clk_x, clk_y));
+            cnt[i]->node_ids[0] = cy;
+        }
+    }
+
+    /* RST: the four seconds and minutes digits never need one - their modulus already wraps
+       them - so they sit on the rail. */
+    for (int i = 2; i < 6; i++) {
+        float cx = x + i * pitch;
+        TW(TN(cx - 40, y + 40), TN(cx - 180, y + 40));
+        TW(TN(cx - 180, y + 40), TN(cx - 180, gnd_rail));
+        TW(TN(cx - 180, gnd_rail), TN(cx - 140, gnd_rail));
+        cnt[i]->node_ids[1] = gnd_node;
+    }
+
+    /* The hours run 0..29 on their own: mod 10 and mod 3. This gate is what makes them a clock -
+       tens = 2 (Q1) and units = 4 (Q2) means the display just reached 24, and both are reset. */
+    Component *rst = add_comp(circuit, COMP_AND_GATE, x + pitch + 340.0f, y - 260.0f, 0);
+    int tens_q1 = TN(x + 40, y - 20);          /* HH tens Q1: weight 2 */
+    int ones_q2 = TN(x + pitch + 40, y + 20);  /* HH ones Q2: weight 4 */
+    TW(tens_q1, TN(x + 100, y - 20));
+    TW(TN(x + 100, y - 20), TN(x + 100, y - 280));
+    TW(TN(x + 100, y - 280), TN(x + pitch + 300.0f, y - 280));
+    rst->node_ids[0] = tens_q1;
+    TW(ones_q2, TN(x + pitch + 100, y + 20));
+    TW(TN(x + pitch + 100, y + 20), TN(x + pitch + 100, y - 240));
+    TW(TN(x + pitch + 100, y - 240), TN(x + pitch + 300.0f, y - 240));
+    rst->node_ids[1] = ones_q2;
+
+    int rst_out = TN(x + pitch + 380.0f, y - 260.0f);
+    rst->node_ids[2] = rst_out;
+    TW(rst_out, TN(x + pitch + 380.0f, y - 320.0f));
+    TW(TN(x + pitch + 380.0f, y - 320.0f), TN(x - 180, y - 320.0f));
+    TW(TN(x - 180, y - 320.0f), TN(x - 180, y + 40));
+    TW(TN(x - 180, y + 40), TN(x - 40, y + 40));
+    cnt[0]->node_ids[1] = rst_out;
+    TW(TN(x - 180, y - 320.0f), TN(x + pitch - 180, y - 320.0f));
+    TW(TN(x + pitch - 180, y - 320.0f), TN(x + pitch - 180, y + 40));
+    TW(TN(x + pitch - 180, y + 40), TN(x + pitch - 40, y + 40));
+    cnt[1]->node_ids[1] = rst_out;
+
+    /* The hours' carry is where a day counter would go. Brought out to a marked pin rather than
+       left hanging, so the schematic says what it is instead of looking forgotten. */
+    Component *day = add_comp(circuit, COMP_PIN, x - 160, y + 160, 0);
+    int day_node = TN(x - 120, y + 160);
+    day->node_ids[0] = day_node;
+    strncpy(day->props.pin.pin_name, "DAY", sizeof(day->props.pin.pin_name) - 1);
+    int h_cy = TN(x, y + 70);
+    cnt[0]->node_ids[6] = h_cy;
+    TW(h_cy, TN(x, y + 160));
+    TW(TN(x, y + 160), day_node);
+
+    /* Only the title and the per-digit names go on the canvas. The explanation lives in the
+       notes panel, and printing it here as well put two paragraphs on top of each other. */
+    add_label(circuit, x - 260, y - 420, "DIGITAL CLOCK - HH : MM : SS");
+    add_label(circuit, x + 2 * pitch + 640, y - 420, "1 Hz in");
+    return 20;
+}
+
+/* === WIRELESS LINK (TX/RX) ===
+   What the two antenna parts actually do, which is not obvious from the symbols: TX measures the
+   voltage across itself and publishes it on a channel, RX becomes a source of whatever is on that
+   channel. Both present 50 ohm, so a matched load gets half the transmitted amplitude. */
+static int place_wireless_link(Circuit *circuit, float x, float y) {
+    Component *vsrc = add_comp(circuit, COMP_AC_VOLTAGE, x - 160, y + 40, 0);
+    if (!vsrc) return 0;
+    vsrc->props.ac_voltage.amplitude = 2.0;
+    vsrc->props.ac_voltage.frequency = 1000.0;
+
+    Component *tx = add_comp(circuit, COMP_ANTENNA_TX, x - 40, y, 0);
+    tx->props.antenna.channel = 0;
+    Component *rx = add_comp(circuit, COMP_ANTENNA_RX, x + 280, y, 0);
+    rx->props.antenna.channel = 0;
+
+    Component *rl = add_comp(circuit, COMP_RESISTOR, x + 400, y + 60, 90);
+    rl->props.resistor.resistance = 50.0;
+
+    Component *gnd = add_comp(circuit, COMP_GROUND, x - 160, y + 140, 0);
+    int gnd_node = TN(x - 160, y + 120);
+    gnd->node_ids[0] = gnd_node;
+
+    /* Source across the transmitter */
+    int src_hi = TN(x - 160, y);
+    vsrc->node_ids[0] = src_hi;
+    TW(src_hi, TN(x - 80, y));
+    tx->node_ids[0] = src_hi;
+
+    TW(TN(x - 160, y + 80), gnd_node);
+    vsrc->node_ids[1] = gnd_node;
+
+    /* Transmitter's cold end down to the ground rail */
+    TW(TN(x, y), TN(x, y + 120));
+    TW(TN(x, y + 120), gnd_node);
+    tx->node_ids[1] = gnd_node;
+
+    /* Receiver: cold end to ground, hot end into the matched load */
+    TW(TN(x + 240, y), TN(x + 180, y));
+    TW(TN(x + 180, y), TN(x + 180, y + 120));
+    TW(TN(x + 180, y + 120), TN(x, y + 120));
+    rx->node_ids[0] = gnd_node;
+
+    int out = TN(x + 320, y);
+    rx->node_ids[1] = out;
+    TW(out, TN(x + 400, y));
+    TW(TN(x + 400, y), TN(x + 400, y + 26));
+    rl->node_ids[0] = out;
+    TW(TN(x + 400, y + 94), TN(x + 400, y + 120));
+    TW(TN(x + 400, y + 120), TN(x + 180, y + 120));
+    rl->node_ids[1] = gnd_node;
+
+    add_label(circuit, x - 200, y - 120, "WIRELESS LINK - TX publishes on a channel, RX reproduces it");
+    add_label(circuit, x - 200, y + 200, "TX reads the voltage across itself and puts it on channel 0. RX on the same channel becomes");
+    add_label(circuit, x - 200, y + 230, "a source of it. Both are 50 ohm, so the matched load sees half the amplitude: 2 V in, 1 V out.");
+    add_label(circuit, x - 200, y + 260, "Change either channel number and the link goes quiet - that is all the channel is, a name they share.");
+    return 12;
+}
+
 #undef TN
 #undef TW
 
@@ -12721,6 +13179,10 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_SWITCH_CHOICE] = { COMP_NPN_BJT, 0, 1 },      /* the saturated collector */
     [CIRCUIT_IV_INRUSH]        = { COMP_CAPACITOR, 0, 0 },    /* the bulk cap, straight in */
     [CIRCUIT_TLINE_REAL]       = { COMP_RESISTOR, 1, 0 },     /* the matched far end */
+    [CIRCUIT_SEVENSEG_TEST]    = { COMP_7SEG_DISPLAY, 0, 0 }, /* segment a's pin: its forward drop */
+    [CIRCUIT_WIRELESS_LINK]    = { COMP_RESISTOR, 0, 0 },     /* across the matched load */
+    [CIRCUIT_BCD_COUNTER]      = { COMP_7SEG_DISPLAY, 0, 0 }, /* segment a: on for 0,2,3,5,6,7,8,9 */
+    [CIRCUIT_DIGITAL_CLOCK]    = { COMP_7SEG_DISPLAY, 5, 0 }, /* the seconds digit, segment a */
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -12852,6 +13314,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_GROUND_BOUNCE] = 5e-9, [CIRCUIT_IV_CROSSTALK] = 5e-9, [CIRCUIT_IV_ESD_CLAMP] = 1e-3,
     [CIRCUIT_IV_CAP_ENERGY] = 5e-3, [CIRCUIT_IV_MILLER] = 200e-9,
     [CIRCUIT_IV_SWITCH_CHOICE] = 1e-3, [CIRCUIT_IV_INRUSH] = 5e-3, [CIRCUIT_TLINE_REAL] = 20e-9,
+    [CIRCUIT_SEVENSEG_TEST] = 1e-3, [CIRCUIT_WIRELESS_LINK] = 200e-6, [CIRCUIT_BCD_COUNTER] = 0.1, [CIRCUIT_DIGITAL_CLOCK] = 1.0,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -12907,6 +13370,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_GROUND_BOUNCE] = 0.5, [CIRCUIT_IV_CROSSTALK] = 0.5, [CIRCUIT_IV_ESD_CLAMP] = 1.0,
     [CIRCUIT_IV_CAP_ENERGY] = 2.0, [CIRCUIT_IV_MILLER] = 0.5,
     [CIRCUIT_IV_SWITCH_CHOICE] = 2.0, [CIRCUIT_IV_INRUSH] = 2.0, [CIRCUIT_TLINE_REAL] = 0.5,
+    [CIRCUIT_SEVENSEG_TEST] = 1.0, [CIRCUIT_WIRELESS_LINK] = 0.5, [CIRCUIT_BCD_COUNTER] = 1.0, [CIRCUIT_DIGITAL_CLOCK] = 1.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -13094,6 +13558,10 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_SWITCH_CHOICE] = { DEMO_DC, 0 },
     [CIRCUIT_IV_INRUSH]        = { DEMO_DC, 0 },
     [CIRCUIT_TLINE_REAL]       = { DEMO_WAVEFORM, 12500000 },
+    [CIRCUIT_SEVENSEG_TEST]    = { DEMO_DC, 0 },
+    [CIRCUIT_WIRELESS_LINK]    = { DEMO_WAVEFORM, 1000 },
+    [CIRCUIT_BCD_COUNTER]      = { DEMO_WAVEFORM, 2 },
+    [CIRCUIT_DIGITAL_CLOCK]    = { DEMO_WAVEFORM, 1 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -13154,6 +13622,8 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_MILLER] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_IV_INRUSH] = SCOPE_FLAG_STACK,
     [CIRCUIT_TLINE_REAL] = SCOPE_FLAG_STACK,
+    [CIRCUIT_SEVENSEG_TEST] = SCOPE_FLAG_FIT, [CIRCUIT_WIRELESS_LINK] = SCOPE_FLAG_FIT,
+    [CIRCUIT_BCD_COUNTER] = SCOPE_FLAG_FIT, [CIRCUIT_DIGITAL_CLOCK] = SCOPE_FLAG_FIT,
     /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */
     [CIRCUIT_COLPITTS] = SCOPE_FLAG_AC, [CIRCUIT_HARTLEY] = SCOPE_FLAG_AC, [CIRCUIT_CLAPP] = SCOPE_FLAG_AC,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,

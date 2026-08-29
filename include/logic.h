@@ -141,6 +141,7 @@ void logic_propagate_sr_latch(Component *comp);
 
 // Decoders and multiplexers
 void logic_propagate_bcd_decoder(Component *comp);
+void logic_propagate_counter(Component *comp, double time);
 void logic_propagate_decoder(Component *comp);
 void logic_propagate_mux(Component *comp);
 void logic_propagate_demux(Component *comp);

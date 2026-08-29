@@ -555,6 +555,19 @@ typedef union {
         bool ideal;             // Ideal mode
     } seven_seg;
 
+    // Binary / BCD counter with a settable modulus and a carry out
+    struct {
+        int modulus;            // counts 0 .. modulus-1, then wraps (10 for a BCD digit)
+        int count;              // where it is now
+        bool wrapped;           // has it rolled over yet? CARRY stays low until it has, so a
+                                // chain of these does not clock itself once at power-on
+        double v_low;           // output low level (V)
+        double v_high;          // output high level (V)
+        double v_threshold;     // input threshold (V)
+        double r_out;           // output resistance (Ohm)
+        bool ideal;
+    } counter;
+
     // BCD to 7-Segment Decoder (like 7447/74LS47)
     struct {
         double v_low;           // Low output voltage (V)

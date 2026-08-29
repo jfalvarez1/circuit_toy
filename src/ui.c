@@ -160,6 +160,7 @@ void ui_init(UIState *ui) {
     ui->categories[PCAT_MIXED] = (PaletteCategory){"Mixed Signal", true, 0};
     ui->categories[PCAT_REGULATORS] = (PaletteCategory){"Regulators", true, 0};
     ui->categories[PCAT_DISPLAY] = (PaletteCategory){"Display", true, 0};
+    ui->categories[PCAT_WIRELESS] = (PaletteCategory){"Wireless", true, 0};
     ui->categories[PCAT_MEASUREMENT] = (PaletteCategory){"Measurement", true, 0};
     ui->categories[PCAT_SUBPARTS] = (PaletteCategory){"Sub-circuit / Bus", true, 0};
     ui->categories[PCAT_CIRCUITS] = (PaletteCategory){"Circuits", true, 0};
@@ -402,6 +403,11 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_LED_ARRAY, "LEDBar");
     ADD_COMP(COMP_LED_MATRIX, "8x8");
     ADD_COMP(COMP_DC_MOTOR, "Motor");
+
+    // === WIRELESS SECTION ===
+    // TX and RX are not displays. TX publishes the voltage across itself on a channel number
+    // and RX, set to the same channel, reproduces it - see the Wireless Link template.
+    NEW_SECTION(PCAT_WIRELESS);
     ADD_COMP(COMP_ANTENNA_TX, "TX");
     ADD_COMP(COMP_ANTENNA_RX, "RX");
 

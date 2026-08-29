@@ -166,6 +166,7 @@ void render_7seg_display(RenderContext *ctx, float x, float y, int rotation,
 void render_led_array(RenderContext *ctx, float x, float y, int rotation,
                       double *currents, bool *failed, double max_current, int color_idx);
 void render_bcd_decoder(RenderContext *ctx, float x, float y, int rotation);
+void render_counter(RenderContext *ctx, float x, float y, int rotation, int count, int modulus);
 void render_subcircuit(RenderContext *ctx, float x, float y, int rotation, int def_id, const char *name);
 
 // Neon glow effect helpers (for selected items)
@@ -1289,12 +1290,10 @@ void render_component(RenderContext *ctx, Component *comp) {
             render_draw_text_small(ctx, "SR", sx - 8, sy - 4, COLOR_TEXT);
             break;
         }
-        case COMP_COUNTER: {
-            render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
-            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
-            render_draw_text_small(ctx, "CNT", sx - 10, sy - 4, COLOR_TEXT);
+        case COMP_COUNTER:
+            render_counter(ctx, comp->x, comp->y, comp->rotation,
+                           comp->props.counter.count, comp->props.counter.modulus);
             break;
-        }
         case COMP_SHIFT_REG: {
             render_d_flipflop(ctx, comp->x, comp->y, comp->rotation);
             int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
@@ -4269,6 +4268,60 @@ void render_led_array(RenderContext *ctx, float x, float y, int rotation,
 
 // BCD to 7-segment decoder (7447/74LS47 style)
 // Component size: 80x140, terminals: A,B,C,D inputs on left, a-g outputs on right
+/* Counter: same DIP outline as the decoder it usually feeds. CLK and RST on the left, the four
+   count bits and the carry on the right, and the value it is holding printed in the middle so
+   you can read the count off the schematic without probing it. */
+void render_counter(RenderContext *ctx, float x, float y, int rotation, int count, int modulus) {
+    render_draw_line_rotated(ctx, x, y, -30, -65, 30, -65, rotation);
+    render_draw_line_rotated(ctx, x, y, 30, -65, 30, 65, rotation);
+    render_draw_line_rotated(ctx, x, y, 30, 65, -30, 65, rotation);
+    render_draw_line_rotated(ctx, x, y, -30, 65, -30, -65, rotation);
+    render_draw_circle(ctx, x, y - 65, 5);
+
+    render_draw_line_rotated(ctx, x, y, -30, -40, -40, -40, rotation);   // CLK
+    render_draw_line_rotated(ctx, x, y, -30, 40, -40, 40, rotation);     // RST
+    render_draw_line_rotated(ctx, x, y, 30, -60, 40, -60, rotation);     // Q0
+    render_draw_line_rotated(ctx, x, y, 30, -20, 40, -20, rotation);     // Q1
+    render_draw_line_rotated(ctx, x, y, 30, 20, 40, 20, rotation);       // Q2
+    render_draw_line_rotated(ctx, x, y, 30, 60, 40, 60, rotation);       // Q3
+    render_draw_line_rotated(ctx, x, y, 0, 65, 0, 70, rotation);         // CY, on the bottom edge
+
+    /* Pin names hug their own edge and the middle is left clear for the count, so the two never
+       fight for the same pixels. The modulus goes under the package, the way the part number
+       does on the other ICs, instead of being crammed inside next to the value. */
+    int sx, sy;
+    Color label_color = {0x00, 0xff, 0xff, 0xff};
+    render_world_to_screen(ctx, x - 28, y - 44, &sx, &sy);
+    render_draw_text_small(ctx, "CLK", sx, sy, label_color);
+    render_world_to_screen(ctx, x - 28, y + 36, &sx, &sy);
+    render_draw_text_small(ctx, "RST", sx, sy, label_color);
+    render_world_to_screen(ctx, x + 16, y - 62, &sx, &sy);
+    render_draw_text_small(ctx, "Q0", sx, sy, label_color);
+    render_world_to_screen(ctx, x + 16, y - 24, &sx, &sy);
+    render_draw_text_small(ctx, "Q1", sx, sy, label_color);
+    render_world_to_screen(ctx, x + 16, y + 16, &sx, &sy);
+    render_draw_text_small(ctx, "Q2", sx, sy, label_color);
+    render_world_to_screen(ctx, x + 16, y + 56, &sx, &sy);
+    render_draw_text_small(ctx, "Q3", sx, sy, label_color);
+    render_world_to_screen(ctx, x + 6, y + 66, &sx, &sy);
+    render_draw_text_small(ctx, "CY", sx, sy, label_color);
+
+    /* the value, in a little window in the middle of the package */
+    render_draw_line_rotated(ctx, x, y, -12, -12, 12, -12, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, -12, 12, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, 12, 12, -12, 12, rotation);
+    render_draw_line_rotated(ctx, x, y, -12, 12, -12, -12, rotation);
+
+    char buf[24];
+    snprintf(buf, sizeof buf, "%d", count);
+    render_world_to_screen(ctx, x - 4, y - 8, &sx, &sy);
+    render_draw_text(ctx, buf, sx, sy, label_color);
+
+    snprintf(buf, sizeof buf, "CNT mod%d", modulus > 0 ? modulus : 10);
+    render_world_to_screen(ctx, x - 30, y + 92, &sx, &sy);
+    render_draw_text_small(ctx, buf, sx, sy, label_color);
+}
+
 void render_bcd_decoder(RenderContext *ctx, float x, float y, int rotation) {
     // DIP-style IC package
     // Outer rectangle
@@ -4324,11 +4377,10 @@ void render_bcd_decoder(RenderContext *ctx, float x, float y, int rotation) {
     render_world_to_screen(ctx, x + 18, y + 60, &sx, &sy);
     render_draw_text_small(ctx, "g", sx, sy - 3, label_color);
 
-    // IC label in center
-    render_world_to_screen(ctx, x, y - 5, &sx, &sy);
-    render_draw_text_small(ctx, "7447", sx - 10, sy, label_color);
-    render_world_to_screen(ctx, x, y + 10, &sx, &sy);
-    render_draw_text_small(ctx, "BCD", sx - 8, sy, label_color);
+    /* Part number under the package, not across the middle of it: the pin names are only 18 px
+       away on both sides and the three ran into each other. */
+    render_world_to_screen(ctx, x - 26, y + 78, &sx, &sy);
+    render_draw_text_small(ctx, "7447 BCD", sx, sy, label_color);
 }
 
 // User-defined sub-circuit / IC block

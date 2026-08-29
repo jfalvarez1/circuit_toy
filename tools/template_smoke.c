@@ -768,6 +768,9 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_COMMON_DRAIN,     COMP_NMOS,      0, 2, "dc",  4.3,   0.15, 5e-3, "Vs = Vg - Vgs" },
     { CIRCUIT_MULTISTAGE_AMP,   COMP_NPN_BJT,   1, 1, "dc",  5.8,   0.15, 5e-3, "2nd collector" },
     { CIRCUIT_DIFFERENTIAL_PAIR,COMP_NPN_BJT,   0, 1, "dc",  10.75, 0.05, 5e-3, "12 - 0.27mA*4.7k" },
+    { CIRCUIT_SEVENSEG_TEST,    COMP_7SEG_DISPLAY, 0, 0, "dc", 2.16, 0.05, 1e-3, "segment a forward drop at 19 mA" },
+    { CIRCUIT_WIRELESS_LINK,    COMP_RESISTOR,  0, 0, "amp", 1.0,  0.05, 5e-3, "2 Vpk sent, 50 into 50" },
+    { CIRCUIT_BCD_COUNTER,      COMP_7SEG_DISPLAY, 0, 0, "max", 2.18, 0.05, 6.0, "segment a lights as the count runs" },
     { CIRCUIT_CURRENT_MIRROR,   COMP_NPN_BJT,   1, 1, "dc",  10.9,  0.05, 2e-3, "12 - 1.1mA*1k" },
     { CIRCUIT_PUSH_PULL,        COMP_RESISTOR,  0, 0, "amp", 4.3,   0.15, 5e-3, "5 Vpk minus Vbe" },
     { CIRCUIT_CMOS_INVERTER,    COMP_NMOS,      0, 1, "amp", 2.5,   0.10, 5e-3, "0..5 V square" },
@@ -1102,6 +1105,9 @@ static int geom_test(void) {
         total++;
         int diag = 0, cross = 0, through = 0, touch = 0;
         char detail[400] = "";
+        /* Through-body findings get their own buffer. They matter more than crossings, and
+           sharing one meant a busy schematic's crossings crowded them out of the line. */
+        char tdetail[400] = "";
         /* wire endpoints */
         for (int w = 0; w < c->num_wires; w++) {
             Node *a = circuit_get_node(c, c->wires[w].start_node_id), *b = circuit_get_node(c, c->wires[w].end_node_id);
@@ -1140,7 +1146,7 @@ static int geom_test(void) {
                 if (hw < 4) hw = 4; if (hh < 4) hh = 4;
                 if (seg_hits_box(a->x, a->y, b->x, b->y, comp->x - hw, comp->y - hh, comp->x + hw, comp->y + hh)) {
                     through++;
-                    if (strlen(detail) < 280) snprintf(detail + strlen(detail), sizeof detail - strlen(detail),
+                    if (strlen(tdetail) < 280) snprintf(tdetail + strlen(tdetail), sizeof tdetail - strlen(tdetail),
                         " through:%s@(%g,%g)box[%g..%g,%g..%g]<-wire(%g,%g)-(%g,%g)", comp->label,
                         comp->x, comp->y, comp->x - hw, comp->x + hw, comp->y - hh, comp->y + hh,
                         a->x, a->y, b->x, b->y);
@@ -1174,9 +1180,9 @@ static int geom_test(void) {
            status, so this can gate CI without failing on the tracked cosmetic list. */
         int hard = diag + overlap;
         int ok = (diag + cross + through + touch + overlap) == 0;
-        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d overlap=%d%s\n",
+        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d overlap=%d%s%s\n",
                ok ? " OK " : (hard ? "FAIL" : "WARN"), ti ? ti->name : "?",
-               diag, cross, through, touch, overlap, detail);
+               diag, cross, through, touch, overlap, tdetail, detail);
         if (!ok) bad_templates++;
         if (hard) hard_failures++;
         circuit_free(c);
@@ -2073,6 +2079,16 @@ static const SwitchCase switch_cases[] = {
     { CIRCUIT_SUBSTATION,   4, 103700.0, 103700.0, 0.05, "phase B cap bank - the probe is on phase A" },
     { CIRCUIT_SUBSTATION,   5, 103700.0, 103700.0, 0.05, "phase C cap bank - the probe is on phase A" },
     { CIRCUIT_GS_RX,        1, 168.533,  168.533,  0.05, "the feeder's reactive block - the probe is on the transmission bus" },
+    /* Each segment of the display has its own switch and its own resistor, and the probe is on
+       segment a. Blanking any of the other seven must leave a exactly where it was - segments
+       that dim each other would mean they were sharing a resistor. */
+    { CIRCUIT_SEVENSEG_TEST, 1, 2.16241, 2.16241, 0.02, "segment b - the probe is on segment a" },
+    { CIRCUIT_SEVENSEG_TEST, 2, 2.16241, 2.16241, 0.02, "segment c - the probe is on segment a" },
+    { CIRCUIT_SEVENSEG_TEST, 3, 2.16241, 2.16241, 0.02, "segment d - the probe is on segment a" },
+    { CIRCUIT_SEVENSEG_TEST, 4, 2.16241, 2.16241, 0.02, "segment e - the probe is on segment a" },
+    { CIRCUIT_SEVENSEG_TEST, 5, 2.16241, 2.16241, 0.02, "segment f - the probe is on segment a" },
+    { CIRCUIT_SEVENSEG_TEST, 6, 2.16241, 2.16241, 0.02, "segment g - the probe is on segment a" },
+    { CIRCUIT_SEVENSEG_TEST, 7, 2.16241, 2.16241, 0.02, "the decimal point - the probe is on segment a" },
 };
 static double switch_measure(CircuitTemplateType t, int sw_ord, int closed, int *ok_out) {
     Circuit *c = circuit_create();
