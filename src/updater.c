@@ -183,7 +183,13 @@ int updater_install(UpdaterState *st, char *msg, size_t msgn) {
         "  Write-Host 'Starting the version you had.'\n"
         "  while (Get-Process -Id $pid0 -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 300 }\n"
         "}\n"
-        "Start-Process -FilePath $exe -WorkingDirectory $dir\n",
+        /* Hand the relaunch to Explorer rather than starting it as this console's child. A
+           console-subsystem build started from here dies with the console when the script
+           exits - either killed by the close event, or failing DLL init with 0xC0000142. The
+           sleep gives it time to finish starting before this window goes away. */
+        "try { $sh = New-Object -ComObject Shell.Application; $sh.ShellExecute($exe, '', $dir, 'open', 1) }\n"
+        "catch { Start-Process -FilePath $exe -WorkingDirectory $dir }\n"
+        "Start-Sleep -Seconds 3\n",
         tag, dir, exe, (unsigned long)GetCurrentProcessId(), REPO);
     fclose(f);
     char cmd[1024];

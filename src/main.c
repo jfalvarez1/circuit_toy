@@ -17,6 +17,9 @@
 #include "updater.h"
 #include "ui.h"
 #include "crashlog.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 static bool rects_overlap(const Rect *a, const Rect *b) {
     return a->x < b->x + b->w && b->x < a->x + a->w && a->y < b->y + b->h && b->y < a->y + a->h;
@@ -318,7 +321,25 @@ static void usage(void) {
            "  --crashlog           print the start-up / crash log and exit\n");
 }
 
+/* The app is a GUI subsystem binary, so it owns no console. When it is run from a terminal
+   with arguments, borrow the terminal's console so --version, --update-check, --layout-test
+   and the rest still print where the person typing them can see. Output that is redirected to
+   a pipe or a file already works without this and must not be clobbered, hence the isatty-ish
+   check on each handle before reopening it. */
+static void attach_parent_console(void) {
+#ifdef _WIN32
+    if (!AttachConsole(ATTACH_PARENT_PROCESS)) return;
+    if (GetFileType(GetStdHandle(STD_OUTPUT_HANDLE)) == FILE_TYPE_UNKNOWN) {
+        FILE *f; freopen_s(&f, "CONOUT$", "w", stdout);
+    }
+    if (GetFileType(GetStdHandle(STD_ERROR_HANDLE)) == FILE_TYPE_UNKNOWN) {
+        FILE *f; freopen_s(&f, "CONOUT$", "w", stderr);
+    }
+#endif
+}
+
 int main(int argc, char *argv[]) {
+    if (argc > 1) attach_parent_console();
     const char *cli_template = NULL, *cli_shot = NULL, *cli_record = NULL, *cli_size = NULL;
     int cli_frame = 90, cli_rec_n = 0, cli_rec_every = 1, cli_scroll = -1, cli_tab = -1; bool cli_exit = false, no_update = false, no_auto_update = false;
     const char *cli_keys = NULL; int cli_keys_frame = 30, cli_keys_every = 6;

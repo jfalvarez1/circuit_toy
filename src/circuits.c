@@ -1752,46 +1752,49 @@ static int place_differential_pair(Circuit *circuit, float x, float y) {
     strncpy(label->props.text.text, "Differential Pair", sizeof(label->props.text.text)-1);
     label->props.text.font_size = 2;
 
-    // VCC power supply - centered at top
-    Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x + 100, y - 100, 0);
+    // VCC power supply - off to the right, so its return can run down the outside edge
+    Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x + 280, y - 100, 0);
     vcc->props.dc_voltage.voltage = 12.0;
 
     // Collector resistors - RC1 for Q1, RC2 for Q2
     Component *rc1 = add_comp(circuit, COMP_RESISTOR, x + 60, y - 40, 90);
     rc1->props.resistor.resistance = 4700.0;
-    Component *rc2 = add_comp(circuit, COMP_RESISTOR, x + 140, y - 40, 90);
+    Component *rc2 = add_comp(circuit, COMP_RESISTOR, x + 220, y - 40, 90);
     rc2->props.resistor.resistance = 4700.0;
 
-    // NPN transistors - Q1 on left, Q2 on right (both facing inward)
-    // Q1: normal orientation (0 deg) - base on left, collector on top-right, emitter on bottom-right
-    // Q2: mirrored (180 deg) - base on right, collector on top-left, emitter on bottom-left
+    // NPN transistors - both upright, so both read the same way: base left, collector at the
+    // top, emitter at the bottom. Q2 used to be placed at 180 degrees to face the second input
+    // source, but rotating an NPN by 180 turns it upside down - collector at the bottom and
+    // emitter at the top - which forced RC2's wire to run down past Q2's own emitter terminal.
     Component *q1 = add_comp(circuit, COMP_NPN_BJT, x + 40, y + 40, 0);
     q1->props.bjt.bf = 100;
-    Component *q2 = add_comp(circuit, COMP_NPN_BJT, x + 160, y + 40, 180);
+    Component *q2 = add_comp(circuit, COMP_NPN_BJT, x + 200, y + 40, 0);
     q2->props.bjt.bf = 100;
 
-    // Tail resistor RE - connected to both emitters
-    Component *re = add_comp(circuit, COMP_RESISTOR, x + 100, y + 100, 90);
+    // Tail resistor RE - centred between the two emitters, below both bodies
+    Component *re = add_comp(circuit, COMP_RESISTOR, x + 140, y + 120, 90);
     re->props.resistor.resistance = 10000.0;
 
-    // Ground at bottom center
-    Component *gnd = add_comp(circuit, COMP_GROUND, x + 100, y + 180, 0);
+    // Ground on the bottom rail
+    Component *gnd = add_comp(circuit, COMP_GROUND, x + 40, y + 240, 0);
 
     // Base resistors - horizontal orientation. The pair is direct-coupled: the input
     // sources carry a 6 V DC offset that biases both bases (single-supply, tail to GND),
     // so Ve ~ 5.3 V, Itail ~ 0.53 mA and each collector sits near 10.8 V.
     // (A capacitor-coupled input would leave the bases with no DC path and both BJTs off.)
-    Component *cin1 = add_comp(circuit, COMP_RESISTOR, x - 40, y + 40, 0);
+    // Both inputs enter from the left now that both transistors face the same way: Q1's on the
+    // base row, Q2's on a clear row above the collector resistors, dropping in between them.
+    Component *cin1 = add_comp(circuit, COMP_RESISTOR, x - 60, y + 40, 0);
     cin1->props.resistor.resistance = 1000.0;
-    Component *cin2 = add_comp(circuit, COMP_RESISTOR, x + 240, y + 40, 180);
+    Component *cin2 = add_comp(circuit, COMP_RESISTOR, x - 60, y - 110, 0);
     cin2->props.resistor.resistance = 1000.0;
 
-    // AC input sources - on far left and right, DC-biased at 6 V, anti-phase
-    Component *vin1 = add_comp(circuit, COMP_AC_VOLTAGE, x - 100, y + 80, 0);
+    // AC input sources - DC-biased at 6 V, anti-phase
+    Component *vin1 = add_comp(circuit, COMP_AC_VOLTAGE, x - 160, y + 80, 0);
     vin1->props.ac_voltage.amplitude = 0.01;   // 10 mV each, antiphase: 20 mV differential keeps the pair linear (tanh saturates past ~4 V_T)
     vin1->props.ac_voltage.frequency = 1000.0;
     vin1->props.ac_voltage.offset = 6.0;
-    Component *vin2 = add_comp(circuit, COMP_AC_VOLTAGE, x + 300, y + 80, 0);
+    Component *vin2 = add_comp(circuit, COMP_AC_VOLTAGE, x - 260, y - 70, 0);
     vin2->props.ac_voltage.amplitude = 0.01;
     vin2->props.ac_voltage.frequency = 1000.0;
     vin2->props.ac_voltage.phase = 180.0;
@@ -1847,11 +1850,14 @@ static int place_differential_pair(Circuit *circuit, float x, float y) {
     int vcc_node = circuit_find_or_create_node(circuit, vcc_pos_x, vcc_rail_y, 5.0f);
     vcc->node_ids[0] = vcc_node;
 
-    // VCC- goes down to ground rail
+    // VCC- runs down the right-hand edge and joins the bottom rail at RE's column. The rail is
+    // drawn as a chain of segments between the columns that land on it, never as several
+    // full-width wires stacked on top of each other.
     float gnd_rail_y = gnd_y;
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vcc_neg_x, vcc_neg_y, 5.0f),
                      circuit_find_or_create_node(circuit, vcc_neg_x, gnd_rail_y, 5.0f));
-    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vcc_neg_x, gnd_rail_y, 5.0f), gnd_node);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vcc_neg_x, gnd_rail_y, 5.0f),
+                     circuit_find_or_create_node(circuit, re_bot_x, gnd_rail_y, 5.0f));
     vcc->node_ids[1] = gnd_node;
 
     // VCC+ to RC1 top: go left then down
@@ -1886,14 +1892,15 @@ static int place_differential_pair(Circuit *circuit, float x, float y) {
     // === EMITTER TAIL CONNECTION ===
     // Both emitters connect above RE, then drop down to RE top to avoid crossing the resistor
     // Use a horizontal wire above RE (at emit1_y level + some offset to clear transistor bodies)
-    float emitter_bus_y = emit1_y + 15;  // Horizontal bus just below emitters
+    // The bus runs along RE's own top terminal row. Putting it a fixed 15 px below the
+    // emitters instead dropped it inside RE's body, so both emitter wires arrived by
+    // running horizontally through the resistor.
+    float emitter_bus_y = re_top_y;
 
-    // Tail node at RE top
+    // Tail node at RE top - the emitters meet on it directly
     int tail_node = circuit_find_or_create_node(circuit, re_top_x, re_top_y, 5.0f);
     re->node_ids[0] = tail_node;
-
-    // Create emitter bus node (where both emitters meet, directly above RE)
-    int emitter_bus_node = circuit_find_or_create_node(circuit, re_top_x, emitter_bus_y, 5.0f);
+    int emitter_bus_node = tail_node;
 
     // Q1 emitter: down to bus level, then right to center
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, emit1_x, emit1_y, 5.0f),
@@ -1907,11 +1914,12 @@ static int place_differential_pair(Circuit *circuit, float x, float y) {
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, emit2_x, emitter_bus_y, 5.0f), emitter_bus_node);
     q2->node_ids[2] = emitter_bus_node;
 
-    // Drop from emitter bus down to RE top (vertical wire, doesn't cross RE body)
-    circuit_add_wire(circuit, emitter_bus_node, tail_node);
+    // No drop needed: the bus already is RE's top terminal.
 
-    // RE bottom to ground
-    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, re_bot_x, re_bot_y, 5.0f), gnd_node);
+    // RE bottom down to the rail, then left to the ground symbol
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, re_bot_x, re_bot_y, 5.0f),
+                     circuit_find_or_create_node(circuit, re_bot_x, gnd_rail_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, re_bot_x, gnd_rail_y, 5.0f), gnd_node);
     re->node_ids[1] = gnd_node;
 
     // === INPUT COUPLING CAPACITOR TO BASE CONNECTIONS ===
@@ -1923,42 +1931,42 @@ static int place_differential_pair(Circuit *circuit, float x, float y) {
     cin1->node_ids[1] = base1_node;
     q1->node_ids[0] = base1_node;
 
-    // Cin2 output to Q2 base - horizontal wire
+    // Cin2 output to Q2 base - across above the collector resistors, then down the clear
+    // column between the two transistors and in on the base row.
     int base2_node = circuit_find_or_create_node(circuit, base2_x, base2_y, 5.0f);
+    float drop_x = base1_x + 80.0f;   // between Q1's body and Q2's
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, cin2_out_x, cin2_out_y, 5.0f),
-                     circuit_find_or_create_node(circuit, base2_x, cin2_out_y, 5.0f));
-    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, base2_x, cin2_out_y, 5.0f), base2_node);
+                     circuit_find_or_create_node(circuit, drop_x, cin2_out_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, drop_x, cin2_out_y, 5.0f),
+                     circuit_find_or_create_node(circuit, drop_x, base2_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, drop_x, base2_y, 5.0f), base2_node);
     cin2->node_ids[1] = base2_node;
     q2->node_ids[0] = base2_node;
 
     // === VIN1 TO CIN1 CONNECTION ===
-    // Vin1+ up to capacitor input level, then right to cin1 input
+    // Each source sits on its base resistor's own row, so the feed is a single wire
     int vin1_node = circuit_find_or_create_node(circuit, vin1_pos_x, vin1_pos_y, 5.0f);
     vin1->node_ids[0] = vin1_node;
-    circuit_add_wire(circuit, vin1_node, circuit_find_or_create_node(circuit, vin1_pos_x, cin1_in_y, 5.0f));
-    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vin1_pos_x, cin1_in_y, 5.0f),
-                     circuit_find_or_create_node(circuit, cin1_in_x, cin1_in_y, 5.0f));
+    circuit_add_wire(circuit, vin1_node, circuit_find_or_create_node(circuit, cin1_in_x, cin1_in_y, 5.0f));
     cin1->node_ids[0] = vin1_node;
 
-    // Vin1- to ground: down then right to ground rail
+    // Vin1- down to the bottom rail, then right to the ground symbol
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vin1_neg_x, vin1_neg_y, 5.0f),
                      circuit_find_or_create_node(circuit, vin1_neg_x, gnd_rail_y, 5.0f));
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vin1_neg_x, gnd_rail_y, 5.0f), gnd_node);
     vin1->node_ids[1] = gnd_node;
 
     // === VIN2 TO CIN2 CONNECTION ===
-    // Vin2+ up to capacitor input level, then left to cin2 input
     int vin2_node = circuit_find_or_create_node(circuit, vin2_pos_x, vin2_pos_y, 5.0f);
     vin2->node_ids[0] = vin2_node;
-    circuit_add_wire(circuit, vin2_node, circuit_find_or_create_node(circuit, vin2_pos_x, cin2_in_y, 5.0f));
-    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vin2_pos_x, cin2_in_y, 5.0f),
-                     circuit_find_or_create_node(circuit, cin2_in_x, cin2_in_y, 5.0f));
+    circuit_add_wire(circuit, vin2_node, circuit_find_or_create_node(circuit, cin2_in_x, cin2_in_y, 5.0f));
     cin2->node_ids[0] = vin2_node;
 
-    // Vin2- to ground: down then left to ground rail
+    // Vin2- down the outside and along the rail as far as Vin1's column
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vin2_neg_x, vin2_neg_y, 5.0f),
                      circuit_find_or_create_node(circuit, vin2_neg_x, gnd_rail_y, 5.0f));
-    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vin2_neg_x, gnd_rail_y, 5.0f), gnd_node);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vin2_neg_x, gnd_rail_y, 5.0f),
+                     circuit_find_or_create_node(circuit, vin1_neg_x, gnd_rail_y, 5.0f));
     vin2->node_ids[1] = gnd_node;
 
     return 11;
@@ -2734,10 +2742,13 @@ static int place_comparator(Circuit *circuit, float x, float y) {
                      circuit_find_or_create_node(circuit, rpu_top_x, rpu_top_y, 5.0f));
     rpu->node_ids[0] = vcc_node;
 
-    // Vcc- to ground
+    // Vcc- to ground. The three returns (Vcc-, R2, Vin-) hand off along the rail from left to
+    // right instead of each drawing its own full-width wire to the ground symbol - otherwise
+    // three wires lie on top of one another and a single crossing gets reported three times.
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vcc_neg_x, vcc_neg_y, 5.0f),
                      circuit_find_or_create_node(circuit, vcc_neg_x, gnd_y, 5.0f));
-    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vcc_neg_x, gnd_y, 5.0f), gnd_node);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vcc_neg_x, gnd_y, 5.0f),
+                     circuit_find_or_create_node(circuit, r2_bot_x, gnd_y, 5.0f));
     vcc->node_ids[1] = gnd_node;
 
     // R1/R2 junction to + input
@@ -2756,18 +2767,30 @@ static int place_comparator(Circuit *circuit, float x, float y) {
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, r2_bot_x, gnd_y, 5.0f), gnd_node);
     r2->node_ids[1] = gnd_node;
 
-    // Vin to - input
+    // Vin to - input. The straight shot along vin_pos_y is the divider's own row: it ran
+    // clean through R2's body. Go out to the left of the source, under the divider, and up
+    // into the inverting pin between the divider and the op-amp.
+    float in_left   = vin_pos_x - 60.0f;
+    float in_bus_y  = gnd_y + 40.0f;      // under the ground rail, which nothing else reaches
+    float in_up_x   = r2_bot_x + 20.0f;   // between the divider column and the ground symbol
     int vin_node = circuit_find_or_create_node(circuit, vin_pos_x, vin_pos_y, 5.0f);
     vin->node_ids[0] = vin_node;
-    circuit_add_wire(circuit, vin_node, circuit_find_or_create_node(circuit, inv_x, vin_pos_y, 5.0f));
-    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, inv_x, vin_pos_y, 5.0f),
+    circuit_add_wire(circuit, vin_node, circuit_find_or_create_node(circuit, in_left, vin_pos_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, in_left, vin_pos_y, 5.0f),
+                     circuit_find_or_create_node(circuit, in_left, in_bus_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, in_left, in_bus_y, 5.0f),
+                     circuit_find_or_create_node(circuit, in_up_x, in_bus_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, in_up_x, in_bus_y, 5.0f),
+                     circuit_find_or_create_node(circuit, in_up_x, inv_y, 5.0f));
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, in_up_x, inv_y, 5.0f),
                      circuit_find_or_create_node(circuit, inv_x, inv_y, 5.0f));
     opamp->node_ids[0] = vin_node;
 
-    // Vin- to ground
+    // Vin- to ground - joins the rail at Vcc-'s column, not all the way across
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vin_neg_x, vin_neg_y, 5.0f),
                      circuit_find_or_create_node(circuit, vin_neg_x, gnd_y, 5.0f));
-    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vin_neg_x, gnd_y, 5.0f), gnd_node);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, vin_neg_x, gnd_y, 5.0f),
+                     circuit_find_or_create_node(circuit, vcc_neg_x, gnd_y, 5.0f));
     vin->node_ids[1] = gnd_node;
 
     // Output with pull-up

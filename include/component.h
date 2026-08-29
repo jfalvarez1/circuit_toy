@@ -551,6 +551,7 @@ typedef union {
         double max_current;     // Max current per segment (A)
         bool common_cathode;    // true=common cathode, false=common anode
         uint8_t segments;       // Active segments bitmask (a=bit0, b=bit1, ..., g=bit6, dp=bit7)
+        double currents[8];     // Per-segment current (A), order a,b,c,d,e,f,g,dp - drives the glow
         bool ideal;             // Ideal mode
     } seven_seg;
 

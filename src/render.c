@@ -161,7 +161,8 @@ void render_d_flipflop(RenderContext *ctx, float x, float y, int rotation);
 void render_vco(RenderContext *ctx, float x, float y, int rotation);
 void render_optocoupler(RenderContext *ctx, float x, float y, int rotation);
 void render_test_point(RenderContext *ctx, float x, float y, int rotation);
-void render_7seg_display(RenderContext *ctx, float x, float y, int rotation);
+void render_7seg_display(RenderContext *ctx, float x, float y, int rotation,
+                         const double *currents, double max_current);
 void render_led_array(RenderContext *ctx, float x, float y, int rotation,
                       double *currents, bool *failed, double max_current, int color_idx);
 void render_bcd_decoder(RenderContext *ctx, float x, float y, int rotation);
@@ -1231,7 +1232,9 @@ void render_component(RenderContext *ctx, Component *comp) {
             render_test_point(ctx, comp->x, comp->y, comp->rotation);
             break;
         case COMP_7SEG_DISPLAY:
-            render_7seg_display(ctx, comp->x, comp->y, comp->rotation);
+            render_7seg_display(ctx, comp->x, comp->y, comp->rotation,
+                                comp->props.seven_seg.currents,
+                                comp->props.seven_seg.max_current);
             break;
         case COMP_LED_ARRAY:
             render_led_array(ctx, comp->x, comp->y, comp->rotation,
@@ -4084,7 +4087,8 @@ void render_test_point(RenderContext *ctx, float x, float y, int rotation) {
 
 // 7-segment display
 // Component size: 80x100, terminals: a,b,c,d,COM on left (-40), e,f,g,DP on right (40)
-void render_7seg_display(RenderContext *ctx, float x, float y, int rotation) {
+void render_7seg_display(RenderContext *ctx, float x, float y, int rotation,
+                         const double *currents, double max_current) {
     // DIP-style IC package
     // Outer rectangle
     render_draw_line_rotated(ctx, x, y, -30, -45, 30, -45, rotation);  // Top
@@ -4108,29 +4112,65 @@ void render_7seg_display(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_line_rotated(ctx, x, y, 30, 0, 40, 0, rotation);        // g
     render_draw_line_rotated(ctx, x, y, 30, 20, 40, 20, rotation);      // DP
 
-    // 7-segment pattern inside (digit "8" outline)
-    // Top horizontal (segment a)
-    render_draw_line_rotated(ctx, x, y, -15, -35, 15, -35, rotation);
-    // Top-left vertical (segment f)
-    render_draw_line_rotated(ctx, x, y, -15, -35, -15, -5, rotation);
-    // Top-right vertical (segment b)
-    render_draw_line_rotated(ctx, x, y, 15, -35, 15, -5, rotation);
-    // Middle horizontal (segment g)
-    render_draw_line_rotated(ctx, x, y, -15, -5, 15, -5, rotation);
-    // Bottom-left vertical (segment e)
-    render_draw_line_rotated(ctx, x, y, -15, -5, -15, 25, rotation);
-    // Bottom-right vertical (segment c)
-    render_draw_line_rotated(ctx, x, y, 15, -5, 15, 25, rotation);
-    // Bottom horizontal (segment d)
-    render_draw_line_rotated(ctx, x, y, -15, 25, 15, 25, rotation);
-    // Decimal point (segment DP)
-    render_fill_circle(ctx, x + 20, y + 25, 3);
+    /* The digit. Each segment is drawn dim when it is off and as a thick bright bar when
+       current is flowing through it, so the display reads as a display and not as a fixed
+       "8" outline. Order matches the stamp: a,b,c,d,e,f,g,dp. */
+    static const float seg_pts[7][4] = {
+        { -15, -35,  15, -35 },   // a  top
+        {  15, -35,  15,  -5 },   // b  top right
+        {  15,  -5,  15,  25 },   // c  bottom right
+        { -15,  25,  15,  25 },   // d  bottom
+        { -15,  -5, -15,  25 },   // e  bottom left
+        { -15, -35, -15,  -5 },   // f  top left
+        { -15,  -5,  15,  -5 },   // g  middle
+    };
+    const Color off_color = {0x30, 0x50, 0x58, 0xff};   // unlit segment: barely there
+    const Color on_color  = {0xff, 0x30, 0x30, 0xff};   // lit: red, like a real LED digit
 
-    // Label
+    for (int s = 0; s < 7; s++) {
+        double i_seg = currents ? currents[s] : 0.0;
+        bool lit = i_seg > 0.0001;                       // 0.1 mA, same threshold as the LED bar
+        float x1 = seg_pts[s][0], y1 = seg_pts[s][1];
+        float x2 = seg_pts[s][2], y2 = seg_pts[s][3];
+
+        if (!lit) {
+            SDL_SetRenderDrawColor(ctx->renderer, off_color.r, off_color.g, off_color.b, 0xff);
+            render_draw_line_rotated(ctx, x, y, x1, y1, x2, y2, rotation);
+            continue;
+        }
+
+        float brightness = (float)(i_seg / (max_current > 0 ? max_current : 0.02));
+        if (brightness > 1.0f) brightness = 1.0f;
+        brightness = powf(brightness, 0.6f);
+        brightness = fminf(brightness * 1.3f, 1.0f);
+        SDL_SetRenderDrawColor(ctx->renderer,
+                               (Uint8)(on_color.r * brightness),
+                               (Uint8)(on_color.g * brightness),
+                               (Uint8)(on_color.b * brightness), 0xff);
+        /* Thicken across the segment's short axis so a lit bar is unmistakable. */
+        bool horiz = (y1 == y2);
+        for (int t = -2; t <= 2; t++) {
+            if (horiz) render_draw_line_rotated(ctx, x, y, x1, y1 + t, x2, y2 + t, rotation);
+            else       render_draw_line_rotated(ctx, x, y, x1 + t, y1, x2 + t, y2, rotation);
+        }
+    }
+
+    // Decimal point (segment DP)
+    double i_dp = currents ? currents[7] : 0.0;
+    if (i_dp > 0.0001) {
+        SDL_SetRenderDrawColor(ctx->renderer, on_color.r, on_color.g, on_color.b, 0xff);
+        render_fill_circle(ctx, x + 20, y + 25, 4);
+    } else {
+        SDL_SetRenderDrawColor(ctx->renderer, off_color.r, off_color.g, off_color.b, 0xff);
+        render_draw_circle(ctx, x + 20, y + 25, 3);
+    }
+    SDL_SetRenderDrawColor(ctx->renderer, 0x00, 0xff, 0xff, 0xff);
+
+    /* Label below the package. It used to sit dead centre, on top of the digit. */
     int sx, sy;
-    render_world_to_screen(ctx, x, y, &sx, &sy);
+    render_world_to_screen(ctx, x, y + 56, &sx, &sy);
     Color label_color = {0x00, 0xff, 0xff, 0xff};
-    render_draw_text_small(ctx, "7SEG", sx - 10, sy - 5, label_color);
+    render_draw_text_small(ctx, "7SEG", sx - 14, sy, label_color);
 }
 
 // LED array (bar graph) - 8 individual LEDs with common cathode

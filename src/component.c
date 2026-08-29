@@ -5501,6 +5501,12 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 double Id = Is * (expTerm - 1);
                 double Ieq = Id - Gd * Vd;
 
+                /* Keep the segment current so the symbol can actually light up. Without this the
+                   display drew the same dead outline whatever it was driven with. */
+                comp->props.seven_seg.currents[j] = Id;
+                if (Id > 0.0001) comp->props.seven_seg.segments |= (uint8_t)(1u << j);
+                else             comp->props.seven_seg.segments &= (uint8_t)~(1u << j);
+
                 STAMP_CONDUCTANCE(n[i], n[com], Gd);
                 if (n[i] > 0) vector_add(b, n[i]-1, -Ieq);
                 if (n[com] > 0) vector_add(b, n[com]-1, Ieq);

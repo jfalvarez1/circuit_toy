@@ -86,7 +86,16 @@ executable('circuit-playground',
   include_directories : inc_dirs,
   dependencies : [sdl2_dep, sdl2main_dep] + win_deps,
   install : true,
-  win_subsystem : 'console'  # Show console window for debug output
+  # A GUI subsystem binary, not a console one. As a console app the updater's relaunch was a
+  # coin flip: PowerShell starts the new exe, its own console window closes a moment later, and
+  # a console process attached to a console that is going away either takes the close event and
+  # dies ("reopens and just crashes instantly") or fails during DLL init with 0xC0000142 ("the
+  # application was unable to start correctly"). It also meant a console window behind the app
+  # for anyone who just double-clicks it.
+  # Command-line output is not lost: main() attaches to the parent console when there are
+  # arguments (see attach_parent_console), and redirection to a pipe or file works regardless,
+  # which is how CI captures it.
+  win_subsystem : 'windows'
 )
 
 # SDL2 runtime next to the exe, so the app starts from a taskbar pin or Explorer (Windows
