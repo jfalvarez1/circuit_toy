@@ -9839,7 +9839,7 @@ static int place_mos_idvgs(Circuit *circuit, float x, float y) {
         rail = rn;
     }
     add_label(circuit, x - 40, y - 320, "MOSFET TRANSFER CURVES: one 0-4 V gate ramp into three devices; each source sense resistor makes the probe read I_D");
-    add_label(circuit, x - 40, y + 380, "Press the scope's Y-T button for X-Y and CH1 (the gate) becomes the x axis: these are I_D vs V_GS curves.");
+    add_label(circuit, x - 40, y + 420, "Press the scope's Y-T button for X-Y and CH1 (the gate) becomes the x axis: these are I_D vs V_GS curves.");
     add_label(circuit, x - 40, y + 330, "Each channel is 1 ohm x I_D, so 1 V = 1 A. Watch each device leave cutoff at its own Vth and rise with its own kn.");
     add_label(circuit, x - 40, y + 360, "TRY: select a device and edit Vth, W/L or Kn in the properties panel - the curve moves as you type.");
     return 20;
@@ -11935,16 +11935,9 @@ static int place_iv_ldo_vs_buck(Circuit *circuit, float x, float y) {
     ld2->props.resistor.power_rating = 15.0;   /* 4.8 W steady, and it rings a little on the way there */
 
     add_label(circuit, x - 40, y - 80, "LDO vs SWITCHER: 12 V in, 5 V out, 1 A out. Read the two input ammeters and compare them");
-    add_label(circuit, x + 560, y + 60, "LINEAR: input current = output current. 1 A in, 1 A out, and the 7 V");
-    add_label(circuit, x + 560, y + 90, "difference x 1 A = 7 W leaves as heat. Efficiency = Vout/Vin = 42 %.");
-    add_label(circuit, x + 560, y + 120, "It is quiet, cheap, needs two capacitors, and it will need a heatsink.");
-    add_label(circuit, x + 760, by + 60, "SWITCHING: power in = power out (plus losses). 5 W out of a 12 V rail is");
-    add_label(circuit, x + 760, by + 90, "about 440 mA in, not 1 A. Efficiency ~90 %, and no heatsink.");
-    add_label(circuit, x + 760, by + 120, "It costs an inductor, a controller, layout care, and 100 kHz of ripple.");
-    add_label(circuit, x - 40, by + 320, "INTERVIEW: 'when would you use an LDO instead of a buck?' Small step-down ratio, low current, or when");
-    add_label(circuit, x - 40, by + 350, "the load hates ripple - an RF synthesiser or an ADC reference. And often both: a buck down to 5 V and an");
-    add_label(circuit, x - 40, by + 380, "LDO from 5 V to 3.3 V, so the LDO only burns 1.7 V and still cleans up the switcher's output.");
-    add_label(circuit, x - 40, by + 410, "ALSO SEE: 7805 Regulator, LM317 Adj Reg, Buck Converter, Input vs Output Capacitance.");
+    add_label(circuit, x + 560, y + 60, "LINEAR: 1 A in for 1 A out. The other 7 V leaves as 7 W of heat - 42 %");
+    add_label(circuit, x + 760, by + 60, "SWITCHING: 440 mA in for the same 1 A out - about 90 %, and no heatsink");
+    add_label(circuit, x - 40, by + 320, "ALSO SEE: 7805 Regulator, LM317 Adj Reg, Buck Converter, Input vs Output Capacitance.");
     return 30;
 }
 
@@ -12331,19 +12324,27 @@ static int place_iv_cap_energy(Circuit *circuit, float x, float y) {
         Component *g1 = add_comp(circuit, COMP_GROUND, x, py + 200, 0);
         g1->node_ids[0] = TN(x, py + 180); TW(c1b, TN(x, py + 180));
 
-        Component *sw = add_comp(circuit, COMP_ANALOG_SWITCH, x + 180, py + 20, 0);  // IN(140,20) OUT(220,20) CTL(180,40)
-        sw->props.analog_switch.r_on = rt[k]; sw->props.analog_switch.r_off = 1e9;
-        sw->props.analog_switch.v_on = 2.5; sw->props.analog_switch.ideal = false;
-        int si = TN(x + 140, py + 20), so = TN(x + 220, py + 20), ctl = TN(x + 180, py + 40);
+        /* An NMOS, turned so its channel lies along the row and its gate hangs below: the drain
+           on the left where the charged capacitor is, the source on the right. K is set so the
+           channel is rt[k] at the middle of the transfer, where V_gs is about 12.5 V. */
+        Component *sw = add_comp(circuit, COMP_NMOS, x + 180, py + 40, 270);   // D(160,20) S(200,20) G(180,60)
+        sw->props.mosfet.vth = 1.0;
+        sw->props.mosfet.kp = 1.0 / (11.5 * rt[k]);
+        sw->props.mosfet.lambda = 0.0;
+        sw->props.mosfet.ideal = true;              /* square law, no parasitics: this is the switch */
+        int si = TN(x + 160, py + 20), so = TN(x + 200, py + 20), ctl = TN(x + 180, py + 60);
         TW(c1t, TN(x, py + 20)); TW(TN(x, py + 20), si);
-        sw->node_ids[0] = si; sw->node_ids[1] = so; sw->node_ids[2] = ctl;
+        sw->node_ids[1] = si; sw->node_ids[2] = so; sw->node_ids[0] = ctl;   /* D, S, G */
         Component *pw = add_comp(circuit, COMP_PULSE_SOURCE, x + 180, py + 140, 0);  // +(180,100) -(180,180)
-        pw->props.pulse_source.v_low = 0; pw->props.pulse_source.v_high = 5.0;
+        /* 15 V, not 5: an NMOS pass transistor stops conducting when its source reaches
+           V_gate - V_th, so a gate at the rail would leave the transfer unfinished. This is
+           what a gate driver or a bootstrap is for. */
+        pw->props.pulse_source.v_low = 0; pw->props.pulse_source.v_high = 15.0;
         pw->props.pulse_source.delay = 20e-3;      /* close it well after the scope has started */
         pw->props.pulse_source.rise_time = pw->props.pulse_source.fall_time = 1e-6;
         pw->props.pulse_source.pulse_width = 10.0; pw->props.pulse_source.period = 100.0;
         int pp = TN(x + 180, py + 100); pw->node_ids[0] = pp;
-        TW(ctl, TN(x + 180, py + 80)); TW(TN(x + 180, py + 80), pp);
+        TW(ctl, pp);   /* gate straight down to the pulse source */
         Component *gp = add_comp(circuit, COMP_GROUND, x + 180, py + 240, 0);
         connect_terminals(circuit, pw, 1, gp, 0);
 

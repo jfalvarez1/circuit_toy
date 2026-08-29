@@ -20,6 +20,7 @@
 #include "spice.h"
 #include "crashlog.h"
 #include "version.h"
+#include "label.h"   /* label_wrap: framing has to measure text the way it is drawn */
 #include "settings.h"
 #include "file_io.h"
 #include "circuits.h"
@@ -2153,8 +2154,20 @@ void app_zoom_to_fit(App *app) {
     float minx = 1e9f, miny = 1e9f, maxx = -1e9f, maxy = -1e9f;
     for (int i = 0; i < app->circuit->num_components; i++) {
         Component *c = app->circuit->components[i];
-        float w = (c->type == COMP_TEXT) ? (float)strlen(c->props.text.text) * 6.0f : 60.0f;
-        float h = (c->type == COMP_TEXT) ? 16.0f : 60.0f;
+        /* A label's box the way it is actually drawn: wrapped, at CANVAS_TEXT_PX a character.
+           The old 6 px guess was less than half of it, so the fit framed a template as if its
+           notes were half their width and the right-hand ones ended up under the scope panel. */
+        float w = 60.0f, h = 60.0f;
+        if (c->type == COMP_TEXT) {
+            int fs = c->props.text.font_size; if (fs < 1) fs = 1; if (fs > 3) fs = 3;
+            int st[CANVAS_TEXT_MAX_LINES], ln[CANVAS_TEXT_MAX_LINES];
+            int nl = label_wrap(c->props.text.text, CANVAS_TEXT_WRAP, st, ln, CANVAS_TEXT_MAX_LINES);
+            int widest = 0;
+            for (int q = 0; q < nl; q++) if (ln[q] > widest) widest = ln[q];
+            if (nl <= 0) { nl = 1; widest = (int)strlen(c->props.text.text); }
+            w = (float)widest * CANVAS_TEXT_PX * fs;
+            h = (float)nl * (CANVAS_TEXT_PX * fs + 2);
+        }
         float x0 = (c->type == COMP_TEXT) ? c->x : c->x - w / 2;
         float y0 = (c->type == COMP_TEXT) ? c->y : c->y - h / 2;
         if (x0 < minx) minx = x0; if (y0 < miny) miny = y0;
@@ -2211,8 +2224,20 @@ bool app_place_template_centered(App *app, CircuitTemplateType type) {
     float minx = 1e9f, miny = 1e9f, maxx = -1e9f, maxy = -1e9f;
     for (int i = first; i < app->circuit->num_components; i++) {
         Component *c = app->circuit->components[i];
-        float w = (c->type == COMP_TEXT) ? (float)strlen(c->props.text.text) * 6.0f : 60.0f;
-        float h = (c->type == COMP_TEXT) ? 16.0f : 60.0f;
+        /* A label's box the way it is actually drawn: wrapped, at CANVAS_TEXT_PX a character.
+           The old 6 px guess was less than half of it, so the fit framed a template as if its
+           notes were half their width and the right-hand ones ended up under the scope panel. */
+        float w = 60.0f, h = 60.0f;
+        if (c->type == COMP_TEXT) {
+            int fs = c->props.text.font_size; if (fs < 1) fs = 1; if (fs > 3) fs = 3;
+            int st[CANVAS_TEXT_MAX_LINES], ln[CANVAS_TEXT_MAX_LINES];
+            int nl = label_wrap(c->props.text.text, CANVAS_TEXT_WRAP, st, ln, CANVAS_TEXT_MAX_LINES);
+            int widest = 0;
+            for (int q = 0; q < nl; q++) if (ln[q] > widest) widest = ln[q];
+            if (nl <= 0) { nl = 1; widest = (int)strlen(c->props.text.text); }
+            w = (float)widest * CANVAS_TEXT_PX * fs;
+            h = (float)nl * (CANVAS_TEXT_PX * fs + 2);
+        }
         float x0 = (c->type == COMP_TEXT) ? c->x : c->x - w / 2, y0 = (c->type == COMP_TEXT) ? c->y : c->y - h / 2;
         if (x0 < minx) minx = x0; if (y0 < miny) miny = y0;
         if (x0 + w > maxx) maxx = x0 + w; if (y0 + h > maxy) maxy = y0 + h;
