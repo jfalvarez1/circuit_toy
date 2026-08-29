@@ -6234,7 +6234,11 @@ static int place_phase_shift_osc(Circuit *circuit, float x, float y) {
     u->props.opamp.vmax = 5.0;
     u->props.opamp.vmin = -5.0;
     Component *rf = add_comp(circuit, COMP_RESISTOR, x, y - 120, 0);           // (-40,-120)-(40,-120)
-    rf->props.resistor.resistance = 33000.0;   // gain 33: just above the 29 minimum, limits overdrive
+    /* Gain 33 against the 29 a phase-shift loop needs to start. Nothing controls the amplitude
+       after that - no lamp, no JFET, no diode limiter - so the oscillation grows until the rails
+       stop it, and the steady state is a lightly clipped sine. That is what this circuit does as
+       drawn; a limiter across Rf is what would make it a clean one. */
+    rf->props.resistor.resistance = 33000.0;
 
     // --- non-inverting input to ground ---
     Component *gnd_p = add_comp(circuit, COMP_GROUND, x - 80, y + 40, 0);      // terminal (-80,20)

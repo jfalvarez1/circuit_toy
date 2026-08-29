@@ -50,6 +50,9 @@ jobs:
       # compile takes thirty-five seconds. The same script runs locally: bash tools/run_audits.sh
       - name: Template audit
         shell: bash
+        env:
+          SDL_VIDEODRIVER: dummy
+          CIRCUIT_TOY_NO_UPDATE: '1'
         run: bash tools/run_audits.sh build
 
       # Start the binary this job is about to ship: window, renderer, a template placed, frames

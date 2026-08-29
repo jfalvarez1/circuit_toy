@@ -634,6 +634,12 @@ typedef enum {
 UIActionKind ui_action_kind(int action, int *index);
 /* One 1-2-5 step of the vertical scale, on the channel the ALL / channel chips point at. */
 void ui_scope_volt_step(UIState *ui, int dir);
+/* The most recent trigger edge in a channel's history, or -1: what decides whether a trace
+   stands still. Shared by the display and by --trig-test. */
+int ui_scope_find_trigger(const UIState *ui, const double *times, const double *values, int count,
+                          double time_window, double level);
+/* Point the trigger at a channel that actually swings, at the middle of its range. */
+void ui_scope_autotrigger(UIState *ui, Simulation *sim);
 
 // Set status message
 void ui_set_status(UIState *ui, const char *msg);

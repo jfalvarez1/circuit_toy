@@ -29,7 +29,7 @@ SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test
 --flow-test --switch-test --part-test --op-test --sub-test --spice-test --xtal-test --view-test
 --conn-test --file-test --line-test --std-test --burn-test --knob-test --geom-test --param-test
 --tesla-test"
-APP_MODES="--layout-test --autoset-test --place-test"
+APP_MODES="--layout-test --autoset-test --place-test --trig-test"
 # The battery cannot finish faster than its longest single suite, and two of them are most of it:
 # demo-test is two thirds on its own, and the plain load-and-run is the next. Both walk every
 # template independently, so they run as shards - quarters of the template list, one process each.
@@ -110,6 +110,20 @@ if [ "$fails" -gt 0 ]; then
         echo "=== $m ==="
         grep -i "fail" "$out/$name.log" | head -40
     done
+fi
+
+# The one check that has to draw: a triggered trace has to stand still between frames, which is
+# a property of the picture and not of any number. Skipped where pillow is not installed.
+if command -v python >/dev/null 2>&1; then
+    if python tools/trace_stability.py "$APP" > "$out/stability.log" 2>&1; then
+        printf '[ OK ] %-14s %s
+' "stability" "$(tail -n 1 "$out/stability.log" | cut -c1-100)"
+    else
+        printf '[FAIL] %-14s %s
+' "stability" "$(tail -n 1 "$out/stability.log" | cut -c1-100)"
+        grep -i fail "$out/stability.log" | head -10
+        fails=$((fails + 1))
+    fi
 fi
 
 echo

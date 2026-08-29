@@ -11,7 +11,12 @@
 
 // Simulation configuration
 #define DEFAULT_TIME_STEP 1e-7    // 100 nanoseconds - good for observing transients
-#define MIN_TIME_STEP 1e-9        // 1 nanosecond minimum
+/* 1 ns was the floor, and it is the reason the transmission-line templates looked untriggered:
+   at 5 ns a division the scope asks for a step of 250 ps and got 1 ns, so each division of the
+   screen was five samples. The trace was a zigzag and the trigger point could only land on one
+   of five places in a division, which reads as jitter. 10 ps lets a 5 ns/div screen have its
+   twenty samples a division like every other circuit. */
+#define MIN_TIME_STEP 1e-11       // 10 picoseconds minimum
 #define MAX_TIME_STEP 0.01        // 10 milliseconds maximum
 #define MAX_ITERATIONS 50
 #define CONVERGENCE_TOL 1e-9

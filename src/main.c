@@ -25,6 +25,120 @@ static bool rects_overlap(const Rect *a, const Rect *b) {
     return a->x < b->x + b->w && b->x < a->x + a->w && a->y < b->y + b->h && b->y < a->y + a->h;
 }
 
+/* --trig-test: a repeating waveform has to stand still on the screen. The scope finds the most
+   recent edge through the trigger level and draws the window around it; if it finds none, the
+   display free-runs and the trace crawls sideways. A circuit whose response is a one-off - a step
+   into an RC, a fault, a start-up - has nothing to trigger on and is not judged here. The test
+   for "there is something to trigger on" is the channel's own data: two rising edges through the
+   middle of its range is a period, and then the scope must find an edge. A trace also has to be
+   drawn from enough samples to be worth triggering: at five samples a division the trigger point
+   can only land in five places, which reads as jitter however correct it is. */
+static int trig_test(void) {
+    int fails = 0, judged = 0, skipped = 0;
+    UIState *ui = calloc(1, sizeof *ui);
+    ui_init(ui);
+    ui->window_width = 1600; ui->window_height = 1000;
+    ui_update_layout(ui);
+
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti) continue;
+        Circuit *c = circuit_create();
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        Simulation *sim = simulation_create(c);
+        ui_scope_apply_template_preset(ui, (CircuitTemplateType)t);
+        ui->scope_num_channels = c->num_probes < MAX_PROBES ? c->num_probes : MAX_PROBES;
+        for (int ch = 0; ch < MAX_PROBES; ch++) {
+            ui->scope_channels[ch].enabled = ch < ui->scope_num_channels;
+            ui->scope_channels[ch].probe_idx = ch;
+        }
+        /* A swept source has no one frequency, and the app widens the time base to follow it
+           (scope_track_sweep). Judged at a fixed time base it is judged at whatever point of the
+           sweep the run happens to stop, which says nothing: at 100 Hz the whole screen is a
+           fifth of a cycle. The other audits pin the static frequency for the same reason. */
+        for (int i = 0; i < c->num_components; i++)
+            if (c->components[i]->type == COMP_AC_VOLTAGE)
+                c->components[i]->props.ac_voltage.frequency_sweep.enabled = false;
+
+        if (!simulation_dc_analysis(sim)) { simulation_free(sim); circuit_free(c); continue; }
+        simulation_auto_time_step(sim);
+        { double dtp = simulation_scope_time_step(sim, ui->scope_time_div);
+          if (dtp > 0 && dtp < sim->time_step) simulation_set_time_step(sim, dtp); }
+        simulation_set_history_span(sim, 20.0 * ui->scope_time_div);
+        simulation_start(sim);
+        /* far enough in that a start-up transient is over and the steady state is what is on
+           the screen - which is also what the user is looking at when they complain */
+        double run_to = 30.0 * ui->scope_time_div;
+        int guard = 0;
+        while (sim->time < run_to && guard++ < 400000) if (!simulation_step(sim)) break;
+
+        /* the trigger the app picks from the data, then the search the screen runs */
+        ui_scope_autotrigger(ui, sim);
+        int tc = ui->trigger_channel;
+        static double times[MAX_HISTORY], values[MAX_HISTORY];
+        int n = (tc >= 0 && tc < ui->scope_num_channels)
+                    ? simulation_get_history(sim, ui->scope_channels[tc].probe_idx, times, values, MAX_HISTORY)
+                    : 0;
+        double time_window = 10.0 * ui->scope_time_div;
+
+        /* Rises and falls counted apart, because "repeating" means the same edge twice over: a
+           single pulse crosses the level once each way, and a fault or a step is not something a
+           scope can hold still. Two rising edges is a period. */
+        int rises = 0, falls = 0;
+        if (n > 10) {
+            double lvl = ui->trigger_level;
+            for (int i = 1; i < n; i++) {
+                if (values[i - 1] < lvl && values[i] >= lvl) rises++;
+                else if (values[i - 1] > lvl && values[i] <= lvl) falls++;
+            }
+        }
+        int crossings = rises + falls;
+        bool repeating = (rises >= 2 || falls >= 2);
+        int idx = (n > 10) ? ui_scope_find_trigger(ui, times, values, n, time_window, ui->trigger_level) : -1;
+
+        double per_div = (n > 1 && times[n - 1] > times[0])
+                             ? (double)n / ((times[n - 1] - times[0]) / ui->scope_time_div) : 0.0;
+
+        if (!repeating) {
+            /* nothing repeating on the trigger channel: a transient, a DC operating point, a
+               one-shot. Free-running is the right behaviour and there is nothing to check. */
+            skipped++;
+            printf("[skip] trig %-28s %s crosses its level %d time(s), %d of them rising - not a "
+                   "repeating waveform\n", ti->name, ui_channel_name(ui, tc < 0 ? 0 : tc),
+                   crossings, rises);
+        } else {
+            judged++;
+            /* A trace drawn from a handful of samples a division is a zigzag whose trigger point
+               can only land on one of that handful, which reads as jitter however correctly it
+               triggers. The transmission-line templates had five samples a division because the
+               time step could not go below a nanosecond. */
+            if (idx >= 0 && per_div < 10.0) {
+                printf("[FAIL] trig %-28s %s triggers, but its window is drawn from %.1f samples "
+                       "a division (dt=%.4g): the trace and its trigger point both jitter\n",
+                       ti->name, ui_channel_name(ui, tc), per_div, sim->time_step);
+                fails++;
+            } else if (idx < 0) {
+                printf("[FAIL] trig %-28s %s crosses its level %d times in the window but the "
+                       "scope finds no edge to trigger on: the trace free-runs\n",
+                       ti->name, ui_channel_name(ui, tc), crossings);
+                fails++;
+            } else {
+                printf("[ OK ] trig %-28s %s @ %-10.4g %d crossings, edge at %d of %d, %.1f "
+                       "samples/div, dt=%.4g\n", ti->name, ui_channel_name(ui, tc),
+                       ui->trigger_level, crossings, idx, n,
+                       n > 1 ? (double)n / ((times[n - 1] - times[0]) / ui->scope_time_div) : 0.0,
+                       sim->time_step);
+            }
+        }
+        simulation_free(sim);
+        circuit_free(c);
+    }
+    free(ui);
+    printf("\ntrig-test: %d repeating waveforms judged, %d free-running, %d one-shots skipped\n",
+           judged, fails, skipped);
+    return fails;
+}
+
 /* --place-test: picking a circuit from the palette must place it, on its own, for every one of
    them. Two things have to hold and both broke in the same way. The click's action code has to
    be recognised as a circuit - the range only held a hundred templates while there are 187, so
@@ -640,6 +754,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--layout-test")) return layout_test();
         else if (!strcmp(argv[i], "--autoset-test")) return autoset_test();
         else if (!strcmp(argv[i], "--place-test")) return place_test();
+        else if (!strcmp(argv[i], "--trig-test")) return trig_test();
         else if (!strcmp(argv[i], "--crashlog")) { crashlog_dump_last(); return 0; }
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); usage(); return 2; }
     }

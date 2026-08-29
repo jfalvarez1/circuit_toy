@@ -3594,47 +3594,8 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 // - 0.0 = left edge (all post-trigger)
                 // - 0.5 = center (50% pre, 50% post)
                 // - 1.0 = right edge (all pre-trigger)
-                double post_trigger_ratio = 1.0 - ui->trigger_position;
-                int min_post_samples = (int)(time_window / (trig_times[trig_count-1] - trig_times[0]) * trig_count * post_trigger_ratio);
-                if (min_post_samples < 5) min_post_samples = 5;
-
-                // Search backwards from end - min_post_samples to find most recent trigger
-                int search_end = trig_count - min_post_samples;
-                int search_start = trig_count / 10;  // Don't search too far back
-                if (search_start < 1) search_start = 1;
-
-                for (int i = search_end; i >= search_start; i--) {
-                    bool triggered_here = false;
-                    double v_prev = trig_values[i - 1];
-                    double v_curr = trig_values[i];
-
-                    switch (ui->trigger_edge) {
-                        case TRIG_EDGE_RISING:
-                            // Rising edge: previous below level, current at or above
-                            if (v_prev < level && v_curr >= level) {
-                                triggered_here = true;
-                            }
-                            break;
-                        case TRIG_EDGE_FALLING:
-                            // Falling edge: previous above level, current at or below
-                            if (v_prev > level && v_curr <= level) {
-                                triggered_here = true;
-                            }
-                            break;
-                        case TRIG_EDGE_BOTH:
-                            // Either edge
-                            if ((v_prev < level && v_curr >= level) ||
-                                (v_prev > level && v_curr <= level)) {
-                                triggered_here = true;
-                            }
-                            break;
-                    }
-
-                    if (triggered_here) {
-                        trigger_idx = i;
-                        break;  // Use most recent trigger found
-                    }
-                }
+                trigger_idx = ui_scope_find_trigger(ui, trig_times, trig_values, trig_count,
+                                                   time_window, level);
             }
 
             // Handle trigger modes
@@ -3834,7 +3795,14 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     // appears at the trigger_position (horizontal trigger position)
                     // AUTO mode included: a found trigger anchors the trace; only when none was
                     // found does AUTO free-run (that is what AUTO means on a real scope)
-                    if (ui->triggered && trigger_idx >= 0 &&
+                    /* The remembered trigger time anchors the trace, whether or not this
+                       particular frame ran a search. It often does not: the holdoff suppresses
+                       one, and SINGLE stops after the first. Requiring a fresh trigger_idx meant
+                       those frames fell through to the free-running branch below and the trace
+                       slid sideways by however far the simulation had advanced - which is what
+                       "it does not trigger properly" looks like, on every template, one frame in
+                       two. The trigger only stops anchoring when it ages out of the buffer. */
+                    if (ui->triggered &&
                         ui->scope_last_trigger_time >= t_start && ui->scope_last_trigger_time <= t_end) {
                         // Position the trigger point at trigger_position on screen
                         // t_reference is the time at x=0, trigger is at trigger_position
@@ -3935,6 +3903,16 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     ui->scope_ch_shift[ch] = offset - ui->scope_channels[ch].offset;
                     ui->scope_ch_center[ch] = ch_center;
                     ui->scope_ch_scale[ch] = ch_scale;
+                    /* SCOPE_DEBUG=1 prints what each band decided: where it is, what it is
+                       scaled at and what it centred on. Reading this off the screen is guesswork
+                       - it is how the "the buck's ripple goes flat" report was settled. */
+                    static int dbg = -1;
+                    if (dbg < 0) dbg = getenv("SCOPE_DEBUG") ? 1 : 0;
+                    if (dbg)
+                        fprintf(stderr, "ch%d band_y=%d band_h=%d centre=%d scale=%.4g vd=%.5g "
+                                "avg=%.5g lo=%.5g hi=%.5g off=%.5g n=%d\n", ch, band_y, band_h,
+                                ch_center, ch_scale, ui->scope_band_vdiv[ch], v_avg, v_min, v_max,
+                                offset, ui->scope_capture_count);
 
                     // Calculate x range for the captured data
                     double x_frac_start = (ui->scope_capture_times[0] - t_reference) / display_time_span;
@@ -7639,6 +7617,67 @@ void ui_scope_volt_step(UIState *ui, int dir) {
        used in place of the fitted one. */
     ui->scope_auto_vdiv_pending = false;
     ui->scope_capture_valid = false;
+}
+
+/* The most recent edge in the recorded history, or -1. This is what decides whether a trace
+   stands still or crawls, so --trig-test runs exactly this rather than its own copy. */
+int ui_scope_find_trigger(const UIState *ui, const double *times, const double *values, int count,
+                          double time_window, double level) {
+    if (!ui || !times || !values || count <= 10) return -1;
+    double span = times[count - 1] - times[0];
+    if (span <= 0) return -1;
+    /* enough samples after the trigger to fill the part of the screen that comes after it */
+    double post_trigger_ratio = 1.0 - ui->trigger_position;
+    int min_post_samples = (int)(time_window / span * count * post_trigger_ratio);
+    if (min_post_samples < 5) min_post_samples = 5;
+    int search_end = count - min_post_samples;
+    int search_start = count / 10;      /* don't search too far back */
+    if (search_start < 1) search_start = 1;
+
+    for (int i = search_end; i >= search_start; i--) {
+        double v_prev = values[i - 1], v_curr = values[i];
+        bool rise = (v_prev < level && v_curr >= level);
+        bool fall = (v_prev > level && v_curr <= level);
+        switch (ui->trigger_edge) {
+            case TRIG_EDGE_RISING:  if (rise) return i; break;
+            case TRIG_EDGE_FALLING: if (fall) return i; break;
+            default:                if (rise || fall) return i; break;
+        }
+    }
+    return -1;
+}
+
+/* Point the trigger at something that actually crosses it. A level of 0 V never fires on a
+   rectified, pulsed or DC-offset output, and the display free-runs and crawls. The channel with
+   the largest swing wins - the current one keeps its job if it still swings a tenth as much -
+   and the level goes at the middle of that channel's range, which every cycle has to cross. */
+void ui_scope_autotrigger(UIState *ui, Simulation *sim) {
+    if (!ui || !sim) return;
+    static double t_buf[MAX_HISTORY], v_buf[MAX_HISTORY];
+    double lo[MAX_PROBES], hi[MAX_PROBES];
+    int nch = ui->scope_num_channels < MAX_PROBES ? ui->scope_num_channels : MAX_PROBES;
+    int best = -1;
+    double best_swing = 0;
+    for (int ch = 0; ch < nch; ch++) {
+        lo[ch] = 1e300; hi[ch] = -1e300;
+        if (!ui->scope_channels[ch].enabled) continue;
+        int n = simulation_get_history(sim, ui->scope_channels[ch].probe_idx, t_buf, v_buf, MAX_HISTORY);
+        for (int i = 0; i < n; i++) {
+            if (v_buf[i] < lo[ch]) lo[ch] = v_buf[i];
+            if (v_buf[i] > hi[ch]) hi[ch] = v_buf[i];
+        }
+        if (n < 2 || hi[ch] < lo[ch]) continue;
+        double sw = hi[ch] - lo[ch];
+        if (sw > best_swing) { best_swing = sw; best = ch; }
+    }
+    int cur = ui->trigger_channel;
+    if (cur >= 0 && cur < nch && hi[cur] >= lo[cur] && (hi[cur] - lo[cur]) > 0.1 * best_swing)
+        best = cur;
+    if (best >= 0 && (hi[best] - lo[best]) > 1e-6) {
+        ui->trigger_channel = best;
+        ui->trigger_level = 0.5 * (lo[best] + hi[best]);
+        ui->scope_capture_valid = false;
+    }
 }
 
 UIActionKind ui_action_kind(int action, int *index) {

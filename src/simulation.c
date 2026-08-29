@@ -1007,7 +1007,7 @@ void simulation_set_history_span(Simulation *sim, double span_seconds) {
     if (!sim || !sim->circuit || span_seconds <= 0) return;
     if (fabs(span_seconds - sim->history_target_span) < 1e-15) return;
     sim->history_target_span = span_seconds;
-    if (sim->history_decimate_factor > 0 && sim->time_step >= 1e-9 &&
+    if (sim->history_decimate_factor > 0 && sim->time_step >= MIN_TIME_STEP &&
         simulation_compute_decimation(sim) != sim->history_decimate_factor) {
         sim->history_prev_factor = sim->history_decimate_factor;
         sim->history_decimate_factor = 0;   // recompute on the next step, keeping what is recorded
@@ -1416,7 +1416,9 @@ bool simulation_step(Simulation *sim) {
     // (sim->history_target_span), but never fewer than ~20 samples per cycle of the fastest
     // fixed-frequency source. Recomputed only when the factor is invalidated (0), because
     // changing decimation mid-run makes sample spacing inconsistent.
-    if (sim->history_decimate_factor == 0 && sim->time_step >= 1e-9) {
+    /* >= MIN_TIME_STEP, not a hard 1e-9: a step below the old floor would leave the factor at
+       zero forever and nothing would ever be recorded, which is a blank scope. */
+    if (sim->history_decimate_factor == 0 && sim->time_step >= MIN_TIME_STEP) {
         int prev = sim->history_prev_factor;
         sim->history_decimate_factor = simulation_compute_decimation(sim);
         sim->history_prev_factor = 0;
@@ -1532,6 +1534,8 @@ double simulation_accuracy_time_step(Simulation *sim) {
 
     // Find the highest frequency signal in the circuit
     double max_freq = 0;
+    /* ...and the narrowest thing any stimulus actually does, which a frequency does not describe */
+    double min_pulse = 0;
 
     for (int i = 0; i < sim->circuit->num_components; i++) {
         Component *c = sim->circuit->components[i];
@@ -1559,10 +1563,14 @@ double simulation_accuracy_time_step(Simulation *sim) {
             case COMP_SOURCE_3PH:
                 freq = c->props.source_3ph.frequency;
                 break;
-            case COMP_PULSE_SOURCE:
+            case COMP_PULSE_SOURCE: {
                 // repetitive pulses count as a periodic source (start-up kicks with a huge period do not)
                 if (c->props.pulse_source.period > 0 && c->props.pulse_source.period < 10.0) freq = 1.0 / c->props.pulse_source.period;
+                /* but the pulse itself has to be sampled however rarely it comes round */
+                double pw = c->props.pulse_source.pulse_width;
+                if (pw > 0 && (min_pulse <= 0 || pw < min_pulse)) min_pulse = pw;
                 break;
+            }
             default:
                 break;
         }
@@ -1594,6 +1602,15 @@ double simulation_accuracy_time_step(Simulation *sim) {
         dt = MAX_TIME_STEP;
     }
 
+    /* Five samples across the narrowest pulse, however rare that pulse is. The relaxation
+       oscillator is started by a single 20 us kick with a hundred-second period: it counts as no
+       frequency at all, the step came out at 50 us, and the kick fell between two samples. It
+       only ever started because the first sample happened to land on its leading edge. */
+    if (min_pulse > 0) {
+        double dt_pulse = min_pulse / 5.0;
+        if (dt_pulse < dt) dt = dt_pulse;
+    }
+
     // Clamp to valid range
     return CLAMP(dt, MIN_TIME_STEP, MAX_TIME_STEP);
 }
@@ -1612,7 +1629,7 @@ double simulation_scope_time_step(Simulation *sim, double scope_time_div) {
     double dt = display_dt < accuracy_dt ? display_dt : accuracy_dt;
     dt = CLAMP(dt, MIN_TIME_STEP, MAX_TIME_STEP);
 
-    // Snap down to the 1-2-5 series (stays >= MIN_TIME_STEP because MIN is itself 1e-9)
+    // Snap down to the 1-2-5 series, then clamp
     double decade = pow(10.0, floor(log10(dt)));
     double m = dt / decade;
     double snapped = (m >= 5.0) ? 5.0 : (m >= 2.0) ? 2.0 : 1.0;

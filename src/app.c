@@ -1667,6 +1667,13 @@ void app_update(App *app) {
     float delta_time = (current_time - app->last_frame_time) / 1000.0f;
     app->last_frame_time = current_time;
 
+    /* A scripted run advances by a fixed frame instead of by the wall clock. The simulation
+       steps by delta_time x speed, so with the real clock the circuit is at a different point
+       every time the same command is run: two screenshots of "frame 400" are two different
+       moments, and nothing that compares them can mean anything. A sixtieth of a second a frame
+       makes --shot, --record and anything built on them reproducible. */
+    if (app->cli_shot_path[0] || app->cli_record_dir[0]) delta_time = 1.0f / 60.0f;
+
     // Update FPS counter
     app->frame_count++;
     static uint32_t fps_timer = 0;
@@ -1817,24 +1824,8 @@ void app_update(App *app) {
             if (vd > 500e3) vd = 500e3;
             app->ui.scope_volt_div = vd;
             app->ui.scope_auto_vdiv_pending = false;
-            // Trigger from real data: a 0 V level never fires on rectified / pulsed / DC-offset
-            // outputs, so the display free-runs and jitters. Prefer the current trigger channel
-            // if it actually swings, else the channel with the largest swing; level = mid-range.
-            {
-                int best = -1; double best_swing = 0;
-                for (int pi = 0; pi < nprobes; pi++) {
-                    if (ch_max[pi] < ch_min[pi]) continue;
-                    double sw = ch_max[pi] - ch_min[pi];
-                    if (sw > best_swing) { best_swing = sw; best = pi; }
-                }
-                int tc = app->ui.trigger_channel;
-                if (tc >= 0 && tc < nprobes && ch_max[tc] >= ch_min[tc] && (ch_max[tc] - ch_min[tc]) > 0.1 * best_swing && (ch_max[tc] - ch_min[tc]) > 1e-6) best = tc;
-                if (best >= 0 && best_swing > 1e-6) {
-                    app->ui.trigger_channel = best;
-                    app->ui.trigger_level = 0.5 * (ch_min[best] + ch_max[best]);
-                    app->ui.scope_capture_valid = false;
-                }
-            }
+            /* and a trigger that something actually crosses, from the same data */
+            ui_scope_autotrigger(&app->ui, app->simulation);
         }
     }
     app->ui.sim_realtime_ratio = app->sim_realtime_ratio;
@@ -1865,6 +1856,8 @@ void app_update(App *app) {
         if (app->sim_step_carry < 0) app->sim_step_carry = 0;
         if (app->sim_step_carry > 1e6) app->sim_step_carry = 0;
         Uint64 t0 = SDL_GetPerformanceCounter(), budget = SDL_GetPerformanceFrequency() * 12 / 1000;
+        bool scripted = app->cli_shot_path[0] || app->cli_record_dir[0];
+        if (scripted && target > 20000) target = 20000;   /* deterministic, and it terminates */
         long done = 0;
         for (long i = 0; i < target; i++) {
             if (!simulation_step(app->simulation)) {
@@ -1873,7 +1866,12 @@ void app_update(App *app) {
                 break;
             }
             done++;
-            if ((done & 63) == 0 && SDL_GetPerformanceCounter() - t0 > budget) break;   // out of time this frame
+            /* Interactive runs give up when the frame's time is gone. Scripted ones cannot: a
+               wall-clock budget makes the result depend on how busy the machine is, and a
+               screenshot nobody can reproduce cannot be compared with anything. They take a
+               fixed number of steps a frame instead - bounded above, so a nanosecond-scale
+               template still finishes, and identical from one run to the next. */
+            if (!scripted && (done & 63) == 0 && SDL_GetPerformanceCounter() - t0 > budget) break;
         }
         app->sim_realtime_ratio = (target > 0) ? (double)done / (double)target : 1.0;
         // Refresh terminal currents and wire flows once per frame for the animation
@@ -2420,6 +2418,9 @@ void app_render(App *app) {
     double current_time = (double)SDL_GetTicks() / 1000.0;
     double delta_time = current_time - app->render->last_frame_time;
     app->render->last_frame_time = current_time;
+    /* the current-flow dots move by the wall clock, which makes two runs of the same scripted
+       command draw different canvases; a recorded GIF should be the same GIF every time */
+    if (app->cli_shot_path[0] || app->cli_record_dir[0]) delta_time = 1.0 / 60.0;
     // Only advance animation when simulation is running
     if (app->render->sim_running) {
         app->render->animation_time += delta_time;

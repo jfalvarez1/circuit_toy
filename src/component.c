@@ -3779,8 +3779,26 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double t_norm = fmod(time + phase / (2 * M_PI * freq), period) / period;
             if (t_norm < 0) t_norm += 1.0;
 
-            // Square wave: high for duty cycle, low otherwise
-            double V = (t_norm < duty) ? (amp + offset) : (-amp + offset);
+            /* Square wave with the edges it says it has: rise_time and fall_time were carried
+               and never used, so the edge was a step and its di/dt was whatever the time step
+               made it. At 1 ns against a millisecond period this is invisible; on the templates
+               that live in nanoseconds it is the whole answer. */
+            double hi = amp + offset, lo = -amp + offset;
+            double t_in = t_norm * period;
+            double sq_tr = comp->props.square_wave.rise_time;
+            double sq_tf = comp->props.square_wave.fall_time;
+            if (sq_tr < 0) sq_tr = 0;
+            if (sq_tf < 0) sq_tf = 0;
+            double high_time = duty * period, low_time = period - high_time;
+            if (sq_tr > high_time * 0.5) sq_tr = high_time * 0.5;
+            if (sq_tf > low_time * 0.5) sq_tf = low_time * 0.5;
+
+            double V;
+            if (sq_tr > 0 && t_in < sq_tr)            V = lo + (hi - lo) * (t_in / sq_tr);
+            else if (t_in < high_time)                V = hi;
+            else if (sq_tf > 0 && t_in < high_time + sq_tf)
+                                                      V = hi - (hi - lo) * ((t_in - high_time) / sq_tf);
+            else                                      V = lo;
             int volt_idx = num_nodes + comp->voltage_var_idx;
 
             if (n[0] > 0) {
@@ -4427,12 +4445,30 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double pw = comp->props.pulse_source.pulse_width;
             double period = comp->props.pulse_source.period;
 
+            /* A real driver's edge takes time, and this one carries the numbers for it -
+               rise_time and fall_time, 1 ns by default - but stepped instantly anyway. An
+               instantaneous edge has no defined di/dt, so every circuit that answers to an edge
+               rate answered to the time step instead: the ground-bounce template's spike doubled
+               each time the step was halved and never settled. With the edge given its own
+               duration the answer is the circuit's, not the solver's. */
+            double tr = comp->props.pulse_source.rise_time;
+            double tf = comp->props.pulse_source.fall_time;
+            if (tr < 0) tr = 0;
+            if (tf < 0) tf = 0;
+            /* an edge can never eat its own half of the period, or a slow setting turns the
+               pulse into a triangle */
+            if (tr > pw * 0.5) tr = pw * 0.5;
+            if (period - pw > 0 && tf > (period - pw) * 0.5) tf = (period - pw) * 0.5;
+
             double V = v_low;
             if (time >= delay) {
                 double t_in_period = fmod(time - delay, period);
-                if (t_in_period < pw) {
+                if (tr > 0 && t_in_period < tr)
+                    V = v_low + (v_high - v_low) * (t_in_period / tr);
+                else if (t_in_period < pw)
                     V = v_high;
-                }
+                else if (tf > 0 && t_in_period < pw + tf)
+                    V = v_high - (v_high - v_low) * ((t_in_period - pw) / tf);
             }
             int volt_idx = num_nodes + comp->voltage_var_idx;
 
