@@ -411,6 +411,69 @@ static void roundtrip_leg(Circuit *a, const char *path,
     circuit_free(b);
 }
 
+/* --parts-file-test: one of every part on a canvas, saved and loaded back.
+   --file-test round-trips every template, which exercises the 52 component types that appear in
+   one. The other 74 are saved and loaded by code nothing has ever run: a part whose state is
+   built when it is created rather than stored - a logic block's engine, a delay line's ring
+   buffer - can come back different, and the first person to find out is whoever saved a circuit
+   with one in it. The parts sit 200 px apart so no two terminals merge into one node. */
+static int parts_file_test(void) {
+    Circuit *a = circuit_create();
+    int placed = 0, uncreatable = 0;
+    for (int t = COMP_NONE + 1; t < COMP_TYPE_COUNT; t++) {
+        const ComponentTypeInfo *info = component_get_info((ComponentType)t);
+        if (!info || !info->name || !info->name[0]) { uncreatable++; continue; }
+        float x = (float)(placed % 12) * 200.0f, y = (float)(placed / 12) * 200.0f;
+        Component *comp = component_create((ComponentType)t, x, y);
+        if (!comp || circuit_add_component(a, comp) < 0) {
+            if (comp) component_free(comp);
+            uncreatable++;
+            continue;
+        }
+        /* Defaults round-trip even through a format that drops the field, because the loader
+           creates the part with those same defaults. Every part therefore carries a value no
+           default is: the first double of its own properties, which for nearly all of them is
+           the value on the schematic. Three are left alone: text, whose properties start with a
+           string, and the delay line and the subcircuit, whose properties start with pointers to
+           memory they own - a double's bytes in a pointer is a crash at the next free, in this
+           test's own cleanup. (Loading is safe from that: component_adopt_props never takes a
+           pointer out of a file.) */
+        /* Not every part's properties start with a number that any value is legal for:
+             - text, an expression, a bus or pin name, a subcircuit's name: a string
+             - a delay line: pointers to buffers it owns
+             - an arbitrary source: an index into a fixed set of tables, which is checked on the
+               way in, so a marker there is reported as a difference by the sanitiser doing
+               exactly its job (which is how the out-of-range crash below it was found)
+           Those keep their defaults; the rest carry the marker. */
+        bool marker_unsafe = (t == COMP_TEXT || t == COMP_EXPR_SOURCE || t == COMP_BUS ||
+                              t == COMP_BUS_TAP || t == COMP_PIN || t == COMP_SUBCIRCUIT ||
+                              t == COMP_DELAY_LINE || t == COMP_ARB_SOURCE);
+        if (!marker_unsafe) {
+            double marker = 1.2345e-7;
+            memcpy(&comp->props, &marker, sizeof marker);
+        }
+        comp->rotation = (placed % 4) * 90;
+        placed++;
+    }
+
+    int fails = 0;
+    char why[240];
+    roundtrip_leg(a, "parts_roundtrip.cpg", file_save_circuit, file_load_circuit, why, sizeof why);
+    if (why[0]) { printf("[FAIL] parts-file  binary: %s\n", why); fails++; }
+    else printf("[ OK ] parts-file  binary: %d parts saved and loaded back\n", placed);
+
+    roundtrip_leg(a, "parts_roundtrip.json", file_export_json, file_import_json, why, sizeof why);
+    if (why[0]) { printf("[FAIL] parts-file  json:   %s\n", why); fails++; }
+    else printf("[ OK ] parts-file  json:   %d parts saved and loaded back\n", placed);
+
+    remove("parts_roundtrip.cpg");
+    remove("parts_roundtrip.json");
+    circuit_free(a);
+    printf("\nparts-file-test: %d of %d component types on one canvas (%d cannot be created), "
+           "%d formats failed\n", placed, COMP_TYPE_COUNT - 1, uncreatable, fails);
+    return fails;
+}
+
 static int file_test(const char *filter) {
     int fails = 0, total = 0;
     char path[600];
@@ -3627,6 +3690,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--label-test")) return label_test();
+        else if (!strcmp(argv[i], "--parts-file-test")) return parts_file_test();
         else if (!strcmp(argv[i], "--span-test")) return span_test();
         else if (!strcmp(argv[i], "--geom-test")) return geom_test();
         else if (!strcmp(argv[i], "--sweep-check")) return sweep_check();

@@ -1865,6 +1865,11 @@ static void arb_default_tables(void) {
 }
 
 double arb_table_value(int idx, double phase) {
+    /* Bounds first. "idx < 2" is true of every negative number, so this read of g_arb_n[idx]
+       used to happen before anything had checked the index - and the index is a field in a saved
+       file, which means a corrupted or hand-edited circuit could point it anywhere and take the
+       whole app down. Everything below this line was already guarded; this line was not. */
+    if (idx < 0 || idx >= ARB_TABLES) return 0.0;
     if (idx < 2 && g_arb_n[idx] == 0) arb_default_tables();
     int n = arb_table_len(idx);
     if (n <= 0) return 0.0;
@@ -2600,6 +2605,13 @@ void component_adopt_props(Component *comp, const ComponentProps *p) {
         comp->props.subcircuit.inst_data = NULL;
         comp->props.subcircuit.inst_count = 0;
         comp->props.subcircuit.inst_def_id = 0;
+    }
+    if (comp->type == COMP_ARB_SOURCE) {
+        /* Not a pointer, but the same kind of trust: an index into a fixed set of tables, read
+           straight out of a file. Out of range it names no table, and the value readout would
+           print it. Bring it back inside. */
+        int tbl = comp->props.arb_source.table;
+        if (tbl < 0 || tbl >= ARB_TABLES) comp->props.arb_source.table = 0;
     }
 }
 

@@ -27,7 +27,7 @@ fi
 
 SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test
 --flow-test --switch-test --part-test --op-test --sub-test --spice-test --xtal-test --view-test
---conn-test --file-test --line-test --std-test --burn-test --knob-test --geom-test --param-test
+--conn-test --file-test --parts-file-test --line-test --std-test --burn-test --knob-test --geom-test --param-test
 --tesla-test"
 APP_MODES="--layout-test --autoset-test --place-test --trig-test --prop-test"
 # The battery cannot finish faster than its longest single suite, and two of them are most of it:
