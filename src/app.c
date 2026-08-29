@@ -296,6 +296,12 @@ void app_handle_events(App *app) {
                     }
                 }
                 break;
+            case UI_ACTION_DEFER_UPDATE:
+                app->update_deferred = true;
+                app->update_due_ms = 0;
+                app->ui.update_countdown_active = false;
+                ui_set_status(&app->ui, "Auto-update cancelled - click Update in the toolbar when you are ready");
+                break;
             case UI_ACTION_ZOOM_IN:
                 render_zoom(app->render, 1.2f, app->render->canvas_rect.x + app->render->canvas_rect.w / 2,
                             app->render->canvas_rect.y + app->render->canvas_rect.h / 2);
@@ -1999,19 +2005,69 @@ void app_update_check(App *app) {
     if (!app->skip_update_check) updater_check_async(&app->updater);
 }
 
-/* called once per frame: surface the result of the background check */
+/* Called once per frame: surface the result of the background check, then act on it.
+ *
+ * A new version installs itself. The updater script downloads the release zip, waits for this
+ * process to exit, unpacks over the install directory and starts the new binary, so the whole
+ * thing needs no clicks. Two things hold it back, and both are deliberate: a circuit with
+ * unsaved changes is never interrupted, and there is a visible countdown that Esc cancels. */
+#define UPDATE_GRACE_MS 6000
+
 static void app_update_poll(App *app) {
-    if (app->update_announced || !app->updater.lock) return;
-    char tag[128];
-    if (updater_available(&app->updater, tag, sizeof tag)) {
-        app->update_announced = true;
-        char msg[200];
-        snprintf(msg, sizeof msg, "Update available: %s (you have v%s) - click Update in the toolbar", tag, APP_VERSION);
+    if (!app->updater.lock) return;
+
+    if (!app->update_announced) {
+        char tag[128];
+        if (updater_available(&app->updater, tag, sizeof tag)) {
+            app->update_announced = true;
+            snprintf(app->update_tag, sizeof app->update_tag, "%s", tag);
+            app->update_due_ms = SDL_GetTicks() + UPDATE_GRACE_MS;
+            app->ui.btn_update.bounds = (Rect){app->ui.window_width - 70, 10, 60, 24};
+        } else {
+            int failed = 0;
+            if (updater_checked(&app->updater, &failed)) app->update_announced = true;   // up to date or offline: stay quiet
+            return;
+        }
+    }
+    if (!app->update_due_ms || app->update_deferred) return;
+    if (app->no_auto_update) {
+        app->update_deferred = true;
+        char msg[220];
+        snprintf(msg, sizeof msg, "Update %s available (you have v%s) - click Update in the toolbar",
+                 app->update_tag, APP_VERSION);
         ui_set_status(&app->ui, msg);
-        app->ui.btn_update.bounds = (Rect){app->ui.window_width - 70, 10, 60, 24};
+        return;
+    }
+
+    /* never pull the floor out from under unsaved work */
+    if (app->circuit && app->circuit->modified) {
+        app->update_deferred = true;
+        char msg[220];
+        snprintf(msg, sizeof msg, "Update %s ready (you have v%s) - save your circuit, then click Update",
+                 app->update_tag, APP_VERSION);
+        ui_set_status(&app->ui, msg);
+        return;
+    }
+
+    Uint32 now = SDL_GetTicks();
+    if (now < app->update_due_ms) {
+        app->ui.update_countdown_active = true;
+        char msg[220];
+        snprintf(msg, sizeof msg, "Update %s found (you have v%s) - installing in %u s, Esc to keep working",
+                 app->update_tag, APP_VERSION, (app->update_due_ms - now + 999) / 1000);
+        ui_set_status(&app->ui, msg);
+        return;
+    }
+
+    app->ui.update_countdown_active = false;
+    char msg[256];
+    app->update_due_ms = 0;
+    if (updater_install(&app->updater, msg, sizeof msg)) {
+        ui_set_status(&app->ui, msg);
+        app->running = false;          /* the installer waits for this, then relaunches */
     } else {
-        int failed = 0;
-        if (updater_checked(&app->updater, &failed)) app->update_announced = true;   // up to date or offline: stay quiet
+        app->update_deferred = true;   /* it did not take: leave the button for the user */
+        ui_set_status(&app->ui, msg);
     }
 }
 
@@ -2169,6 +2225,33 @@ static void app_cli_capture(App *app) {
             SDL_PushEvent(&ev);
         }
     }
+    /* Scripted pointer. A click is press-then-release at one point; a drag presses, moves in
+       four steps and releases, which is what the Pan tool and the knobs need to see. */
+    for (int i = 0; i < app->cli_mouse_n; i++) {
+        if (app->cli_mouse[i].done || app->cli_frame != app->cli_mouse[i].frame) continue;
+        app->cli_mouse[i].done = true;
+        int x1 = app->cli_mouse[i].x, y1 = app->cli_mouse[i].y;
+        int x2 = app->cli_mouse[i].x2, y2 = app->cli_mouse[i].y2;
+        SDL_Event ev;
+        memset(&ev, 0, sizeof ev);
+        ev.type = SDL_MOUSEMOTION; ev.motion.x = x1; ev.motion.y = y1; SDL_PushEvent(&ev);
+        memset(&ev, 0, sizeof ev);
+        ev.type = SDL_MOUSEBUTTONDOWN; ev.button.button = SDL_BUTTON_LEFT;
+        ev.button.x = x1; ev.button.y = y1; ev.button.clicks = 1; SDL_PushEvent(&ev);
+        if (app->cli_mouse[i].drag) {
+            for (int k = 1; k <= 4; k++) {
+                memset(&ev, 0, sizeof ev);
+                ev.type = SDL_MOUSEMOTION;
+                ev.motion.x = x1 + (x2 - x1) * k / 4; ev.motion.y = y1 + (y2 - y1) * k / 4;
+                ev.motion.state = SDL_BUTTON_LMASK;
+                SDL_PushEvent(&ev);
+            }
+        }
+        memset(&ev, 0, sizeof ev);
+        ev.type = SDL_MOUSEBUTTONUP; ev.button.button = SDL_BUTTON_LEFT;
+        ev.button.x = x2; ev.button.y = y2; ev.button.clicks = 1; SDL_PushEvent(&ev);
+    }
+
     bool done = true;
     if (app->cli_shot_path[0]) {
         if (app->cli_frame == app->cli_shot_frame) {

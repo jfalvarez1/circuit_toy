@@ -43,10 +43,22 @@ typedef struct {
     int  cli_frame;              // frames rendered since start
     char cli_keys[64];           // --keys "^mosfet" FRAME EVERY : from FRAME, one char every EVERY frames ('^' opens Spotlight, '|' = Enter)
     int  cli_keys_frame, cli_keys_every, cli_keys_pos;
+    /* --click and --drag: scripted mouse, so a GUI smoke test can press the buttons a user
+       presses instead of calling the functions behind them. Events go through SDL_PushEvent,
+       so they take exactly the path a real pointer takes. */
+    struct { int x, y, x2, y2, frame; bool drag, done; } cli_mouse[12];
+    int  cli_mouse_n;
 
     // Auto-update (GitHub releases)
     UpdaterState updater;
-    bool update_announced;       // status message shown once
+    bool update_announced;
+    /* Auto-update: once the background check finds a newer tag the app installs it by itself
+       and the installer relaunches it. The countdown exists so the message is readable and so
+       there is a moment to press Esc; a circuit with unsaved changes is never interrupted. */
+    Uint32 update_due_ms;        // 0 = nothing scheduled
+    char   update_tag[128];
+    bool   update_deferred;      // user pressed Esc, or the circuit is modified: use the button
+    bool   no_auto_update;       // --no-auto-update: still check, but wait to be asked       // status message shown once
     bool skip_update_check;      // --no-update-check
     int  saved_window_w, saved_window_h;   // from settings.json (0 = default)
     bool show_voltages;

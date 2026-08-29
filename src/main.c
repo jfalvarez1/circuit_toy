@@ -259,10 +259,13 @@ static void usage(void) {
            "  --record DIR N EVERY save N frames, one every EVERY frames, as DIR/frame_XXX.bmp\n"
            "  --scroll PX          scroll the left palette by PX pixels (screenshots)\n"
            "  --keys S FRAME EVERY type S one char every EVERY frames from FRAME (^ opens Spotlight, | is Enter)\n"
+           "  --click X,Y,FRAME    left-click at X,Y on that frame (repeatable, up to 12)\n"
+           "  --drag X1,Y1,X2,Y2,FRAME  press at X1,Y1, move to X2,Y2 and release, on that frame\n"
            "  --xy FILE            load 'x y' coordinate pairs into the X-Y Plotter template\n"
            "  --tab parts|circuits left panel tab\n"
            "  --exit               quit when the shot / recording is done\n"
            "  --no-update-check    do not query GitHub for a newer release (also CIRCUIT_TOY_NO_UPDATE=1)\n"
+           "  --no-auto-update     check, but do not install by itself (also CIRCUIT_TOY_NO_AUTO_UPDATE=1)\n"
            "  --version            print the version and exit\n"
            "  --update-check       query the latest GitHub release and exit; --update-now also installs it\n"
            "  --layout-test        headless UI layout self-check (no window)\n");
@@ -270,8 +273,9 @@ static void usage(void) {
 
 int main(int argc, char *argv[]) {
     const char *cli_template = NULL, *cli_shot = NULL, *cli_record = NULL, *cli_size = NULL;
-    int cli_frame = 90, cli_rec_n = 0, cli_rec_every = 1, cli_scroll = -1, cli_tab = -1; bool cli_exit = false, no_update = false;
+    int cli_frame = 90, cli_rec_n = 0, cli_rec_every = 1, cli_scroll = -1, cli_tab = -1; bool cli_exit = false, no_update = false, no_auto_update = false;
     const char *cli_keys = NULL; int cli_keys_frame = 30, cli_keys_every = 6;
+    struct { int x, y, x2, y2, frame; bool drag; } cli_mouse[12]; int cli_mouse_n = 0;
     const char *cli_xy = NULL;
     bool cli_popout = false;
     const char *cli_spice = NULL;
@@ -283,6 +287,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--record") && i + 3 < argc) { cli_record = argv[++i]; cli_rec_n = atoi(argv[++i]); cli_rec_every = atoi(argv[++i]); }
         else if (!strcmp(argv[i], "--exit")) cli_exit = true;
         else if (!strcmp(argv[i], "--no-update-check")) no_update = true;
+        else if (!strcmp(argv[i], "--no-auto-update")) no_auto_update = true;
         else if (!strcmp(argv[i], "--version")) { printf("%s\n", APP_VERSION); return 0; }
         else if (!strcmp(argv[i], "--update-check") || !strcmp(argv[i], "--update-now")) {
             UpdaterState st; updater_init(&st); updater_check_async(&st); updater_wait(&st);
@@ -297,6 +302,21 @@ int main(int argc, char *argv[]) {
         }
         else if (!strcmp(argv[i], "--scroll") && i + 1 < argc) cli_scroll = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--keys") && i + 3 < argc) { cli_keys = argv[++i]; cli_keys_frame = atoi(argv[++i]); cli_keys_every = atoi(argv[++i]); }
+        else if ((!strcmp(argv[i], "--click") || !strcmp(argv[i], "--drag")) && i + 1 < argc) {
+            bool drag = !strcmp(argv[i], "--drag");
+            if (cli_mouse_n < (int)(sizeof cli_mouse / sizeof cli_mouse[0])) {
+                int a = 0, b = 0, c2 = 0, d = 0, f = 60;
+                int got = drag ? sscanf(argv[i + 1], "%d,%d,%d,%d,%d", &a, &b, &c2, &d, &f)
+                               : sscanf(argv[i + 1], "%d,%d,%d", &a, &b, &f);
+                if (got >= (drag ? 4 : 2)) {
+                    cli_mouse[cli_mouse_n].x = a; cli_mouse[cli_mouse_n].y = b;
+                    cli_mouse[cli_mouse_n].x2 = drag ? c2 : a; cli_mouse[cli_mouse_n].y2 = drag ? d : b;
+                    cli_mouse[cli_mouse_n].frame = f; cli_mouse[cli_mouse_n].drag = drag;
+                    cli_mouse_n++;
+                } else fprintf(stderr, "bad %s argument: %s\n", argv[i], argv[i + 1]);
+            }
+            i++;
+        }
         else if (!strcmp(argv[i], "--xy") && i + 1 < argc) cli_xy = argv[++i];
         else if (!strcmp(argv[i], "--tab") && i + 1 < argc) cli_tab = !strcmp(argv[++i], "circuits") ? 1 : 0;
         else if (!strcmp(argv[i], "--popout")) cli_popout = true;
@@ -345,7 +365,14 @@ int main(int argc, char *argv[]) {
     if (cli_record) { strncpy(app.cli_record_dir, cli_record, sizeof app.cli_record_dir - 1); app.cli_record_frames = cli_rec_n; app.cli_record_every = cli_rec_every; }
     app.cli_shot_frame = cli_frame;
     if (cli_keys) { strncpy(app.cli_keys, cli_keys, sizeof app.cli_keys - 1); app.cli_keys_frame = cli_keys_frame; app.cli_keys_every = cli_keys_every; }
+    for (int i = 0; i < cli_mouse_n; i++) {
+        app.cli_mouse[i].x = cli_mouse[i].x; app.cli_mouse[i].y = cli_mouse[i].y;
+        app.cli_mouse[i].x2 = cli_mouse[i].x2; app.cli_mouse[i].y2 = cli_mouse[i].y2;
+        app.cli_mouse[i].frame = cli_mouse[i].frame; app.cli_mouse[i].drag = cli_mouse[i].drag;
+    }
+    app.cli_mouse_n = cli_mouse_n;
     app.skip_update_check = no_update || cli_shot || cli_record;   // scripted runs never phone home
+    app.no_auto_update = no_auto_update || getenv("CIRCUIT_TOY_NO_AUTO_UPDATE") != NULL;
     app_update_check(&app);
     if (cli_scroll >= 0) app.ui.palette_scroll_offset = cli_scroll;
     if (cli_tab >= 0) app.ui.left_tab = cli_tab;

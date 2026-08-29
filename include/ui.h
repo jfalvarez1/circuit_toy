@@ -195,6 +195,7 @@ typedef struct {
     Button btn_export_svg;
     Button btn_screenshot;
     /* the probe the properties panel is naming, refreshed from the input state each frame */
+    bool update_countdown_active;    // an auto-update is counting down; Esc cancels it
     Probe *selected_probe;
     Button btn_zoom_out;             // canvas zoom, for pointers with no wheel
     Button btn_zoom_in;
@@ -579,7 +580,8 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode);
 #define UI_ACTION_EDIT_SUBCIRCUIT   42   // Edit existing subcircuit (right-click in palette)
 #define UI_ACTION_ZOOM_IN       47   // Toolbar + : zoom the canvas about its centre
 #define UI_ACTION_ZOOM_OUT      48   // Toolbar -
-#define UI_ACTION_ZOOM_FIT      49   // Toolbar Fit: frame everything that is placed
+#define UI_ACTION_ZOOM_FIT      49
+#define UI_ACTION_DEFER_UPDATE  50   // Esc during the auto-update countdown: leave it to the button   // Toolbar Fit: frame everything that is placed
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type (supports up to 300 component types)
 #define UI_ACTION_SELECT_CIRCUIT 500 // + circuit template type

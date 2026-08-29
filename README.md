@@ -387,10 +387,10 @@ UFLS stages, St. Clair loadability) are collected in `docs/RESEARCH_AEP_PC.md`.
 ![Pop-out Scope](gifs/pop_out_scope.gif)
 
 Full-featured virtual oscilloscope with:
-- **8 Channels** - Connect multiple voltage probes
-- **Adjustable Scales** - Time/div (10 ns to 100 s), Volts/div (1mV to 100V)
+- **8 Channels** - connect multiple voltage probes, and **name them**: click a probe, type `Vout`, and every place the scope said CH2 says Vout
+- **Adjustable Scales** - time/div (10 ns to 100 s), volts/div (1 mV to 500 kV), and **per-channel volts/div**: each input has its own knob on the pop-out panel, and a channel you have not touched follows the main one
 - **Time step follows the scope** - changing time/div re-maps the simulation step to ~50 samples per division (never coarser than the signal-accuracy step); the dt +/- buttons still override until the next time/div change
-- **Stacked view** - `Stack` button gives every channel its own band with its own zero line and CHn tag, so identical signals can be told apart; toggles back to overlay
+- **Stacked view** - `Stack` button gives every channel its own band with its own zero line and name tag, so identical signals can be told apart; toggles back to overlay
 - **Time-Based Display** - History decimation follows the visible time window (20 x time/div is kept), so the trace is smooth at every time/div setting
 - **Voltage Scale Labels** - Y-axis shows voltage marks dynamically based on V/div setting
 - **Trigger System** (Tektronix-style)
@@ -644,13 +644,28 @@ Create reusable subcircuits from your designs:
 
 ### Auto-Update (Windows)
 
+
 On start-up the app asks GitHub for the latest release in a background thread (PowerShell
-`Invoke-RestMethod`, nothing new is linked). If a newer tag exists an **Update** button appears at
-the right of the toolbar: it downloads `circuit-playground-windows-vX.Y.Z.zip`, waits for the app to
-close, extracts it over the install folder and relaunches. `--no-update-check` (or
-`CIRCUIT_TOY_NO_UPDATE=1`) disables the check; `--update-check` / `--update-now` do it from the
-command line. Releases are built with `pwsh tools/make_release.ps1 -Publish` (version from
-`include/version.h`).
+`Invoke-RestMethod`, nothing new is linked). **If a newer version exists it installs itself.** The
+status bar counts down for six seconds, then the updater downloads
+`circuit-playground-windows-vX.Y.Z.zip`, waits for the app to close, extracts it over the install
+folder and **starts the new binary**. No clicking, and no "now go and relaunch it".
+
+Two things hold it back, both deliberate:
+
+- **A circuit with unsaved changes is never interrupted.** If `modified` is set the countdown is
+  cancelled and the status bar says to save first; the **Update** button in the toolbar is still
+  there for when you are ready.
+- **Esc cancels it** for the rest of the session, and again leaves the button.
+
+`--no-auto-update` (or `CIRCUIT_TOY_NO_AUTO_UPDATE=1`) keeps the check but never installs by
+itself. `--no-update-check` (or `CIRCUIT_TOY_NO_UPDATE=1`) turns the check off entirely, and any
+run that takes a screenshot or records frames skips it automatically. `--update-check` /
+`--update-now` do it from the command line.
+
+The zip is attached to the release by CI: pushing a `v*` tag builds the static Windows binary,
+runs the whole suite against it, and only then uploads `circuit-playground.exe`, the README and
+the guide as `circuit-playground-windows-vX.Y.Z.zip`. A release with a red build has no download.
 
 ### File Operations
 
@@ -903,10 +918,10 @@ point and a short transient, and reports solver errors, NaN/runaway voltages and
 point of every transistor / op-amp / regulator:
 
 ```bash
-build/tools/template_smoke.exe             # 162/162 templates passed
+build/tools/template_smoke.exe             # 182/182 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
-build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (159 oracles)
+build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (204 oracles)
 build/tools/template_smoke.exe --knob-test       # every template still converges with every value x0.5 and x2
 build/tools/template_smoke.exe --trace "87 " 0.3 # per-node min/max over a run (debugging a template)
 build/tools/template_smoke.exe --demo-test       # every template demonstrates its DemoKind contract
@@ -923,10 +938,47 @@ build/tools/template_smoke.exe --param-test      # scope presets: the window rea
 build/circuit-playground.exe --keys "^mosfet|" 24 8 --record DIR N EVERY   # scripted typing: ^ opens Spotlight, | is Enter
 build/tools/template_smoke.exe --geom-test       # schematic audit: diagonals, crossings, wires through bodies
 build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
+build/tools/template_smoke.exe --view-test       # every template puts something on the scope, every switch is clickable
+build/tools/template_smoke.exe --xtal-test       # the crystal's |Z| at, below and above series resonance
+build/tools/template_smoke.exe --spice-test      # SPICE .SUBCKT import
+build/tools/template_smoke.exe --sub-test        # subcircuits used as IC blocks
 build/tools/template_smoke.exe --response "RC BP"   # amplitude vs frequency of every node during the sweep
 build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
 build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template in the palette)
 ```
+
+### GUI smoke test
+
+The modes above link the simulation and ask it questions. `tools/gui_smoke.py` does not: it
+launches `circuit-playground.exe`, lets it place a template and run, reads the screenshot the app
+saves and looks at the pixels. That is the only way to catch the bug where the physics is right
+and the user still sees an empty screen - a probe on a node that never moves, a preset that puts
+the trace off the display, a panel drawn over the canvas.
+
+```bash
+python tools/gui_smoke.py                 # every template, then the interaction checks
+python tools/gui_smoke.py --quick         # a spread of 12
+python tools/gui_smoke.py --only Pierce   # substring match on the name
+python tools/gui_smoke.py --keep          # leave the screenshots behind
+```
+
+It needs a real display: `SDL_VIDEODRIVER=dummy` has no renderer to read pixels back from,
+so this one is a local check rather than a CI job. Everything CI runs is in the list above.
+
+Per template it checks the window is not one flat colour, the canvas has a schematic on it, and
+the graticule has trace-coloured pixels in it. Then it presses things, through injected SDL mouse
+events rather than by calling the functions behind the buttons:
+
+| Check | What it drives |
+|---|---|
+| `zoom-in` / `zoom-out` / `fit` | the three toolbar buttons; the canvas has to change |
+| `pan-tool` | select Pan in the palette, drag the canvas, the view has to move |
+| `switch-click` | click the N-1 breaker; the pixels around it have to change |
+
+The app grew `--click X,Y,FRAME` and `--drag X1,Y1,X2,Y2,FRAME` for this. They push real
+`SDL_MOUSEBUTTONDOWN` / `SDL_MOUSEMOTION` / `SDL_MOUSEBUTTONUP` events, so a scripted click takes
+exactly the path a pointer takes - including the parts of `input.c` that decide whether you hit a
+button, a component, a terminal or empty canvas.
 
 The app itself has automation flags for reproducible screenshots (used by `tools/make_media.py`,
 which produced the images in this README):
@@ -934,6 +986,8 @@ which produced the images in this README):
 ```bash
 build/circuit-playground.exe --template Tesla --size 1400x900 --shot out.bmp --frame 300 --exit
 build/circuit-playground.exe --template LP --record frames 48 3 --exit    # 48 frames, one every 3
+build/circuit-playground.exe --template LP --click 867,22,40 --shot z.bmp --exit   # click the toolbar +
+build/circuit-playground.exe --template LP --drag 600,500,900,560,50 --shot p.bmp --exit
 build/circuit-playground.exe --help
 ```
 
@@ -995,7 +1049,7 @@ hand-calculated expectations and value variations) track the interactive test ca
 
 | Key | Action |
 |-----|--------|
-| Escape | Cancel current action, return to select tool |
+| Escape | Cancel current action, return to select tool - and cancel an auto-update that is counting down |
 | Delete/Backspace | Delete selected component |
 | R | Rotate component (while placing or selected) |
 | W | Switch to Wire tool |
@@ -1014,6 +1068,10 @@ hand-calculated expectations and value variations) track the interactive test ca
 | Ctrl+K | Open spotlight search |
 | Ctrl+G | Open subcircuit creation dialog (with selection) |
 | F1 | Show keyboard shortcuts dialog |
+
+Mouse: middle-drag pans and the wheel zooms. Without a middle button, pick the **Pan** tool and
+left-drag, or use the toolbar's **-** / **+** / **Fit**. Over the scope the wheel changes time/div
+(Shift+wheel volts/div); over the palette or properties it scrolls them.
 
 ## Technical Details
 
@@ -1106,9 +1164,29 @@ circuit_toy/
 
 - **Current flow display** - the animation traces paths from sources to ground, sizing and
   timing each dot from the solved terminal currents, and `--flow-test` checks KCL at every
-  node, conservation around each loop and equal current along a series path for all 161
+  node, conservation around each loop and equal current along a series path for all 182
   templates. It is a display of the solution, not part of it: a circuit whose currents are
-  right can still be drawn oddly where a net has many branches meeting at one point.
+  right can still be drawn oddly where a net has many branches meeting at one point. Two
+  templates are exempt from the node-KCL part of that audit and say so in their result line,
+  for a reason worth stating: node KCL compares wire currents against terminal currents, and
+  it cannot see displacement current. The charge that flows into a MOSFET gate or a
+  reverse-biased junction is real current in the wires and appears in no `terminal_current`.
+  On a slow circuit it is under the noise floor; on a hard-switched power stage it is tens of
+  microamps. The real fix is for the MOSFET and diode models to report their capacitive
+  terminal currents.
+
+- **DCM in an asynchronous converter** - a buck in discontinuous conduction has an interval
+  where neither the switch nor the diode conducts, and with an ideal switch that leaves the
+  switch node undefined; it runs away to kilovolts at every time step the template system can
+  offer. What it needs is a switch model with a defined off-state capacitance, or local time
+  step control across a commutation. Written up in `docs/ROADMAP.md`; the lesson lives in the
+  notes of **Discrete Buck, Node by Node** instead of in a template of its own.
+
+- **No true delay-line transmission line** - `COMP_TLINE` is a power-line model (per-mile R, X
+  and B at 60 Hz, nominal pi). The templates that need propagation delay - Signal Reflections,
+  Termination, Scope Input Impedance - build it as an L-C ladder, which is correct but needs a
+  time step short against one section's delay. A delay-based lossless line element would be
+  the better answer and is the one clear gap against circuit.js.
 
 ## License
 

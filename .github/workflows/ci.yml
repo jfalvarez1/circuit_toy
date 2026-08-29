@@ -77,3 +77,19 @@ jobs:
             build/circuit-playground.exe
             README.md
             guide.html
+
+      # A tag should produce something a user can download. The static build needs no DLL, so
+      # the zip is the exe, the README and the guide, attached to the release the tag created -
+      # which is what "Latest Release" at the top of the README points at.
+      - name: Attach the build to the release
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.link == 'static' && matrix.os == 'windows-latest'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          mkdir -p dist/circuit-playground
+          cp build/circuit-playground.exe README.md guide.html dist/circuit-playground/
+          (cd dist && 7z a -tzip "circuit-playground-windows-$tag.zip" circuit-playground >/dev/null)
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes
+          gh release upload "$tag" "dist/circuit-playground-windows-$tag.zip" --clobber

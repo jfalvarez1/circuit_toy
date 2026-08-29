@@ -1333,6 +1333,11 @@ bool input_handle_event(InputState *input, SDL_Event *event,
 
             // Close panels on ESC
             if (event->key.keysym.sym == SDLK_ESCAPE && ui) {
+                if (ui->update_countdown_active) {   /* stop an auto-update that is about to run */
+                    ui->update_countdown_active = false;
+                    input->pending_ui_action = UI_ACTION_DEFER_UPDATE;
+                    return true;
+                }
                 if (ui->show_bode_plot) {
                     ui->show_bode_plot = false;
                     return true;
