@@ -885,7 +885,8 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_HW_PDN,           COMP_RESISTOR,  3, 0, "absmean", 1.5921, 0.04, 200e-6, "1.8 V rail sagging under the load step (deeper since the DCR history fix)" },
     { CIRCUIT_HW_CAPS,          COMP_RESISTOR,  2, 0, "absmean", 5.0,    0.03, 500e-6, "the input-capacitor rail" },
     { CIRCUIT_HW_MATCH,         COMP_RESISTOR,  3, 0, "amp", 1.0,    0.03, 20e-6, "matched 50 ohm load takes half the source voltage" },
-    { CIRCUIT_HW_REFLECT,       COMP_INDUCTOR,  7, 1, "max", 5.0101, 0.04, 8e-6, "open far end doubles the incident 2.5 V step" },
+    { CIRCUIT_HW_REFLECT,       COMP_DELAY_LINE, 0, 1, "max", 5.0,    0.03, 8e-6, "open far end doubles the incident 2.5 V step" },
+    { CIRCUIT_HW_REFLECT,       COMP_DELAY_LINE, 0, 0, "max", 5.0,    0.03, 8e-6, "driver end: 2.5 V launched, 5 V once the reflection is back" },
     { CIRCUIT_HW_LOOP,          COMP_OPAMP,     0, 2, "amp", 4.9995, 0.04, 4e-3, "uncompensated stage: x10 on a 1 Vpp step" },
     /* Ideal vs real: both halves of every comparison, so a model change cannot quietly
        collapse the two rows onto each other. Hand calculations are in the template notes. */
@@ -919,7 +920,7 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_IV_PROBE_LOADING, COMP_CAPACITOR, 3, 0, "amp", 1.484,  0.06, 5e-6, "10x probe's 12 pF: 2.97 Vpp, loaded but honest" },
     { CIRCUIT_IV_GROUND_LEAD,   COMP_CAPACITOR, 0, 0, "max", 3.693,  0.08, 4e-7, "6 inch clip, 150 nH: 0.39 V of overshoot on a 3.3 V edge" },
     { CIRCUIT_IV_GROUND_LEAD,   COMP_CAPACITOR, 1, 0, "max", 3.447,  0.08, 4e-7, "spring tip, 15 nH: 0.15 V - the same edge, a shorter return" },
-    { CIRCUIT_IV_SCOPE_INPUT_Z, COMP_RESISTOR,  1, 0, "max", 2.207,  0.08, 4e-7, "1 M input: open cable end, the step doubles to 2.2 V" },
+    { CIRCUIT_IV_SCOPE_INPUT_Z, COMP_RESISTOR,  1, 0, "max", 2.0,    0.04, 4e-7, "1 M input: the open cable end doubles the launched 1 V, exactly" },
     { CIRCUIT_IV_SCOPE_INPUT_Z, COMP_RESISTOR,  3, 0, "max", 1.05,   0.10, 4e-7, "50 ohm input: matched, 1 V - what the generator is calibrated to deliver" },
     { CIRCUIT_IV_AC_COUPLING,   COMP_RESISTOR,  1, 0, "dc",  12.0,   0.02, 5e-5, "DC-coupled channel sits at the 12 V rail" },
     { CIRCUIT_IV_AC_COUPLING,   COMP_RESISTOR,  2, 0, "amp", 0.1,    0.05, 5e-5, "AC-coupled channel: the 200 mVpp ripple, centred on zero" },
@@ -934,9 +935,9 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_IV_BOOTSTRAP,     COMP_CAPACITOR, 0, 0, "max", 23.4,   0.15, 1e-4, "switching: BOOT rides to 23 V, 11.5 V above the switch node" },
     { CIRCUIT_IV_BOOTSTRAP,     COMP_CAPACITOR, 1, 0, "max", 12.0,   0.05, 4e-3, "stuck on: the cap has drained and BOOT has fallen back to the switch node" },
     /* Interview prep - I/O and signal integrity. */
-    { CIRCUIT_IV_TERMINATION,   COMP_CAPACITOR, 5, 0, "max", 4.748,  0.05, 2e-7, "unterminated: the 2.2 V launched doubles at the open far end" },
-    { CIRCUIT_IV_TERMINATION,   COMP_CAPACITOR, 11, 0, "max", 3.358, 0.05, 2e-7, "series terminated: the full 3.3 V, and nothing comes back twice" },
-    { CIRCUIT_IV_TERMINATION,   COMP_CAPACITOR, 17, 0, "max", 2.333, 0.05, 2e-7, "parallel terminated: clean, but 3.3 x 50/75 is all the receiver ever gets" },
+    { CIRCUIT_IV_TERMINATION,   COMP_CAPACITOR, 0, 0, "max", 4.504,  0.05, 2e-7, "unterminated: the 2.2 V launched doubles at the open far end" },
+    { CIRCUIT_IV_TERMINATION,   COMP_CAPACITOR, 1, 0, "max", 3.282, 0.05, 2e-7, "series terminated: the full 3.3 V, and nothing comes back twice" },
+    { CIRCUIT_IV_TERMINATION,   COMP_CAPACITOR, 2, 0, "max", 2.355, 0.05, 2e-7, "parallel terminated: clean, but 3.3 x 50/75 is all the receiver ever gets" },
     { CIRCUIT_IV_GROUND_BOUNCE, COMP_INDUCTOR,  0, 0, "amp", 1.077,  0.10, 4e-7, "the chip's own ground moves 2.2 Vpp against the board's" },
     { CIRCUIT_IV_GROUND_BOUNCE, COMP_RESISTOR,  1, 0, "amp", 0.51,   0.20, 4e-7, "and the pin that is holding LOW moves with it" },
     { CIRCUIT_IV_CROSSTALK,     COMP_CAPACITOR, 2, 0, "amp", 0.685,  0.15, 4e-7, "weak victim: 6.6 pC into 7 pF is nearly a volt" },

@@ -1182,14 +1182,13 @@ circuit_toy/
   step control across a commutation. Written up in `docs/ROADMAP.md`; the lesson lives in the
   notes of **Discrete Buck, Node by Node** instead of in a template of its own.
 
-- **Two transmission line models, and the older templates use the older one.** `COMP_DELAY_LINE`
-  is a real line: Bergeron's method, with the propagation delay carried in a history buffer, so
-  it is exact for a lossless line at any time step (**Transmission Line (real delay)** is the
-  template, `--line-test` the oracle). `COMP_TLINE` remains the power-line model - per-mile R, X
-  and B at 60 Hz, nominal pi - which is the right thing for a 345 kV circuit and the wrong thing
-  for a 5 ns cable. Signal Reflections, Termination and Scope Input Impedance still build their
-  cable as an L-C ladder, which is correct but needs a time step short against one section's
-  delay; migrating them to the delay line is worth doing and has not been done.
+- **Two transmission line models, for two different jobs.** `COMP_DELAY_LINE` is a signal line:
+  Bergeron's method, with the propagation delay carried in a history buffer, so it is exact for
+  a lossless line at any time step (`--line-test` is the oracle). Every template that needs
+  propagation now uses it - Signal Reflections, Termination, Scope Input Impedance and
+  Transmission Line (real delay). `COMP_TLINE` remains the power-line model - per-mile R, X and
+  B at 60 Hz, nominal pi - which is the right thing for a 345 kV circuit and the wrong thing for
+  a 5 ns cable. Neither models loss with frequency, so neither shows dispersion.
 
 ## License
 

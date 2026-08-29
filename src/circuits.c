@@ -6955,9 +6955,9 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_IV_SCOPE_INPUT_Z] = {"SCOPE INPUT IMPEDANCE: a generator marked 1 V is 1 V INTO 50 OHMS - internally it is a",
         "2 V source behind 50 ohms. Terminate the cable in the scope's 50 ohm input and you read 1 V.",
         "Leave the scope on 1 M and the far end of the cable is open: the step reflects, adds to itself",
-        "and you read 2 V, with ringing from the cable resonating against the input capacitance. The",
-        "cable here is five L-C sections, Z0 = sqrt(15 nH / 6 pF) = 50 ohm, 1.5 ns of delay. INTERVIEW:",
-        "'the generator reads double' - and 'when may you NOT use the 50 ohm input?' (over 5 V, or DC)."},
+        "and you read exactly twice what it is sending - 2 V for a generator set to 1. The",
+        "cable is a real 50 ohm line with 5 ns of propagation delay, so the reflection arrives when it",
+        "arrives. INTERVIEW: 'the generator reads double' - and 'when may you NOT use 50 ohms?'"},
     [CIRCUIT_IV_AC_COUPLING] = {"AC COUPLING: 200 mVpp of ripple on a 12 V rail. DC-coupled you must fit 12 V on screen, so",
         "at 5 V/div the ripple is a twentieth of a division and simply is not there. AC coupling puts",
         "the scope's own 0.1 uF in series with its 1 M input - a high-pass at 1.6 Hz - which throws the",
@@ -7013,7 +7013,12 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "lambda is also what gives the device a finite output resistance r_o = 1/(lambda I_D) - without it the",
         "saturation curves are flat and a current mirror would be perfect. PROBE: both drains."},
     [CIRCUIT_HW_MATCH] = {"IMPEDANCE MATCHING: one 2 Vpk source behind 50 ohm, feeding 5 ohm, 50 ohm and 500 ohm.", "The load voltage rises with R_L, but the load POWER does not: V^2/R gives 33 mW, 20 mW and", "3.3 mW... wait - work it through and the matched 50 ohm load takes the most, because power is", "(V_s R_L / (R_s + R_L))^2 / R_L, which peaks at R_L = R_s.", "Maximum power transfer is a match, not the biggest or smallest load. Maximum voltage would want", "an open circuit and maximum current a short; neither delivers power. PROBE: all three loads."},
-    [CIRCUIT_HW_REFLECT] = {"SIGNAL REFLECTIONS: eight L-C sections (2.5 uH and 1 nF each) make an artificial line with", "Z0 = sqrt(L/C) = 50 ohm and a one-way delay of 8 sqrt(LC) = 400 ns, driven from 50 ohm.", "With the far-end switch OPEN the line is unterminated: the edge runs to the end, reflects with", "the same sign, and comes back - so the driver end shows the classic staircase and the far end", "overshoots to twice the incident step. CLOSE the switch for a matched 50 ohm termination and the", "reflection disappears. TRY: 10 ohm instead of 50 for an inverted reflection."},
+    [CIRCUIT_HW_REFLECT] = {"SIGNAL REFLECTIONS: a 50 ohm line with 400 ns of one-way delay, driven from 50 ohm. The",
+        "line is a real one - Bergeron's method, with the delay carried in the part's own history - so the",
+        "far end sits at exactly zero for 400 ns and then steps, which an L-C ladder cannot do. With the",
+        "far-end switch OPEN the line is unterminated: the edge runs to the end, reflects with the same",
+        "sign and comes back, so the driver end shows the classic staircase and the far end doubles the",
+        "incident step. CLOSE the switch for a matched 50 ohm end and the reflection disappears."},
     [CIRCUIT_HW_LOOP] = {"LOOP STABILITY AND PHASE MARGIN: two identical inverting stages (gain -10) driving 1 nF through", "1 k. The load pole and the amplifier's own pole both sit inside the loop, so by the time the", "loop gain reaches unity the phase has fallen close to -180 degrees: little phase margin, and the", "step response rings. The lower copy has 100 pF across the feedback resistor, which adds a zero,", "returns phase before crossover and damps the ringing - at the cost of bandwidth.", "PROBE: both outputs on the same step. Use the Bode button to see the margin directly."},
 };
 
@@ -10566,37 +10571,34 @@ static int place_hw_reflect(Circuit *circuit, float x, float y) {
     Component *rs = hres(circuit, x + 100, y + 20, 50.0);                   // source termination
     int sl = TN(x + 60, y + 20), sr = TN(x + 140, y + 20); TW(sp, sl);
     rs->node_ids[0] = sl; rs->node_ids[1] = sr;
-    /* eight LC sections: Z0 = sqrt(L/C) = 50 ohm, delay = 8 sqrt(LC) = 400 ns */
-    int n = sr;
-    for (int k = 0; k < 8; k++) {
-        float px = x + 220 + k * 120;
-        Component *l = hind(circuit, px, y + 20, 2.5e-6);
-        int ll = TN(px - 40, y + 20), lr = TN(px + 40, y + 20);
-        if (n != ll) TW(n, ll);
-        l->node_ids[0] = ll; l->node_ids[1] = lr;
-        Component *c = add_comp(circuit, COMP_CAPACITOR, px + 40, y + 80, 90);
-        c->props.capacitor.capacitance = 1e-9;
-        Component *gc = add_comp(circuit, COMP_GROUND, px + 40, y + 160, 0);
-        int ct = TN(px + 40, y + 40), cb = TN(px + 40, y + 120), gt = TN(px + 40, y + 140);
-        TW(lr, ct); TW(cb, gt);
-        c->node_ids[0] = ct; c->node_ids[1] = cb; gc->node_ids[0] = gt;
-        n = lr;
-    }
-    Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 1220, y + 20, 0);   // termination switch (open = reflect)
+    /* One 50 ohm, 400 ns line. This used to be eight L-C sections making an artificial one;
+       the Delay Line carries the delay in its history instead, so the far end sits at exactly
+       zero for 400 ns and then steps, rather than starting to move with the driver. */
+    Component *line = add_comp(circuit, COMP_DELAY_LINE, x + 400, y + 20, 0);   // (360,20)-(440,20)
+    line->props.delay_line.z0 = 50.0;
+    line->props.delay_line.delay = 400e-9;
+    line->props.delay_line.ideal = true;
+    int near = TN(x + 360, y + 20), farend = TN(x + 440, y + 20);
+    TW(sr, near);
+    line->node_ids[0] = near; line->node_ids[1] = farend;
+    int n = farend;
+
+    Component *sw = add_comp(circuit, COMP_SPST_SWITCH, x + 560, y + 20, 0);   // termination switch (open = reflect)
     sw->props.switch_spst.closed = false;
-    int swl = TN(x + 1180, y + 20), swr = TN(x + 1260, y + 20); TW(n, swl);
+    int swl = TN(x + 520, y + 20), swr = TN(x + 600, y + 20); TW(n, swl);
     sw->node_ids[0] = swl; sw->node_ids[1] = swr;
-    Component *rt = add_comp(circuit, COMP_RESISTOR, x + 1320, y + 80, 90);
+    Component *rt = add_comp(circuit, COMP_RESISTOR, x + 660, y + 80, 90);
     rt->props.resistor.resistance = 50.0;
-    Component *gt2 = add_comp(circuit, COMP_GROUND, x + 1320, y + 160, 0);
-    int tt = TN(x + 1320, y + 40), tb = TN(x + 1320, y + 120), tg = TN(x + 1320, y + 140);
-    TW(swr, TN(x + 1320, y + 20)); TW(TN(x + 1320, y + 20), tt); TW(tb, tg);
+    Component *gt2 = add_comp(circuit, COMP_GROUND, x + 660, y + 160, 0);
+    int tt = TN(x + 660, y + 40), tb = TN(x + 660, y + 120), tg = TN(x + 660, y + 140);
+    TW(swr, TN(x + 660, y + 20)); TW(TN(x + 660, y + 20), tt); TW(tb, tg);
     rt->node_ids[0] = tt; rt->node_ids[1] = tb; gt2->node_ids[0] = tg;
-    add_label(circuit, x - 40, y - 60, "SIGNAL REFLECTIONS: eight L-C sections make an artificial 50 ohm line with a 400 ns delay, driven through 50 ohm");
+    add_label(circuit, x - 40, y - 60, "SIGNAL REFLECTIONS: a 50 ohm line with 400 ns of real propagation delay, driven through 50 ohm");
     add_label(circuit, x - 40, y + 240, "With the termination switch OPEN the far end is unterminated: the edge reflects back with the same sign, and the");
     add_label(circuit, x - 40, y + 270, "source end shows the classic staircase. CLOSE the switch for a matched 50 ohm end and the reflection disappears.");
-    add_label(circuit, x - 40, y + 300, "PROBE: the driver end and the far end. TRY: make the termination 10 ohm for a negative (inverted) reflection.");
-    return 30;
+    add_label(circuit, x - 40, y + 300, "PROBE: the driver end and the far end. TRY: make the termination 10 ohm for a negative (inverted)");
+    add_label(circuit, x - 40, y + 330, "reflection, or edit the line: Z0 and the delay are both properties of the part, not of the drawing.");
+    return 7;
 }
 
 // 10. Loop stability: the same amplifier with and without a compensation capacitor
@@ -11446,7 +11448,7 @@ static int place_iv_scope_input_z(Circuit *circuit, float x, float y) {
     /* a 50 ohm generator into 3 ft of 50 ohm coax (five LC sections), read two ways */
     static const double rterm[2] = { 1e6, 50.0 };
     static const char *tag[2] = {
-        "1 M input: the cable end is open, the edge doubles to 2 Vpk and rings. The generator is not putting out 2 V",
+        "1 M input: the cable end is open, so the 1 V launched doubles to 2 V. The generator is not putting out 2 V",
         "50 ohm input: matched, 1 Vpk, flat. This is the setting the generator's amplitude is calibrated into"
     };
     for (int k = 0; k < 2; k++) {
@@ -11463,35 +11465,31 @@ static int place_iv_scope_input_z(Circuit *circuit, float x, float y) {
         int sl = TN(x + 60, py + 20), sr = TN(x + 140, py + 20);
         TW(sp, sl); rout->node_ids[0] = sl; rout->node_ids[1] = sr;
 
-        /* 3 ft of RG-58: 1.5 ns of delay as five L-C sections, Z0 = sqrt(L/C) = 50 ohm */
-        int prev = sr;
-        for (int s = 0; s < 5; s++) {
-            float sx = x + 220 + s * 160;
-            Component *ls = add_comp(circuit, COMP_INDUCTOR, sx, py + 20, 0);          // (sx-40,20)-(sx+40,20)
-            ls->props.inductor.inductance = 15e-9;
-            Component *cs = vcap(circuit, sx + 40, py + 80, 6e-12);
-            int a = TN(sx - 40, py + 20), b = TN(sx + 40, py + 20);
-            TW(prev, a); ls->node_ids[0] = a; ls->node_ids[1] = b;
-            int ct = TN(sx + 40, py + 40), cb = TN(sx + 40, py + 120);
-            TW(b, ct); cs->node_ids[0] = ct; cs->node_ids[1] = cb;
-            Component *gc = add_comp(circuit, COMP_GROUND, sx + 40, py + 180, 0);
-            gc->node_ids[0] = TN(sx + 40, py + 160); TW(cb, TN(sx + 40, py + 160));
-            prev = b;
-        }
-        Component *rin = vres(circuit, x + 1100, py + 80, rterm[k]);
-        int rt = TN(x + 1100, py + 40), rb = TN(x + 1100, py + 120);
-        TW(prev, TN(x + 1060, py + 20)); TW(TN(x + 1060, py + 20), TN(x + 1100, py + 20)); TW(TN(x + 1100, py + 20), rt);
+        /* 3 ft of RG-58: one Delay Line, Z0 = 50 ohm and 5 ns one way. It used to be five L-C
+           sections standing in for the cable; the part carries the delay itself, so the far end
+           stays at zero until the wave gets there instead of ramping with the driver. */
+        Component *cable = add_comp(circuit, COMP_DELAY_LINE, x + 300, py + 20, 0);   // (260,20)-(340,20)
+        cable->props.delay_line.z0 = 50.0;
+        cable->props.delay_line.delay = 5e-9;
+        cable->props.delay_line.ideal = true;
+        int ca = TN(x + 260, py + 20), cb2 = TN(x + 340, py + 20);
+        TW(sr, ca);
+        cable->node_ids[0] = ca; cable->node_ids[1] = cb2;
+        int prev = cb2;
+        Component *rin = vres(circuit, x + 460, py + 80, rterm[k]);
+        int rt = TN(x + 460, py + 40), rb = TN(x + 460, py + 120);
+        TW(prev, TN(x + 420, py + 20)); TW(TN(x + 420, py + 20), TN(x + 460, py + 20)); TW(TN(x + 460, py + 20), rt);
         rin->node_ids[0] = rt; rin->node_ids[1] = rb;
-        Component *g2 = add_comp(circuit, COMP_GROUND, x + 1100, py + 180, 0);
-        g2->node_ids[0] = TN(x + 1100, py + 160); TW(rb, TN(x + 1100, py + 160));
-        add_label(circuit, x + 1180, py + 80, tag[k]);
+        Component *g2 = add_comp(circuit, COMP_GROUND, x + 460, py + 180, 0);
+        g2->node_ids[0] = TN(x + 460, py + 160); TW(rb, TN(x + 460, py + 160));
+        add_label(circuit, x + 540, py + 80, tag[k]);
     }
     add_label(circuit, x - 40, y - 60, "SCOPE INPUT: 1 M or 50 ohm. Same generator, same cable, two different answers");
     add_label(circuit, x - 40, y + 740, "A signal generator marked 1 V is 1 V into 50 ohms - it is a 2 V source behind 50 ohms. Terminate the cable in");
     add_label(circuit, x - 40, y + 770, "50 ohms and you read 1 V. Leave the scope on 1 M and the far end is open: the step reflects, adds to itself and");
-    add_label(circuit, x - 40, y + 800, "you read 2 V, with ringing from the cable's own resonance. The classic 'my generator is out of cal' bug report.");
+    add_label(circuit, x - 40, y + 800, "you read exactly twice what it is sending. The classic 'my generator is out of calibration' bug report.");
     add_label(circuit, x - 40, y + 830, "ALSO SEE: Signal Reflections and Impedance Matching - the same physics, in the board rather than the bench.");
-    return 30;
+    return 12;
 }
 
 static int place_iv_ac_coupling(Circuit *circuit, float x, float y) {
@@ -11898,31 +11896,23 @@ static int place_iv_bootstrap(Circuit *circuit, float x, float y) {
  * does not, how you pick a pull-up, and the two ways a neighbouring signal ruins yours.
  * =================================================================================== */
 
-/* A 3.3 V CMOS driver into an artificial 50 ohm line: five L-C sections of 50 nH and 20 pF.
-   Z0 = sqrt(L/C) = 50 ohm and each section is sqrt(L C) = 1 ns, so the line is 5 ns one way -
-   about a metre of coax, and slow enough that a 250 ps time step resolves it section by
-   section rather than smearing the whole thing into one lump. Returns the far-end node. */
+/* A 3.3 V CMOS driver into a metre of 50 ohm coax: one Delay Line part, 5 ns one way. This
+   used to be five L-C sections approximating the same cable; the part carries the delay in its
+   own history instead, so the far end stays at exactly zero until the wave arrives and the
+   time step no longer has to be short against a section. Returns the far-end node. */
 static int fast_line(Circuit *circuit, float x, float y, int src, double rs_val, Component **rs_out) {
     Component *rs = hres(circuit, x + 60, y, rs_val);
     int sl = TN(x + 20, y), sr = TN(x + 100, y);
     TW(src, sl); rs->node_ids[0] = sl; rs->node_ids[1] = sr;
     if (rs_out) *rs_out = rs;
-    int prev = sr;
-    for (int s = 0; s < 5; s++) {
-        float sx = x + 180 + s * 160;
-        Component *ls = add_comp(circuit, COMP_INDUCTOR, sx, y, 0);
-        ls->props.inductor.inductance = 50e-9;
-        ls->props.inductor.dcr = 0.05;
-        Component *cs = vcap(circuit, sx + 40, y + 60, 20e-12);
-        int a = TN(sx - 40, y), b = TN(sx + 40, y);
-        TW(prev, a); ls->node_ids[0] = a; ls->node_ids[1] = b;
-        int ct = TN(sx + 40, y + 20), cb = TN(sx + 40, y + 100);
-        TW(b, ct); cs->node_ids[0] = ct; cs->node_ids[1] = cb;
-        Component *gc = add_comp(circuit, COMP_GROUND, sx + 40, y + 160, 0);
-        gc->node_ids[0] = TN(sx + 40, y + 140); TW(cb, TN(sx + 40, y + 140));
-        prev = b;
-    }
-    return prev;
+    Component *ln = add_comp(circuit, COMP_DELAY_LINE, x + 220, y, 0);   // (180,0)-(260,0)
+    ln->props.delay_line.z0 = 50.0;
+    ln->props.delay_line.delay = 5e-9;
+    ln->props.delay_line.ideal = true;
+    int a = TN(x + 180, y), b = TN(x + 260, y);
+    TW(sr, a);
+    ln->node_ids[0] = a; ln->node_ids[1] = b;
+    return b;
 }
 
 static int place_iv_termination(Circuit *circuit, float x, float y) {
@@ -12669,7 +12659,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_PDN]           = { COMP_RESISTOR, 3, 0 },
     [CIRCUIT_HW_CAPS]          = { COMP_RESISTOR, 2, 0 },
     [CIRCUIT_HW_MATCH]         = { COMP_RESISTOR, 3, 0 },
-    [CIRCUIT_HW_REFLECT]       = { COMP_INDUCTOR, 7, 1 },
+    [CIRCUIT_HW_REFLECT]       = { COMP_DELAY_LINE, 0, 1 },   /* the far end of the line */
     [CIRCUIT_HW_LOOP]          = { COMP_OPAMP, 0, 2 },
     [CIRCUIT_ID_SOURCE]        = { COMP_RESISTOR, 0, 0 },
     [CIRCUIT_ID_DIODE]         = { COMP_RESISTOR, 0, 0 },
@@ -12693,7 +12683,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_BUCK_NODES]    = { COMP_RESISTOR, 2, 0 },     /* the output, after L and C */
     [CIRCUIT_IV_LDO_VS_BUCK]   = { COMP_RESISTOR, 1, 0 },     /* the linear regulator's 5 V output */
     [CIRCUIT_IV_BOOTSTRAP]     = { COMP_CAPACITOR, 0, 0 },    /* BOOT, riding on the switch node */
-    [CIRCUIT_IV_TERMINATION]   = { COMP_CAPACITOR, 5, 0 },    /* unterminated receiver: the overshoot */
+    [CIRCUIT_IV_TERMINATION]   = { COMP_CAPACITOR, 0, 0 },    /* unterminated receiver: the overshoot */
     [CIRCUIT_IV_PULLUP_SIZING] = { COMP_CAPACITOR, 0, 0 },    /* the 10 k bus */
     [CIRCUIT_IV_GROUND_BOUNCE] = { COMP_INDUCTOR, 0, 0 },     /* the local ground, above the bond wire */
     [CIRCUIT_IV_CROSSTALK]     = { COMP_CAPACITOR, 2, 0 },    /* the weakly held victim */
@@ -12751,7 +12741,7 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_XY_PLOTTER]       = { { COMP_RESISTOR, 0, 0 } },
     [CIRCUIT_HW_CAPS]          = { { COMP_RESISTOR, 6, 0 } },
     [CIRCUIT_HW_MATCH]         = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 5, 0 } },
-    [CIRCUIT_HW_REFLECT]       = { { COMP_INDUCTOR, 0, 0 } },
+    [CIRCUIT_HW_REFLECT]       = { { COMP_DELAY_LINE, 0, 0 } },   /* and the driver end */
     [CIRCUIT_HW_LOOP]          = { { COMP_OPAMP, 1, 2 } },
     [CIRCUIT_HW_PDN]           = { { COMP_RESISTOR, 0, 0 } },
     /* ideal vs real: the whole point is seeing both models at once, so every copy is probed */
