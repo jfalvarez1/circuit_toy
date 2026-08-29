@@ -97,6 +97,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 int knob = ui_scope_knob_at(ui, x, y);
                 if (knob >= 0) {
                     ui->scope_knob_active = knob;
+                    ui->scope_knob_last_x = x;
                     ui->scope_knob_last_y = y;
                     ui->scope_knobs[knob].detent = 0;
                     ui_restore_popup_scope_coords(ui, &backup);
@@ -935,7 +936,9 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 backup_motion = ui_setup_popup_scope_coords(ui);
             }
             if (is_popup_motion && ui->scope_knob_active >= 0) {
-                int act = ui_scope_knob_drag(ui, ui->scope_knob_active, y - ui->scope_knob_last_y);
+                int act = ui_scope_knob_drag_xy(ui, ui->scope_knob_active,
+                                                x - ui->scope_knob_last_x, y - ui->scope_knob_last_y);
+                ui->scope_knob_last_x = x;
                 ui->scope_knob_last_y = y;
                 if (act) input->pending_ui_action = act;
                 ui_restore_popup_scope_coords(ui, &backup_motion);

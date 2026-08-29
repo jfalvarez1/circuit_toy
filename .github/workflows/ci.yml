@@ -89,10 +89,16 @@ jobs:
         run: |
           set +e
           rm -rf pkgtest start.bmp
-          # exactly what the release zip carries, and nothing else - no SDL2 DLL, no build
-          # leftovers. A release that needs a file the zip does not ship fails here.
-          mkdir -p pkgtest
-          cp build/circuit-playground.exe README.md guide.html pkgtest/
+          if [ "${{ matrix.link }}" = "static" ]; then
+            # exactly what the release zip carries, and nothing else. A release that needs a
+            # file the zip does not ship fails here.
+            mkdir -p pkgtest
+            cp build/circuit-playground.exe README.md guide.html pkgtest/
+          else
+            # the shared build keeps SDL2-8.dll beside it; start it where it lives
+            mkdir -p pkgtest
+            cp build/circuit-playground.exe build/SDL2*.dll README.md guide.html pkgtest/ 2>/dev/null
+          fi
           cd pkgtest
           ./circuit-playground.exe --template "RC Low Pass" --size 800x600 \
               --frame 20 --shot ../start.bmp --exit --no-update-check

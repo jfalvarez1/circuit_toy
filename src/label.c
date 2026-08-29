@@ -47,6 +47,33 @@ static void compact_eng(double v, const char *unit, char *buf, size_t n) {
     snprintf(buf, n, "%.2g%s", v, unit);
 }
 
+/* How a canvas annotation is broken into lines.
+   The notes are written as one long sentence each, and at 11 px a character a 120-character
+   line is 1300 px wide - wider than the circuit it describes, so reading the note means zooming
+   out until the schematic is too small to read. Wrapping at a fixed column turns that into a
+   paragraph the same shape as the circuit. The renderer and the geometry audit both call this,
+   so what is measured is what is drawn. */
+int label_wrap(const char *s, int max_chars, int *starts, int *lens, int max_lines) {
+    int n = 0, i = 0, len = (int)strlen(s);
+    if (max_chars < 8) max_chars = 8;
+    while (i < len && n < max_lines) {
+        int remaining = len - i;
+        if (remaining <= max_chars) {
+            starts[n] = i; lens[n] = remaining; n++;
+            break;
+        }
+        /* break on the last space that fits; if there is none, break at the column */
+        int brk = -1;
+        for (int k = max_chars; k > 0; k--)
+            if (s[i + k] == ' ') { brk = k; break; }
+        if (brk <= 0) brk = max_chars;
+        starts[n] = i; lens[n] = brk; n++;
+        i += brk;
+        while (s[i] == ' ') i++;    /* the space itself is not drawn at the start of a line */
+    }
+    return n;
+}
+
 bool render_component_value_label(const Component *comp, char *out, size_t outn,
                                   float *out_x, float *out_y) {
     char buf[64] = "";

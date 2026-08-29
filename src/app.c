@@ -1047,12 +1047,34 @@ void app_handle_events(App *app) {
                 // Handle circuit template selection (UI_ACTION_SELECT_CIRCUIT + circuit_type)
                 if (app->input.pending_ui_action >= UI_ACTION_SELECT_CIRCUIT &&
                     app->input.pending_ui_action < UI_ACTION_SELECT_CIRCUIT + 100) {
+                    /* Picking a circuit from the list places it, on its own, framed and running.
+                       It used to arm a click: choose the circuit, find a clear patch of canvas,
+                       click, and clear the last one by hand first. Nobody wants a template
+                       *next to* another template - they want to look at it. */
                     int circuit_type = app->input.pending_ui_action - UI_ACTION_SELECT_CIRCUIT;
                     const CircuitTemplateInfo *info = circuit_template_get_info(circuit_type);
-                    char msg[128];
-                    snprintf(msg, sizeof(msg), "Click on canvas to place %s circuit", info->name);
+                    char msg[160];
+                    simulation_reset(app->simulation);
+                    circuit_clear(app->circuit);
+                    input_cancel_action(&app->input);
+                    app->input.selected_component = NULL;
+                    app->has_file = false;
+                    app->current_file[0] = '\0';
+
+                    if (app_place_template_centered(app, (CircuitTemplateType)circuit_type)) {
+                        app->input.should_autostart_sim = true;
+                        snprintf(msg, sizeof msg, "%s: probes on input and output, running - read the notes on the canvas",
+                                 info ? info->name : "circuit");
+                    } else {
+                        snprintf(msg, sizeof msg, "Could not place %s", info ? info->name : "that circuit");
+                    }
                     ui_set_status(&app->ui, msg);
-                    // Note: actual placement happens in input.c when user clicks on canvas
+
+                    /* the selection has done its job; leave nothing armed behind it */
+                    app->ui.placing_circuit = false;
+                    app->ui.selected_circuit_type = -1;
+                    for (int i = 0; i < app->ui.num_circuit_items; i++)
+                        app->ui.circuit_items[i].selected = false;
                 }
                 // Handle property edit start actions (UI_ACTION_PROP_EDIT + prop_type)
                 else if (app->input.pending_ui_action >= UI_ACTION_PROP_EDIT &&

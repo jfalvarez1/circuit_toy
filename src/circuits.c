@@ -139,6 +139,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "circuits.h"
+#include "label.h"   /* label_wrap: the notes are laid out at the width they are drawn */
 #include "component.h"
 
 // Circuit template info table
@@ -7506,7 +7507,7 @@ static int place_ferranti_line(Circuit *circuit, float x, float y) {
     Component *xr = add_comp(circuit, COMP_INDUCTOR, x + 380, y + 140, 90);             // (380,100)-(380,180)
     xr->props.inductor.inductance = 3.54;
     Component *g4 = add_comp(circuit, COMP_GROUND, x + 380, y + 200, 0);
-    add_label(circuit, x + 20, y - 40, "Ferranti rise: 345 kV, 200 mi pi line, open end - close SW for the shunt reactor");
+    add_label(circuit, x + 20, y - 80, "Ferranti rise: 345 kV, 200 mi pi line, open end - close SW for the shunt reactor");
     int sp = TN(x, y + 20), tll = TN(x + 90, y + 20), tlr = TN(x + 170, y + 20), ot = TN(x + 280, y + 20), swt = TN(x + 380, y + 20), swb = TN(x + 380, y + 100);
     TW(sp, tll); TW(tlr, ot); TW(ot, swt);
     connect_terminals(circuit, open_load, 1, g3, 0);
@@ -7538,7 +7539,7 @@ static int place_line_model_ladder(Circuit *circuit, float x, float y) {
         t->node_ids[0] = tl; t->node_ids[1] = tr; ld->node_ids[0] = n;
         add_label(circuit, x + 40, ry - 70, names[row]);
     }
-    add_label(circuit, x + 20, y - 60, "Line model ladder: 138 kV, 30 mi, 90 MW - probe the three load buses");
+    add_label(circuit, x + 20, y - 100, "Line model ladder: 138 kV, 30 mi, 90 MW - probe the three load buses");
     return 13;
 }
 
@@ -7742,7 +7743,7 @@ static int place_pc_overcurrent(Circuit *circuit, float x, float y) {
     TW(hold, c1); TW(c1, c2); TW(c2, plus);
     Component *u = comparator_with_ref(circuit, x + 600, y + 40, 8.0, plus);     // -(560,20) +(560,60) out(640,40)
     (void)u;
-    add_label(circuit, x + 20, y - 110, "CT + 50/51 overcurrent: 600 A normal, fault 1200 A at t = 40-100 ms (repeats)");
+    add_label(circuit, x + 20, y - 150, "CT + 50/51 overcurrent: 600 A normal, fault 1200 A at t = 40-100 ms (repeats)");
     add_label(circuit, x + 700, y + 30, "TRIP");
     // wiring
     int sp = TN(x, y + 20), p1 = TN(x + 100, y + 20); TW(sp, p1);
@@ -7908,7 +7909,7 @@ static int place_pc_breaker_fail(Circuit *circuit, float x, float y) {
     Component *rl = add_comp(circuit, COMP_RESISTOR, x + 700, y + 110, 90);      // (700,70)-(700,150)
     rl->props.resistor.resistance = 100e3;
     Component *gl = add_comp(circuit, COMP_GROUND, x + 700, y + 170, 0);
-    add_label(circuit, x + 20, y - 90, "50BF: TRIP at 50 ms, breaker current still present -> BFT 150 ms later (stuck breaker)");
+    add_label(circuit, x + 20, y - 140, "50BF: TRIP at 50 ms, breaker current still present -> BFT 150 ms later (stuck breaker)");
     add_label(circuit, x + 720, y + 60, "BFT");
     add_label(circuit, x + 20, y + 310, "TRIP (top pulse) and 50BF current detector (bottom pulse); shorten the 50BF pulse to 83 ms for a healthy breaker");
     // wiring
@@ -7945,7 +7946,7 @@ static int place_sil_loading(Circuit *circuit, float x, float y) {
     Component *l2 = add_comp(circuit, COMP_RESISTOR, x + 380, y + 140, 90);      // (380,100)-(380,180)
     l2->props.resistor.resistance = 283.0;
     Component *g2 = add_comp(circuit, COMP_GROUND, x + 380, y + 200, 0);
-    add_label(circuit, x + 20, y - 40, "SIL loading: 200 mi 345 kV line into Zc = 283 ohm (420 MW) - close SW for 2 x SIL");
+    add_label(circuit, x + 20, y - 80, "SIL loading: 200 mi 345 kV line into Zc = 283 ohm (420 MW) - close SW for 2 x SIL");
     int sp = TN(x, y + 20), tll = TN(x + 90, y + 20), tlr = TN(x + 170, y + 20), lt = TN(x + 280, y + 20), swt = TN(x + 380, y + 20), swb = TN(x + 380, y + 100);
     TW(sp, tll); TW(tlr, lt); TW(lt, swt);
     v->node_ids[0] = sp; tl->node_ids[0] = tll; tl->node_ids[1] = tlr; ld->node_ids[0] = lt; sw->node_ids[0] = swt; sw->node_ids[1] = swb; l2->node_ids[0] = swb;
@@ -8052,7 +8053,7 @@ static int place_3ph_345_line(Circuit *circuit, float x, float y) {
     Component *gn = add_comp(circuit, COMP_GROUND, x + 320, y + 400, 0);
     rn->node_ids[0] = bus_prev;
     connect_terminals(circuit, rn, 1, gn, 0);
-    add_label(circuit, x + 20, y - 40, "Three-phase 345 kV, 100 mi per phase, 600 MW: every phase drops the same 6 %");
+    add_label(circuit, x + 20, y - 80, "Three-phase 345 kV, 100 mi per phase, 600 MW: every phase drops the same 6 %");
     return 11;
 }
 // six-pulse bridge: phase columns at x+100/200/300, plus bus y=0, minus bus y=260 (neutral grounded)
@@ -8757,7 +8758,7 @@ static int place_power_plant(Circuit *circuit, float x, float y) {
         TW(tr, lt);
         br->node_ids[0] = s1; br->node_ids[1] = bl; tl->node_ids[0] = bl; tl->node_ids[1] = tr; ld->node_ids[0] = lt;
     }
-    add_label(circuit, x + 20, y - 170, "Power plant: 18 kV generator (X'' = 0.15 pu) -> GSU bank 18/345 kV -> 345 kV breakers -> 100 mi lines -> 600 MW");
+    add_label(circuit, x + 20, y - 240, "Power plant: 18 kV generator (X'' = 0.15 pu) -> GSU bank 18/345 kV -> 345 kV breakers -> 100 mi lines -> 600 MW");
     add_label(circuit, x + 280, y - 190, "open a breaker: that phase's load drops, the others keep going (unbalanced)");
     return 22;
 }
@@ -8794,7 +8795,7 @@ static int place_substation(Circuit *circuit, float x, float y) {
         int swb = TN(x + 620, r + 80);
         sw->node_ids[0] = ct; sw->node_ids[1] = swb; cb->node_ids[0] = swb;
     }
-    add_label(circuit, x + 20, y - 210, "Transmission substation: 345 kV grid -> 50 mi lines -> breakers -> 345/138 kV autotransformers -> 138 kV bus");
+    add_label(circuit, x + 20, y - 290, "Transmission substation: 345 kV grid -> 50 mi lines -> breakers -> 345/138 kV autotransformers -> 138 kV bus");
     add_label(circuit, x + 20, y - 230, "-> 30 mi feeders into 90 MW pf 0.9 loads. Close the cap-bank switches: the far bus recovers ~5 %");
     return 34;
 }
@@ -9197,7 +9198,7 @@ static int place_tx_ladder(Circuit *circuit, float x, float y) {
             add_label(circuit, x + 640, ry - 30, "240 V service (117.7 V per leg)");
         }
     }
-    add_label(circuit, x - 40, y - 60, "TEXAS VOLTAGE LADDER - 345 / 138 / 69 / 12.47 kV and the 240 V service, each with its own tap load");
+    add_label(circuit, x - 40, y - 110, "TEXAS VOLTAGE LADDER - 345 / 138 / 69 / 12.47 kV and the 240 V service, each with its own tap load");
     return 40;
 }
 
@@ -9536,7 +9537,7 @@ static int place_gs_bold(Circuit *circuit, float x, float y) {
     int b = line_seg(circuit, x + 200, y + 260, d1, 150.0, 0.036, 0.38, 14.5, 2);    // BOLD: Zc 162 ohm
     int bb = TN(x + 320, y + 260); TW(b, bb);
     rl_load(circuit, x + 320, y + 260, bb, 198.4, 0);
-    add_label(circuit, x - 40, y - 60, "AEP BOLD (Breakthrough Overhead Line Design): the same 150 mi 345 kV corridor at 600 MW, twice");
+    add_label(circuit, x - 40, y - 120, "AEP BOLD (Breakthrough Overhead Line Design): the same 150 mi 345 kV corridor at 600 MW, twice");
     add_label(circuit, x + 120, y - 70, "conventional: 0.06 + j0.55 ohm/mi, 8 uS/mi  ->  Zc = sqrt(L/C) = 262 ohm, SIL = 345^2/Zc = 454 MW");
     add_label(circuit, x + 120, y + 170, "BOLD: compact triangular phasing raises C and lowers L  ->  Zc = 162 ohm, SIL = 735 MW (+62 %), losses -40 %");
     add_label(circuit, x + 60, y + 420, "Because BOLD carries the transfer naturally it needs no series capacitors - and so has no sub-synchronous resonance risk.");
@@ -9766,10 +9767,10 @@ static int place_gs_pids(Circuit *circuit, float x, float y) {
     Component *ge = add_comp(circuit, COMP_GROUND, x + 560, y + 160, 0);
     eol->node_ids[0] = et; eol->node_ids[1] = eb; ge->node_ids[0] = eb;
     add_label(circuit, x - 40, y - 80, "SUPERVISED PERIMETER ZONE (NERC CIP-014-2 layers 2 and 5): a fence sensor reported to the substation RTU");
-    add_label(circuit, x + 60, y + 310, "One wire carries four states, so a cut or a short cannot be mistaken for 'all clear':");
-    add_label(circuit, x + 60, y + 290, "  normal (contact shorts the zone resistor, 5.6k end-of-line) = 8.5 V     alarm (contact opens, 2.2k + 5.6k) = 9.2 V");
-    add_label(circuit, x + 60, y + 320, "  cable cut (open the integrity switch) = 12 V                            short across the pair = 0 V");
-    add_label(circuit, x + 60, y + 350, "The contact opens at 4 s for 3 s. Passive loops and fibre are used because wireless sensors fail in substation EMI.");
+    add_label(circuit, x + 60, y + 290, "One wire carries four states, so a cut or a short cannot be mistaken for 'all clear':");
+    add_label(circuit, x + 60, y + 330, "  normal (contact shorts the zone resistor, 5.6k end-of-line) = 8.5 V     alarm (contact opens, 2.2k + 5.6k) = 9.2 V");
+    add_label(circuit, x + 60, y + 370, "  cable cut (open the integrity switch) = 12 V                            short across the pair = 0 V");
+    add_label(circuit, x + 60, y + 410, "The contact opens at 4 s for 3 s. Passive loops and fibre are used because wireless sensors fail in substation EMI.");
     return 18;
 }
 #undef TN
@@ -9838,7 +9839,7 @@ static int place_mos_idvgs(Circuit *circuit, float x, float y) {
         rail = rn;
     }
     add_label(circuit, x - 40, y - 320, "MOSFET TRANSFER CURVES: one 0-4 V gate ramp into three devices; each source sense resistor makes the probe read I_D");
-    add_label(circuit, x - 40, y + 345, "Press the scope's Y-T button for X-Y and CH1 (the gate) becomes the x axis: these are I_D vs V_GS curves.");
+    add_label(circuit, x - 40, y + 380, "Press the scope's Y-T button for X-Y and CH1 (the gate) becomes the x axis: these are I_D vs V_GS curves.");
     add_label(circuit, x - 40, y + 330, "Each channel is 1 ohm x I_D, so 1 V = 1 A. Watch each device leave cutoff at its own Vth and rise with its own kn.");
     add_label(circuit, x - 40, y + 360, "TRY: select a device and edit Vth, W/L or Kn in the properties panel - the curve moves as you type.");
     return 20;
@@ -10510,7 +10511,7 @@ static int place_hw_cuk(Circuit *circuit, float x, float y) {
     out_stage(circuit, x + 700, y, out, 100e-6, 20.0, -12.0);   /* 2 ms of output filter: the converter settles inside the visible window */
     add_label(circuit, x - 40, y - 80, "CUK CONVERTER: energy moves through the 47 uF transfer capacitor instead of an inductor, so BOTH the input and");
     add_label(circuit, x - 40, y - 50, "output currents are continuous - the quietest of the basic topologies. Vout = -D/(1-D) x Vin = -12 V at D = 0.5.");
-    add_label(circuit, x - 40, y + 220, "The 0.5 ohm with C1 is its ESR; with no real loss the C1-L2 loop rings away at start-up. TRY: C1 -> 1 uF.");
+    add_label(circuit, x - 40, y + 300, "The 0.5 ohm with C1 is its ESR; with no real loss the C1-L2 loop rings away at start-up. TRY: C1 -> 1 uF.");
     return 22;
 }
 
@@ -10962,10 +10963,10 @@ static int place_id_opamp(Circuit *circuit, float x, float y) {
         add_label(circuit, x + 470, py + 40, nm[k]);
     }
     add_label(circuit, x - 140, y - 100, "IDEAL vs REAL OP-AMP: three non-inverting stages, gain 1 + 9k/1k = 10, all driven at 100 kHz");
-    add_label(circuit, x - 140, y + 840, "An ideal op-amp has infinite gain and infinite bandwidth, so 50 mV in is 500 mV out however fast you drive it. A real");
-    add_label(circuit, x - 140, y + 870, "part has a gain-bandwidth PRODUCT: 1 MHz at a closed-loop gain of 10 leaves 100 kHz of bandwidth, so at exactly");
-    add_label(circuit, x - 140, y + 800, "100 kHz the output is 3 dB down. Row 3 asks the same part for 5 V at 100 kHz, which needs 2 pi f V = 3.1 V/us; it");
-    add_label(circuit, x - 140, y + 830, "can only manage 0.5, so the sine leaves as a triangle. Bandwidth is small-signal, slew rate is large-signal.");
+    add_label(circuit, x - 140, y + 800, "An ideal op-amp has infinite gain and infinite bandwidth, so 50 mV in is 500 mV out however fast you drive it. A real");
+    add_label(circuit, x - 140, y + 840, "part has a gain-bandwidth PRODUCT: 1 MHz at a closed-loop gain of 10 leaves 100 kHz of bandwidth, so at exactly");
+    add_label(circuit, x - 140, y + 880, "100 kHz the output is 3 dB down. Row 3 asks the same part for 5 V at 100 kHz, which needs 2 pi f V = 3.1 V/us; it");
+    add_label(circuit, x - 140, y + 920, "can only manage 0.5, so the sine leaves as a triangle. Bandwidth is small-signal, slew rate is large-signal.");
     return 24;
 }
 
@@ -12062,9 +12063,9 @@ static int place_iv_termination(Circuit *circuit, float x, float y) {
         add_label(circuit, x + 1240, py + 60, tag[k]);
     }
     add_label(circuit, x - 40, y - 60, "TERMINATION: the same 3.3 V driver into the same 50 ohm line, ended three ways");
-    add_label(circuit, x + 1240, y + 400, "back is absorbed there. The far end still doubles the step, which is exactly right: the");
-    add_label(circuit, x + 1240, y + 430, "receiver is high impedance, so the incident half plus the reflected half make the full 3.3 V.");
-    add_label(circuit, x + 1240, y + 720, "receiver only ever sees 3.3 x 50/75 = 2.2 V, and the driver holds 44 mA the whole time it is high.");
+    add_label(circuit, x + 1240, y + 420, "back is absorbed there. The far end still doubles the step, which is exactly right: the");
+    add_label(circuit, x + 1240, y + 460, "receiver is high impedance, so the incident half plus the reflected half make the full 3.3 V.");
+    add_label(circuit, x + 1240, y + 750, "receiver only ever sees 3.3 x 50/75 = 2.2 V, and the driver holds 44 mA the whole time it is high.");
     add_label(circuit, x - 40, y + 1000, "The interview answer is the trade: SERIES costs nothing at DC and one line delay of latency, and it works");
     add_label(circuit, x - 40, y + 1030, "for exactly one receiver at the far end. PARALLEL works for a bus with receivers along it, and costs DC");
     add_label(circuit, x - 40, y + 1060, "current and amplitude forever. NONE is fine when the edge is slow next to the round trip - the real rule is");
@@ -13792,12 +13793,17 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
         }
     }
 
+    /* Each note is drawn wrapped, so the next one starts below however many lines this one
+       took. A fixed 16 px step printed them on top of each other the moment they wrapped. */
     float ty = max_y + 60.0f;
     for (int l = 0; l < 6 && template_notes[type][l]; l++) {
-        Component *txt = add_comp(circuit, COMP_TEXT, min_x, ty + l * 16.0f, 0);
+        Component *txt = add_comp(circuit, COMP_TEXT, min_x, ty, 0);
         if (!txt) break;
         strncpy(txt->props.text.text, template_notes[type][l], sizeof(txt->props.text.text) - 1);
         txt->props.text.font_size = 1;
+        int st[CANVAS_TEXT_MAX_LINES], ln[CANVAS_TEXT_MAX_LINES];
+        int nl = label_wrap(template_notes[type][l], CANVAS_TEXT_WRAP, st, ln, CANVAS_TEXT_MAX_LINES);
+        ty += (float)(nl > 0 ? nl : 1) * (CANVAS_TEXT_PX + 2) + 4.0f;
         count++;
     }
     return count;

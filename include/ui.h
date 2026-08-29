@@ -8,7 +8,8 @@
 #include <SDL.h>
 #include "types.h"
 
-#define PALETTE_TOP_H 44        // tab strip (22) + filter box (22) above the scrolling palette
+#define PALETTE_TOP_H 54        // tab strip (30) + filter box (24) above the scrolling palette
+#define PAL_HEADER_H 21         // a palette section header row: drawn, laid out and hit-tested from here
 #include "circuit.h"
 #include "circuits.h"   /* TG_COUNT: the palette groups are sized from the template enum */
 #include "simulation.h"
@@ -312,6 +313,7 @@ typedef struct {
     ScopeKnob scope_knobs[KNOB_COUNT];
     int scope_knob_active;               // index of the knob being dragged, -1 when none
     int scope_knob_hover;                // index under the pointer, -1 when none
+    int scope_knob_last_x;               // last pointer x while dragging (right turns it up)
     int scope_knob_last_y;               // last pointer y while dragging
     bool scope_panel_active;             // the pop-out panel layout is in effect
 
@@ -647,6 +649,7 @@ int  ui_scope_input_row_at(UIState *ui, int x, int y);     // pop-out INPUTS lis
 // Drag: dy is pointer movement in pixels (up = increase). Returns a UI action to queue for
 // the detented knobs (volts/div, time/div, channel) or 0 when the knob changed a value itself.
 int  ui_scope_knob_drag(UIState *ui, int knob, int dy);
+int  ui_scope_knob_drag_xy(UIState *ui, int knob, int dx, int dy);
 // Fill out[] with every scope control button (SCOPE_BTN_N entries)
 void ui_scope_buttons(UIState *ui, Button *out[]);
 // Hover tooltip, drawn after everything else

@@ -72,6 +72,7 @@ void render_draw_rect_screen(RenderContext *ctx, int x, int y, int w, int h);
 void render_fill_rect_screen(RenderContext *ctx, int x, int y, int w, int h);
 
 // Text rendering (basic - screen coordinates)
+int  render_text_px(RenderContext *ctx, int font_size);   /* glyph height at the current zoom */
 void render_draw_text(RenderContext *ctx, const char *text, int x, int y, Color color);
 void render_draw_text_small(RenderContext *ctx, const char *text, int x, int y, Color color);
 void render_draw_text_styled(RenderContext *ctx, const char *text, int x, int y, Color color,

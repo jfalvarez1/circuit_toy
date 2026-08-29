@@ -581,6 +581,7 @@ void ui_init(UIState *ui) {
     // Initialize pop-out oscilloscope window
     ui->scope_knob_active = -1;
     ui->scope_knob_hover = -1;
+    ui->scope_knob_last_x = 0;
     ui->scope_knob_last_y = 0;
     ui->scope_panel_active = false;
     ui->scope_popup_window = NULL;
@@ -943,23 +944,60 @@ static bool palette_filter_match(const UIState *ui, const char *label, const cha
 }
 
 // Tab strip + filter box at the top of the left panel
+/* A palette section header, drawn as something you can obviously press: a filled bar across the
+   panel with a border and a triangle, rather than a line of coloured text that happens to be
+   clickable. PAL_HEADER_H is the row it occupies - the draw, the layout and the hit test all
+   take it from here, so a taller header cannot drift away from where the clicks land. */
+static void draw_palette_header(SDL_Renderer *renderer, int screen_y, const char *label,
+                                bool collapsed, bool accent) {
+    SDL_Rect bar = { 2, screen_y, PALETTE_WIDTH - 14, PAL_HEADER_H - 3 };
+    SDL_SetRenderDrawColor(renderer, collapsed ? 0x1c : 0x2e, collapsed ? 0x10 : 0x16,
+                                     collapsed ? 0x32 : 0x50, 0xff);
+    SDL_RenderFillRect(renderer, &bar);
+    SDL_SetRenderDrawColor(renderer, accent ? SYNTH_PINK : SYNTH_BORDER_LIGHT, 0xff);
+    SDL_RenderDrawRect(renderer, &bar);
+
+    /* the triangle: right when it is closed, down when it is open */
+    int tx = bar.x + 7, ty = bar.y + bar.h / 2;
+    SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+    if (collapsed) {
+        for (int i = 0; i < 5; i++)
+            SDL_RenderDrawLine(renderer, tx + i, ty - 4 + i, tx + i, ty + 4 - i);
+    } else {
+        for (int i = 0; i < 5; i++)
+            SDL_RenderDrawLine(renderer, tx - 4 + i, ty + i - 2, tx + 4 - i, ty + i - 2);
+    }
+
+    SDL_SetRenderDrawColor(renderer, accent ? SYNTH_PINK : SYNTH_TEXT, 0xff);
+    ui_draw_text(renderer, label, bar.x + 18, bar.y + (bar.h - 8) / 2);
+}
+
 static void draw_palette_tabs(UIState *ui, SDL_Renderer *renderer) {
+    /* Two buttons, not two words. They are the first thing anyone touches and they were 18 px
+       of text with the label centred on the wrong glyph width, so the whole strip read as a
+       caption rather than a control. */
     const char *names[LTAB_COUNT] = { "Parts", "Circuits" };
     int tab_w = (PALETTE_WIDTH - 14) / LTAB_COUNT;
     for (int t = 0; t < LTAB_COUNT; t++) {
-        SDL_Rect r = { 2 + t * (tab_w + 2), TOOLBAR_HEIGHT + 3, tab_w, 18 };
+        SDL_Rect r = { 2 + t * (tab_w + 2), TOOLBAR_HEIGHT + 3, tab_w, 25 };
         bool active = (ui->left_tab == t);
-        SDL_SetRenderDrawColor(renderer, active ? 0x40 : 0x14, active ? 0x20 : 0x0c, active ? 0x60 : 0x24, 0xff);
+        SDL_SetRenderDrawColor(renderer, active ? 0x4a : 0x18, active ? 0x22 : 0x0e,
+                                         active ? 0x70 : 0x28, 0xff);
         SDL_RenderFillRect(renderer, &r);
-        SDL_SetRenderDrawColor(renderer, active ? SYNTH_CYAN : SYNTH_BORDER, 0xff);
+        /* the active one gets a brighter border and a thicker underline, so which tab you are
+           on is legible at a glance rather than by comparing two dark fills */
+        SDL_SetRenderDrawColor(renderer, active ? SYNTH_CYAN : SYNTH_BORDER_LIGHT, 0xff);
         SDL_RenderDrawRect(renderer, &r);
-        if (active) SDL_RenderDrawLine(renderer, r.x, r.y + r.h - 1, r.x + r.w - 1, r.y + r.h - 1);
-        int tx = r.x + (r.w - (int)strlen(names[t]) * 6) / 2;
+        if (active) {
+            SDL_Rect under = { r.x + 1, r.y + r.h - 3, r.w - 2, 2 };
+            SDL_RenderFillRect(renderer, &under);
+        }
+        int tx = r.x + (r.w - (int)strlen(names[t]) * 8) / 2;     /* the font advances 8 */
         SDL_SetRenderDrawColor(renderer, active ? SYNTH_CYAN : SYNTH_TEXT_DIM, 0xff);
-        ui_draw_text(renderer, names[t], tx, r.y + 5);
+        ui_draw_text(renderer, names[t], tx, r.y + (r.h - 8) / 2);
     }
     // filter box
-    SDL_Rect box = { 4, TOOLBAR_HEIGHT + 24, PALETTE_WIDTH - 18, 17 };
+    SDL_Rect box = { 4, TOOLBAR_HEIGHT + 31, PALETTE_WIDTH - 18, 19 };
     SDL_SetRenderDrawColor(renderer, 0x0c, 0x08, 0x18, 0xff);
     SDL_RenderFillRect(renderer, &box);
     SDL_SetRenderDrawColor(renderer, ui->palette_filter_active ? SYNTH_CYAN : SYNTH_BORDER, 0xff);
@@ -1011,28 +1049,10 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
         // Draw header
         int header_screen_y = draw_y - scroll_offset;
         if (header_screen_y >= TOOLBAR_HEIGHT - 14 && header_screen_y < ui->window_height - STATUSBAR_HEIGHT) {
-            // Draw collapse indicator
-            SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
-            if (collapsed) {
-                // Draw right-pointing triangle (collapsed)
-                int tx = 3, ty = header_screen_y + 2;
-                SDL_RenderDrawLine(renderer, tx, ty, tx, ty + 6);
-                SDL_RenderDrawLine(renderer, tx, ty, tx + 4, ty + 3);
-                SDL_RenderDrawLine(renderer, tx, ty + 6, tx + 4, ty + 3);
-            } else {
-                // Draw down-pointing triangle (expanded)
-                int tx = 2, ty = header_screen_y + 1;
-                SDL_RenderDrawLine(renderer, tx, ty, tx + 6, ty);
-                SDL_RenderDrawLine(renderer, tx, ty, tx + 3, ty + 4);
-                SDL_RenderDrawLine(renderer, tx + 6, ty, tx + 3, ty + 4);
-            }
-
-            // Draw header text
-            SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
-            ui_draw_text(renderer, cat->name, 12, header_screen_y);
+            draw_palette_header(renderer, header_screen_y, cat->name, collapsed, false);
         }
-        draw_y += 14;  // Header height
-        content_height += 14;
+        draw_y += PAL_HEADER_H;
+        content_height += PAL_HEADER_H;
 
         if (!collapsed) {
             // Draw items in this section
@@ -1086,25 +1106,10 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
 
         int header_screen_y = draw_y - scroll_offset;
         if (header_screen_y >= TOOLBAR_HEIGHT - 14 && header_screen_y < ui->window_height - STATUSBAR_HEIGHT) {
-            // Draw collapse indicator
-            SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
-            if (circuits_cat->collapsed) {
-                int tx = 3, ty = header_screen_y + 2;
-                SDL_RenderDrawLine(renderer, tx, ty, tx, ty + 6);
-                SDL_RenderDrawLine(renderer, tx, ty, tx + 4, ty + 3);
-                SDL_RenderDrawLine(renderer, tx, ty + 6, tx + 4, ty + 3);
-            } else {
-                int tx = 2, ty = header_screen_y + 1;
-                SDL_RenderDrawLine(renderer, tx, ty, tx + 6, ty);
-                SDL_RenderDrawLine(renderer, tx, ty, tx + 3, ty + 4);
-                SDL_RenderDrawLine(renderer, tx + 6, ty, tx + 3, ty + 4);
-            }
-
-            SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
-            ui_draw_text(renderer, "Circuits", 12, header_screen_y);
+            draw_palette_header(renderer, header_screen_y, "Circuits", circuits_cat->collapsed, true);
         }
-        draw_y += 14;
-        content_height += 14;
+        draw_y += PAL_HEADER_H;
+        content_height += PAL_HEADER_H;
 
         if (!circuits_cat->collapsed) {
             int col = 0, cur_group = -1;
@@ -1172,24 +1177,10 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
         int header_screen_y = draw_y - scroll_offset;
         if (header_screen_y >= TOOLBAR_HEIGHT - 14 && header_screen_y < ui->window_height - STATUSBAR_HEIGHT) {
             // Draw collapse indicator
-            SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
-            if (subcircuits_cat->collapsed) {
-                int tx = 3, ty = header_screen_y + 2;
-                SDL_RenderDrawLine(renderer, tx, ty, tx, ty + 6);
-                SDL_RenderDrawLine(renderer, tx, ty, tx + 4, ty + 3);
-                SDL_RenderDrawLine(renderer, tx, ty + 6, tx + 4, ty + 3);
-            } else {
-                int tx = 2, ty = header_screen_y + 1;
-                SDL_RenderDrawLine(renderer, tx, ty, tx + 6, ty);
-                SDL_RenderDrawLine(renderer, tx, ty, tx + 3, ty + 4);
-                SDL_RenderDrawLine(renderer, tx + 6, ty, tx + 3, ty + 4);
-            }
-
-            SDL_SetRenderDrawColor(renderer, SYNTH_ORANGE, 0xff);
-            ui_draw_text(renderer, "My Circuits", 12, header_screen_y);
+            draw_palette_header(renderer, header_screen_y, "My Circuits", subcircuits_cat->collapsed, true);
         }
-        draw_y += 14;
-        content_height += 14;
+        draw_y += PAL_HEADER_H;
+        content_height += PAL_HEADER_H;
 
         if (!subcircuits_cat->collapsed) {
             int col = 0;
@@ -6724,7 +6715,7 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
 
         // Tab strip and filter box at the top of the left panel
         if (x >= 0 && x < PALETTE_WIDTH && y >= TOOLBAR_HEIGHT && y < TOOLBAR_HEIGHT + PALETTE_TOP_H) {
-            if (y < TOOLBAR_HEIGHT + 23) {
+            if (y < TOOLBAR_HEIGHT + 30) {    /* the tab buttons are 25 tall from +3 */
                 int tab = (x < PALETTE_WIDTH / 2) ? LTAB_PARTS : LTAB_CIRCUITS;
                 if (tab != ui->left_tab) {
                     ui->palette_scroll_per_tab[ui->left_tab] = ui->palette_scroll_offset;
@@ -6794,7 +6785,7 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
                 if (!on_tab) continue;
                 PaletteCategory *category = &ui->categories[cat];
                 // Header_y is in content coords, header is 14 pixels tall
-                if (content_y >= category->header_y && content_y < category->header_y + 14) {
+                if (content_y >= category->header_y && content_y < category->header_y + PAL_HEADER_H) {
                     // Toggle collapsed state
                     category->collapsed = !category->collapsed;
                     return UI_ACTION_NONE;  // Handled, no further action needed
@@ -8069,10 +8060,13 @@ int ui_scope_knob_at(UIState *ui, int x, int y) {
     return -1;
 }
 
-int ui_scope_knob_drag(UIState *ui, int knob, int dy) {
+int ui_scope_knob_drag_xy(UIState *ui, int knob, int dx, int dy) {
     if (!ui || knob < 0 || knob >= KNOB_COUNT) return 0;
     ScopeKnob *k = &ui->scope_knobs[knob];
-    double up = -(double)dy;                       /* dragging up increases */
+    /* Right or up turns it up, left or down turns it down. Vertical alone is what a real knob
+       does under a finger, but on a screen the hand wants to go the way the value goes, and
+       either axis reading the same way means neither is wrong. */
+    double up = (double)dx - (double)dy;
     switch (knob) {
         case KNOB_VOLTS: {
             /* One vertical section, driving whichever input the CHANNEL knob is on. Writing to
@@ -8165,4 +8159,9 @@ void ui_restore_popup_scope_coords(UIState *ui, const ScopeCoordsBackup *backup)
     ui->scope_rect = backup->scope_rect;
     ui->scope_buttons_bottom = backup->buttons_bottom;
     for (int i = 0; i < SCOPE_BTN_N; i++) list[i]->bounds = backup->b[i];
+}
+
+/* the old one-axis entry point, kept for the headless layout checks */
+int ui_scope_knob_drag(UIState *ui, int knob, int dy) {
+    return ui_scope_knob_drag_xy(ui, knob, 0, dy);
 }

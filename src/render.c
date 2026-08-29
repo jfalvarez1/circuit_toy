@@ -466,11 +466,22 @@ void render_fill_rect_screen(RenderContext *ctx, int x, int y, int w, int h) {
 /* Schematic text. CANVAS_TEXT_PX is the height of one character on the canvas: the font's own
    cell is 8 px, which is legible but mean, and everything here reads better a little larger.
    The geometry audit measures label boxes with the same number (tools/template_smoke.c). */
+/* Schematic text is part of the drawing, so it scales with it. Drawn at a fixed pixel size it
+   stayed the same while the circuit shrank, which is why a zoomed-out template was a wall of
+   letters with a small diagram somewhere behind it - and why the geometry audit, which measures
+   labels in world units, could call a template clean that plainly was not. */
+int render_text_px(RenderContext *ctx, int font_size) {
+    int fs = (font_size < 1) ? 1 : (font_size > 3) ? 3 : font_size;
+    int px = (int)((float)(CANVAS_TEXT_PX * fs) * (ctx ? ctx->zoom : 1.0f) + 0.5f);
+    return px < 3 ? 3 : px;    /* below this it is a smudge either way */
+}
+
 void render_draw_text(RenderContext *ctx, const char *text, int x, int y, Color color) {
     if (!text || !*text) return;  // Safety check for NULL or empty string
+    int px = render_text_px(ctx, 1);
     int cx = x;
     while (*text) {
-        cx += font_draw_char(ctx, *text, cx, y, CANVAS_TEXT_PX, color);
+        cx += font_draw_char(ctx, *text, cx, y, px, color);
         text++;
     }
 }
@@ -488,7 +499,7 @@ void render_draw_text_styled(RenderContext *ctx, const char *text, int x, int y,
 
     // Scale based on font_size: 1=small(1x), 2=normal(2x), 3=large(3x)
     int scale = (font_size < 1) ? 1 : (font_size > 3) ? 3 : font_size;
-    int char_height = CANVAS_TEXT_PX * scale;
+    int char_height = render_text_px(ctx, scale);       /* scales with the canvas */
     int char_width = char_height + (bold ? scale : 0);  // Extra width for bold
 
     int cx = x;
@@ -1008,11 +1019,26 @@ void render_component(RenderContext *ctx, Component *comp) {
             if (comp->selected) {
                 text_color = COLOR_ACCENT2;
             }
-            render_draw_text_styled(ctx, comp->props.text.text, sx, sy, text_color,
-                                    comp->props.text.font_size,
-                                    comp->props.text.bold,
-                                    comp->props.text.italic,
-                                    comp->props.text.underline);
+            /* wrapped, so a long note is a paragraph beside the circuit rather than a line
+               wider than it - see label_wrap */
+            {
+                int fs = comp->props.text.font_size;
+                if (fs < 1) fs = 1; if (fs > 3) fs = 3;
+                int starts[CANVAS_TEXT_MAX_LINES], lens[CANVAS_TEXT_MAX_LINES];
+                int nl = label_wrap(comp->props.text.text, CANVAS_TEXT_WRAP,
+                                    starts, lens, CANVAS_TEXT_MAX_LINES);
+                int line_h = render_text_px(ctx, fs) + 2;
+                for (int li = 0; li < nl; li++) {
+                    char line[256];
+                    int n = lens[li] < (int)sizeof line - 1 ? lens[li] : (int)sizeof line - 1;
+                    memcpy(line, comp->props.text.text + starts[li], n);
+                    line[n] = 0;
+                    render_draw_text_styled(ctx, line, sx, sy + li * line_h, text_color,
+                                            fs, comp->props.text.bold,
+                                            comp->props.text.italic,
+                                            comp->props.text.underline);
+                }
+            }
             break;
         }
         // === NEW COMPONENT SYMBOLS ===

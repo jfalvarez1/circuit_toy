@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include "file_io.h"
 
 static char error_message[256] = "";
@@ -343,6 +344,20 @@ bool file_export_json(Circuit *circuit, const char *filename) {
             has_props = true;
         }
 
+        /* The readable fields above are a handful per type, chosen by hand, and everything they
+           leave out came back as the component's default: a 10 mH inductor reloaded as 1 mH, a
+           12 V supply as 5 V. Rather than hand-write every field of every part - which is how
+           it drifted in the first place - the whole property block goes out as bytes alongside
+           them, with the terminals' nodes and the part number. The readable fields stay for
+           anything reading these files; the state is what the app loads. */
+        fprintf(f, ",\n      \"state\": \"");
+        const unsigned char *pb = (const unsigned char *)&comp->props;
+        for (size_t k = 0; k < sizeof comp->props; k++) fprintf(f, "%02x", pb[k]);
+        fprintf(f, "\",\n      \"part\": \"%s\",\n      \"terminals\": [", comp->part);
+        for (int k = 0; k < comp->num_terminals; k++)
+            fprintf(f, "%d%s", comp->node_ids[k], k < comp->num_terminals - 1 ? ", " : "");
+        fprintf(f, "]");
+
         fprintf(f, "\n    }%s\n", i < circuit->num_components - 1 ? "," : "");
     }
     fprintf(f, "  ],\n");
@@ -560,7 +575,48 @@ bool file_import_json(Circuit *circuit, const char *filename) {
                             }
                         }
 
+                        /* The full property block, if the file carries one. It wins over the
+                           readable fields above: those are a hand-picked few and everything
+                           they omit would otherwise stay at the component's default. */
+                        char *end_of_comp = strstr(ptr + 1, "\"type\":");
+                        char *state_ptr = strstr(ptr, "\"state\": \"");
+                        if (state_ptr && (!end_of_comp || state_ptr < end_of_comp)) {
+                            const char *hex = state_ptr + strlen("\"state\": \"");
+                            ComponentProps p;
+                            unsigned char *pb = (unsigned char *)&p;
+                            size_t k = 0;
+                            for (; k < sizeof p; k++) {
+                                unsigned v;
+                                if (!isxdigit((unsigned char)hex[2*k]) || !isxdigit((unsigned char)hex[2*k+1])) break;
+                                if (sscanf(hex + 2*k, "%2x", &v) != 1) break;
+                                pb[k] = (unsigned char)v;
+                            }
+                            if (k == sizeof p) component_adopt_props(comp, &p);
+                        }
+                        char *part_ptr = strstr(ptr, "\"part\": \"");
+                        if (part_ptr && (!end_of_comp || part_ptr < end_of_comp)) {
+                            const char *q = part_ptr + strlen("\"part\": \"");
+                            size_t n = 0;
+                            while (q[n] && q[n] != '"' && n < sizeof comp->part - 1) n++;
+                            memcpy(comp->part, q, n);
+                            comp->part[n] = 0;
+                        }
+
                         circuit_add_component(circuit, comp);
+
+                        /* and which node each terminal is on - after the add, which assigns them
+                           by position and would otherwise overwrite what the file says */
+                        char *term_ptr = strstr(ptr, "\"terminals\": [");
+                        if (term_ptr && (!end_of_comp || term_ptr < end_of_comp)) {
+                            const char *q = term_ptr + strlen("\"terminals\": [");
+                            for (int k = 0; k < comp->num_terminals; k++) {
+                                int id = 0;
+                                while (*q == ' ' || *q == ',') q++;
+                                if (sscanf(q, "%d", &id) != 1) break;
+                                comp->node_ids[k] = id;
+                                while (*q && *q != ',' && *q != ']') q++;
+                            }
+                        }
                     }
                 }
             }
@@ -568,9 +624,14 @@ bool file_import_json(Circuit *circuit, const char *filename) {
         }
     }
 
-    // Parse nodes
+    /* Parse nodes.
+       The file's node ids are the ones its wires and its components' terminals refer to, so
+       they have to survive. This used to call circuit_create_node, which hands out a fresh id
+       and leaves every reference in the file pointing at something else - on top of the nodes
+       the components had already created by position, which are replaced here. */
     ptr = strstr(buffer, "\"nodes\"");
     if (ptr) {
+        circuit->num_nodes = 0;
         while ((ptr = strstr(ptr, "\"id\":")) != NULL) {
             int id;
             float x, y;
@@ -588,9 +649,15 @@ bool file_import_json(Circuit *circuit, const char *filename) {
                         is_ground = true;
                     }
 
-                    int node_id = circuit_create_node(circuit, x, y);
-                    if (is_ground) {
-                        circuit_set_ground(circuit, node_id);
+                    if (circuit->num_nodes < MAX_NODES) {
+                        Node *n = &circuit->nodes[circuit->num_nodes++];
+                        memset(n, 0, sizeof *n);
+                        n->id = id;
+                        n->x = x;
+                        n->y = y;
+                        n->is_ground = is_ground;
+                        if (is_ground) circuit->ground_node_id = id;
+                        if (id >= circuit->next_node_id) circuit->next_node_id = id + 1;
                     }
                 }
             }
