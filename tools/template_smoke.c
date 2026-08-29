@@ -1140,8 +1140,10 @@ static int geom_test(void) {
                 if (hw < 4) hw = 4; if (hh < 4) hh = 4;
                 if (seg_hits_box(a->x, a->y, b->x, b->y, comp->x - hw, comp->y - hh, comp->x + hw, comp->y + hh)) {
                     through++;
-                    if (strlen(detail) < 300) snprintf(detail + strlen(detail), sizeof detail - strlen(detail),
-                        " through:%s@wire(%g,%g)-(%g,%g)", comp->label, a->x, a->y, b->x, b->y);
+                    if (strlen(detail) < 280) snprintf(detail + strlen(detail), sizeof detail - strlen(detail),
+                        " through:%s@(%g,%g)box[%g..%g,%g..%g]<-wire(%g,%g)-(%g,%g)", comp->label,
+                        comp->x, comp->y, comp->x - hw, comp->x + hw, comp->y - hh, comp->y + hh,
+                        a->x, a->y, b->x, b->y);
                 }
             }
         }

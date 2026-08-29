@@ -99,5 +99,9 @@ jobs:
           mkdir -p dist/circuit-playground
           cp build/circuit-playground.exe README.md guide.html dist/circuit-playground/
           (cd dist && 7z a -tzip "circuit-playground-windows-$tag.zip" circuit-playground >/dev/null)
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "$tag" --generate-notes
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --title "$tag" --generate-notes
           gh release upload "$tag" "dist/circuit-playground-windows-$tag.zip" --clobber
+          # Publish only now. A release is what the updater calls "latest": while it exists
+          # without its zip, every app that checks for updates quits itself to download a file
+          # that is not there. The draft is invisible to the API until this line runs.
+          gh release edit "$tag" --draft=false

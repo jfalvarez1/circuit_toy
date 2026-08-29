@@ -62,10 +62,21 @@ static int run_capture(const char *cmd, char *out, size_t n) {
 static int check_thread(void *arg) {
     CheckArgs *ca = (CheckArgs *)arg;
     UpdaterState *st = ca->st;
-    char cmd[512], tag[128];
+    char cmd[900], tag[128];
+    /* Report the tag ONLY if the release already carries the zip we would download. A tag
+       exists from the moment it is pushed; the binary is attached when CI has finished
+       building and testing it, a quarter of an hour later. Offering an update in that window
+       means quitting the app to fetch a file that is not there - which is how someone on
+       v3.14.0 ended up with a window that closed and never came back.
+
+       No pipeline in the script on purpose: the whole command goes through cmd.exe, and a
+       vertical bar inside it does not survive the trip. */
     snprintf(cmd, sizeof cmd,
              "powershell -NoProfile -NonInteractive -Command \"try { [Net.ServicePointManager]::SecurityProtocol = 'Tls12'; "
-             "(Invoke-RestMethod -Uri 'https://api.github.com/repos/%s/releases/latest' -Headers @{'User-Agent'='circuit-playground'} -TimeoutSec 8).tag_name } catch { '' }\"",
+             "$r = Invoke-RestMethod -Uri 'https://api.github.com/repos/%s/releases/latest' -Headers @{'User-Agent'='circuit-playground'} -TimeoutSec 8; "
+             "$want = 'circuit-playground-windows-' + $r.tag_name + '.zip'; $hit = 0; "
+             "foreach ($a in $r.assets) { if ($a.name -eq $want) { $hit = 1 } }; "
+             "if ($hit) { $r.tag_name } else { '' } } catch { '' }\"",
              REPO);
     int ok = run_capture(cmd, tag, sizeof tag);
     SDL_LockMutex(st->lock);

@@ -3512,7 +3512,9 @@ static int place_difference_amp(Circuit *circuit, float x, float y) {
     component_get_terminal_pos(r1, 0, &r1_left_x, &r1_left_y);
 
     int v1_node = circuit_find_or_create_node(circuit, v1_pos_x, v1_pos_y, 5.0f);
-    int v1_corner = circuit_find_or_create_node(circuit, v1_pos_x, r1_left_y, 5.0f);
+    /* turn at R1's column on the source's own row: turning at (v1_pos_x, r1_left_y) puts
+       the corner inside the source symbol, and the wire out of it runs through the body */
+    int v1_corner = circuit_find_or_create_node(circuit, r1_left_x, v1_pos_y, 5.0f);
     int r1_left_node = circuit_find_or_create_node(circuit, r1_left_x, r1_left_y, 5.0f);
     circuit_add_wire(circuit, v1_node, v1_corner);
     circuit_add_wire(circuit, v1_corner, r1_left_node);
@@ -4005,7 +4007,7 @@ static int place_sallen_key_lp(Circuit *circuit, float x, float y) {
     component_get_terminal_pos(r1, 0, &r1_left_x, &r1_left_y);
 
     int vsrc_node = circuit_find_or_create_node(circuit, vsrc_pos_x, vsrc_pos_y, 5.0f);
-    int vsrc_corner = circuit_find_or_create_node(circuit, vsrc_pos_x, r1_left_y, 5.0f);
+    int vsrc_corner = circuit_find_or_create_node(circuit, r1_left_x, vsrc_pos_y, 5.0f);
     int r1_left_node = circuit_find_or_create_node(circuit, r1_left_x, r1_left_y, 5.0f);
     circuit_add_wire(circuit, vsrc_node, vsrc_corner);
     circuit_add_wire(circuit, vsrc_corner, r1_left_node);
@@ -5796,7 +5798,7 @@ static int place_wheatstone_bridge(Circuit *circuit, float x, float y) {
     vsrc->node_ids[0] = node_vsrc_pos;
 
     // Wire from vsrc+ up to top row height, then right to R1 left
-    int corner_top_left = circuit_find_or_create_node(circuit, vsrc_pos_x, r1_left_y, 5.0f);
+    int corner_top_left = circuit_find_or_create_node(circuit, r1_left_x, vsrc_pos_y, 5.0f);
     circuit_add_wire(circuit, node_vsrc_pos, corner_top_left);
 
     int node_r1_left = circuit_find_or_create_node(circuit, r1_left_x, r1_left_y, 5.0f);
