@@ -78,6 +78,9 @@ typedef struct Simulation {
     // Adaptive decimation for history (ensures history covers long time spans)
     int history_decimate_counter;   // Counter for decimation
     int history_decimate_factor;    // Current decimation factor (record every Nth sample)
+    int history_prev_factor;        // the factor before an invalidation, so what is already
+                                    // recorded can be thinned to the new spacing instead of
+                                    // thrown away (a wider time/div used to blank the scope)
     double history_target_span;     // Seconds of history the scope wants to see (drives decimation)
 
     // Error message

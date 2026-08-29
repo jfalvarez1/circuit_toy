@@ -1009,7 +1009,8 @@ void simulation_set_history_span(Simulation *sim, double span_seconds) {
     sim->history_target_span = span_seconds;
     if (sim->history_decimate_factor > 0 && sim->time_step >= 1e-9 &&
         simulation_compute_decimation(sim) != sim->history_decimate_factor) {
-        sim->history_decimate_factor = 0;   // recompute (and reset history) on the next step
+        sim->history_prev_factor = sim->history_decimate_factor;
+        sim->history_decimate_factor = 0;   // recompute on the next step, keeping what is recorded
     }
 }
 
@@ -1416,11 +1417,38 @@ bool simulation_step(Simulation *sim) {
     // fixed-frequency source. Recomputed only when the factor is invalidated (0), because
     // changing decimation mid-run makes sample spacing inconsistent.
     if (sim->history_decimate_factor == 0 && sim->time_step >= 1e-9) {
+        int prev = sim->history_prev_factor;
         sim->history_decimate_factor = simulation_compute_decimation(sim);
+        sim->history_prev_factor = 0;
 
-        // Reset history so all stored samples share one spacing
-        sim->history_count = 0;
-        sim->history_start = 0;
+        /* Widening the scope's time/div asks for a coarser spacing, and this used to throw the
+           recorded history away and start again - so the trace vanished and came back as the
+           buffer refilled, which is what a wider T+ looked like from the front. Every sample
+           carries its own timestamp, so the samples already recorded are still good: thin them
+           to the new spacing and keep them. Only a finer spacing, which cannot be reconstructed
+           from coarse samples, starts over. */
+        int keep_every = (prev > 0 && sim->history_decimate_factor > prev)
+                             ? sim->history_decimate_factor / prev : 0;
+        if (keep_every > 1 && sim->history_count > 1) {
+            int kept_n = (sim->history_count + keep_every - 1) / keep_every;
+            HistoryPoint *kept = malloc((size_t)kept_n * sizeof *kept);
+            if (kept) {
+                int w = 0;
+                for (int i = 0; i < sim->history_count && w < kept_n; i += keep_every)
+                    kept[w++] = sim->history[(sim->history_start + i) % MAX_HISTORY];
+                memcpy(sim->history, kept, (size_t)w * sizeof *kept);
+                free(kept);
+                sim->history_start = 0;
+                sim->history_count = w;
+            } else {
+                sim->history_count = 0;
+                sim->history_start = 0;
+            }
+        } else if (keep_every != 1) {
+            // Finer spacing than what is recorded: start over so all samples share one spacing
+            sim->history_count = 0;
+            sim->history_start = 0;
+        }
         sim->history_decimate_counter = 0;
     }
 

@@ -8803,7 +8803,11 @@ static int place_substation(Circuit *circuit, float x, float y) {
 #undef TW
 
 // Output node to probe for each template (component type, ordinal among that type, terminal)
-typedef struct { ComponentType ct; int ord, term; } TemplateProbeSpec;
+/* A probe the template places. `name` is what it is called on the schematic and on the scope -
+   "CH1" says which trace it is but not what it is on, which is the thing you actually want to
+   know when you look at a circuit you did not draw. Left NULL, a name is derived from the part
+   and terminal it sits on, so no probe is ever unnamed. */
+typedef struct { ComponentType ct; int ord, term; const char *name; } TemplateProbeSpec;
 // ---------------------------------------------------------------------------------------
 // IC I/O and drivers: what a GPIO pin is made of and how it talks to the outside world.
 // Push-pull / open-drain / open-collector outputs, wired-AND buses, level shifting, input
@@ -13117,7 +13121,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_SERIES_COMP]      = { COMP_RESISTOR, 0, 0 },
     [CIRCUIT_HV_765_LINE]      = { COMP_RESISTOR, 0, 0 },
     [CIRCUIT_3PH_Y_BALANCED]   = { COMP_RESISTOR, 3, 0 },   // phase B load
-    [CIRCUIT_3PH_UNBALANCED]   = { COMP_RESISTOR, 6, 0 },
+    [CIRCUIT_3PH_UNBALANCED]   = { COMP_RESISTOR, 6, 0, "NEUT" },   /* the neutral shift, not an output */
     [CIRCUIT_3PH_345_LINE]     = { COMP_RESISTOR, 1, 0 },   // phase B load
     [CIRCUIT_3PH_RECTIFIER]    = { COMP_RESISTOR, 0, 0 },   // plus bus
     [CIRCUIT_SCHMITT_BISTABLE] = { COMP_OPAMP, 0, 2 },
@@ -13215,7 +13219,10 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_SHUNT_SENSE]   = { COMP_OPAMP, 0, 2 },        /* high-side difference amp output */
     [CIRCUIT_IV_KELVIN]        = { COMP_OPAMP, 0, 2 },        /* the 4-wire differential reading */
     [CIRCUIT_IV_BUCK_NODES]    = { COMP_RESISTOR, 2, 0 },     /* the output, after L and C */
-    [CIRCUIT_IV_LDO_VS_BUCK]   = { COMP_RESISTOR, 1, 0 },     /* the linear regulator's 5 V output */
+    /* Resistor 0 is the linear regulator's load, resistor 1 the switcher's. The output probe was
+       on 1, so the whole point of the circuit - the two 5 V rails side by side - had a probe on
+       one half and nothing on the other. Both are probed now. */
+    [CIRCUIT_IV_LDO_VS_BUCK]   = { COMP_RESISTOR, 0, 0, "LDO" },
     [CIRCUIT_IV_BOOTSTRAP]     = { COMP_CAPACITOR, 0, 0 },    /* BOOT, riding on the switch node */
     [CIRCUIT_IV_TERMINATION]   = { COMP_CAPACITOR, 0, 0 },    /* unterminated receiver: the overshoot */
     [CIRCUIT_IV_PULLUP_SIZING] = { COMP_CAPACITOR, 0, 0 },    /* the 10 k bus */
@@ -13238,72 +13245,73 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
 
 // Extra probes (up to 3) for templates that need more than input + output on the scope
 static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
-    [CIRCUIT_3PH_Y_BALANCED]   = { { COMP_RESISTOR, 5, 0 }, { COMP_RESISTOR, 6, 0 } },      // phase C load, neutral (A = source probe)
-    [CIRCUIT_DIFFERENTIAL_PAIR] = { { COMP_NPN_BJT, 1, 1 } },                                // Q2 collector: the mirror image
-    [CIRCUIT_3PH_UNBALANCED]   = { { COMP_RESISTOR, 3, 0 }, { COMP_RESISTOR, 5, 0 } },
-    [CIRCUIT_3PH_345_LINE]     = { { COMP_RESISTOR, 0, 0 }, { COMP_RESISTOR, 2, 0 } },      // phase A, C loads
-    [CIRCUIT_3PH_RECTIFIER]    = { { COMP_DIODE, 5, 0 } },                                   // minus bus
-    [CIRCUIT_TRI_SQUARE_GEN]   = { { COMP_OPAMP, 0, 2 } },                                   // square
-    [CIRCUIT_FUNCTION_GEN]     = { { COMP_OPAMP, 1, 2 } },                                   // triangle
-    [CIRCUIT_RLC_DAMPING]      = { { COMP_CAPACITOR, 0, 0 }, { COMP_CAPACITOR, 2, 0 } },      // under / over rows
-    [CIRCUIT_OPAMP_SAT]        = { { COMP_OPAMP, 0, 0 } },                                   // inverting input
-    [CIRCUIT_SR_LATCH]         = { { COMP_NOR_GATE, 0, 2 }, { COMP_PULSE_SOURCE, 1, 0 } },   // Qbar, R
-    [CIRCUIT_POWER_PLANT]      = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 2, 0 } },      // phases B, C
-    [CIRCUIT_SUBSTATION]       = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 2, 0 } },
-    [CIRCUIT_IO_I2C_BUS]       = { { COMP_PULSE_SOURCE, 1, 0 } },                             // slave driver
-    [CIRCUIT_IO_I2C_LEVEL]     = { { COMP_RESISTOR, 1, 1 } },                                 // 3.3 V side
-    [CIRCUIT_IO_INPUT_DEBOUNCE]= { { COMP_RESISTOR, 0, 1 }, { COMP_CAPACITOR, 0, 0 } },       // pin, RC node
-    [CIRCUIT_IO_HIGH_SIDE]     = { { COMP_RESISTOR, 1, 1 } },                                 // PMOS gate
-    [CIRCUIT_IO_SPI]           = { { COMP_PULSE_SOURCE, 1, 0 }, { COMP_CAPACITOR, 1, 0 } },   // MOSI source, MOSI at load
-    [CIRCUIT_IO_UART]          = { { COMP_PULSE_SOURCE, 1, 0 }, { COMP_NOT_GATE, 0, 1 } },    // 3.3 V TX, 5 V receiver out
-    [CIRCUIT_IO_RS485]         = { { COMP_RESISTOR, 3, 0 }, { COMP_RESISTOR, 3, 1 } },        // A, B at the far termination
-    [CIRCUIT_IO_SPMI]          = { { COMP_CAPACITOR, 0, 0 } },
+    [CIRCUIT_3PH_Y_BALANCED]   = { { COMP_RESISTOR, 5, 0, "PH C" }, { COMP_RESISTOR, 6, 0, "NEUT" } },      // phase C load, neutral (A = source probe)
+    [CIRCUIT_DIFFERENTIAL_PAIR] = { { COMP_NPN_BJT, 1, 1, "VC2" } },                                // Q2 collector: the mirror image
+    [CIRCUIT_3PH_UNBALANCED]   = { { COMP_RESISTOR, 3, 0, "PH B" }, { COMP_RESISTOR, 5, 0, "PH C" } },
+    [CIRCUIT_3PH_345_LINE]     = { { COMP_RESISTOR, 0, 0, "PH A" }, { COMP_RESISTOR, 2, 0, "PH C" } },      // phase A, C loads
+    [CIRCUIT_3PH_RECTIFIER]    = { { COMP_DIODE, 5, 0, "V-" } },                                   // minus bus
+    [CIRCUIT_TRI_SQUARE_GEN]   = { { COMP_OPAMP, 0, 2, "SQUARE" } },                                   // square
+    [CIRCUIT_FUNCTION_GEN]     = { { COMP_OPAMP, 1, 2, "TRI" } },                                   // triangle
+    [CIRCUIT_RLC_DAMPING]      = { { COMP_CAPACITOR, 0, 0, "UNDER" }, { COMP_CAPACITOR, 2, 0, "OVER" } },      // under / over rows
+    [CIRCUIT_OPAMP_SAT]        = { { COMP_OPAMP, 0, 0, "V-" } },                                   // inverting input
+    [CIRCUIT_SR_LATCH]         = { { COMP_NOR_GATE, 0, 2, "QBAR" }, { COMP_PULSE_SOURCE, 1, 0, "R" } },   // Qbar, R
+    [CIRCUIT_POWER_PLANT]      = { { COMP_RESISTOR, 1, 0, "PH B" }, { COMP_RESISTOR, 2, 0, "PH C" } },      // phases B, C
+    [CIRCUIT_SUBSTATION]       = { { COMP_RESISTOR, 1, 0, "PH B" }, { COMP_RESISTOR, 2, 0, "PH C" } },
+    [CIRCUIT_IO_I2C_BUS]       = { { COMP_PULSE_SOURCE, 1, 0, "SLAVE" } },                             // slave driver
+    [CIRCUIT_IO_I2C_LEVEL]     = { { COMP_RESISTOR, 1, 1, "3V3" } },                                 // 3.3 V side
+    [CIRCUIT_IO_INPUT_DEBOUNCE]= { { COMP_RESISTOR, 0, 1, "PIN" }, { COMP_CAPACITOR, 0, 0, "RC" } },       // pin, RC node
+    [CIRCUIT_IO_HIGH_SIDE]     = { { COMP_RESISTOR, 1, 1, "PGATE" } },                                 // PMOS gate
+    [CIRCUIT_IO_SPI]           = { { COMP_PULSE_SOURCE, 1, 0, "MOSI" }, { COMP_CAPACITOR, 1, 0, "MOSIRX" } },   // MOSI source, MOSI at load
+    [CIRCUIT_IO_UART]          = { { COMP_PULSE_SOURCE, 1, 0, "TX3V3" }, { COMP_NOT_GATE, 0, 1, "RX5V" } },    // 3.3 V TX, 5 V receiver out
+    [CIRCUIT_IO_RS485]         = { { COMP_RESISTOR, 3, 0, "A FAR" }, { COMP_RESISTOR, 3, 1, "B FAR" } },        // A, B at the far termination
+    [CIRCUIT_IO_SPMI]          = { { COMP_CAPACITOR, 0, 0, "BUS" } },
+    [CIRCUIT_IV_LDO_VS_BUCK]   = { { COMP_RESISTOR, 1, 0, "SW OUT" } },   /* the switcher's rail */
     /* the digit templates: the clock that drives them, so the scope shows the input that makes
        the count advance next to the segment it lights */
-    [CIRCUIT_BCD_COUNTER]      = { { COMP_CLOCK, 0, 0 } },
-    [CIRCUIT_DIGITAL_CLOCK]    = { { COMP_CLOCK, 0, 0 } },                                // SCLK at load
-    [CIRCUIT_TX_LADDER]        = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 2, 0 }, { COMP_RESISTOR, 3, 0 } },   // 138 / 69 / 12.47 kV buses
-    [CIRCUIT_TX_WIND]          = { { COMP_TLINE, 1, 0 }, { COMP_TLINE, 1, 1 } },               // 345 kV sending end, POI
-    [CIRCUIT_TX_PLANT]         = { { COMP_RESISTOR, 1, 0 } },                                 // 4.16 kV motor bus
-    [CIRCUIT_RES_SERVICE]      = { { COMP_RESISTOR, 4, 1 }, { COMP_RESISTOR, 2, 0 } },        // L2 at the panel, the neutral conductor
-    [CIRCUIT_RES_BRANCH]       = { { COMP_RESISTOR, 3, 0 } },                                 // #10 load
-    [CIRCUIT_RES_ACSTART]      = { { COMP_RESISTOR, 2, 0 } },                                 // motor branch
-    [CIRCUIT_COM_480Y]         = { { COMP_RESISTOR, 4, 0 }, { COMP_RESISTOR, 6, 0 } },        // phase B, phase C buses
-    [CIRCUIT_COM_208Y]         = { { COMP_RESISTOR, 3, 0 }, { COMP_RESISTOR, 5, 0 } },        // phase B, C branch buses
-    [CIRCUIT_COM_ATS]          = { { COMP_AC_VOLTAGE, 1, 0 } },                               // the standby generator
-    [CIRCUIT_GS_BOLD]          = { { COMP_RESISTOR, 1, 0 } },                                 // the BOLD receiving bus
-    [CIRCUIT_GS_KRON]          = { { COMP_RESISTOR, 6, 0 }, { COMP_RESISTOR, 4, 0 } },        // the delta-side load (overlays the Y one) and the second Y load
-    [CIRCUIT_GS_RX]            = { { COMP_RESISTOR, 4, 0 } },                                 // the feeder bus
-    [CIRCUIT_GS_IBR]           = { { COMP_RESISTOR, 2, 0 } },                                 // the fault branch
-    [CIRCUIT_MOS_IDVGS]        = { { COMP_RESISTOR, 3, 0 }, { COMP_RESISTOR, 5, 0 } },        // the other two devices
-    [CIRCUIT_MOS_IDVDS]        = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 3, 0 } },
-    [CIRCUIT_MOS_DIFF]         = { { COMP_RESISTOR, 1, 1 } },
-    [CIRCUIT_CMOS_TGATE]       = { { COMP_RESISTOR, 1, 0 } },
-    [CIRCUIT_XY_LISSAJOUS]     = { { COMP_RESISTOR, 0, 0 } },
-    [CIRCUIT_XY_PLOTTER]       = { { COMP_RESISTOR, 0, 0 } },
-    [CIRCUIT_HW_CAPS]          = { { COMP_RESISTOR, 6, 0 } },
-    [CIRCUIT_HW_MATCH]         = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 5, 0 } },
-    [CIRCUIT_HW_REFLECT]       = { { COMP_DELAY_LINE, 0, 0 } },   /* and the driver end */
-    [CIRCUIT_HW_LOOP]          = { { COMP_OPAMP, 1, 2 } },
-    [CIRCUIT_HW_PDN]           = { { COMP_RESISTOR, 0, 0 } },
+    [CIRCUIT_BCD_COUNTER]      = { { COMP_CLOCK, 0, 0, "CLK" } },
+    [CIRCUIT_DIGITAL_CLOCK]    = { { COMP_CLOCK, 0, 0, "CLK" } },                                // SCLK at load
+    [CIRCUIT_TX_LADDER]        = { { COMP_RESISTOR, 1, 0, "138KV" }, { COMP_RESISTOR, 2, 0, "69KV" }, { COMP_RESISTOR, 3, 0, "12KV" } },   // 138 / 69 / 12.47 kV buses
+    [CIRCUIT_TX_WIND]          = { { COMP_TLINE, 1, 0, "345KV" }, { COMP_TLINE, 1, 1, "POI" } },               // 345 kV sending end, POI
+    [CIRCUIT_TX_PLANT]         = { { COMP_RESISTOR, 1, 0, "4160V" } },                                 // 4.16 kV motor bus
+    [CIRCUIT_RES_SERVICE]      = { { COMP_RESISTOR, 4, 1, "L2" }, { COMP_RESISTOR, 2, 0, "NEUT" } },        // L2 at the panel, the neutral conductor
+    [CIRCUIT_RES_BRANCH]       = { { COMP_RESISTOR, 3, 0, "BR10" } },                                 // #10 load
+    [CIRCUIT_RES_ACSTART]      = { { COMP_RESISTOR, 2, 0, "MOTOR" } },                                 // motor branch
+    [CIRCUIT_COM_480Y]         = { { COMP_RESISTOR, 4, 0, "PH B" }, { COMP_RESISTOR, 6, 0, "PH C" } },        // phase B, phase C buses
+    [CIRCUIT_COM_208Y]         = { { COMP_RESISTOR, 3, 0, "PH B" }, { COMP_RESISTOR, 5, 0, "PH C" } },        // phase B, C branch buses
+    [CIRCUIT_COM_ATS]          = { { COMP_AC_VOLTAGE, 1, 0, "GEN" } },                               // the standby generator
+    [CIRCUIT_GS_BOLD]          = { { COMP_RESISTOR, 1, 0, "BOLD" } },                                 // the BOLD receiving bus
+    [CIRCUIT_GS_KRON]          = { { COMP_RESISTOR, 6, 0, "DELTA" }, { COMP_RESISTOR, 4, 0, "SEC" } },        // the delta-side load (overlays the Y one) and the second Y load
+    [CIRCUIT_GS_RX]            = { { COMP_RESISTOR, 4, 0, "FEEDER" } },                                 // the feeder bus
+    [CIRCUIT_GS_IBR]           = { { COMP_RESISTOR, 2, 0, "FAULT" } },                                 // the fault branch
+    [CIRCUIT_MOS_IDVGS]        = { { COMP_RESISTOR, 3, 0, "DEV2" }, { COMP_RESISTOR, 5, 0, "DEV3" } },        // the other two devices
+    [CIRCUIT_MOS_IDVDS]        = { { COMP_RESISTOR, 1, 0, "DEV2" }, { COMP_RESISTOR, 3, 0, "DEV3" } },
+    [CIRCUIT_MOS_DIFF]         = { { COMP_RESISTOR, 1, 1, "OUT2" } },
+    [CIRCUIT_CMOS_TGATE]       = { { COMP_RESISTOR, 1, 0, "PASS" } },
+    [CIRCUIT_XY_LISSAJOUS]     = { { COMP_RESISTOR, 0, 0, "Y" } },
+    [CIRCUIT_XY_PLOTTER]       = { { COMP_RESISTOR, 0, 0, "Y" } },
+    [CIRCUIT_HW_CAPS]          = { { COMP_RESISTOR, 6, 0, "RAIL" } },
+    [CIRCUIT_HW_MATCH]         = { { COMP_RESISTOR, 1, 0, "NEAR" }, { COMP_RESISTOR, 5, 0, "FAR" } },
+    [CIRCUIT_HW_REFLECT]       = { { COMP_DELAY_LINE, 0, 0, "DRIVER" } },   /* and the driver end */
+    [CIRCUIT_HW_LOOP]          = { { COMP_OPAMP, 1, 2, "COMP" } },
+    [CIRCUIT_HW_PDN]           = { { COMP_RESISTOR, 0, 0, "PDN" } },
     /* ideal vs real: the whole point is seeing both models at once, so every copy is probed */
-    [CIRCUIT_ID_SOURCE]        = { { COMP_RESISTOR, 1, 0 }, { COMP_RESISTOR, 2, 0 } },
-    [CIRCUIT_ID_DIODE]         = { { COMP_RESISTOR, 1, 0 } },
-    [CIRCUIT_ID_CAP]           = { { COMP_CAPACITOR, 1, 0 }, { COMP_CAPACITOR, 2, 0 } },
-    [CIRCUIT_ID_IND]           = { { COMP_CAPACITOR, 1, 0 } },
-    [CIRCUIT_ID_OPAMP]         = { { COMP_RESISTOR, 5, 0 }, { COMP_RESISTOR, 8, 0 } },
-    [CIRCUIT_ID_BJT]           = { { COMP_RESISTOR, 3, 1 } },
-    [CIRCUIT_ID_MOSFET]        = { { COMP_RESISTOR, 5, 1 } },
-    [CIRCUIT_ID_OPAMP_ERR]     = { { COMP_OPAMP, 0, 2 } },
-    [CIRCUIT_PARTS_MOSFET]     = { { COMP_NMOS, 1, 1 }, { COMP_NMOS, 2, 1 } },
-    [CIRCUIT_CAP_DCBIAS]       = { { COMP_CAPACITOR, 1, 0 }, { COMP_CAPACITOR, 2, 0 } },
-    [CIRCUIT_NE555_ASTABLE]    = { { COMP_CAPACITOR, 0, 0 } },
-    [CIRCUIT_CMOS_NAND]        = { { COMP_PULSE_SOURCE, 1, 0 } },
+    [CIRCUIT_ID_SOURCE]        = { { COMP_RESISTOR, 1, 0, "MODEL2" }, { COMP_RESISTOR, 2, 0, "MODEL3" } },
+    [CIRCUIT_ID_DIODE]         = { { COMP_RESISTOR, 1, 0, "MODEL2" } },
+    [CIRCUIT_ID_CAP]           = { { COMP_CAPACITOR, 1, 0, "MODEL2" }, { COMP_CAPACITOR, 2, 0, "MODEL3" } },
+    [CIRCUIT_ID_IND]           = { { COMP_CAPACITOR, 1, 0, "MODEL2" } },
+    [CIRCUIT_ID_OPAMP]         = { { COMP_RESISTOR, 5, 0, "MODEL2" }, { COMP_RESISTOR, 8, 0, "MODEL3" } },
+    [CIRCUIT_ID_BJT]           = { { COMP_RESISTOR, 3, 1, "MODEL2" } },
+    [CIRCUIT_ID_MOSFET]        = { { COMP_RESISTOR, 5, 1, "MODEL2" } },
+    [CIRCUIT_ID_OPAMP_ERR]     = { { COMP_OPAMP, 0, 2, "OUT2" } },
+    [CIRCUIT_PARTS_MOSFET]     = { { COMP_NMOS, 1, 1, "DRAIN2" }, { COMP_NMOS, 2, 1, "DRAIN3" } },
+    [CIRCUIT_CAP_DCBIAS]       = { { COMP_CAPACITOR, 1, 0, "CAP2" }, { COMP_CAPACITOR, 2, 0, "CAP3" } },
+    [CIRCUIT_NE555_ASTABLE]    = { { COMP_CAPACITOR, 0, 0, "VCAP" } },
+    [CIRCUIT_CMOS_NAND]        = { { COMP_PULSE_SOURCE, 1, 0, "B IN" } },
     // multi-input circuits: every input on its own channel
-    [CIRCUIT_SUMMING_AMP]      = { { COMP_DC_VOLTAGE, 1, 0 }, { COMP_DC_VOLTAGE, 2, 0 } },    // V2, V3 (V1 = source probe)
-    [CIRCUIT_DIFFERENCE_AMP]   = { { COMP_DC_VOLTAGE, 1, 0 } },                               // V2 (0.5 V DC)
-    [CIRCUIT_INSTR_AMP]        = { { COMP_DC_VOLTAGE, 0, 0 } },                               // V2 (50 mV DC)
-    [CIRCUIT_SUPERPOSITION]    = { { COMP_DC_VOLTAGE, 1, 0 } },                               // the 6 V source
+    [CIRCUIT_SUMMING_AMP]      = { { COMP_DC_VOLTAGE, 1, 0, "V2" }, { COMP_DC_VOLTAGE, 2, 0, "V3" } },    // V2, V3 (V1 = source probe)
+    [CIRCUIT_DIFFERENCE_AMP]   = { { COMP_DC_VOLTAGE, 1, 0, "V2" } },                               // V2 (0.5 V DC)
+    [CIRCUIT_INSTR_AMP]        = { { COMP_DC_VOLTAGE, 0, 0, "V2" } },                               // V2 (50 mV DC)
+    [CIRCUIT_SUPERPOSITION]    = { { COMP_DC_VOLTAGE, 1, 0, "V6" } },                               // the 6 V source
 };
 
 // Scope time/div that shows the interesting behaviour of each template
@@ -13644,8 +13652,20 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_MOS_TUNED] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_MOS_CG] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_MOS_CASCODE] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_MOS_DIFF] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_CMOS_INV] = SCOPE_FLAG_STACK, [CIRCUIT_CMOS_NAND] = SCOPE_FLAG_STACK, [CIRCUIT_CMOS_TGATE] = SCOPE_FLAG_STACK,
-    [CIRCUIT_HW_BUCK] = SCOPE_FLAG_STACK, [CIRCUIT_HW_BOOST] = SCOPE_FLAG_STACK, [CIRCUIT_HW_BUCKBOOST] = SCOPE_FLAG_STACK,
-    [CIRCUIT_HW_CUK] = SCOPE_FLAG_STACK, [CIRCUIT_HW_INTERLEAVED] = SCOPE_FLAG_STACK,
+    /* A converter's output ripple is what the circuit is about, and it is tens of millivolts on a
+       rail of several volts: three hundredths of a division on one shared scale, which reads as
+       "this buck has no ripple". Each channel gets its own fitted band, so the rail's ripple
+       fills its band and the switching node keeps its own. --probe-audit's RIPPLE flag finds
+       these: a trace on the screen whose every movement is thinner than a tenth of a division. */
+    [CIRCUIT_HW_BUCK] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_HW_BOOST] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_HW_BUCKBOOST] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_HW_CUK] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_HW_INTERLEAVED] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_CENTERTAP_RECT] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_AC_DC_AMERICAN] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_GS_PIDS] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_MOS_MIRROR] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_HW_PDN] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_HW_CAPS] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_HW_MATCH] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_HW_REFLECT] = SCOPE_FLAG_STACK,
     [CIRCUIT_HW_LOOP] = SCOPE_FLAG_STACK,
@@ -13670,7 +13690,7 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_PULLUP_SIZING] = SCOPE_FLAG_STACK,
     [CIRCUIT_IV_GROUND_BOUNCE] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_IV_CROSSTALK] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
-    [CIRCUIT_IV_CAP_ENERGY] = SCOPE_FLAG_STACK,
+    [CIRCUIT_IV_CAP_ENERGY] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_IV_MILLER] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_IV_INRUSH] = SCOPE_FLAG_STACK,
     [CIRCUIT_TLINE_REAL] = SCOPE_FLAG_STACK,
@@ -13713,13 +13733,55 @@ static Component *nth_of_type(Circuit *circuit, int first, ComponentType ct, int
     return NULL;
 }
 
-static void probe_component_terminal(Circuit *circuit, Component *c, int term) {
+/* What a probe is sitting on, in the seven characters a probe label holds. Every part that has
+   named terminals says which one; anything else is a node in the middle of the circuit. */
+static const char *derived_probe_name(ComponentType ct, int term) {
+    switch (ct) {
+        case COMP_NPN_BJT: case COMP_PNP_BJT:
+        case COMP_NPN_DARLINGTON: case COMP_PNP_DARLINGTON:
+            return term == 0 ? "BASE" : term == 1 ? "COLL" : "EMIT";
+        case COMP_NMOS: case COMP_PMOS: case COMP_NJFET: case COMP_PJFET:
+            return term == 0 ? "GATE" : term == 1 ? "DRAIN" : "SRC";
+        case COMP_DIODE: case COMP_ZENER: case COMP_LED: case COMP_SCHOTTKY:
+            return term == 0 ? "ANODE" : "CATH";
+        case COMP_CAPACITOR: return "VCAP";
+        case COMP_INDUCTOR:  return "VL";
+        case COMP_OPAMP:     return term == 2 ? "OUT" : term == 0 ? "V-" : "V+";
+        case COMP_AND_GATE: case COMP_OR_GATE: case COMP_NAND_GATE: case COMP_NOR_GATE:
+        case COMP_XOR_GATE: case COMP_NOT_GATE:
+            return term >= 2 ? "Q" : term == 0 ? "A" : "B";
+        case COMP_TRANSFORMER: return term < 2 ? "PRI" : "SEC";
+        case COMP_RESISTOR:  return "VR";
+        default:             return "NODE";
+    }
+}
+
+/* Place a probe and give it a name. Names have to be unique inside a circuit, because they are
+   also the scope's channel names: two traces both called VCAP cannot be told apart. */
+static void probe_named(Circuit *circuit, Component *c, int term, const char *name) {
     if (!c || term < 0 || term >= c->num_terminals) return;
     Node *n = circuit_get_node(circuit, c->node_ids[term]);
     if (!n) return;
     for (int i = 0; i < circuit->num_probes; i++)
         if (circuit->probes[i].node_id == n->id) return;   // already probed
-    circuit_add_probe(circuit, n->id, n->x, n->y);
+    int id = circuit_add_probe(circuit, n->id, n->x, n->y);   /* returns the probe's id, = index+1 */
+    int idx = id - 1;
+    if (id <= 0 || idx >= circuit->num_probes) return;
+    Probe *p = &circuit->probes[idx];
+    const char *want = (name && name[0]) ? name : derived_probe_name(c->type, term);
+    for (int attempt = 0; attempt < 9; attempt++) {
+        char cand[8];
+        if (attempt == 0) snprintf(cand, sizeof cand, "%s", want);
+        else snprintf(cand, sizeof cand, "%.*s%d", (int)sizeof cand - 2, want, attempt + 1);
+        bool taken = false;
+        for (int i = 0; i < circuit->num_probes; i++)
+            if (i != idx && strcmp(circuit->probes[i].label, cand) == 0) { taken = true; break; }
+        if (!taken) { snprintf(p->label, sizeof p->label, "%s", cand); return; }
+    }
+}
+
+static void probe_component_terminal(Circuit *circuit, Component *c, int term) {
+    probe_named(circuit, c, term, NULL);
 }
 
 int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, float y) {
@@ -13787,14 +13849,14 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
             int st = 0;
             for (int i = 0; i < circuit->num_components; i++)
                 if (circuit->components[i]->type == COMP_GROUND && circuit->components[i]->node_ids[0] == src->node_ids[0]) st = 1;
-            probe_component_terminal(circuit, src, st);
+            probe_named(circuit, src, st, "IN");
         }
-        if (out) probe_component_terminal(circuit, out, spec->term);
+        if (out) probe_named(circuit, out, spec->term, spec->name ? spec->name : "OUT");
         for (int e = 0; e < 3; e++) {
             const TemplateProbeSpec *xs = &template_extra_probes[type][e];
             if (!xs->ct) continue;
             Component *xc = nth_of_type(circuit, first, xs->ct, xs->ord);
-            if (xc) probe_component_terminal(circuit, xc, xs->term);
+            if (xc) probe_named(circuit, xc, xs->term, xs->name);
         }
     }
 

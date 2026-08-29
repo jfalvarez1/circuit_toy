@@ -3804,6 +3804,14 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 }
             }
 
+            /* Nothing new to draw, but something was drawn before: hold it, the way a bench scope
+               holds its last sweep. The recorder can be briefly empty - a change of time/div
+               re-derives its sample spacing - and blanking the screen for those frames is what
+               made the display flicker on the way to a wider window. */
+            if (!use_capture && trig_count < 2 && ui->scope_capture_valid &&
+                ui->scope_capture_count >= 2)
+                use_capture = true;
+
             // Render the captured/current waveform
             if (use_capture && ui->scope_capture_count >= 2) {
                 double t_start = ui->scope_capture_times[0];

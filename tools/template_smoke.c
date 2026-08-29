@@ -1119,6 +1119,106 @@ static Component *find_comp(Circuit *c, ComponentType ct, int ord) {
     return NULL;
 }
 
+/* --label-test: every probe on every circuit has to say what it is sitting on. "CH1" tells you
+   which trace it is and nothing else, which is no help on a circuit you did not draw - and the
+   probe label is the scope's channel name too, so it is the same word in both places. A name has
+   to be there, has to not be the old CHn default, has to fit the field, and has to be unique
+   inside its circuit: two traces called VCAP cannot be told apart. */
+static int label_test(void) {
+    int fails = 0, total = 0, probes_seen = 0;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti) continue;
+        Circuit *c = circuit_create();
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        total++;
+        char why[240] = "";
+        if (c->num_probes < 1)
+            snprintf(why, sizeof why, "no probes at all, so the scope has nothing to show");
+        for (int i = 0; i < c->num_probes && !why[0]; i++) {
+            const char *l = c->probes[i].label;
+            if (!l[0]) { snprintf(why, sizeof why, "probe %d has no name", i + 1); break; }
+            if (l[0] == 'C' && l[1] == 'H' && l[2] >= '0' && l[2] <= '9' && !l[3]) {
+                snprintf(why, sizeof why, "probe %d is still called %s - name it after the node "
+                         "it is on", i + 1, l);
+                break;
+            }
+            if (strlen(l) > 7) {
+                snprintf(why, sizeof why, "probe %d's name %s does not fit the 7-character field",
+                         i + 1, l);
+                break;
+            }
+            for (int j = 0; j < i; j++)
+                if (!strcmp(c->probes[j].label, l)) {
+                    snprintf(why, sizeof why, "probes %d and %d are both called %s", j + 1, i + 1, l);
+                    break;
+                }
+        }
+        probes_seen += c->num_probes;
+        if (why[0]) { printf("[FAIL] labels %-28s %s\n", ti->name, why); fails++; }
+        else {
+            char names[160] = ""; size_t at = 0;
+            for (int i = 0; i < c->num_probes && at < sizeof names - 10; i++)
+                at += (size_t)snprintf(names + at, sizeof names - at, "%s%s", i ? " " : "",
+                                       c->probes[i].label);
+            printf("[ OK ] labels %-28s %d probes: %s\n", ti->name, c->num_probes, names);
+        }
+        circuit_free(c);
+    }
+    printf("\nlabel-test: %d templates, %d probes, %d templates with an unnamed or ambiguous probe\n",
+           total, probes_seen, fails);
+    return fails;
+}
+
+/* --span-test: turning the time/div up must not empty the scope. A wider window asks the
+   recorder for a coarser sample spacing, and it used to answer by throwing away everything it
+   had and starting again - so the trace vanished and came back a moment later, once for every
+   press of T+. The samples already recorded each carry their own timestamp, so they survive the
+   change thinned to the new spacing. */
+static int span_test(void) {
+    int fails = 0, total = 0;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti) continue;
+        Circuit *c = circuit_create();
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        Simulation *sim = simulation_create(c);
+        double td = circuit_template_scope_time_div((CircuitTemplateType)t);
+        if (td <= 0) td = 1e-3;
+        if (!simulation_dc_analysis(sim)) { simulation_free(sim); circuit_free(c); continue; }
+        simulation_auto_time_step(sim);
+        { double dtp = simulation_scope_time_step(sim, td); if (dtp > 0 && dtp < sim->time_step) simulation_set_time_step(sim, dtp); }
+        simulation_set_history_span(sim, 20.0 * td);
+        simulation_start(sim);
+        total++;
+
+        /* fill the buffer the way a running circuit does */
+        int guard = 0;
+        while (sim->history_count < 400 && guard++ < 400000) if (!simulation_step(sim)) break;
+        int before = sim->history_count;
+
+        /* T+ four times over: each press widens the window and re-derives the spacing */
+        char why[200] = "";
+        for (int press = 0; press < 4 && !why[0]; press++) {
+            td *= 2.0;
+            simulation_set_history_span(sim, 20.0 * td);
+            for (int s = 0; s < 3; s++) if (!simulation_step(sim)) break;
+            /* two samples is the least the display can draw a line from */
+            if (sim->history_count < 2)
+                snprintf(why, sizeof why, "press %d of T+ left %d samples of the %d it had - the "
+                         "scope goes blank until the buffer refills", press + 1,
+                         sim->history_count, before);
+        }
+        if (why[0]) { printf("[FAIL] span %-28s %s\n", ti->name, why); fails++; }
+        else printf("[ OK ] span %-28s %d samples before, %d after four presses of T+\n",
+                    ti->name, before, sim->history_count);
+        simulation_free(sim); circuit_free(c);
+    }
+    printf("\nspan-test: %d templates, %d that blank the scope when the time/div is turned up\n",
+           total, fails);
+    return fails;
+}
+
 static int probe_test(void) {
     int fails = 0, total = 0;
     for (unsigned k = 0; k < sizeof probe_cases / sizeof probe_cases[0]; k++) {
@@ -2185,6 +2285,15 @@ static int probe_audit(const char *filter) {
             if (ok && np >= 2 && vd > 0 && steady && amp > 0 && amp < 0.25 * vd && peak < 0.25 * vd)
                 strcat(flags, "SMALL ");
             if (ok && np >= 2 && vd > 0 && peak > 4.0 * vd) strcat(flags, "CLIP ");
+            /* RIPPLE: the trace is on the screen but everything that moves on it is thinner than
+               a fifth of a division. A converter's output rail is the case that matters - the
+               buck's 60 mV of ripple on a 5.4 V rail at 2 V/div is three hundredths of a
+               division, so the circuit looks like it has no ripple at all, which is the one
+               thing that circuit is for. AC coupling or a per-channel band fixes it. */
+            int ac_coupled = (circuit_template_scope_flags(t) & SCOPE_FLAG_AC) != 0;
+            if (ok && np >= 2 && vd > 0 && !ac_coupled && amp > 0 &&
+                amp < 0.1 * vd && peak > 0.5 * vd)
+                strcat(flags, "RIPPLE ");
         }
         printf("[%s] %-26s td=%-7.3g vd=%-7.3g probes=%d  t=%.4g steps=%ld  %s\n", flags[0] ? "FLAG" : " OK ", ti->name, td, vd, np, sim->time, steps, flags);
         for (int i = 0; i < np && i < MAX_PROBES; i++) {
@@ -3443,6 +3552,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt = atof(argv[++i]);
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
+        else if (!strcmp(argv[i], "--label-test")) return label_test();
+        else if (!strcmp(argv[i], "--span-test")) return span_test();
         else if (!strcmp(argv[i], "--geom-test")) return geom_test();
         else if (!strcmp(argv[i], "--sweep-check")) return sweep_check();
         else if (!strcmp(argv[i], "--demo-test")) return demo_test();
