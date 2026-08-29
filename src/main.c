@@ -25,6 +25,111 @@ static bool rects_overlap(const Rect *a, const Rect *b) {
     return a->x < b->x + b->w && b->x < a->x + a->w && a->y < b->y + b->h && b->y < a->y + a->h;
 }
 
+/* --prop-test: every row the properties panel offers has to be a row that can be edited. The
+   panel lists a field, the click carries its property type, and applying runs one long switch
+   over (property, component type). A part that is listed but missing from that switch shows a
+   field, takes the typing, and answers "Invalid value" - the value springs back and nothing says
+   why. This asks the panel itself what it offers for each part, then tries to apply each of
+   those rows, so the two lists cannot drift apart.
+
+   It needs a renderer because the panel builds its row list while drawing it; the dummy video
+   driver is enough (SDL_VIDEODRIVER=dummy), and that is what CI runs it under. */
+static int prop_test(void) {
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        printf("prop-test: no video (%s) - skipped\n", SDL_GetError());
+        return 0;
+    }
+    SDL_Window *win = SDL_CreateWindow("prop-test", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                                       1600, 1000, SDL_WINDOW_HIDDEN);
+    SDL_Renderer *ren = win ? SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE) : NULL;
+    if (!ren) {
+        printf("prop-test: no renderer (%s) - skipped\n", SDL_GetError());
+        if (win) SDL_DestroyWindow(win);
+        SDL_Quit();
+        return 0;
+    }
+
+    UIState *ui = calloc(1, sizeof *ui);
+    InputState *in = calloc(1, sizeof *in);
+    ui_init(ui);
+    ui->window_width = 1600; ui->window_height = 1000;
+    ui_update_layout(ui);
+
+    int fails = 0, rows_total = 0, parts_with_rows = 0, toggles = 0;
+    for (int ct = COMP_NONE + 1; ct < COMP_TYPE_COUNT; ct++) {
+        const ComponentTypeInfo *info = component_get_info((ComponentType)ct);
+        if (!info || !info->name || !info->name[0]) continue;
+        Component *comp = component_create((ComponentType)ct, 200, 200);
+        if (!comp) continue;
+
+        /* ask the panel what it shows for this part */
+        memset(in, 0, sizeof *in);
+        in->selected_component = comp;
+        ui->num_properties = 0;
+        ui_render_properties(ui, ren, comp, in);
+        int rows = ui->num_properties;
+        if (rows > 0) parts_with_rows++;
+
+        for (int r = 0; r < rows; r++) {
+            int pr = ui->properties[r].prop_type;
+            /* the probe name is not a component property: the app applies it to the probe */
+            if (pr == PROP_PROBE_NAME) continue;
+            /* and a toggle is clicked, not typed into */
+            if (property_is_toggle(pr)) { toggles++; continue; }
+            rows_total++;
+
+            /* Values across the decades a property could plausibly want. The apply switch
+               validates ranges - a MOSFET's width has to be under a metre, a BJT's saturation
+               current under a microamp - so one number cannot tell "this row is dead" from "that
+               number was silly for this row". The row is fine if any of them lands. */
+            static const char *candidates[] = { "3.3", "0.33", "33", "3.3m", "3.3u", "3.3n",
+                                                "3.3p", "3.3k", "3.3M", "0.5" };
+            Component *fresh = NULL;
+            ComponentProps before;
+            bool applied = false, changed = false;
+            memset(&before, 0, sizeof before);
+            for (unsigned ci = 0; ci < sizeof candidates / sizeof candidates[0] && !applied; ci++) {
+                if (fresh) component_free(fresh);
+                fresh = component_create((ComponentType)ct, 200, 200);
+                if (!fresh) break;
+                before = fresh->props;
+                memset(in, 0, sizeof *in);
+                in->selected_component = fresh;
+                in->editing_property = true;
+                in->editing_prop_type = (PropertyType)pr;
+                snprintf(in->input_buffer, sizeof in->input_buffer, "%s", candidates[ci]);
+                if (input_apply_property_edit(in, fresh)) {
+                    applied = true;
+                    changed = memcmp(&before, &fresh->props, sizeof before) != 0;
+                }
+            }
+            if (!fresh) continue;
+
+            if (!applied) {
+                printf("[FAIL] prop  %-22s offers property %-3d and cannot apply it: the field "
+                       "takes the typing and answers Invalid value\n", info->name, pr);
+                fails++;
+            } else if (!changed) {
+                printf("[FAIL] prop  %-22s property %-3d applies and changes nothing\n",
+                       info->name, pr);
+                fails++;
+            }
+            component_free(fresh);
+        }
+        component_free(comp);
+    }
+
+    printf("\nprop-test: %d typed rows and %d toggles over %d parts, %d that the panel "
+           "offers and the app cannot apply\n", rows_total, toggles, parts_with_rows, fails);
+
+    free(in);
+    free(ui);
+    SDL_DestroyRenderer(ren);
+    SDL_DestroyWindow(win);
+    SDL_Quit();
+    return fails;
+}
+
 /* --trig-test: a repeating waveform has to stand still on the screen. The scope finds the most
    recent edge through the trigger level and draws the window around it; if it finds none, the
    display free-runs and the trace crawls sideways. A circuit whose response is a one-off - a step
@@ -755,6 +860,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--autoset-test")) return autoset_test();
         else if (!strcmp(argv[i], "--place-test")) return place_test();
         else if (!strcmp(argv[i], "--trig-test")) return trig_test();
+        else if (!strcmp(argv[i], "--prop-test")) return prop_test();
         else if (!strcmp(argv[i], "--crashlog")) { crashlog_dump_last(); return 0; }
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); usage(); return 2; }
     }

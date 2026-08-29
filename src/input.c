@@ -1995,6 +1995,28 @@ void input_cancel_property_edit(InputState *input) {
     SDL_StopTextInput();
 }
 
+/* Some rows in the properties panel are not typed into: clicking them flips a model, cycles a
+   part number or turns a sweep on. Those are applied where they are clicked and never reach the
+   text-apply switch below, so a test that types into every row would call them all broken. This
+   is the list of them. It is a list, which means it can fall behind the panel - and when it does,
+   --prop-test says so out loud rather than quietly passing. */
+bool property_is_toggle(int prop_type) {
+    switch (prop_type) {
+        case PROP_IDEAL: case PROP_PART:
+        case PROP_BJT_IDEAL: case PROP_MOS_IDEAL: case PROP_MOS_TYPE:
+        case PROP_OPAMP_IDEAL: case PROP_OPAMP_R2R:
+        case PROP_LED_COLOR: case PROP_LED_ARRAY_COLOR:
+        case PROP_RESET_FUSE:
+        case PROP_SWEEP_VOLTAGE_ENABLE: case PROP_SWEEP_VOLTAGE_MODE: case PROP_SWEEP_VOLTAGE_REPEAT:
+        case PROP_SWEEP_AMP_ENABLE: case PROP_SWEEP_AMP_MODE: case PROP_SWEEP_AMP_REPEAT:
+        case PROP_SWEEP_FREQ_ENABLE: case PROP_SWEEP_FREQ_MODE: case PROP_SWEEP_FREQ_REPEAT:
+        case PROP_TEXT_BOLD: case PROP_TEXT_ITALIC: case PROP_TEXT_UNDERLINE: case PROP_TEXT_SIZE:
+            return true;
+        default:
+            return false;
+    }
+}
+
 bool input_apply_property_edit(InputState *input, Component *comp) {
     if (!input || !comp || !input->editing_property) return false;
 
@@ -2419,8 +2441,15 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
         }
 
         case PROP_LED_VF:
+            /* The Schottky's panel reuses this row for its own forward voltage, and the box is
+               filled from props.schottky.vf - but only the LED could be written back, so typing
+               a Vf on a Schottky showed the right number, took the typing and answered "Invalid
+               value". Found by --prop-test: a row the panel offers that the app cannot apply. */
             if (comp->type == COMP_LED && value > 0 && value <= 10) {
                 comp->props.led.vf = value;
+                applied = true;
+            } else if (comp->type == COMP_SCHOTTKY && value > 0 && value <= 10) {
+                comp->props.schottky.vf = value;
                 applied = true;
             }
             break;

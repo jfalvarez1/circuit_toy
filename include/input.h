@@ -320,6 +320,9 @@ void input_duplicate(InputState *input, Circuit *circuit);
 void input_start_property_edit(InputState *input, PropertyType prop, const char *initial_value);
 void input_cancel_property_edit(InputState *input);
 bool input_apply_property_edit(InputState *input, Component *comp);
+/* True for the panel rows that are clicked rather than typed into (model toggles, the
+   part picker, the sweep switches): those never reach the apply switch. */
+bool property_is_toggle(int prop_type);
 void input_handle_text_input(InputState *input, const char *text);
 void input_handle_text_key(InputState *input, SDL_Keycode key);
 
