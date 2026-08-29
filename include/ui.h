@@ -567,9 +567,13 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode);
 #define UI_ACTION_SCOPE_STACK   33   // Toggle stacked / overlay channel view
 #define UI_ACTION_SCOPE_AC      44   // Toggle AC coupling
 #define UI_ACTION_SCOPE_FIT     45   // Toggle per-band fit (stacked)
-#define UI_ACTION_SCOPE_TRACK   1101   // Toggle sweep-tracking time/div
-#define UI_ACTION_UPDATE        1103 // Install the newer release
-#define UI_ACTION_SPOTLIGHT     1102 // Open component spotlight search (Ctrl+K)  (was 33: collided with SCOPE_STACK)
+/* These three sat at 1101..1103, which is UI_ACTION_PROP_EDIT + 1..3 - that is, the actions for
+   editing a source's Frequency, Phase and Offset. Clicking Offset in the properties panel ran the
+   updater and clicking Frequency toggled sweep-tracking instead of opening the field. Nothing may
+   live inside another action's range; the plain codes below have room. */
+#define UI_ACTION_SCOPE_TRACK   52   // Toggle sweep-tracking time/div
+#define UI_ACTION_SPOTLIGHT     53   // Open component spotlight search (Ctrl+K)
+#define UI_ACTION_UPDATE        54   // Install the newer releasewith SCOPE_STACK)
 #define UI_ACTION_EXPORT_SVG    34   // Export circuit to SVG file
 #define UI_ACTION_MC_RUN        35   // Start Monte Carlo analysis
 #define UI_ACTION_MC_RUNS_UP    36   // Increase MC runs
@@ -587,10 +591,31 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode);
 #define UI_ACTION_IMPORT_SPICE  51   // Toolbar SPICE: pick a .cir / .lib and import its .SUBCKTs   // Toolbar Fit: frame everything that is placed
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type (supports up to 300 component types)
-#define UI_ACTION_SELECT_CIRCUIT 500 // + circuit template type
-#define UI_ACTION_SELECT_SUBCIRCUIT 600 // + subcircuit definition id
+/* + circuit template type. 500 left room for a hundred templates and there are 187 of them, so
+   every template past the hundredth landed in the subcircuit range at 600 and was not recognised
+   as a circuit at all: picking I2C or Button Debounce armed a click instead of placing the
+   circuit, and the one already on the canvas stayed where it was. A thousand each, well clear. */
+#define UI_ACTION_SELECT_CIRCUIT 2000
+#define UI_ACTION_SELECT_CIRCUIT_MAX 1000   /* templates this range holds */
+#define UI_ACTION_SELECT_SUBCIRCUIT 3000 // + subcircuit definition id
 #define UI_ACTION_PROP_APPLY    1000 // Apply property text edit
 #define UI_ACTION_PROP_EDIT     1100 // + property type (PROP_VALUE, PROP_FREQUENCY, etc.)
+#define UI_ACTION_PROP_EDIT_MAX 300  // property types this range holds
+
+/* What an action code means. The ranges above are open-ended and used to be read off by hand in
+   two places with different bounds, which is how templates past the hundredth stopped being
+   recognised. One classifier, used by the dispatch and by --place-test, cannot drift from itself. */
+typedef enum {
+    UIA_NONE = 0,
+    UIA_SIMPLE,       /* a plain button: the code is the whole meaning */
+    UIA_TOOL,         /* index = tool */
+    UIA_COMP,         /* index = component type */
+    UIA_CIRCUIT,      /* index = circuit template type */
+    UIA_SUBCIRCUIT,   /* index = subcircuit definition id */
+    UIA_PROP_APPLY,
+    UIA_PROP_EDIT     /* index = property type */
+} UIActionKind;
+UIActionKind ui_action_kind(int action, int *index);
 
 // Set status message
 void ui_set_status(UIState *ui, const char *msg);

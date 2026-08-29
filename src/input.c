@@ -122,9 +122,15 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 }
             }
 
+            /* Everything from here to the button branches below used to run whatever button was
+               pressed, because the left-button test comes later. A middle press inside the scope
+               therefore set the trigger level and returned, and never reached the pan; a middle
+               press on a toolbar button pressed it. Only the left button works the widgets. */
+            bool left_press = event->button.button == SDL_BUTTON_LEFT;
+
             // If spotlight is open, handle spotlight clicks first
             if (ui && ui->show_spotlight) {
-                ComponentType selected = ui_spotlight_click(ui, x, y);
+                ComponentType selected = left_press ? ui_spotlight_click(ui, x, y) : COMP_NONE;
                 if (selected != COMP_NONE) {
                     // Component selected - start placing it
                     input_start_placing(input, selected);
@@ -135,7 +141,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
 
             // If subcircuit dialog is open, handle subcircuit dialog clicks
             if (ui && ui->show_subcircuit_dialog) {
-                bool clicked = ui_subcircuit_dialog_click(ui, x, y);
+                bool clicked = left_press && ui_subcircuit_dialog_click(ui, x, y);
                 if (clicked) {
                     // Check if create button was clicked (dialog closes and returns true for create)
                     if (!ui->show_subcircuit_dialog) {
@@ -147,25 +153,28 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             }
 
             // Check if click is in UI area first
-            int action = ui_handle_click(ui, x, y, true);
+            int action = left_press ? ui_handle_click(ui, x, y, true) : UI_ACTION_NONE;
             if (action != UI_ACTION_NONE) {
                 // Restore popup coordinates if needed
                 if (is_popup_event) {
                     ui_restore_popup_scope_coords(ui, &backup);
                 }
                 // Handle UI action
-                if (action >= UI_ACTION_SELECT_TOOL && action < UI_ACTION_SELECT_COMP) {
-                    input_set_tool(input, action - UI_ACTION_SELECT_TOOL);
-                } else if (action >= UI_ACTION_SELECT_COMP && action < UI_ACTION_SELECT_CIRCUIT) {
-                    input_start_placing(input, action - UI_ACTION_SELECT_COMP);
-                } else if (action >= UI_ACTION_SELECT_CIRCUIT && action < UI_ACTION_PROP_APPLY) {
-                    // Circuit template selected - store action for app to process
-                    // and set input to select tool for placement click
-                    input_set_tool(input, TOOL_SELECT);
-                    input->pending_ui_action = action;
-                } else {
-                    // Store simulation/file actions for app to process
-                    input->pending_ui_action = action;
+                int idx = 0;
+                switch (ui_action_kind(action, &idx)) {
+                    case UIA_TOOL: input_set_tool(input, idx); break;
+                    case UIA_COMP: input_start_placing(input, idx); break;
+                    /* A circuit places itself; a saved subcircuit is a part and still places on
+                       the next canvas click. Both want the select tool in hand afterwards. */
+                    case UIA_CIRCUIT:
+                    case UIA_SUBCIRCUIT:
+                        input_set_tool(input, TOOL_SELECT);
+                        input->pending_ui_action = action;
+                        break;
+                    default:
+                        // Store simulation/file/property actions for app to process
+                        input->pending_ui_action = action;
+                        break;
                 }
                 return true;
             }
@@ -178,10 +187,23 @@ bool input_handle_event(InputState *input, SDL_Event *event,
 
             /* Left-drag on the scope screen sets the trigger level, the way the level knob on a
                bench scope does - except you can see where you are putting it. */
-            if (ui && point_in_scope_screen(ui, x, y)) {
+            if (left_press && ui && point_in_scope_screen(ui, x, y)) {
                 input->scope_trig_dragging = true;
                 ui->trigger_level = scope_y_to_volts(ui, y);
                 ui->scope_capture_valid = false;
+                return true;
+            }
+
+            /* Middle-drag over the scope screen pans it - the time window across, every channel
+               down. Taken here because the canvas-bounds test immediately below throws away
+               anything outside the canvas, and the scope panel is outside the canvas: the middle
+               branch further down, which is where this used to be handled, was never reached for
+               the docked scope at all. */
+            if (event->button.button == SDL_BUTTON_MIDDLE && ui && point_in_scope_screen(ui, x, y)) {
+                input->middle.down = true;
+                input->middle.start_x = x;
+                input->middle.start_y = y;
+                input->scope_panning = true;
                 return true;
             }
 

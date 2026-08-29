@@ -25,6 +25,117 @@ static bool rects_overlap(const Rect *a, const Rect *b) {
     return a->x < b->x + b->w && b->x < a->x + a->w && a->y < b->y + b->h && b->y < a->y + a->h;
 }
 
+/* --place-test: picking a circuit from the palette must place it, on its own, for every one of
+   them. Two things have to hold and both broke in the same way. The click's action code has to
+   be recognised as a circuit - the range only held a hundred templates while there are 187, so
+   everything past the hundredth fell into the subcircuit range, armed a click and left the
+   previous circuit sitting on the canvas. And placing has to replace: the canvas afterwards has
+   to be exactly what a fresh canvas with that template on it holds, with nothing left over from
+   the circuit before it. One circuit is reused down the whole list, so anything not cleared is
+   still there to be found. The action codes of every other kind of click are checked here too,
+   because that is the same fault: UI_ACTION_UPDATE sat inside the property-edit range, so
+   clicking a source's Offset field ran the updater. */
+static int place_test(void) {
+    int fails = 0, checks = 0;
+    Circuit *shared = circuit_create();
+
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti) continue;
+        char why[220] = "";
+        checks++;
+
+        /* what the click produces, and what the dispatch makes of it */
+        int action = UI_ACTION_SELECT_CIRCUIT + t, idx = -1;
+        UIActionKind kind = ui_action_kind(action, &idx);
+        if (kind != UIA_CIRCUIT || idx != t)
+            snprintf(why, sizeof why,
+                     "a click on it produces action %d, which the dispatch reads as kind %d index "
+                     "%d - it would not place the circuit", action, (int)kind, idx);
+
+        /* the placement itself, onto the canvas the previous template was left on */
+        Circuit *fresh = circuit_create();
+        int want = circuit_place_template(fresh, (CircuitTemplateType)t, 0, 0);
+        circuit_clear(shared);
+        int got = circuit_place_template(shared, (CircuitTemplateType)t, 0, 0);
+        if (!why[0] && want <= 0)
+            snprintf(why, sizeof why, "the template places nothing at all");
+        else if (!why[0] && got != want)
+            snprintf(why, sizeof why, "placed %d parts over the last circuit where a clean canvas "
+                     "gets %d", got, want);
+        else if (!why[0] && (shared->num_components != fresh->num_components ||
+                             shared->num_wires != fresh->num_wires ||
+                             shared->num_probes != fresh->num_probes))
+            snprintf(why, sizeof why,
+                     "left the last circuit behind: %d parts / %d wires / %d probes against the "
+                     "%d / %d / %d a clean canvas gets", shared->num_components, shared->num_wires,
+                     shared->num_probes, fresh->num_components, fresh->num_wires, fresh->num_probes);
+        if (!why[0]) {
+            for (int i = 0; i < shared->num_components; i++)
+                if (shared->components[i]->type != fresh->components[i]->type) {
+                    snprintf(why, sizeof why, "part %d is a %d where a clean canvas has a %d", i,
+                             shared->components[i]->type, fresh->components[i]->type);
+                    break;
+                }
+        }
+        circuit_free(fresh);
+
+        if (why[0]) { printf("[FAIL] place %-28s %s\n", ti->name, why); fails++; }
+        else printf("[ OK ] place %-28s %d parts, %d wires, %d probes\n", ti->name,
+                    shared->num_components, shared->num_wires, shared->num_probes);
+    }
+    circuit_free(shared);
+
+    /* No other click may land inside a range. A property edit that reads as a plain button is
+       how clicking Offset came to run the updater. */
+    static const struct { int code; const char *name; } simple[] = {
+        { UI_ACTION_SCOPE_TRACK, "scope track" }, { UI_ACTION_SPOTLIGHT, "spotlight" },
+        { UI_ACTION_UPDATE, "update" }, { UI_ACTION_SCOPE_POPUP, "scope popout" },
+        { UI_ACTION_SCOPE_STACK, "scope stack" }, { UI_ACTION_SCOPE_AC, "scope AC" },
+        { UI_ACTION_SCOPE_FIT, "scope fit" }, { UI_ACTION_IMPORT_SPICE, "import SPICE" },
+        { UI_ACTION_EXPORT_SVG, "export SVG" }, { UI_ACTION_SCREENSHOT, "screenshot" },
+        { UI_ACTION_ZOOM_IN, "zoom in" }, { UI_ACTION_ZOOM_OUT, "zoom out" },
+        { UI_ACTION_ZOOM_FIT, "zoom fit" }, { UI_ACTION_CREATE_SUBCIRCUIT, "create subcircuit" },
+        { UI_ACTION_EDIT_SUBCIRCUIT, "edit subcircuit" }, { UI_ACTION_DEFER_UPDATE, "defer update" },
+    };
+    for (size_t i = 0; i < sizeof simple / sizeof simple[0]; i++) {
+        checks++;
+        if (ui_action_kind(simple[i].code, NULL) != UIA_SIMPLE) {
+            printf("[FAIL] action %-28s code %d is inside another action's range\n",
+                   simple[i].name, simple[i].code);
+            fails++;
+        }
+        for (size_t j = i + 1; j < sizeof simple / sizeof simple[0]; j++)
+            if (simple[i].code == simple[j].code) {
+                printf("[FAIL] action %s and %s are both code %d\n", simple[i].name,
+                       simple[j].name, simple[i].code);
+                fails++;
+            }
+    }
+    for (int p = 0; p < PROP_TYPE_COUNT; p++) {
+        checks++;
+        int idx = -1;
+        if (ui_action_kind(UI_ACTION_PROP_EDIT + p, &idx) != UIA_PROP_EDIT || idx != p) {
+            printf("[FAIL] property %d edits as something else\n", p);
+            fails++;
+        }
+    }
+    checks++;
+    if (ui_action_kind(UI_ACTION_PROP_APPLY, NULL) != UIA_PROP_APPLY) {
+        printf("[FAIL] applying a property edit reads as something else\n"); fails++;
+    }
+    for (int c = 0; c < COMP_TYPE_COUNT; c++) {
+        checks++;
+        int idx = -1;
+        if (ui_action_kind(UI_ACTION_SELECT_COMP + c, &idx) != UIA_COMP || idx != c) {
+            printf("[FAIL] part %d selects as something else\n", c); fails++;
+        }
+    }
+
+    printf("\nplace-test: %d checks, %d failed\n", checks, fails);
+    return fails;
+}
+
 /* --autoset-test: press Autoset on every template and check what it leaves on the screen.
    No window: the scope's scaling is arithmetic over the simulation's history, so it can be run
    and judged headlessly. Two things have to hold afterwards, and both are what a person means
@@ -521,6 +632,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
         else if (!strcmp(argv[i], "--layout-test")) return layout_test();
         else if (!strcmp(argv[i], "--autoset-test")) return autoset_test();
+        else if (!strcmp(argv[i], "--place-test")) return place_test();
         else if (!strcmp(argv[i], "--crashlog")) { crashlog_dump_last(); return 0; }
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); usage(); return 2; }
     }

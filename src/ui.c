@@ -7549,6 +7549,26 @@ void ui_scope_reset_for_template(UIState *ui) {
     ui->scope_capture_valid = false;
 }
 
+UIActionKind ui_action_kind(int action, int *index) {
+    int idx = 0;
+    UIActionKind k = UIA_NONE;
+    if (action <= UI_ACTION_NONE) k = UIA_NONE;
+    else if (action < UI_ACTION_SELECT_TOOL) { k = UIA_SIMPLE; idx = action; }
+    else if (action < UI_ACTION_SELECT_COMP) { k = UIA_TOOL; idx = action - UI_ACTION_SELECT_TOOL; }
+    else if (action < UI_ACTION_SELECT_COMP + 300) { k = UIA_COMP; idx = action - UI_ACTION_SELECT_COMP; }
+    else if (action == UI_ACTION_PROP_APPLY) k = UIA_PROP_APPLY;
+    else if (action >= UI_ACTION_PROP_EDIT && action < UI_ACTION_PROP_EDIT + UI_ACTION_PROP_EDIT_MAX) {
+        k = UIA_PROP_EDIT; idx = action - UI_ACTION_PROP_EDIT;
+    } else if (action >= UI_ACTION_SELECT_CIRCUIT &&
+               action < UI_ACTION_SELECT_CIRCUIT + UI_ACTION_SELECT_CIRCUIT_MAX) {
+        k = UIA_CIRCUIT; idx = action - UI_ACTION_SELECT_CIRCUIT;
+    } else if (action >= UI_ACTION_SELECT_SUBCIRCUIT && action < UI_ACTION_SELECT_SUBCIRCUIT + 1000) {
+        k = UIA_SUBCIRCUIT; idx = action - UI_ACTION_SELECT_SUBCIRCUIT;
+    }
+    if (index) *index = idx;
+    return k;
+}
+
 /* Placing a template sets the scope up for it. Kept here rather than inline in the app so the
    headless audit drives the same code the app does instead of a copy that can drift from it. */
 void ui_scope_apply_template_preset(UIState *ui, CircuitTemplateType type) {

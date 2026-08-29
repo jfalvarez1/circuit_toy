@@ -1046,13 +1046,14 @@ void app_handle_events(App *app) {
 
             default:
                 // Handle circuit template selection (UI_ACTION_SELECT_CIRCUIT + circuit_type)
-                if (app->input.pending_ui_action >= UI_ACTION_SELECT_CIRCUIT &&
-                    app->input.pending_ui_action < UI_ACTION_SELECT_CIRCUIT + 100) {
+                int sel_idx = 0;
+                if (ui_action_kind(app->input.pending_ui_action, &sel_idx) == UIA_CIRCUIT &&
+                    sel_idx > CIRCUIT_NONE && sel_idx < CIRCUIT_TYPE_COUNT) {
                     /* Picking a circuit from the list places it, on its own, framed and running.
                        It used to arm a click: choose the circuit, find a clear patch of canvas,
                        click, and clear the last one by hand first. Nobody wants a template
                        *next to* another template - they want to look at it. */
-                    int circuit_type = app->input.pending_ui_action - UI_ACTION_SELECT_CIRCUIT;
+                    int circuit_type = sel_idx;
                     const CircuitTemplateInfo *info = circuit_template_get_info(circuit_type);
                     char msg[160];
                     simulation_reset(app->simulation);

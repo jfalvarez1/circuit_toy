@@ -207,7 +207,8 @@ typedef enum {
     PROP_MIC_ENABLED,             // Microphone capture enabled toggle
     PROP_MIC_GAIN,                // Microphone input gain
     PROP_MIC_AMPLITUDE,           // Output amplitude
-    PROP_MIC_OFFSET               // DC offset
+    PROP_MIC_OFFSET,              // DC offset
+    PROP_TYPE_COUNT               /* so an audit can walk every property's action code */
 } PropertyType;
 
 // Input state
