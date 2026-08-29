@@ -163,6 +163,12 @@ bool file_load_circuit(Circuit *circuit, const char *filename) {
             strncpy(comp->label, label, MAX_LABEL_LEN);
             component_adopt_props(comp, &props);
             if (version >= 2) memcpy(comp->part, part, sizeof comp->part);
+            /* A subcircuit's pin count is not a property of its type - whoever places it sets it
+               from the definition, so a loaded one kept the default four and its fifth and sixth
+               pins did not exist to be reconnected. The 555 has six. */
+            if (version >= 2 && comp->type == COMP_SUBCIRCUIT &&
+                saved_terminals > 0 && saved_terminals <= MAX_TERMINALS)
+                comp->num_terminals = saved_terminals;
             circuit_add_component(circuit, comp);
             /* After, not before: circuit_add_component assigns every terminal to whatever node
                sits at its position, which is exactly the guess this is here to replace. The
@@ -425,8 +431,13 @@ bool file_import_json(Circuit *circuit, const char *filename) {
         return false;
     }
 
-    fread(buffer, 1, size, f);
-    buffer[size] = '\0';
+    /* Terminate at what was actually read, not at the file's size. The file is opened in text
+       mode, so on Windows every CRLF collapses to one byte and fread returns fewer than size -
+       leaving the tail of the buffer uninitialised heap that the parser below then walks into.
+       It found a "type": in that garbage often enough to load circuits with a phantom extra
+       component, and which circuits depended on whatever had been in that memory before. */
+    size_t got = fread(buffer, 1, (size_t)size, f);
+    buffer[got] = '\0';
     fclose(f);
 
     // Very basic JSON parsing
@@ -437,8 +448,9 @@ bool file_import_json(Circuit *circuit, const char *filename) {
     // Parse components (simplified)
     char *ptr = strstr(buffer, "\"components\"");
     if (ptr) {
+        char *comps_end = strstr(ptr, "\"nodes\"");   /* stay inside the array, as with the rest */
         // Find each component object
-        while ((ptr = strstr(ptr, "\"type\":")) != NULL) {
+        while ((ptr = strstr(ptr, "\"type\":")) != NULL && (!comps_end || ptr < comps_end)) {
             int type;
             float x, y;
             int rotation;
@@ -602,6 +614,18 @@ bool file_import_json(Circuit *circuit, const char *filename) {
                             comp->part[n] = 0;
                         }
 
+                        /* same as the binary path: a subcircuit's pin count comes from the
+                           file, not from its type */
+                        char *tcount_ptr = strstr(ptr, "\"terminals\": [");
+                        if (comp->type == COMP_SUBCIRCUIT && tcount_ptr &&
+                            (!end_of_comp || tcount_ptr < end_of_comp)) {
+                            int cnt = 0;
+                            for (const char *q = tcount_ptr + strlen("\"terminals\": ["); *q && *q != ']'; q++)
+                                if (*q == ',') cnt++;
+                            cnt++;                                  /* one more than the commas */
+                            if (cnt > 0 && cnt <= MAX_TERMINALS) comp->num_terminals = cnt;
+                        }
+
                         circuit_add_component(circuit, comp);
 
                         /* and which node each terminal is on - after the add, which assigns them
@@ -631,8 +655,13 @@ bool file_import_json(Circuit *circuit, const char *filename) {
        the components had already created by position, which are replaced here. */
     ptr = strstr(buffer, "\"nodes\"");
     if (ptr) {
+        /* Bounded by the start of the wires. "id" appears again in the probes further down the
+           file, and an unbounded search walked into them and read each probe's x and y as
+           another node - phantom nodes that then merged with real ones by position and pulled
+           whole nets together. */
+        char *nodes_end = strstr(ptr, "\"wires\"");
         circuit->num_nodes = 0;
-        while ((ptr = strstr(ptr, "\"id\":")) != NULL) {
+        while ((ptr = strstr(ptr, "\"id\":")) != NULL && (!nodes_end || ptr < nodes_end)) {
             int id;
             float x, y;
             bool is_ground = false;
@@ -668,7 +697,8 @@ bool file_import_json(Circuit *circuit, const char *filename) {
     // Parse wires
     ptr = strstr(buffer, "\"wires\"");
     if (ptr) {
-        while ((ptr = strstr(ptr, "\"start\":")) != NULL) {
+        char *wires_end = strstr(ptr, "\"probes\"");     /* same reason */
+        while ((ptr = strstr(ptr, "\"start\":")) != NULL && (!wires_end || ptr < wires_end)) {
             int start, end;
 
             if (sscanf(ptr, "\"start\": %d", &start) == 1) {

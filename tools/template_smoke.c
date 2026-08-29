@@ -331,6 +331,85 @@ static double circuit_signature(Circuit *c, int *ok_out) {
     return sum;
 }
 
+/* one leg of the round trip: write with save_fn, read with load_fn, and say what came back
+   different. Returns "" when the circuit survived. */
+static void roundtrip_leg(Circuit *a, const char *path,
+                          bool (*save_fn)(Circuit *, const char *),
+                          bool (*load_fn)(Circuit *, const char *),
+                          char *why, size_t whyn) {
+    why[0] = 0;
+    if (!save_fn(a, path)) { snprintf(why, whyn, "save failed"); return; }
+    Circuit *b = circuit_create();
+    if (!load_fn(b, path)) { snprintf(why, whyn, "load failed"); circuit_free(b); return; }
+
+    if (b->num_components != a->num_components) {
+        /* name the odd one out: which type appeared or vanished, and where */
+        char extra[80] = "";
+        if (b->num_components > a->num_components) {
+            Component *x = b->components[b->num_components - 1];
+            snprintf(extra, sizeof extra, " (last back: %s type %d at %g,%g)", x->label, x->type, x->x, x->y);
+        }
+        snprintf(why, whyn, "%d components saved, %d came back%s", a->num_components, b->num_components, extra);
+    }
+    else if (b->num_wires != a->num_wires)
+        snprintf(why, whyn, "%d wires saved, %d came back", a->num_wires, b->num_wires);
+    else {
+        for (int i = 0; i < a->num_components && !why[0]; i++) {
+            Component *ca = a->components[i], *cb = b->components[i];
+            if (ca->type != cb->type)
+                snprintf(why, whyn, "part %d is type %d, came back %d", i, ca->type, cb->type);
+            else if (fabsf(ca->x - cb->x) > 0.5f || fabsf(ca->y - cb->y) > 0.5f)
+                snprintf(why, whyn, "%s moved (%g,%g) -> (%g,%g)", ca->label, ca->x, ca->y, cb->x, cb->y);
+            else if (ca->rotation != cb->rotation)
+                snprintf(why, whyn, "%s rotation %d -> %d", ca->label, ca->rotation, cb->rotation);
+            else {
+                /* the value the schematic prints: resistance, capacitance, source volts, switch
+                   state, part number - everything that carries a label */
+                char va[96] = "", vb[96] = "";
+                render_component_value_label(ca, va, sizeof va, NULL, NULL);
+                render_component_value_label(cb, vb, sizeof vb, NULL, NULL);
+                if (strcmp(va, vb))
+                    snprintf(why, whyn, "%s reads '%s', came back '%s'", ca->label, va, vb);
+                /* the printed value is only the headline: compare the whole property block, so
+                   a series resistance or an ideal flag that did not survive is named too. The
+                   two types that own memory through the union hold pointers there, and those
+                   are meant to differ. */
+                else if (ca->type != COMP_DELAY_LINE && ca->type != COMP_SUBCIRCUIT &&
+                         memcmp(&ca->props, &cb->props, sizeof ca->props)) {
+                    const unsigned char *pa = (const unsigned char *)&ca->props;
+                    const unsigned char *pb2 = (const unsigned char *)&cb->props;
+                    size_t off = 0;
+                    while (off < sizeof ca->props && pa[off] == pb2[off]) off++;
+                    snprintf(why, whyn, "%s props differ at byte %zu of %zu", ca->label, off, sizeof ca->props);
+                }
+            }
+        }
+        { int d1=0,d2=0; circuit_signature(a,&d1); circuit_signature(b,&d2); }   /* build both node maps */
+        /* the connections themselves, named: two circuits can hold identical parts at identical
+           values and still be different circuits */
+        for (int i = 0; i < a->num_components && !why[0]; i++) {
+            Component *ca = a->components[i], *cb = b->components[i];
+            for (int k = 0; k < ca->num_terminals; k++) {
+                int na = a->node_map[ca->node_ids[k]], nb = b->node_map[cb->node_ids[k]];
+                if (na != nb) {
+                    snprintf(why, whyn, "%s pin %d was on net %d, came back on %d",
+                             ca->label, k, na, nb);
+                    break;
+                }
+            }
+        }
+        if (!why[0]) {
+            int oka = 0, okb = 0;
+            double sa = circuit_signature(a, &oka), sb = circuit_signature(b, &okb);
+            if (oka != okb)
+                snprintf(why, whyn, "DC solves %s before and %s after", oka ? "yes" : "no", okb ? "yes" : "no");
+            else if (oka && fabs(sa - sb) > 1e-6 * (1.0 + fabs(sa)))
+                snprintf(why, whyn, "settles differently: sum|V| %.6g -> %.6g", sa, sb);
+        }
+    }
+    circuit_free(b);
+}
+
 static int file_test(const char *filter) {
     int fails = 0, total = 0;
     char path[600];
@@ -347,51 +426,14 @@ static int file_test(const char *filter) {
         total++;
         char why[220] = "";
 
-        if (!file_save_circuit(a, path)) {
-            snprintf(why, sizeof why, "save failed");
-        } else {
-            Circuit *b = circuit_create();
-            if (!file_load_circuit(b, path)) {
-                snprintf(why, sizeof why, "load failed");
-            } else {
-                if (b->num_components != a->num_components)
-                    snprintf(why, sizeof why, "%d components saved, %d came back",
-                             a->num_components, b->num_components);
-                else if (b->num_wires != a->num_wires)
-                    snprintf(why, sizeof why, "%d wires saved, %d came back", a->num_wires, b->num_wires);
-                else {
-                    for (int i = 0; i < a->num_components && !why[0]; i++) {
-                        Component *ca = a->components[i], *cb = b->components[i];
-                        if (ca->type != cb->type)
-                            snprintf(why, sizeof why, "part %d is type %d, came back %d", i, ca->type, cb->type);
-                        else if (fabsf(ca->x - cb->x) > 0.5f || fabsf(ca->y - cb->y) > 0.5f)
-                            snprintf(why, sizeof why, "%s moved (%g,%g) -> (%g,%g)", ca->label,
-                                     ca->x, ca->y, cb->x, cb->y);
-                        else if (ca->rotation != cb->rotation)
-                            snprintf(why, sizeof why, "%s rotation %d -> %d", ca->label, ca->rotation, cb->rotation);
-                        else {
-                            /* the value the schematic prints: covers resistance, capacitance,
-                               source volts, switch state, part number, everything with a label */
-                            char va[96] = "", vb[96] = "";
-                            render_component_value_label(ca, va, sizeof va, NULL, NULL);
-                            render_component_value_label(cb, vb, sizeof vb, NULL, NULL);
-                            if (strcmp(va, vb))
-                                snprintf(why, sizeof why, "%s reads '%s', came back '%s'", ca->label, va, vb);
-                        }
-                    }
-                    if (!why[0]) {
-                        int oka = 0, okb = 0;
-                        double sa = circuit_signature(a, &oka), sb = circuit_signature(b, &okb);
-                        if (oka != okb)
-                            snprintf(why, sizeof why, "DC solves %s before and %s after",
-                                     oka ? "yes" : "no", okb ? "yes" : "no");
-                        else if (oka && fabs(sa - sb) > 1e-6 * (1.0 + fabs(sa)))
-                            snprintf(why, sizeof why, "settles differently: sum|V| %.6g -> %.6g", sa, sb);
-                    }
-                }
-            }
-            circuit_free(b);
-        }
+        /* Both formats, because they are not the same code and only one of them is what the
+           Save button writes. The binary .ckt is the older path; the app saves and loads JSON. */
+        char why_bin[220] = "", why_json[220] = "";
+        roundtrip_leg(a, path, file_save_circuit, file_load_circuit, why_bin, sizeof why_bin);
+        roundtrip_leg(a, path, file_export_json, file_import_json, why_json, sizeof why_json);
+        if (why_bin[0])       snprintf(why, sizeof why, "binary: %s", why_bin);
+        else if (why_json[0]) snprintf(why, sizeof why, "json: %s", why_json);
+
         printf("[%s] file  %-28s parts=%-3d wires=%-3d %s\n", why[0] ? "FAIL" : " OK ",
                name, a->num_components, a->num_wires, why);
         fflush(stdout);   /* so a template that takes the process down names itself */
@@ -1178,9 +1220,16 @@ static int geom_text_boxes(Circuit *c, TextBox *out, int max, int with_values) {
             if (len <= 0) continue;
             int fs = t->props.text.font_size;
             if (fs < 1) fs = 1; if (fs > 3) fs = 3;
-            float cell = (float)CANVAS_TEXT_PX * fs;   /* matches render_draw_text_styled */
-            out[n].x0 = t->x; out[n].x1 = t->x + cell * len;
-            out[n].y0 = t->y; out[n].y1 = t->y + cell;
+            /* the wrapped box: as wide as the longest line it breaks into, as tall as the
+               number of lines - the same call the renderer makes */
+            float cell = (float)CANVAS_TEXT_PX * fs;
+            int st[CANVAS_TEXT_MAX_LINES], ln[CANVAS_TEXT_MAX_LINES];
+            int nl = label_wrap(str, CANVAS_TEXT_WRAP, st, ln, CANVAS_TEXT_MAX_LINES);
+            int widest = 0;
+            for (int k = 0; k < nl; k++) if (ln[k] > widest) widest = ln[k];
+            if (nl <= 0) { widest = len; nl = 1; }
+            out[n].x0 = t->x; out[n].x1 = t->x + cell * widest;
+            out[n].y0 = t->y; out[n].y1 = t->y + (float)nl * (cell + 2.0f);
             snprintf(out[n].s, sizeof out[n].s, "%.20s", str);
             out[n].is_value = 0; out[n].owner = t;
             n++;
@@ -3371,6 +3420,16 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--flow-test")) return flow_test();
         else if (!strcmp(argv[i], "--conn-test")) return conn_test();
         else if (!strcmp(argv[i], "--file-test")) return file_test(i + 1 < argc ? argv[i + 1] : NULL);
+        else if (!strcmp(argv[i], "--json-dump") && i + 2 < argc) {
+            /* place a template and write it as JSON, to look at what the format keeps */
+            Circuit *c = circuit_create();
+            for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+                const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+                if (ti && strstr(ti->name, argv[i + 1])) { circuit_place_template(c, (CircuitTemplateType)t, 0, 0); break; }
+            }
+            printf("%d components -> %s\n", c->num_components, argv[i + 2]);
+            return file_export_json(c, argv[i + 2]) ? 0 : 1;
+        }
         else if (!strcmp(argv[i], "--line-test")) return line_test();
         else if (!strcmp(argv[i], "--view-test")) return scope_test();   /* --scope-test is the dt rule; this is what the screen shows */
         else if (!strcmp(argv[i], "--burn-test")) return burn_test();
