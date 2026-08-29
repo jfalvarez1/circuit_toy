@@ -332,6 +332,10 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_IV_GROUND_BOUNCE] = {"Ground Bounce", "Bounce", "A shared return lifts a quiet pin by a volt", TG_IV_SI},
     [CIRCUIT_IV_CROSSTALK] = {"Crosstalk", "Xtalk", "Same coupled charge, two victim impedances", TG_IV_SI},
     [CIRCUIT_IV_ESD_CLAMP] = {"ESD Clamp Diodes", "ESD", "6 V into a 3.3 V pin, through 1 k and through 220 k", TG_IV_SI},
+    [CIRCUIT_IV_CAP_ENERGY] = {"The Two-Capacitor Problem", "CapE", "Half the energy leaves, whatever the resistance", TG_IV_FUND},
+    [CIRCUIT_IV_MILLER] = {"The Miller Effect", "Miller", "10 pF of C_gd becomes 110 pF at the input", TG_IV_FUND},
+    [CIRCUIT_IV_SWITCH_CHOICE] = {"BJT or MOSFET as a Switch", "SwSel", "V_CE(sat) against R_DS(on), and what each costs", TG_IV_FUND},
+    [CIRCUIT_IV_INRUSH] = {"Hot-Plug Inrush", "Inrush", "An empty capacitor is a short circuit", TG_IV_FUND},
 
 
 
@@ -6306,6 +6310,10 @@ static int place_iv_pullup_sizing(Circuit *circuit, float x, float y);
 static int place_iv_ground_bounce(Circuit *circuit, float x, float y);
 static int place_iv_crosstalk(Circuit *circuit, float x, float y);
 static int place_iv_esd_clamp(Circuit *circuit, float x, float y);
+static int place_iv_cap_energy(Circuit *circuit, float x, float y);
+static int place_iv_miller(Circuit *circuit, float x, float y);
+static int place_iv_switch_choice(Circuit *circuit, float x, float y);
+static int place_iv_inrush(Circuit *circuit, float x, float y);
 static int place_3ph_345_line(Circuit *circuit, float x, float y);
 static int place_3ph_rectifier(Circuit *circuit, float x, float y);
 static int place_3ph_unbalanced(Circuit *circuit, float x, float y);
@@ -6636,6 +6644,10 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_IV_GROUND_BOUNCE:   return place_iv_ground_bounce(circuit, x, y);
         case CIRCUIT_IV_CROSSTALK:       return place_iv_crosstalk(circuit, x, y);
         case CIRCUIT_IV_ESD_CLAMP:       return place_iv_esd_clamp(circuit, x, y);
+        case CIRCUIT_IV_CAP_ENERGY:      return place_iv_cap_energy(circuit, x, y);
+        case CIRCUIT_IV_MILLER:          return place_iv_miller(circuit, x, y);
+        case CIRCUIT_IV_SWITCH_CHOICE:   return place_iv_switch_choice(circuit, x, y);
+        case CIRCUIT_IV_INRUSH:          return place_iv_inrush(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6833,6 +6845,30 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "also rises with V_CE - the Early effect, I_C = I_S exp(V_BE/V_T)(1 + V_CE/V_AF) - so with V_AF = 80 V",
         "the current is ~9 % higher and the collector sits lower. It is the same effect that sets a stage's",
         "output resistance r_o = V_AF/I_C, so it is not a rounding error. PROBE: both collectors."},
+    [CIRCUIT_IV_CAP_ENERGY] = {"THE TWO-CAPACITOR PROBLEM: 100 uF charged to 10 V is switched onto an equal empty one.",
+        "Charge is conserved, so both settle at 5 V. Energy is not: 1/2 C V^2 was 5 mJ and is now 2 x 1/2 x",
+        "100 uF x 25 = 2.5 mJ. Half has gone - and it goes for ANY resistance, including the 1 ohm copy that",
+        "finishes in 100 us, because the integral of i^2 R dt does not depend on R: a smaller R raises the",
+        "current by exactly as much as it shortens the time. At R = 0 it leaves as radiation instead. The",
+        "same algebra says charging any cap from a fixed voltage wastes half of what the source delivered."},
+    [CIRCUIT_IV_MILLER] = {"THE MILLER EFFECT: a capacitor between the input and the output of an inverting stage is",
+        "not C at the input. While the input rises by v the drain falls by A v, so the charge that has to be",
+        "supplied is C (1 + A) v - the input sees C (1 + A). Here a harmless-looking 10 pF of C_gd on a stage",
+        "with a gain of 12 becomes 130 pF, and against a 10 k source that is a pole at 122 kHz: at 1 MHz the",
+        "second stage is down to a seventh of the first, which still has all of it. This is why gain and",
+        "bandwidth trade against each other in one stage, and why a cascode holds the drain still to stop it."},
+    [CIRCUIT_IV_SWITCH_CHOICE] = {"BJT OR MOSFET AS A SWITCH: same 12 V, same 100 ohm load, same 5 V of logic. The 2N3904",
+        "saturates at 0.07 V here whatever the current, and costs 9 mA of base current for as long as it is",
+        "on. The 2N7000 drops I x R_DS(on), and at V_GS = 5 V that is about 3.4 ohm - 0.41 V, not the 0.14 V",
+        "the 1.2 ohm on the data sheet would suggest, because 1.2 ohm is quoted at V_GS = 10 V. So the BJT",
+        "wins on drop here and loses badly at high current, costs standby current and nothing per edge; the",
+        "MOSFET is the other way round. 'Logic level' is a specification, and 5 V is not 10 V."},
+    [CIRCUIT_IV_INRUSH] = {"HOT-PLUG INRUSH: an empty capacitor is a short circuit, and the only thing between it and",
+        "12 V is whatever series resistance happens to exist. With 50 mohm of connector and wiring that is",
+        "240 A for the first 50 us. The energy is not the problem - 1/2 C V^2 = 72 mJ either way - the peak",
+        "current is: 240 A through a connector rated for 5 A pits the contacts every time, and the rail sag",
+        "browns out everything else on the board. 4.7 ohm in series makes it 2.5 A and charges the cap in",
+        "20 ms. That is an inrush limiter: an NTC that falls to a few tenths once warm, or a ramped MOSFET."},
     [CIRCUIT_IV_TERMINATION] = {"TERMINATION: the same 3.3 V driver into the same 50 ohm line, ended three ways.",
         "NONE: the far end is open, the step reflects in full, and the driver sees it back one round trip",
         "later - 10 ns here. SERIES 33 ohm at the source: the driver's own 25 ohm plus 33 matches the line,",
@@ -12119,6 +12155,266 @@ static int place_iv_esd_clamp(Circuit *circuit, float x, float y) {
     return 20;
 }
 
+/* =====================================================================================
+ * Interview prep: analog fundamentals.
+ *
+ * The four questions that come up whatever the job is. Thevenin Equivalent, RC Step
+ * Response and Cascode already cover the textbook versions; these are the ones where the
+ * textbook answer and the interview answer are different.
+ * =================================================================================== */
+
+static int place_iv_cap_energy(Circuit *circuit, float x, float y) {
+    /* C1 charged to 10 V, switched onto an equal empty C2. Twice, through very different
+       resistances, to make the point that the resistance is not what decides the loss. */
+    static const double rt[2] = { 1.0, 100.0 };
+    static const char *tag[2] = {
+        "1 ohm: the transfer takes 100 us. Both end at 5 V, and 2.5 mJ of the 5 mJ has gone",
+        "100 ohm: 10 ms instead - and exactly the same 2.5 mJ has gone. R sets the time, not the loss"
+    };
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 320;
+        Component *c1 = vcap(circuit, x, py + 100, 100e-6);              // (x,py+60)-(x,py+140)
+        if (!c1) return 0;
+        c1->props.capacitor.voltage = 10.0;                             /* charged before the switch closes */
+        int c1t = TN(x, py + 60), c1b = TN(x, py + 140);
+        c1->node_ids[0] = c1t; c1->node_ids[1] = c1b;
+        Component *g1 = add_comp(circuit, COMP_GROUND, x, py + 200, 0);
+        g1->node_ids[0] = TN(x, py + 180); TW(c1b, TN(x, py + 180));
+
+        Component *sw = add_comp(circuit, COMP_ANALOG_SWITCH, x + 180, py + 20, 0);  // IN(140,20) OUT(220,20) CTL(180,40)
+        sw->props.analog_switch.r_on = rt[k]; sw->props.analog_switch.r_off = 1e9;
+        sw->props.analog_switch.v_on = 2.5; sw->props.analog_switch.ideal = false;
+        int si = TN(x + 140, py + 20), so = TN(x + 220, py + 20), ctl = TN(x + 180, py + 40);
+        TW(c1t, TN(x, py + 20)); TW(TN(x, py + 20), si);
+        sw->node_ids[0] = si; sw->node_ids[1] = so; sw->node_ids[2] = ctl;
+        Component *pw = add_comp(circuit, COMP_PULSE_SOURCE, x + 180, py + 140, 0);  // +(180,100) -(180,180)
+        pw->props.pulse_source.v_low = 0; pw->props.pulse_source.v_high = 5.0;
+        pw->props.pulse_source.delay = 20e-3;      /* close it well after the scope has started */
+        pw->props.pulse_source.rise_time = pw->props.pulse_source.fall_time = 1e-6;
+        pw->props.pulse_source.pulse_width = 10.0; pw->props.pulse_source.period = 100.0;
+        int pp = TN(x + 180, py + 100); pw->node_ids[0] = pp;
+        TW(ctl, TN(x + 180, py + 80)); TW(TN(x + 180, py + 80), pp);
+        Component *gp = add_comp(circuit, COMP_GROUND, x + 180, py + 240, 0);
+        connect_terminals(circuit, pw, 1, gp, 0);
+
+        Component *c2 = vcap(circuit, x + 340, py + 100, 100e-6);
+        int c2t = TN(x + 340, py + 60), c2b = TN(x + 340, py + 140);
+        TW(so, TN(x + 340, py + 20)); TW(TN(x + 340, py + 20), c2t);
+        c2->node_ids[0] = c2t; c2->node_ids[1] = c2b;
+        Component *g2 = add_comp(circuit, COMP_GROUND, x + 340, py + 200, 0);
+        g2->node_ids[0] = TN(x + 340, py + 180); TW(c2b, TN(x + 340, py + 180));
+        add_label(circuit, x + 420, py + 100, tag[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "THE TWO-CAPACITOR PROBLEM: 100 uF charged to 10 V, switched onto an equal empty one at t = 20 ms");
+    add_label(circuit, x - 40, y + 700, "Before: 1/2 C V^2 = 1/2 x 100 uF x 100 = 5 mJ. After: charge is conserved, so both sit at 5 V, and the");
+    add_label(circuit, x - 40, y + 730, "energy is 2 x 1/2 x 100 uF x 25 = 2.5 mJ. Half of it is gone, and it is gone for ANY resistance, including");
+    add_label(circuit, x - 40, y + 760, "one so small the transfer takes microseconds: the integral of i^2 R dt is independent of R, because a");
+    add_label(circuit, x - 40, y + 790, "smaller R makes the current bigger by exactly as much as it shortens the time. Make R zero and the energy");
+    add_label(circuit, x - 40, y + 820, "still leaves - as radiation from a loop carrying an enormous current. The same algebra says a capacitor");
+    add_label(circuit, x - 40, y + 850, "charged from a fixed voltage source always wastes half of what the source delivered, which is why a");
+    add_label(circuit, x - 40, y + 880, "switching pre-regulator exists at all. INTERVIEW: asked at TI, and the follow-up is 'where did it go?'");
+    add_label(circuit, x - 40, y + 910, "ALSO SEE: RC Step Response, and Input vs Output Capacitance.");
+    return 16;
+}
+
+static int place_iv_miller(Circuit *circuit, float x, float y) {
+    /* the same common-source stage twice; the second one has its C_gd made explicit */
+    static const double cgd[2] = { 0.0, 10e-12 };
+    static const char *tag[2] = {
+        "NO C_gd: the 10 k source sees only the gate capacitance, and the stage does its full gain at 1 MHz",
+        "10 pF from drain to gate: the input sees 10 pF x (1 + 12) = 130 pF, and 10 k x 130 pF rolls off at"
+    };
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 400;
+        Component *vdd = dc_rail(circuit, x + 300, py - 160, 12.0); if (!vdd) return 0;
+        int rail = TN(x + 300, py - 160);
+        Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x, py + 60, 0);   // +(x,py+20) -(x,py+100)
+        vin->props.ac_voltage.amplitude = 0.05; vin->props.ac_voltage.frequency = 1e6;
+        Component *gi = add_comp(circuit, COMP_GROUND, x, py + 160, 0);
+        connect_terminals(circuit, vin, 1, gi, 0);
+        int sp = TN(x, py + 20); vin->node_ids[0] = sp;
+        Component *rs = hres(circuit, x + 100, py + 20, 10e3);               /* the source impedance that Miller works against */
+        int rsl = TN(x + 60, py + 20), rsr = TN(x + 140, py + 20);
+        TW(sp, rsl); rs->node_ids[0] = rsl; rs->node_ids[1] = rsr;
+        /* the signal has to be coupled in: without this the 10 k source drags the bias divider
+           down to a tenth of a volt and the stage is simply off */
+        Component *cc = hcap(circuit, x + 180, py + 20, 100e-9);             // (140,20)-(220,20)
+        int ccl = TN(x + 140, py + 20), ccr = TN(x + 220, py + 20);
+        TW(rsr, ccl); cc->node_ids[0] = ccl; cc->node_ids[1] = ccr;
+        int gate = ccr;
+
+        /* bias: 1M / 330k from the rail, so the gate sits at 3 V */
+        Component *rb1 = vres(circuit, x + 220, py - 60, 1e6);
+        int b1t = TN(x + 220, py - 100), b1b = TN(x + 220, py - 20);
+        TW(rail, TN(x + 220, py - 160)); TW(TN(x + 220, py - 160), b1t); TW(b1b, gate);
+        rb1->node_ids[0] = b1t; rb1->node_ids[1] = b1b;
+        Component *rb2 = vres(circuit, x + 220, py + 100, 330e3);
+        int b2t = TN(x + 220, py + 60), b2b = TN(x + 220, py + 140);
+        TW(gate, b2t); rb2->node_ids[0] = b2t; rb2->node_ids[1] = b2b;
+        Component *gb = add_comp(circuit, COMP_GROUND, x + 220, py + 200, 0);
+        gb->node_ids[0] = TN(x + 220, py + 180); TW(b2b, TN(x + 220, py + 180));
+
+        Component *m = add_comp(circuit, COMP_NMOS, x + 320, py + 20, 0);    // G(300,20) D(340,0) S(340,40)
+        m->props.mosfet.vth = 1.5; m->props.mosfet.kp = 3.8e-3;
+        m->props.mosfet.w = 1e-6; m->props.mosfet.l = 1e-6;   /* W/L = 1: the stamp multiplies kp by W/L, and
+                                                                 the default 10 um device would be ten times
+                                                                 this transconductance and sit in triode */
+        m->props.mosfet.lambda = 0.02; m->props.mosfet.ideal = false;
+        int mg = TN(x + 300, py + 20), md = TN(x + 340, py), ms = TN(x + 340, py + 40);
+        TW(gate, mg);
+        m->node_ids[0] = mg; m->node_ids[1] = md; m->node_ids[2] = ms;
+        Component *gs = add_comp(circuit, COMP_GROUND, x + 340, py + 100, 0);
+        gs->node_ids[0] = TN(x + 340, py + 80); TW(ms, TN(x + 340, py + 80));
+        Component *rd = vres(circuit, x + 340, py - 80, 2200.0);             // (340,-120)-(340,-40)
+        int rdt = TN(x + 340, py - 120), rdb = TN(x + 340, py - 40);
+        TW(rail, TN(x + 340, py - 160)); TW(TN(x + 340, py - 160), rdt);
+        TW(rdb, md);
+        rd->node_ids[0] = rdt; rd->node_ids[1] = rdb;
+
+        if (cgd[k] > 0) {
+            Component *cm = add_comp(circuit, COMP_CAPACITOR, x + 300, py - 200, 0);   // (260,-200)-(340,-200)
+            cm->props.capacitor.capacitance = cgd[k];
+            int cml = TN(x + 260, py - 200), cmr = TN(x + 340, py - 200);
+            TW(gate, TN(x + 220, py - 200)); TW(TN(x + 220, py - 200), cml);
+            TW(md, TN(x + 400, py)); TW(TN(x + 400, py), TN(x + 400, py - 200)); TW(TN(x + 400, py - 200), cmr);
+            cm->node_ids[0] = cml; cm->node_ids[1] = cmr;
+        }
+        add_label(circuit, x + 480, py + 20, tag[k]);
+    }
+    add_label(circuit, x - 40, y - 300, "THE MILLER EFFECT: two identical common-source stages driven at 1 MHz. The second has a 10 pF C_gd");
+    add_label(circuit, x + 480, y + 450, "122 kHz, so at 1 MHz most of the signal never reaches the gate at all.");
+    add_label(circuit, x - 40, y + 700, "A capacitor between the input and the output of an inverting stage is not a capacitor of C to the input:");
+    add_label(circuit, x - 40, y + 730, "while the input moves up by v the far end moves DOWN by A v, so the charge that has to be supplied is");
+    add_label(circuit, x - 40, y + 760, "C (1 + A) v. The input sees C (1 + A), and with a gain of 10 a harmless 10 pF becomes 110 pF. That is why");
+    add_label(circuit, x - 40, y + 790, "gain and bandwidth trade against each other in a single stage, and why the cascode exists: putting a");
+    add_label(circuit, x - 40, y + 820, "common-gate device above the common-source one holds the drain still, so A across C_gd is about 1.");
+    add_label(circuit, x - 40, y + 850, "ALSO SEE: Cascode (MOSFET) for the fix, and Common Source for the stage without the argument.");
+    return 22;
+}
+
+static int place_iv_switch_choice(Circuit *circuit, float x, float y) {
+    /* the same 100 ohm load switched by a saturated BJT and by a MOSFET */
+    Component *v1 = dc_rail(circuit, x, y, 12.0); if (!v1) return 0;
+    int rail1 = TN(x, y);
+    Component *rl1 = vres(circuit, x + 200, y + 80, 100.0);        // (200,40)-(200,120)
+    rl1->props.resistor.power_rating = 5.0;
+    int l1t = TN(x + 200, y + 40), l1b = TN(x + 200, y + 120);
+    TW(rail1, TN(x + 200, y)); TW(TN(x + 200, y), l1t);
+    rl1->node_ids[0] = l1t; rl1->node_ids[1] = l1b;
+    Component *q = add_comp(circuit, COMP_NPN_BJT, x + 220, y + 200, 0);   // B(200,200) C(240,180) E(240,220)
+    component_apply_part(q, "2N3904");
+    int qb = TN(x + 200, y + 200), qc = TN(x + 240, y + 180), qe = TN(x + 240, y + 220);
+    TW(l1b, TN(x + 200, y + 160)); TW(TN(x + 200, y + 160), TN(x + 240, y + 160)); TW(TN(x + 240, y + 160), qc);
+    q->node_ids[0] = qb; q->node_ids[1] = qc; q->node_ids[2] = qe;
+    Component *gq = add_comp(circuit, COMP_GROUND, x + 240, y + 280, 0);
+    gq->node_ids[0] = TN(x + 240, y + 260); TW(qe, TN(x + 240, y + 260));
+    Component *rb = hres(circuit, x + 100, y + 200, 470.0);        // (60,200)-(140,200)
+    int rbl = TN(x + 60, y + 200), rbr = TN(x + 140, y + 200);
+    TW(rbr, qb); rb->node_ids[0] = rbl; rb->node_ids[1] = rbr;
+    Component *d1 = dc_rail(circuit, x - 100, y + 200, 5.0);
+    TW(TN(x - 100, y + 200), rbl);
+
+    /* the same job with a logic-level MOSFET */
+    float mx = x + 700;
+    Component *v2 = dc_rail(circuit, mx, y, 12.0);
+    int rail2 = TN(mx, y);
+    Component *rl2 = vres(circuit, mx + 200, y + 80, 100.0);
+    rl2->props.resistor.power_rating = 5.0;
+    int l2t = TN(mx + 200, y + 40), l2b = TN(mx + 200, y + 120);
+    TW(rail2, TN(mx + 200, y)); TW(TN(mx + 200, y), l2t);
+    rl2->node_ids[0] = l2t; rl2->node_ids[1] = l2b;
+    Component *m = add_comp(circuit, COMP_NMOS, mx + 220, y + 200, 0);
+    component_apply_part(m, "2N7000");
+    int mg = TN(mx + 200, y + 200), md = TN(mx + 240, y + 180), ms = TN(mx + 240, y + 220);
+    TW(l2b, TN(mx + 200, y + 160)); TW(TN(mx + 200, y + 160), TN(mx + 240, y + 160)); TW(TN(mx + 240, y + 160), md);
+    m->node_ids[0] = mg; m->node_ids[1] = md; m->node_ids[2] = ms;
+    Component *gm = add_comp(circuit, COMP_GROUND, mx + 240, y + 280, 0);
+    gm->node_ids[0] = TN(mx + 240, y + 260); TW(ms, TN(mx + 240, y + 260));
+    Component *rg = hres(circuit, mx + 100, y + 200, 470.0);
+    int rgl = TN(mx + 60, y + 200), rgr = TN(mx + 140, y + 200);
+    TW(rgr, mg); rg->node_ids[0] = rgl; rg->node_ids[1] = rgr;
+    Component *d2 = dc_rail(circuit, mx - 100, y + 200, 5.0);
+    TW(TN(mx - 100, y + 200), rgl);
+    (void)d1; (void)d2;
+
+    add_label(circuit, x - 40, y - 100, "BJT OR MOSFET AS A SWITCH: the same 12 V, 100 ohm load, the same 5 V of logic to drive it");
+    add_label(circuit, x + 320, y + 180, "2N3904 saturated: V_CE(sat) about 0.2 V, so the load gets 11.8 V.");
+    add_label(circuit, x + 320, y + 210, "It costs 9 mA of base current the whole time it is on, forever.");
+    add_label(circuit, mx + 320, y + 180, "2N7000 at V_GS = 5 V: about 3.4 ohm, so 0.41 V. The data sheet's 1.2 ohm");
+    add_label(circuit, mx + 320, y + 210, "is at V_GS = 10 V - and the gate takes current only while it changes.");
+    add_label(circuit, x - 40, y + 420, "The interview answer is not 'MOSFETs are better'. A saturated BJT holds a fixed 0.2 V whatever the current,");
+    add_label(circuit, x - 40, y + 450, "so at low current it wins on drop and at high current it loses badly - the MOSFET's drop is I x R_DS(on) and");
+    add_label(circuit, x - 40, y + 480, "falls with the current. The BJT costs continuous base current, which matters on a battery; the MOSFET costs");
+    add_label(circuit, x - 40, y + 510, "gate charge per edge, which matters at 100 kHz. And 'logic level' is a real specification: a 2N7000 needs");
+    add_label(circuit, x - 40, y + 540, "V_GS = 4.5 V to be properly on, and an IRF540N would still be half off at 5 V.");
+    add_label(circuit, x - 40, y + 570, "ALSO SEE: Named Parts: MOSFET Switches, Low-side Switch + Flyback, Common Emitter.");
+    return 20;
+}
+
+static int place_iv_inrush(Circuit *circuit, float x, float y) {
+    /* the same bulk capacitor hot-plugged onto the same supply, with and without a limiter */
+    static const double rlim[2] = { 0.0, 4.7 };
+    static const char *tag[2] = {
+        "STRAIGHT IN: 50 mohm of connector and wiring is all that limits it. 12 / 0.05 = 240 A for the",
+        "THROUGH 4.7 ohm: 2.5 A peak, and the cap is charged in 20 ms. That is what an inrush limiter is -"
+    };
+    for (int k = 0; k < 2; k++) {
+        float py = y + k * 300;
+        Component *v = add_comp(circuit, COMP_DC_VOLTAGE, x, py + 60, 0);   // +(x,py+20) -(x,py+100)
+        if (!v) return 0;
+        v->props.dc_voltage.voltage = 12.0;
+        v->props.dc_voltage.r_series = 0.01;      /* the supply's own output impedance */
+        v->props.dc_voltage.ideal = false;
+        Component *gv = add_comp(circuit, COMP_GROUND, x, py + 160, 0);
+        connect_terminals(circuit, v, 1, gv, 0);
+        int sp = TN(x, py + 20); v->node_ids[0] = sp;
+
+        /* the connector itself. Closing it IS the hot plug, and its on-resistance is the only
+           thing between 12 V and an empty capacitor. */
+        Component *sw = add_comp(circuit, COMP_ANALOG_SWITCH, x + 160, py + 20, 0);  // IN(120,20) OUT(200,20) CTL(160,40)
+        sw->props.analog_switch.r_on = (rlim[k] > 0) ? rlim[k] : 0.05;
+        sw->props.analog_switch.r_off = 1e9; sw->props.analog_switch.v_on = 2.5;
+        sw->props.analog_switch.ideal = false;
+        int si = TN(x + 120, py + 20), so = TN(x + 200, py + 20), ctl = TN(x + 160, py + 40);
+        TW(sp, si);
+        sw->node_ids[0] = si; sw->node_ids[1] = so; sw->node_ids[2] = ctl;
+        Component *pw = add_comp(circuit, COMP_PULSE_SOURCE, x + 160, py + 140, 0);  // +(160,100) -(160,180)
+        pw->props.pulse_source.v_low = 0; pw->props.pulse_source.v_high = 5.0;
+        pw->props.pulse_source.delay = 2e-3;
+        pw->props.pulse_source.rise_time = pw->props.pulse_source.fall_time = 1e-6;
+        pw->props.pulse_source.pulse_width = 10.0; pw->props.pulse_source.period = 100.0;
+        int pp = TN(x + 160, py + 100); pw->node_ids[0] = pp;
+        TW(ctl, TN(x + 160, py + 80)); TW(TN(x + 160, py + 80), pp);
+        Component *gpw = add_comp(circuit, COMP_GROUND, x + 160, py + 240, 0);
+        connect_terminals(circuit, pw, 1, gpw, 0);
+        int bulk = TN(x + 300, py + 20); TW(so, bulk);
+        Component *cb = vcap(circuit, x + 300, py + 100, 1000e-6);
+        int cbt = TN(x + 300, py + 60), cbb = TN(x + 300, py + 140);
+        TW(bulk, cbt); cb->node_ids[0] = cbt; cb->node_ids[1] = cbb;
+        Component *gc = add_comp(circuit, COMP_GROUND, x + 300, py + 200, 0);
+        gc->node_ids[0] = TN(x + 300, py + 180); TW(cbb, TN(x + 300, py + 180));
+        Component *rload = vres(circuit, x + 420, py + 100, 100.0);
+        int rlt = TN(x + 420, py + 60), rlb = TN(x + 420, py + 140);
+        TW(bulk, TN(x + 420, py + 20)); TW(TN(x + 420, py + 20), rlt);
+        rload->props.resistor.power_rating = 5.0;
+        rload->node_ids[0] = rlt; rload->node_ids[1] = rlb;
+        Component *gl = add_comp(circuit, COMP_GROUND, x + 420, py + 200, 0);
+        gl->node_ids[0] = TN(x + 420, py + 180); TW(rlb, TN(x + 420, py + 180));
+        add_label(circuit, x + 520, py + 100, tag[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "HOT-PLUG INRUSH: 1000 uF of bulk capacitance meeting a 12 V supply, twice");
+    add_label(circuit, x + 520, y + 130, "first 50 us, which is what welds a connector pin and browns out everything");
+    add_label(circuit, x + 520, y + 160, "else on the rail. The capacitor is charged in 250 us, which nobody asked for.");
+    add_label(circuit, x + 520, y + 430, "usually an NTC thermistor, so it is 4.7 ohm cold and a few tenths once current");
+    add_label(circuit, x + 520, y + 460, "has warmed it, or a MOSFET whose gate is ramped by an RC (a hot-swap controller).");
+    add_label(circuit, x - 40, y + 640, "An empty capacitor is a short circuit, and the only thing between 12 V and that short is whatever series");
+    add_label(circuit, x - 40, y + 670, "resistance happens to exist. The energy is not the problem - it is 1/2 C V^2 = 72 mJ either way - the");
+    add_label(circuit, x - 40, y + 700, "problem is the peak current and how briefly it flows: 240 A through a connector rated for 5 A pits the");
+    add_label(circuit, x - 40, y + 730, "contacts a little every time, and the rail sag takes everything else on the board down with it.");
+    add_label(circuit, x - 40, y + 760, "ALSO SEE: Power Delivery Network, and The Two-Capacitor Problem for where the other half of the energy goes.");
+    return 15;
+}
+
 #undef TN
 #undef TW
 
@@ -12298,6 +12594,10 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_GROUND_BOUNCE] = { COMP_INDUCTOR, 0, 0 },     /* the local ground, above the bond wire */
     [CIRCUIT_IV_CROSSTALK]     = { COMP_CAPACITOR, 2, 0 },    /* the weakly held victim */
     [CIRCUIT_IV_ESD_CLAMP]     = { COMP_DIODE, 0, 0 },        /* the pin, clamped one diode above the rail */
+    [CIRCUIT_IV_CAP_ENERGY]    = { COMP_CAPACITOR, 1, 0 },    /* C2 in the fast copy: 0 V, then 5 V */
+    [CIRCUIT_IV_MILLER]        = { COMP_NMOS, 0, 1 },         /* the drain of the stage without C_gd */
+    [CIRCUIT_IV_SWITCH_CHOICE] = { COMP_NPN_BJT, 0, 1 },      /* the saturated collector */
+    [CIRCUIT_IV_INRUSH]        = { COMP_CAPACITOR, 0, 0 },    /* the bulk cap, straight in */
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -12427,6 +12727,8 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_LDO_VS_BUCK] = 2e-6, [CIRCUIT_IV_BOOTSTRAP] = 2e-6,
     [CIRCUIT_IV_TERMINATION] = 5e-9, [CIRCUIT_IV_PULLUP_SIZING] = 5e-6,
     [CIRCUIT_IV_GROUND_BOUNCE] = 5e-9, [CIRCUIT_IV_CROSSTALK] = 5e-9, [CIRCUIT_IV_ESD_CLAMP] = 1e-3,
+    [CIRCUIT_IV_CAP_ENERGY] = 5e-3, [CIRCUIT_IV_MILLER] = 200e-9,
+    [CIRCUIT_IV_SWITCH_CHOICE] = 1e-3, [CIRCUIT_IV_INRUSH] = 5e-3,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -12480,6 +12782,8 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_LDO_VS_BUCK] = 2.0, [CIRCUIT_IV_BOOTSTRAP] = 5.0,
     [CIRCUIT_IV_TERMINATION] = 1.0, [CIRCUIT_IV_PULLUP_SIZING] = 1.0,
     [CIRCUIT_IV_GROUND_BOUNCE] = 0.5, [CIRCUIT_IV_CROSSTALK] = 0.5, [CIRCUIT_IV_ESD_CLAMP] = 1.0,
+    [CIRCUIT_IV_CAP_ENERGY] = 2.0, [CIRCUIT_IV_MILLER] = 0.5,
+    [CIRCUIT_IV_SWITCH_CHOICE] = 2.0, [CIRCUIT_IV_INRUSH] = 2.0,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -12662,6 +12966,10 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_GROUND_BOUNCE] = { DEMO_WAVEFORM, 20000000 },
     [CIRCUIT_IV_CROSSTALK]     = { DEMO_WAVEFORM, 20000000 },
     [CIRCUIT_IV_ESD_CLAMP]     = { DEMO_DC, 0 },
+    [CIRCUIT_IV_CAP_ENERGY]    = { DEMO_DC, 0 },
+    [CIRCUIT_IV_MILLER]        = { DEMO_WAVEFORM, 1000000 },
+    [CIRCUIT_IV_SWITCH_CHOICE] = { DEMO_DC, 0 },
+    [CIRCUIT_IV_INRUSH]        = { DEMO_DC, 0 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -12718,6 +13026,9 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_PULLUP_SIZING] = SCOPE_FLAG_STACK,
     [CIRCUIT_IV_GROUND_BOUNCE] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_IV_CROSSTALK] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_IV_CAP_ENERGY] = SCOPE_FLAG_STACK,
+    [CIRCUIT_IV_MILLER] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_IV_INRUSH] = SCOPE_FLAG_STACK,
     /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */
     [CIRCUIT_COLPITTS] = SCOPE_FLAG_AC, [CIRCUIT_HARTLEY] = SCOPE_FLAG_AC, [CIRCUIT_CLAPP] = SCOPE_FLAG_AC,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
