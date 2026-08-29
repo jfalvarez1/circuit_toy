@@ -163,6 +163,104 @@ static int scope_dt_test(void) {
  *    the resistor current, and every wire is "lit" (|I| > 0) while the source is non-zero. */
 static int circuit_node_net(Circuit *c, int id) { return (id >= 0 && id < MAX_NODES) ? c->node_map[id] : -1; }
 
+
+/* ---------------------------------------------------------------------------------------
+ * --scope-test: what the APP shows, for every template.
+ *
+ * The other modes check numbers at nodes the oracle names. This one checks the thing a user
+ * actually complains about: I loaded a template and the scope was empty. It places each
+ * template exactly as the app does - circuit_place_template puts the probes down from the
+ * template's own output and extra-probe specs - runs it for one screen at the preset time
+ * base, and looks at every probe.
+ *
+ * It also checks the other half of "can I drive this in the GUI": every switch in every
+ * template has to be reachable with a click, i.e. a hit test at its own centre has to find
+ * that switch and not something drawn on top of it.
+ * ------------------------------------------------------------------------------------- */
+static int is_switch_type(ComponentType t) {
+    return t == COMP_SPST_SWITCH || t == COMP_SPDT_SWITCH || t == COMP_DPDT_SWITCH ||
+           t == COMP_PUSH_BUTTON || t == COMP_ANALOG_SWITCH;
+}
+
+static int scope_test(void) {
+    int fails = 0, total = 0, dead_probes = 0, switches = 0;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        const char *name = ti ? ti->name : "?";
+        Circuit *c = circuit_create();
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        total++;
+        int ok = 1; char why[220] = "";
+
+        /* every switch has to be clickable where it is drawn */
+        int sw_here = 0, sw_bad = 0;
+        for (int i = 0; i < c->num_components; i++) {
+            Component *comp = c->components[i];
+            if (!is_switch_type(comp->type)) continue;
+            sw_here++;
+            Component *hit = circuit_find_component_at(c, comp->x, comp->y);
+            if (hit != comp) {
+                sw_bad++;
+                if (ok) { ok = 0; snprintf(why, sizeof why, "%s is not clickable at its own centre (hit %s)",
+                                           comp->label, hit ? hit->label : "nothing"); }
+            }
+        }
+        switches += sw_here;
+
+        /* one screen at the template's own time base, sampling every probe */
+        double td = circuit_template_scope_time_div((CircuitTemplateType)t);
+        double run = (td > 0) ? td * 10.0 : 1e-3;
+        Simulation *sim = simulation_create(c);
+        if (c->num_probes == 0) {
+            ok = 0; snprintf(why, sizeof why, "no probes: the scope would be blank");
+        } else if (!simulation_dc_analysis(sim)) {
+            ok = 0; snprintf(why, sizeof why, "DC failed");
+        }
+        double mn[MAX_PROBES], mx[MAX_PROBES], sum[MAX_PROBES];
+        int np = c->num_probes < MAX_PROBES ? c->num_probes : MAX_PROBES, n = 0;
+        for (int i = 0; i < np; i++) { mn[i] = 1e300; mx[i] = -1e300; sum[i] = 0; }
+        if (ok) {
+            simulation_auto_time_step(sim);
+            if (td > 0) { double dtp = simulation_scope_time_step(sim, td); if (dtp > 0 && dtp < sim->time_step) simulation_set_time_step(sim, dtp); }
+            simulation_start(sim);
+            long steps = 0;
+            while (sim->time < run && steps < 400000) {
+                if (!simulation_step(sim)) { ok = 0; snprintf(why, sizeof why, "step failed at t=%.3g", sim->time); break; }
+                steps++;
+                if (sim->time < run * 0.25) continue;          /* let the start-up transient go by */
+                for (int i = 0; i < np; i++) {
+                    Node *nd = circuit_get_node(c, c->probes[i].node_id);
+                    double v = nd ? nd->voltage : 0;
+                    if (v < mn[i]) mn[i] = v; if (v > mx[i]) mx[i] = v; sum[i] += v;
+                }
+                n++;
+            }
+        }
+        /* a channel is "showing something" if it moves at all or sits at a real level */
+        int alive = 0;
+        char detail[160] = ""; size_t dl = 0;
+        if (ok && n > 0) {
+            for (int i = 0; i < np; i++) {
+                double pp = mx[i] - mn[i], mean = sum[i] / n;
+                if (pp > 1e-9 || fabs(mean) > 1e-6) alive++;
+                else dead_probes++;
+                if (dl < sizeof detail - 24)
+                    dl += (size_t)snprintf(detail + dl, sizeof detail - dl, "%s%.3gpp", i ? " " : "", pp);
+            }
+            if (alive == 0) { ok = 0; snprintf(why, sizeof why, "every probe is flat at 0 V: the scope shows nothing"); }
+        }
+        if (!ok) fails++;
+        printf("[%s] scope %-28s probes=%d alive=%d switches=%d %s %s\n", ok ? " OK " : "FAIL",
+               name, c->num_probes, alive, sw_here, detail, why);
+        (void)sw_bad;
+        if (sim) simulation_free(sim);
+        circuit_free(c);
+    }
+    printf("\nscope-test: %d templates, %d with nothing on the scope, %d flat probes, %d switches all clickable\n",
+           total, fails, dead_probes, switches);
+    return fails ? 1 : 0;
+}
+
 static int flow_test(void) {
     int fails = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -2768,6 +2866,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--svg") && i + 1 < argc) svg_dir = argv[++i];
         else if (!strcmp(argv[i], "--scope-test")) return scope_dt_test();
         else if (!strcmp(argv[i], "--flow-test")) return flow_test();
+        else if (!strcmp(argv[i], "--view-test")) return scope_test();   /* --scope-test is the dt rule; this is what the screen shows */
         else if (!strcmp(argv[i], "--burn-test")) return burn_test();
         else if (!strcmp(argv[i], "--std-test")) return std_test();
         else if (!strcmp(argv[i], "--switch-test")) return switch_test();
