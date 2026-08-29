@@ -76,6 +76,49 @@ jobs:
           CIRCUIT_TOY_NO_UPDATE: '1'
         run: ./build/circuit-playground.exe --layout-test
 
+      # Start the binary this job is about to ship: window, renderer, a template placed, frames
+      # drawn, screenshot written. --layout-test above returns before SDL_Init and never builds
+      # the App, which is how v3.19.2, v3.20.0 and v3.21.0 all went out crashing with 0xC00000FD
+      # a moment after start-up and all passed CI. If the runner cannot open a window at all the
+      # step says so and moves on; a binary that starts and then dies is a failure.
+      - name: Start the app
+        shell: bash
+        env:
+          CIRCUIT_TOY_NO_UPDATE: '1'
+        run: |
+          set +e
+          rm -f start.bmp
+          ./build/circuit-playground.exe --template "RC Low Pass" --size 800x600 \
+              --frame 20 --shot start.bmp --exit --no-update-check
+          rc=$?
+          log="$APPDATA/circuit_toy/circuit-playground/crash.log"
+          if [ -f start.bmp ]; then
+            echo "started, drew frames and wrote a screenshot (exit $rc)"
+            exit 0
+          fi
+          if [ -f "$log" ] && grep -q "FATAL: SDL_Init failed" "$log"; then
+            echo "this runner has no display; skipping (the app never got to open a window)"
+            exit 0
+          fi
+          echo "the app did not start. Its log:"
+          [ -f "$log" ] && tail -40 "$log"
+          exit 1
+
+      # The stack the crash came out of. 223 KB of App state used to live on it; the state is in
+      # static storage now and this is the guard that the reserve stays generous.
+      - name: Stack reserve
+        shell: bash
+        run: |
+          python - <<'PY'
+          import struct
+          d = open('build/circuit-playground.exe','rb').read()
+          pe = struct.unpack_from('<I', d, 0x3c)[0]
+          reserve = struct.unpack_from('<Q', d, pe + 24 + 72)[0]
+          mb = reserve / 1048576
+          print('stack reserve %.1f MB' % mb)
+          raise SystemExit(0 if mb >= 7.9 else 'reserve too small: %.2f MB' % mb)
+          PY
+
       - name: Upload binary
         if: matrix.link == 'static' && matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
