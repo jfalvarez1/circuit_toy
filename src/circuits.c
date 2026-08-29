@@ -12167,7 +12167,8 @@ static int place_iv_esd_clamp(Circuit *circuit, float x, float y) {
         int d1a = TN(x + 300, py - 80), d1k = TN(x + 300, py);
         d1->node_ids[0] = d1k; d1->node_ids[1] = d1a;                    /* anode at the pin, cathode at VDD */
         TW(pin, TN(x + 300, py + 20)); TW(TN(x + 300, py + 20), d1k);
-        TW(d1a, TN(x + 300, py - 120)); TW(TN(x + 300, py - 120), TN(x, py - 120)); TW(TN(x, py - 120), vdd);
+        /* py - 120 lands inside the copy above: run the rail just above this copy instead */
+        TW(d1a, TN(x, py - 80)); TW(TN(x, py - 80), vdd);
         Component *d2 = add_comp(circuit, COMP_DIODE, x + 420, py + 120, 90);  // A(420,80) K(420,160)
         int d2a = TN(x + 420, py + 80), d2k = TN(x + 420, py + 160);
         d2->node_ids[0] = d2k; d2->node_ids[1] = d2a;                    /* anode at ground, cathode at the pin */
@@ -12300,7 +12301,8 @@ static int place_iv_miller(Circuit *circuit, float x, float y) {
                                                                  this transconductance and sit in triode */
         m->props.mosfet.lambda = 0.02; m->props.mosfet.ideal = false;
         int mg = TN(x + 300, py + 20), md = TN(x + 340, py), ms = TN(x + 340, py + 40);
-        TW(gate, mg);
+        int gtap = TN(x + 260, py + 20);          /* the C_gd tap, on the gate run */
+        TW(gate, gtap); TW(gtap, mg);
         m->node_ids[0] = mg; m->node_ids[1] = md; m->node_ids[2] = ms;
         Component *gs = add_comp(circuit, COMP_GROUND, x + 340, py + 100, 0);
         gs->node_ids[0] = TN(x + 340, py + 80); TW(ms, TN(x + 340, py + 80));
@@ -12314,7 +12316,9 @@ static int place_iv_miller(Circuit *circuit, float x, float y) {
             Component *cm = add_comp(circuit, COMP_CAPACITOR, x + 300, py - 200, 0);   // (260,-200)-(340,-200)
             cm->props.capacitor.capacitance = cgd[k];
             int cml = TN(x + 260, py - 200), cmr = TN(x + 340, py - 200);
-            TW(gate, TN(x + 220, py - 200)); TW(TN(x + 220, py - 200), cml);
+            /* tap the gate one column right of the bias resistors: running up x + 220 would
+               take this wire straight over the 1M, which is where the bias divider lives */
+            TW(gtap, TN(x + 260, py - 200)); TW(TN(x + 260, py - 200), cml);
             TW(md, TN(x + 400, py)); TW(TN(x + 400, py), TN(x + 400, py - 200)); TW(TN(x + 400, py - 200), cmr);
             cm->node_ids[0] = cml; cm->node_ids[1] = cmr;
         }
