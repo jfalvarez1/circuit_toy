@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.17.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.17.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.18.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.18.0)** (auto-updating from v3.4.0 on)
 
 A native desktop circuit simulator written in C with SDL2. Build, simulate and analyse circuits
 with a drag-and-drop schematic and a bench oscilloscope.
@@ -121,7 +121,7 @@ In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/).
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-182 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+183 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -1182,11 +1182,14 @@ circuit_toy/
   step control across a commutation. Written up in `docs/ROADMAP.md`; the lesson lives in the
   notes of **Discrete Buck, Node by Node** instead of in a template of its own.
 
-- **No true delay-line transmission line** - `COMP_TLINE` is a power-line model (per-mile R, X
-  and B at 60 Hz, nominal pi). The templates that need propagation delay - Signal Reflections,
-  Termination, Scope Input Impedance - build it as an L-C ladder, which is correct but needs a
-  time step short against one section's delay. A delay-based lossless line element would be
-  the better answer and is the one clear gap against circuit.js.
+- **Two transmission line models, and the older templates use the older one.** `COMP_DELAY_LINE`
+  is a real line: Bergeron's method, with the propagation delay carried in a history buffer, so
+  it is exact for a lossless line at any time step (**Transmission Line (real delay)** is the
+  template, `--line-test` the oracle). `COMP_TLINE` remains the power-line model - per-mile R, X
+  and B at 60 Hz, nominal pi - which is the right thing for a 345 kV circuit and the wrong thing
+  for a 5 ns cable. Signal Reflections, Termination and Scope Input Impedance still build their
+  cable as an L-C ladder, which is correct but needs a time step short against one section's
+  delay; migrating them to the delay line is worth doing and has not been done.
 
 ## License
 
