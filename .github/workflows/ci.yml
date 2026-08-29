@@ -75,7 +75,9 @@ jobs:
         env:
           SDL_VIDEODRIVER: dummy
           CIRCUIT_TOY_NO_UPDATE: '1'
-        run: ./build/circuit-playground.exe --layout-test
+        run: |
+          ./build/circuit-playground.exe --layout-test
+          ./build/circuit-playground.exe --autoset-test
 
       # Start the binary this job is about to ship: window, renderer, a template placed, frames
       # drawn, screenshot written. --layout-test above returns before SDL_Init and never builds

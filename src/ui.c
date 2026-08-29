@@ -7624,11 +7624,16 @@ void ui_scope_autoset(UIState *ui, Simulation *sim) {
         return;
     }
 
-    // Calculate appropriate volt/div
-    // Want signal to fill about 60-80% of the vertical range (8 divisions)
+    /* Volts/div has to satisfy two things, and this used to check only the first: the signal has
+       to fit the screen's height, AND it has to fit where it actually sits. The screen is eight
+       divisions centred on zero, so a 0-5 V square wave scaled from its 5 V span alone lands at
+       1 V/div and runs five divisions above centre - half of it off the top, which is what
+       "autoset does not match what I see" looks like. Take whichever of the two is coarser. */
     double signal_range = global_max - global_min;
-    double target_range = signal_range * 1.4;  // Add some margin
-    double ideal_volt_div = target_range / 8.0;
+    double by_span = signal_range * 1.4 / 8.0;
+    double excursion = fmax(fabs(global_max), fabs(global_min));
+    double by_offset = excursion / 3.5;            /* half a division of margin at the edge */
+    double ideal_volt_div = fmax(by_span, by_offset);
 
     // Find nearest standard value (round up)
     int volt_idx = 0;
@@ -7662,8 +7667,31 @@ void ui_scope_autoset(UIState *ui, Simulation *sim) {
         ui->scope_time_div = 0.01;  // 10ms/div
     }
 
-    // Set trigger level to midpoint of signal
-    ui->trigger_level = (global_min + global_max) / 2.0;
+    /* Trigger on a channel from that channel's own numbers.
+       The level used to be the midpoint of every channel taken together while the trigger stayed
+       on CH1, so an amplifier - a 100 mV input and a 9 V output - got a level of about 4.5 V on
+       a channel that never leaves +/-0.1 V. It cannot fire, and the trace free-runs and slides.
+       Twenty templates were doing this. Pick the channel with the most swing, and take the level
+       from the middle of that channel. */
+    {
+        int best = -1;
+        double best_swing = 0, best_mid = 0;
+        for (int ch = 0; ch < ui->scope_num_channels; ch++) {
+            if (!ui->scope_channels[ch].enabled) continue;
+            double times[MAX_HISTORY], values[MAX_HISTORY];
+            int n = simulation_get_history(sim, ui->scope_channels[ch].probe_idx, times, values, MAX_HISTORY);
+            if (n < 10) continue;
+            double lo = values[0], hi = values[0];
+            for (int i = 1; i < n; i++) { if (values[i] < lo) lo = values[i]; if (values[i] > hi) hi = values[i]; }
+            if (hi - lo > best_swing) { best_swing = hi - lo; best = ch; best_mid = (lo + hi) / 2.0; }
+        }
+        if (best >= 0 && best_swing > 1e-9) {
+            ui->trigger_channel = best;
+            ui->trigger_level = best_mid;
+        } else {
+            ui->trigger_level = (global_min + global_max) / 2.0;   /* nothing moves: harmless */
+        }
+    }
 
     // Reset channel offsets to center the signal
     double signal_center = (global_min + global_max) / 2.0;

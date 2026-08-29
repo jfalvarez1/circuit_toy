@@ -25,6 +25,110 @@ static bool rects_overlap(const Rect *a, const Rect *b) {
     return a->x < b->x + b->w && b->x < a->x + a->w && a->y < b->y + b->h && b->y < a->y + a->h;
 }
 
+/* --autoset-test: press Autoset on every template and check what it leaves on the screen.
+   No window: the scope's scaling is arithmetic over the simulation's history, so it can be run
+   and judged headlessly. Two things have to hold afterwards, and both are what a person means
+   by "it autoset properly": every channel's trace fits inside the eight divisions the screen
+   has, and the trigger level sits inside the range of the channel it triggers on - a level
+   outside that range never fires, and the display free-runs. */
+static int autoset_test(void) {
+    int fails = 0, total = 0;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti) continue;
+        Circuit *c = circuit_create();
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        Simulation *sim = simulation_create(c);
+        UIState *ui = calloc(1, sizeof *ui);
+        ui_init(ui);
+        ui->window_width = 1600; ui->window_height = 1000;
+        ui_update_layout(ui);
+
+        /* the preset the app applies when it places this template */
+        double td = circuit_template_scope_time_div((CircuitTemplateType)t);
+        if (td > 0) ui->scope_time_div = td;
+        double vd0 = circuit_template_scope_volt_div((CircuitTemplateType)t);
+        if (vd0 > 0) ui->scope_volt_div = vd0;
+        ui->scope_num_channels = c->num_probes < MAX_PROBES ? c->num_probes : MAX_PROBES;
+        for (int ch = 0; ch < ui->scope_num_channels; ch++) {
+            ui->scope_channels[ch].enabled = true;
+            ui->scope_channels[ch].probe_idx = ch;
+            ui->scope_channels[ch].offset = 0;
+            ui->scope_channels[ch].volt_div = 0;
+        }
+
+        total++;
+        char why[220] = "";
+        if (!simulation_dc_analysis(sim)) snprintf(why, sizeof why, "no operating point");
+        else {
+            simulation_auto_time_step(sim);
+            { double dtp = simulation_scope_time_step(sim, ui->scope_time_div);
+              if (dtp > 0 && dtp < sim->time_step) simulation_set_time_step(sim, dtp); }
+            /* the scope tells the simulation how much time it wants to keep, which is what
+               sets the history decimation; without it a fast template keeps almost nothing */
+            simulation_set_history_span(sim, 10.0 * ui->scope_time_div);
+            simulation_start(sim);
+            /* ten screens' worth, so a slow signal has shown its peak before Autoset looks */
+            double run_to = 10.0 * ui->scope_time_div;
+            int guard = 0;
+            while (sim->time < run_to && guard++ < 200000) if (!simulation_step(sim)) break;
+
+            ui_scope_autoset(ui, sim);
+
+            int with_data = 0;
+            for (int ch = 0; ch < ui->scope_num_channels && !why[0]; ch++) {
+                double times[MAX_HISTORY], values[MAX_HISTORY];
+                int n = simulation_get_history(sim, ui->scope_channels[ch].probe_idx,
+                                               times, values, MAX_HISTORY);
+                if (n < 10) continue;
+                with_data++;
+                double lo = values[0], hi = values[0];
+                for (int i = 1; i < n; i++) { if (values[i] < lo) lo = values[i]; if (values[i] > hi) hi = values[i]; }
+                double vd = ui->scope_volt_div;
+                double off = ui->scope_channels[ch].offset;
+                double top = (hi + off) / vd, bot = (lo + off) / vd;   /* in divisions from centre */
+                if (top > 4.05 || bot < -4.05)
+                    snprintf(why, sizeof why,
+                             "CH%d runs off the screen: %.4g..%.4g V at %.4g V/div is %.1f..%.1f divisions",
+                             ch + 1, lo, hi, vd, bot, top);
+            }
+            /* Autoset with nothing to look at falls back to its defaults, and the scope then
+               shows a flat line whatever the circuit is doing. That is the same complaint as
+               "no output on the scope", so it is a failure here rather than a silent pass. */
+            if (!why[0] && with_data == 0)
+                snprintf(why, sizeof why, "no channel had any history to autoset from after %d steps", guard);
+            if (!why[0]) {
+                int tc = ui->trigger_channel;
+                if (tc >= 0 && tc < ui->scope_num_channels) {
+                    double times[MAX_HISTORY], values[MAX_HISTORY];
+                    int n = simulation_get_history(sim, ui->scope_channels[tc].probe_idx, times, values, MAX_HISTORY);
+                    if (n >= 10) {
+                        double lo = values[0], hi = values[0];
+                        for (int i = 1; i < n; i++) { if (values[i] < lo) lo = values[i]; if (values[i] > hi) hi = values[i]; }
+                        double lvl = ui->trigger_level;
+                        /* a flat channel cannot be triggered on at all, and that is not a fault */
+                        if (hi - lo > 1e-6 && (lvl <= lo || lvl >= hi))
+                            snprintf(why, sizeof why,
+                                     "trigger level %.4g V is outside CH%d's %.4g..%.4g V, so it never fires",
+                                     lvl, tc + 1, lo, hi);
+                    }
+                }
+            }
+        }
+        printf("[%s] autoset %-28s vdiv=%-9.4g tdiv=%-9.4g trig=CH%d @ %-8.4g %s\n",
+               why[0] ? "FAIL" : " OK ", ti->name, ui->scope_volt_div, ui->scope_time_div,
+               ui->trigger_channel + 1, ui->trigger_level, why);
+        fflush(stdout);
+        if (why[0]) fails++;
+        free(ui);
+        simulation_free(sim);
+        circuit_free(c);
+    }
+    printf("\nautoset-test: %d templates, %d where Autoset leaves something off the screen or untriggerable\n",
+           total, fails);
+    return fails;
+}
+
 /* Headless UI layout self-check: no SDL window needed. */
 static int layout_test(void) {
     int fails = 0;
@@ -391,6 +495,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--import-spice") && i + 1 < argc) cli_spice = argv[++i];
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
         else if (!strcmp(argv[i], "--layout-test")) return layout_test();
+        else if (!strcmp(argv[i], "--autoset-test")) return autoset_test();
         else if (!strcmp(argv[i], "--crashlog")) { crashlog_dump_last(); return 0; }
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); usage(); return 2; }
     }
