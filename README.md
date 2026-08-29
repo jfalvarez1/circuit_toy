@@ -94,8 +94,14 @@ In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/).
 
 **Digital**
 - 555 Timer IC (astable/monostable modes)
-- 7-Segment Display
+- 7-Segment Display - every segment lights from its own current, decimal point included
+- BCD to 7-segment decoder (7447)
+- Counter - four bits, a reset and a carry-out, with a settable modulus
 - Flip-Flops
+
+**Wireless**
+- Antenna TX - publishes the voltage across itself on a channel number
+- Antenna RX - set to the same channel, becomes a source of that voltage (both 50 ohm)
 
 **Display & Measurement**
 - LED indicators (multiple colors)
@@ -121,7 +127,7 @@ In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/).
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-183 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+187 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -225,6 +231,9 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **CMOS Inverter (VTC)** (`CMOSi`) - Sweep the gates and read the transfer characteristic
 - **CMOS NAND (transistor level)** (`CMOSn`) - PMOS in parallel, NMOS in series
 - **Transmission Gate** (`TGate`) - Complementary pair vs a lone NMOS pass transistor
+- **7-Segment Segment Test** (`7Seg`) - Every segment on its own switch: open one and it goes out
+- **BCD Counter to 7-Segment** (`Count`) - Clock, decade counter, decoder, digit: ten counts light every segment
+- **Digital Clock (HH:MM:SS)** (`Clock`) - Six digits carry-chained, an AND gate resetting the hours at 24
 
 **Power systems (Texas / ERCOT numbers)**
 - **345 kV Line** (`345kV`) - 100-mile 345 kV line, 600 MW load (per-phase)
@@ -273,6 +282,7 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **GPIO Input + Debounce** (`Btn`) - Pull-up, button to ground, RC debounce, inverter
 - **Low-side Switch + Flyback** (`LoSw`) - NMOS sinks a relay coil; flyback diode clamps the spike
 - **High-side PMOS Switch** (`HiSw`) - 3.3 V logic -> NPN -> PMOS gate: load switched from the 12 V rail
+- **Wireless Link (TX/RX)** (`Wless`) - What the antenna pair does: a channel shared, 2 V in and 1 V across a matched load
 - **SPI Lines** (`SPI`) - SCLK 10 MHz / MOSI 5 MHz, 33 ohm series termination, 200 pF cable
 - **UART 5 V <-> 3.3 V** (`UART`) - Divider one way, direct the other way (TTL V_IH = 2 V)
 - **RS-485 Differential Link** (`RS485`) - A/B antiphase, 120 ohm both ends, common-mode noise rejected
