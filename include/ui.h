@@ -141,14 +141,9 @@ typedef enum {
     KNOB_POSITION,    // vertical position of the selected channel (volts)
     KNOB_TRIGGER,     // trigger level (volts)
     KNOB_INTENSITY,   // screen brightness
-    KNOB_CHANNEL,     // selected / trigger channel, detented
-    /* One knob per input, the way a bench scope has one per input: it sets that channel's
-       own volts/div and selects it, so POSITION and TRIG LEVEL follow. A channel left at
-       zero tracks the main VOLTS/DIV knob, which is how they all start. */
-    KNOB_CH1, KNOB_CH2, KNOB_CH3, KNOB_CH4, KNOB_CH5, KNOB_CH6, KNOB_CH7, KNOB_CH8,
+    KNOB_CHANNEL,     // which input the vertical section is driving
     KNOB_COUNT
 } ScopeKnobKind;
-#define KNOB_CH_BASE KNOB_CH1
 
 typedef struct {
     Rect bounds;         // the knob's cell, including its label
@@ -312,6 +307,7 @@ typedef struct {
     int scope_default_h;             // scope height when the user has not resized it (shrinks on small windows)
 
     // Pop-out bench-scope front panel
+    Rect scope_input_rows[MAX_PROBES];   /* the INPUTS list on the pop-out panel; click a row to drive it */
     ScopeKnob scope_knobs[KNOB_COUNT];
     int scope_knob_active;               // index of the knob being dragged, -1 when none
     int scope_knob_hover;                // index under the pointer, -1 when none
@@ -499,6 +495,7 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer);
 void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *selected, struct InputState *input);
 bool probe_label_is_default(const char *label);   // "CH2" or empty: safe to renumber
 const char *ui_channel_name(const UIState *ui, int ch);   // the probe's name, or CHn
+double ui_channel_volt_div(const UIState *ui, int ch);    // that channel's own V/div, or the main one
 void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
 void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim, void *analysis);
 void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
@@ -645,6 +642,7 @@ void ui_layout_scope_buttons(UIState *ui, int x0, int y0, int max_x);
 void ui_layout_scope_panel(UIState *ui, int win_w, int win_h);
 void ui_render_scope_panel(UIState *ui, SDL_Renderer *renderer);
 int  ui_scope_knob_at(UIState *ui, int x, int y);          // knob index or -1
+int  ui_scope_input_row_at(UIState *ui, int x, int y);     // pop-out INPUTS list: which row, or -1
 // Drag: dy is pointer movement in pixels (up = increase). Returns a UI action to queue for
 // the detented knobs (volts/div, time/div, channel) or 0 when the knob changed a value itself.
 int  ui_scope_knob_drag(UIState *ui, int knob, int dy);

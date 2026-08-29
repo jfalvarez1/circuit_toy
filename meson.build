@@ -66,6 +66,7 @@ src_files = files(
   'src/threadpool.c',
   'src/updater.c',
   'src/settings.c',
+  'src/crashlog.c',
   'src/spice.c'
 )
 

@@ -18,6 +18,7 @@
 
 #include "app.h"
 #include "spice.h"
+#include "crashlog.h"
 #include "version.h"
 #include "settings.h"
 #include "file_io.h"
@@ -66,9 +67,11 @@ bool app_init(App *app) {
     );
 
     if (!app->window) {
+        crashlog_note("FATAL: SDL_CreateWindow failed: %s", SDL_GetError());
         fprintf(stderr, "Window creation failed: %s\n", SDL_GetError());
         return false;
     }
+    crashlog_note("window created");
 
     // Set window icon for Linux/macOS (Windows uses embedded ICO from resource file)
 #ifndef _WIN32
@@ -80,16 +83,31 @@ bool app_init(App *app) {
 #endif
 
     // Create renderer
-    app->renderer = SDL_CreateRenderer(
-        app->window,
-        -1,
-        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
-    );
-
+    /* Accelerated with vsync is what we want. On a machine with a broken or missing GPU driver
+       - a VM, a fresh install, remote desktop - that combination fails, and refusing to start is
+       a worse answer than running on the software renderer. Each fallback is logged, so a slow
+       or odd-looking session can be explained afterwards. */
+    app->renderer = SDL_CreateRenderer(app->window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!app->renderer) {
+        crashlog_note("accelerated+vsync renderer failed (%s); trying accelerated without vsync", SDL_GetError());
+        app->renderer = SDL_CreateRenderer(app->window, -1, SDL_RENDERER_ACCELERATED);
+    }
+    if (!app->renderer) {
+        crashlog_note("accelerated renderer failed (%s); trying software", SDL_GetError());
+        app->renderer = SDL_CreateRenderer(app->window, -1, SDL_RENDERER_SOFTWARE);
+    }
+    if (!app->renderer) {
+        crashlog_note("FATAL: no renderer of any kind: %s", SDL_GetError());
         fprintf(stderr, "Renderer creation failed: %s\n", SDL_GetError());
         SDL_DestroyWindow(app->window);
         return false;
+    }
+    {
+        SDL_RendererInfo ri;
+        if (SDL_GetRendererInfo(app->renderer, &ri) == 0)
+            crashlog_note("renderer '%s'%s%s", ri.name ? ri.name : "?",
+                          (ri.flags & SDL_RENDERER_ACCELERATED) ? " accelerated" : " software",
+                          (ri.flags & SDL_RENDERER_PRESENTVSYNC) ? " vsync" : "");
     }
 
     // Enable alpha blending
@@ -139,7 +157,9 @@ bool app_init(App *app) {
     app->last_frame_time = SDL_GetTicks();
 
     // Persistent preferences (brightness, window size, view toggles ...): %APPDATA%\circuit_toy\circuit-playground\settings.json
+    crashlog_note("loading settings");
     settings_load(app);
+    crashlog_note("settings loaded");
     if (app->saved_window_w > 0 && app->saved_window_h > 0) SDL_SetWindowSize(app->window, app->saved_window_w, app->saved_window_h);
 
     ui_set_status(&app->ui, "Ready - Select a component or tool to begin");

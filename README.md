@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.18.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.18.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.19.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.19.0)** (auto-updating from v3.4.0 on)
 
 A native desktop circuit simulator written in C with SDL2. Build, simulate and analyse circuits
 with a drag-and-drop schematic and a bench oscilloscope.
@@ -1198,12 +1198,7 @@ MIT License - See LICENSE file for details.
 
 ## Acknowledgments
 
-- Inspired by **[Paul Falstad's circuit.js](https://www.falstad.com/circuit/)** (source:
-  [pfalstad/circuitjs1](https://github.com/pfalstad/circuitjs1)) - the simulator that made circuit
-  theory something you learn by dragging parts around and watching the current move. Its
-  example-first library, its animated current dots and its click-anything-and-watch-it-respond
-  feel are the model this project works from; the Circuits tab, the current-flow display and the
-  on-canvas theory notes all exist because circuit.js showed how much a learner gets from them.
+- Inspired by **[Paul Falstad's circuit.js](https://www.falstad.com/circuit/)** ([source](https://github.com/pfalstad/circuitjs1)) - the example-first library, the current dots, the click-anything feel
 - Inspired by [The Powder Toy](https://github.com/The-Powder-Toy/The-Powder-Toy) particle simulation game
 - Architecture follows the same C/SDL2 pattern
 - Synthwave color theme inspired by 1980s aesthetics

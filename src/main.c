@@ -16,6 +16,7 @@
 #include "version.h"
 #include "updater.h"
 #include "ui.h"
+#include "crashlog.h"
 
 static bool rects_overlap(const Rect *a, const Rect *b) {
     return a->x < b->x + b->w && b->x < a->x + a->w && a->y < b->y + b->h && b->y < a->y + a->h;
@@ -87,14 +88,58 @@ static int layout_test(void) {
             knobs_ok++;
         }
 
-        /* volts/div and time/div are detented: a long drag has to emit an action */
+        /* The vertical section drives whichever input the CHANNEL knob is on: VOLTS/DIV writes
+           that channel's own volts/div rather than a global one, so three probes can be on three
+           different scales with one set of knobs. */
+        {
+            ui->scope_num_channels = 3;
+            for (int ch = 0; ch < MAX_PROBES; ch++) {
+                ui->scope_channels[ch].enabled = (ch < 3);
+                ui->scope_channels[ch].volt_div = 0.0;      /* all following the main setting */
+            }
+            ui->scope_volt_div = 1.0;
+            ui->scope_selected_channel = 1;                 /* point the section at CH2 */
+
+            for (int ch = 0; ch < 3; ch++)
+                if (ui_channel_volt_div(ui, ch) != 1.0) {
+                    printf("[FAIL] channel %d does not follow the main setting (own %g, main %g)\n",
+                           ch, ui->scope_channels[ch].volt_div, ui->scope_volt_div); fails++;
+                }
+
+            for (int i = 0; i < 40 && ui->scope_channels[1].volt_div <= 0; i++)
+                ui_scope_knob_drag(ui, KNOB_VOLTS, -1);
+            if (!(ui->scope_channels[1].volt_div > 1.0)) {
+                printf("[FAIL] VOLTS/DIV did not take CH2 coarser than the main 1 V (got %g)\n",
+                       ui->scope_channels[1].volt_div); fails++;
+            }
+            if (ui->scope_channels[0].volt_div != 0.0 || ui->scope_channels[2].volt_div != 0.0) {
+                printf("[FAIL] driving CH2 moved another channel\n"); fails++;
+            }
+            if (ui_channel_volt_div(ui, 0) != 1.0) {
+                printf("[FAIL] the untouched channels stopped following the main setting\n"); fails++;
+            }
+
+            /* and a click on an INPUTS row re-points the section */
+            ui->scope_panel_active = true;
+            Rect r2 = ui->scope_input_rows[2];
+            if (ui_scope_input_row_at(ui, r2.x + 4, r2.y + 4) != 2) {
+                printf("[FAIL] the INPUTS row for CH3 does not hit-test\n"); fails++;
+            }
+            if (ui_scope_input_row_at(ui, r2.x + 4, r2.y - 40) == 2) {
+                printf("[FAIL] a click above the CH3 row still selects it\n"); fails++;
+            }
+            if (ui_scope_input_row_at(ui, ui->scope_input_rows[5].x + 4, ui->scope_input_rows[5].y + 4) != -1) {
+                printf("[FAIL] a row for a channel that is not there is clickable\n"); fails++;
+            }
+            printf("[ OK ] one vertical section: VOLTS/DIV drives the selected input only, and the\n");
+            printf("       INPUTS rows re-point it - channels that are not there are not clickable\n");
+
+            for (int ch = 0; ch < MAX_PROBES; ch++) ui->scope_channels[ch].volt_div = 0.0;
+            ui->scope_selected_channel = 0;
+        }
+
+        /* time/div and the channel selector are detented: a long drag has to emit an action */
         int act = 0;
-        for (int i = 0; i < 40 && !act; i++) act = ui_scope_knob_drag(ui, KNOB_VOLTS, -1);
-        if (act != UI_ACTION_SCOPE_VOLT_UP) { printf("[FAIL] VOLTS/DIV knob emitted %d, not VOLT_UP\n", act); fails++; }
-        act = 0;
-        for (int i = 0; i < 40 && !act; i++) act = ui_scope_knob_drag(ui, KNOB_VOLTS, +1);
-        if (act != UI_ACTION_SCOPE_VOLT_DOWN) { printf("[FAIL] VOLTS/DIV knob down emitted %d\n", act); fails++; }
-        act = 0;
         for (int i = 0; i < 40 && !act; i++) act = ui_scope_knob_drag(ui, KNOB_TIME, -1);
         if (act != UI_ACTION_SCOPE_TIME_UP) { printf("[FAIL] TIME/DIV knob emitted %d, not TIME_UP\n", act); fails++; }
         act = 0;
@@ -269,7 +314,8 @@ static void usage(void) {
            "  --no-auto-update     check, but do not install by itself (also CIRCUIT_TOY_NO_AUTO_UPDATE=1)\n"
            "  --version            print the version and exit\n"
            "  --update-check       query the latest GitHub release and exit; --update-now also installs it\n"
-           "  --layout-test        headless UI layout self-check (no window)\n");
+           "  --layout-test        headless UI layout self-check (no window)\n"
+           "  --crashlog           print the start-up / crash log and exit\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -324,25 +370,37 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--import-spice") && i + 1 < argc) cli_spice = argv[++i];
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
         else if (!strcmp(argv[i], "--layout-test")) return layout_test();
+        else if (!strcmp(argv[i], "--crashlog")) { crashlog_dump_last(); return 0; }
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); usage(); return 2; }
     }
 
     printf("Circuit Playground v%s\n", APP_VERSION);
     printf("A circuit simulator inspired by Paul Falstad's circuit.js and The Powder Toy\n\n");
 
+    /* From here on every milestone is written to the log, flushed, so a window that never
+       appears still says how far it got. */
+    crashlog_init(APP_VERSION);
+    printf("log: %s\n", crashlog_path());
+    crashlog_note("start-up: about to SDL_Init(VIDEO | TIMER)");
+
     // Initialize SDL (video + timer; audio subsystem was removed with the microphone feature)
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
+        crashlog_note("FATAL: SDL_Init failed: %s", SDL_GetError());
         fprintf(stderr, "SDL initialization failed: %s\n", SDL_GetError());
         return 1;
     }
+    crashlog_note("SDL_Init ok, video driver '%s'", SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "?");
 
     // Create application
     App app = {0};
+    crashlog_note("start-up: app_init (window, renderer, circuit, simulation)");
     if (!app_init(&app)) {
+        crashlog_note("FATAL: app_init failed: %s", SDL_GetError());
         fprintf(stderr, "Application initialization failed\n");
         SDL_Quit();
         return 1;
     }
+    crashlog_note("app_init ok");
 
     printf("Application initialized successfully\n");
     printf("Press F1 for keyboard shortcuts\n\n");
@@ -399,18 +457,26 @@ int main(int argc, char *argv[]) {
     }
 
     // Main loop
+    crashlog_note("entering the main loop");
+    long frames = 0;
     while (app.running) {
         app_handle_events(&app);
         app_update(&app);
         app_render(&app);
+        /* the first frames are where a driver problem shows up, and the hundredth says the thing
+           is really running; after that, silence */
+        if (++frames == 1 || frames == 10 || frames == 100) crashlog_note("frame %ld drawn", frames);
 
         // Cap frame rate to ~60 FPS
         SDL_Delay(16);
     }
 
+    crashlog_note("main loop ended");
+
     // Cleanup
     app_shutdown(&app);
     SDL_Quit();
+    crashlog_ok();
 
     printf("Application closed\n");
     return 0;

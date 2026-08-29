@@ -92,6 +92,8 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             if (is_popup_event) {
                 backup = ui_setup_popup_scope_coords(ui);
                 /* A knob takes the press before anything else in the panel column. */
+                int row = ui_scope_input_row_at(ui, x, y);
+                if (row >= 0) { ui->scope_selected_channel = row; return true; }
                 int knob = ui_scope_knob_at(ui, x, y);
                 if (knob >= 0) {
                     ui->scope_knob_active = knob;
