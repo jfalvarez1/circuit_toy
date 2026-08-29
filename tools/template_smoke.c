@@ -186,6 +186,7 @@ static int is_switch_type(ComponentType t) {
 static int scope_test(void) {
     int fails = 0, total = 0, dead_probes = 0, switches = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         const char *name = ti ? ti->name : "?";
         Circuit *c = circuit_create();
@@ -418,6 +419,7 @@ static int file_test(const char *filter) {
     snprintf(path, sizeof path, "%s\\ct_roundtrip.json", tmp);
 
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         const char *name = ti ? ti->name : "?";
         if (filter && !strstr(name, filter)) continue;
@@ -448,6 +450,7 @@ static int file_test(const char *filter) {
 static int conn_test(void) {
     int fails = 0, total = 0, dangling = 0, isolated = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         const char *name = ti ? ti->name : "?";
         Circuit *c = circuit_create();
@@ -654,6 +657,7 @@ static int line_test(void) {
 static int flow_test(void) {
     int fails = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         const char *name = ti ? ti->name : "?";
         Circuit *c = circuit_create();
@@ -803,6 +807,12 @@ static int flow_test(void) {
  * loop gives ~0 crossings; a healthy oscillator gives 2 per period. */
 static Component *find_comp(Circuit *c, ComponentType t, int ord);
 static double g_osc_dt = 1e-6;
+
+/* --shard i/n: run only every n-th template, starting at i. The suites are one process each and
+   run several at a time, so the battery's wall clock is whatever its longest single suite takes -
+   and demo-test alone was two thirds of it. Sharding splits that one across processes too. */
+static int g_shard_i = 0, g_shard_n = 1;
+static int shard_skip(int t) { return g_shard_n > 1 && (t % g_shard_n) != g_shard_i; }
 static int osc_test(void) {
     /* shape: the AC rms of the probed node divided by its peak-to-peak. A sine is 0.354,
        a square 0.5 and a triangle 0.289 - so a clipped or notched 'sine' fails on shape
@@ -1127,6 +1137,7 @@ static Component *find_comp(Circuit *c, ComponentType ct, int ord) {
 static int label_test(void) {
     int fails = 0, total = 0, probes_seen = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         if (!ti) continue;
         Circuit *c = circuit_create();
@@ -1178,6 +1189,7 @@ static int label_test(void) {
 static int span_test(void) {
     int fails = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         if (!ti) continue;
         Circuit *c = circuit_create();
@@ -1456,6 +1468,7 @@ static int geom_overlap(Circuit *c, char *why, size_t whyn) {
 static int geom_test(void) {
     int bad_templates = 0, hard_failures = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         Circuit *c = circuit_create();
         if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
@@ -1614,6 +1627,7 @@ static double app_dt_for(Simulation *sim, double f) {
 static int demo_test(void) {
     int fails = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         const TemplateDemo *d = circuit_template_demo((CircuitTemplateType)t);
         const char *name = ti ? ti->name : "?";
@@ -1738,6 +1752,7 @@ static int demo_test(void) {
  * output node / DemoKind and to see whether a filter actually filters. */
 static int response_explore(const char *filter) {
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         if (!ti || !strstr(ti->name, filter)) continue;
         Circuit *c = circuit_create();
@@ -2058,6 +2073,7 @@ static int param_test(void) {
       static const double volt_divs[] = {0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1e3, 2e3, 5e3, 10e3, 20e3, 50e3, 100e3, 200e3, 500e3};
       int bad = 0, checked = 0;
       for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
           const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
           double td = circuit_template_scope_time_div((CircuitTemplateType)t), vd = circuit_template_scope_volt_div((CircuitTemplateType)t);
           const TemplateDemo *dp = circuit_template_demo((CircuitTemplateType)t); TemplateDemo demo = dp ? *dp : (TemplateDemo){ DEMO_NONE, 0 };
@@ -2081,6 +2097,7 @@ static int param_test(void) {
  * min / max voltage and the components attached, plus the final state of switches. */
 static int trace_template(const char *filter, double t_end) {
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         if (!ti || !strstr(ti->name, filter)) continue;
         Circuit *c = circuit_create();
@@ -2164,6 +2181,7 @@ static int knob_test(const char *filter) {
     int fails = 0, runs = 0, templates = 0;
     static const double factors[] = { 0.5, 2.0 };
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         if (!ti || (filter && !strstr(ti->name, filter))) continue;
         templates++;
@@ -2222,6 +2240,7 @@ static int node_is_ground(Circuit *c, int id) {
 static int probe_audit(const char *filter) {
     int flagged = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         if (!ti || (filter && !strstr(ti->name, filter))) continue;
         total++;
@@ -2316,6 +2335,7 @@ static int probe_audit(const char *filter) {
 static int burn_test(void) {
     int flagged = 0, total = 0, hv_flagged = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         Circuit *c = circuit_create();
         if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
@@ -2507,6 +2527,7 @@ static int switch_test(void) {
     int fails = 0, total = 0;
     printf("%-34s %-4s %14s %14s   %s\n", "template", "sw", "open", "closed", "note");
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         Circuit *probe = circuit_create();
         if (circuit_place_template(probe, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(probe); continue; }
@@ -3491,6 +3512,7 @@ static int xtal_test(void) {
 
 static int series_template(const char *filter, double t_end, int node_id) {
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         if (!ti || !strstr(ti->name, filter)) continue;
         Circuit *c = circuit_create();
@@ -3516,6 +3538,16 @@ int main(int argc, char **argv) {
     /* Unbuffered: when a template crashes the run, the last line printed has to be the
        one that crashed. Block buffering hid it behind 4 KB of already-passed templates. */
     setvbuf(stdout, NULL, _IONBF, 0);
+    /* --shard is read before anything else: a suite flag returns straight out of the loop below,
+       so a shard written after it on the command line would never be seen. */
+    for (int i = 1; i + 1 < argc; i++)
+        if (!strcmp(argv[i], "--shard")) {
+            if (sscanf(argv[i + 1], "%d/%d", &g_shard_i, &g_shard_n) != 2 || g_shard_n < 1 ||
+                g_shard_i < 0 || g_shard_i >= g_shard_n) {
+                fprintf(stderr, "--shard wants i/n with 0 <= i < n, e.g. 0/4\n");
+                return 2;
+            }
+        }
     int dc_only = 0, verbose = 0, dump_nodes = 0;
     const char *svg_dir = NULL;
     double sim_time = 5e-3;
@@ -3533,6 +3565,7 @@ int main(int argc, char **argv) {
             /* place a template and write it as JSON, to look at what the format keeps */
             Circuit *c = circuit_create();
             for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
                 const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
                 if (ti && strstr(ti->name, argv[i + 1])) { circuit_place_template(c, (CircuitTemplateType)t, 0, 0); break; }
             }
@@ -3550,6 +3583,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--spice-test")) return spice_test();
         else if (!strcmp(argv[i], "--xtal-test")) return xtal_test();
         else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt = atof(argv[++i]);
+        else if (!strcmp(argv[i], "--shard") && i + 1 < argc) i++;   /* read before this loop */
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--label-test")) return label_test();
@@ -3570,6 +3604,7 @@ int main(int argc, char **argv) {
 
     int failures = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         const char *name = ti ? ti->name : "?";
         if (filter && !strstr(name, filter)) continue;

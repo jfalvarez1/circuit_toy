@@ -25,11 +25,15 @@ if [ "$JOBS" -le 0 ]; then
     JOBS=$((JOBS > 2 ? JOBS - 1 : 2))
 fi
 
-SMOKE_MODES="default --probe-test --probe-audit --label-test --span-test --demo-test --osc-test
+SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test
 --flow-test --switch-test --part-test --op-test --sub-test --spice-test --xtal-test --view-test
 --conn-test --file-test --line-test --std-test --burn-test --knob-test --geom-test --param-test
 --tesla-test"
 APP_MODES="--layout-test --autoset-test --place-test"
+# The battery cannot finish faster than its longest single suite, and two of them are most of it:
+# demo-test is two thirds on its own, and the plain load-and-run is the next. Both walk every
+# template independently, so they run as shards - quarters of the template list, one process each.
+SHARDED="demo-test:4 default:2"
 
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
@@ -45,7 +49,26 @@ run_one() {   # binary, mode
     fi
 }
 
+run_shard() {   # binary, mode-without-dashes, shard index, shard count
+    local bin="$1" mode="$2" i="$3" n="$4" name="$2.$3" args=""
+    [ "$mode" = "default" ] || args="--$mode"
+    if "$bin" $args --shard "$i/$n" > "$out/$name.log" 2>&1; then
+        echo "ok" > "$out/$name.rc"
+    else
+        echo "fail" > "$out/$name.rc"
+    fi
+}
+
 start=$(date +%s)
+for entry in $SHARDED; do
+    mode="${entry%%:*}"; parts="${entry##*:}"
+    i=0
+    while [ "$i" -lt "$parts" ]; do
+        while [ "$(jobs -pr | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || break; done
+        run_shard "$SMOKE" "$mode" "$i" "$parts" &
+        i=$((i + 1))
+    done
+done
 for m in $SMOKE_MODES; do
     while [ "$(jobs -pr | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || break; done
     run_one "$SMOKE" "$m" &
@@ -58,8 +81,15 @@ for m in $APP_MODES; do
 done
 wait
 
+# the shards report as one line each, so a failing quarter names itself
+SHARD_MODES=""
+for entry in $SHARDED; do
+    mode="${entry%%:*}"; parts="${entry##*:}"; i=0
+    while [ "$i" -lt "$parts" ]; do SHARD_MODES="$SHARD_MODES $mode.$i"; i=$((i + 1)); done
+done
+
 fails=0
-for m in $SMOKE_MODES $APP_MODES; do
+for m in $SHARD_MODES $SMOKE_MODES $APP_MODES; do
     name="${m#--}"
     rc=$(cat "$out/$name.rc" 2>/dev/null || echo fail)
     last=$(tail -n 1 "$out/$name.log" 2>/dev/null | cut -c1-100)
@@ -73,7 +103,7 @@ done
 
 # A failure is worth its whole log, not just its last line.
 if [ "$fails" -gt 0 ]; then
-    for m in $SMOKE_MODES $APP_MODES; do
+    for m in $SHARD_MODES $SMOKE_MODES $APP_MODES; do
         name="${m#--}"
         [ "$(cat "$out/$name.rc" 2>/dev/null)" = "fail" ] || continue
         echo
@@ -83,5 +113,5 @@ if [ "$fails" -gt 0 ]; then
 fi
 
 echo
-echo "audits: $fails of $(echo $SMOKE_MODES $APP_MODES | wc -w) suites failed, ${JOBS} at a time, $(( $(date +%s) - start ))s"
+echo "audits: $fails of $(echo $SHARD_MODES $SMOKE_MODES $APP_MODES | wc -w) suites failed, ${JOBS} at a time, $(( $(date +%s) - start ))s"
 [ "$fails" -eq 0 ]
