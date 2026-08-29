@@ -5014,8 +5014,10 @@ static int place_hysteresis_comp(Circuit *circuit, float x, float y) {
     r1->node_ids[1] = ref_junc;
     r2->node_ids[0] = r2_top_node;
 
+    /* Out along the divider's own junction first, then up the op-amp's column. Turning at
+       the divider instead - (r1_bot_x, opamp_inv_y) - put this wire inside both resistors. */
     int opamp_inv_node = circuit_find_or_create_node(circuit, opamp_inv_x, opamp_inv_y, 5.0f);
-    int corner_inv = circuit_find_or_create_node(circuit, r1_bot_x, opamp_inv_y, 5.0f);
+    int corner_inv = circuit_find_or_create_node(circuit, opamp_inv_x, r1_bot_y, 5.0f);
     circuit_add_wire(circuit, ref_junc, corner_inv);
     circuit_add_wire(circuit, corner_inv, opamp_inv_node);
     opamp->node_ids[0] = opamp_inv_node;
@@ -5353,8 +5355,9 @@ static int place_lm317_reg(Circuit *circuit, float x, float y) {
     Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 140, y + 50, 90);
     r1->props.resistor.resistance = 240.0;
 
-    // R2 (between ADJ and GND) - 720 ohm for ~5V output
-    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 140, y + 110, 90);
+    /* R2 sits a body-length below R1, not overlapping it: at y + 110 the two symbols shared
+       twenty pixels and the wires to the ADJ junction ran across R2's body. */
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 140, y + 140, 90);
     r2->props.resistor.resistance = 720.0;
 
     // Output filter capacitor
@@ -5365,7 +5368,7 @@ static int place_lm317_reg(Circuit *circuit, float x, float y) {
     Component *rload = add_comp(circuit, COMP_RESISTOR, x + 260, y + 30, 90);
     rload->props.resistor.resistance = 100.0;
 
-    Component *gnd_load = add_comp(circuit, COMP_GROUND, x + 200, y + 150, 0);
+    Component *gnd_load = add_comp(circuit, COMP_GROUND, x + 200, y + 210, 0);
 
     // Get terminal positions
     float vin_pos_x, vin_pos_y, vin_neg_x, vin_neg_y;
@@ -5474,7 +5477,7 @@ static int place_lm317_reg(Circuit *circuit, float x, float y) {
     gnd_in->node_ids[0] = gnd_in_node;
 
     // Ground rail
-    float gnd_y = y + 140;
+    float gnd_y = y + 200;   /* below R2, not through the middle of it */
     int gnd_rail = circuit_find_or_create_node(circuit, cin_bot_x, gnd_y, 5.0f);
 
     // Cin bottom to ground
