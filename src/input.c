@@ -53,6 +53,23 @@ static int find_wire_at(Circuit *circuit, float wx, float wy, float threshold) {
     return -1;
 }
 
+/* Where a pointer sits, in volts on the channel the scope triggers from. The display keeps the
+   scale and the band centre it last drew each channel with, so this is that arithmetic run
+   backwards - which makes it right in the plain view and in the per-channel one, where every
+   band has its own scale and its own centre. */
+static double scope_y_to_volts(UIState *ui, int y) {
+    int ch = ui->trigger_channel;
+    if (ch < 0 || ch >= MAX_PROBES) ch = 0;
+    double scale = ui->scope_ch_scale[ch];
+    int center = ui->scope_ch_center[ch];
+    if (scale <= 0 || center <= 0) {            /* nothing drawn yet: fall back to the main scale */
+        if (ui->scope_rect.h <= 0 || ui->scope_volt_div <= 0) return 0.0;
+        scale = (ui->scope_rect.h / 8.0) / ui->scope_volt_div;
+        center = ui->scope_rect.y + ui->scope_rect.h / 2;
+    }
+    return ((double)center - (double)y) / scale - ui->scope_ch_shift[ch] - ui->scope_channels[ch].offset;
+}
+
 // Is (x,y) on the oscilloscope screen (graticule area, main window)?
 static bool point_in_scope_screen(UIState *ui, int x, int y) {
     if (!ui || ui->scope_popped_out) return false;
@@ -157,6 +174,15 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             if (is_popup_event) {
                 ui_restore_popup_scope_coords(ui, &backup);
                 return true;  // Consume popup window clicks, don't try canvas operations
+            }
+
+            /* Left-drag on the scope screen sets the trigger level, the way the level knob on a
+               bench scope does - except you can see where you are putting it. */
+            if (ui && point_in_scope_screen(ui, x, y)) {
+                input->scope_trig_dragging = true;
+                ui->trigger_level = scope_y_to_volts(ui, y);
+                ui->scope_capture_valid = false;
+                return true;
             }
 
             // Check if in canvas area (use dynamic canvas bounds)
@@ -902,6 +928,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 input->is_dragging = false;
                 input->is_multi_dragging = false;
                 input->dragging_component = NULL;
+                input->scope_trig_dragging = false;
             } else if (button == SDL_BUTTON_MIDDLE) {
                 input->middle.down = false;
                 input->is_panning = false;
@@ -949,6 +976,12 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             if (is_popup_motion) {
                 ui_restore_popup_scope_coords(ui, &backup_motion);
                 return true;  // Consume popup window motion events
+            }
+
+            if (input->scope_trig_dragging && ui) {
+                ui->trigger_level = scope_y_to_volts(ui, y);
+                ui->scope_capture_valid = false;
+                return true;
             }
 
             // Scope pan (middle-drag over the scope): horizontal moves the trigger position
@@ -1101,7 +1134,9 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             // manually releases sweep tracking so the user's choice sticks.
             if (ui && point_in_scope_screen(ui, x, y)) {
                 bool shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
-                if (shift) {
+                /* Wheel is volts/div, shift-wheel is time/div. The vertical scale is the one
+                   a hand reaches for most, and the wheel is the nearest thing to a knob. */
+                if (!shift) {
                     input->pending_ui_action = (event->wheel.y > 0) ? UI_ACTION_SCOPE_VOLT_DOWN : UI_ACTION_SCOPE_VOLT_UP;
                 } else {
                     input->pending_ui_action = (event->wheel.y > 0) ? UI_ACTION_SCOPE_TIME_DOWN : UI_ACTION_SCOPE_TIME_UP;

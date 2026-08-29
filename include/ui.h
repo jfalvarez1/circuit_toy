@@ -345,6 +345,7 @@ typedef struct {
     bool scope_stack_fit;            // Fit (stacked only): each band auto-scaled to its own signal, centred on its mean
     double scope_ch_shift[MAX_PROBES];   // per-channel vertical shift used for the last draw (AC / Fit)
     double scope_ch_scale[MAX_PROBES];   // per-channel px/V used for the last draw
+    int    scope_ch_center[MAX_PROBES];  // y of each channel's band centre, for turning a drag back into volts
     double scope_band_vdiv[MAX_PROBES];  // per-band V/div when Fit is on
     bool scope_track_sweep;          // Auto time/div: ~3 cycles of the sweeping source per screen
     bool scope_auto_vdiv_pending;    // One-shot: pick V/div from the measured probe range once data exists

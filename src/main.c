@@ -49,6 +49,10 @@ static int autoset_test(void) {
         if (td > 0) ui->scope_time_div = td;
         double vd0 = circuit_template_scope_volt_div((CircuitTemplateType)t);
         if (vd0 > 0) ui->scope_volt_div = vd0;
+        { int fl = circuit_template_scope_flags((CircuitTemplateType)t);
+          ui->scope_ac_coupling = (fl & SCOPE_FLAG_AC) != 0;
+          ui->scope_stacked     = (fl & SCOPE_FLAG_STACK) != 0;
+          ui->scope_stack_fit   = (fl & SCOPE_FLAG_FIT) != 0; }
         ui->scope_num_channels = c->num_probes < MAX_PROBES ? c->num_probes : MAX_PROBES;
         for (int ch = 0; ch < ui->scope_num_channels; ch++) {
             ui->scope_channels[ch].enabled = true;
@@ -86,6 +90,17 @@ static int autoset_test(void) {
                 for (int i = 1; i < n; i++) { if (values[i] < lo) lo = values[i]; if (values[i] > hi) hi = values[i]; }
                 double vd = ui->scope_volt_div;
                 double off = ui->scope_channels[ch].offset;
+                /* In the per-channel view each band centres itself on that channel's own mean,
+                   so an offset on top of it shifts the trace off the band twice over - which is
+                   how Autoset once blanked the screen while every readout still updated. There,
+                   the only correct offset is none. */
+                if (ui->scope_stacked && ui->scope_stack_fit) {
+                    if (fabs(off) > 1e-9)
+                        snprintf(why, sizeof why,
+                                 "CH%d carries a %.4g V offset while the bands are centring themselves, so it is drawn twice-shifted",
+                                 ch + 1, off);
+                    continue;
+                }
                 double top = (hi + off) / vd, bot = (lo + off) / vd;   /* in divisions from centre */
                 if (top > 4.05 || bot < -4.05)
                     snprintf(why, sizeof why,

@@ -949,8 +949,8 @@ static bool palette_filter_match(const UIState *ui, const char *label, const cha
    clickable. PAL_HEADER_H is the row it occupies - the draw, the layout and the hit test all
    take it from here, so a taller header cannot drift away from where the clicks land. */
 static void draw_palette_header(SDL_Renderer *renderer, int screen_y, const char *label,
-                                bool collapsed, bool accent) {
-    SDL_Rect bar = { 2, screen_y, PALETTE_WIDTH - 14, PAL_HEADER_H - 3 };
+                                bool collapsed, bool accent, int indent) {
+    SDL_Rect bar = { 2 + indent, screen_y, PALETTE_WIDTH - 14 - indent, PAL_HEADER_H - 3 };
     SDL_SetRenderDrawColor(renderer, collapsed ? 0x1c : 0x2e, collapsed ? 0x10 : 0x16,
                                      collapsed ? 0x32 : 0x50, 0xff);
     SDL_RenderFillRect(renderer, &bar);
@@ -1049,7 +1049,7 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
         // Draw header
         int header_screen_y = draw_y - scroll_offset;
         if (header_screen_y >= TOOLBAR_HEIGHT - 14 && header_screen_y < ui->window_height - STATUSBAR_HEIGHT) {
-            draw_palette_header(renderer, header_screen_y, cat->name, collapsed, false);
+            draw_palette_header(renderer, header_screen_y, cat->name, collapsed, false, 0);
         }
         draw_y += PAL_HEADER_H;
         content_height += PAL_HEADER_H;
@@ -1106,7 +1106,7 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
 
         int header_screen_y = draw_y - scroll_offset;
         if (header_screen_y >= TOOLBAR_HEIGHT - 14 && header_screen_y < ui->window_height - STATUSBAR_HEIGHT) {
-            draw_palette_header(renderer, header_screen_y, "Circuits", circuits_cat->collapsed, true);
+            draw_palette_header(renderer, header_screen_y, "Circuits", circuits_cat->collapsed, true, 0);
         }
         draw_y += PAL_HEADER_H;
         content_height += PAL_HEADER_H;
@@ -1123,14 +1123,13 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
                     cur_group = item->group;
                     ui->circuit_group_header_y[cur_group] = draw_y;
                     int hy = draw_y - scroll_offset;
-                    if (hy >= TOOLBAR_HEIGHT - 12 && hy < ui->window_height - STATUSBAR_HEIGHT) {
-                        SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
-                        char hdr[48];
-                        snprintf(hdr, sizeof hdr, "%s %s", ui->circuit_group_collapsed[cur_group] ? ">" : "v",
-                                 circuit_template_group_name((TemplateGroup)cur_group));
-                        ui_draw_text(renderer, hdr, 14, hy);
+                    if (hy >= TOOLBAR_HEIGHT - PAL_HEADER_H && hy < ui->window_height - STATUSBAR_HEIGHT) {
+                        /* the same pressable bar as every other section, indented one step so it
+                           still reads as living inside Circuits */
+                        draw_palette_header(renderer, hy, circuit_template_group_name((TemplateGroup)cur_group),
+                                            ui->circuit_group_collapsed[cur_group], false, 10);
                     }
-                    draw_y += 13; content_height += 13;
+                    draw_y += PAL_HEADER_H; content_height += PAL_HEADER_H;
                 }
                 if (ui->circuit_group_collapsed[cur_group]) { item->bounds.w = 0; item->bounds.h = 0; continue; }
                 {
@@ -1177,7 +1176,7 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
         int header_screen_y = draw_y - scroll_offset;
         if (header_screen_y >= TOOLBAR_HEIGHT - 14 && header_screen_y < ui->window_height - STATUSBAR_HEIGHT) {
             // Draw collapse indicator
-            draw_palette_header(renderer, header_screen_y, "My Circuits", subcircuits_cat->collapsed, true);
+            draw_palette_header(renderer, header_screen_y, "My Circuits", subcircuits_cat->collapsed, true, 0);
         }
         draw_y += PAL_HEADER_H;
         content_height += PAL_HEADER_H;
@@ -3902,6 +3901,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     if (ui->scope_ac_coupling || fit) offset -= v_avg;   // AC view / fitted band: centre on the channel's own mean
                     else if (stacked && v_min >= -0.05 * ui->scope_volt_div) offset -= 3.0 * ui->scope_volt_div;   // unipolar (logic) signal: 0 V one division above the band bottom (negative shifts the trace down)
                     ui->scope_ch_shift[ch] = offset - ui->scope_channels[ch].offset;
+                    ui->scope_ch_center[ch] = ch_center;
                     ui->scope_ch_scale[ch] = ch_scale;
 
                     // Calculate x range for the captured data
@@ -6831,7 +6831,7 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (ui->left_tab == LTAB_CIRCUITS && !ui->categories[PCAT_CIRCUITS].collapsed) {
         for (int g = 0; g < TG_COUNT; g++) {
             if (ui->circuit_group_header_y[g] <= 0) continue;
-            Rect hr = {10, ui->circuit_group_header_y[g], 140, 13};
+            Rect hr = {12, ui->circuit_group_header_y[g], PALETTE_WIDTH - 24, PAL_HEADER_H - 3};
             int hy = hr.y - ui->palette_scroll_offset;
             if (hy < TOOLBAR_HEIGHT - 12 || hy > ui->window_height - STATUSBAR_HEIGHT) continue;
             if (point_in_rect(x, adjusted_y, &hr)) {
@@ -7693,12 +7693,27 @@ void ui_scope_autoset(UIState *ui, Simulation *sim) {
         }
     }
 
-    // Reset channel offsets to center the signal
-    double signal_center = (global_min + global_max) / 2.0;
+    /* Where each trace sits.
+       This used to push every channel down by the midpoint of all of them together. In the
+       per-channel view - which is what the amplifier templates open in - the display is already
+       centring each band on that channel's own mean, so the two shifts add: a common emitter's
+       output, 200 mV of signal on a 9 V rail, ended up about fourteen volts from its band at
+       100 mV/div, which is a hundred and thirty divisions away. The screen went blank and the
+       readouts kept updating, because the numbers were fine and only the drawing was off.
+
+       In the per-channel view the bands do their own centring, so the right offset is none. In
+       the plain view each channel is centred on its own mean, which is what puts a trace on the
+       screen whatever DC it rides on. */
+    bool per_channel = ui->scope_stacked && ui->scope_stack_fit;
     for (int ch = 0; ch < ui->scope_num_channels; ch++) {
-        if (ui->scope_channels[ch].enabled) {
-            ui->scope_channels[ch].offset = -signal_center;
-        }
+        if (!ui->scope_channels[ch].enabled) continue;
+        if (per_channel) { ui->scope_channels[ch].offset = 0.0; continue; }
+        double times[MAX_HISTORY], values[MAX_HISTORY];
+        int n = simulation_get_history(sim, ui->scope_channels[ch].probe_idx, times, values, MAX_HISTORY);
+        if (n < 10) { ui->scope_channels[ch].offset = 0.0; continue; }
+        double lo = values[0], hi = values[0];
+        for (int i = 1; i < n; i++) { if (values[i] < lo) lo = values[i]; if (values[i] > hi) hi = values[i]; }
+        ui->scope_channels[ch].offset = -(lo + hi) / 2.0;
     }
 
     // Set trigger to rising edge and auto mode for good display
