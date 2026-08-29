@@ -120,7 +120,7 @@ Written at v3.18.0 plus the unreleased work on `main`.
 | `--line-test` | 5 transmission-line checks |
 | `--xtal-test` | 4 crystal checks |
 | `--flow-test` | 187/187 |
-| `--geom-test` | 162/187 clean, 0 hard violations, 0 labels on symbols |
+| `--geom-test` | 166/187 clean, 0 through-body, 0 hard violations, 0 labels on symbols |
 | `--knob-test` | 2670 runs |
 | `--part-test` | 25 checks over 21 named devices |
 | `--layout-test` | palette, scope knobs, zoom and SPICE buttons, probe naming |
@@ -147,10 +147,14 @@ Written at v3.18.0 plus the unreleased work on `main`.
 
 Cosmetic, all named per template with their endpoints by `--geom-test`:
 
-- **12 wires still cross a component body.** Down from 49. The remaining ones are op-amp
-  templates where the bias divider sits in the lane the input and feedback resistors use to
-  reach the amplifier — Schmitt Trigger, Window Comp, Sallen-Key, and the MOSFET stages. Each
-  needs its own look; moving the divider is not enough, the wires have to be rerouted around it.
+- **No wire runs through a component body, in any template.** Down from 49 when the audit
+  started. The last nine each needed their own answer: the Schmitt Trigger's reference divider
+  stood in the only lane the input and feedback wires have to the op-amp pins and moved out to
+  the left; the Window Comparator's supply rail sat *inside* R1, because the divider reaches up
+  past it; Sallen-Key's R1 and C1 overlap in x, so a turn at either one's column goes through
+  the other and the wire steps out of the row first; the MOSFET mirror's diode connection
+  overshot the drain and came back through the far side of the transistor; the CMOS inverter had
+  a stub to nowhere drawn back through its own PMOS.
 - **121 wire crossings**, most of them in the two new digit templates: a 7-segment display has
   four segment pins on one side of the package and four on the other, so any driver has to wrap
   three wires around the body, and a crossing is what that costs. A crossing without a junction
