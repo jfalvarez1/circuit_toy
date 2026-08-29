@@ -58,6 +58,32 @@ Written at v3.18.0 plus the unreleased work on `main`.
 - **`permissions: contents: write`** — v3.17.0's build was green and the upload still failed with
   `Resource not accessible by integration`. GitHub's default token is read-only.
 
+### v3.21.0 — readable text
+
+- **Schematic text is antialiased and larger.** The canvas font was the 8x8 bitmap drawn as
+  filled squares, which staircases every diagonal and gets worse the bigger it is drawn. It is
+  resampled once into a coverage atlas — each glyph a cell whose alpha is the bitmap sampled
+  bilinearly, with a contrast curve so a one-pixel stem keeps its weight — and drawn as a
+  textured quad per character. Characters are 11 px rather than 8. The UI panels keep their own
+  font; this is only the canvas.
+- **Values are in schematic notation**: `10k`, `4.7k`, `100nF`, `2.2uF`, `170V 60Hz`, where it
+  used to say `10.0 kOhm`. Nine characters for a value a schematic writes in three, with parts
+  80 px apart, is how they came to overlap.
+- **Text landing on other text is audited**, which nothing had ever checked: 94 labels across 51
+  templates were overlapping. The notation fixed two thirds; the rest moved, and a few templates
+  had parts standing closer than their own labels are wide. Zero now, and the value labels come
+  from the renderer's own function — split into `src/label.c` so the headless tool can call it —
+  so what is measured is what is drawn.
+- **Two placement rules changed.** A voltage source is a tall part whose terminals are top and
+  bottom, but the rule keyed off the rotation field and called it horizontal, so its label went
+  underneath — onto its own ground symbol and the lead down to it, which is where a sweeping
+  source's frequency readout was landing too. Tall parts label to the right; a source labels to
+  its outside. A transmission line's label is wider than the gap to the next part in a
+  substation bay, so it goes above the line.
+- **The transmission line symbol is drawn at a size you can read.** 52 x 18 with masts 15 px
+  tall — smaller than the resistor beside it — is now 64 x 44 with both cross-arms and a lattice
+  brace. Terminals unchanged.
+
 ### v3.19.2 — the update crash, and the counter that never counted
 
 - **Update no longer closes the app and leaves it closed.** Two separate faults. A tag is
@@ -120,7 +146,7 @@ Written at v3.18.0 plus the unreleased work on `main`.
 | `--line-test` | 5 transmission-line checks |
 | `--xtal-test` | 4 crystal checks |
 | `--flow-test` | 187/187 |
-| `--geom-test` | 166/187 clean, 0 through-body, 0 hard violations, 0 labels on symbols |
+| `--geom-test` | 166/187 clean, 0 through-body, 0 hard violations, 0 text on symbols, 0 text on text |
 | `--knob-test` | 2670 runs |
 | `--part-test` | 25 checks over 21 named devices |
 | `--layout-test` | palette, scope knobs, zoom and SPICE buttons, probe naming |

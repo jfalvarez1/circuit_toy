@@ -127,6 +127,9 @@ In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/).
 
 ![Example Circuits](gifs/example_circuits.gif)
 
+Schematic text is antialiased and drawn in the notation a schematic uses - `10k`, `100nF`,
+`170V 60Hz` - and an audit checks that no label lands on a symbol or on another label.
+
 187 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
