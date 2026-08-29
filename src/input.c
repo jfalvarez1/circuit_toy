@@ -274,6 +274,14 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 }
 
                 switch (input->current_tool) {
+                    case TOOL_PAN:
+                        /* left-drag pans, exactly as a middle-drag does. A trackpad has no
+                           middle button, and holding one down while dragging is not something
+                           every mouse can do comfortably either. */
+                        input->is_panning = true;
+                        input->middle.start_x = x;
+                        input->middle.start_y = y;
+                        break;
                     case TOOL_SELECT: {
                         // If already drawing a wire (started from terminal click), complete it
                         if (input->drawing_wire) {
@@ -727,7 +735,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                     }
                 }
             } else if (event->button.button == SDL_BUTTON_MIDDLE) {
-                input->middle.down = true;
+                input->middle.down = true;   /* the classic way; the Pan tool is the other one */
                 input->middle.start_x = x;
                 input->middle.start_y = y;
                 if (ui && point_in_scope_screen(ui, x, y)) {
@@ -756,6 +764,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                 return true;
             }
             if (button == SDL_BUTTON_LEFT) {
+                if (input->current_tool == TOOL_PAN) input->is_panning = false;
                 // Auto-wire when dropping a component near other terminals
                 if (input->is_dragging && input->dragging_component) {
                     Component *comp = input->dragging_component;

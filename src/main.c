@@ -172,8 +172,64 @@ static int layout_test(void) {
     for (int c = 0; c < PCAT_CIRCUITS; c++) if (per_cat[c] == 0) { printf("[FAIL] part category %d (%s) is empty\n", c, ui->categories[c].name); fails++; }
     for (int i = 0; i < ui->num_circuit_items; i++)
         if (strlen(ui->circuit_items[i].label) > 9) { printf("[FAIL] circuit label '%s' too long\n", ui->circuit_items[i].label); fails++; }
-    /* action id sanity */
+    /* action id sanity: every id below 100 must be unique, or two buttons do the same thing */
     if (UI_ACTION_SCOPE_STACK == UI_ACTION_SPOTLIGHT || UI_ACTION_SCOPE_TRACK == UI_ACTION_SPOTLIGHT) { printf("[FAIL] UI action id collision\n"); fails++; }
+    {
+        static const int ids[] = { UI_ACTION_ZOOM_IN, UI_ACTION_ZOOM_OUT, UI_ACTION_ZOOM_FIT,
+                                   UI_ACTION_SCOPE_AC, UI_ACTION_SCOPE_FIT, UI_ACTION_SCREENSHOT,
+                                   UI_ACTION_EXPORT_SVG, UI_ACTION_SPOTLIGHT, UI_ACTION_SCOPE_STACK };
+        for (unsigned a = 0; a < sizeof ids / sizeof ids[0]; a++)
+            for (unsigned b = a + 1; b < sizeof ids / sizeof ids[0]; b++)
+                if (ids[a] == ids[b]) { printf("[FAIL] two UI actions share id %d\n", ids[a]); fails++; }
+    }
+
+    /* ---- pan and zoom: the controls a laptop without a middle button needs ---- */
+    {
+        int pan_items = 0;
+        for (int i = 0; i < ui->num_palette_items; i++)
+            if (ui->palette_items[i].is_tool && ui->palette_items[i].tool_type == TOOL_PAN) pan_items++;
+        if (pan_items != 1) { printf("[FAIL] the Pan tool appears %d times in the palette\n", pan_items); fails++; }
+
+        ui->window_width = 1280; ui->window_height = 720;
+        ui_update_layout(ui);
+        Button *zb[3] = { &ui->btn_zoom_out, &ui->btn_zoom_in, &ui->btn_zoom_fit };
+        for (int i = 0; i < 3; i++) {
+            if (zb[i]->bounds.y < 0 || zb[i]->bounds.y + zb[i]->bounds.h > TOOLBAR_HEIGHT) {
+                printf("[FAIL] zoom button '%s' is not inside the toolbar\n", zb[i]->label); fails++;
+            }
+            if (zb[i]->bounds.x + zb[i]->bounds.w > ui->window_width) {
+                printf("[FAIL] zoom button '%s' runs off the right edge\n", zb[i]->label); fails++;
+            }
+            if (rects_overlap(&zb[i]->bounds, &ui->btn_screenshot.bounds)) {
+                printf("[FAIL] zoom button '%s' overlaps the screenshot button\n", zb[i]->label); fails++;
+            }
+            if (rects_overlap(&zb[i]->bounds, &ui->speed_slider)) {
+                printf("[FAIL] zoom button '%s' overlaps the speed slider\n", zb[i]->label); fails++;
+            }
+            for (int j = i + 1; j < 3; j++)
+                if (rects_overlap(&zb[i]->bounds, &zb[j]->bounds)) {
+                    printf("[FAIL] zoom buttons '%s' and '%s' overlap\n", zb[i]->label, zb[j]->label); fails++;
+                }
+            int cx = zb[i]->bounds.x + zb[i]->bounds.w / 2, cy = zb[i]->bounds.y + zb[i]->bounds.h / 2;
+            int want = (i == 0) ? UI_ACTION_ZOOM_OUT : (i == 1) ? UI_ACTION_ZOOM_IN : UI_ACTION_ZOOM_FIT;
+            if (ui_handle_click(ui, cx, cy, true) != want) {
+                printf("[FAIL] clicking '%s' does not return its zoom action\n", zb[i]->label); fails++;
+            }
+        }
+        printf("[ OK ] pan tool present, 3 zoom buttons in the toolbar, each returns its own action\n");
+    }
+
+    /* ---- the palette opens as a table of contents, not a wall of buttons ---- */
+    {
+        int open = 0;
+        for (int c = 0; c < PCAT_COUNT; c++) if (!ui->categories[c].collapsed) open++;
+        if (ui->categories[PCAT_TOOLS].collapsed) { printf("[FAIL] the Tools category starts collapsed\n"); fails++; }
+        if (open != 1) { printf("[FAIL] %d palette categories start open, expected only Tools\n", open); fails++; }
+        int groups_open = 0;
+        for (int g = 0; g < TG_COUNT; g++) if (!ui->circuit_group_collapsed[g]) groups_open++;
+        if (groups_open != 0) { printf("[FAIL] %d template groups start open, expected none\n", groups_open); fails++; }
+        printf("[ OK ] palette starts with Tools open and all %d template groups closed\n", (int)TG_COUNT);
+    }
     printf("[ OK ] %d palette items in %d categories\n", ui->num_palette_items, (int)PCAT_CIRCUITS);
     printf("%d layout checks failed\n", fails);
     free(ui);

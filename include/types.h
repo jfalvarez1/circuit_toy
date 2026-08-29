@@ -279,6 +279,7 @@ typedef enum {
     TOOL_WIRE,
     TOOL_DELETE,
     TOOL_PROBE,
+    TOOL_PAN,          // left-drag pans the canvas: a laptop trackpad has no middle button
     TOOL_COMPONENT
 } ToolType;
 

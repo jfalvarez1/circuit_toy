@@ -77,6 +77,7 @@ typedef struct {
 bool app_init(App *app);
 // Place a template at the canvas centre with its scope presets and auto-start (used by --template)
 bool app_place_template_centered(App *app, CircuitTemplateType type);
+void app_zoom_to_fit(App *app);   // frame every placed component in the canvas
 // Start the background release check (unless --no-update-check)
 void app_update_check(App *app);
 // Save the current window contents as a BMP (used by --shot / --record)

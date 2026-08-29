@@ -141,27 +141,29 @@ void ui_init(UIState *ui) {
     memset(ui, 0, sizeof(UIState));
 
     // Initialize collapsible categories
+    /* Everything except Tools starts collapsed. With 180-odd templates and twenty component
+       categories an all-open palette is a wall of buttons; a closed one is a table of contents. */
     ui->categories[PCAT_TOOLS] = (PaletteCategory){"Tools", false, 0};
-    ui->categories[PCAT_SOURCES] = (PaletteCategory){"Sources", false, 0};
-    ui->categories[PCAT_WAVEFORMS] = (PaletteCategory){"Waveforms", false, 0};
-    ui->categories[PCAT_PASSIVES] = (PaletteCategory){"Passives", false, 0};
-    ui->categories[PCAT_DIODES] = (PaletteCategory){"Diodes", false, 0};
-    ui->categories[PCAT_BJT] = (PaletteCategory){"BJT", false, 0};
-    ui->categories[PCAT_FET] = (PaletteCategory){"FET", false, 0};
-    ui->categories[PCAT_THYRISTORS] = (PaletteCategory){"Thyristors", false, 0};
-    ui->categories[PCAT_OPAMPS] = (PaletteCategory){"Op-Amps", false, 0};
-    ui->categories[PCAT_CONTROLLED] = (PaletteCategory){"Ctrl Sources", false, 0};
-    ui->categories[PCAT_SWITCHES] = (PaletteCategory){"Switches", false, 0};
-    ui->categories[PCAT_TRANSFORMERS] = (PaletteCategory){"Transformers", false, 0};
-    ui->categories[PCAT_LOGIC] = (PaletteCategory){"Logic Gates", false, 0};
-    ui->categories[PCAT_DIGITAL] = (PaletteCategory){"Digital ICs", false, 0};
-    ui->categories[PCAT_MIXED] = (PaletteCategory){"Mixed Signal", false, 0};
-    ui->categories[PCAT_REGULATORS] = (PaletteCategory){"Regulators", false, 0};
-    ui->categories[PCAT_DISPLAY] = (PaletteCategory){"Display", false, 0};
-    ui->categories[PCAT_MEASUREMENT] = (PaletteCategory){"Measurement", false, 0};
-    ui->categories[PCAT_SUBPARTS] = (PaletteCategory){"Sub-circuit / Bus", false, 0};
-    ui->categories[PCAT_CIRCUITS] = (PaletteCategory){"Circuits", false, 0};
-    ui->categories[PCAT_SUBCIRCUITS] = (PaletteCategory){"My Circuits", false, 0};
+    ui->categories[PCAT_SOURCES] = (PaletteCategory){"Sources", true, 0};
+    ui->categories[PCAT_WAVEFORMS] = (PaletteCategory){"Waveforms", true, 0};
+    ui->categories[PCAT_PASSIVES] = (PaletteCategory){"Passives", true, 0};
+    ui->categories[PCAT_DIODES] = (PaletteCategory){"Diodes", true, 0};
+    ui->categories[PCAT_BJT] = (PaletteCategory){"BJT", true, 0};
+    ui->categories[PCAT_FET] = (PaletteCategory){"FET", true, 0};
+    ui->categories[PCAT_THYRISTORS] = (PaletteCategory){"Thyristors", true, 0};
+    ui->categories[PCAT_OPAMPS] = (PaletteCategory){"Op-Amps", true, 0};
+    ui->categories[PCAT_CONTROLLED] = (PaletteCategory){"Ctrl Sources", true, 0};
+    ui->categories[PCAT_SWITCHES] = (PaletteCategory){"Switches", true, 0};
+    ui->categories[PCAT_TRANSFORMERS] = (PaletteCategory){"Transformers", true, 0};
+    ui->categories[PCAT_LOGIC] = (PaletteCategory){"Logic Gates", true, 0};
+    ui->categories[PCAT_DIGITAL] = (PaletteCategory){"Digital ICs", true, 0};
+    ui->categories[PCAT_MIXED] = (PaletteCategory){"Mixed Signal", true, 0};
+    ui->categories[PCAT_REGULATORS] = (PaletteCategory){"Regulators", true, 0};
+    ui->categories[PCAT_DISPLAY] = (PaletteCategory){"Display", true, 0};
+    ui->categories[PCAT_MEASUREMENT] = (PaletteCategory){"Measurement", true, 0};
+    ui->categories[PCAT_SUBPARTS] = (PaletteCategory){"Sub-circuit / Bus", true, 0};
+    ui->categories[PCAT_CIRCUITS] = (PaletteCategory){"Circuits", true, 0};
+    ui->categories[PCAT_SUBCIRCUITS] = (PaletteCategory){"My Circuits", true, 0};
 
     // Set initial window dimensions
     ui->window_width = WINDOW_WIDTH;
@@ -193,6 +195,14 @@ void ui_init(UIState *ui) {
     ui->btn_export_svg = (Button){{btn_x, 10, btn_w, btn_h}, "SVG", "Export as SVG", false, false, true, false};
     btn_x += btn_w + 10;
     ui->btn_screenshot = (Button){{btn_x, 10, 35, btn_h}, "Scr", "Screenshot (F12)", false, false, true, false};
+    btn_x += 35 + 10;
+    /* Canvas zoom on the toolbar. The wheel and +/- already do this; a trackpad that
+       reports no wheel, or a hand already on the mouse, has nothing to reach for. */
+    ui->btn_zoom_out = (Button){{btn_x, 10, 24, btn_h}, "-", "Zoom out (-)", false, false, true, false};
+    btn_x += 24 + 4;
+    ui->btn_zoom_in  = (Button){{btn_x, 10, 24, btn_h}, "+", "Zoom in (+)", false, false, true, false};
+    btn_x += 24 + 4;
+    ui->btn_zoom_fit = (Button){{btn_x, 10, 32, btn_h}, "Fit", "Zoom to fit the whole circuit", false, false, true, false};
 
     // Speed slider
     ui->speed_slider = (Rect){btn_x + btn_w + 30, 15, 100, 20};
@@ -246,6 +256,7 @@ void ui_init(UIState *ui) {
     ADD_TOOL(TOOL_WIRE, "Wire");
     ADD_TOOL(TOOL_DELETE, "Delete");
     ADD_TOOL(TOOL_PROBE, "Probe");
+    ADD_TOOL(TOOL_PAN, "Pan");
     ADD_COMP(COMP_TEXT, "Text");
 
     // === SOURCES SECTION (index 5) ===
@@ -416,6 +427,8 @@ void ui_init(UIState *ui) {
     ui->num_circuit_items = 0;
     ui->selected_circuit_type = -1;
     ui->placing_circuit = false;
+
+    for (int g = 0; g < TG_COUNT; g++) ui->circuit_group_collapsed[g] = true;
 
     // User subcircuits (dynamically updated from g_subcircuit_library)
     ui->num_subcircuit_items = 0;
@@ -835,6 +848,9 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     draw_button(renderer, &ui->btn_load);
     draw_button(renderer, &ui->btn_export_svg);
     draw_button(renderer, &ui->btn_screenshot);
+    draw_button(renderer, &ui->btn_zoom_out);
+    draw_button(renderer, &ui->btn_zoom_in);
+    draw_button(renderer, &ui->btn_zoom_fit);
 
     // Speed slider label
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
@@ -6473,6 +6489,9 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_export_svg.bounds) && ui->btn_export_svg.enabled) {
             return UI_ACTION_EXPORT_SVG;
         }
+        if (point_in_rect(x, y, &ui->btn_zoom_out.bounds) && ui->btn_zoom_out.enabled) return UI_ACTION_ZOOM_OUT;
+        if (point_in_rect(x, y, &ui->btn_zoom_in.bounds)  && ui->btn_zoom_in.enabled)  return UI_ACTION_ZOOM_IN;
+        if (point_in_rect(x, y, &ui->btn_zoom_fit.bounds) && ui->btn_zoom_fit.enabled) return UI_ACTION_ZOOM_FIT;
         if (point_in_rect(x, y, &ui->btn_screenshot.bounds) && ui->btn_screenshot.enabled) {
             return UI_ACTION_SCREENSHOT;
         }
@@ -7084,6 +7103,9 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         ui->btn_load.hovered = point_in_rect(x, y, &ui->btn_load.bounds);
         ui->btn_export_svg.hovered = point_in_rect(x, y, &ui->btn_export_svg.bounds);
         ui->btn_screenshot.hovered = point_in_rect(x, y, &ui->btn_screenshot.bounds);
+        ui->btn_zoom_out.hovered = point_in_rect(x, y, &ui->btn_zoom_out.bounds);
+        ui->btn_zoom_in.hovered  = point_in_rect(x, y, &ui->btn_zoom_in.bounds);
+        ui->btn_zoom_fit.hovered = point_in_rect(x, y, &ui->btn_zoom_fit.bounds);
         ui->btn_timestep_up.hovered = point_in_rect(x, y, &ui->btn_timestep_up.bounds);
         ui->btn_timestep_down.hovered = point_in_rect(x, y, &ui->btn_timestep_down.bounds);
         ui->btn_timestep_auto.hovered = point_in_rect(x, y, &ui->btn_timestep_auto.bounds);
@@ -7119,7 +7141,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         const char *tip = NULL;
         char tipbuf[160];
         Button *tb[] = { &ui->btn_run, &ui->btn_pause, &ui->btn_step, &ui->btn_reset, &ui->btn_clear, &ui->btn_save, &ui->btn_load,
-                         &ui->btn_export_svg, &ui->btn_screenshot, &ui->btn_timestep_up, &ui->btn_timestep_down, &ui->btn_timestep_auto, &ui->btn_update };
+                         &ui->btn_export_svg, &ui->btn_screenshot, &ui->btn_zoom_out, &ui->btn_zoom_in, &ui->btn_zoom_fit, &ui->btn_timestep_up, &ui->btn_timestep_down, &ui->btn_timestep_auto, &ui->btn_update };
         for (unsigned i = 0; i < sizeof tb / sizeof tb[0] && !tip; i++)
             if (!popup_mode && tb[i]->bounds.w > 0 && point_in_rect(x, y, &tb[i]->bounds)) tip = tb[i]->tooltip;
         Button *sb[SCOPE_BTN_N]; scope_button_list(ui, sb);

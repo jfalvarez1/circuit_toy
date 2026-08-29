@@ -296,6 +296,17 @@ void app_handle_events(App *app) {
                     }
                 }
                 break;
+            case UI_ACTION_ZOOM_IN:
+                render_zoom(app->render, 1.2f, app->render->canvas_rect.x + app->render->canvas_rect.w / 2,
+                            app->render->canvas_rect.y + app->render->canvas_rect.h / 2);
+                break;
+            case UI_ACTION_ZOOM_OUT:
+                render_zoom(app->render, 0.8f, app->render->canvas_rect.x + app->render->canvas_rect.w / 2,
+                            app->render->canvas_rect.y + app->render->canvas_rect.h / 2);
+                break;
+            case UI_ACTION_ZOOM_FIT:
+                app_zoom_to_fit(app);
+                break;
             case UI_ACTION_SCREENSHOT:
                 {
                     // Create screenshots directory
@@ -1976,6 +1987,33 @@ static void app_update_poll(App *app) {
         int failed = 0;
         if (updater_checked(&app->updater, &failed)) app->update_announced = true;   // up to date or offline: stay quiet
     }
+}
+
+/* Frame everything that is placed. The same arithmetic app_place_template_centered does for a
+   freshly placed template, but over the whole circuit and on demand. */
+void app_zoom_to_fit(App *app) {
+    if (!app || !app->circuit || app->circuit->num_components == 0) return;
+    RenderContext *render = app->render;
+    float minx = 1e9f, miny = 1e9f, maxx = -1e9f, maxy = -1e9f;
+    for (int i = 0; i < app->circuit->num_components; i++) {
+        Component *c = app->circuit->components[i];
+        float w = (c->type == COMP_TEXT) ? (float)strlen(c->props.text.text) * 6.0f : 60.0f;
+        float h = (c->type == COMP_TEXT) ? 16.0f : 60.0f;
+        float x0 = (c->type == COMP_TEXT) ? c->x : c->x - w / 2;
+        float y0 = (c->type == COMP_TEXT) ? c->y : c->y - h / 2;
+        if (x0 < minx) minx = x0; if (y0 < miny) miny = y0;
+        if (x0 + w > maxx) maxx = x0 + w; if (y0 + h > maxy) maxy = y0 + h;
+    }
+    if (!(maxx > minx && maxy > miny)) return;
+    float bw = maxx - minx + 80.0f, bh = maxy - miny + 80.0f;
+    float z = fminf(render->canvas_rect.w / bw, render->canvas_rect.h / bh);
+    if (z > 2.0f) z = 2.0f;
+    if (z < 0.1f) z = 0.1f;
+    render->zoom = z;
+    render->offset_x = render->canvas_rect.w * 0.5f - (minx + maxx) * 0.5f * z;
+    render->offset_y = render->canvas_rect.h * 0.5f - (miny + maxy) * 0.5f * z;
+    char msg[64]; snprintf(msg, sizeof msg, "Zoom to fit: %.0f %%", z * 100.0f);
+    ui_set_status(&app->ui, msg);
 }
 
 bool app_place_template_centered(App *app, CircuitTemplateType type) {
