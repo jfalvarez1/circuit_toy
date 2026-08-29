@@ -32,6 +32,11 @@
 #define CANVAS_WIDTH (WINDOW_WIDTH - PALETTE_WIDTH - PROPERTIES_WIDTH)
 #define CANVAS_HEIGHT (WINDOW_HEIGHT - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT)
 
+/* Height of one character of schematic text, in pixels. The bitmap font's own cell is 8; the
+   canvas reads better a little larger than that. The geometry audit measures label boxes with
+   the same number, so a label's reported footprint matches what is actually drawn. */
+#define CANVAS_TEXT_PX 11
+
 // Grid settings
 #define GRID_SIZE 10
 #define MAX_ZOOM 4.0f

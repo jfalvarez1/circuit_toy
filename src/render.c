@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <math.h>
 #include "render.h"
+#include "label.h"
 
 // Forward declarations for new component symbols
 void render_fuse(RenderContext *ctx, float x, float y, int rotation, bool blown, double heat_level);
@@ -17,81 +18,10 @@ static void render_draw_line_rotated(RenderContext *ctx, float cx, float cy,
 static void render_draw_circle_rotated(RenderContext *ctx, float cx, float cy,
                                        float dx, float dy, float r, int rotation);
 void render_load_hp(RenderContext *ctx, float x, float y, int rotation);
-// Value label next to a component: R / C / L / source volts / line miles / transformer ratio ...
 static void render_component_value(RenderContext *ctx, Component *comp) {
-    char buf[64] = "";
-    switch (comp->type) {
-        case COMP_GROUND: case COMP_TEXT: case COMP_LABEL: case COMP_PIN: case COMP_SUBCIRCUIT:
-        case COMP_VOLTMETER: case COMP_AMMETER: case COMP_WATTMETER: case COMP_TEST_POINT:
-        case COMP_NOT_GATE: case COMP_AND_GATE: case COMP_OR_GATE: case COMP_NAND_GATE: case COMP_NOR_GATE: case COMP_XOR_GATE: case COMP_XNOR_GATE:
-        case COMP_OPAMP: case COMP_OPAMP_FLIPPED: case COMP_DPDT_SWITCH:
-        case COMP_DIODE: case COMP_SCHOTTKY: case COMP_NPN_BJT: case COMP_PNP_BJT: case COMP_NMOS: case COMP_PMOS:
-            return;
-        /* Switches say what state they are in. A closed switch is a straight line between two
-           small circles, which on a busy schematic is a wire - and then a template that says
-           "open the breaker" gives you nothing to look for. */
-        case COMP_SPST_SWITCH:
-            snprintf(buf, sizeof buf, comp->props.switch_spst.closed ? "CLOSED" : "OPEN");
-            break;
-        case COMP_SPDT_SWITCH:
-            snprintf(buf, sizeof buf, "POS %d", comp->props.switch_spdt.position + 1);
-            break;
-        case COMP_PUSH_BUTTON:
-            snprintf(buf, sizeof buf, comp->props.push_button.pressed ? "PRESSED" : "BUTTON");
-            break;
-        case COMP_ANALOG_SWITCH:
-            snprintf(buf, sizeof buf, "%s%s", comp->props.analog_switch.state ? "ON" : "OFF",
-                     comp->props.analog_switch.manual ? " MAN" : "");
-            break;
-        case COMP_TRANSFORMER: case COMP_TRANSFORMER_CT:
-            snprintf(buf, sizeof buf, "1:%.4g", comp->props.transformer.turns_ratio);
-            break;
-        case COMP_TLINE: {
-            double R, L, C; tline_params(comp, &R, &L, &C);
-            snprintf(buf, sizeof buf, "%.4g mi  %.3g+j%.3g", comp->props.tline.length_mi, R, 2 * M_PI * 60 * L);
-            break;
-        }
-        case COMP_DELAY_LINE: {
-            double td = comp->props.delay_line.delay;
-            if (td >= 1e-6)      snprintf(buf, sizeof buf, "%.3g ohm  %.4g us", comp->props.delay_line.z0, td * 1e6);
-            else if (td >= 1e-9) snprintf(buf, sizeof buf, "%.3g ohm  %.4g ns", comp->props.delay_line.z0, td * 1e9);
-            else                 snprintf(buf, sizeof buf, "%.3g ohm  %.4g ps", comp->props.delay_line.z0, td * 1e12);
-            break;
-        }
-        case COMP_SOURCE_3PH:
-            snprintf(buf, sizeof buf, "3ph %.4g kV L-L", comp->props.source_3ph.v_peak / 1.41421356 * 1.7320508 / 1e3);
-            break;
-        case COMP_AC_VOLTAGE: {
-            char v[24]; format_engineering(comp->props.ac_voltage.amplitude, "V", v, sizeof v);
-            snprintf(buf, sizeof buf, "%spk %.4gHz", v, comp->props.ac_voltage.frequency);
-            break;
-        }
-        case COMP_ZENER: snprintf(buf, sizeof buf, "%.3gV", comp->props.zener.vz); break;
-        default:
-            component_get_value_string(comp, buf, sizeof buf);
-            break;
-    }
-    if (comp->type == COMP_RESISTOR && comp->props.resistor.high_power && comp->props.resistor.power_dissipated > 0) {
-        char pw[24]; format_engineering(comp->props.resistor.power_dissipated, "W", pw, sizeof pw);
-        size_t n = strlen(buf); snprintf(buf + n, sizeof buf - n, "  %s", pw);   // show the real dissipation instead of a warning
-    }
-    /* A named device shows its part number - that is what a schematic is labelled with. The
-       transistor symbols draw their own label, so those are already covered; everything else
-       gets it in front of the value. */
-    if (comp->part[0] && comp->type != COMP_NMOS && comp->type != COMP_PMOS &&
-        comp->type != COMP_NPN_BJT && comp->type != COMP_PNP_BJT) {
-        char merged[96];
-        if (buf[0]) snprintf(merged, sizeof merged, "%s  %s", comp->part, buf);
-        else        snprintf(merged, sizeof merged, "%s", comp->part);
-        snprintf(buf, sizeof buf, "%s", merged);
-    }
-    if (!buf[0]) return;
-    const ComponentTypeInfo *info = component_get_info(comp->type);
-    int rot = ((comp->rotation % 360) + 360) % 360;
-    float w = info ? info->width : 60, h = info ? info->height : 40;
+    char buf[96];
     float lx, ly;
-    if (rot == 90 || rot == 270) { lx = comp->x + h / 2 + 4; ly = comp->y - 5; }      // vertical part: label to the right
-    else                         { lx = comp->x - w / 2 + 4; ly = comp->y + h / 2 + 3; } // horizontal: label below
+    if (!render_component_value_label(comp, buf, sizeof buf, &lx, &ly)) return;
     int sx, sy; render_world_to_screen(ctx, lx, ly, &sx, &sy);
     render_draw_text_small(ctx, buf, sx, sy, (Color){0xa0, 0xb4, 0xc8, 0xff});
 }
@@ -286,6 +216,87 @@ void render_transformer(RenderContext *ctx, float x, float y, int rotation);
 void render_transformer_ct(RenderContext *ctx, float x, float y, int rotation);
 
 // Draw a single character using bitmap font
+/* ---------------------------------------------------------------------------------------
+ * Antialiased text for the canvas.
+ *
+ * The font is an 8x8 bitmap, and drawing it as filled squares gives a staircase on every
+ * diagonal that gets worse the larger it is drawn. Instead it is resampled once into a
+ * coverage atlas: each glyph occupies a FONT_CELL_PX square whose alpha is the bitmap
+ * sampled bilinearly, so an edge fades across a texel rather than stopping dead. Drawing is
+ * then one textured quad per character with linear filtering, which stays smooth at any size
+ * and at any zoom.
+ *
+ * A mild contrast curve keeps the strokes solid: without it a one-pixel stem loses half its
+ * weight to the resampling and the text reads grey instead of lit.
+ * ------------------------------------------------------------------------------------- */
+#define FONT_SS       6                       /* atlas resolution per font pixel */
+#define FONT_CELL_PX  (8 * FONT_SS)
+#define FONT_GLYPHS   95
+
+static float font_bit(int gi, int px, int py) {
+    if (px < 0 || px > 7 || py < 0 || py > 7) return 0.0f;
+    return (font8x8[gi][py] & (1 << px)) ? 1.0f : 0.0f;
+}
+
+static SDL_Texture *font_atlas_build(SDL_Renderer *renderer) {
+    SDL_Texture *tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32,
+                                         SDL_TEXTUREACCESS_STATIC,
+                                         FONT_CELL_PX * FONT_GLYPHS, FONT_CELL_PX);
+    if (!tex) return NULL;
+
+    size_t w = (size_t)FONT_CELL_PX * FONT_GLYPHS, h = FONT_CELL_PX;
+    Uint32 *px = (Uint32 *)calloc(w * h, sizeof(Uint32));
+    if (!px) { SDL_DestroyTexture(tex); return NULL; }
+
+    for (int gi = 0; gi < FONT_GLYPHS; gi++) {
+        for (int ty = 0; ty < FONT_CELL_PX; ty++) {
+            for (int tx = 0; tx < FONT_CELL_PX; tx++) {
+                /* texel centre, expressed in font-pixel coordinates */
+                float sx = ((float)tx + 0.5f) / FONT_SS - 0.5f;
+                float sy = ((float)ty + 0.5f) / FONT_SS - 0.5f;
+                int x0 = (int)floorf(sx), y0 = (int)floorf(sy);
+                float fx = sx - x0, fy = sy - y0;
+                float c = font_bit(gi, x0,     y0)     * (1 - fx) * (1 - fy)
+                        + font_bit(gi, x0 + 1, y0)     * fx       * (1 - fy)
+                        + font_bit(gi, x0,     y0 + 1) * (1 - fx) * fy
+                        + font_bit(gi, x0 + 1, y0 + 1) * fx       * fy;
+                /* Contrast: solid through the middle of a stroke, soft only at its edge. A
+                   plain resample leaves a one-pixel stem peaking well under full coverage, and
+                   the text then reads grey instead of lit. */
+                c = (c - 0.25f) / 0.45f;
+                if (c < 0) c = 0; if (c > 1) c = 1;
+                c = powf(c, 0.85f);
+                Uint8 a = (Uint8)(c * 255.0f + 0.5f);
+                px[(size_t)ty * w + (size_t)gi * FONT_CELL_PX + tx] =
+                    ((Uint32)a << 24) | 0x00ffffffu;   /* white, alpha = coverage */
+            }
+        }
+    }
+
+    SDL_UpdateTexture(tex, NULL, px, (int)(w * sizeof(Uint32)));
+    free(px);
+    SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureScaleMode(tex, SDL_ScaleModeLinear);
+    return tex;
+}
+
+/* One character at an arbitrary pixel size. Returns how far to advance. */
+static int font_draw_char(RenderContext *ctx, char c, int x, int y, int size_px, Color col) {
+    if (!ctx->font_atlas) {
+        if (ctx->font_atlas_tried) return size_px;
+        ctx->font_atlas_tried = true;
+        ctx->font_atlas = font_atlas_build(ctx->renderer);
+        if (!ctx->font_atlas) return size_px;
+    }
+    if (c < 32 || c > 126) c = '?';
+    SDL_Rect src = { (c - 32) * FONT_CELL_PX, 0, FONT_CELL_PX, FONT_CELL_PX };
+    SDL_Rect dst = { x, y, size_px, size_px };
+    SDL_SetTextureColorMod(ctx->font_atlas, col.r, col.g, col.b);
+    SDL_SetTextureAlphaMod(ctx->font_atlas, col.a);
+    SDL_RenderCopy(ctx->renderer, ctx->font_atlas, &src, &dst);
+    return size_px;
+}
+
 static void draw_char(SDL_Renderer *renderer, char c, int x, int y) {
     if (c < 32 || c > 126) c = '?';
     const unsigned char *glyph = font8x8[c - 32];
@@ -346,6 +357,8 @@ RenderContext *render_create(SDL_Renderer *renderer) {
 }
 
 void render_free(RenderContext *ctx) {
+    if (!ctx) return;
+    if (ctx->font_atlas) SDL_DestroyTexture(ctx->font_atlas);
     free(ctx);
 }
 
@@ -450,14 +463,14 @@ void render_fill_rect_screen(RenderContext *ctx, int x, int y, int w, int h) {
     SDL_RenderFillRect(ctx->renderer, &rect);
 }
 
-// Text rendering using bitmap font
+/* Schematic text. CANVAS_TEXT_PX is the height of one character on the canvas: the font's own
+   cell is 8 px, which is legible but mean, and everything here reads better a little larger.
+   The geometry audit measures label boxes with the same number (tools/template_smoke.c). */
 void render_draw_text(RenderContext *ctx, const char *text, int x, int y, Color color) {
     if (!text || !*text) return;  // Safety check for NULL or empty string
-    SDL_SetRenderDrawColor(ctx->renderer, color.r, color.g, color.b, color.a);
     int cx = x;
     while (*text) {
-        draw_char(ctx->renderer, *text, cx, y);
-        cx += 8;
+        cx += font_draw_char(ctx, *text, cx, y, CANVAS_TEXT_PX, color);
         text++;
     }
 }
@@ -475,13 +488,21 @@ void render_draw_text_styled(RenderContext *ctx, const char *text, int x, int y,
 
     // Scale based on font_size: 1=small(1x), 2=normal(2x), 3=large(3x)
     int scale = (font_size < 1) ? 1 : (font_size > 3) ? 3 : font_size;
-    int char_width = 8 * scale + (bold ? scale : 0);  // Extra width for bold
-    int char_height = 8 * scale;
+    int char_height = CANVAS_TEXT_PX * scale;
+    int char_width = char_height + (bold ? scale : 0);  // Extra width for bold
 
     int cx = x;
     int text_start_x = x;
     while (*text) {
-        draw_char_scaled(ctx->renderer, *text, cx, y, scale, bold, italic);
+        /* Italic and bold still go through the blocky path - they are only used by hand-placed
+           annotations, and the atlas has no slanted or weighted variants. Everything else, which
+           is every label a template places, takes the antialiased one. */
+        if (italic || bold) {
+            SDL_SetRenderDrawColor(ctx->renderer, color.r, color.g, color.b, color.a);
+            draw_char_scaled(ctx->renderer, *text, cx, y, scale, bold, italic);
+        } else {
+            font_draw_char(ctx, *text, cx, y, char_height, color);
+        }
         cx += char_width;
         text++;
     }
@@ -778,8 +799,13 @@ void render_component(RenderContext *ctx, Component *comp) {
             render_voltage_source(ctx, comp->x, comp->y, comp->rotation, true);
             // Live readout of a sweeping source: instantaneous frequency / amplitude
             if (comp->props.ac_voltage.frequency_sweep.enabled || comp->props.ac_voltage.amplitude_sweep.enabled) {
+                /* Stack under the source's own value label, wherever that ended up. Fixed screen
+                   offsets from the symbol's centre put this on the ground symbol below it, and
+                   only lined up at all at zoom 1. */
+                char lb[96]; float lx = comp->x, ly = comp->y;
+                render_component_value_label(comp, lb, sizeof lb, &lx, &ly);
                 int sx, sy;
-                render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+                render_world_to_screen(ctx, lx, ly + CANVAS_TEXT_PX + 2, &sx, &sy);
                 char rd[48];
                 if (comp->props.ac_voltage.frequency_sweep.enabled) {
                     double f = sweep_get_value(&comp->props.ac_voltage.frequency_sweep,
@@ -787,13 +813,14 @@ void render_component(RenderContext *ctx, Component *comp) {
                     if (f >= 1e6) snprintf(rd, sizeof rd, "f=%.2fMHz", f / 1e6);
                     else if (f >= 1e3) snprintf(rd, sizeof rd, "f=%.2fkHz", f / 1e3);
                     else snprintf(rd, sizeof rd, "f=%.1fHz", f);
-                    render_draw_text_small(ctx, rd, sx - 30, sy + 46, COLOR_ACCENT);
+                    render_draw_text_small(ctx, rd, sx, sy, COLOR_ACCENT);
                 }
                 if (comp->props.ac_voltage.amplitude_sweep.enabled) {
                     double a = sweep_get_value(&comp->props.ac_voltage.amplitude_sweep,
                                                comp->props.ac_voltage.amplitude, ctx->sim_time);
                     snprintf(rd, sizeof rd, "A=%.2fV", a);
-                    render_draw_text_small(ctx, rd, sx - 30, sy + (comp->props.ac_voltage.frequency_sweep.enabled ? 58 : 46), COLOR_ACCENT);
+                    int ay = sy + (comp->props.ac_voltage.frequency_sweep.enabled ? (int)((CANVAS_TEXT_PX + 2) * ctx->zoom) : 0);
+                    render_draw_text_small(ctx, rd, sx, ay, COLOR_ACCENT);
                 }
             }
             break;

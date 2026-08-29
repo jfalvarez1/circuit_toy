@@ -59,6 +59,7 @@ src_files = files(
   'src/simulation.c',
   'src/logic.c',
   'src/render.c',
+  'src/label.c',
   'src/ui.c',
   'src/input.c',
   'src/file_io.c',

@@ -2976,7 +2976,7 @@ static int place_centertap_rectifier(Circuit *circuit, float x, float y) {
     Component *gnd1 = add_comp(circuit, COMP_GROUND, x, y + 130, 0);
 
     // Center-tap transformer (10:1 step down)
-    Component *trans = add_comp(circuit, COMP_TRANSFORMER_CT, x + 120, y + 50, 0);
+    Component *trans = add_comp(circuit, COMP_TRANSFORMER_CT, x + 160, y + 50, 0);
     trans->props.transformer.turns_ratio = 0.1;
 
     // Two horizontal diodes (both pointing right, cathodes to DC+)
@@ -4598,10 +4598,10 @@ static int place_current_source(Circuit *circuit, float x, float y) {
     Component *gnd1 = add_comp(circuit, COMP_GROUND, x, y + 20, 0);
 
     // Decoupling capacitor
-    Component *c_dec = add_comp(circuit, COMP_CAPACITOR, x + 40, y - 80, 90);
+    Component *c_dec = add_comp(circuit, COMP_CAPACITOR, x + 40, y - 140, 90);
     c_dec->props.capacitor.capacitance = 0.1e-6;  // 0.1uF decoupling
 
-    Component *gnd_dec = add_comp(circuit, COMP_GROUND, x + 40, y - 20, 0);
+    Component *gnd_dec = add_comp(circuit, COMP_GROUND, x + 40, y - 80, 0);
 
     // Reference voltage divider
     Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 80, y - 80, 90);
@@ -6393,6 +6393,7 @@ static int place_tline_real(Circuit *circuit, float x, float y);
 static int place_sevenseg_test(Circuit *circuit, float x, float y);
 static int place_wireless_link(Circuit *circuit, float x, float y);
 static int place_bcd_counter(Circuit *circuit, float x, float y);
+static int place_pierce(Circuit *circuit, float x, float y);
 static int place_digital_clock(Circuit *circuit, float x, float y);
 static int place_3ph_345_line(Circuit *circuit, float x, float y);
 static int place_3ph_rectifier(Circuit *circuit, float x, float y);
@@ -7535,7 +7536,7 @@ static int place_line_model_ladder(Circuit *circuit, float x, float y) {
         TW(bl, tl); TW(tr, n);
         connect_terminals(circuit, ld, 1, g, 0);
         t->node_ids[0] = tl; t->node_ids[1] = tr; ld->node_ids[0] = n;
-        add_label(circuit, x + 40, ry - 60, names[row]);
+        add_label(circuit, x + 40, ry - 70, names[row]);
     }
     add_label(circuit, x + 20, y - 60, "Line model ladder: 138 kV, 30 mi, 90 MW - probe the three load buses");
     return 13;
@@ -7741,7 +7742,7 @@ static int place_pc_overcurrent(Circuit *circuit, float x, float y) {
     TW(hold, c1); TW(c1, c2); TW(c2, plus);
     Component *u = comparator_with_ref(circuit, x + 600, y + 40, 8.0, plus);     // -(560,20) +(560,60) out(640,40)
     (void)u;
-    add_label(circuit, x + 20, y - 60, "CT + 50/51 overcurrent: 600 A normal, fault 1200 A at t = 40-100 ms (repeats)");
+    add_label(circuit, x + 20, y - 110, "CT + 50/51 overcurrent: 600 A normal, fault 1200 A at t = 40-100 ms (repeats)");
     add_label(circuit, x + 700, y + 30, "TRIP");
     // wiring
     int sp = TN(x, y + 20), p1 = TN(x + 100, y + 20); TW(sp, p1);
@@ -7787,7 +7788,7 @@ static int place_pc_differential(Circuit *circuit, float x, float y) {
     int plus = TN(x + 860, y + 60), c1 = TN(x + 800, y + 20), c2 = TN(x + 800, y + 60);
     TW(hold, c1); TW(c1, c2); TW(c2, plus);
     comparator_with_ref(circuit, x + 900, y + 40, 1.0, plus);                   // -(860,20) +(860,60) out(940,40)
-    add_label(circuit, x + 20, y - 60, "87 line differential: internal fault (100-160 ms) trips, through fault (240-300 ms) does not");
+    add_label(circuit, x + 20, y - 110, "87 line differential: internal fault (100-160 ms) trips, through fault (240-300 ms) does not");
     add_label(circuit, x + 1000, y + 30, "TRIP");
     // primary path
     connect_terminals(circuit, v, 0, rs, 0);
@@ -8019,7 +8020,7 @@ static int place_3ph_y(Circuit *circuit, float x, float y, const double *loads, 
     rn->node_ids[0] = bus_prev;
     connect_terminals(circuit, rn, 1, gn, 0);
     add_label(circuit, x + 20, y - 40, title);
-    add_label(circuit, x + 320, y + 330, "neutral (1 ohm to ground)");
+    add_label(circuit, x + 370, y + 330, "neutral (1 ohm to ground)");
     return 11;
 }
 static int place_3ph_y_balanced(Circuit *circuit, float x, float y) {
@@ -8038,7 +8039,7 @@ static int place_3ph_345_line(Circuit *circuit, float x, float y) {
         float ry = y + k * 140;
         Component *v = ph_source(circuit, x, ry, 281700.0, deg[k]); if (!v) return 0;
         Component *tl = add_tline(circuit, x + 130, ry + 20, 0, 100.0, 0.06, 0.55, 8.0, 1);   // (90,20)-(170,20)
-        Component *ld = add_comp(circuit, COMP_RESISTOR, x + 240, ry + 20, 0);   // (200,20)-(280,20)
+        Component *ld = add_comp(circuit, COMP_RESISTOR, x + 280, ry + 20, 0);   // (240,20)-(320,20)
         ld->props.resistor.resistance = 198.4;
         int sp = TN(x, ry + 20), a = TN(x + 90, ry + 20), b = TN(x + 170, ry + 20), c = TN(x + 200, ry + 20), d = TN(x + 280, ry + 20), bus = TN(x + 320, ry + 20);
         TW(sp, a); TW(b, c); TW(d, bus);
@@ -8082,7 +8083,7 @@ static int place_3ph_rectifier(Circuit *circuit, float x, float y) {
     TW(plus_prev, p1); TW(p1, p2); TW(minus_prev, m1); TW(m1, m2);
     ld->node_ids[0] = p2; ld->node_ids[1] = m2;
     add_label(circuit, x + 40, y - 40, "Six-pulse rectifier: 170 Vpk per phase -> plus bus follows the highest phase, minus bus the lowest");
-    add_label(circuit, x + 470, y + 120, "load 100 ohm (V+ - V-)");
+    add_label(circuit, x + 510, y + 120, "load 100 ohm (V+ - V-)");
     return 13;
 }
 #undef TN
@@ -8493,7 +8494,7 @@ static int place_rlc_damping(Circuit *circuit, float x, float y) {
         Component *l = add_comp(circuit, COMP_INDUCTOR, x + 160, ry + 20, 0); l->props.inductor.inductance = 10e-3;
         Component *c = add_comp(circuit, COMP_CAPACITOR, x + 220, ry + 60, 90); c->props.capacitor.capacitance = 100e-9;
         series_series_shunt(circuit, x, ry, v, r, l, c);
-        add_label(circuit, x + 260, ry + 50, names[k]);
+        add_label(circuit, x + 330, ry + 50, names[k]);
     }
     add_label(circuit, x + 20, y - 40, "Damping ladder: same L = 10 mH, C = 100 nF; only R changes the shape of the step response");
     return 18;
@@ -8600,7 +8601,7 @@ static int place_single_tuned_amp(Circuit *circuit, float x, float y) {
     gnd_below(circuit, ce, 1, x + 280, y + 120);
     Component *l = add_comp(circuit, COMP_INDUCTOR, x + 300, y - 60, 90); l->props.inductor.inductance = 1e-3;   // (300,-100)-(300,-20)
     Component *ct = vcap(circuit, x + 360, y - 60, 2.53e-9);                               // (360,-100)-(360,-20)
-    Component *rq = vres(circuit, x + 420, y - 60, 10e3);                                  // (420,-100)-(420,-20)
+    Component *rq = vres(circuit, x + 440, y - 60, 10e3);                                  // (440,-100)-(440,-20)
     Component *co = hcap(circuit, x + 480, y - 20, 10e-9);                                 // (440,-20)-(520,-20)
     Component *rl = vres(circuit, x + 560, y + 20, 100e3);                                 // (560,-20)-(560,60)
     gnd_below(circuit, rl, 1, x + 560, y + 80);
@@ -9183,7 +9184,7 @@ static int place_tx_ladder(Circuit *circuit, float x, float y) {
         int bus = line_seg(circuit, x + 160, ry, in, mi[k], rr[k], xx[k], bb[k], 1);
         int b2 = TN(x + 300, ry); TW(bus, b2);
         rl_load(circuit, x + 300, ry, b2, tap[k], 0);
-        add_label(circuit, x + 120, ry - 30, lbl[k]);
+        add_label(circuit, x + 120, ry - 60, lbl[k]);   /* the line label now sits above its symbol */
         int sec = xfmr_row(circuit, x + 520, ry, ratio[k], b2);              // P1(x+470,ry) S1(x+570,ry)
         if (k < 3) {                                                        // carry the secondary down to the next row
             int d1 = TN(x + 620, ry), d2 = TN(x + 620, ry + 220), d3 = TN(x, ry + 220), d4 = TN(x, ry + 260);
@@ -9581,7 +9582,7 @@ static int place_gs_facrate(Circuit *circuit, float x, float y) {
         int l = TN(x + 100 + k * 160, y + 20), rr = TN(x + 180 + k * 160, y + 20);
         if (n != l) TW(n, l);
         r->node_ids[0] = l; r->node_ids[1] = rr;
-        add_label(circuit, x + 100 + k * 160, y - 20, nm[k]);
+        add_label(circuit, x + 100 + k * 160, y - 20 - (k % 2) * 26, nm[k]);
         n = rr;
     }
     int bus = TN(x + 800, y + 20); TW(n, bus);
@@ -9832,12 +9833,12 @@ static int place_mos_idvgs(Circuit *circuit, float x, float y) {
         TW(gj, gn); TW(gn, gu); TW(gu, gt);
         int rn = TN(dx + 40, y - 260); TW(rail, rn);
         curve_device(circuit, dx, y, gt, rn, vth[k], kn[k], rd[k], 1.0);
-        add_label(circuit, dx - 80, y + 240, nm[k]);
+        add_label(circuit, x - 80, y + 240 + k * 30, nm[k]);
         gj = gn;
         rail = rn;
     }
     add_label(circuit, x - 40, y - 320, "MOSFET TRANSFER CURVES: one 0-4 V gate ramp into three devices; each source sense resistor makes the probe read I_D");
-    add_label(circuit, x - 40, y + 300, "Press the scope's Y-T button for X-Y and CH1 (the gate) becomes the x axis: these are I_D vs V_GS curves.");
+    add_label(circuit, x - 40, y + 345, "Press the scope's Y-T button for X-Y and CH1 (the gate) becomes the x axis: these are I_D vs V_GS curves.");
     add_label(circuit, x - 40, y + 330, "Each channel is 1 ohm x I_D, so 1 V = 1 A. Watch each device leave cutoff at its own Vth and rise with its own kn.");
     add_label(circuit, x - 40, y + 360, "TRY: select a device and edit Vth, W/L or Kn in the properties panel - the curve moves as you type.");
     return 20;
@@ -9944,7 +9945,7 @@ static int place_mos_tuned(Circuit *circuit, float x, float y) {
     static const double val[3] = { 1e-3, 2.53e-9, 10e3 };
     int rprev = rgb;
     for (int k = 0; k < 3; k++) {                                                   // L, C, Rq in parallel
-        float px = x + 40 + k * 60;
+        float px = x + 40 + k * 80;   /* 60 was narrower than the tank capacitor's own label */
         Component *c = add_comp(circuit, k == 0 ? COMP_INDUCTOR : (k == 1 ? COMP_CAPACITOR : COMP_RESISTOR), px, y - 100, 90);
         if (k == 0) c->props.inductor.inductance = val[0];
         else if (k == 1) c->props.capacitor.capacitance = val[1];
@@ -11190,7 +11191,7 @@ static int place_parts_mosfet(Circuit *circuit, float x, float y) {
             TW(sj, dj); TW(dj, dd); TW(dd, drain);
             r2->node_ids[0] = r2t; r2->node_ids[1] = r2b;
             sw->node_ids[0] = swt; sw->node_ids[1] = swb;
-            add_label(circuit, x + 520, py + 160, "CLOSE: a second 100 ohm load, so twice the current");
+            add_label(circuit, x + 570, py + 160, "CLOSE: a second 100 ohm load, so twice the current");
         }
         add_label(circuit, x + 520, py + 60, nm[k]);
     }
@@ -11428,7 +11429,7 @@ static void probe_channel(Circuit *circuit, float x, float y, double ccomp, int 
     Component *g = add_comp(circuit, COMP_GROUND, x + 200, y + 200, 0);
     g->node_ids[0] = TN(x + 200, y + 180);
     TW(rb, TN(x + 200, y + 180));
-    add_label(circuit, x + 340, y + 100, tag);
+    add_label(circuit, x + 380, y + 100, tag);
 }
 
 static int place_iv_probe_comp(Circuit *circuit, float x, float y) {
@@ -11641,7 +11642,7 @@ static int place_iv_ac_coupling(Circuit *circuit, float x, float y) {
 
     add_label(circuit, x - 40, y - 60, "AC COUPLING: 200 mVpp of ripple sitting on a 12 V rail - one node, two channels");
     add_label(circuit, x + 300, y + 260, "DC-coupled: 12.00 V. At 5 V/div the ripple is a twentieth of a division");
-    add_label(circuit, x + 580, y + 260, "AC-coupled: 0 V mean. Now 50 mV/div fits, and 200 mVpp is four divisions");
+    add_label(circuit, x + 300, y + 290, "AC-coupled: 0 V mean. Now 50 mV/div fits, and 200 mVpp is four divisions");
     add_label(circuit, x - 40, y + 340, "TRY IT: on the DC-coupled trace, work out what V/div you would need to see 200 mV on 12 V. You cannot - the rail");
     add_label(circuit, x - 40, y + 370, "would be 60 divisions off screen before the ripple is one. AC coupling is a 0.1 uF cap into the 1 M input, a");
     add_label(circuit, x - 40, y + 400, "high-pass at 1.6 Hz: it throws the DC away and keeps everything above it, so the gain can be turned all the way up.");
@@ -11664,8 +11665,8 @@ static int place_iv_shunt_sense(Circuit *circuit, float x, float y) {
     TW(l1b, s1t); sh1->node_ids[0] = s1t; sh1->node_ids[1] = s1b;
     Component *g1 = add_comp(circuit, COMP_GROUND, x + 160, y + 440, 0);
     g1->node_ids[0] = TN(x + 160, y + 420); TW(s1b, TN(x + 160, y + 420));
-    add_label(circuit, x + 240, y + 300, "LOW SIDE: 100 mV across the shunt, referred to ground - a single-ended input reads it directly.");
-    add_label(circuit, x + 240, y + 330, "The price: the load's 'ground' now sits 100 mV up, and every other signal it shares is offset by that.");
+    add_label(circuit, x + 240, y + 400, "LOW SIDE: 100 mV across the shunt, referred to ground - a single-ended input reads it directly.");
+    add_label(circuit, x + 240, y + 430, "The price: the load's 'ground' now sits 100 mV up, and every other signal it shares is offset by that.");
 
     /* high side: same shunt at the top of the rail, read by a difference amp */
     float hx = x + 900;
@@ -11791,9 +11792,9 @@ static int place_iv_kelvin(Circuit *circuit, float x, float y) {
     add_label(circuit, x + 620, y + 360, "4-wire: the difference amp reads 10 mV -> 10 mohm. The sense leads carry no");
     add_label(circuit, x + 620, y + 390, "current, so their own 50 mohm drops nothing - and the reading is the part");
     add_label(circuit, x - 40, y + 620, "The force leads carry the current and the sense leads carry none, so IR drop in the sense path is zero and what");
-    add_label(circuit, x - 40, y + 590, "the meter sees is the part. This is why a milliohm meter, an LCR bridge and a good shunt all have four terminals,");
-    add_label(circuit, x - 40, y + 620, "and why a current-sense resistor is laid out with its sense pads inside its force pads.");
-    add_label(circuit, x - 40, y + 650, "ALSO SEE: High-side vs Low-side Current Sense, and Line Drop Basics for the same IR drop at another scale.");
+    add_label(circuit, x - 40, y + 650, "the meter sees is the part. This is why a milliohm meter, an LCR bridge and a good shunt all have four terminals,");
+    add_label(circuit, x - 40, y + 680, "and why a current-sense resistor is laid out with its sense pads inside its force pads.");
+    add_label(circuit, x - 40, y + 710, "ALSO SEE: High-side vs Low-side Current Sense, and Line Drop Basics for the same IR drop at another scale.");
     return 22;
 }
 
@@ -12489,7 +12490,7 @@ static int place_iv_switch_choice(Circuit *circuit, float x, float y) {
     (void)d1; (void)d2;
 
     add_label(circuit, x - 40, y - 100, "BJT OR MOSFET AS A SWITCH: the same 12 V, 100 ohm load, the same 5 V of logic to drive it");
-    add_label(circuit, x + 320, y + 180, "2N3904 saturated: V_CE(sat) about 0.2 V, so the load gets 11.8 V.");
+    add_label(circuit, x + 320, y + 360, "2N3904 saturated: V_CE(sat) about 0.2 V, so the load gets 11.8 V.");
     add_label(circuit, x + 320, y + 390, "It costs 9 mA of base current the whole time it is on, forever.");
     add_label(circuit, mx + 320, y + 180, "2N7000 at V_GS = 5 V: about 3.4 ohm, so 0.41 V. The data sheet's 1.2 ohm");
     add_label(circuit, mx + 320, y + 210, "is at V_GS = 10 V - and the gate takes current only while it changes.");

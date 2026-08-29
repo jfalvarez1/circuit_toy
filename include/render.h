@@ -37,6 +37,12 @@ typedef struct {
     // Real-time animation (independent of simulation speed)
     double animation_time;      // Real-time accumulator for smooth animation
     double last_frame_time;     // Last frame timestamp for delta calculation
+
+    /* Antialiased glyph atlas for schematic text: the 8x8 bitmap font resampled to a coverage
+       map, built once on the first draw. The UI panels keep their own hard-edged font in ui.c;
+       this one is only for what is drawn on the canvas. */
+    SDL_Texture *font_atlas;
+    bool font_atlas_tried;      // do not retry every frame if creating it failed
 } RenderContext;
 
 // Initialize/cleanup

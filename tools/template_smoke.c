@@ -35,6 +35,7 @@
 #include "spice.h"
 #include "simulation.h"
 #include "file_io.h"
+#include "label.h"   /* render_component_value_label: the audit measures the text that is drawn */
 
 /* Defined by the UI layer in the real app; the engine only reads it. */
 WirelessState g_wireless = {0};
@@ -1062,22 +1063,84 @@ static int seg_hits_box(float ax, float ay, float bx, float by, float x0, float 
    glyph 8 px wide per font size step, so the box a label occupies is predictable - and a label
    printed across a component is unreadable in exactly the way a wire through one is. Nothing
    checked this before, so labels drifting onto a part only showed up by looking at screenshots. */
-static int geom_text_on_symbol(Circuit *c, char *why, size_t whyn) {
-    int hits = 0;
-    for (int i = 0; i < c->num_components; i++) {
+/* Every piece of text on the canvas, as a box: the annotations a template places and the value
+   label each component draws beside itself ("10k", "CLOSED", "2N7000  1.2 ohm"). The value
+   labels come from the renderer's own function, so what is measured is what is drawn. */
+typedef struct { float x0, y0, x1, y1; char s[40]; int is_value; const Component *owner; } TextBox;
+
+static int geom_text_boxes(Circuit *c, TextBox *out, int max, int with_values) {
+    int n = 0;
+    for (int i = 0; i < c->num_components && n < max; i++) {
         Component *t = c->components[i];
-        if (t->type != COMP_TEXT) continue;
-        const char *str = t->props.text.text;
-        int n = (int)strlen(str);
-        if (n <= 0) continue;
-        int fs = t->props.text.font_size;
-        if (fs < 1) fs = 1; if (fs > 3) fs = 3;
-        float tx0 = t->x, tx1 = t->x + 8.0f * fs * n;
-        float ty0 = t->y, ty1 = t->y + 8.0f * fs;
+        if (t->type != COMP_TEXT && !with_values) continue;
+        if (t->type == COMP_TEXT) {
+            const char *str = t->props.text.text;
+            int len = (int)strlen(str);
+            if (len <= 0) continue;
+            int fs = t->props.text.font_size;
+            if (fs < 1) fs = 1; if (fs > 3) fs = 3;
+            float cell = (float)CANVAS_TEXT_PX * fs;   /* matches render_draw_text_styled */
+            out[n].x0 = t->x; out[n].x1 = t->x + cell * len;
+            out[n].y0 = t->y; out[n].y1 = t->y + cell;
+            snprintf(out[n].s, sizeof out[n].s, "%.20s", str);
+            out[n].is_value = 0; out[n].owner = t;
+            n++;
+        } else {
+            char buf[96]; float lx, ly;
+            if (!render_component_value_label(t, buf, sizeof buf, &lx, &ly)) continue;
+            int len = (int)strlen(buf);
+            if (len <= 0) continue;
+            out[n].x0 = lx; out[n].x1 = lx + (float)CANVAS_TEXT_PX * len;
+            out[n].y0 = ly; out[n].y1 = ly + (float)CANVAS_TEXT_PX;
+            snprintf(out[n].s, sizeof out[n].s, "%.20s", buf);
+            out[n].is_value = 1; out[n].owner = t;
+            n++;
+        }
+    }
+    return n;
+}
+
+/* Text landing on other text. Two labels on top of each other are unreadable in a way that is
+   easy to miss when writing the template - the value labels in particular are placed by the
+   renderer, not by the template, so nobody chose where they went. */
+static int geom_text_on_text(Circuit *c, char *why, size_t whyn) {
+    enum { MAX_TB = 512 };
+    static TextBox tb[MAX_TB];
+    int n = geom_text_boxes(c, tb, MAX_TB, 1), hits = 0;   /* annotations and value labels */
+    for (int i = 0; i < n; i++) {
+        for (int j = i + 1; j < n; j++) {
+            /* 2 px of slack: text that merely abuts is fine, text that shares pixels is not */
+            if (tb[i].x0 < tb[j].x1 - 2 && tb[j].x0 < tb[i].x1 - 2 &&
+                tb[i].y0 < tb[j].y1 - 2 && tb[j].y0 < tb[i].y1 - 2) {
+                hits++;
+                if (strlen(why) < whyn - 110) {
+                    snprintf(why + strlen(why), whyn - strlen(why),
+                             " textpair:'%s'@(%g,%g)x'%s'@(%g,%g)",
+                             tb[i].s, tb[i].x0, tb[i].y0, tb[j].s, tb[j].x0, tb[j].y0);
+                }
+            }
+        }
+    }
+    return hits;
+}
+
+static int geom_text_on_symbol(Circuit *c, char *why, size_t whyn) {
+    enum { MAX_TB = 512 };
+    static TextBox tb[MAX_TB];
+    /* annotations only: a value label is placed by the renderer hard against its own part, and
+       in a dense schematic it will sit near a neighbour's body without being unreadable */
+    int nb = geom_text_boxes(c, tb, MAX_TB, 0);
+    int hits = 0;
+    for (int i = 0; i < nb; i++) {
+        float tx0 = tb[i].x0, tx1 = tb[i].x1, ty0 = tb[i].y0, ty1 = tb[i].y1;
+        const Component *t = tb[i].owner;
+        const char *str = tb[i].s;
 
         for (int j = 0; j < c->num_components; j++) {
             Component *b = c->components[j];
             if (b->type == COMP_TEXT || b->type == COMP_LABEL) continue;
+            /* a part's own value label sits against its body on purpose */
+            if (b == t) continue;
             const ComponentTypeInfo *ib = component_get_info(b->type);
             if (!ib) continue;
             int rot = ((b->rotation % 360) + 360) % 360;
@@ -1219,6 +1282,7 @@ static int geom_test(void) {
         }
         int overlap = geom_overlap(c, detail, sizeof detail);
         int texton = geom_text_on_symbol(c, tdetail, sizeof tdetail);
+        int textpair = geom_text_on_text(c, tdetail, sizeof tdetail);
         /* Two of these are hard rules and the rest are cosmetic. No two symbols may overlap and
            no wire may run at an angle - those are design rules, and a template that breaks one
            is wrong. A drawn crossing, a wire passing over an unrelated node, or two terminals
@@ -1226,10 +1290,10 @@ static int geom_test(void) {
            some topologies (TEST_PLAN 3.19.1b tracks them). Only the hard rules set the exit
            status, so this can gate CI without failing on the tracked cosmetic list. */
         int hard = diag + overlap;
-        int ok = (diag + cross + through + touch + overlap + texton) == 0;
-        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d overlap=%d texton=%d%s%s\n",
+        int ok = (diag + cross + through + touch + overlap + texton + textpair) == 0;
+        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d overlap=%d texton=%d textpair=%d%s%s\n",
                ok ? " OK " : (hard ? "FAIL" : "WARN"), ti ? ti->name : "?",
-               diag, cross, through, touch, overlap, texton, tdetail, detail);
+               diag, cross, through, touch, overlap, texton, textpair, tdetail, detail);
         if (!ok) bad_templates++;
         if (hard) hard_failures++;
         circuit_free(c);
