@@ -2905,36 +2905,40 @@ void render_source_3ph(RenderContext *ctx, Component *comp) {
 // Transmission line: a box with two little towers; the pi legs are drawn for the pi model
 void render_tline(RenderContext *ctx, Component *comp) {
     float x = comp->x, y = comp->y; int rot = comp->rotation;
-    render_draw_line_rotated(ctx, x, y, -40, 0, -26, 0, rot);
-    render_draw_line_rotated(ctx, x, y, 26, 0, 40, 0, rot);
+    /* The body was 52 x 18 with towers 15 px tall - smaller than the resistor next to it, and
+       the two masts and their catenary were too small to read as anything. Same terminals, so
+       nothing rewires: the body grows into the leads and, mostly, downwards. */
+    render_draw_line_rotated(ctx, x, y, -40, 0, -32, 0, rot);
+    render_draw_line_rotated(ctx, x, y, 32, 0, 40, 0, rot);
     // body
-    render_draw_line_rotated(ctx, x, y, -26, -9, 26, -9, rot);
-    render_draw_line_rotated(ctx, x, y, -26, 9, 26, 9, rot);
-    render_draw_line_rotated(ctx, x, y, -26, -9, -26, 9, rot);
-    render_draw_line_rotated(ctx, x, y, 26, -9, 26, 9, rot);
+    render_draw_line_rotated(ctx, x, y, -32, -22, 32, -22, rot);
+    render_draw_line_rotated(ctx, x, y, -32, 22, 32, 22, rot);
+    render_draw_line_rotated(ctx, x, y, -32, -22, -32, 22, rot);
+    render_draw_line_rotated(ctx, x, y, 32, -22, 32, 22, rot);
     // two towers (lattice masts) inside the body
     for (int t = -1; t <= 1; t += 2) {
-        float cx = 12.0f * t;
-        render_draw_line_rotated(ctx, x, y, cx - 4, 8, cx, -7, rot);
-        render_draw_line_rotated(ctx, x, y, cx + 4, 8, cx, -7, rot);
-        render_draw_line_rotated(ctx, x, y, cx - 6, -3, cx + 6, -3, rot);
-        render_draw_line_rotated(ctx, x, y, cx - 4, 2, cx + 4, 2, rot);
+        float cx = 15.0f * t;
+        render_draw_line_rotated(ctx, x, y, cx - 9, 19, cx, -17, rot);
+        render_draw_line_rotated(ctx, x, y, cx + 9, 19, cx, -17, rot);
+        render_draw_line_rotated(ctx, x, y, cx - 13, -8, cx + 13, -8, rot);   // upper cross-arm
+        render_draw_line_rotated(ctx, x, y, cx - 9, 2, cx + 9, 2, rot);       // lower cross-arm
+        render_draw_line_rotated(ctx, x, y, cx - 6, 10, cx + 6, 10, rot);     // lattice brace
     }
     // catenary between the towers
-    render_draw_line_rotated(ctx, x, y, -12, -3, -4, -1, rot);
-    render_draw_line_rotated(ctx, x, y, -4, -1, 4, -1, rot);
-    render_draw_line_rotated(ctx, x, y, 4, -1, 12, -3, rot);
+    render_draw_line_rotated(ctx, x, y, -15, -8, -6, -2, rot);
+    render_draw_line_rotated(ctx, x, y, -6, -2, 6, -2, rot);
+    render_draw_line_rotated(ctx, x, y, 6, -2, 15, -8, rot);
     if (comp->props.tline.model >= 2) {
         // pi legs: short capacitor ticks below each end
         for (int t = -1; t <= 1; t += 2) {
-            float cx = 22.0f * t;
-            render_draw_line_rotated(ctx, x, y, cx, 9, cx, 13, rot);
-            render_draw_line_rotated(ctx, x, y, cx - 4, 13, cx + 4, 13, rot);
-            render_draw_line_rotated(ctx, x, y, cx - 4, 16, cx + 4, 16, rot);
+            float cx = 26.0f * t;
+            render_draw_line_rotated(ctx, x, y, cx, 22, cx, 28, rot);
+            render_draw_line_rotated(ctx, x, y, cx - 6, 28, cx + 6, 28, rot);
+            render_draw_line_rotated(ctx, x, y, cx - 6, 33, cx + 6, 33, rot);
         }
     } else if (comp->props.tline.model == 1) {
-        render_draw_line_rotated(ctx, x, y, 18, 4, 22, 4, rot);   // small "L" hint
-        render_draw_line_rotated(ctx, x, y, 18, 0, 18, 4, rot);
+        render_draw_line_rotated(ctx, x, y, 22, 12, 28, 12, rot);   // small "L" hint
+        render_draw_line_rotated(ctx, x, y, 22, 6, 22, 12, rot);
     }
 }
 

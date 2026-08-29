@@ -642,7 +642,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
     [COMP_TLINE] = {
         "Transmission Line", "TL", 2,
         {{ -40, 0, "1" }, { 40, 0, "2" }},
-        80, 30,
+        80, 50,   /* the drawn body is 64 x 44: two masts and a catenary need the room */
         { .tline = {
             .length_mi = 100.0,
             .r_per_mi = 0.06,           // 345 kV twin Drake

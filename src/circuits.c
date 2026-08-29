@@ -8758,7 +8758,7 @@ static int place_power_plant(Circuit *circuit, float x, float y) {
         br->node_ids[0] = s1; br->node_ids[1] = bl; tl->node_ids[0] = bl; tl->node_ids[1] = tr; ld->node_ids[0] = lt;
     }
     add_label(circuit, x + 20, y - 170, "Power plant: 18 kV generator (X'' = 0.15 pu) -> GSU bank 18/345 kV -> 345 kV breakers -> 100 mi lines -> 600 MW");
-    add_label(circuit, x + 280, y - 140, "open a breaker: that phase's load drops, the others keep going (unbalanced)");
+    add_label(circuit, x + 280, y - 190, "open a breaker: that phase's load drops, the others keep going (unbalanced)");
     return 22;
 }
 
@@ -8795,7 +8795,7 @@ static int place_substation(Circuit *circuit, float x, float y) {
         sw->node_ids[0] = ct; sw->node_ids[1] = swb; cb->node_ids[0] = swb;
     }
     add_label(circuit, x + 20, y - 210, "Transmission substation: 345 kV grid -> 50 mi lines -> breakers -> 345/138 kV autotransformers -> 138 kV bus");
-    add_label(circuit, x + 20, y - 180, "-> 30 mi feeders into 90 MW pf 0.9 loads. Close the cap-bank switches: the far bus recovers ~5 %");
+    add_label(circuit, x + 20, y - 230, "-> 30 mi feeders into 90 MW pf 0.9 loads. Close the cap-bank switches: the far bus recovers ~5 %");
     return 34;
 }
 #undef TN
@@ -9537,8 +9537,8 @@ static int place_gs_bold(Circuit *circuit, float x, float y) {
     int bb = TN(x + 320, y + 260); TW(b, bb);
     rl_load(circuit, x + 320, y + 260, bb, 198.4, 0);
     add_label(circuit, x - 40, y - 60, "AEP BOLD (Breakthrough Overhead Line Design): the same 150 mi 345 kV corridor at 600 MW, twice");
-    add_label(circuit, x + 120, y - 20, "conventional: 0.06 + j0.55 ohm/mi, 8 uS/mi  ->  Zc = sqrt(L/C) = 262 ohm, SIL = 345^2/Zc = 454 MW");
-    add_label(circuit, x + 120, y + 220, "BOLD: compact triangular phasing raises C and lowers L  ->  Zc = 162 ohm, SIL = 735 MW (+62 %), losses -40 %");
+    add_label(circuit, x + 120, y - 70, "conventional: 0.06 + j0.55 ohm/mi, 8 uS/mi  ->  Zc = sqrt(L/C) = 262 ohm, SIL = 345^2/Zc = 454 MW");
+    add_label(circuit, x + 120, y + 170, "BOLD: compact triangular phasing raises C and lowers L  ->  Zc = 162 ohm, SIL = 735 MW (+62 %), losses -40 %");
     add_label(circuit, x + 60, y + 420, "Because BOLD carries the transfer naturally it needs no series capacitors - and so has no sub-synchronous resonance risk.");
     return 14;
 }
