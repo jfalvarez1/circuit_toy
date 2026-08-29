@@ -11,6 +11,7 @@
 #include "input.h"
 #include "circuits.h"
 #include "analysis.h"
+#include "version.h"   /* the version shown under the title */
 
 static void ui_volt_readout(char *out, size_t n, double v);   // defined with the scope layout helpers
 static void scope_button_list(UIState *ui, Button *out[SCOPE_BTN_N]);
@@ -843,9 +844,12 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     SDL_Rect toolbar = {0, 0, ui->window_width, TOOLBAR_HEIGHT};
     SDL_RenderFillRect(renderer, &toolbar);
 
-    // Title - hot pink
+    // Title - hot pink, with the version dim underneath it. The window title carries it too,
+    // which is what the taskbar shows; this is for when the window is already in front of you.
     SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
     ui_draw_text(renderer, "Circuit Playground", 10, 20);
+    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
+    ui_draw_text(renderer, "v" APP_VERSION, 10, 32);
 
     // Buttons
     draw_button(renderer, &ui->btn_run);

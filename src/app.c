@@ -56,9 +56,9 @@ static MCBackup g_mc_backup;
 bool app_init(App *app) {
     memset(app, 0, sizeof(App));
 
-    // Create window
+    // Create window. The title carries the version, which is what the taskbar shows.
     app->window = SDL_CreateWindow(
-        "Circuit Playground",
+        "Circuit Playground v" APP_VERSION,
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         WINDOW_WIDTH,
