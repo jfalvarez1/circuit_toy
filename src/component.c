@@ -2568,6 +2568,33 @@ static void delay_line_release(Component *comp) {
     comp->props.delay_line.cap = comp->props.delay_line.head = comp->props.delay_line.count = 0;
 }
 
+void component_adopt_props(Component *comp, const ComponentProps *p) {
+    if (!comp || !p) return;
+    /* Props are a plain union, so copying one wholesale over a live component also copies any
+       pointer inside it. A delay line owns two heap buffers that way. Loading a file used to
+       do exactly this: the component's own buffers leaked and it inherited the addresses the
+       *saving* process had, which are then freed a second time when both circuits go away -
+       a double free that took the whole run down two templates later. Copy the values, keep
+       the buffers this component already owns. */
+    double *hist = NULL, *hist_t = NULL;
+    int cap = 0, head = 0, count = 0;
+    if (comp->type == COMP_DELAY_LINE) {
+        hist = comp->props.delay_line.hist;
+        hist_t = comp->props.delay_line.hist_t;
+        cap = comp->props.delay_line.cap;
+        head = comp->props.delay_line.head;
+        count = comp->props.delay_line.count;
+    }
+    comp->props = *p;
+    if (comp->type == COMP_DELAY_LINE) {
+        comp->props.delay_line.hist = hist;
+        comp->props.delay_line.hist_t = hist_t;
+        comp->props.delay_line.cap = cap;
+        comp->props.delay_line.head = head;
+        comp->props.delay_line.count = count;
+    }
+}
+
 void component_free(Component *comp) {
     subcircuit_release_instance(comp);
     delay_line_release(comp);

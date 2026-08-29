@@ -48,6 +48,11 @@ bool file_save_circuit(Circuit *circuit, const char *filename) {
         fwrite(&comp->rotation, sizeof(int), 1, f);
         fwrite(comp->label, MAX_LABEL_LEN, 1, f);
         fwrite(&comp->props, sizeof(ComponentProps), 1, f);
+        /* which node each terminal is on (format 2). Without this the connections that are not
+           re-derivable from where the terminals sit are simply lost. */
+        fwrite(&comp->num_terminals, sizeof(int), 1, f);
+        fwrite(comp->node_ids, sizeof(int), MAX_TERMINALS, f);
+        fwrite(comp->part, sizeof comp->part, 1, f);   /* the named device, if one was applied */
     }
 
     // Write node count
@@ -140,12 +145,31 @@ bool file_load_circuit(Circuit *circuit, const char *filename) {
         fread(label, MAX_LABEL_LEN, 1, f);
         fread(&props, sizeof(ComponentProps), 1, f);
 
+        int saved_terminals = 0;
+        int saved_nodes[MAX_TERMINALS];
+        for (int k = 0; k < MAX_TERMINALS; k++) saved_nodes[k] = -1;
+        char part[16] = "";
+        if (version >= 2) {
+            fread(&saved_terminals, sizeof(int), 1, f);
+            fread(saved_nodes, sizeof(int), MAX_TERMINALS, f);
+            fread(part, sizeof part, 1, f);
+            part[sizeof part - 1] = 0;
+        }
+
         Component *comp = component_create(type, x, y);
         if (comp) {
             comp->rotation = rotation;
             strncpy(comp->label, label, MAX_LABEL_LEN);
-            comp->props = props;
+            component_adopt_props(comp, &props);
+            if (version >= 2) memcpy(comp->part, part, sizeof comp->part);
             circuit_add_component(circuit, comp);
+            /* After, not before: circuit_add_component assigns every terminal to whatever node
+               sits at its position, which is exactly the guess this is here to replace. The
+               node table read below is the one these ids refer to. */
+            if (version >= 2) {
+                int n = saved_terminals < comp->num_terminals ? saved_terminals : comp->num_terminals;
+                for (int k = 0; k < n; k++) comp->node_ids[k] = saved_nodes[k];
+            }
         }
     }
 

@@ -931,6 +931,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                      double time, Vector *prev_solution, double dt);
 
 // Get display value string
+/* Copy a saved props union onto a live component without stealing the heap buffers it owns
+   (the delay line's history). Use this instead of comp->props = p anywhere props come from a
+   file, the clipboard or another component. */
+void component_adopt_props(Component *comp, const ComponentProps *p);
 void component_get_value_string(Component *comp, char *buf, size_t buf_size);
 
 // Update LED parameters based on color (for both LED and LED_ARRAY)

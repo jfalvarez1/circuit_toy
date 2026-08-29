@@ -63,6 +63,7 @@ jobs:
           echo "--- crystal impedance vs frequency"   && $T --xtal-test
           echo "--- what the scope actually shows"    && $T --view-test
           echo "--- every pin wired to something"     && $T --conn-test
+          echo "--- save and load every template"   && $T --file-test
           echo "--- transmission line reflections"    && $T --line-test
           echo "--- standards limits"                 && $T --std-test
           echo "--- power ratings"                    && $T --burn-test
@@ -87,10 +88,16 @@ jobs:
           CIRCUIT_TOY_NO_UPDATE: '1'
         run: |
           set +e
-          rm -f start.bmp
-          ./build/circuit-playground.exe --template "RC Low Pass" --size 800x600 \
-              --frame 20 --shot start.bmp --exit --no-update-check
+          rm -rf pkgtest start.bmp
+          # exactly what the release zip carries, and nothing else - no SDL2 DLL, no build
+          # leftovers. A release that needs a file the zip does not ship fails here.
+          mkdir -p pkgtest
+          cp build/circuit-playground.exe README.md guide.html pkgtest/
+          cd pkgtest
+          ./circuit-playground.exe --template "RC Low Pass" --size 800x600 \
+              --frame 20 --shot ../start.bmp --exit --no-update-check
           rc=$?
+          cd ..
           log="$APPDATA/circuit_toy/circuit-playground/crash.log"
           if [ -f start.bmp ]; then
             echo "started, drew frames and wrote a screenshot (exit $rc)"

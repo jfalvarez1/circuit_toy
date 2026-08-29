@@ -304,6 +304,105 @@ static int is_marker(ComponentType t) {
            t == COMP_GROUND || t == COMP_ANTENNA_TX || t == COMP_ANTENNA_RX;
 }
 
+/* ------------------------------------------------------------------------------------
+ * --file-test: save every template and load it back.
+ *
+ * A circuit that does not survive being written to disk and read again is the worst thing
+ * this program can do to somebody, and nothing checked it. Every template is placed, saved,
+ * loaded into a fresh circuit, and then compared twice over: the parts, where they are and
+ * what they are worth, and - the check that actually matters - what the simulation does with
+ * them. Two circuits that look the same on paper but settle at different voltages have lost
+ * something in the write.
+ * ---------------------------------------------------------------------------------- */
+static double circuit_signature(Circuit *c, int *ok_out) {
+    /* one number that depends on every node the solver settles: the sum of |V| after a DC
+       solve, which changes if any value, connection or polarity came back different */
+    Simulation *sim = simulation_create(c);
+    int ok = simulation_dc_analysis(sim);
+    double sum = 0;
+    if (ok) {
+        for (int i = 0; i < c->num_nodes; i++) {
+            double v = node_v(c, c->nodes[i].id);
+            if (v == v) sum += fabs(v);          /* NaN contributes nothing rather than poisoning */
+        }
+    }
+    if (ok_out) *ok_out = ok;
+    simulation_free(sim);
+    return sum;
+}
+
+static int file_test(const char *filter) {
+    int fails = 0, total = 0;
+    char path[600];
+    const char *tmp = getenv("TEMP");
+    if (!tmp) tmp = ".";
+    snprintf(path, sizeof path, "%s\\ct_roundtrip.json", tmp);
+
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        const char *name = ti ? ti->name : "?";
+        if (filter && !strstr(name, filter)) continue;
+        Circuit *a = circuit_create();
+        if (circuit_place_template(a, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(a); continue; }
+        total++;
+        char why[220] = "";
+
+        if (!file_save_circuit(a, path)) {
+            snprintf(why, sizeof why, "save failed");
+        } else {
+            Circuit *b = circuit_create();
+            if (!file_load_circuit(b, path)) {
+                snprintf(why, sizeof why, "load failed");
+            } else {
+                if (b->num_components != a->num_components)
+                    snprintf(why, sizeof why, "%d components saved, %d came back",
+                             a->num_components, b->num_components);
+                else if (b->num_wires != a->num_wires)
+                    snprintf(why, sizeof why, "%d wires saved, %d came back", a->num_wires, b->num_wires);
+                else {
+                    for (int i = 0; i < a->num_components && !why[0]; i++) {
+                        Component *ca = a->components[i], *cb = b->components[i];
+                        if (ca->type != cb->type)
+                            snprintf(why, sizeof why, "part %d is type %d, came back %d", i, ca->type, cb->type);
+                        else if (fabsf(ca->x - cb->x) > 0.5f || fabsf(ca->y - cb->y) > 0.5f)
+                            snprintf(why, sizeof why, "%s moved (%g,%g) -> (%g,%g)", ca->label,
+                                     ca->x, ca->y, cb->x, cb->y);
+                        else if (ca->rotation != cb->rotation)
+                            snprintf(why, sizeof why, "%s rotation %d -> %d", ca->label, ca->rotation, cb->rotation);
+                        else {
+                            /* the value the schematic prints: covers resistance, capacitance,
+                               source volts, switch state, part number, everything with a label */
+                            char va[96] = "", vb[96] = "";
+                            render_component_value_label(ca, va, sizeof va, NULL, NULL);
+                            render_component_value_label(cb, vb, sizeof vb, NULL, NULL);
+                            if (strcmp(va, vb))
+                                snprintf(why, sizeof why, "%s reads '%s', came back '%s'", ca->label, va, vb);
+                        }
+                    }
+                    if (!why[0]) {
+                        int oka = 0, okb = 0;
+                        double sa = circuit_signature(a, &oka), sb = circuit_signature(b, &okb);
+                        if (oka != okb)
+                            snprintf(why, sizeof why, "DC solves %s before and %s after",
+                                     oka ? "yes" : "no", okb ? "yes" : "no");
+                        else if (oka && fabs(sa - sb) > 1e-6 * (1.0 + fabs(sa)))
+                            snprintf(why, sizeof why, "settles differently: sum|V| %.6g -> %.6g", sa, sb);
+                    }
+                }
+            }
+            circuit_free(b);
+        }
+        printf("[%s] file  %-28s parts=%-3d wires=%-3d %s\n", why[0] ? "FAIL" : " OK ",
+               name, a->num_components, a->num_wires, why);
+        fflush(stdout);   /* so a template that takes the process down names itself */
+        if (why[0]) fails++;
+        circuit_free(a);
+    }
+    remove(path);
+    printf("\nfile-test: %d templates saved and loaded back, %d failed\n", total, fails);
+    return fails;
+}
+
 static int conn_test(void) {
     int fails = 0, total = 0, dangling = 0, isolated = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -3271,6 +3370,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--scope-test")) return scope_dt_test();
         else if (!strcmp(argv[i], "--flow-test")) return flow_test();
         else if (!strcmp(argv[i], "--conn-test")) return conn_test();
+        else if (!strcmp(argv[i], "--file-test")) return file_test(i + 1 < argc ? argv[i + 1] : NULL);
         else if (!strcmp(argv[i], "--line-test")) return line_test();
         else if (!strcmp(argv[i], "--view-test")) return scope_test();   /* --scope-test is the dt rule; this is what the screen shows */
         else if (!strcmp(argv[i], "--burn-test")) return burn_test();
