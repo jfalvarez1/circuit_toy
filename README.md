@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.22.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.22.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.22.1](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.22.1)** (auto-updating from v3.4.0 on)
 
 A native desktop circuit simulator written in C with SDL2. Build, simulate and analyse circuits
 with a drag-and-drop schematic and a bench oscilloscope.

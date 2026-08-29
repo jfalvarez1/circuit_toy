@@ -677,6 +677,28 @@ UI_ACTION_UPDATE inside the property-edit range, where it is Offset.
 | 3.27.17 | `[ ]` Circuits tab | Group rows are pressable bars; a name too long for the panel is cut with two dots rather than running over the canvas |
 | 3.27.18 | `[ ]` **Automated:** `--layout-test` at 1024x600 | The scope's four button rows clear the status bar |
 
+### 3.28 What a trace is drawn from, and what a source's edge is (2026-08-29: v3.22.1)
+
+Crosstalk, Ground Bounce and Termination drew each division from five samples: at 5 ns a
+division the scope asks for a 250 ps step and the floor was a nanosecond. The trigger point
+could only land in one of five places across a division, which reads as a trace that will not
+settle. Chasing it found that the pulse and square sources carried a rise and fall time, the
+templates set them, and both stamps stepped instantly - so any circuit that answers to an edge
+rate was answering to the solver's step.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.28.1 | `[ ]` Load Crosstalk and look at the edges | A resolved edge and the victim's coupled spike, 25 samples a division. Five before |
+| 3.28.2 | `[ ]` Same for Ground Bounce and Termination | The same |
+| 3.28.3 | `[ ]` **Automated:** `circuit-playground --trig-test` | 154 repeating waveforms judged, 0 free-running, 33 one-shots skipped. Under the old floor it names exactly those three |
+| 3.28.4 | `[ ]` **Automated:** `template_smoke --probe-test` | 208/208. Three oracles are recalibrated against the edges their templates ask for: the discrete buck's 1 us gate ramp, the crosstalk aggressor's 1 ns |
+| 3.28.5 | `[ ]` Halve the time step on Ground Bounce and read the bounce | It stays put. Before, every halving doubled it and it never settled |
+| 3.28.6 | `[ ]` Load Relaxation Osc | It oscillates. Its 20 us kick has a hundred-second period, so the step was 50 us and the kick fell between two samples - it only ever started because sample zero landed on its edge |
+| 3.28.7 | `[ ]` **Automated:** `--flow-test` | 186/187, Pierce exempt: it used to pass because it was not running, and now that it does, the flow display mis-splits microamps on the crystal's net (the arrows, not the solve) |
+| 3.28.8 | `[ ]` Run the same `--shot` command twice | The scope area is identical. Scripted runs step a fixed frame and a fixed number of steps, not the wall clock |
+| 3.28.9 | `[ ]` **Automated:** `python tools/trace_stability.py build/circuit-playground.exe` | A triggered trace stands still between frames on all three templates |
+| 3.28.10 | `[ ]` Phase Shift Osc: read the output shape | Lightly clipped, and the audit says so: gain 33 against the 29 it needs with nothing holding the amplitude down. A diode limiter across Rf is the fix, not yet made |
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.
