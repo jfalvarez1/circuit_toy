@@ -358,6 +358,10 @@ const CircuitTemplateInfo *circuit_template_get_info(CircuitTemplateType type) {
 }
 
 // Helper to create and add a component
+/* Defined further down with the other layout helpers; the amplifier builders above the
+   definition need it, so it is declared here. */
+static void cap_output_load(Circuit *circuit, Component *cap, double r_load);
+
 static Component *add_comp(Circuit *circuit, ComponentType type, float x, float y, int rotation) {
     Component *comp = component_create(type, x, y);
     if (!comp) return NULL;
@@ -1189,7 +1193,8 @@ static int place_common_emitter(Circuit *circuit, float x, float y) {
     wire_ortho(circuit, emit_node, circuit_find_or_create_node(circuit, re_top_x, re_top_y, 5.0f));
     re->node_ids[0] = emit_node;
 
-    return 14;
+    cap_output_load(circuit, cout, 100e3);   /* the far side of the output cap is the output */
+    return 16;
 }
 
 // Common Source Amplifier (NMOS):
@@ -1343,7 +1348,8 @@ static int place_common_source(Circuit *circuit, float x, float y) {
     circuit_add_wire(circuit, source_node, circuit_find_or_create_node(circuit, rs_top_x, rs_top_y, 5.0f));
     rs->node_ids[0] = source_node;
 
-    return 14;
+    cap_output_load(circuit, cout, 100e3);
+    return 16;
 }
 
 // Common Drain (Source Follower):
@@ -1475,7 +1481,8 @@ static int place_common_drain(Circuit *circuit, float x, float y) {
                      circuit_find_or_create_node(circuit, cout_in_x, cout_in_y, 5.0f));
     cout->node_ids[0] = source_node;
 
-    return 13;
+    cap_output_load(circuit, cout, 100e3);
+    return 15;
 }
 
 // Two-Stage BJT Amplifier (CE-CE cascade):
@@ -1705,7 +1712,8 @@ static int place_multistage_amp(Circuit *circuit, float x, float y) {
     wire_ortho(circuit, emit2_node, circuit_find_or_create_node(circuit, re2_top_x, re2_top_y, 5.0f));
     re2->node_ids[0] = emit2_node;
 
-    return 23;
+    cap_output_load(circuit, c3, 100e3);   /* stage 2's output cap had nothing on its far side */
+    return 25;
 }
 
 // BJT Differential Pair:
@@ -7440,8 +7448,11 @@ static int place_dc_line_drop(Circuit *circuit, float x, float y) {
     connect_terminals(circuit, rl, 1, g1, 0);
     int sp = TN(x, y + 20), wl = TN(x + 60, y + 20), wr = TN(x + 140, y + 20), lt = TN(x + 200, y + 20);
     TW(sp, wl); TW(wr, lt);
-    int gl = TN(x + 60, y + 120), gr = TN(x + 140, y + 120), gnd0 = TN(x, y + 120), gnd1 = TN(x + 200, y + 120);
-    TW(gnd0, gl); TW(gr, gnd1);
+    /* the ground symbols' terminals are 20 px above their origin: at y + 100, not y + 120.
+       gnd1 used to be the latter, which is outside the 5 px merge, so the return conductor's
+       far end sat on a node of its own with nothing else on it. */
+    int gl = TN(x + 60, y + 120), gr = TN(x + 140, y + 120), gnd0 = TN(x, y + 120), gnd1 = TN(x + 200, y + 100);
+    TW(gnd0, gl); TW(gr, TN(x + 140, y + 100)); TW(TN(x + 140, y + 100), gnd1);   /* up to the ground terminal, orthogonally */
     v->node_ids[0] = sp; rw->node_ids[0] = wl; rw->node_ids[1] = wr; rl->node_ids[0] = lt; rw2->node_ids[0] = gl; rw2->node_ids[1] = gr;
     return 7;
 }
@@ -8408,6 +8419,32 @@ static int place_opamp_sat(Circuit *circuit, float x, float y) {
 // ---------------------------------------------------------------------------------------
 #define TN(cx, cy) circuit_find_or_create_node(circuit, (cx), (cy), 5.0f)
 #define TW(a_, b_) circuit_add_wire(circuit, (a_), (b_))
+/* An output coupling capacitor with nothing on the far side is not an output: the pin has no
+   node at all, so the schematic shows a lead going nowhere and the node cannot be probed. This
+   gives it the load a real stage would drive - high enough not to move the gain, real enough to
+   be a circuit. Placed from the capacitor's own terminal position, so it follows the layout. */
+static void cap_output_load(Circuit *circuit, Component *cap, double r_load) {
+    if (!cap) return;
+    float ox, oy;
+    component_get_terminal_pos(cap, 1, &ox, &oy);
+    int out = circuit_find_or_create_node(circuit, ox, oy, 5.0f);
+    cap->node_ids[1] = out;
+    Component *rl = add_comp(circuit, COMP_RESISTOR, ox + 80, oy + 60, 90);   /* (ox+80,oy+20)-(ox+80,oy+100) */
+    if (!rl) return;
+    rl->props.resistor.resistance = r_load;
+    int corner = circuit_find_or_create_node(circuit, ox + 80, oy, 5.0f);
+    int rt = circuit_find_or_create_node(circuit, ox + 80, oy + 20, 5.0f);
+    int rb = circuit_find_or_create_node(circuit, ox + 80, oy + 100, 5.0f);
+    circuit_add_wire(circuit, out, corner);
+    circuit_add_wire(circuit, corner, rt);
+    rl->node_ids[0] = rt; rl->node_ids[1] = rb;
+    Component *g = add_comp(circuit, COMP_GROUND, ox + 80, oy + 160, 0);
+    if (!g) return;
+    int gt = circuit_find_or_create_node(circuit, ox + 80, oy + 140, 5.0f);
+    circuit_add_wire(circuit, rb, gt);
+    g->node_ids[0] = gt;
+}
+
 static Component *dc_rail(Circuit *circuit, float x, float y, double v) {   // DC source at (x,y+40): +(x,y) -(x,y+80) -> gnd
     Component *vcc = add_comp(circuit, COMP_DC_VOLTAGE, x, y + 40, 0);
     vcc->props.dc_voltage.voltage = v;
@@ -11985,15 +12022,17 @@ static int place_iv_pullup_sizing(Circuit *circuit, float x, float y) {
 
 static int place_iv_ground_bounce(Circuit *circuit, float x, float y) {
     /* one driver switching hard, one quiet line, one shared return inductance */
-    Component *rail = dc_rail(circuit, x, y, 3.3); if (!rail) return 0;
-    int vdd = TN(x, y);
+    /* The driver is a pulse source, so there is no separate rail to draw - one used to be
+       placed here and its + terminal connected to nothing at all. */
     Component *drv = add_comp(circuit, COMP_PULSE_SOURCE, x + 160, y + 60, 0);   // +(160,20) -(160,100)
+    if (!drv) return 0;
     drv->props.pulse_source.v_low = 0; drv->props.pulse_source.v_high = 3.3;
     drv->props.pulse_source.pulse_width = 20e-9; drv->props.pulse_source.period = 50e-9;
     drv->props.pulse_source.rise_time = drv->props.pulse_source.fall_time = 1e-9;
     int dp = TN(x + 160, y + 20), dn = TN(x + 160, y + 100);
     drv->node_ids[0] = dp; drv->node_ids[1] = dn;
     Component *rout = hres(circuit, x + 280, y + 20, 10.0);       // (240,20)-(320,20)
+    rout->props.resistor.power_rating = 1.0;
     int rl = TN(x + 240, y + 20), rr = TN(x + 320, y + 20);
     TW(dp, rl); rout->node_ids[0] = rl; rout->node_ids[1] = rr;
     int load = TN(x + 400, y + 20); TW(rr, load);
@@ -12039,7 +12078,7 @@ static int place_iv_ground_bounce(Circuit *circuit, float x, float y) {
     add_label(circuit, x - 40, y + 580, "the current to be shared. More ground pins, shorter returns, a plane instead of a trace, slower edges.");
     add_label(circuit, x - 40, y + 610, "ALSO SEE: Power Delivery Network for the same story on the supply side, and Ground Lead Ringing for the");
     add_label(circuit, x - 40, y + 640, "measurement version of it - where the inductance you are fighting is in your own probe.");
-    return 15;
+    return 13;
 }
 
 static int place_iv_crosstalk(Circuit *circuit, float x, float y) {

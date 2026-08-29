@@ -135,7 +135,7 @@ def template_names():
     p = subprocess.run([SMOKE], capture_output=True, text=True, timeout=1800)
     names = []
     for line in p.stdout.splitlines():
-        m = re.match(r"\[(?: OK |FAIL)\] (.+?)\s{2,}comps=", line)
+        m = re.match(r"\[(?: OK |FAIL)\] (.+?)\s+comps=", line)
         if m:
             names.append(m.group(1).strip())
     return names

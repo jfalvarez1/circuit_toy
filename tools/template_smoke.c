@@ -261,6 +261,126 @@ static int scope_test(void) {
     return fails ? 1 : 0;
 }
 
+
+/* ---------------------------------------------------------------------------------------
+ * --conn-test: is every pin actually wired to something?
+ *
+ * A schematic can look right and be wrong: a builder assigns node ids terminal by terminal,
+ * and a pin that is simply never assigned - or assigned a node nobody else is on - leaves the
+ * part sitting there with a symbol and no circuit behind it. The simulation does not complain,
+ * because an unconnected pin is a legal (if useless) node.
+ *
+ * Connectivity here is electrical, not graphical: two pins are connected when the node map
+ * puts them on the same matrix row, which is what wires, shared node ids and the 10 px
+ * position merge all reduce to. Ground is row 0, and a pin tied to it counts as connected.
+ *
+ * What is a fault and what is not:
+ *   FAIL  a component with no connected pin at all - it is not in the circuit
+ *   FAIL  an IC (subcircuit, 555, gate, flip-flop, op-amp, converter, counter, display) with
+ *         any dangling pin: a chip with a floating input is a bug, not a style
+ *   note  a dangling pin on a two-terminal part or a marker (test point, antenna, label)
+ * ------------------------------------------------------------------------------------- */
+static int is_ic_like(ComponentType t) {
+    switch (t) {
+        case COMP_SUBCIRCUIT: case COMP_555_TIMER: case COMP_7805: case COMP_LM317: case COMP_TL431:
+        case COMP_OPAMP: case COMP_OPAMP_REAL: case COMP_OPAMP_FLIPPED: case COMP_OTA:
+        case COMP_NOT_GATE: case COMP_AND_GATE: case COMP_OR_GATE: case COMP_NAND_GATE:
+        case COMP_NOR_GATE: case COMP_XOR_GATE: case COMP_XNOR_GATE: case COMP_BUFFER:
+        case COMP_SCHMITT_INV: case COMP_SCHMITT_BUF: case COMP_TRISTATE_BUF:
+        case COMP_D_FLIPFLOP: case COMP_JK_FLIPFLOP: case COMP_T_FLIPFLOP: case COMP_SR_LATCH:
+        case COMP_COUNTER: case COMP_SHIFT_REG: case COMP_MUX_2TO1: case COMP_DEMUX_1TO2:
+        case COMP_DECODER: case COMP_BCD_DECODER: case COMP_HALF_ADDER: case COMP_FULL_ADDER:
+        case COMP_ADC: case COMP_DAC: case COMP_PLL: case COMP_VCO: case COMP_MONOSTABLE:
+        case COMP_7SEG_DISPLAY: case COMP_OPTOCOUPLER: case COMP_ANALOG_SWITCH:
+            return 1;
+        default: return 0;
+    }
+}
+
+/* markers and one-ended parts: a loose pin on these is how they are drawn, not a fault */
+static int is_marker(ComponentType t) {
+    return t == COMP_TEXT || t == COMP_LABEL || t == COMP_PIN || t == COMP_TEST_POINT ||
+           t == COMP_GROUND || t == COMP_ANTENNA_TX || t == COMP_ANTENNA_RX;
+}
+
+static int conn_test(void) {
+    int fails = 0, total = 0, dangling = 0, isolated = 0;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        const char *name = ti ? ti->name : "?";
+        Circuit *c = circuit_create();
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        total++;
+        Simulation *sim = simulation_create(c);
+        int ok = simulation_dc_analysis(sim);          /* builds the node map */
+        char why[240] = ""; size_t wl = 0;
+        int t_dangling = 0, t_isolated = 0, bad_here = 0;
+        char loose_list[200] = ""; size_t nl = 0;
+
+        if (!ok) {
+            snprintf(why, sizeof why, "DC failed, cannot map nodes");
+            bad_here = 1;
+        } else {
+            for (int i = 0; i < c->num_components; i++) {
+                Component *comp = c->components[i];
+                if (is_marker(comp->type)) continue;
+                int live = 0, loose = 0; char loose_pins[64] = ""; size_t ll = 0;
+                for (int k = 0; k < comp->num_terminals; k++) {
+                    int id = comp->node_ids[k];
+                    int m = (id >= 0 && id < MAX_NODES) ? c->node_map[id] : -1;
+                    if (id <= 0 || m < 0) {
+                        loose++;
+                        if (ll < sizeof loose_pins - 4) ll += (size_t)snprintf(loose_pins + ll, sizeof loose_pins - ll, "%s%d", ll ? "," : "", k);
+                        continue;
+                    }
+                    if (m == 0) { live++; continue; }         /* tied to ground */
+                    /* Any OTHER terminal on the same net counts, including another pin of
+                       this same part: a voltage follower ties its output to its own inverting
+                       input, and that is a connection, not a loose end. */
+                    int others = 0;
+                    for (int j = 0; j < c->num_components && !others; j++) {
+                        Component *o = c->components[j];
+                        for (int q = 0; q < o->num_terminals; q++) {
+                            if (j == i && q == k) continue;
+                            int oid = o->node_ids[q];
+                            if (oid <= 0 || oid >= MAX_NODES) continue;
+                            if (c->node_map[oid] == m) { others = 1; break; }
+                        }
+                    }
+                    if (others) live++;
+                    else {
+                        loose++;
+                        if (ll < sizeof loose_pins - 4) ll += (size_t)snprintf(loose_pins + ll, sizeof loose_pins - ll, "%s%d", ll ? "," : "", k);
+                    }
+                }
+                if (loose == 0) continue;
+                t_dangling += loose;
+                if (nl < sizeof loose_list - 24)
+                    nl += (size_t)snprintf(loose_list + nl, sizeof loose_list - nl, "%s%s pin%s",
+                                           nl ? " " : "", comp->label, loose_pins);
+                int fault = (live == 0) || (is_ic_like(comp->type) && loose > 0);
+                if (live == 0) t_isolated++;
+                if (fault) {
+                    bad_here = 1;
+                    if (wl < sizeof why - 40)
+                        wl += (size_t)snprintf(why + wl, sizeof why - wl, "%s%s pin%s%s", wl ? "; " : "",
+                                               comp->label, loose_pins, live == 0 ? " (isolated)" : "");
+                }
+            }
+        }
+        dangling += t_dangling; isolated += t_isolated;
+        if (bad_here) fails++;
+        printf("[%s] conn  %-28s parts=%-3d loose=%-2d %s\n",
+               bad_here ? "FAIL" : (t_dangling ? "NOTE" : " OK "),
+               name, c->num_components, t_dangling, why[0] ? why : loose_list);
+        if (sim) simulation_free(sim);
+        circuit_free(c);
+    }
+    printf("\nconn-test: %d templates, %d with a floating IC pin or an isolated part, %d loose pins, %d parts in nothing\n",
+           total, fails, dangling, isolated);
+    return fails ? 1 : 0;
+}
+
 static int flow_test(void) {
     int fails = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -2866,6 +2986,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--svg") && i + 1 < argc) svg_dir = argv[++i];
         else if (!strcmp(argv[i], "--scope-test")) return scope_dt_test();
         else if (!strcmp(argv[i], "--flow-test")) return flow_test();
+        else if (!strcmp(argv[i], "--conn-test")) return conn_test();
         else if (!strcmp(argv[i], "--view-test")) return scope_test();   /* --scope-test is the dt rule; this is what the screen shows */
         else if (!strcmp(argv[i], "--burn-test")) return burn_test();
         else if (!strcmp(argv[i], "--std-test")) return std_test();

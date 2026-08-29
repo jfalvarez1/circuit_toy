@@ -56,6 +56,7 @@ jobs:
           echo "--- SPICE .SUBCKT import"             && $T --spice-test
           echo "--- crystal impedance vs frequency"   && $T --xtal-test
           echo "--- what the scope actually shows"    && $T --view-test
+          echo "--- every pin wired to something"     && $T --conn-test
           echo "--- standards limits"                 && $T --std-test
           echo "--- power ratings"                    && $T --burn-test
           echo "--- every adjustable knob"            && $T --knob-test
