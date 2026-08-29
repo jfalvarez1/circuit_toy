@@ -203,6 +203,8 @@ void ui_init(UIState *ui) {
     ui->btn_zoom_in  = (Button){{btn_x, 10, 24, btn_h}, "+", "Zoom in (+)", false, false, true, false};
     btn_x += 24 + 4;
     ui->btn_zoom_fit = (Button){{btn_x, 10, 32, btn_h}, "Fit", "Zoom to fit the whole circuit", false, false, true, false};
+    btn_x += 32 + 10;
+    ui->btn_import_spice = (Button){{btn_x, 10, 46, btn_h}, "SPICE", "Import a vendor .SUBCKT model", false, false, true, false};
 
     // Speed slider
     ui->speed_slider = (Rect){btn_x + btn_w + 30, 15, 100, 20};
@@ -852,6 +854,7 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     draw_button(renderer, &ui->btn_zoom_out);
     draw_button(renderer, &ui->btn_zoom_in);
     draw_button(renderer, &ui->btn_zoom_fit);
+    draw_button(renderer, &ui->btn_import_spice);
 
     // Speed slider label
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
@@ -6570,6 +6573,7 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_zoom_out.bounds) && ui->btn_zoom_out.enabled) return UI_ACTION_ZOOM_OUT;
         if (point_in_rect(x, y, &ui->btn_zoom_in.bounds)  && ui->btn_zoom_in.enabled)  return UI_ACTION_ZOOM_IN;
         if (point_in_rect(x, y, &ui->btn_zoom_fit.bounds) && ui->btn_zoom_fit.enabled) return UI_ACTION_ZOOM_FIT;
+        if (point_in_rect(x, y, &ui->btn_import_spice.bounds) && ui->btn_import_spice.enabled) return UI_ACTION_IMPORT_SPICE;
         if (point_in_rect(x, y, &ui->btn_screenshot.bounds) && ui->btn_screenshot.enabled) {
             return UI_ACTION_SCREENSHOT;
         }
@@ -7184,6 +7188,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         ui->btn_zoom_out.hovered = point_in_rect(x, y, &ui->btn_zoom_out.bounds);
         ui->btn_zoom_in.hovered  = point_in_rect(x, y, &ui->btn_zoom_in.bounds);
         ui->btn_zoom_fit.hovered = point_in_rect(x, y, &ui->btn_zoom_fit.bounds);
+        ui->btn_import_spice.hovered = point_in_rect(x, y, &ui->btn_import_spice.bounds);
         ui->btn_timestep_up.hovered = point_in_rect(x, y, &ui->btn_timestep_up.bounds);
         ui->btn_timestep_down.hovered = point_in_rect(x, y, &ui->btn_timestep_down.bounds);
         ui->btn_timestep_auto.hovered = point_in_rect(x, y, &ui->btn_timestep_auto.bounds);
@@ -7219,7 +7224,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         const char *tip = NULL;
         char tipbuf[160];
         Button *tb[] = { &ui->btn_run, &ui->btn_pause, &ui->btn_step, &ui->btn_reset, &ui->btn_clear, &ui->btn_save, &ui->btn_load,
-                         &ui->btn_export_svg, &ui->btn_screenshot, &ui->btn_zoom_out, &ui->btn_zoom_in, &ui->btn_zoom_fit, &ui->btn_timestep_up, &ui->btn_timestep_down, &ui->btn_timestep_auto, &ui->btn_update };
+                         &ui->btn_export_svg, &ui->btn_screenshot, &ui->btn_zoom_out, &ui->btn_zoom_in, &ui->btn_zoom_fit, &ui->btn_import_spice, &ui->btn_timestep_up, &ui->btn_timestep_down, &ui->btn_timestep_auto, &ui->btn_update };
         for (unsigned i = 0; i < sizeof tb / sizeof tb[0] && !tip; i++)
             if (!popup_mode && tb[i]->bounds.w > 0 && point_in_rect(x, y, &tb[i]->bounds)) tip = tb[i]->tooltip;
         Button *sb[SCOPE_BTN_N]; scope_button_list(ui, sb);

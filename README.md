@@ -669,7 +669,7 @@ the guide as `circuit-playground-windows-vX.Y.Z.zip`. A release with a red build
 
 ### File Operations
 
-- **Save/Load circuits** - Binary format (.ckt)
+- **Save/Load circuits** - Binary format (.ckt) and JSON; **Load** opens the system file dialog
 - **Auto-save** - Periodic backup during work
 - **Circuit templates** - Pre-built example circuits
 
@@ -1159,8 +1159,10 @@ circuit_toy/
 - **SPICE import covers the passive subset.** `.SUBCKT` bodies made of R, L, C and `X`
   instances import and simulate; `.MODEL` cards, semiconductor instances, `.PARAM`
   expressions and parameterised subcircuits do not, and each unsupported line is counted and
-  named in the import summary rather than being silently dropped. Import is on the command
-  line (`--import-spice`); there is no "Import model..." button in the properties panel yet.
+  named in the import summary rather than being silently dropped. There is a **SPICE** button on
+  the toolbar now: it opens the system file dialog, imports every `.SUBCKT` it understands and
+  puts them in the Circuits tab, reporting what it skipped in the status bar. `--import-spice`
+  still works from the command line.
 
 - **Current flow display** - the animation traces paths from sources to ground, sizing and
   timing each dot from the solved terminal currents, and `--flow-test` checks KCL at every

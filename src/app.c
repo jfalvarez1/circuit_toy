@@ -11,7 +11,13 @@
 #else
 #include <sys/stat.h>  // for mkdir
 #endif
+#ifdef _WIN32
+#include <windows.h>   /* GetOpenFileNameA */
+#include <commdlg.h>
+#endif
+
 #include "app.h"
+#include "spice.h"
 #include "version.h"
 #include "settings.h"
 #include "file_io.h"
@@ -279,6 +285,28 @@ void app_handle_events(App *app) {
             case UI_ACTION_LOAD:
                 app_load_circuit(app);
                 break;
+            case UI_ACTION_IMPORT_SPICE: {
+                char picked[512];
+                if (!app_pick_file(picked, sizeof picked, "Import a SPICE model",
+                                   "SPICE netlists (*.cir;*.sp;*.lib;*.mod;*.txt)\0*.cir;*.sp;*.lib;*.mod;*.txt\0All files (*.*)\0*.*\0")) {
+                    ui_set_status(&app->ui, "Import cancelled");
+                    break;
+                }
+                char msg[192] = "";
+                int n = spice_import_file(picked, msg, sizeof msg);
+                if (n > 0) {
+                    ui_update_layout(&app->ui);          /* the new subcircuits go in the palette */
+                    char done[256];
+                    snprintf(done, sizeof done, "Imported %d subcircuit%s%s%s", n, n == 1 ? "" : "s",
+                             msg[0] ? " - " : "", msg);
+                    ui_set_status(&app->ui, done);
+                } else {
+                    char fail[256];
+                    snprintf(fail, sizeof fail, "Nothing imported%s%s", msg[0] ? ": " : "", msg);
+                    ui_set_status(&app->ui, fail);
+                }
+                break;
+            }
             case UI_ACTION_EXPORT_SVG:
                 {
                     // Generate timestamped filename
@@ -2102,6 +2130,32 @@ void app_zoom_to_fit(App *app) {
     ui_set_status(&app->ui, msg);
 }
 
+/* The Open dialog. Everything else in this program draws its own UI, but a file picker that is
+   not the system's is a file picker nobody can use: it has to know the drives, the network
+   places and the last folder you were in. */
+bool app_pick_file(char *out, size_t out_size, const char *title, const char *filter) {
+    if (!out || out_size == 0) return false;
+    out[0] = '\0';
+#ifdef _WIN32
+    char buf[MAX_PATH] = "";
+    OPENFILENAMEA ofn;
+    memset(&ofn, 0, sizeof ofn);
+    ofn.lStructSize = sizeof ofn;
+    ofn.hwndOwner = NULL;
+    ofn.lpstrFilter = filter;
+    ofn.lpstrFile = buf;
+    ofn.nMaxFile = sizeof buf;
+    ofn.lpstrTitle = title;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER;
+    if (!GetOpenFileNameA(&ofn)) return false;      /* cancelled, or no dialog */
+    snprintf(out, out_size, "%s", buf);
+    return out[0] != '\0';
+#else
+    (void)title; (void)filter;
+    return false;
+#endif
+}
+
 bool app_place_template_centered(App *app, CircuitTemplateType type) {
     RenderContext *render = app->render;
     UIState *ui = &app->ui;
@@ -2486,8 +2540,11 @@ void app_save_circuit_as(App *app) {
 }
 
 void app_load_circuit(App *app) {
-    // In a real app, this would show a file dialog
+    char picked[512];
     const char *filename = "circuit.json";
+    if (app_pick_file(picked, sizeof picked, "Open circuit",
+                      "Circuit files (*.json;*.ckt)\0*.json;*.ckt\0All files (*.*)\0*.*\0"))
+        filename = picked;
 
     if (file_import_json(app->circuit, filename)) {
         strncpy(app->current_file, filename, sizeof(app->current_file) - 1);

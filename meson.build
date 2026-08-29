@@ -38,6 +38,7 @@ if host_machine.system() == 'windows' and static_build
   win_deps += cc.find_library('winmm')
   win_deps += cc.find_library('imm32')
   win_deps += cc.find_library('ole32')
+  win_deps += cc.find_library('comdlg32')   # GetOpenFileName: the Load / Import file picker
   win_deps += cc.find_library('oleaut32')
   win_deps += cc.find_library('version')
   win_deps += cc.find_library('uuid')

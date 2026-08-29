@@ -90,6 +90,11 @@ bool app_init(App *app);
 // Place a template at the canvas centre with its scope presets and auto-start (used by --template)
 bool app_place_template_centered(App *app, CircuitTemplateType type);
 void app_zoom_to_fit(App *app);   // frame every placed component in the canvas
+
+/* Ask the user for a file. Returns false if they cancelled, or if the platform has no dialog -
+   on Windows this is the ordinary Open dialog; elsewhere the caller falls back to a fixed name.
+   `filter` is the Win32 double-NUL filter string. */
+bool app_pick_file(char *out, size_t out_size, const char *title, const char *filter);
 // Start the background release check (unless --no-update-check)
 void app_update_check(App *app);
 // Save the current window contents as a BMP (used by --shot / --record)
