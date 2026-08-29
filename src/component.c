@@ -625,6 +625,19 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         }}
     },
 
+    [COMP_DELAY_LINE] = {
+        "Delay Line", "TD", 2,
+        {{ -40, 0, "1" }, { 40, 0, "2" }},
+        80, 30,
+        { .delay_line = {
+            .z0 = 50.0,                 // RG-58 and most of the world
+            .delay = 5e-9,              // about a metre of coax at 0.66 c
+            .loss_db = 0.0,
+            .ideal = true,
+            .hist = NULL, .hist_t = NULL, .cap = 0, .head = 0, .count = 0
+        }}
+    },
+
     [COMP_TLINE] = {
         "Transmission Line", "TL", 2,
         {{ -40, 0, "1" }, { 40, 0, "2" }},
@@ -2288,6 +2301,50 @@ double spark_gap_breakdown(const Component *comp) {
     return 3000.0 * comp->props.spark_gap.gap_mm;   // ~30 kV/cm in air at 1 atm
 }
 
+static void delay_line_alloc(Component *comp);   /* defined with component_free, below */
+
+/* What port `port` launched at time t, interpolated from the ring buffer. Before the line has
+   that much history it has launched nothing, so the far end sees zero - which is exactly right
+   for a line that starts at rest. */
+double delay_line_history(const Component *comp, int port, double t) {
+    if (!comp || comp->type != COMP_DELAY_LINE) return 0.0;
+    int cap = comp->props.delay_line.cap, n = comp->props.delay_line.count;
+    if (cap <= 0 || n <= 0) return 0.0;
+    const double *ht = comp->props.delay_line.hist_t;
+    const double *hv = comp->props.delay_line.hist + (port ? cap : 0);
+    int head = comp->props.delay_line.head;
+    int oldest = (n < cap) ? 0 : head;                 /* ring: oldest sample */
+    if (t <= ht[oldest]) return 0.0;                   /* before the line was running */
+    /* walk back from the newest until we straddle t */
+    for (int k = 1; k <= n; k++) {
+        int i = (head - k + cap) % cap;                /* newest first */
+        if (ht[i] <= t) {
+            int j = (i + 1) % cap;                     /* the sample after it */
+            if (k == 1) return hv[i];                  /* t is at or past the newest */
+            double dt = ht[j] - ht[i];
+            if (dt <= 0) return hv[i];
+            double f = (t - ht[i]) / dt;
+            return hv[i] + f * (hv[j] - hv[i]);
+        }
+    }
+    return 0.0;
+}
+
+/* Record what each port launched this step: v + Z0 i, the wave leaving into the line. */
+void delay_line_record(Component *comp, double t, double v0, double i0, double v1, double i1) {
+    if (!comp || comp->type != COMP_DELAY_LINE) return;
+    int cap = comp->props.delay_line.cap;
+    if (cap <= 0) return;
+    double z0 = comp->props.delay_line.z0;
+    int h = comp->props.delay_line.head;
+    comp->props.delay_line.hist_t[h] = t;
+    comp->props.delay_line.hist[h] = v0 + z0 * i0;
+    comp->props.delay_line.hist[cap + h] = v1 + z0 * i1;
+    comp->props.delay_line.head = (h + 1) % cap;
+    if (comp->props.delay_line.count < cap) comp->props.delay_line.count++;
+}
+
+
 Component *component_create(ComponentType type, float x, float y) {
     if (type <= COMP_NONE || type >= COMP_TYPE_COUNT) {
         return NULL;
@@ -2305,6 +2362,7 @@ Component *component_create(ComponentType type, float x, float y) {
     comp->rotation = 0;
     comp->num_terminals = info->num_terminals;
     comp->props = info->default_props;
+    if (comp->type == COMP_DELAY_LINE) delay_line_alloc(comp);
 
     // Special initialization for text component (char array needs explicit copy)
     if (type == COMP_TEXT) {
@@ -2462,8 +2520,36 @@ void subcircuit_release_instance(Component *comp) {
     comp->props.subcircuit.inst_def_id = 0;
 }
 
+/* The delay line carries a history buffer, because its whole model is "what the far end
+   launched one delay ago". It is the only component with a heap allocation of its own besides
+   a subcircuit instance, so it gets the same treatment: allocated on create, freed on free,
+   and a clone starts with its own empty one rather than sharing. */
+#define DELAY_LINE_CAP 8192
+static void delay_line_alloc(Component *comp);
+static void delay_line_release(Component *comp);
+
+static void delay_line_alloc(Component *comp) {
+    if (!comp || comp->type != COMP_DELAY_LINE) return;
+    comp->props.delay_line.hist = calloc(2 * DELAY_LINE_CAP, sizeof(double));
+    comp->props.delay_line.hist_t = calloc(DELAY_LINE_CAP, sizeof(double));
+    comp->props.delay_line.cap = comp->props.delay_line.hist && comp->props.delay_line.hist_t
+                                 ? DELAY_LINE_CAP : 0;
+    comp->props.delay_line.head = 0;
+    comp->props.delay_line.count = 0;
+}
+
+static void delay_line_release(Component *comp) {
+    if (!comp || comp->type != COMP_DELAY_LINE) return;
+    free(comp->props.delay_line.hist);
+    free(comp->props.delay_line.hist_t);
+    comp->props.delay_line.hist = NULL;
+    comp->props.delay_line.hist_t = NULL;
+    comp->props.delay_line.cap = comp->props.delay_line.head = comp->props.delay_line.count = 0;
+}
+
 void component_free(Component *comp) {
     subcircuit_release_instance(comp);
+    delay_line_release(comp);
     free(comp);
 }
 
@@ -2477,6 +2563,7 @@ Component *component_clone(Component *comp) {
     clone->id = next_component_id++;
     clone->selected = false;
     clone->highlighted = false;
+    if (clone->type == COMP_DELAY_LINE) delay_line_alloc(clone);   /* its own history, not the original's */
     if (clone->type == COMP_SUBCIRCUIT) {
         /* the copy must not share the original's instance array, or both would free it */
         clone->props.subcircuit.inst_data = NULL;
@@ -4047,6 +4134,51 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 if (n[3] > 0) { matrix_add(A, idx, n[3]-1, -1.0); matrix_add(A, n[3]-1, idx, -1.0); }
                 matrix_add(A, idx, idx, -(Rs + Lterm));
                 vector_add(b, idx, V - Lterm * iprev);
+            }
+            break;
+        }
+
+        case COMP_DELAY_LINE: {
+            /* Bergeron's method. Each end of a lossless line looks like Z0 in series with a
+               source carrying whatever the OTHER end launched one delay ago:
+
+                   E1(t) = v2(t - T) + Z0 i2(t - T)
+                   E2(t) = v1(t - T) + Z0 i1(t - T)
+
+               In Norton form that is a conductance 1/Z0 to ground and a current source E/Z0
+               into the node - two stamps, no auxiliary row, and exact for any time step. The
+               delay lives in the history buffer, so a 5 ns cable does not need the solver to
+               take 5 ns steps; it only needs enough steps to resolve the edge you are sending
+               down it.
+
+               Both ports are referred to ground: this is a coax with its shield on the ground
+               plane, which is what a bench cable and a board trace over a plane both are. */
+            double z0 = comp->props.delay_line.z0;
+            double td = comp->props.delay_line.delay;
+            if (z0 <= 0) break;
+            double g = 1.0 / z0;
+
+            /* The wave arriving now was launched one delay ago at the far end. At the operating
+               point (dt = 0) there is no history at all, so the line is just 2 x Z0 to ground -
+               a matched, quiet cable, which is the right DC starting state. */
+            double e1 = 0.0, e2 = 0.0;
+            if (dt > 0 && td > 0) {
+                double now = time + dt;   /* the stamp is called for the step being solved */
+                e1 = delay_line_history(comp, 1, now - td);   /* what port 2 launched */
+                e2 = delay_line_history(comp, 0, now - td);   /* what port 1 launched */
+                if (!comp->props.delay_line.ideal && comp->props.delay_line.loss_db > 0) {
+                    double a = pow(10.0, -comp->props.delay_line.loss_db / 20.0);
+                    e1 *= a; e2 *= a;
+                }
+            }
+
+            if (n[0] > 0) {
+                matrix_add(A, n[0]-1, n[0]-1, g);
+                vector_add(b, n[0]-1, e1 * g);
+            }
+            if (n[1] > 0) {
+                matrix_add(A, n[1]-1, n[1]-1, g);
+                vector_add(b, n[1]-1, e2 * g);
             }
             break;
         }

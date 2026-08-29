@@ -51,6 +51,13 @@ static void render_component_value(RenderContext *ctx, Component *comp) {
             snprintf(buf, sizeof buf, "%.4g mi  %.3g+j%.3g", comp->props.tline.length_mi, R, 2 * M_PI * 60 * L);
             break;
         }
+        case COMP_DELAY_LINE: {
+            double td = comp->props.delay_line.delay;
+            if (td >= 1e-6)      snprintf(buf, sizeof buf, "%.3g ohm  %.4g us", comp->props.delay_line.z0, td * 1e6);
+            else if (td >= 1e-9) snprintf(buf, sizeof buf, "%.3g ohm  %.4g ns", comp->props.delay_line.z0, td * 1e9);
+            else                 snprintf(buf, sizeof buf, "%.3g ohm  %.4g ps", comp->props.delay_line.z0, td * 1e12);
+            break;
+        }
         case COMP_SOURCE_3PH:
             snprintf(buf, sizeof buf, "3ph %.4g kV L-L", comp->props.source_3ph.v_peak / 1.41421356 * 1.7320508 / 1e3);
             break;
@@ -121,6 +128,7 @@ void render_cccs(RenderContext *ctx, float x, float y, int rotation);
 void render_dpdt_switch(RenderContext *ctx, float x, float y, int rotation, int position);
 void render_relay(RenderContext *ctx, float x, float y, int rotation, bool energized);
 void render_analog_switch(RenderContext *ctx, float x, float y, int rotation, bool closed);
+void render_delay_line(RenderContext *ctx, Component *comp);
 void render_lamp(RenderContext *ctx, float x, float y, int rotation);
 void render_speaker(RenderContext *ctx, float x, float y, int rotation);
 void render_microphone(RenderContext *ctx, float x, float y, int rotation);
@@ -1010,6 +1018,9 @@ void render_component(RenderContext *ctx, Component *comp) {
             break;
         case COMP_TLINE:
             render_tline(ctx, comp);
+            break;
+        case COMP_DELAY_LINE:
+            render_delay_line(ctx, comp);
             break;
         case COMP_SOURCE_3PH:
             render_source_3ph(ctx, comp);
@@ -3442,6 +3453,28 @@ void render_relay(RenderContext *ctx, float x, float y, int rotation, bool energ
 }
 
 // Analog Switch
+/* A length of cable: two parallel conductors with the delay written under it by the value
+   label. Deliberately not a rectangle - a delay line is not a lumped part, and the symbol
+   should not suggest one. */
+void render_delay_line(RenderContext *ctx, Component *comp) {
+    float x = comp->x, y = comp->y;
+    int rot = comp->rotation;
+    render_draw_line_rotated(ctx, x, y, -40, 0, -26, 0, rot);
+    render_draw_line_rotated(ctx, x, y, 26, 0, 40, 0, rot);
+    /* the two conductors */
+    render_draw_line_rotated(ctx, x, y, -26, -7, 26, -7, rot);
+    render_draw_line_rotated(ctx, x, y, -26, 7, 26, 7, rot);
+    /* end caps */
+    render_draw_line_rotated(ctx, x, y, -26, -7, -26, 7, rot);
+    render_draw_line_rotated(ctx, x, y, 26, -7, 26, 7, rot);
+    /* the lead enters the middle of each end */
+    render_draw_line_rotated(ctx, x, y, -26, 0, -20, 0, rot);
+    render_draw_line_rotated(ctx, x, y, 20, 0, 26, 0, rot);
+    /* a chevron pointing the way a wave travels */
+    render_draw_line_rotated(ctx, x, y, -6, -4, 2, 0, rot);
+    render_draw_line_rotated(ctx, x, y, -6, 4, 2, 0, rot);
+}
+
 void render_analog_switch(RenderContext *ctx, float x, float y, int rotation, bool closed) {
     // Terminals at (-40, 0) and (40, 0), control at (0, -20)
     render_draw_line_rotated(ctx, x, y, -40, 0, -15, 0, rotation);

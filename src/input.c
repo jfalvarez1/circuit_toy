@@ -1933,6 +1933,13 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
     bool applied = false;
 
     switch (input->editing_prop_type) {
+        case PROP_LINE_Z0:
+            if (comp->type == COMP_DELAY_LINE && value > 0) { comp->props.delay_line.z0 = value; applied = true; }
+            break;
+        case PROP_LINE_DELAY:
+            /* typed in seconds, with the usual suffixes: 5n is 5 ns */
+            if (comp->type == COMP_DELAY_LINE && value > 0) { comp->props.delay_line.delay = value; applied = true; }
+            break;
         case PROP_VALUE:
         case PROP_AMPLITUDE:
             switch (comp->type) {

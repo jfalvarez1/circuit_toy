@@ -728,6 +728,23 @@ typedef union {
         double b_us_per_mi;     // micro-siemens per mile (shunt charging susceptance at 60 Hz)
         int model;
     } tline;
+    /* Signal transmission line: a real one, with a propagation delay rather than a lumped
+       approximation of one. Both ports are referred to circuit ground - a coax with its shield
+       on the ground plane, which is what every template that needs this is drawing.
+       The model is Bergeron's: at each end the line looks like Z0 in series with a source
+       carrying what the far end launched one delay ago,
+           E1(t) = v2(t - T) + Z0 i2(t - T),   E2(t) = v1(t - T) + Z0 i1(t - T)
+       which is exact for a lossless line at any time step - the delay is in the history, not
+       in the number of sections, so 5 ns of cable does not need 5 ns of solver resolution. */
+    struct {
+        double z0;              // characteristic impedance (Ohm)
+        double delay;           // one-way propagation delay (s)
+        double loss_db;         // one-way loss (dB), applied to the launched wave
+        bool ideal;             // lossless: ignore loss_db
+        double *hist;           // ring buffer, 2 * cap: port 0 then port 1 (v + Z0 i)
+        double *hist_t;         // sample times, cap entries
+        int cap, head, count;   // ring state; head is where the next sample goes
+    } delay_line;
     // Three-phase source / generator block (per-phase peak voltage, common neutral)
     struct {
         double v_peak;          // phase-to-neutral peak (V)
@@ -890,6 +907,10 @@ int component_get_terminal_at(Component *comp, float px, float py, float thresho
 // The solver sets this before Newton iteration; prev_solution passed to component_stamp is
 // the current Newton iterate, which must NOT be used as the storage element's memory.
 extern Vector *g_stamp_prev_step;
+
+/* Delay line: what a port launched at time t, and the per-step record of both ports. */
+double delay_line_history(const Component *comp, int port, double t);
+void   delay_line_record(Component *comp, double t, double v0, double i0, double v1, double i1);
 
 void component_stamp(Component *comp, Matrix *A, Vector *b,
                      int *node_map, int num_nodes,

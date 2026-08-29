@@ -1023,7 +1023,11 @@ void app_handle_events(App *app) {
                         // Get current value to show in edit field
                         char current_value[64] = "";
                         Component *c = app->input.selected_component;
-                        if (prop_type == PROP_VALUE || prop_type == PROP_AMPLITUDE) {
+                        if (prop_type == PROP_LINE_Z0) {
+                            snprintf(current_value, sizeof current_value, "%.6g", c->props.delay_line.z0);
+                        } else if (prop_type == PROP_LINE_DELAY) {
+                            snprintf(current_value, sizeof current_value, "%.6g", c->props.delay_line.delay);
+                        } else if (prop_type == PROP_VALUE || prop_type == PROP_AMPLITUDE) {
                             switch (c->type) {
                                 case COMP_DC_VOLTAGE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_voltage.voltage); break;
                                 case COMP_AC_VOLTAGE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.ac_voltage.amplitude); break;

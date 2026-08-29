@@ -336,6 +336,7 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_IV_MILLER] = {"The Miller Effect", "Miller", "10 pF of C_gd becomes 110 pF at the input", TG_IV_FUND},
     [CIRCUIT_IV_SWITCH_CHOICE] = {"BJT or MOSFET as a Switch", "SwSel", "V_CE(sat) against R_DS(on), and what each costs", TG_IV_FUND},
     [CIRCUIT_IV_INRUSH] = {"Hot-Plug Inrush", "Inrush", "An empty capacitor is a short circuit", TG_IV_FUND},
+    [CIRCUIT_TLINE_REAL] = {"Transmission Line (real delay)", "TLdly", "One 5 ns cable, three terminations, actual propagation", TG_HARDWARE},
 
 
 
@@ -6322,6 +6323,7 @@ static int place_iv_cap_energy(Circuit *circuit, float x, float y);
 static int place_iv_miller(Circuit *circuit, float x, float y);
 static int place_iv_switch_choice(Circuit *circuit, float x, float y);
 static int place_iv_inrush(Circuit *circuit, float x, float y);
+static int place_tline_real(Circuit *circuit, float x, float y);
 static int place_3ph_345_line(Circuit *circuit, float x, float y);
 static int place_3ph_rectifier(Circuit *circuit, float x, float y);
 static int place_3ph_unbalanced(Circuit *circuit, float x, float y);
@@ -6656,6 +6658,7 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_IV_MILLER:          return place_iv_miller(circuit, x, y);
         case CIRCUIT_IV_SWITCH_CHOICE:   return place_iv_switch_choice(circuit, x, y);
         case CIRCUIT_IV_INRUSH:          return place_iv_inrush(circuit, x, y);
+        case CIRCUIT_TLINE_REAL:         return place_tline_real(circuit, x, y);
         case CIRCUIT_TESLA_COIL:       return place_tesla_coil(circuit, x, y);
         case CIRCUIT_TESLA_COIL_BIG:   return place_tesla_coil_big(circuit, x, y);
         case CIRCUIT_TESLA_COIL_DETUNED: return place_tesla_coil_detuned(circuit, x, y);
@@ -6853,6 +6856,12 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "also rises with V_CE - the Early effect, I_C = I_S exp(V_BE/V_T)(1 + V_CE/V_AF) - so with V_AF = 80 V",
         "the current is ~9 % higher and the collector sits lower. It is the same effect that sets a stage's",
         "output resistance r_o = V_AF/I_C, so it is not a rounding error. PROBE: both collectors."},
+    [CIRCUIT_TLINE_REAL] = {"TRANSMISSION LINE WITH A REAL DELAY: one 50 ohm, 5 ns cable, ended three ways. The",
+        "Delay Line part is not a ladder of Ls and Cs approximating a cable - it records what each end",
+        "launches and hands it to the other end one delay later, which is Bergeron's method and is exact",
+        "for a lossless line at any time step. So the delay is a property of the cable, not of the solver:",
+        "the far end sits at exactly zero for 5 ns and then steps. Matched, it arrives once and stays;",
+        "shorted it comes back inverted at 10 ns; open it doubles. PROBE: the far end of the matched line."},
     [CIRCUIT_IV_CAP_ENERGY] = {"THE TWO-CAPACITOR PROBLEM: 100 uF charged to 10 V is switched onto an equal empty one.",
         "Charge is conserved, so both settle at 5 V. Energy is not: 1/2 C V^2 was 5 mJ and is now 2 x 1/2 x",
         "100 uF x 25 = 2.5 mJ. Half has gone - and it goes for ANY resistance, including the 1 ohm copy that",
@@ -12394,6 +12403,58 @@ static int place_iv_switch_choice(Circuit *circuit, float x, float y) {
     return 20;
 }
 
+static int place_tline_real(Circuit *circuit, float x, float y) {
+    /* One driver, one 5 ns cable, three ways of ending it - the same experiment as the
+       Termination template, but with a line that actually delays rather than five L-C
+       sections pretending to. The difference is visible: here the far end stays at zero
+       for a full 5 ns and then steps, instead of ramping the moment the driver moves. */
+    static const double rl[3] = { 50.0, 0.0, 1e6 };     /* matched, short, open */
+    static const char *tag[3] = {
+        "MATCHED (50 ohm at the far end): the launched half arrives once, 5 ns later, and stays. Nothing reflects",
+        "SHORTED: the far end cannot move, so it reflects with -1 and drives the source end back to zero at 10 ns",
+        "OPEN: the far end reflects with +1 and doubles to the full 2 V; the source end sees it arrive at 10 ns"
+    };
+    for (int k = 0; k < 3; k++) {
+        float py = y + k * 260;
+        Component *drv = add_comp(circuit, COMP_PULSE_SOURCE, x, py + 60, 0);   // +(x,py+20) -(x,py+100)
+        if (!drv) return 0;
+        drv->props.pulse_source.v_low = 0; drv->props.pulse_source.v_high = 2.0;
+        drv->props.pulse_source.pulse_width = 40e-9; drv->props.pulse_source.period = 80e-9;
+        drv->props.pulse_source.rise_time = drv->props.pulse_source.fall_time = 250e-12;
+        Component *gd = add_comp(circuit, COMP_GROUND, x, py + 160, 0);
+        connect_terminals(circuit, drv, 1, gd, 0);
+        int sp = TN(x, py + 20); drv->node_ids[0] = sp;
+
+        Component *rs = hres(circuit, x + 100, py + 20, 50.0);      // (60,20)-(140,20)
+        int sl = TN(x + 60, py + 20), sr = TN(x + 140, py + 20);
+        TW(sp, sl); rs->node_ids[0] = sl; rs->node_ids[1] = sr;
+
+        Component *ln = add_comp(circuit, COMP_DELAY_LINE, x + 280, py + 20, 0);   // (240,20)-(320,20)
+        ln->props.delay_line.z0 = 50.0;
+        ln->props.delay_line.delay = 5e-9;      /* about a metre of coax */
+        ln->props.delay_line.ideal = true;
+        int near = TN(x + 240, py + 20), far = TN(x + 320, py + 20);
+        TW(sr, near);
+        ln->node_ids[0] = near; ln->node_ids[1] = far;
+
+        int rx = TN(x + 420, py + 20); TW(far, rx);
+        Component *rt = vres(circuit, x + 420, py + 80, rl[k] > 0 ? rl[k] : 0.001);
+        rt->props.resistor.power_rating = 5.0;
+        int rtt = TN(x + 420, py + 40), rtb = TN(x + 420, py + 120);
+        TW(rx, rtt); rt->node_ids[0] = rtt; rt->node_ids[1] = rtb;
+        Component *gt = add_comp(circuit, COMP_GROUND, x + 420, py + 180, 0);
+        gt->node_ids[0] = TN(x + 420, py + 160); TW(rtb, TN(x + 420, py + 160));
+        add_label(circuit, x + 500, py + 60, tag[k]);
+    }
+    add_label(circuit, x - 40, y - 60, "TRANSMISSION LINE WITH A REAL DELAY: one 50 ohm, 5 ns cable, ended three ways");
+    add_label(circuit, x - 40, y + 780, "The Delay Line part is not a ladder of Ls and Cs: it carries what each end launched and hands it to the other");
+    add_label(circuit, x - 40, y + 810, "end one delay later (Bergeron's method), so the delay is a property of the cable rather than of the time step.");
+    add_label(circuit, x - 40, y + 840, "Watch the far end: it sits at exactly zero for 5 ns and then steps. A lumped approximation cannot do that -");
+    add_label(circuit, x - 40, y + 870, "it starts moving the instant the driver does, and it needs the solver to take steps far shorter than the delay.");
+    add_label(circuit, x - 40, y + 900, "ALSO SEE: Signal Reflections and Termination, which use the ladder, and Scope Input: 1 M vs 50 ohm.");
+    return 21;
+}
+
 static int place_iv_inrush(Circuit *circuit, float x, float y) {
     /* the same bulk capacitor hot-plugged onto the same supply, with and without a limiter */
     static const double rlim[2] = { 0.0, 4.7 };
@@ -12641,6 +12702,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_MILLER]        = { COMP_NMOS, 0, 1 },         /* the drain of the stage without C_gd */
     [CIRCUIT_IV_SWITCH_CHOICE] = { COMP_NPN_BJT, 0, 1 },      /* the saturated collector */
     [CIRCUIT_IV_INRUSH]        = { COMP_CAPACITOR, 0, 0 },    /* the bulk cap, straight in */
+    [CIRCUIT_TLINE_REAL]       = { COMP_RESISTOR, 1, 0 },     /* the matched far end */
     [CIRCUIT_TESLA_COIL]       = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_BIG]   = { COMP_TOROID, 0, 0 },
     [CIRCUIT_TESLA_COIL_DETUNED] = { COMP_TOROID, 0, 0 },
@@ -12771,7 +12833,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_TERMINATION] = 5e-9, [CIRCUIT_IV_PULLUP_SIZING] = 5e-6,
     [CIRCUIT_IV_GROUND_BOUNCE] = 5e-9, [CIRCUIT_IV_CROSSTALK] = 5e-9, [CIRCUIT_IV_ESD_CLAMP] = 1e-3,
     [CIRCUIT_IV_CAP_ENERGY] = 5e-3, [CIRCUIT_IV_MILLER] = 200e-9,
-    [CIRCUIT_IV_SWITCH_CHOICE] = 1e-3, [CIRCUIT_IV_INRUSH] = 5e-3,
+    [CIRCUIT_IV_SWITCH_CHOICE] = 1e-3, [CIRCUIT_IV_INRUSH] = 5e-3, [CIRCUIT_TLINE_REAL] = 20e-9,
 };
 
 // Scope volts/div preset (0 = leave as is)
@@ -12826,7 +12888,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_TERMINATION] = 1.0, [CIRCUIT_IV_PULLUP_SIZING] = 1.0,
     [CIRCUIT_IV_GROUND_BOUNCE] = 0.5, [CIRCUIT_IV_CROSSTALK] = 0.5, [CIRCUIT_IV_ESD_CLAMP] = 1.0,
     [CIRCUIT_IV_CAP_ENERGY] = 2.0, [CIRCUIT_IV_MILLER] = 0.5,
-    [CIRCUIT_IV_SWITCH_CHOICE] = 2.0, [CIRCUIT_IV_INRUSH] = 2.0,
+    [CIRCUIT_IV_SWITCH_CHOICE] = 2.0, [CIRCUIT_IV_INRUSH] = 2.0, [CIRCUIT_TLINE_REAL] = 0.5,
 };
 
 // Demonstration contract per template (see DemoKind in circuits.h)
@@ -13013,6 +13075,7 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_MILLER]        = { DEMO_WAVEFORM, 1000000 },
     [CIRCUIT_IV_SWITCH_CHOICE] = { DEMO_DC, 0 },
     [CIRCUIT_IV_INRUSH]        = { DEMO_DC, 0 },
+    [CIRCUIT_TLINE_REAL]       = { DEMO_WAVEFORM, 12500000 },
 };
 
 const TemplateDemo *circuit_template_demo(CircuitTemplateType type) {
@@ -13072,6 +13135,7 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_CAP_ENERGY] = SCOPE_FLAG_STACK,
     [CIRCUIT_IV_MILLER] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_IV_INRUSH] = SCOPE_FLAG_STACK,
+    [CIRCUIT_TLINE_REAL] = SCOPE_FLAG_STACK,
     /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */
     [CIRCUIT_COLPITTS] = SCOPE_FLAG_AC, [CIRCUIT_HARTLEY] = SCOPE_FLAG_AC, [CIRCUIT_CLAPP] = SCOPE_FLAG_AC,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,

@@ -210,6 +210,7 @@ typedef enum {
     CIRCUIT_IV_MILLER,
     CIRCUIT_IV_SWITCH_CHOICE,
     CIRCUIT_IV_INRUSH,
+    CIRCUIT_TLINE_REAL,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 

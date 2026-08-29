@@ -381,6 +381,134 @@ static int conn_test(void) {
     return fails ? 1 : 0;
 }
 
+
+/* ---------------------------------------------------------------------------------------
+ * --line-test: the delay line, against the three answers everyone knows.
+ *
+ * A step of amplitude V launched into a line of impedance Z0 from a source of impedance Rs
+ * puts V * Z0/(Rs+Z0) on the line. What comes back depends only on what is at the far end:
+ *
+ *   matched (RL = Z0)   nothing reflects. The far end sees the launched wave, once, T later.
+ *   open    (RL = inf)  the reflection coefficient is +1: the far end doubles to the full V,
+ *                       and the source end sees that arrive at 2T.
+ *   short   (RL = 0)    the coefficient is -1: the far end stays at 0 and the source end is
+ *                       driven back to 0 at 2T.
+ *
+ * The point of the model is that the delay is real: the far end must stay at zero until T,
+ * not ramp up immediately the way an L-C ladder with too few sections does. So the timing is
+ * checked as well as the amplitude.
+ * ------------------------------------------------------------------------------------- */
+static Component *pt_add(Circuit *c, ComponentType t, float x, float y, int rot);   /* defined with the part-test helpers */
+static int pt_node(Circuit *c, float x, float y);
+
+typedef struct { double t_far_rise, t_near_rise, v_far, v_src_after_2t, v_far_final; int ok; } LineRun;
+
+static LineRun line_run(double rl_ohm, int open_end, double z0, double td, double rs) {
+    LineRun out = {0};
+    Circuit *c = circuit_create();
+    Component *src = pt_add(c, COMP_PULSE_SOURCE, 0, 100, 0);
+    src->props.pulse_source.v_low = 0; src->props.pulse_source.v_high = 2.0;
+    src->props.pulse_source.delay = 0;
+    src->props.pulse_source.rise_time = src->props.pulse_source.fall_time = td / 20.0;
+    src->props.pulse_source.pulse_width = td * 20.0; src->props.pulse_source.period = td * 100.0;
+    Component *g0 = pt_add(c, COMP_GROUND, 0, 200, 0);
+    Component *rsc = pt_add(c, COMP_RESISTOR, 140, 60, 0);
+    rsc->props.resistor.resistance = rs;
+    rsc->props.resistor.power_rating = 10.0;
+    Component *ln = pt_add(c, COMP_DELAY_LINE, 320, 60, 0);
+    ln->props.delay_line.z0 = z0; ln->props.delay_line.delay = td; ln->props.delay_line.ideal = true;
+
+    int sp = pt_node(c, 0, 60), near = pt_node(c, 200, 60), gnd = pt_node(c, 0, 180), far = pt_node(c, 440, 60);
+    src->node_ids[0] = sp; src->node_ids[1] = gnd; g0->node_ids[0] = gnd;
+    rsc->node_ids[0] = sp; rsc->node_ids[1] = near;
+    ln->node_ids[0] = near; ln->node_ids[1] = far;
+
+    Component *rload = NULL;
+    if (!open_end) {
+        rload = pt_add(c, COMP_RESISTOR, 520, 140, 90);
+        rload->props.resistor.resistance = rl_ohm > 0 ? rl_ohm : 1e-3;
+        rload->props.resistor.power_rating = 10.0;
+        Component *gl = pt_add(c, COMP_GROUND, 520, 260, 0);
+        int lb = pt_node(c, 520, 180);
+        rload->node_ids[0] = far;      /* the load IS the far end of the line */
+        rload->node_ids[1] = lb; gl->node_ids[0] = lb;
+    }
+
+    Simulation *sim = simulation_create(c);
+    out.ok = sim && simulation_dc_analysis(sim);
+    if (out.ok) {
+        simulation_set_time_step(sim, td / 40.0);
+        simulation_start(sim);
+        double t_end = td * 6.0;
+        int seen_far = 0, seen_near = 0;
+        while (sim->time < t_end) {
+            if (!simulation_step(sim)) { out.ok = 0; break; }
+            Node *nf = circuit_get_node(c, far), *nn = circuit_get_node(c, near);
+            double vf = nf ? nf->voltage : 0, vn = nn ? nn->voltage : 0;
+            if (!seen_near && vn > 0.1) { out.t_near_rise = sim->time; seen_near = 1; }
+            if (!seen_far && vf > 0.1) { out.t_far_rise = sim->time; seen_far = 1; }
+            if (sim->time > td * 1.4 && sim->time < td * 1.9) out.v_far = vf;
+            if (sim->time > td * 2.4 && sim->time < td * 2.9) out.v_src_after_2t = vn;
+            out.v_far_final = vf;
+        }
+    }
+    if (sim) simulation_free(sim);
+    circuit_free(c);
+    return out;
+}
+
+static int line_test(void) {
+    int fails = 0, total = 0;
+    const double Z0 = 50.0, TD = 5e-9, RS = 50.0;
+    printf("line-test: a real transmission line - Z0 = %g ohm, one-way delay %g ns, %g ohm source\n\n",
+           Z0, TD * 1e9, RS);
+
+    struct { const char *name; double rl; int open; double want_far; double want_near_2t; const char *note; } cases[] = {
+        { "matched 50 ohm", 50.0, 0, 1.0, 1.0, "half the source volts on the line, nothing comes back" },
+        { "open end",       0.0,  1, 2.0, 2.0, "the far end doubles to the full 2 V; the source end follows at 2T" },
+        { "short to ground",1e-3, 0, 0.0, 0.0, "the far end stays at 0 and drives the source end back down at 2T" },
+    };
+    for (unsigned i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        LineRun r = line_run(cases[i].rl, cases[i].open, Z0, TD, RS);
+        total++;
+        double tol = 0.12;
+        int amp_ok = r.ok && fabs(r.v_far - cases[i].want_far) <= tol * (fabs(cases[i].want_far) + 0.5);
+        int near_ok = r.ok && fabs(r.v_src_after_2t - cases[i].want_near_2t) <= tol * (fabs(cases[i].want_near_2t) + 0.5);
+        int pass = amp_ok && near_ok;
+        if (!pass) fails++;
+        printf("%s line  %-16s far=%.3f V (want %.2f)  near@2T=%.3f V (want %.2f)  %s%s\n",
+               pass ? " OK " : "FAIL", cases[i].name, r.v_far, cases[i].want_far,
+               r.v_src_after_2t, cases[i].want_near_2t, cases[i].note, r.ok ? "" : "  [sim failed]");
+    }
+
+    /* the delay is the point: the far end must stay dark until T */
+    {
+        LineRun r = line_run(50.0, 0, Z0, TD, RS);
+        total++;
+        /* the source's own edge and one step of bookkeeping are common to both ends, so
+           the delay is the difference between them - which is what the model claims. */
+        double measured = r.t_far_rise - r.t_near_rise;
+        int pass = r.ok && measured > TD * 0.85 && measured < TD * 1.25;
+        if (!pass) fails++;
+        printf("%s line  %-16s near end at %.2f ns, far end at %.2f ns: %.2f ns of delay (want %.2f)\n",
+               pass ? " OK " : "FAIL", "propagation", r.t_near_rise * 1e9, r.t_far_rise * 1e9, measured * 1e9, TD * 1e9);
+    }
+
+    /* twice the delay, twice the wait */
+    {
+        LineRun r = line_run(50.0, 0, Z0, TD * 2.0, RS);
+        total++;
+        double measured = r.t_far_rise - r.t_near_rise;
+        int pass = r.ok && measured > TD * 1.7 && measured < TD * 2.5;
+        if (!pass) fails++;
+        printf("%s line  %-16s a 10 ns cable measures %.2f ns  the delay follows the cable, not the time step\n",
+               pass ? " OK " : "FAIL", "delay scales", measured * 1e9);
+    }
+
+    printf("\nline-test: %d checks, %d failed\n", total, fails);
+    return fails ? 1 : 0;
+}
+
 static int flow_test(void) {
     int fails = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -421,7 +549,11 @@ static int flow_test(void) {
                 if (isnan(v) || isinf(v)) { ok = 0; snprintf(why, sizeof why, "%s terminal current NaN", comp->label); break; }
                 sum += v; if (fabs(v) > amax) amax = fabs(v); if (fabs(v) > imax) imax = fabs(v);
             }
-            if (!(comp->type == COMP_TLINE && comp->props.tline.model >= 2) && !(comp->type >= COMP_NOT_GATE && comp->type <= COMP_XNOR_GATE) && (ok && comp->num_terminals == 2 && fabs(sum) > 1e-6 * amax + 1e-9)) {   /* pi lines shunt charging current to ground */
+            /* A transmission line does not conserve instantaneous current between its ends -
+               that is what makes it a transmission line. A pi line shunts charging current to
+               ground; a delay line has charge in flight, and what goes in now comes out one
+               propagation delay later. */
+            if (!(comp->type == COMP_TLINE && comp->props.tline.model >= 2) && comp->type != COMP_DELAY_LINE && !(comp->type >= COMP_NOT_GATE && comp->type <= COMP_XNOR_GATE) && (ok && comp->num_terminals == 2 && fabs(sum) > 1e-6 * amax + 1e-9)) {
                 ok = 0; snprintf(why, sizeof why, "%s not conserving: I0+I1=%.3g (|I|=%.3g)", comp->label, sum, amax);
             }
         }
@@ -2996,6 +3128,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--scope-test")) return scope_dt_test();
         else if (!strcmp(argv[i], "--flow-test")) return flow_test();
         else if (!strcmp(argv[i], "--conn-test")) return conn_test();
+        else if (!strcmp(argv[i], "--line-test")) return line_test();
         else if (!strcmp(argv[i], "--view-test")) return scope_test();   /* --scope-test is the dt rule; this is what the screen shows */
         else if (!strcmp(argv[i], "--burn-test")) return burn_test();
         else if (!strcmp(argv[i], "--std-test")) return std_test();

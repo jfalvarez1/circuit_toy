@@ -1301,6 +1301,33 @@ bool simulation_step(Simulation *sim) {
         for (int sub = 0; sub < circuit->num_components; sub++)
             subcircuit_advance_caps(circuit->components[sub], sim->solution, sim->prev_step_solution, dt);
 
+        /* Delay line: record what each end launched into the cable this step. The far end
+           will read it back one propagation delay from now, which is the whole model - so this
+           has to happen once per ACCEPTED step, with the solution that was accepted.
+             i_k = (v_k - E_k) / Z0 is the current flowing into the line at port k, where E_k is
+           the wave that arrived there; the launched wave is v_k + Z0 i_k. */
+        for (int i = 0; i < circuit->num_components; i++) {
+            Component *comp = circuit->components[i];
+            if (comp->type != COMP_DELAY_LINE) continue;
+            double z0 = comp->props.delay_line.z0, td = comp->props.delay_line.delay;
+            if (z0 <= 0) continue;
+            int m0 = (comp->node_ids[0] >= 0 && comp->node_ids[0] < MAX_NODES) ? circuit->node_map[comp->node_ids[0]] : 0;
+            int m1 = (comp->node_ids[1] >= 0 && comp->node_ids[1] < MAX_NODES) ? circuit->node_map[comp->node_ids[1]] : 0;
+            double v0 = (m0 > 0 && m0 - 1 < (int)sim->solution->size) ? vector_get(sim->solution, m0 - 1) : 0.0;
+            double v1 = (m1 > 0 && m1 - 1 < (int)sim->solution->size) ? vector_get(sim->solution, m1 - 1) : 0.0;
+            double e0 = (td > 0) ? delay_line_history(comp, 1, sim->time + dt - td) : 0.0;
+            double e1 = (td > 0) ? delay_line_history(comp, 0, sim->time + dt - td) : 0.0;
+            if (!comp->props.delay_line.ideal && comp->props.delay_line.loss_db > 0) {
+                double a = pow(10.0, -comp->props.delay_line.loss_db / 20.0);
+                e0 *= a; e1 *= a;
+            }
+            double i0 = (v0 - e0) / z0, i1 = (v1 - e1) / z0;
+            comp->terminal_current[0] = i0;
+            comp->terminal_current[1] = i1;
+            /* the accepted solution belongs to the END of the step; sim->time is still at its start */
+            delay_line_record(comp, sim->time + dt, v0, i0, v1, i1);
+        }
+
         /* Crystal: the motional capacitor's voltage and the holder capacitor's current, both
            carried forward from the arm current the solve just produced. */
         for (int i = 0; i < circuit->num_components; i++) {

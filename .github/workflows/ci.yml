@@ -11,6 +11,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Attaching a zip to a release is a write to repository contents, and the default token is
+# read-only. Without this the upload step fails with "Resource not accessible by integration"
+# after a green build - which is exactly how v3.17.0 shipped with no download.
+permissions:
+  contents: write
+
 jobs:
   windows:
     name: windows-${{ matrix.link }} (${{ matrix.os }})
@@ -57,6 +63,7 @@ jobs:
           echo "--- crystal impedance vs frequency"   && $T --xtal-test
           echo "--- what the scope actually shows"    && $T --view-test
           echo "--- every pin wired to something"     && $T --conn-test
+          echo "--- transmission line reflections"    && $T --line-test
           echo "--- standards limits"                 && $T --std-test
           echo "--- power ratings"                    && $T --burn-test
           echo "--- every adjustable knob"            && $T --knob-test

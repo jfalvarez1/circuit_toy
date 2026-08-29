@@ -22,6 +22,8 @@ typedef struct {
 typedef enum {
     PROP_NONE = 0,
     PROP_PROBE_NAME,    // the probe's label, which is also its oscilloscope channel name
+    PROP_LINE_Z0,       // delay line: characteristic impedance
+    PROP_LINE_DELAY,    // delay line: one-way propagation delay
     PROP_VALUE,         // Main value (resistance, capacitance, voltage, etc.)
     PROP_FREQUENCY,
     PROP_PHASE,

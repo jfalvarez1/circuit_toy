@@ -292,6 +292,7 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_SPARK_GAP, "Spark");
     ADD_COMP(COMP_TOROID, "Toroid");
     ADD_COMP(COMP_TLINE, "TLine");
+    ADD_COMP(COMP_DELAY_LINE, "Delay");
     ADD_COMP(COMP_SOURCE_3PH, "3ph~");
 
     // === DIODES SECTION (index 25) ===
@@ -2272,6 +2273,37 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 break;
             }
 
+            case COMP_DELAY_LINE: {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_LINE_Z0;
+                    snprintf(buf, sizeof(buf), "%.4g Ohm", selected->props.delay_line.z0);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Z0:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_LINE_Z0;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_LINE_DELAY;
+                    double td = selected->props.delay_line.delay;
+                    if (td >= 1e-6)      snprintf(buf, sizeof(buf), "%.4g us", td * 1e6);
+                    else if (td >= 1e-9) snprintf(buf, sizeof(buf), "%.4g ns", td * 1e9);
+                    else                 snprintf(buf, sizeof(buf), "%.4g ps", td * 1e12);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Delay:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_LINE_DELAY;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {   /* a length is easier to picture than a delay: 0.66 c is ordinary coax */
+                    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
+                    double metres = selected->props.delay_line.delay * 2.0e8;
+                    snprintf(buf, sizeof(buf), "~%.3g m of coax", metres);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                    prop_y += 16;
+                }
+                break;
+            }
             case COMP_TLINE: {
                 {
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_TLINE_LENGTH;

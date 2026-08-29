@@ -212,6 +212,7 @@ typedef enum {
     // === HIGH VOLTAGE ===
     COMP_TOROID,            // Tesla-coil topload: one-terminal capacitor to ground sized by its shape
     COMP_TLINE,             // Power transmission line: length x per-mile R, X, B (R / R-L / pi model)
+    COMP_DELAY_LINE,        // Signal transmission line: Z0 and a real propagation delay (Bergeron)
     COMP_SOURCE_3PH,        // Three-phase generator block: A, B, C at 0 / -120 / +120 deg, common neutral N
     COMP_LOAD_HP,           // High-power load: a resistor with no thermal limit (becomes COMP_RESISTOR with high_power set)
     COMP_ARB_SOURCE,        // Arbitrary waveform source: replays a table of samples (X-Y plotting, uploaded data)
