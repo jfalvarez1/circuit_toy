@@ -2023,8 +2023,21 @@ static int probe_audit(const char *filter) {
         double peak = (np > 0) ? fmax(fabs(pmax[oi]), fabs(pmin[oi])) : 0;
         int waveform = d && d->kind != DEMO_DC && d->kind != DEMO_NONE;
         if (ok && np >= 2 && waveform && amp < 1e-4 * fmax(1.0, peak) + 1e-9) strcat(flags, "FLAT ");
-        if (ok && np >= 2 && vd > 0 && waveform && amp > 0 && amp < 0.25 * vd) strcat(flags, "SMALL ");
-        if (ok && np >= 2 && vd > 0 && peak > 4.0 * vd) strcat(flags, "CLIP ");
+        /* A template that asks for the one-shot autoscale gets its volts/div set from the trace
+           before the first frame is drawn, so the preset it was placed with is not what anyone
+           sees. Reporting those as badly scaled was measuring a number the app overwrites. */
+        int autofit = (circuit_template_scope_flags(t) & SCOPE_FLAG_FIT) != 0;
+        if (!autofit) {
+            /* SMALL is about a trace nobody can see: it has to hug the centre line as well as
+               being small. A rectifier's output is a flat line at 12 V and a high-pass under a
+               sweep starts attenuated - both are the circuit doing its job, and both were being
+               reported. Only a steady stimulus (DEMO_WAVEFORM) is judged at all; under a sweep
+               one screen at the start says nothing about what the sweep will show. */
+            int steady = d && d->kind == DEMO_WAVEFORM;
+            if (ok && np >= 2 && vd > 0 && steady && amp > 0 && amp < 0.25 * vd && peak < 0.25 * vd)
+                strcat(flags, "SMALL ");
+            if (ok && np >= 2 && vd > 0 && peak > 4.0 * vd) strcat(flags, "CLIP ");
+        }
         printf("[%s] %-26s td=%-7.3g vd=%-7.3g probes=%d  t=%.4g steps=%ld  %s\n", flags[0] ? "FLAG" : " OK ", ti->name, td, vd, np, sim->time, steps, flags);
         for (int i = 0; i < np && i < MAX_PROBES; i++) {
             char own[96]; owners_of(c, c->probes[i].node_id, own, sizeof own);

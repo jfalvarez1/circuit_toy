@@ -161,13 +161,22 @@ int updater_install(UpdaterState *st, char *msg, size_t msgn) {
         "$pid0 = %lu\n"
         "$zip = Join-Path $env:TEMP ('circuit-playground-' + $tag + '.zip')\n"
         "$url = 'https://github.com/%s/releases/download/' + $tag + '/circuit-playground-windows-' + $tag + '.zip'\n"
+        /* Everything this script says goes to a file as well as the console. The console window
+           closes with the script, so when an update failed there was nothing left to look at -
+           and "it just closed and I am still on the old version" is the one report that needs a
+           reason attached. Next to crash.log, where the app already writes. */
+        "$logdir = Join-Path $env:APPDATA 'circuit_toy\\circuit-playground'\n"
+        "if (-not (Test-Path $logdir)) { New-Item -ItemType Directory -Force -Path $logdir | Out-Null }\n"
+        "$log = Join-Path $logdir 'update.log'\n"
+        "function Say($m) { $line = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '  ' + $m; Write-Host $line; Add-Content -Path $log -Value $line }\n"
+        "Say ('update to ' + $tag + ' starting, installing into ' + $dir)\n"
         /* The app has already quit by the time this runs, so every failure path has to put it
            back. A release with no zip attached, a network that drops, a locked file: all of
            them end with the version that was working being started again. */
         "try {\n"
-        "  Write-Host \"Downloading $url\"\n"
+        "  Say ('downloading ' + $url)\n"
         "  Invoke-WebRequest -Uri $url -OutFile $zip -Headers @{'User-Agent'='circuit-playground'}\n"
-        "  Write-Host 'Waiting for Circuit Playground to close...'\n"
+        "  Say 'waiting for the app to close'\n"
         "  while (Get-Process -Id $pid0 -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 300 }\n"
         "  $stage = Join-Path $env:TEMP ('circuit-playground-' + $tag)\n"
         "  if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }\n"
@@ -177,10 +186,12 @@ int updater_install(UpdaterState *st, char *msg, size_t msgn) {
         "  if (-not (Test-Path (Join-Path $stage 'circuit-playground.exe')) -and $inner) { $src = $inner.FullName }\n"
         "  if (-not (Test-Path (Join-Path $src 'circuit-playground.exe'))) { throw 'the zip has no circuit-playground.exe in it' }\n"
         "  Copy-Item -Path (Join-Path $src '*') -Destination $dir -Recurse -Force\n"
-        "  Write-Host \"Updated to $tag - relaunching\"\n"
+        "  Say ('copied into place, relaunching ' + $tag)\n"
         "} catch {\n"
-        "  Write-Host \"Update to $tag failed: $_\"\n"
-        "  Write-Host 'Starting the version you had.'\n"
+        /* The reason, in the log and on screen. A copy into a folder the user cannot write is
+           the likeliest one, and it needs to say so rather than just closing. */
+        "  Say ('FAILED: ' + $_)\n"
+        "  Say 'starting the version you already had'\n"
         "  while (Get-Process -Id $pid0 -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 300 }\n"
         "}\n"
         /* Hand the relaunch to Explorer rather than starting it as this console's child. A
