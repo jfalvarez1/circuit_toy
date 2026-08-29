@@ -4011,9 +4011,11 @@ static int place_sallen_key_lp(Circuit *circuit, float x, float y) {
     c1->props.capacitor.capacitance = 10e-9;
 
     // C2 (from R2 output to ground)
-    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 320, y + 60, 90);
+    /* Hangs below R2's row rather than straddling it, so the wire from R2 to the op-amp's +
+       input passes over clear air instead of through the capacitor. */
+    Component *c2 = add_comp(circuit, COMP_CAPACITOR, x + 320, y + 120, 90);
     c2->props.capacitor.capacitance = 10e-9;
-    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 320, y + 120, 0);
+    Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 320, y + 180, 0);
     connect_terminals(circuit, c2, 1, gnd2, 0);
 
     // === OP-AMP (unity gain buffer) ===
@@ -4057,10 +4059,16 @@ static int place_sallen_key_lp(Circuit *circuit, float x, float y) {
     float c1_left_x, c1_left_y;
     component_get_terminal_pos(c1, 0, &c1_left_x, &c1_left_y);
 
-    int corner1 = circuit_find_or_create_node(circuit, r1_right_x, c1_left_y, 5.0f);
+    /* R1 and C1 overlap in x - C1's left terminal is above R1's body - so neither a turn at
+       R1's column (through C1) nor one at C1's column (through R1) works. Step up out of R1's
+       row first, then across, then up into the terminal. */
+    float step_y = (r1_right_y + c1_left_y) / 2 + 5.0f;
+    int step_a = circuit_find_or_create_node(circuit, r1_right_x, step_y, 5.0f);
+    int step_b = circuit_find_or_create_node(circuit, c1_left_x, step_y, 5.0f);
     int c1_left_node = circuit_find_or_create_node(circuit, c1_left_x, c1_left_y, 5.0f);
-    circuit_add_wire(circuit, junc1, corner1);
-    circuit_add_wire(circuit, corner1, c1_left_node);
+    circuit_add_wire(circuit, junc1, step_a);
+    circuit_add_wire(circuit, step_a, step_b);
+    circuit_add_wire(circuit, step_b, c1_left_node);
     c1->node_ids[0] = c1_left_node;
 
     // R2 to op-amp non-inverting and C2
@@ -4075,16 +4083,20 @@ static int place_sallen_key_lp(Circuit *circuit, float x, float y) {
     r2->node_ids[1] = junc2;
 
     // To C2
+    /* Along C2's top terminal row and then across, rather than turning at (c2_x, r2_y) - that
+       corner sits between C2's plates, so the wire left the capacitor through its own side. */
     int c2_top_node = circuit_find_or_create_node(circuit, c2_top_x, c2_top_y, 5.0f);
-    int c2_corner = circuit_find_or_create_node(circuit, c2_top_x, r2_right_y, 5.0f);
+    int c2_corner = circuit_find_or_create_node(circuit, r2_right_x, c2_top_y, 5.0f);
     circuit_add_wire(circuit, junc2, c2_corner);
     circuit_add_wire(circuit, c2_corner, c2_top_node);
     c2->node_ids[0] = c2_top_node;
 
-    // To op-amp non-inverting
+    /* To the op-amp's + input, straight along R2's own row. This used to turn at C2's column
+       and travel the last stretch at C2's terminal height, which put it through the capacitor;
+       both branches leave R2's junction instead, and C2 hangs below the row. */
     int opamp_noninv_node = circuit_find_or_create_node(circuit, opamp_noninv_x, opamp_noninv_y, 5.0f);
-    int noninv_corner = circuit_find_or_create_node(circuit, c2_top_x, opamp_noninv_y, 5.0f);
-    circuit_add_wire(circuit, c2_corner, noninv_corner);
+    int noninv_corner = circuit_find_or_create_node(circuit, r2_right_x, opamp_noninv_y, 5.0f);
+    circuit_add_wire(circuit, junc2, noninv_corner);
     circuit_add_wire(circuit, noninv_corner, opamp_noninv_node);
     opamp->node_ids[1] = opamp_noninv_node;
 
@@ -4780,22 +4792,24 @@ static int place_window_comp(Circuit *circuit, float x, float y) {
     float cdec_top_x, cdec_top_y;
     component_get_terminal_pos(c_dec, 0, &cdec_top_x, &cdec_top_y);
 
-    // Create power rail at y - 160
+    /* The rail runs at y-200, clear above the top of R1. At y-160 it was inside R1's body -
+       the divider's top resistor reaches up to y-174 - so the rail arrived in the middle of it
+       instead of at its terminal, and everything else that used that row went through it too. */
     int vref_node = circuit_find_or_create_node(circuit, vref_pos_x, vref_pos_y, 5.0f);
-    int vref_rail = circuit_find_or_create_node(circuit, vref_pos_x, y - 160, 5.0f);
+    int vref_rail = circuit_find_or_create_node(circuit, vref_pos_x, y - 200, 5.0f);
     circuit_add_wire(circuit, vref_node, vref_rail);
     vref->node_ids[0] = vref_node;
 
     // Decoupling cap to rail
     int cdec_node = circuit_find_or_create_node(circuit, cdec_top_x, cdec_top_y, 5.0f);
-    int corner_dec = circuit_find_or_create_node(circuit, cdec_top_x, y - 160, 5.0f);
+    int corner_dec = circuit_find_or_create_node(circuit, cdec_top_x, y - 200, 5.0f);
     circuit_add_wire(circuit, vref_rail, corner_dec);
     circuit_add_wire(circuit, corner_dec, cdec_node);
     c_dec->node_ids[0] = cdec_node;
 
     // R1 to rail
     int r1_top_node = circuit_find_or_create_node(circuit, r1_top_x, r1_top_y, 5.0f);
-    int corner_r1 = circuit_find_or_create_node(circuit, r1_top_x, y - 160, 5.0f);
+    int corner_r1 = circuit_find_or_create_node(circuit, r1_top_x, y - 200, 5.0f);
     circuit_add_wire(circuit, corner_dec, corner_r1);
     circuit_add_wire(circuit, corner_r1, r1_top_node);
     r1->node_ids[0] = r1_top_node;
@@ -4835,11 +4849,19 @@ static int place_window_comp(Circuit *circuit, float x, float y) {
     circuit_add_wire(circuit, corner1, input_junc);
     vin->node_ids[0] = vin_node;
 
-    // To comp_hi inverting
-    wire_L_shape(circuit, x + 60, y, comp_hi_inv_x, comp_hi_inv_y, false);
-
-    // To comp_lo non-inverting
-    wire_L_shape(circuit, x + 60, y, comp_lo_noninv_x, comp_lo_noninv_y, false);
+    /* Down and around to both comparator inputs. Going straight across meant crossing the
+       reference divider at the height of its own resistors, and the reference supply with it -
+       the monitored input ran through both of them. */
+    int in_down  = circuit_find_or_create_node(circuit, x + 60, y + 140, 5.0f);
+    int in_right = circuit_find_or_create_node(circuit, x + 220, y + 140, 5.0f);
+    int in_lo    = circuit_find_or_create_node(circuit, x + 220, comp_lo_noninv_y, 5.0f);
+    int in_hi    = circuit_find_or_create_node(circuit, x + 220, comp_hi_inv_y, 5.0f);
+    circuit_add_wire(circuit, input_junc, in_down);
+    circuit_add_wire(circuit, in_down, in_right);
+    circuit_add_wire(circuit, in_right, in_lo);
+    circuit_add_wire(circuit, in_lo, circuit_find_or_create_node(circuit, comp_lo_noninv_x, comp_lo_noninv_y, 5.0f));
+    circuit_add_wire(circuit, in_lo, in_hi);
+    circuit_add_wire(circuit, in_hi, circuit_find_or_create_node(circuit, comp_hi_inv_x, comp_hi_inv_y, 5.0f));
 
     // Outputs summed through R_hi / R_lo into the LED node (wired-AND behaviour):
     // both high -> ~2.9 mA into the LED; either low -> net current negative, LED off.
@@ -4887,7 +4909,13 @@ static int place_window_comp(Circuit *circuit, float x, float y) {
     float rpu_top_x, rpu_top_y;
     component_get_terminal_pos(rpu, 0, &rpu_top_x, &rpu_top_y);
 
-    wire_L_shape(circuit, rpu_top_x, rpu_top_y, vref_pos_x, vref_pos_y, false);
+    /* Up to the rail and along it, joining at the divider's column. Straight across at the
+       pull-up's own height went through R1. */
+    int rpu_top_node = circuit_find_or_create_node(circuit, rpu_top_x, rpu_top_y, 5.0f);
+    int rpu_rail = circuit_find_or_create_node(circuit, rpu_top_x, y - 200, 5.0f);
+    circuit_add_wire(circuit, rpu_top_node, rpu_rail);
+    circuit_add_wire(circuit, rpu_rail, corner_r1);
+    rpu->node_ids[0] = rpu_top_node;
 
     return 18;  // incl. c_dec, gnd_dec, r_hi, r_lo
 }
@@ -4950,15 +4978,19 @@ static int place_hysteresis_comp(Circuit *circuit, float x, float y) {
     Component *rf = add_comp(circuit, COMP_RESISTOR, x + 280, y - 40, 0);
     rf->props.resistor.resistance = 100000.0;  // 100kΩ for hysteresis
 
-    // === REFERENCE DIVIDER (to the left of inverting input, vertical stack) ===
-    // Position divider far enough left to avoid crossing the op-amp
-    Component *r1 = add_comp(circuit, COMP_RESISTOR, x + 180, y - 40, 90);  // Top resistor
+    /* === REFERENCE DIVIDER, out on the left ===
+       It used to stand at x+180, which is between the input resistor and the op-amp - the one
+       lane both the input wire and the feedback wire have to use to reach the pins. Both ran
+       straight through its two resistors. Out here the only thing it meets is a single crossing
+       with the non-inverting column, which is what a reference wire crossing a signal looks
+       like on paper too. */
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x - 80, y - 40, 90);  // Top resistor
     r1->props.resistor.resistance = 10000.0;
 
-    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 180, y + 40, 90);  // Bottom resistor
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x - 80, y + 40, 90);  // Bottom resistor
     r2->props.resistor.resistance = 10000.0;
 
-    Component *gnd_ref = add_comp(circuit, COMP_GROUND, x + 180, y + 100, 0);
+    Component *gnd_ref = add_comp(circuit, COMP_GROUND, x - 80, y + 100, 0);
     connect_terminals(circuit, r2, 1, gnd_ref, 0);
 
     // === OUTPUT SECTION (right side) ===
@@ -5025,7 +5057,9 @@ static int place_hysteresis_comp(Circuit *circuit, float x, float y) {
 
     int r1_top_node = circuit_find_or_create_node(circuit, r1_top_x, r1_top_y, 5.0f);
     int corner_pwr = circuit_find_or_create_node(circuit, r1_top_x, y - 160, 5.0f);
-    circuit_add_wire(circuit, corner_vcc, corner_pwr);
+    /* from the supply end of the rail, not the decoupling end: the divider is on the far side
+       now, and running from corner_vcc would lay this wire on top of the rail it already has */
+    circuit_add_wire(circuit, vcc_rail, corner_pwr);
     circuit_add_wire(circuit, corner_pwr, r1_top_node);
     r1->node_ids[0] = r1_top_node;
 
@@ -10041,12 +10075,16 @@ static int place_mos_diff(Circuit *circuit, float x, float y) {
         rd->node_ids[0] = rt; rd->node_ids[1] = rb;
         m->node_ids[1] = d; m->node_ids[2] = sN;
         TW(sN, TN(dx + 20, y + 60)); TW(TN(dx + 20, y + 60), tail);
-        Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, dx - 120, y + 60, 0);   // +(dx-120,y+20)
+        /* Each source sits outside its own half of the pair. Both used to be placed to the left
+           of their transistor, which put the second one between the two devices - directly on
+           the row the sources share to reach the tail, so that wire ran through its body. */
+        float sx2 = (k == 0) ? dx - 120 : dx + 120;
+        Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, sx2, y + 60, 0);        // +(sx2,y+20)
         vin->props.ac_voltage.amplitude = 0.02; vin->props.ac_voltage.frequency = 1000.0;
         vin->props.ac_voltage.phase = k ? 180.0 : 0.0; vin->props.ac_voltage.offset = 3.0;
-        Component *gv = add_comp(circuit, COMP_GROUND, dx - 120, y + 140, 0);
+        Component *gv = add_comp(circuit, COMP_GROUND, sx2, y + 140, 0);
         connect_terminals(circuit, vin, 1, gv, 0);
-        int vp = TN(dx - 120, y + 20), vj = TN(dx - 120, y);
+        int vp = TN(sx2, y + 20), vj = TN(sx2, y);
         TW(vp, vj); TW(vj, gt);
         vin->node_ids[0] = vp; m->node_ids[0] = gt;
     }
@@ -10070,7 +10108,9 @@ static int place_mos_mirror(Circuit *circuit, float x, float y) {
     rref->node_ids[0] = rt; rref->node_ids[1] = rb;
     Component *m1 = mos_dev(circuit, x, y, 1.5, 0.01); if (!m1) return 0;
     int d1 = TN(x + 20, y - 20), s1 = TN(x + 20, y + 20), g1 = TN(x - 20, y);
-    TW(rb, TN(x - 60, y - 20)); TW(TN(x - 60, y - 20), TN(x + 40, y - 20)); TW(TN(x + 40, y - 20), d1);
+    /* straight into the drain; it used to overshoot to x+40 and come back, which drew the wire
+       out through the far side of the transistor */
+    TW(rb, TN(x - 60, y - 20)); TW(TN(x - 60, y - 20), d1);
     TW(TN(x - 60, y - 20), TN(x - 60, y)); TW(TN(x - 60, y), g1);                   // diode connection
     m1->node_ids[0] = g1; m1->node_ids[1] = d1; m1->node_ids[2] = s1;
     Component *gs1 = add_comp(circuit, COMP_GROUND, x + 20, y + 60, 0);
@@ -10110,7 +10150,8 @@ static int place_cmos_inv(Circuit *circuit, float x, float y) {
     int pd = TN(x + 20, y - 100), ps = TN(x + 20, y - 60), nd = TN(x + 20, y + 60), ns = TN(x + 20, y + 100);
     TW(ps, TN(x + 60, y - 60)); TW(TN(x + 60, y - 60), TN(x + 60, y - 180)); TW(TN(x + 60, y - 180), railA);
     int out = TN(x + 20, y);
-    TW(pd, TN(x - 20, y - 100)); TW(TN(x - 20, y - 100), TN(x - 20, y - 120));      /* keep the PMOS drain clear */
+    /* A stub from the drain out to (-20,-120) used to hang here. It connected to nothing and it
+       was drawn straight back through the PMOS it came from. */
     TW(pd, out); TW(out, nd);
     Component *gnd = add_comp(circuit, COMP_GROUND, x + 20, y + 140, 0);
     gnd->node_ids[0] = ns;
@@ -10170,7 +10211,11 @@ static int place_cmos_nand(Circuit *circuit, float x, float y) {
     rl->props.resistor.resistance = 100e3;
     Component *gl = add_comp(circuit, COMP_GROUND, x + 240, y + 40, 0);
     int lt = TN(x + 240, y - 80), lb = TN(x + 240, y), lg = TN(x + 240, y + 20);
-    TW(out, TN(x + 240, y - 40)); TW(TN(x + 240, y - 40), lt); TW(lb, lg);
+    /* Up to the load resistor's own top terminal. Running along y-40 to x+240 arrived at the
+       middle of the resistor body, because that is the resistor's centre, not a pin. */
+    TW(TN(x + 140, y - 40), TN(x + 200, y - 40));
+    TW(TN(x + 200, y - 40), TN(x + 200, y - 80));
+    TW(TN(x + 200, y - 80), lt); TW(lb, lg);
     rl->node_ids[0] = lt; rl->node_ids[1] = lb; gl->node_ids[0] = lg;
     Component *cld = add_comp(circuit, COMP_CAPACITOR, x + 320, y - 40, 90);        // (320,-80)-(320,0)
     cld->props.capacitor.capacitance = 20e-12;
