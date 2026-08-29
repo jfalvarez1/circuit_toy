@@ -96,7 +96,12 @@ executable('circuit-playground',
   # Command-line output is not lost: main() attaches to the parent console when there are
   # arguments (see attach_parent_console), and redirection to a pipe or file works regardless,
   # which is how CI captures it.
-  win_subsystem : 'windows'
+  win_subsystem : 'windows',
+  # 8 MB of stack instead of the default 1. The app state is off the stack now, but the template
+  # builders are long functions with a lot of locals and the simulation recurses through the
+  # netlist, and a release that dies with 0xC00000FD before its first frame is not a failure
+  # anyone can diagnose from the outside. Headroom is free: this is a reserve, not a commitment.
+  link_args : host_machine.system() == 'windows' ? ['/STACK:8388608'] : []
 )
 
 # SDL2 runtime next to the exe, so the app starts from a taskbar pin or Explorer (Windows

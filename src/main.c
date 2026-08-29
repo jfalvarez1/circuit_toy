@@ -402,6 +402,7 @@ int main(int argc, char *argv[]) {
        appears still says how far it got. */
     crashlog_init(APP_VERSION);
     printf("log: %s\n", crashlog_path());
+    crashlog_note("App state %zu KB", sizeof(App) / 1024);
     crashlog_note("start-up: about to SDL_Init(VIDEO | TIMER)");
 
     // Initialize SDL (video + timer; audio subsystem was removed with the microphone feature)
@@ -413,7 +414,13 @@ int main(int argc, char *argv[]) {
     crashlog_note("SDL_Init ok, video driver '%s'", SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "?");
 
     // Create application
-    App app = {0};
+    /* Not on the stack. The App carries the whole UI state by value - the palette, the scope's
+       capture buffers, every panel rect - and at that size it sits close enough to the default
+       1 MB stack that whether it fits depends on the compiler's frame layout. It fitted in the
+       build here and overflowed in the one CI ships: v3.19.2 through v3.21.0 all died with
+       0xC00000FD a moment after start-up, which is the instant crash people reported. */
+    static App app;
+    memset(&app, 0, sizeof app);
     crashlog_note("start-up: app_init (window, renderer, circuit, simulation)");
     if (!app_init(&app)) {
         crashlog_note("FATAL: app_init failed: %s", SDL_GetError());
