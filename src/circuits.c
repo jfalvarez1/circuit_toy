@@ -13674,6 +13674,10 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_MILLER] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_IV_INRUSH] = SCOPE_FLAG_STACK,
     [CIRCUIT_TLINE_REAL] = SCOPE_FLAG_STACK,
+    /* The neutral shift is the whole point of the unbalanced Y, and it is tens of volts beside
+       phases of four hundred: on one shared scale it is a fifth of a division and invisible.
+       Each channel gets its own band so the small one is readable next to the large ones. */
+    [CIRCUIT_3PH_UNBALANCED] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_SEVENSEG_TEST] = SCOPE_FLAG_FIT, [CIRCUIT_WIRELESS_LINK] = SCOPE_FLAG_FIT,
     [CIRCUIT_BCD_COUNTER] = SCOPE_FLAG_FIT, [CIRCUIT_DIGITAL_CLOCK] = SCOPE_FLAG_FIT,
     /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */

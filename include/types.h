@@ -22,7 +22,10 @@
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 #define TOOLBAR_HEIGHT 50
-#define PALETTE_WIDTH 160
+/* 160 fitted about thirteen characters beside a header's arrow, which is shorter than half the
+   names in it - "Interview: instrumentation & scope" ran out over the canvas. 184 costs the
+   canvas 24 px and lets a group name identify itself. */
+#define PALETTE_WIDTH 184
 #define PROPERTIES_WIDTH 420
 #define STATUSBAR_HEIGHT 24
 

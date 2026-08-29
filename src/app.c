@@ -2253,12 +2253,11 @@ bool app_place_template_centered(App *app, CircuitTemplateType type) {
     }
     app->circuit->modified = true;
     app->circuit->topology_dirty = true;
-    double td = circuit_template_scope_time_div(type);
-    if (td > 0) { ui->scope_time_div = td; ui->scope_capture_valid = false; }
-    double vd = circuit_template_scope_volt_div(type);
-    if (vd > 0) ui->scope_volt_div = vd;
-    { int fl = circuit_template_scope_flags(type); ui->scope_ac_coupling = (fl & SCOPE_FLAG_AC) != 0; ui->scope_stacked = (fl & SCOPE_FLAG_STACK) != 0; ui->scope_stack_fit = (fl & SCOPE_FLAG_FIT) != 0; }
-    ui->scope_auto_vdiv_pending = true;
+    /* The scope's whole setup for this template: everything Autoset or a hand on the knobs left
+       behind goes back to neutral first, so the preset lands on a clean scope rather than on the
+       last circuit's - a 9 V trigger level carried over from the Common Emitter never fires on
+       the circuit that follows it, and its trace never appears. */
+    ui_scope_apply_template_preset(ui, type);
     ui->scope_track_sweep = false;
     for (int i = 0; i < app->circuit->num_components; i++) {
         Component *cc = app->circuit->components[i];

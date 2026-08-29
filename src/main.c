@@ -33,37 +33,47 @@ static bool rects_overlap(const Rect *a, const Rect *b) {
    outside that range never fires, and the display free-runs. */
 static int autoset_test(void) {
     int fails = 0, total = 0;
+    /* One scope for the whole run, reused template after template exactly as the app reuses it.
+       Each template therefore starts on whatever Autoset left behind for the one before it, which
+       is the case the user hit: Autoset the Common Emitter, pick another circuit, no trace. */
+    UIState *ui = calloc(1, sizeof *ui);
+    ui_init(ui);
+    ui->window_width = 1600; ui->window_height = 1000;
+    ui_update_layout(ui);
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         if (!ti) continue;
         Circuit *c = circuit_create();
         if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
         Simulation *sim = simulation_create(c);
-        UIState *ui = calloc(1, sizeof *ui);
-        ui_init(ui);
-        ui->window_width = 1600; ui->window_height = 1000;
-        ui_update_layout(ui);
 
-        /* the preset the app applies when it places this template */
-        double td = circuit_template_scope_time_div((CircuitTemplateType)t);
-        if (td > 0) ui->scope_time_div = td;
-        double vd0 = circuit_template_scope_volt_div((CircuitTemplateType)t);
-        if (vd0 > 0) ui->scope_volt_div = vd0;
-        { int fl = circuit_template_scope_flags((CircuitTemplateType)t);
-          ui->scope_ac_coupling = (fl & SCOPE_FLAG_AC) != 0;
-          ui->scope_stacked     = (fl & SCOPE_FLAG_STACK) != 0;
-          ui->scope_stack_fit   = (fl & SCOPE_FLAG_FIT) != 0; }
+        /* what the app itself does when it places a template - the same function, not a copy of
+           it that can drift from it */
+        ui_scope_apply_template_preset(ui, (CircuitTemplateType)t);
         ui->scope_num_channels = c->num_probes < MAX_PROBES ? c->num_probes : MAX_PROBES;
-        for (int ch = 0; ch < ui->scope_num_channels; ch++) {
-            ui->scope_channels[ch].enabled = true;
+        for (int ch = 0; ch < MAX_PROBES; ch++) {
+            ui->scope_channels[ch].enabled = ch < ui->scope_num_channels;
             ui->scope_channels[ch].probe_idx = ch;
-            ui->scope_channels[ch].offset = 0;
-            ui->scope_channels[ch].volt_div = 0;
         }
 
         total++;
         char why[220] = "";
-        if (!simulation_dc_analysis(sim)) snprintf(why, sizeof why, "no operating point");
+        /* Nothing from the circuit before this one may still be on the scope. This is the state
+           the user sees when they pick a circuit and do NOT press Autoset: a stale offset or a
+           trigger level the new circuit never reaches leaves the screen blank. */
+        for (int ch = 0; ch < MAX_PROBES && !why[0]; ch++) {
+            if (ui->scope_channels[ch].offset != 0.0 || ui->scope_channels[ch].volt_div != 0.0)
+                snprintf(why, sizeof why,
+                         "CH%d still carries %.4g V of offset / %.4g V per division from the "
+                         "circuit before this one", ch + 1,
+                         ui->scope_channels[ch].offset, ui->scope_channels[ch].volt_div);
+        }
+        if (!why[0] && (ui->trigger_level != 0.0 || ui->trigger_channel != 0))
+            snprintf(why, sizeof why,
+                     "the trigger is still on CH%d at %.4g V from the circuit before this one",
+                     ui->trigger_channel + 1, ui->trigger_level);
+        if (why[0]) { /* already stale before anything ran; the rest would only add noise */ }
+        else if (!simulation_dc_analysis(sim)) snprintf(why, sizeof why, "no operating point");
         else {
             simulation_auto_time_step(sim);
             { double dtp = simulation_scope_time_step(sim, ui->scope_time_div);
@@ -135,10 +145,10 @@ static int autoset_test(void) {
                ui->trigger_channel + 1, ui->trigger_level, why);
         fflush(stdout);
         if (why[0]) fails++;
-        free(ui);
         simulation_free(sim);
         circuit_free(c);
     }
+    free(ui);
     printf("\nautoset-test: %d templates, %d where Autoset leaves something off the screen or untriggerable\n",
            total, fails);
     return fails;

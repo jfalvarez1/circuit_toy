@@ -969,7 +969,22 @@ static void draw_palette_header(SDL_Renderer *renderer, int screen_y, const char
     }
 
     SDL_SetRenderDrawColor(renderer, accent ? SYNTH_PINK : SYNTH_TEXT, 0xff);
-    ui_draw_text(renderer, label, bar.x + 18, bar.y + (bar.h - 8) / 2);
+    /* The bar is the label's whole world now. "Interview: instrumentation & scope" is 34
+       characters at 8 px each - two hundred and seventy pixels in a hundred and thirty pixel
+       panel - and it used to run straight out over the canvas. Anything that does not fit is
+       cut and marked with a pair of dots so it reads as shortened rather than as a typo. */
+    int text_x = bar.x + 16;
+    int room = (bar.x + bar.w - 2 - text_x) / 8;
+    if (room < 4) room = 4;
+    if ((int)strlen(label) <= room) {
+        ui_draw_text(renderer, label, text_x, bar.y + (bar.h - 8) / 2);
+    } else {
+        char cut[64];
+        int keep = room - 2; if (keep > (int)sizeof cut - 3) keep = (int)sizeof cut - 3;
+        memcpy(cut, label, (size_t)keep);
+        cut[keep] = '.'; cut[keep + 1] = '.'; cut[keep + 2] = '\0';
+        ui_draw_text(renderer, cut, text_x, bar.y + (bar.h - 8) / 2);
+    }
 }
 
 static void draw_palette_tabs(UIState *ui, SDL_Renderer *renderer) {
@@ -1127,7 +1142,7 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
                         /* the same pressable bar as every other section, indented one step so it
                            still reads as living inside Circuits */
                         draw_palette_header(renderer, hy, circuit_template_group_name((TemplateGroup)cur_group),
-                                            ui->circuit_group_collapsed[cur_group], false, 10);
+                                            ui->circuit_group_collapsed[cur_group], false, 6);
                     }
                     draw_y += PAL_HEADER_H; content_height += PAL_HEADER_H;
                 }
@@ -6831,7 +6846,8 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (ui->left_tab == LTAB_CIRCUITS && !ui->categories[PCAT_CIRCUITS].collapsed) {
         for (int g = 0; g < TG_COUNT; g++) {
             if (ui->circuit_group_header_y[g] <= 0) continue;
-            Rect hr = {12, ui->circuit_group_header_y[g], PALETTE_WIDTH - 24, PAL_HEADER_H - 3};
+            /* the bar as draw_palette_header lays it out at indent 6, so the whole box presses */
+            Rect hr = {8, ui->circuit_group_header_y[g], PALETTE_WIDTH - 20, PAL_HEADER_H - 3};
             int hy = hr.y - ui->palette_scroll_offset;
             if (hy < TOOLBAR_HEIGHT - 12 || hy > ui->window_height - STATUSBAR_HEIGHT) continue;
             if (point_in_rect(x, adjusted_y, &hr)) {
@@ -7517,6 +7533,37 @@ void ui_update_layout(UIState *ui) {
 }
 
 // Oscilloscope autoset - automatically configure scope based on signal analysis
+/* A circuit's scope preset only means anything against a clean starting state. Autoset and the
+   knobs both write per-channel offsets, per-channel scales and a trigger, and those belong to the
+   circuit that was on the screen when they were set: carried into the next circuit, a trigger
+   level of 9 V from an amplifier sits above everything a logic template ever reaches, so it never
+   fires and the trace never appears. */
+void ui_scope_reset_for_template(UIState *ui) {
+    for (int ch = 0; ch < MAX_PROBES; ch++) {
+        ui->scope_channels[ch].offset = 0.0;
+        ui->scope_channels[ch].volt_div = 0.0;      /* follow the main setting again */
+    }
+    ui->trigger_channel = 0;
+    ui->trigger_level = 0.0;
+    ui->trigger_position = 0.5;
+    ui->scope_capture_valid = false;
+}
+
+/* Placing a template sets the scope up for it. Kept here rather than inline in the app so the
+   headless audit drives the same code the app does instead of a copy that can drift from it. */
+void ui_scope_apply_template_preset(UIState *ui, CircuitTemplateType type) {
+    ui_scope_reset_for_template(ui);
+    double td = circuit_template_scope_time_div(type);
+    if (td > 0) ui->scope_time_div = td;
+    double vd = circuit_template_scope_volt_div(type);
+    if (vd > 0) ui->scope_volt_div = vd;
+    int fl = circuit_template_scope_flags(type);
+    ui->scope_ac_coupling = (fl & SCOPE_FLAG_AC) != 0;
+    ui->scope_stacked     = (fl & SCOPE_FLAG_STACK) != 0;
+    ui->scope_stack_fit   = (fl & SCOPE_FLAG_FIT) != 0;
+    ui->scope_auto_vdiv_pending = true;   /* refine V/div from real data once it flows */
+}
+
 void ui_scope_autoset(UIState *ui, Simulation *sim) {
     if (!ui || !sim || ui->scope_num_channels == 0) return;
 

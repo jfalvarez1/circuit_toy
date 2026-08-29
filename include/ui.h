@@ -603,6 +603,10 @@ void ui_update_scope_channels(UIState *ui, Circuit *circuit);
 
 // Oscilloscope autoset - automatically configure scope based on signal
 void ui_scope_autoset(UIState *ui, Simulation *sim);
+/* Put the scope back to a neutral vertical/trigger state, as loading a circuit does. */
+void ui_scope_reset_for_template(UIState *ui);
+/* The whole scope setup a template gets when it is placed: the reset above, then its preset. */
+void ui_scope_apply_template_preset(UIState *ui, CircuitTemplateType type);
 
 // Update UI layout after window resize
 void ui_sync_subcircuit_items(UIState *ui);   // rebuild the subcircuit palette list from the library
