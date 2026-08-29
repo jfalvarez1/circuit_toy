@@ -7,6 +7,43 @@ non-convergence), conflicting settings, time-base changes, and runtime (while-ru
 
 Status legend: `[ ]` not run · `[P]` pass · `[F]` fail (link issue/notes) · `[S]` skipped
 
+---
+
+## Current state (2026-08-29, v3.16.0)
+
+The per-test notes further down carry the counts they were written with (96/96, 86 oracles and
+so on). They are kept as a record of what each test was checking at the time; these are the
+numbers a clean run gives today.
+
+| Mode | Result |
+|---|---|
+| `template_smoke` | 182/182 templates place, solve and step |
+| `--probe-test` | 204/204 output oracles |
+| `--demo-test` | 182/182 demo contracts |
+| `--osc-test` | 11 oscillators at their own frequency and waveform shape |
+| `--view-test` | 182 templates put something on the scope; 50 switches all clickable |
+| `--flow-test` | 182/182 (two templates exempt from the node sum, and they say so) |
+| `--switch-test` | 25 switches, both states |
+| `--part-test` | 25 checks over 21 named devices at their data sheet conditions |
+| `--op-test` | 6 device operating points |
+| `--sub-test` | 5 subcircuit cases, nested eight deep |
+| `--spice-test` | 14 `.SUBCKT` import cases |
+| `--xtal-test` | 4 crystal impedance checks |
+| `--std-test` | 23 buses against ERCOT / NERC / ANSI C84.1 / NEC |
+| `--burn-test` | 182 templates, 0 parts over rating |
+| `--knob-test` | 2646 runs: every adjustable value at x0.5 and x2 |
+| `--param-test` | scope presets sane for all 182 |
+| `--geom-test` | 0 hard violations (diagonal wires, overlapping symbols) |
+| `--layout-test` | 0 failures: palette, scope panel knobs, zoom buttons, probe naming |
+| `tools/gui_smoke.py` | every template driven through the real app, plus zoom / pan / switch-click |
+
+**GUI smoke.** `python tools/gui_smoke.py` launches the app, places each template, reads the
+screenshot it saves and checks the pixels: the window is not one flat colour, the canvas has a
+schematic on it, and the graticule has trace-coloured pixels in it. Then it presses the toolbar
+zoom buttons, selects the Pan tool and drags, and clicks the N-1 breaker - through injected SDL
+mouse events (`--click`, `--drag`), so each one takes the path a real pointer takes. It needs a
+display; `SDL_VIDEODRIVER=dummy` has no renderer to read back from.
+
 Recording: for every failure, capture `screenshots/<test-id>.bmp` (F12/Screenshot action)
 and note: build hash, steps, expected vs actual, stderr excerpt.
 

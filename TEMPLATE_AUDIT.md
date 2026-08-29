@@ -1,4 +1,30 @@
-# Prebuilt Circuit Template Audit (96 templates, 10 palette groups)
+# Prebuilt Circuit Template Audit (182 templates, 19 palette groups)
+
+## Added since the blocks below were written
+
+The per-template blocks in this file were extracted on 2026-08-24, when there were 96. The
+templates added since are audited by the oracles in `tools/template_smoke.c` rather than by a
+block here - each one carries its expected output in `probe_cases[]`, its behaviour contract in
+`template_demo[]` and its scope preset in `template_time_div[]` / `template_volt_div[]`, and all
+three are checked on every run. What a block adds over that is the *value variations to try*,
+which is a manual exercise; for the newer templates that lives in the on-canvas notes instead,
+where every one ends with a TRY or an INTERVIEW line.
+
+| Group | Templates |
+|---|---|
+| Oscillators | 555 Astable, Pierce Crystal Oscillator |
+| Ideal vs real | Op-Amp Error Sources, Named Parts: MOSFET Switches, Ceramic DC Bias |
+| Interview: instrumentation & scope | Probe Compensation, Probe Loading (1x vs 10x), Ground Lead Ringing, Scope Input: 1 M vs 50 ohm, AC Coupling, Current Sense: High vs Low Side, 4-Wire (Kelvin) Sensing |
+| Interview: power & converters | Discrete Buck Node by Node, LDO vs Switcher, Bootstrap High-Side Drive |
+| Interview: I/O & signal integrity | Termination none/series/parallel, Pull-up Sizing, Ground Bounce, Crosstalk, ESD Clamp Diodes |
+| Interview: fundamentals | The Two-Capacitor Problem, The Miller Effect, BJT or MOSFET as a Switch, Hot-Plug Inrush |
+
+Two are deliberately absent and written up in `docs/ROADMAP.md`: **CCM vs DCM** (an ideal switch
+leaves the DCM dead interval undefined) and a **delay-line transmission line** (the L-C ladder
+stands in for it).
+
+---
+
 
 Companion to `TEST_PLAN.md` §8. Every template gets the same five passes; the per-template
 block adds the hand-calculated nominal, the **value variations** to try, and specific traps.

@@ -1731,8 +1731,12 @@ Probe readouts, the scope channel labels and the measurements switch to kV autom
                 </div>
                 <div class="component-card">
                     <h4>Probe Tool</h4>
-                    <p>Place measurement probes on circuit nodes. Each probe connects to an oscilloscope channel (up to 4 probes). Drag probes to reposition.</p>
+                    <p>Place measurement probes on circuit nodes. Each probe is an oscilloscope channel (up to 8). Drag probes to reposition, and <strong>click one to name it</strong> - type <code>Vout</code> in the properties panel and every place the scope said CH2 says Vout: the stacked band tag, the measurement list, the trigger readout and the per-channel knob on the pop-out panel. Leave the name blank to go back to CHn.</p>
                     <div class="shortcut">Keyboard: <kbd>P</kbd></div>
+                </div>
+                <div class="component-card">
+                    <h4>Pan Tool</h4>
+                    <p>Left-drag moves the canvas. Middle-drag does the same thing with any tool selected, but a laptop trackpad has no middle button - this is the way in without one. The toolbar's <strong>-</strong>, <strong>+</strong> and <strong>Fit</strong> buttons zoom for the same reason; Fit frames everything placed.</p>
                 </div>
                 <div class="component-card">
                     <h4>Pin Marker</h4>
@@ -1917,11 +1921,32 @@ Probe readouts, the scope channel labels and the measurements switch to kV autom
 
             <h3>Using Templates</h3>
             <ol>
-                <li>Scroll down in the left palette to find the "Circuits" section</li>
-                <li>Click on a template name to select it</li>
-                <li>Click on the canvas where you want to place the circuit</li>
-                <li>The complete circuit will be placed with proper component values and wiring</li>
+                <li>Open the <strong>Circuits</strong> tab in the left palette</li>
+                <li>Click a group heading to expand it - groups start closed, because there are 182 templates in 19 of them</li>
+                <li>Click a template name, then click the canvas to place it</li>
+                <li>The circuit arrives complete: values, wiring, probes on its input and output, the scope preset to its own time base, and an on-canvas note with the theory and a PROBE: line</li>
             </ol>
+
+            <h3>Interview Prep</h3>
+            <p>Four groups aimed at the questions a hardware interview asks - the kind Apple, Texas
+            Instruments, Cirrus Logic and National Instruments put to board-level and analog candidates.
+            Nothing in them repeats a circuit that already exists elsewhere in the library: where the
+            ground is covered the notes name the template that covers it, so "how does a buck converter
+            work" sends you to <strong>Buck Converter</strong> and the interview group adds the discrete
+            version, the gate drive and the efficiency argument instead.</p>
+            <ul>
+                <li><strong>Instrumentation &amp; scope</strong> - probe compensation, 1x vs 10x loading,
+                ground-lead ringing, 1 M&#937; vs 50 &#937; input, AC coupling, high- vs low-side current
+                sense, 4-wire Kelvin sensing. The measurement questions: the circuit is fine and the
+                answer on the screen is wrong because of how it was measured.</li>
+                <li><strong>Power &amp; converters</strong> - a discrete buck node by node (real PMOS,
+                NPN gate drive, Schottky), LDO vs switcher at 1 A, and the bootstrap capacitor that is
+                why an N-channel high side cannot run at 100 % duty.</li>
+                <li><strong>I/O &amp; signal integrity</strong> - termination three ways, pull-up sizing,
+                ground bounce, crosstalk, ESD clamp diodes.</li>
+                <li><strong>Fundamentals</strong> - the two-capacitor problem, the Miller effect,
+                BJT vs MOSFET as a switch, hot-plug inrush.</li>
+            </ul>
 
             <!-- Basic Circuits -->
             <h3>Basic Circuits</h3>
