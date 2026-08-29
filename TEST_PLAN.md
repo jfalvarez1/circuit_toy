@@ -648,6 +648,35 @@ exercise of the subcircuit engine by a shipped template.
 | 3.26.6 | `[ ]` **Tooling:** `template_smoke` stdout is unbuffered | A crash used to show the last 4 KB of already-passed templates, so the culprit looked 14 places earlier than it was |
 | 3.26.7 | `[ ]` **Bug:** two burn warnings on R_A and R_B | The discharge transistor was in ideal mode, where saturation output conductance is 1e-12; the DISCH node was barely defined while the latch flipped and threw a 58 V startup spike. A real output conductance settles it |
 
+### 3.27 Every circuit places itself, named probes, and the scope's mouse (2026-08-29: v3.22.0)
+
+Picking a circuit from the palette had only ever worked for the first hundred: the click's
+action code is a base plus an index, circuits were given a hundred codes, and there are 187.
+Everything past the hundredth landed in the range that belongs to saved subcircuits and was not
+recognised at all, so nothing was cleared and nothing was placed. The same fault had put
+UI_ACTION_UPDATE inside the property-edit range, where it is Offset.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.27.1 | `[ ]` Pick I2C Bus, then Button Debounce, then any circuit past the hundredth | Each one clears the last and places itself, framed and running - no click needed |
+| 3.27.2 | `[ ]` Click a source's **Offset** property, then **Frequency** | The edit field opens. Before this, Offset ran the updater and Frequency toggled sweep-tracking |
+| 3.27.3 | `[ ]` **Automated:** `circuit-playground --place-test` | 476 checks: every circuit recognised from its click and leaving the canvas holding exactly what a clean canvas holds, plus every part, property and plain button checked for overlapping codes |
+| 3.27.4 | `[ ]` Autoset the Common Emitter, pick another circuit, come back | Both show their traces every time - a template's preset lands on a scope reset to neutral first |
+| 3.27.5 | `[ ]` Read the probes on any circuit | Named for the node they sit on - IN, OUT, GATE, NEUT, SW OUT - on the schematic and as the scope's channel names |
+| 3.27.6 | `[ ]` **Automated:** `template_smoke --label-test` | 445 probes over 187 circuits: named, not CHn, inside seven characters, unique within the circuit |
+| 3.27.7 | `[ ]` Load LDO vs Switcher | Three probes: the PWM, the linear rail and the switcher's rail. Both halves of the comparison are probed |
+| 3.27.8 | `[ ]` Load Buck Converter and look at OUT | The ripple is visible - each channel has its own fitted band. At the old shared 2 V/div it was three hundredths of a division |
+| 3.27.9 | `[ ]` **Automated:** `--probe-audit` | The RIPPLE flag: a trace on the screen whose every movement is under a tenth of a division. Nine circuits had it |
+| 3.27.10 | `[ ]` Press T+ several times | The trace stays up. The recorder thins what it has to the new sample spacing instead of starting again |
+| 3.27.11 | `[ ]` **Automated:** `--span-test` | Four presses of T+ on all 187 circuits leave something to draw; 23 went blank before |
+| 3.27.12 | `[ ]` Left-drag on the scope screen | The trigger level lands where you drop it |
+| 3.27.13 | `[ ]` Wheel, then shift-wheel over the screen | Volts/div, then time/div |
+| 3.27.14 | `[ ]` Middle-drag on the screen | Pans: sideways moves the time window, down moves every channel. It had never run on the docked scope - the press was consumed by the trigger-level drag above the button test |
+| 3.27.15 | `[ ]` Click the `OUT` chip under V+/V-, then V+ | Only that channel rescales, from what its band was showing; the rail stays centred in its band. `ALL` hands every channel back to the shared scale |
+| 3.27.16 | `[ ]` Pop the scope out and press **KNOBS / SLIDERS** | The six controls redraw as sliders, drag the same way, and the choice survives a restart |
+| 3.27.17 | `[ ]` Circuits tab | Group rows are pressable bars; a name too long for the panel is cut with two dots rather than running over the canvas |
+| 3.27.18 | `[ ]` **Automated:** `--layout-test` at 1024x600 | The scope's four button rows clear the status bar |
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.
