@@ -58,6 +58,25 @@ Written at v3.18.0 plus the unreleased work on `main`.
 - **`permissions: contents: write`** — v3.17.0's build was green and the upload still failed with
   `Resource not accessible by integration`. GitHub's default token is read-only.
 
+### v3.21.1 — the crash every release since 3.19.2 had
+
+- **The shipped binary died a moment after start-up.** `0xC00000FD`, a stack overflow, logged
+  right after `app_init ok`. It happened in the binary CI ships and not in one built locally
+  from the same source, which is what made it look like somebody's machine: `App app = {0}` is
+  a local in `main()` carrying the whole UI state by value — the palette, the scope's capture
+  buffers, every panel rect, **223 KB** of it — and whether that fits in the default 1 MB stack
+  alongside everything `main()` then calls depends on the compiler's frame layout. CI's
+  toolchain lays it out differently. It is in static storage now, with the reserve raised to
+  8 MB besides.
+- **v3.19.2, v3.20.0 and v3.21.0 are all affected**, and all three passed CI.
+- **CI starts the binary it ships now.** `--layout-test` returns before `SDL_Init` and never
+  constructs the App, so the job was building a release, running a check that could not reach
+  the crashing path, and shipping it. It now runs the exe with a template and a screenshot and
+  fails if it does not get there, plus a PE-header check that the stack reserve stays at 8 MB.
+  `--version` works fine on a binary that cannot start; that is why it gave false confidence.
+- **The updater writes `update.log`** next to `crash.log`, timestamped per step, because an
+  update that fails leaves nothing behind once its console window closes.
+
 ### v3.21.0 — readable text
 
 - **Schematic text is antialiased and larger.** The canvas font was the 8x8 bitmap drawn as
