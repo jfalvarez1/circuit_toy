@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.15.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.15.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.16.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.16.0)** (auto-updating from v3.4.0 on)
 
 A native desktop circuit simulator written in C with SDL2. Build, simulate and analyse circuits
 with a drag-and-drop schematic and a bench oscilloscope.
@@ -10,10 +10,7 @@ in a recessed bezel, and knobs that look like the front of an instrument from ab
 an aesthetic choice, and it is also a legible one: every channel has its own colour, and the
 scope reads the way a scope reads.
 
-In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/), which is where a lot
-of us first watched current move through a schematic - here as a native app, with a bench
-oscilloscope, textbook-parameter device models, and a template library whose every number is
-checked against a hand calculation.
+In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/).
 
 ![Circuit Playground Screenshot](screenshot.png)
 
@@ -124,7 +121,7 @@ checked against a hand calculation.
 
 ![Example Circuits](gifs/example_circuits.gif)
 
-173 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+182 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -537,6 +534,27 @@ docked, and actually moves its value in the right direction.
 
 ![Pop-out scope in X-Y mode](screenshots/auto/scope_panel_xy.png)
 
+### Getting Around the Canvas
+
+Middle-drag pans and the wheel zooms, which needs a mouse. For a laptop trackpad there is a
+**Pan** tool beside Select/Wire/Delete/Probe - pick it and left-drag moves the canvas - and
+**-**, **+** and **Fit** on the toolbar. Fit frames everything placed, at any zoom.
+
+The palette opens as a table of contents: only **Tools** is expanded, and the other 20 part
+categories and all 19 template groups start closed. Click a heading to open it.
+
+### Naming Probes
+
+Click a probe and the properties panel offers one field: its name. Type `Vout` and every place
+the scope said CH2 says Vout - the stacked band tag, the measurement list, the trigger readout
+and the per-channel knob on the pop-out panel. Blank restores CHn. Adding or deleting probes
+renumbers the ones still called CHn and leaves the named ones alone.
+
+Switches say what state they are in, on the schematic: `CLOSED` / `OPEN` for an SPST, `POS n`
+for an SPDT, `ON` / `OFF` (plus `MAN` under manual control) for an analog switch. A closed
+switch is otherwise a straight line between two small dots, which on a busy schematic reads as
+a wire - and then a template that says "open the breaker" gives you nothing to look for.
+
 ### Bode Plot Analysis
 
 ![Bode Plot](gifs/bode_plot.gif)
@@ -771,6 +789,35 @@ and the answer on the screen is wrong because of how it was measured.
 - **Bootstrap High-Side Drive** (`Boot`) - C_boot rides the switch node to 23 V so an N-channel
   gate can sit above the rail, and the second copy holds the node high until the cap drains and
   the high side turns itself off. This is why a bootstrapped buck has a maximum duty cycle
+
+**Interview: I/O & signal integrity**
+
+- **Termination: none / series / parallel** (`Term`) - one driver, one 50 ohm line, three
+  endings. Unterminated the far end doubles to 4.75 V; series 33 ohm gives a clean 3.36 V and
+  absorbs what comes back; parallel 50 ohm is cleanest and costs the receiver a third of its
+  amplitude forever
+- **Pull-up Sizing** (`PullUp`) - 10k / 4.7k / 1k against 400 pF: 8.8 us at 330 uA, 4.1 us at
+  700 uA, 880 ns at 3.3 mA. Both ends of the I2C specification, and why the bus is capped at
+  400 pF
+- **Ground Bounce** (`Bounce`) - 330 mA in a nanosecond through 5 nH of shared return swings
+  the chip's ground 2.2 V pk-pk, and the pin that is holding LOW moves with it
+- **Crosstalk** (`Xtalk`) - the same 6.6 pC of coupled charge into a 10 k victim (0.94 V for
+  70 ns) and a 10 ohm one (76 mV, gone). Coupling is only a fault when the victim lets it be
+- **ESD Clamp Diodes** (`ESD`) - 6 V into a 3.3 V pin: through 1 k it sits at 3.85 V and pushes
+  current into the rail, which is how a live signal back-powers a board that is switched off
+
+**Interview: fundamentals**
+
+- **The Two-Capacitor Problem** (`CapE`) - 100 uF at 10 V switched onto an equal empty one.
+  Both end at 5 V and half the energy is gone, and it is the same half through 1 ohm as
+  through 100
+- **The Miller Effect** (`Miller`) - two identical common-source stages at 1 MHz; the one with
+  10 pF of C_gd sees 130 pF at its input and is down to a seventh of the other
+- **BJT or MOSFET as a Switch** (`SwSel`) - V_CE(sat) against I x R_DS(on), and what each
+  costs: continuous base current, or gate charge per edge. R_DS(on) is 3.4 ohm at V_GS = 5 V,
+  not the data sheet's 1.2 at 10 V, which is the whole "logic level" point
+- **Hot-Plug Inrush** (`Inrush`) - 1000 uF meeting 12 V through a closing connector: 240 A for
+  50 us, or 2.5 A through a 4.7 ohm limiter
 
 ### Ideal vs real models
 
