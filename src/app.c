@@ -961,6 +961,23 @@ void app_handle_events(App *app) {
                 break;
 
             case UI_ACTION_PROP_APPLY:
+                /* Naming a probe: the label is also the oscilloscope channel name, so a blank
+                   entry puts it back to CHn rather than leaving the channel with no name. */
+                if (app->input.editing_property && app->input.editing_prop_type == PROP_PROBE_NAME) {
+                    int pi = app->input.selected_probe_idx;
+                    if (pi >= 0 && pi < app->circuit->num_probes) {
+                        Probe *pr = &app->circuit->probes[pi];
+                        const char *t = app->input.input_buffer;
+                        while (*t == ' ') t++;
+                        if (!*t) snprintf(pr->label, sizeof pr->label, "CH%d", pr->channel_num + 1);
+                        else { strncpy(pr->label, t, sizeof pr->label - 1); pr->label[sizeof pr->label - 1] = 0; }
+                        char msg[64]; snprintf(msg, sizeof msg, "Probe named %s", pr->label);
+                        ui_set_status(&app->ui, msg);
+                        app->circuit->modified = true;
+                    }
+                    input_cancel_property_edit(&app->input);
+                    break;
+                }
                 // Apply text-edited property value
                 if (app->input.selected_component) {
                     if (input_apply_property_edit(&app->input, app->input.selected_component)) {
@@ -987,6 +1004,15 @@ void app_handle_events(App *app) {
                 else if (app->input.pending_ui_action >= UI_ACTION_PROP_EDIT &&
                     app->input.pending_ui_action < UI_ACTION_PROP_EDIT + 200) {
                     int prop_type = app->input.pending_ui_action - UI_ACTION_PROP_EDIT;
+                    if (prop_type == PROP_PROBE_NAME) {
+                        int pi = app->input.selected_probe_idx;
+                        if (pi >= 0 && pi < app->circuit->num_probes && !app->input.editing_property) {
+                            input_start_property_edit(&app->input, PROP_PROBE_NAME, app->circuit->probes[pi].label);
+                            ui_set_status(&app->ui, "Type a name for this probe, Enter to apply (blank restores CHn)");
+                        }
+                        app->input.pending_ui_action = UI_ACTION_NONE;
+                        break;
+                    }
                     if (app->input.selected_component && !app->input.editing_property) {
                         // Get current value to show in edit field
                         char current_value[64] = "";
@@ -2268,6 +2294,10 @@ void app_render(App *app) {
     // Render UI elements
     ui_render_toolbar(&app->ui, r);
     ui_render_palette(&app->ui, r);
+    {   /* the properties panel names probes as well as components */
+        int pi = app->input.selected_probe_idx;
+        app->ui.selected_probe = (pi >= 0 && pi < app->circuit->num_probes) ? &app->circuit->probes[pi] : NULL;
+    }
     ui_render_properties(&app->ui, r, app->input.selected_component, &app->input);
     // Only render oscilloscope in main window if not popped out
     if (!app->ui.scope_popped_out) {

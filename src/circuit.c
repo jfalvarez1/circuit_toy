@@ -415,7 +415,7 @@ int circuit_add_probe(Circuit *circuit, int node_id, float x, float y) {
     probe->color = probe_colors[idx % 8];
     probe->voltage = 0;
     probe->channel_num = idx;
-    snprintf(probe->label, sizeof(probe->label), "CH%d", idx + 1);
+    snprintf(probe->label, sizeof(probe->label), "CH%d", idx + 1);   /* renameable: see probe_label_is_default */
 
     circuit->num_probes++;
     return probe->id;

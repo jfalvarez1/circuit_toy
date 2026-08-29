@@ -183,6 +183,20 @@ static int layout_test(void) {
                 if (ids[a] == ids[b]) { printf("[FAIL] two UI actions share id %d\n", ids[a]); fails++; }
     }
 
+    /* ---- probe names are the scope's channel names ---- */
+    {
+        if (probe_label_is_default("Vout")) { printf("[FAIL] 'Vout' read as a default probe label\n"); fails++; }
+        if (!probe_label_is_default("CH3")) { printf("[FAIL] 'CH3' not read as a default probe label\n"); fails++; }
+        if (!probe_label_is_default(""))    { printf("[FAIL] an empty label is not a default\n"); fails++; }
+        if (probe_label_is_default("CH"))   { printf("[FAIL] 'CH' with no number read as a default\n"); fails++; }
+        if (probe_label_is_default("CLK"))  { printf("[FAIL] 'CLK' read as a default\n"); fails++; }
+        memset(ui->scope_channels, 0, sizeof ui->scope_channels);
+        if (strcmp(ui_channel_name(ui, 2), "CH3")) { printf("[FAIL] an unnamed channel is not CH3\n"); fails++; }
+        snprintf(ui->scope_channels[2].name, sizeof ui->scope_channels[2].name, "Vout");
+        if (strcmp(ui_channel_name(ui, 2), "Vout")) { printf("[FAIL] a named channel does not report its name\n"); fails++; }
+        printf("[ OK ] probe names: defaults renumber, typed names survive, the scope reads them\n");
+    }
+
     /* ---- pan and zoom: the controls a laptop without a middle button needs ---- */
     {
         int pan_items = 0;

@@ -21,6 +21,7 @@ typedef struct {
 // Property being edited
 typedef enum {
     PROP_NONE = 0,
+    PROP_PROBE_NAME,    // the probe's label, which is also its oscilloscope channel name
     PROP_VALUE,         // Main value (resistance, capacitance, voltage, etc.)
     PROP_FREQUENCY,
     PROP_PHASE,

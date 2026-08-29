@@ -1445,6 +1445,22 @@ static int draw_sweep_config(SDL_Renderer *renderer, UIState *ui, int x, int pro
     return prop_y;
 }
 
+/* What the scope calls a channel: the probe's own label if it has one, CHn otherwise. */
+const char *ui_channel_name(const UIState *ui, int ch) {
+    static char fallback[8];
+    if (ui && ch >= 0 && ch < MAX_PROBES && ui->scope_channels[ch].name[0]) return ui->scope_channels[ch].name;
+    snprintf(fallback, sizeof fallback, "CH%d", ch + 1);
+    return fallback;
+}
+
+/* "CH3" and "" are defaults; anything else is a name somebody typed. */
+bool probe_label_is_default(const char *label) {
+    if (!label || !label[0]) return true;
+    if (label[0] != 'C' || label[1] != 'H') return false;
+    for (const char *p = label + 2; *p; p++) if (*p < '0' || *p > '9') return false;
+    return label[2] != '\0';
+}
+
 void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *selected, struct InputState *input) {
     int x = ui->window_width - ui->properties_width;
     int y = TOOLBAR_HEIGHT;
@@ -2985,6 +3001,35 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
 
         // Track content height for scrollbar calculations (relative to panel start)
         ui->properties_content_height = prop_y + 30 - content_y;  // Include help text
+    } else if (ui->selected_probe) {
+        /* A selected probe gets one editable field: its name. That name is what the scope
+           labels the channel with, so "Vout" beats "CH2" on a schematic with eight of them. */
+        ui->num_properties = 0;
+        Probe *pr = ui->selected_probe;
+        int prop_y = content_y + 6;
+        int prop_w = ui->properties_width - 20;
+        SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+        char hdr[64];
+        snprintf(hdr, sizeof hdr, "Probe on channel %d", pr->channel_num + 1);
+        ui_draw_text(renderer, hdr, x + 10, prop_y);
+        prop_y += 20;
+
+        bool editing = input->editing_property && input->editing_prop_type == PROP_PROBE_NAME;
+        draw_property_field(renderer, x + 10, prop_y, prop_w, "Name:", pr->label,
+                            editing, input->input_buffer, input->input_cursor);
+        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+        ui->properties[ui->num_properties].prop_type = PROP_PROBE_NAME;
+        ui->num_properties++;
+        prop_y += 22;
+
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
+        char vbuf[48];
+        snprintf(vbuf, sizeof vbuf, "Reading: %.4g V", pr->voltage);
+        ui_draw_text(renderer, vbuf, x + 10, prop_y); prop_y += 16;
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
+        ui_draw_text(renderer, "Up to 7 characters.", x + 10, prop_y); prop_y += 14;
+        ui_draw_text(renderer, "Blank restores CHn.", x + 10, prop_y); prop_y += 14;
+        ui->properties_content_height = prop_y + 10 - content_y;
     } else {
         // Reset num_properties when nothing is selected to avoid stale bounds
         ui->num_properties = 0;
@@ -2992,7 +3037,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
         SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
         ui_draw_text(renderer, "No selection", x + 10, content_y + 35);
         ui_draw_text(renderer, "Click component", x + 10, content_y + 55);
-        ui_draw_text(renderer, "to edit properties", x + 10, content_y + 70);
+        ui_draw_text(renderer, "or probe", x + 10, content_y + 70);
+        ui_draw_text(renderer, "to edit properties", x + 10, content_y + 85);
 
         // Minimal content height when nothing selected
         ui->properties_content_height = 100;
@@ -3236,7 +3282,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
     // Update trigger channel button label
     static char trig_ch_label[8];
-    snprintf(trig_ch_label, sizeof(trig_ch_label), "CH%d", ui->trigger_channel + 1);
+    snprintf(trig_ch_label, sizeof(trig_ch_label), "%s", ui_channel_name(ui, ui->trigger_channel));
     ui->btn_scope_trig_ch.label = trig_ch_label;
 
     // Title bar with settings
@@ -3776,7 +3822,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                         SDL_RenderDrawLine(renderer, r->x, ch_center, r->x + r->w, ch_center);
                         // Channel tag in its own colour
                         char tag[24];
-                        snprintf(tag, sizeof(tag), "CH%d", ch + 1);
+                        snprintf(tag, sizeof(tag), "%s", ui_channel_name(ui, ch));
                         if (fit) {
                             double v_lo = ui->scope_capture_values[ch][0], v_hi = v_lo;
                             for (int i = 1; i < ui->scope_capture_count; i++) { double v = ui->scope_capture_values[ch][i]; if (v < v_lo) v_lo = v; if (v > v_hi) v_hi = v; }
@@ -3787,7 +3833,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                             ui->scope_band_vdiv[ch] = vd;
                             ch_scale = (band_h / 8.0) / vd;
                             char vs[16]; format_volt_value(vs, sizeof vs, vd);
-                            snprintf(tag, sizeof(tag), "CH%d %s/div", ch + 1, vs);
+                            snprintf(tag, sizeof(tag), "%s %s/div", ui_channel_name(ui, ch), vs);
                         }
                         SDL_SetRenderDrawColor(renderer,
                             ui->scope_channels[ch].color.r,
@@ -4215,7 +4261,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
         ui_draw_text(renderer, "TRIG", r->x + 230, info_y);
         SDL_SetRenderDrawColor(renderer, 0xff, 0x80, 0x00, 0xff);
-        snprintf(buf, sizeof(buf), "CH%d %s %s %s", ui->trigger_channel + 1, lv, edges[ui->trigger_edge % 3], modes[ui->trigger_mode % 3]);
+        snprintf(buf, sizeof(buf), "%s %s %s %s", ui_channel_name(ui, ui->trigger_channel), lv, edges[ui->trigger_edge % 3], modes[ui->trigger_mode % 3]);
         ui_draw_text(renderer, buf, r->x + 270, info_y);
     }
 
@@ -4235,7 +4281,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             voltage = sim->circuit->probes[ch].voltage;
         }
 
-        { char vs[32]; ui_volt_readout(vs, sizeof vs, voltage); snprintf(buf, sizeof(buf), "CH%d:%s", ch + 1, vs); }
+        { char vs[32]; ui_volt_readout(vs, sizeof vs, voltage); snprintf(buf, sizeof(buf), "%s:%s", ui_channel_name(ui, ch), vs); }
         ui_draw_text(renderer, buf, r->x + ch * 80, info_y);
     }
 
@@ -4269,7 +4315,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 ui->scope_channels[ch].color.r,
                 ui->scope_channels[ch].color.g,
                 ui->scope_channels[ch].color.b, 0xff);
-            snprintf(buf, sizeof(buf), "CH%d:", ch + 1);
+            snprintf(buf, sizeof(buf), "%s:", ui_channel_name(ui, ch));
             ui_draw_text(renderer, buf, meas_x, meas_y);
 
             // Measurements in gray, laid out in two columns
@@ -7250,10 +7296,14 @@ void ui_update_scope_channels(UIState *ui, Circuit *circuit) {
         ui->scope_channels[i].probe_idx = i;
         ui->scope_channels[i].color = PROBE_COLORS[i];
 
-        // Update probe with channel info
+        // Update probe with channel info. The label is only renumbered while it is still a
+        // default one - a probe the user has named "Vout" keeps that name when probes are
+        // added, removed or reordered.
         circuit->probes[i].channel_num = i;
         circuit->probes[i].color = PROBE_COLORS[i];
-        snprintf(circuit->probes[i].label, sizeof(circuit->probes[i].label), "CH%d", i + 1);
+        if (probe_label_is_default(circuit->probes[i].label))
+            snprintf(circuit->probes[i].label, sizeof(circuit->probes[i].label), "CH%d", i + 1);
+        snprintf(ui->scope_channels[i].name, sizeof ui->scope_channels[i].name, "%s", circuit->probes[i].label);
     }
 
     // Disable unused channels
@@ -7686,9 +7736,9 @@ void ui_scope_controls_scroll(UIState *ui, int direction) {
 
 #define SCOPE_PANEL_W   250      /* right-hand column of knobs */
 
-static const char *knob_label(int k) {
+static const char *knob_label(const UIState *ui, int k) {
     static char chbuf[8];
-    if (k >= KNOB_CH_BASE) { snprintf(chbuf, sizeof chbuf, "CH%d", k - KNOB_CH_BASE + 1); return chbuf; }
+    if (k >= KNOB_CH_BASE) { snprintf(chbuf, sizeof chbuf, "%s", ui_channel_name(ui, k - KNOB_CH_BASE)); return chbuf; }
     switch (k) {
         case KNOB_VOLTS:     return "VOLTS/DIV";
         case KNOB_TIME:      return "TIME/DIV";
@@ -7780,7 +7830,7 @@ static void knob_value_text(UIState *ui, int k, char *buf, size_t n) {
         }
         case KNOB_TRIGGER:   snprintf(buf, n, "%+.3g V", ui->trigger_level); break;
         case KNOB_INTENSITY: snprintf(buf, n, "%d %%", (int)(ui->brightness * 100.0 + 0.5)); break;
-        default:             snprintf(buf, n, "CH%d", ui->scope_selected_channel + 1); break;
+        default:             snprintf(buf, n, "%s", ui_channel_name(ui, ui->scope_selected_channel)); break;
     }
 }
 
@@ -7907,7 +7957,7 @@ void ui_render_scope_panel(UIState *ui, SDL_Renderer *renderer) {
                                k->cx + w + (int)((k->r - 4) * cos(a)), k->cy + (int)((k->r - 4) * sin(a)));
 
         /* label above, value below */
-        const char *lab = knob_label(i);
+        const char *lab = knob_label(ui, i);
         SDL_SetRenderDrawColor(renderer, 0xb9, 0xa6, 0xe6, 0xff);
         ui_draw_text(renderer, lab, k->cx - (int)(strlen(lab) * 4), k->bounds.y + 2);
         char val[32]; knob_value_text(ui, i, val, sizeof(val));

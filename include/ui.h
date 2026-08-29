@@ -163,6 +163,7 @@ typedef struct {
     int probe_idx;
     double offset;      // vertical offset in volts
     double volt_div;    // this channel's own volts/div; 0 = follow the main VOLTS/DIV knob
+    char name[8];       // the probe's label - "CH3", or whatever the user typed instead
 } ScopeChannel;
 
 // Predefined probe colors for oscilloscope channels
@@ -193,6 +194,8 @@ typedef struct {
     Button btn_load;
     Button btn_export_svg;
     Button btn_screenshot;
+    /* the probe the properties panel is naming, refreshed from the input state each frame */
+    Probe *selected_probe;
     Button btn_zoom_out;             // canvas zoom, for pointers with no wheel
     Button btn_zoom_in;
     Button btn_zoom_fit;
@@ -492,6 +495,8 @@ typedef struct AnalysisState AnalysisState_fwd;
 void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer);
 void ui_render_palette(UIState *ui, SDL_Renderer *renderer);
 void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *selected, struct InputState *input);
+bool probe_label_is_default(const char *label);   // "CH2" or empty: safe to renumber
+const char *ui_channel_name(const UIState *ui, int ch);   // the probe's name, or CHn
 void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
 void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim, void *analysis);
 void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
