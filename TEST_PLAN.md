@@ -699,6 +699,22 @@ rate was answering to the solver's step.
 | 3.28.9 | `[ ]` **Automated:** `python tools/trace_stability.py build/circuit-playground.exe` | A triggered trace stands still between frames on all three templates |
 | 3.28.10 | `[ ]` Phase Shift Osc: read the output shape | Lightly clipped, and the audit says so: gain 33 against the 29 it needs with nothing holding the amplitude down. A diode limiter across Rf is the fix, not yet made |
 
+### 3.29 Rows that cannot be applied, and parts no template contains (2026-08-29: v3.22.2)
+
+Two audits of paths nothing had ever run. The properties panel builds its rows while drawing
+them and the app applies them in a switch somewhere else, and nothing compared the two lists.
+--file-test round-trips every template, which covers the 52 component types that appear in one;
+the other 74 are saved and loaded by code nobody exercises.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.29.1 | `[ ]` Select a Schottky diode and type a forward voltage | It sticks. Before, the field showed the right number, took the typing and answered "Invalid value" - the panel reuses the LED's row and only an LED could be written back |
+| 3.29.2 | `[ ]` **Automated:** `circuit-playground --prop-test` | 86 typed rows and 50 toggles over 35 parts, 0 that the panel offers and the app cannot apply |
+| 3.29.3 | `[ ]` **Automated:** `template_smoke --parts-file-test` | All 124 component types on one canvas, each with a rotation and a non-default value, through both formats |
+| 3.29.4 | `[ ]` **Bug:** an out-of-range table index crashed the app | An arbitrary source's properties start with an index into four tables and the lookup read the array before checking it - "idx < 2" is true of every negative number. The index comes from a saved file. The lookup checks its argument now, and loading clamps it |
+| 3.29.5 | `[ ]` Place an Arbitrary source, save, reload | It plays a table; a file carrying a bad index loads with table 0 rather than taking the app down |
+| 3.29.6 | `[ ]` **Automated:** the whole battery | `bash tools/run_audits.sh` - 34 suites, several at a time, about four minutes |
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.
