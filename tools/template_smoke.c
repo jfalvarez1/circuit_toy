@@ -354,6 +354,10 @@ static void circuit_compare_ex(Circuit *a, Circuit *b, bool strict, char *why, s
     }
     else if (b->num_wires != a->num_wires)
         snprintf(why, whyn, "%d wires saved, %d came back", a->num_wires, b->num_wires);
+    /* Probes were never compared here, so nothing noticed whether they came back - and they are
+       what the scope is looking at, which makes them part of the circuit as much as any wire. */
+    else if (b->num_probes != a->num_probes)
+        snprintf(why, whyn, "%d probes saved, %d came back", a->num_probes, b->num_probes);
     else {
         /* Paired by id, not by position. A save and a load keep the order; an undo does not -
            removing a part shifts the rest down and putting it back appends it - and comparing
@@ -465,7 +469,8 @@ static void roundtrip_leg(Circuit *a, const char *path,
 static int undo_test(void) {
     static const char *op_name[] = { "add a part", "delete a part", "move a part",
                                      "add a wire", "delete a wire", "delete a selection",
-                                     "rotate a part", "edit a value", "duplicate a part" };
+                                     "rotate a part", "edit a value", "duplicate a part",
+                                     "add a probe", "delete a probe" };
     int fails = 0, checks = 0, templates = 0;
 
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -474,7 +479,7 @@ static int undo_test(void) {
         if (!ti) continue;
         templates++;
 
-        for (int op = 0; op < 9; op++) {
+        for (int op = 0; op < 11; op++) {
             Circuit *c = circuit_create();
             if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); break; }
             if (!file_save_circuit(c, "undo_before.cpg")) { circuit_free(c); break; }
@@ -538,6 +543,20 @@ static int undo_test(void) {
                         if (r->type != COMP_RESISTOR) continue;
                         circuit_push_edit_undo(c, r);
                         r->props.resistor.resistance *= 3.0;
+                        did = true;
+                    }
+                    break;
+                }
+                case 9: {   /* place a probe on a node */
+                    if (c->num_nodes > 0 && c->num_probes < MAX_PROBES) {
+                        int pid = circuit_add_probe(c, c->nodes[0].id, c->nodes[0].x, c->nodes[0].y);
+                        if (pid > 0) { circuit_push_probe_undo(c, pid); did = true; }
+                    }
+                    break;
+                }
+                case 10: {  /* and take one off again */
+                    if (c->num_probes > 0) {
+                        circuit_delete_probe(c, c->probes[c->num_probes - 1].id);
                         did = true;
                     }
                     break;

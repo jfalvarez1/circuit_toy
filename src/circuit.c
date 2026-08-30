@@ -1127,6 +1127,56 @@ void circuit_push_undo(Circuit *circuit, UndoActionType type, int id, Component 
     action->batch = circuit->undo_batch_current;
 }
 
+void circuit_push_probe_undo(Circuit *circuit, int probe_id) {
+    if (!circuit) return;
+    for (int i = 0; i < circuit->num_probes; i++) {
+        if (circuit->probes[i].id != probe_id) continue;
+        circuit_push_undo(circuit, UNDO_ADD_PROBE, probe_id, NULL, circuit->probes[i].x,
+                          circuit->probes[i].y);
+        if (circuit->undo_count > 0)
+            circuit->undo_stack[circuit->undo_count - 1].probe_backup = circuit->probes[i];
+        return;
+    }
+}
+
+void circuit_delete_probe(Circuit *circuit, int probe_id) {
+    if (!circuit) return;
+    for (int i = 0; i < circuit->num_probes; i++) {
+        if (circuit->probes[i].id != probe_id) continue;
+        circuit_push_undo(circuit, UNDO_REMOVE_PROBE, probe_id, NULL, circuit->probes[i].x,
+                          circuit->probes[i].y);
+        if (circuit->undo_count > 0)
+            circuit->undo_stack[circuit->undo_count - 1].probe_backup = circuit->probes[i];
+        circuit_remove_probe(circuit, probe_id);
+        return;
+    }
+}
+
+/* Which probe is the recorded one? A probe's id is its position in the list plus one, so it
+   changes under any probe that is added or removed before it - an id noted before an edit names
+   a different probe afterwards, or none. What identifies a probe is the node it is on and where
+   it sits. */
+static int probe_like(Circuit *circuit, const Probe *p) {
+    if (!circuit || !p) return -1;
+    for (int i = 0; i < circuit->num_probes; i++)
+        if (circuit->probes[i].node_id == p->node_id &&
+            fabsf(circuit->probes[i].x - p->x) < 0.5f &&
+            fabsf(circuit->probes[i].y - p->y) < 0.5f)
+            return circuit->probes[i].id;
+    return -1;
+}
+
+/* Put a recorded probe back on the circuit, name and channel and all. */
+static void circuit_restore_probe(Circuit *circuit, const Probe *p) {
+    if (!circuit || !p || circuit->num_probes >= MAX_PROBES) return;
+    int id = circuit_add_probe(circuit, p->node_id, p->x, p->y);
+    if (id <= 0) return;
+    Probe *back = &circuit->probes[circuit->num_probes - 1];
+    int keep_id = back->id;
+    *back = *p;
+    back->id = keep_id;
+}
+
 void circuit_push_edit_undo(Circuit *circuit, Component *comp) {
     if (!circuit || !comp) return;
     circuit_push_undo(circuit, UNDO_EDIT_COMPONENT, comp->id, component_clone(comp), comp->x, comp->y);
@@ -1222,6 +1272,24 @@ static bool circuit_undo_one(Circuit *circuit) {
                 circuit_push_redo_internal(circuit, UNDO_ADD_COMPONENT, action->id, NULL, 0, 0, 0, 0);
                 action->component_backup = NULL;  // Don't free it
             }
+            break;
+
+        case UNDO_ADD_PROBE:
+            circuit_push_redo_internal(circuit, UNDO_REMOVE_PROBE, action->id, NULL,
+                                       action->old_x, action->old_y, 0, 0);
+            if (circuit->redo_count > 0)
+                circuit->redo_stack[circuit->redo_count - 1].probe_backup = action->probe_backup;
+            {   int pid = probe_like(circuit, &action->probe_backup);
+                if (pid > 0) circuit_remove_probe(circuit, pid); }
+            break;
+
+        case UNDO_REMOVE_PROBE:
+            circuit_restore_probe(circuit, &action->probe_backup);
+            circuit_push_redo_internal(circuit, UNDO_ADD_PROBE,
+                                       circuit->num_probes > 0 ? circuit->probes[circuit->num_probes - 1].id : 0,
+                                       NULL, action->old_x, action->old_y, 0, 0);
+            if (circuit->redo_count > 0)
+                circuit->redo_stack[circuit->redo_count - 1].probe_backup = action->probe_backup;
             break;
 
         case UNDO_EDIT_COMPONENT: {
@@ -1396,6 +1464,32 @@ static bool circuit_redo_one(Circuit *circuit) {
                     undo->old_y = 0;
                 }
                 action->component_backup = NULL;  // Don't free it
+            }
+            break;
+
+        /* On the redo stack a type names what the undo did, and redo does the opposite - the
+           same convention the component cases above use. UNDO_ADD_PROBE here means the undo put
+           a probe back, so redoing takes it off again. */
+        case UNDO_ADD_PROBE:
+            if (circuit->undo_count < MAX_UNDO) {
+                UndoAction *undo = &circuit->undo_stack[circuit->undo_count++];
+                memset(undo, 0, sizeof *undo);
+                undo->type = UNDO_REMOVE_PROBE;
+                undo->id = action->id;
+                undo->probe_backup = action->probe_backup;
+            }
+            {   int pid = probe_like(circuit, &action->probe_backup);
+                if (pid > 0) circuit_remove_probe(circuit, pid); }
+            break;
+
+        case UNDO_REMOVE_PROBE:
+            circuit_restore_probe(circuit, &action->probe_backup);
+            if (circuit->undo_count < MAX_UNDO && circuit->num_probes > 0) {
+                UndoAction *undo = &circuit->undo_stack[circuit->undo_count++];
+                memset(undo, 0, sizeof *undo);
+                undo->type = UNDO_ADD_PROBE;
+                undo->id = circuit->probes[circuit->num_probes - 1].id;
+                undo->probe_backup = action->probe_backup;
             }
             break;
 

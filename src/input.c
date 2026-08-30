@@ -750,7 +750,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             if (hit >= 0) {
                                 if (input->selected_probe_idx == hit) input->selected_probe_idx = -1;
                                 input->dragging_probe_idx = -1;
-                                circuit_remove_probe(circuit, circuit->probes[hit].id);
+                                circuit_delete_probe(circuit, circuit->probes[hit].id);
                                 ui_set_status(ui, "Probe removed (probe tool toggles; Select tool + Delete also works)");
                                 break;
                             }
@@ -779,13 +779,19 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                         }
 
                         if (best_node_id >= 0) {
-                            circuit_add_probe(circuit, best_node_id, best_tx, best_ty);
+                            {   /* recorded, so Ctrl+Z takes it off again */
+                                int pid = circuit_add_probe(circuit, best_node_id, best_tx, best_ty);
+                                if (pid > 0) circuit_push_probe_undo(circuit, pid);
+                            }
                             ui_set_status(ui, "Probe placed");
                         } else {
                             // Fallback to stored node positions for wire junctions
                             Node *node = circuit_find_node_at(circuit, wx, wy, 25);
                             if (node) {
-                                circuit_add_probe(circuit, node->id, node->x, node->y);
+                                {
+                                    int pid = circuit_add_probe(circuit, node->id, node->x, node->y);
+                                    if (pid > 0) circuit_push_probe_undo(circuit, pid);
+                                }
                                 ui_set_status(ui, "Probe placed");
                             } else {
                                 ui_set_status(ui, "Click on a node or wire junction to place probe");
@@ -1879,7 +1885,7 @@ void input_delete_selected(InputState *input, Circuit *circuit) {
     if (input->selected_probe_idx >= 0 && input->selected_probe_idx < circuit->num_probes) {
         circuit->probes[input->selected_probe_idx].selected = false;
         int probe_id = circuit->probes[input->selected_probe_idx].id;
-        circuit_remove_probe(circuit, probe_id);
+        circuit_delete_probe(circuit, probe_id);
         input->selected_probe_idx = -1;
     }
 }

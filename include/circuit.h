@@ -51,7 +51,11 @@ typedef enum {
        rotation. One record covers all of them, because what it stores is the part as it was.
        Add, delete and move each need their own because they change what is on the canvas or
        where; this one is for a part that stays exactly where it is and is different. */
-    UNDO_EDIT_COMPONENT
+    UNDO_EDIT_COMPONENT,
+    /* Probes are edits too: putting one on a node and taking it off again are things a user
+       does constantly, and neither could be taken back. */
+    UNDO_ADD_PROBE,
+    UNDO_REMOVE_PROBE
 } UndoActionType;
 
 // Undo action
@@ -69,6 +73,9 @@ typedef struct {
        selection of thirty parts is one thing the user did, not thirty; without this it took
        thirty presses of Ctrl+Z to put it back. 0 means an edit that stands alone. */
     int batch;
+    /* A probe is small and owns nothing, so the record carries the whole of it - node, position,
+       colour, channel and the name, which is the one thing a user typed. */
+    Probe probe_backup;
 } UndoAction;
 
 #define MAX_UNDO 100
@@ -149,6 +156,9 @@ void circuit_remove_wire(Circuit *circuit, int wire_id);
    The plain remove_ functions above do not record anything. */
 void circuit_delete_component(Circuit *circuit, int comp_id);
 void circuit_delete_wire(Circuit *circuit, int wire_id);
+void circuit_delete_probe(Circuit *circuit, int probe_id);
+/* Record a probe that has just been added, so undo can take it off again. */
+void circuit_push_probe_undo(Circuit *circuit, int probe_id);
 Wire *circuit_find_wire_at(Circuit *circuit, float x, float y, float threshold);
 int circuit_split_wire_at(Circuit *circuit, Wire *wire, float x, float y);
 
