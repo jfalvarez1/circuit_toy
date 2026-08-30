@@ -1495,6 +1495,7 @@ void input_handle_key(InputState *input, SDL_Keycode key,
                     // Rotate component being placed (before clicking)
                     input->placing_rotation = (input->placing_rotation + 90) % 360;
                 } else if (input->selected_component) {
+                    circuit_push_edit_undo(circuit, input->selected_component);
                     component_rotate(input->selected_component);
                     circuit_update_component_nodes(circuit, input->selected_component);
                 }
@@ -1916,6 +1917,7 @@ void input_paste(InputState *input, Circuit *circuit, RenderContext *render) {
 
     Component *pasted = circuit_paste_component(circuit, snapped_x, snapped_y);
     if (pasted) {
+        circuit_push_undo(circuit, UNDO_ADD_COMPONENT, pasted->id, NULL, 0, 0);
         // Deselect previous and select pasted
         if (input->selected_component) {
             input->selected_component->selected = false;
@@ -1930,6 +1932,7 @@ void input_duplicate(InputState *input, Circuit *circuit) {
 
     Component *dup = circuit_duplicate_component(circuit, input->selected_component);
     if (dup) {
+        circuit_push_undo(circuit, UNDO_ADD_COMPONENT, dup->id, NULL, 0, 0);
         input->selected_component->selected = false;
         dup->selected = true;
         input->selected_component = dup;

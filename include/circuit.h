@@ -46,7 +46,12 @@ typedef enum {
     UNDO_REMOVE_COMPONENT,
     UNDO_ADD_WIRE,
     UNDO_REMOVE_WIRE,
-    UNDO_MOVE_COMPONENT
+    UNDO_MOVE_COMPONENT,
+    /* A part changed in place: a value typed in, a model toggled, a part number cycled, a
+       rotation. One record covers all of them, because what it stores is the part as it was.
+       Add, delete and move each need their own because they change what is on the canvas or
+       where; this one is for a part that stays exactly where it is and is different. */
+    UNDO_EDIT_COMPONENT
 } UndoActionType;
 
 // Undo action
@@ -186,6 +191,8 @@ void circuit_delete_selected(Circuit *circuit);
 // Undo/Redo operations
 void circuit_push_undo(Circuit *circuit, UndoActionType type, int id, Component *backup, float old_x, float old_y);
 /* Everything recorded between these two comes back on one Ctrl+Z, and goes again on one Ctrl+Y. */
+/* Record a component as it is right now, before changing it in place. */
+void circuit_push_edit_undo(Circuit *circuit, Component *comp);
 void circuit_undo_batch_begin(Circuit *circuit);
 void circuit_undo_batch_end(Circuit *circuit);
 bool circuit_undo(Circuit *circuit);

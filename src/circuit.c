@@ -1127,6 +1127,11 @@ void circuit_push_undo(Circuit *circuit, UndoActionType type, int id, Component 
     action->batch = circuit->undo_batch_current;
 }
 
+void circuit_push_edit_undo(Circuit *circuit, Component *comp) {
+    if (!circuit || !comp) return;
+    circuit_push_undo(circuit, UNDO_EDIT_COMPONENT, comp->id, component_clone(comp), comp->x, comp->y);
+}
+
 void circuit_undo_batch_begin(Circuit *circuit) {
     if (!circuit || circuit->undo_batch_current) return;   /* already inside one */
     circuit->undo_batch_current = ++circuit->undo_batch_next;
@@ -1218,6 +1223,33 @@ static bool circuit_undo_one(Circuit *circuit) {
                 action->component_backup = NULL;  // Don't free it
             }
             break;
+
+        case UNDO_EDIT_COMPONENT: {
+            /* Swap: the recorded part becomes the live one, and what was live is recorded for
+               the redo. Properties are adopted rather than assigned, because two of them own
+               memory through the union and a raw copy would hand this part someone else's
+               buffers. */
+            Component *live = NULL;
+            for (int i = 0; i < circuit->num_components; i++)
+                if (circuit->components[i]->id == action->id) { live = circuit->components[i]; break; }
+            if (live && action->component_backup) {
+                Component *was = component_clone(live);
+                Component *b = action->component_backup;
+                component_adopt_props(live, &b->props);
+                live->rotation = b->rotation;
+                live->x = b->x;
+                live->y = b->y;
+                snprintf(live->part, sizeof live->part, "%s", b->part);
+                /* The part never left, so it still owns its nodes: move those back to where its
+                   terminals are now, the way rotating or dragging does. Finding or making nodes
+                   instead would hand it fresh ones and leave whatever it was wired to sitting on
+                   the old ones - the connection would be lost by the undo. */
+                circuit_update_component_nodes(circuit, live);
+                circuit_push_redo_internal(circuit, UNDO_EDIT_COMPONENT, action->id, was,
+                                           live->x, live->y, 0, 0);
+            }
+            break;
+        }
 
         case UNDO_MOVE_COMPONENT:
             // Move component back to old position
@@ -1366,6 +1398,36 @@ static bool circuit_redo_one(Circuit *circuit) {
                 action->component_backup = NULL;  // Don't free it
             }
             break;
+
+        case UNDO_EDIT_COMPONENT: {
+            Component *live = NULL;
+            for (int i = 0; i < circuit->num_components; i++)
+                if (circuit->components[i]->id == action->id) { live = circuit->components[i]; break; }
+            if (live && action->component_backup) {
+                Component *was = component_clone(live);
+                Component *b = action->component_backup;
+                component_adopt_props(live, &b->props);
+                live->rotation = b->rotation;
+                live->x = b->x;
+                live->y = b->y;
+                snprintf(live->part, sizeof live->part, "%s", b->part);
+                /* The part never left, so it still owns its nodes: move those back to where its
+                   terminals are now, the way rotating or dragging does. Finding or making nodes
+                   instead would hand it fresh ones and leave whatever it was wired to sitting on
+                   the old ones - the connection would be lost by the undo. */
+                circuit_update_component_nodes(circuit, live);
+                if (circuit->undo_count < MAX_UNDO) {
+                    UndoAction *undo = &circuit->undo_stack[circuit->undo_count++];
+                    memset(undo, 0, sizeof *undo);
+                    undo->type = UNDO_EDIT_COMPONENT;
+                    undo->id = action->id;
+                    undo->component_backup = was;
+                } else {
+                    component_free(was);
+                }
+            }
+            break;
+        }
 
         case UNDO_MOVE_COMPONENT:
             // Move component to the redo position

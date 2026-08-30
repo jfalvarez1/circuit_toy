@@ -1009,12 +1009,23 @@ void app_handle_events(App *app) {
                 }
                 // Apply text-edited property value
                 if (app->input.selected_component) {
+                    /* what the part was, before the typing lands: a value edit is as much an
+                       edit as a move, and Ctrl+Z could not take one back */
+                    Component *before_edit = component_clone(app->input.selected_component);
                     if (input_apply_property_edit(&app->input, app->input.selected_component)) {
+                        if (before_edit) {
+                            circuit_push_undo(app->circuit, UNDO_EDIT_COMPONENT,
+                                              app->input.selected_component->id, before_edit,
+                                              app->input.selected_component->x,
+                                              app->input.selected_component->y);
+                            before_edit = NULL;
+                        }
                         app_on_property_changed(app, app->input.selected_component);
-                        ui_set_status(&app->ui, "Property updated");
+                        ui_set_status(&app->ui, "Property updated (Ctrl+Z to undo)");
                     } else {
                         ui_set_status(&app->ui, "Invalid value");
                     }
+                    if (before_edit) component_free(before_edit);
                 }
                 break;
 

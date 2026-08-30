@@ -464,7 +464,8 @@ static void roundtrip_leg(Circuit *a, const char *path,
    leaves it a pixel from where it was, or drops the net it was wired to, fails here. */
 static int undo_test(void) {
     static const char *op_name[] = { "add a part", "delete a part", "move a part",
-                                     "add a wire", "delete a wire", "delete a selection" };
+                                     "add a wire", "delete a wire", "delete a selection",
+                                     "rotate a part", "edit a value", "duplicate a part" };
     int fails = 0, checks = 0, templates = 0;
 
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -473,7 +474,7 @@ static int undo_test(void) {
         if (!ti) continue;
         templates++;
 
-        for (int op = 0; op < 6; op++) {
+        for (int op = 0; op < 9; op++) {
             Circuit *c = circuit_create();
             if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); break; }
             if (!file_save_circuit(c, "undo_before.cpg")) { circuit_free(c); break; }
@@ -521,7 +522,37 @@ static int undo_test(void) {
                     }
                     break;
                 }
-                default: {  /* a selection: several parts and a wire, deleted as one act */
+                case 6: {   /* rotate: the part stays where it is and is not what it was */
+                    if (c->num_components > 0) {
+                        Component *r = c->components[0];
+                        circuit_push_edit_undo(c, r);
+                        component_rotate(r);
+                        circuit_update_component_nodes(c, r);
+                        did = true;
+                    }
+                    break;
+                }
+                case 7: {   /* a value typed into the properties panel */
+                    for (int i = 0; i < c->num_components && !did; i++) {
+                        Component *r = c->components[i];
+                        if (r->type != COMP_RESISTOR) continue;
+                        circuit_push_edit_undo(c, r);
+                        r->props.resistor.resistance *= 3.0;
+                        did = true;
+                    }
+                    break;
+                }
+                case 8: {   /* duplicate: a new part, recorded as one added */
+                    if (c->num_components > 0) {
+                        Component *d = circuit_duplicate_component(c, c->components[0]);
+                        if (d) {
+                            circuit_push_undo(c, UNDO_ADD_COMPONENT, d->id, NULL, 0, 0);
+                            did = true;
+                        }
+                    }
+                    break;
+                }
+                case 5: {   /* a selection: several parts and a wire, deleted as one act */
                     if (c->num_components >= 3) {
                         circuit_undo_batch_begin(c);
                         for (int k = 0; k < 3; k++)
@@ -533,6 +564,7 @@ static int undo_test(void) {
                     }
                     break;
                 }
+                default: break;
             }
             if (!did) { circuit_free(c); continue; }
 
