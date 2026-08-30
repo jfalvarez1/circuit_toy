@@ -25,7 +25,7 @@ if [ "$JOBS" -le 0 ]; then
     JOBS=$((JOBS > 2 ? JOBS - 1 : 2))
 fi
 
-SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test --dvdt-test --meas-test --fft-test --class-test --restamp-test
+SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test --dvdt-test --meas-test --fft-test --scope-test --class-test --restamp-test
 --flow-test --switch-test --part-test --op-test --sub-test --spice-test --xtal-test --view-test
 --conn-test --file-test --parts-file-test --undo-test --line-test --std-test --burn-test --knob-test --geom-test --param-test
 --tesla-test"
@@ -37,6 +37,29 @@ APP_SHARDED="bounce-test:4"
 # demo-test is two thirds on its own, and the plain load-and-run is the next. Both walk every
 # template independently, so they run as shards - quarters of the template list, one process each.
 SHARDED="demo-test:4 default:2"
+
+# Every suite that exists has to be in one of the lists above. --scope-test was in none of them,
+# and so nobody ran it: its expectation still said MIN_TIME_STEP was 1 ns long after the floor
+# became 10 ps, and it sat there failing where no one would see. A suite in no list is a hole
+# that looks like coverage, so this refuses to run a battery that has one.
+orphans=""
+for src in tools/template_smoke.c src/main.c; do
+    [ -f "$src" ] || continue
+    for flag in $(grep -oE 'strcmp\(argv\[i\], "--[a-z-]+-test"' "$src" | grep -oE '\-\-[a-z-]+-test' | sort -u); do
+        bare="${flag#--}"
+        # $(echo ...) collapses the embedded newlines: SMOKE_MODES spans four lines, and a
+        # newline is not a space, so a flag at the start of a line looked absent.
+        case " $(echo $SMOKE_MODES $APP_MODES $SHARDED $APP_SHARDED) " in
+            *" $flag "*|*" $bare:"*) ;;
+            *) orphans="$orphans $flag" ;;
+        esac
+    done
+done
+if [ -n "$orphans" ]; then
+    echo "run_audits: these suites exist but are in no list, so nothing runs them:$orphans" >&2
+    echo "run_audits: add them to SMOKE_MODES or APP_MODES, or delete them." >&2
+    exit 2
+fi
 
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT

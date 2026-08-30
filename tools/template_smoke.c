@@ -112,7 +112,11 @@ static int scope_dt_test(void) {
         { 1e-3,   1e-5,  "1 ms/div: display 50 us, accuracy-limited to 10 us" },
         { 100e-6, 5e-6,  "100 us/div: 5 us (20 samples/div)" },
         { 1e-6,   50e-9, "1 us/div: 50 ns" },
-        { 10e-9,  1e-9,  "10 ns/div: wants 0.5 ns -> clamped to MIN_TIME_STEP" },
+        /* 0.5 ns, and it is reachable: the floor is 10 ps. This case expected 1e-9 because it
+           was written when MIN_TIME_STEP was 1 ns, and it kept expecting it after the floor was
+           lowered - which is exactly the sort of rot a suite develops when it is in no list and
+           nobody runs it. It is in the battery now. */
+        { 10e-9,  5e-10, "10 ns/div: 0.5 ns, twenty samples a division at the 10 ps floor" },
         { 100.0,  1e-5,  "100 s/div: display 2 s but accuracy (10 us) wins" },
     };
     for (unsigned i = 0; i < sizeof cases / sizeof cases[0]; i++) {
