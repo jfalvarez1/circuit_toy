@@ -464,7 +464,7 @@ static void roundtrip_leg(Circuit *a, const char *path,
    leaves it a pixel from where it was, or drops the net it was wired to, fails here. */
 static int undo_test(void) {
     static const char *op_name[] = { "add a part", "delete a part", "move a part",
-                                     "add a wire", "delete a wire" };
+                                     "add a wire", "delete a wire", "delete a selection" };
     int fails = 0, checks = 0, templates = 0;
 
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -473,7 +473,7 @@ static int undo_test(void) {
         if (!ti) continue;
         templates++;
 
-        for (int op = 0; op < 5; op++) {
+        for (int op = 0; op < 6; op++) {
             Circuit *c = circuit_create();
             if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); break; }
             if (!file_save_circuit(c, "undo_before.cpg")) { circuit_free(c); break; }
@@ -514,9 +514,21 @@ static int undo_test(void) {
                     }
                     break;
                 }
-                default: {  /* delete a wire, the way the delete tool does */
+                case 4: {   /* delete a wire, the way the delete tool does */
                     if (c->num_wires > 0) {
                         circuit_delete_wire(c, c->wires[c->num_wires - 1].id);
+                        did = true;
+                    }
+                    break;
+                }
+                default: {  /* a selection: several parts and a wire, deleted as one act */
+                    if (c->num_components >= 3) {
+                        circuit_undo_batch_begin(c);
+                        for (int k = 0; k < 3; k++)
+                            circuit_delete_component(c, c->components[c->num_components - 1]->id);
+                        if (c->num_wires > 0)
+                            circuit_delete_wire(c, c->wires[c->num_wires - 1].id);
+                        circuit_undo_batch_end(c);
                         did = true;
                     }
                     break;

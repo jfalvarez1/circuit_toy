@@ -1833,6 +1833,11 @@ void input_delete_selected(InputState *input, Circuit *circuit) {
 
     // Delete multi-selected components and wires (from box selection)
     if (input->multi_selected_count > 0 || wires_to_delete > 0) {
+        /* Deleting a selection is one thing the user did, so it is one thing to undo. Each
+           part and wire still records itself; the batch is what makes a single Ctrl+Z bring
+           the whole selection back instead of one piece per press. */
+        circuit_undo_batch_begin(circuit);
+
         // Delete multi-selected components
         for (int i = 0; i < input->multi_selected_count; i++) {
             if (input->multi_selected[i]) {
@@ -1849,6 +1854,7 @@ void input_delete_selected(InputState *input, Circuit *circuit) {
             }
         }
         input->selected_wire_idx = -1;
+        circuit_undo_batch_end(circuit);
         return;
     }
 

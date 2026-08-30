@@ -60,6 +60,10 @@ typedef struct {
        and those are cleaned up straight away - so by the time anyone undoes, the id recorded
        above may name a node that is gone. The position always still means something. */
     float wire_x0, wire_y0, wire_x1, wire_y1;
+    /* Edits made as one act share a batch, and undo takes the whole batch back. Deleting a
+       selection of thirty parts is one thing the user did, not thirty; without this it took
+       thirty presses of Ctrl+Z to put it back. 0 means an edit that stands alone. */
+    int batch;
 } UndoAction;
 
 #define MAX_UNDO 100
@@ -102,6 +106,10 @@ typedef struct Circuit {
     // Redo stack
     UndoAction redo_stack[MAX_UNDO];
     int redo_count;
+
+    /* Undo batching: while a batch is open every edit recorded joins it. */
+    int undo_batch_current;
+    int undo_batch_next;
 
     // Modified flag
     bool modified;          // unsaved changes (cleared on save / new / load)
@@ -177,6 +185,9 @@ void circuit_delete_selected(Circuit *circuit);
 
 // Undo/Redo operations
 void circuit_push_undo(Circuit *circuit, UndoActionType type, int id, Component *backup, float old_x, float old_y);
+/* Everything recorded between these two comes back on one Ctrl+Z, and goes again on one Ctrl+Y. */
+void circuit_undo_batch_begin(Circuit *circuit);
+void circuit_undo_batch_end(Circuit *circuit);
 bool circuit_undo(Circuit *circuit);
 bool circuit_redo(Circuit *circuit);
 void circuit_clear_undo(Circuit *circuit);

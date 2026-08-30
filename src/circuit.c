@@ -1124,6 +1124,16 @@ void circuit_push_undo(Circuit *circuit, UndoActionType type, int id, Component 
        that one had. Nothing hit it, because nothing ever recorded a wire being deleted. */
     action->wire_start = (type == UNDO_ADD_WIRE || type == UNDO_REMOVE_WIRE) ? (int)old_x : 0;
     action->wire_end   = (type == UNDO_ADD_WIRE || type == UNDO_REMOVE_WIRE) ? (int)old_y : 0;
+    action->batch = circuit->undo_batch_current;
+}
+
+void circuit_undo_batch_begin(Circuit *circuit) {
+    if (!circuit || circuit->undo_batch_current) return;   /* already inside one */
+    circuit->undo_batch_current = ++circuit->undo_batch_next;
+}
+
+void circuit_undo_batch_end(Circuit *circuit) {
+    if (circuit) circuit->undo_batch_current = 0;
 }
 
 /* Delete, and be able to take it back. circuit_remove_component and circuit_remove_wire do what
@@ -1159,10 +1169,12 @@ void circuit_delete_wire(Circuit *circuit, int wire_id) {
     }
 }
 
-bool circuit_undo(Circuit *circuit) {
+static bool circuit_undo_one(Circuit *circuit) {
     if (!circuit || circuit->undo_count == 0) return false;
 
     UndoAction *action = &circuit->undo_stack[--circuit->undo_count];
+    const int batch_of_this = action->batch;
+    const int redo_before = circuit->redo_count;
 
     switch (action->type) {
         case UNDO_ADD_COMPONENT: {
@@ -1270,15 +1282,35 @@ bool circuit_undo(Circuit *circuit) {
         action->component_backup = NULL;
     }
 
+    /* Whatever this left on the redo stack belongs to the same act, so one press of redo takes
+       all of it forward again. */
+    for (int i = redo_before; i < circuit->redo_count; i++)
+        circuit->redo_stack[i].batch = batch_of_this;
+
     circuit->modified = true;
     circuit->topology_dirty = true;
     return true;
 }
 
-bool circuit_redo(Circuit *circuit) {
+/* One press takes back one act. Edits recorded inside a batch are one act however many entries
+   they left on the stack, so the whole run of them comes back together. */
+bool circuit_undo(Circuit *circuit) {
+    if (!circuit || circuit->undo_count == 0) return false;
+    int batch = circuit->undo_stack[circuit->undo_count - 1].batch;
+    if (!circuit_undo_one(circuit)) return false;
+    while (batch != 0 && circuit->undo_count > 0 &&
+           circuit->undo_stack[circuit->undo_count - 1].batch == batch) {
+        if (!circuit_undo_one(circuit)) break;
+    }
+    return true;
+}
+
+static bool circuit_redo_one(Circuit *circuit) {
     if (!circuit || circuit->redo_count == 0) return false;
 
     UndoAction *action = &circuit->redo_stack[--circuit->redo_count];
+    const int batch_of_this = action->batch;
+    const int undo_before = circuit->undo_count;
 
     switch (action->type) {
         case UNDO_ADD_COMPONENT: {
@@ -1406,8 +1438,24 @@ bool circuit_redo(Circuit *circuit) {
         action->component_backup = NULL;
     }
 
+    /* the same, back the other way: what this put on the undo stack is one act */
+    for (int i = undo_before; i < circuit->undo_count; i++)
+        circuit->undo_stack[i].batch = batch_of_this;
+
     circuit->modified = true;
     circuit->topology_dirty = true;
+    return true;
+}
+
+/* One press puts one act forward again, batch and all. */
+bool circuit_redo(Circuit *circuit) {
+    if (!circuit || circuit->redo_count == 0) return false;
+    int batch = circuit->redo_stack[circuit->redo_count - 1].batch;
+    if (!circuit_redo_one(circuit)) return false;
+    while (batch != 0 && circuit->redo_count > 0 &&
+           circuit->redo_stack[circuit->redo_count - 1].batch == batch) {
+        if (!circuit_redo_one(circuit)) break;
+    }
     return true;
 }
 
