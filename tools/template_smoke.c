@@ -1130,16 +1130,21 @@ static int flow_test(void) {
                                         1e-4 * (node_imax > term_imax ? node_imax : term_imax)) {
                 /* Name what is on the node. "KCL does not close" is a number; which part is on
                    the net and what it says it is drawing is the beginning of an answer. */
-                char who[140] = "";
+                /* Everything on the net, not just on this node. The missing current is
+                   somewhere on the net by definition - the node named here is wherever the
+                   minimum-norm solve put the imbalance, which is rarely where it came from. */
+                char who[200] = "";
                 size_t at = 0;
-                for (int j = 0; j < c->num_components && at < sizeof who - 24; j++) {
+                int mnode = c->node_map[id];
+                for (int j = 0; j < c->num_components && at < sizeof who - 26; j++) {
                     Component *comp2 = c->components[j];
+                    if (comp2->type == COMP_GROUND) continue;
                     for (int k = 0; k < comp2->num_terminals; k++) {
-                        if (comp2->node_ids[k] != id) continue;
+                        int nid2 = comp2->node_ids[k];
+                        if (nid2 < 0 || nid2 >= MAX_NODES || c->node_map[nid2] != mnode) continue;
                         at += (size_t)snprintf(who + at, sizeof who - at, "%s%s.%d=%.3g",
                                                at ? " " : "", comp2->label, k,
                                                comp2->terminal_current[k]);
-                        break;
                     }
                 }
                 /* And how far out the whole net is. Wire currents are the minimum-norm

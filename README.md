@@ -450,6 +450,10 @@ what is being left out:
   and the overdrive Vov. `Type:` flips between enhancement and depletion.
 - **BJT** - beta, Is, the forward Early voltage VAF, emission coefficients and leakage currents;
   ideal mode is Ebers-Moll transport with no Early effect.
+- **Diode / Schottky** - Is, the emission coefficient, the reverse breakdown, and the junction
+  capacitance `cjo`, which is stamped: a reverse-biased junction carries displacement current, so
+  a switching node's charge is accounted for and a diode shaper has the frequency limit a real
+  one has.
 - **Capacitor** - ESR, ESL and leakage resistance, all in the solve: ESR puts the current square
   straight onto the ripple, ESL sharpens the edges, leakage bleeds the charge away.
 - **Inductor** - winding resistance (DCR), saturation current.
@@ -564,6 +568,19 @@ Middle-drag pans and the wheel zooms, which needs a mouse. For a laptop trackpad
 
 The palette opens as a table of contents: only **Tools** is expanded, and the other 20 part
 categories and all 19 template groups start closed. Click a heading to open it.
+
+### Taking It Back (Ctrl+Z)
+
+Everything you do to a circuit can be undone: placing a part, moving one, deleting anything at
+all, typing a value, cycling a part number, toggling a model, rotating, pasting, duplicating,
+placing or removing a probe, clearing the canvas - and picking a circuit from the palette, which
+replaces everything on it. One press takes back one act, so deleting a selection of thirty parts
+comes back in one press rather than thirty, and a circuit picked by mistake is one press from the
+circuit you had. **Ctrl+Y** or **Ctrl+Shift+Z** puts it forward again.
+
+A part that comes back comes back on the nets it was on: its nodes are found from its own
+terminals, and a wire brings back the two nodes it joined. The scope resets when a whole circuit
+returns, because its time base belonged to the circuit that replaced it.
 
 ### Naming Probes
 
@@ -939,6 +956,17 @@ meson compile -C build
 point and a short transient, and reports solver errors, NaN/runaway voltages and the bias
 point of every transistor / op-amp / regulator:
 
+The whole battery is one command, and it is what CI runs:
+
+```bash
+bash tools/run_audits.sh                   # every suite below, several at a time, ~4 minutes
+bash tools/run_audits.sh build-static      # or against any other build tree
+```
+
+Each suite is its own process over its own copy of the templates, so they run concurrently; the
+two longest are split into shards (`--shard 0/4`) because a battery can never finish faster than
+its slowest single suite.
+
 ```bash
 build/tools/template_smoke.exe             # 182/182 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
@@ -966,8 +994,41 @@ build/tools/template_smoke.exe --spice-test      # SPICE .SUBCKT import
 build/tools/template_smoke.exe --sub-test        # subcircuits used as IC blocks
 build/tools/template_smoke.exe --response "RC BP"   # amplitude vs frequency of every node during the sweep
 build/tools/template_smoke.exe --svg screenshots/templates   # export every template as SVG
-build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template in the palette)
+build/circuit-playground.exe --layout-test       # headless UI layout check (no overlaps, every template fits)
+build/tools/template_smoke.exe --label-test      # every probe named for the node it sits on, unique, 7 chars
+build/tools/template_smoke.exe --span-test       # turning the time/div up does not blank the scope
+build/tools/template_smoke.exe --parts-file-test # one of all 124 component types, through both file formats
+build/tools/template_smoke.exe --undo-test       # 13 kinds of edit over every template, undone and redone
+build/circuit-playground.exe --place-test        # every circuit is recognised from its click and replaces the last
+build/circuit-playground.exe --trig-test         # a repeating waveform stands still, and is drawn from enough samples
+build/circuit-playground.exe --prop-test         # every row the properties panel offers can actually be applied
+build/circuit-playground.exe --autoset-test      # Autoset leaves every channel on the screen and triggerable
 ```
+
+Two flags help when a suite has something to say: `--only SUBSTRING` runs one template's cases,
+and `--probe-dt N` forces the time step so an expectation can be asked whether it is converged or
+merely repeatable at one step.
+
+### Driving the app itself
+
+Three checks go through the program rather than its parts - the tool, the key handler, the undo
+stack and what is actually drawn:
+
+```bash
+python tools/undo_gui.py build/circuit-playground.exe    # delete with the tool, press Ctrl+Z, look
+python tools/keys_gui.py build/circuit-playground.exe    # ten shortcuts, checked against the app's own state
+python tools/trace_stability.py build/circuit-playground.exe   # a triggered trace stands still between frames
+```
+
+They are possible because a scripted run can now press things and be asked what it is:
+`--keys "~z"` is Ctrl+Z (`#` is Delete, `%` is Escape, `^` opens Spotlight, `|` is Enter), and
+`--state-out FILE` writes what the app is in numbers next to the screenshot - parts, wires,
+probes, which tool is in hand, how deep the undo stack is, what the scope is set to. A picture
+cannot say whether a part was duplicated or which of two identical parts is selected.
+
+Scripted runs are also reproducible: `--shot` and `--record` step a fixed frame and a fixed
+number of solver steps rather than following the wall clock, so the same command draws the same
+scope twice.
 
 ### GUI smoke test
 
@@ -1072,7 +1133,7 @@ hand-calculated expectations and value variations) track the interactive test ca
 | Key | Action |
 |-----|--------|
 | Escape | Cancel current action, return to select tool - and cancel an auto-update that is counting down |
-| Delete/Backspace | Delete selected component |
+| Delete/Backspace | Delete the selection - one act, whatever it holds, and undoable |
 | R | Rotate component (while placing or selected) |
 | W | Switch to Wire tool |
 | G | Toggle grid visibility |
@@ -1083,8 +1144,9 @@ hand-calculated expectations and value variations) track the interactive test ca
 | Ctrl+D | Duplicate selected component |
 | Ctrl+S | Save circuit |
 | Ctrl+O | Open circuit |
-| Ctrl+Z | Undo |
-| Ctrl+Shift+Z | Redo |
+| Ctrl+Z | Undo - any edit, including a delete, a value, a rotation or a whole circuit swap |
+| Ctrl+Shift+Z / Ctrl+Y | Redo |
+| Ctrl+A | Select everything, parts and wires: Delete then removes all of it, one Ctrl+Z brings it back |
 | Space | Start/pause simulation |
 | + / - | Adjust simulation speed |
 | Ctrl+K | Open spotlight search |
