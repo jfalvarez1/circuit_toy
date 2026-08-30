@@ -48,6 +48,7 @@ typedef struct {
        so they take exactly the path a real pointer takes. */
     struct { int x, y, x2, y2, frame; bool drag, done; } cli_mouse[12];
     int  cli_mouse_n;
+    int  cli_mod_until;          // frame at which a scripted Ctrl release takes effect
 
     // Auto-update (GitHub releases)
     UpdaterState updater;

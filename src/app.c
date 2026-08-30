@@ -2343,7 +2343,26 @@ static void app_cli_capture(App *app) {
     if (app->cli_keys[0] && app->cli_keys[app->cli_keys_pos] && app->cli_frame >= app->cli_keys_frame &&
         (app->cli_frame - app->cli_keys_frame) % (app->cli_keys_every > 0 ? app->cli_keys_every : 1) == 0) {
         char ch = app->cli_keys[app->cli_keys_pos++];
-        if (ch == '^') ui_spotlight_open(&app->ui);
+        /* "~z" is Ctrl+Z: the shortcuts are a real part of the app and a scripted run could not
+           reach any of them - it could only type. The modifier is pressed and released around
+           the key the way a hand does it, because that is what sets ctrl_down. */
+        if (ch == '~' && app->cli_keys[app->cli_keys_pos]) {
+            char combo = app->cli_keys[app->cli_keys_pos++];
+            /* The key handler asks SDL for the modifier state rather than reading it off the
+               event, and pushing a Ctrl key event does not change that state - it belongs to the
+               real keyboard. So the state is set here and released a couple of frames later,
+               once the event it belongs to has been through the loop. */
+            SDL_SetModState(KMOD_LCTRL);
+            app->cli_mod_until = app->cli_frame + 3;
+            SDL_Event ev;
+            memset(&ev, 0, sizeof ev);
+            ev.type = SDL_KEYDOWN; ev.key.keysym.sym = (SDL_Keycode)combo;
+            ev.key.keysym.mod = KMOD_LCTRL; SDL_PushEvent(&ev);
+            memset(&ev, 0, sizeof ev);
+            ev.type = SDL_KEYUP; ev.key.keysym.sym = (SDL_Keycode)combo;
+            ev.key.keysym.mod = KMOD_LCTRL; SDL_PushEvent(&ev);
+        }
+        else if (ch == '^') ui_spotlight_open(&app->ui);
         else if (ch == '|') {
             SDL_Event ev; memset(&ev, 0, sizeof ev);
             ev.type = SDL_KEYDOWN; ev.key.keysym.sym = SDLK_RETURN; ev.key.keysym.scancode = SDL_SCANCODE_RETURN;
@@ -2354,6 +2373,11 @@ static void app_cli_capture(App *app) {
             SDL_PushEvent(&ev);
         }
     }
+    if (app->cli_mod_until && app->cli_frame >= app->cli_mod_until) {
+        SDL_SetModState(KMOD_NONE);      /* let go of Ctrl */
+        app->cli_mod_until = 0;
+    }
+
     /* Scripted pointer. A click is press-then-release at one point; a drag presses, moves in
        four steps and releases, which is what the Pan tool and the knobs need to see. */
     for (int i = 0; i < app->cli_mouse_n; i++) {

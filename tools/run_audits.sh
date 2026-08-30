@@ -126,6 +126,19 @@ if command -v python >/dev/null 2>&1; then
     fi
 fi
 
+# and one that drives the app itself: delete a part with the tool, press Ctrl+Z, look at the
+# canvas. Everything else about undo is checked by calling the circuit functions directly.
+if command -v python >/dev/null 2>&1; then
+    if python tools/undo_gui.py "$APP" > "$out/undogui.log" 2>&1; then
+        printf '[ OK ] %-14s %s
+' "undo-gui" "$(grep -m1 'OK\|skipped' "$out/undogui.log" | cut -c1-100)"
+    else
+        printf '[FAIL] %-14s %s
+' "undo-gui" "$(grep -m1 FAIL "$out/undogui.log" | cut -c1-100)"
+        fails=$((fails + 1))
+    fi
+fi
+
 echo
 echo "audits: $fails of $(echo $SHARD_MODES $SMOKE_MODES $APP_MODES | wc -w) suites failed, ${JOBS} at a time, $(( $(date +%s) - start ))s"
 [ "$fails" -eq 0 ]
