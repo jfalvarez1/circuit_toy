@@ -44,6 +44,18 @@ one number the part is about - was uneditable, and its two winding resistances h
 handlers with no way to reach them**. That is done: turns ratio, ideal/real, magnetising
 inductance, coupling and both winding resistances, 37 parts offering rows now.
 
+**Batches 3 and 4 done:** the cheap kind first - parts that already had panels and were missing
+rows for properties that already existed. A capacitor's leakage and an inductor's saturation
+current were being drawn in grey as read-only text while the stamp read them every step; the
+capacitor's ESL and the diode's junction capacitance were not shown at all. Then six parts that
+offered nothing whatsoever: potentiometer, photoresistor, thermistor, both JFETs, battery and the
+four switch types.
+
+**53 of 124 creatable types offer rows now, against 35 this morning. 133 typed rows, 21 property
+types still unbuilt against 40.** What is left is mostly the digital family (gates, flip-flops,
+counters, the 555) and the display parts, where the honest question is what a user would even set
+- a NAND gate has a propagation delay and little else.
+
 **Batch 2 done:** the DC motor (armature R and L, Kv, Kt, rotor inertia, friction, load torque),
 the relay (coil R and L, pickup and dropout currents, both contact resistances) and the four
 controlled sources, whose gain lived in the enum as PROP_GAIN with nothing on either end of it -

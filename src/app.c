@@ -1409,6 +1409,27 @@ void app_handle_events(App *app) {
                                 snprintf(current_value, sizeof(current_value), "%.6g", c->props.capacitor_elec.esr);
                             }
                         }
+                        else if (prop_type == PROP_WIPER_POS)   { snprintf(current_value, sizeof(current_value), "%.4g", c->props.potentiometer.wiper_pos); }
+                        else if (prop_type == PROP_R_DARK)      { snprintf(current_value, sizeof(current_value), "%.6g", c->props.photoresistor.r_dark); }
+                        else if (prop_type == PROP_R_LIGHT)     { snprintf(current_value, sizeof(current_value), "%.6g", c->props.photoresistor.r_light); }
+                        else if (prop_type == PROP_LIGHT_LEVEL) { snprintf(current_value, sizeof(current_value), "%.4g", c->props.photoresistor.light_level); }
+                        else if (prop_type == PROP_LDR_GAMMA)   { snprintf(current_value, sizeof(current_value), "%.4g", c->props.photoresistor.gamma); }
+                        else if (prop_type == PROP_R_25)        { snprintf(current_value, sizeof(current_value), "%.6g", c->props.thermistor.r_25); }
+                        else if (prop_type == PROP_BETA)        { snprintf(current_value, sizeof(current_value), "%.6g", c->props.thermistor.beta); }
+                        else if (prop_type == PROP_IDSS)        { snprintf(current_value, sizeof(current_value), "%.6g", c->props.jfet.idss); }
+                        else if (prop_type == PROP_VP)          { snprintf(current_value, sizeof(current_value), "%.4g", c->props.jfet.vp); }
+                        else if (prop_type == PROP_JFET_LAMBDA) { snprintf(current_value, sizeof(current_value), "%.4g", c->props.jfet.lambda); }
+                        else if (prop_type == PROP_BATT_CAPACITY) { snprintf(current_value, sizeof(current_value), "%.6g", c->props.battery.capacity_mah); }
+                        else if (prop_type == PROP_BATT_R)      { snprintf(current_value, sizeof(current_value), "%.6g", c->props.battery.internal_r); }
+                        else if (prop_type == PROP_R_ON)        { snprintf(current_value, sizeof(current_value), "%.6g", c->props.switch_spst.r_on); }
+                        else if (prop_type == PROP_R_OFF)       { snprintf(current_value, sizeof(current_value), "%.6g", c->props.switch_spst.r_off); }
+                        else if (prop_type == PROP_LEAKAGE) {
+                            if (c->type == COMP_CAPACITOR)           snprintf(current_value, sizeof(current_value), "%.6g", c->props.capacitor.leakage);
+                            else if (c->type == COMP_CAPACITOR_ELEC) snprintf(current_value, sizeof(current_value), "%.6g", c->props.capacitor_elec.leakage);
+                        }
+                        else if (prop_type == PROP_ESL)   { snprintf(current_value, sizeof(current_value), "%.6g", c->props.capacitor.esl); }
+                        else if (prop_type == PROP_I_SAT) { snprintf(current_value, sizeof(current_value), "%.6g", c->props.inductor.i_sat); }
+                        else if (prop_type == PROP_CJO)   { snprintf(current_value, sizeof(current_value), "%.6g", c->props.diode.cjo); }
                         // DC motor
                         else if (prop_type == PROP_MOTOR_R)     { snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_motor.r_armature); }
                         else if (prop_type == PROP_MOTOR_L)     { snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_motor.l_armature); }

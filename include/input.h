@@ -151,6 +151,16 @@ typedef enum {
     // Controlled sources: the gain is the part
     PROP_CS_RIN,                  // input resistance (current sensing for CCVS/CCCS)
 
+    // Battery
+    PROP_BATT_CAPACITY,           // mAh
+    PROP_BATT_R,                  // internal resistance
+
+    // JFET
+    PROP_JFET_LAMBDA,             // channel-length modulation
+
+    // Photoresistor / thermistor shaping
+    PROP_LDR_GAMMA,               // light sensitivity exponent
+
     // Text annotation parameters
     PROP_TEXT_CONTENT,            // Text content string
     PROP_TEXT_SIZE,               // Font size (1=small, 2=normal, 3=large)

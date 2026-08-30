@@ -1866,10 +1866,27 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->num_properties++;
                     prop_y += 18;
 
-                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                    /* Leakage was drawn as grey read-only text and the series inductance was
+                       not drawn at all, though the stamp reads both. A number a user can see and
+                       cannot change is the most annoying kind of number. */
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_LEAKAGE;
                     format_engineering(selected->props.capacitor.leakage, "Ohm", buf, sizeof(buf));
-                    ui_draw_text(renderer, "Leakage:", x + 10, prop_y + 2);
-                    ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Leakage:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_LEAKAGE;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_ESL;
+                    format_engineering(selected->props.capacitor.esl, "H", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "ESL:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_ESL;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
                 }
                 break;
             }
@@ -1883,6 +1900,179 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                per-step advance reads. Its physics was corrected on 2026-08-30 and none of it
                could be configured - a motor could not be given a load torque or a different
                rotor, which is most of what a motor is for. */
+            /* Six parts that offered the properties panel nothing at all. Every value below is
+               read by the solver on every step - a wiper position, a light level, a pinch-off
+               voltage, a battery's internal resistance, a switch's contact resistances - and
+               none of them could be set. --prop-gap is what lists them. */
+            case COMP_POTENTIOMETER: {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_VALUE;
+                    format_engineering(selected->props.potentiometer.resistance, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Resistance:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_WIPER_POS;
+                    snprintf(buf, sizeof(buf), "%.3f", selected->props.potentiometer.wiper_pos);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Wiper (0-1):", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_WIPER_POS;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
+            case COMP_PHOTORESISTOR: {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_R_DARK;
+                    format_engineering(selected->props.photoresistor.r_dark, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R dark:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_R_DARK;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_R_LIGHT;
+                    format_engineering(selected->props.photoresistor.r_light, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R light:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_R_LIGHT;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_LIGHT_LEVEL;
+                    snprintf(buf, sizeof(buf), "%.3f", selected->props.photoresistor.light_level);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Light (0-1):", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_LIGHT_LEVEL;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_LDR_GAMMA;
+                    snprintf(buf, sizeof(buf), "%.3f", selected->props.photoresistor.gamma);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Gamma:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_LDR_GAMMA;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
+            case COMP_THERMISTOR: {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_R_25;
+                    format_engineering(selected->props.thermistor.r_25, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R at 25C:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_R_25;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_BETA;
+                    snprintf(buf, sizeof(buf), "%.0f", selected->props.thermistor.beta);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Beta (K):", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_BETA;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
+            case COMP_NJFET: case COMP_PJFET: {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_IDSS;
+                    format_engineering(selected->props.jfet.idss, "A", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Idss:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_IDSS;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_VP;
+                    snprintf(buf, sizeof(buf), "%.3f V", selected->props.jfet.vp);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Vp:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_VP;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_JFET_LAMBDA;
+                    snprintf(buf, sizeof(buf), "%.4f", selected->props.jfet.lambda);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Lambda:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_JFET_LAMBDA;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
+            case COMP_BATTERY: {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_VALUE;
+                    format_engineering(selected->props.battery.nominal_voltage, "V", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Voltage:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_BATT_CAPACITY;
+                    snprintf(buf, sizeof(buf), "%.0f", selected->props.battery.capacity_mah);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Capacity mAh:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_BATT_CAPACITY;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_BATT_R;
+                    format_engineering(selected->props.battery.internal_r, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Internal R:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_BATT_R;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
+            case COMP_SPST_SWITCH: case COMP_SPDT_SWITCH:
+            case COMP_DPDT_SWITCH: case COMP_PUSH_BUTTON: {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_R_ON;
+                    format_engineering(selected->props.switch_spst.r_on, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Contact on:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_R_ON;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_R_OFF;
+                    format_engineering(selected->props.switch_spst.r_off, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Contact off:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_R_OFF;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
             case COMP_DC_MOTOR: {
                 {
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_R;
@@ -2155,10 +2345,17 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->num_properties++;
                     prop_y += 18;
 
-                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
-                    snprintf(buf, sizeof(buf), "%.2f A", selected->props.inductor.i_sat);
-                    ui_draw_text(renderer, "I_sat:", x + 10, prop_y + 2);
-                    ui_draw_text(renderer, buf, x + 100, prop_y + 2);
+                    /* The saturation current decides where the core gives up, and it was grey
+                       read-only text. */
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_I_SAT;
+                    format_engineering(selected->props.inductor.i_sat, "A", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "I_sat:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_I_SAT;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
                 }
                 break;
             }
@@ -2511,6 +2708,19 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                     ui->properties[ui->num_properties].prop_type = PROP_BV;
                     ui->num_properties++;
+                    prop_y += 18;
+
+                    /* The junction capacitance. It was a default value nothing read until its
+                       stamp was written on 2026-08-30, and it still could not be set. */
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_CJO;
+                    format_engineering(selected->props.diode.cjo, "F", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Cjo:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_CJO;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
                 }
                 break;
             }

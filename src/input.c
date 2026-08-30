@@ -2156,6 +2156,21 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                         applied = true;
                     }
                     break;
+                /* Both of these grew a panel on 2026-08-30 whose main value is PROP_VALUE, and
+                   this switch had no case for either - so the row drew, took a value, and threw
+                   it away. --prop-test caught it in the same run that added them. */
+                case COMP_POTENTIOMETER:
+                    if (value > 0 && value <= 1e9) {
+                        comp->props.potentiometer.resistance = value;
+                        applied = true;
+                    }
+                    break;
+                case COMP_BATTERY:
+                    if (value > 0 && value <= 1e5) {
+                        comp->props.battery.nominal_voltage = value;
+                        applied = true;
+                    }
+                    break;
                 case COMP_FUSE:
                     if (value > 0) {
                         comp->props.fuse.rating = value;
@@ -2550,6 +2565,117 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                     comp->props.capacitor_elec.esr = value;
                     applied = true;
                 }
+            }
+            break;
+
+        /* Parts that had no property panel at all until now. Each of these values is read by
+           the solver on every step; none of them could be set. */
+        case PROP_WIPER_POS:
+            if (comp->type == COMP_POTENTIOMETER && value >= 0.0 && value <= 1.0) {
+                comp->props.potentiometer.wiper_pos = value; applied = true;
+            }
+            break;
+        case PROP_R_DARK:
+            if (comp->type == COMP_PHOTORESISTOR && value > 0 &&
+                value > comp->props.photoresistor.r_light) {
+                comp->props.photoresistor.r_dark = value; applied = true;
+            }
+            break;
+        case PROP_R_LIGHT:
+            if (comp->type == COMP_PHOTORESISTOR && value > 0 &&
+                value < comp->props.photoresistor.r_dark) {
+                comp->props.photoresistor.r_light = value; applied = true;
+            }
+            break;
+        case PROP_LIGHT_LEVEL:
+            if (comp->type == COMP_PHOTORESISTOR && value >= 0.0 && value <= 1.0) {
+                comp->props.photoresistor.light_level = value; applied = true;
+            }
+            break;
+        case PROP_LDR_GAMMA:
+            if (comp->type == COMP_PHOTORESISTOR && value > 0 && value <= 10.0) {
+                comp->props.photoresistor.gamma = value; applied = true;
+            }
+            break;
+        case PROP_R_25:
+            if (comp->type == COMP_THERMISTOR && value > 0) {
+                comp->props.thermistor.r_25 = value; applied = true;
+            }
+            break;
+        case PROP_BETA:
+            if (comp->type == COMP_THERMISTOR && value > 0 && value <= 1e5) {
+                comp->props.thermistor.beta = value; applied = true;
+            }
+            break;
+        case PROP_IDSS:
+            if ((comp->type == COMP_NJFET || comp->type == COMP_PJFET) && value > 0 && value <= 1e3) {
+                comp->props.jfet.idss = value; applied = true;
+            }
+            break;
+        case PROP_VP:
+            /* an N-JFET pinches off at a negative Vp and a P-JFET at a positive one; the sign is
+               the device, so only the magnitude is bounded here */
+            if ((comp->type == COMP_NJFET || comp->type == COMP_PJFET) && fabs(value) <= 100.0) {
+                comp->props.jfet.vp = value; applied = true;
+            }
+            break;
+        case PROP_JFET_LAMBDA:
+            if ((comp->type == COMP_NJFET || comp->type == COMP_PJFET) && value >= 0 && value <= 1.0) {
+                comp->props.jfet.lambda = value; applied = true;
+            }
+            break;
+        case PROP_BATT_CAPACITY:
+            if (comp->type == COMP_BATTERY && value > 0 && value <= 1e9) {
+                comp->props.battery.capacity_mah = value;
+                comp->props.battery.charge_coulombs = value * 3.6 * comp->props.battery.charge_state;
+                applied = true;
+            }
+            break;
+        case PROP_BATT_R:
+            if (comp->type == COMP_BATTERY && value >= 0 && value <= 1e6) {
+                comp->props.battery.internal_r = value; applied = true;
+            }
+            break;
+        case PROP_R_ON:
+            if ((comp->type == COMP_SPST_SWITCH || comp->type == COMP_SPDT_SWITCH ||
+                 comp->type == COMP_DPDT_SWITCH || comp->type == COMP_PUSH_BUTTON) &&
+                value > 0 && value <= 1e9) {
+                comp->props.switch_spst.r_on = value; applied = true;
+            }
+            break;
+        case PROP_R_OFF:
+            if ((comp->type == COMP_SPST_SWITCH || comp->type == COMP_SPDT_SWITCH ||
+                 comp->type == COMP_DPDT_SWITCH || comp->type == COMP_PUSH_BUTTON) &&
+                value > 0 && value <= 1e12) {
+                comp->props.switch_spst.r_off = value; applied = true;
+            }
+            break;
+
+        /* Three values the solver has always read and the panel never let anyone set: a
+           capacitor's leakage and series inductance, and an inductor's saturation current. Two
+           of them were even drawn on screen, in grey, as read-only text. */
+        case PROP_LEAKAGE:
+            if (comp->type == COMP_CAPACITOR && value > 0) {
+                comp->props.capacitor.leakage = value; applied = true;
+            } else if (comp->type == COMP_CAPACITOR_ELEC && value > 0) {
+                comp->props.capacitor_elec.leakage = value; applied = true;
+            }
+            break;
+        case PROP_ESL:
+            if (comp->type == COMP_CAPACITOR && value >= 0 && value <= 1.0) {
+                comp->props.capacitor.esl = value; applied = true;
+            }
+            break;
+        case PROP_I_SAT:
+            if (comp->type == COMP_INDUCTOR && value > 0 && value <= 1e6) {
+                comp->props.inductor.i_sat = value; applied = true;
+            }
+            break;
+        case PROP_CJO:
+            /* the diode and the Schottky share the layout of this field */
+            if ((comp->type == COMP_DIODE || comp->type == COMP_SCHOTTKY) &&
+                value >= 0 && value <= 1e-3) {
+                comp->props.diode.cjo = value; applied = true;
             }
             break;
 
