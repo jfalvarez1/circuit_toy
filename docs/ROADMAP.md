@@ -172,6 +172,31 @@ recovered by re-stamping each device alone and reading its residual, so the repo
 the stamp whatever the stamp says. A sign error is invisible to every conservation check in the
 suite and shows up only in a waveform - which it did, and which was explained away.
 
+## A suite that picks its own time step is testing a different program
+
+`--osc-test` is the oracle for every oscillator in the program: what frequency it runs at, how big
+its swing is, what shape its output has. It ran every one of them at a flat microsecond.
+
+The app does not run at a flat microsecond. It takes the accuracy step and then the scope's rule if
+that is finer, which for a self-oscillator used to mean about twenty samples a cycle. So for as
+long as the Function Generator was **displayed at 5556 Hz**, this suite **verified it at 5000 Hz**
+and passed - because 5000 Hz is what a microsecond step gives. The oracle was right about a program
+nobody was running.
+
+Fixed 2026-08-30: `--osc-test` now takes the step the app would take for that template. Every case
+passes at it, so none of them needed the fixed step they had; `--osc-dt` remains for asking whether
+an expectation is converged.
+
+The general shape is worth keeping in mind when adding a suite:
+
+- If a check is about **what the program shows**, it must run the program's own step. Anything else
+  measures a different program that shares source code with it.
+- If a check is about **physics** - `--line-test` builds a transmission line and samples it at a
+  fortieth of its own propagation delay - then a step chosen for the measurement is right, because
+  there is no display path in the question.
+- `--class-test` exists to catch the first kind going wrong: it runs at the app's step and again
+  finer, and reports anything whose answer does not survive.
+
 ## The time step was the answer for five templates; three are fixed
 
 `--class-test` runs every template twice, at the step the app itself picks and at a finer one, and

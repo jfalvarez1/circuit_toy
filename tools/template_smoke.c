@@ -1344,7 +1344,9 @@ static int flow_test(void) {
  * op-amp output crosses its own mean in the last quarter of the run. A latched or dead
  * loop gives ~0 crossings; a healthy oscillator gives 2 per period. */
 static Component *find_comp(Circuit *c, ComponentType t, int ord);
-static double g_osc_dt = 1e-6;
+/* Set by --osc-dt only. Zero means "whatever the app would use", which is the default and
+   the whole point: see the comment where it is read. */
+static double g_osc_dt_forced = 0.0;
 /* --probe-dt N forces the step probe-test runs at, so an oracle can be asked whether
    it is converged or merely repeatable at one step. */
 static double g_probe_dt = 0.0;
@@ -1400,7 +1402,30 @@ static int osc_test(void) {
             if (ty == COMP_OPAMP || ty == COMP_OPAMP_REAL || ty == COMP_OPAMP_FLIPPED) { amp = c->components[i]; break; }
         }
         int ok = amp && simulation_dc_analysis(sim);
-        simulation_set_time_step(sim, cases[k].dt > 0 ? cases[k].dt : g_osc_dt);
+        /* The step the app itself would take for this template: the accuracy step, then the scope
+           rule if that is finer. Not a step of this suite's own choosing.
+
+           This used to be a flat microsecond, and it made the suite quietly useless in the one way
+           a suite must not be. The Function Generator was displayed at 5556 Hz for as long as this
+           oracle verified it at 5000, because 5000 is what a microsecond step gives and the app was
+           running at twenty samples a cycle. The oracle was right about a program nobody was using.
+           A test that picks its own step is not testing the program; it is testing a different
+           program that happens to share source code with it.
+
+           Every case passes at the app's own step, so none of them needed the fixed one. `--osc-dt`
+           still forces a step when the question is whether an expectation is converged. */
+        {
+            double td = circuit_template_scope_time_div(cases[k].t);
+            if (td <= 0) td = 1e-3;
+            if (g_osc_dt_forced > 0) {
+                simulation_set_time_step(sim, g_osc_dt_forced);
+            } else {
+                simulation_auto_time_step(sim);
+                double dtp = simulation_scope_time_step(sim, td);
+                if (dtp > 0 && dtp < sim->time_step) simulation_set_time_step(sim, dtp);
+            }
+            simulation_set_history_span(sim, 20.0 * td);
+        }
         simulation_start(sim);
         /* record output in the last quarter */
         double t_rec = cases[k].run * 0.75;
@@ -4313,7 +4338,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--sub-test")) return sub_test();
         else if (!strcmp(argv[i], "--spice-test")) return spice_test();
         else if (!strcmp(argv[i], "--xtal-test")) return xtal_test();
-        else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt = atof(argv[++i]);
+        else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt_forced = atof(argv[++i]);
         else if (!strcmp(argv[i], "--probe-dt") && i + 1 < argc) g_probe_dt = atof(argv[++i]);
         else if (!strcmp(argv[i], "--only") && i + 1 < argc) g_only = argv[++i];
         else if (!strcmp(argv[i], "--shard") && i + 1 < argc) i++;   /* read before this loop */
