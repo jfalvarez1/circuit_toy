@@ -1856,6 +1856,72 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 break;
             }
 
+            /* The transformer had no property panel at all, which made its turns ratio - the
+               one number the part is about - uneditable, along with a magnetising inductance,
+               a coupling coefficient and two winding resistances the simulation reads every
+               step. Two of those already had working apply handlers with no way to reach them.
+               Found by counting: --prop-gap lists the types that offer the panel nothing. */
+            case COMP_TRANSFORMER:
+            case COMP_TRANSFORMER_CT: {
+                snprintf(buf, sizeof(buf), "%.4g : 1", selected->props.transformer.turns_ratio);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Turns N2/N1:", buf,
+                                   editing_value, edit_buf, cursor);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                ui->num_properties++;
+                prop_y += 18;
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.transformer.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                {
+                    bool edit_lp = input && input->editing_property && input->editing_prop_type == PROP_TRANS_L_PRIMARY;
+                    format_engineering(selected->props.transformer.l_primary, "H", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "L primary:", buf,
+                                       edit_lp, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_TRANS_L_PRIMARY;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+
+                if (!selected->props.transformer.ideal) {
+                    bool edit_k = input && input->editing_property && input->editing_prop_type == PROP_TRANS_COUPLING;
+                    snprintf(buf, sizeof(buf), "%.4g", selected->props.transformer.coupling);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Coupling k:", buf,
+                                       edit_k, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_TRANS_COUPLING;
+                    ui->num_properties++;
+                    prop_y += 18;
+
+                    bool edit_rp = input && input->editing_property && input->editing_prop_type == PROP_TRANS_R_PRIMARY;
+                    format_engineering(selected->props.transformer.r_primary, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R primary:", buf,
+                                       edit_rp, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_TRANS_R_PRIMARY;
+                    ui->num_properties++;
+                    prop_y += 18;
+
+                    bool edit_rs = input && input->editing_property && input->editing_prop_type == PROP_TRANS_R_SECONDARY;
+                    format_engineering(selected->props.transformer.r_secondary, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R secondary:", buf,
+                                       edit_rs, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_TRANS_R_SECONDARY;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
             case COMP_INDUCTOR: {
                 snprintf(buf, sizeof(buf), "%.3g H", selected->props.inductor.inductance);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Inductance:", buf,

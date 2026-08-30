@@ -308,6 +308,57 @@ static int bounce_test(double dt_force) {
     return fails ? 1 : 0;
 }
 
+/* --prop-gap: which parts offer the properties panel nothing, and whether that is right.
+ *
+ * --prop-test checks that every row the panel offers can actually be applied. It says nothing
+ * about the parts that offer no rows at all, and most do not: 35 parts out of about 124. Some of
+ * those are correct - a wire, a ground and a label have nothing to edit - and some are gaps. That
+ * distinction had never been counted, so this lists them rather than guessing at a number.
+ *
+ * A part is judged "expected empty" from what it is, not from a list of names: no properties
+ * struct worth showing means nothing to show. Everything else prints, and the printing is the
+ * point - the list is the work item.
+ */
+static int prop_gap(void) {
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) { printf("prop-gap: no video - skipped\n"); return 0; }
+    SDL_Window *win = SDL_CreateWindow("prop-gap", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                                       1600, 1000, SDL_WINDOW_HIDDEN);
+    SDL_Renderer *ren = win ? SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE) : NULL;
+    if (!ren) { printf("prop-gap: no renderer - skipped\n"); if (win) SDL_DestroyWindow(win); SDL_Quit(); return 0; }
+
+    UIState *ui = calloc(1, sizeof *ui);
+    InputState *in = calloc(1, sizeof *in);
+    ui_init(ui);
+    ui->window_width = 1600; ui->window_height = 1000;
+    ui_update_layout(ui);
+
+    int total = 0, with_rows = 0, empty = 0, expected_empty = 0;
+    printf("parts with no editable properties:\n");
+    for (int ct = COMP_NONE + 1; ct < COMP_TYPE_COUNT; ct++) {
+        const ComponentTypeInfo *info = component_get_info((ComponentType)ct);
+        if (!info || !info->name || !info->name[0]) continue;
+        Component *comp = component_create((ComponentType)ct, 100, 100);
+        if (!comp) continue;
+        total++;
+        ui->num_properties = 0;
+        ui_render_properties(ui, ren, comp, in);
+        int rows = ui->num_properties;
+        if (rows > 0) { with_rows++; component_free(comp); continue; }
+        empty++;
+        /* Parts that genuinely have nothing to offer: structural and decorative ones. */
+        int structural = (ct == COMP_GROUND || ct == COMP_TEXT || ct == COMP_TEST_POINT);
+        if (structural) { expected_empty++; component_free(comp); continue; }
+        printf("   %-28s (type %d, %d terminals)\n", info->name, ct, info->num_terminals);
+        component_free(comp);
+    }
+    free(in); free(ui);
+    SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
+    printf("\nprop-gap: %d creatable types - %d offer rows, %d offer none "
+           "(%d of those correctly, being structural)\n",
+           total, with_rows, empty, expected_empty);
+    return 0;
+}
+
 static int prop_test(void) {
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         printf("prop-test: no video (%s) - skipped\n", SDL_GetError());
@@ -1150,6 +1201,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--bounce-test"))
             return bounce_test((i + 1 < argc) ? atof(argv[i + 1]) : 0.0);
         else if (!strcmp(argv[i], "--prop-test")) return prop_test();
+        else if (!strcmp(argv[i], "--prop-gap")) return prop_gap();
         else if (!strcmp(argv[i], "--crashlog")) { crashlog_dump_last(); return 0; }
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); usage(); return 2; }
     }

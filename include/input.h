@@ -128,6 +128,8 @@ typedef enum {
     // Transformer parameters
     PROP_TRANS_R_PRIMARY,         // Primary winding resistance
     PROP_TRANS_R_SECONDARY,       // Secondary winding resistance
+    PROP_TRANS_L_PRIMARY,         // Primary inductance (H): the magnetising inductance
+    PROP_TRANS_COUPLING,          // Coupling coefficient k (0..1): leakage is 1 - k
 
     // Text annotation parameters
     PROP_TEXT_CONTENT,            // Text content string

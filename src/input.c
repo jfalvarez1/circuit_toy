@@ -2561,6 +2561,27 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             }
             break;
 
+        /* The magnetising inductance and the coupling. The two winding resistances below have
+           had working handlers all along and no way to reach them: the transformer drew no
+           property panel at all, so nothing could edit any of it. */
+        case PROP_TRANS_L_PRIMARY:
+            if ((comp->type == COMP_TRANSFORMER || comp->type == COMP_TRANSFORMER_CT) &&
+                value > 0 && value <= 1e3) {
+                comp->props.transformer.l_primary = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_TRANS_COUPLING:
+            /* k = 1 is a perfect transformer and the model wants a little leakage to stay
+               solvable, so the top of the range is 0.9999 rather than 1. */
+            if ((comp->type == COMP_TRANSFORMER || comp->type == COMP_TRANSFORMER_CT) &&
+                value > 0 && value <= 0.9999) {
+                comp->props.transformer.coupling = value;
+                applied = true;
+            }
+            break;
+
         // Transformer winding resistances
         case PROP_TRANS_R_PRIMARY:
             if ((comp->type == COMP_TRANSFORMER || comp->type == COMP_TRANSFORMER_CT) && value >= 0 && value <= 1e6) {

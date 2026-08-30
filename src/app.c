@@ -1322,6 +1322,12 @@ void app_handle_events(App *app) {
                                     c->props.inductor.ideal = !c->props.inductor.ideal;
                                     model_name = c->props.inductor.ideal ? "Ideal" : "Real (DCR)";
                                     break;
+                                case COMP_TRANSFORMER:
+                                case COMP_TRANSFORMER_CT:
+                                    c->props.transformer.ideal = !c->props.transformer.ideal;
+                                    model_name = c->props.transformer.ideal ? "Ideal (k=1, no winding R)"
+                                                                            : "Real (leakage, winding R)";
+                                    break;
                                 case COMP_DIODE:
                                     c->props.diode.ideal = !c->props.diode.ideal;
                                     model_name = c->props.diode.ideal ? "Ideal (0.7V drop)" : "Real (Shockley)";
@@ -1388,6 +1394,19 @@ void app_handle_events(App *app) {
                             } else if (c->type == COMP_CAPACITOR_ELEC) {
                                 snprintf(current_value, sizeof(current_value), "%.6g", c->props.capacitor_elec.esr);
                             }
+                        }
+                        // Transformer: magnetising inductance, coupling, winding resistances
+                        else if (prop_type == PROP_TRANS_L_PRIMARY) {
+                            snprintf(current_value, sizeof(current_value), "%.6g", c->props.transformer.l_primary);
+                        }
+                        else if (prop_type == PROP_TRANS_COUPLING) {
+                            snprintf(current_value, sizeof(current_value), "%.4g", c->props.transformer.coupling);
+                        }
+                        else if (prop_type == PROP_TRANS_R_PRIMARY) {
+                            snprintf(current_value, sizeof(current_value), "%.6g", c->props.transformer.r_primary);
+                        }
+                        else if (prop_type == PROP_TRANS_R_SECONDARY) {
+                            snprintf(current_value, sizeof(current_value), "%.6g", c->props.transformer.r_secondary);
                         }
                         // Inductor DCR
                         else if (prop_type == PROP_DCR) {

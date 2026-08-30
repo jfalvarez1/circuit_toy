@@ -1,5 +1,60 @@
 # Roadmap
 
+## Open items, ordered by what they cost (2026-08-30)
+
+Everything below is either a recorded limitation or a warning the suites deliberately do not fail
+on. Nothing here is failing. Ordered cheapest first, which is the order they are being worked.
+
+**1. Parts with no editable properties. MEASURED 2026-08-30, and being worked.** `--prop-gap`
+(new, in the app) lists them: **124 creatable types, 35 offered rows, 89 offered none - and only
+two of those 89 were structural**, a ground and a text label. So it is 87 real gaps, not a handful.
+The measurement changed the shape of the job, which is why it came first.
+
+Some of it is worse than absent. The transformer drew no panel at all, so its turns ratio - the
+one number the part is about - was uneditable, and its two winding resistances had **working apply
+handlers with no way to reach them**. That is done: turns ratio, ideal/real, magnetising
+inductance, coupling and both winding resistances, 37 parts offering rows now.
+
+*Plan: work down the list by how much the simulation actually reads the property, in batches small
+enough to verify. `--prop-test` guards each batch - it checks that every row offered can be
+applied - and `--prop-gap` reports the remaining count. Next in line by that measure: the DC motor
+and the relay (both had their physics fixed today and neither can be configured), the four
+controlled sources (VCVS/VCCS/CCVS/CCCS, whose gain is the entire point of the part), the JFETs,
+the Darlingtons and the thyristors.*
+
+**2. The high-power load's power label is instantaneous.** It is v^2/R at the drawn frame, so two
+identical AC loads can read 909 kW and 2.86 MW depending where the frame lands. *Plan: leave
+unless asked. The field feeds the overload colouring and the burn-in audit, which both want the
+instantaneous value; smoothing only the label needs display-side state that does not exist yet.*
+
+**3. Twenty-one templates with cosmetic geometry warnings.** All drawn wire crossings, no hard
+violations: twelve have one, five have two, and the Digital Clock alone has 87. *Plan: leave the
+Digital Clock (a bus-heavy schematic legitimately crosses) and look at the single-crossing ones
+opportunistically. A crossing is legal schematic practice, which is why these are tracked rather
+than failed.*
+
+**4. The Digital Clock overflows the canvas at the 0.3x zoom floor.** *Plan: leave, documented.
+`tools/edge_gui.py` reports it as a NOTE keyed off the floor itself. A lower floor would make it
+uncut and unreadable, which is not a trade worth making.*
+
+**5. Three `--class-test` warnings.** Hartley sits on the 5 % interval-agreement threshold at 188
+samples a cycle with a steady 13.98 V; the Tesla Coil is a ring-down burst that is genuinely
+neither periodic nor stepped; the X-Y Plotter idles at 1e-10 V of solver residue. *Plan: leave.
+Tightening means tuning thresholds until the classifier agrees with one particular set of
+circuits, which is how a check stops meaning anything. Revisit only if a fourth appears - that
+would say the rule is wrong rather than these three being marginal.*
+
+**6. CCM vs DCM.** The hard one, and the only item whose blocker has actually moved. See its own
+section below: it was blocked because a realistic snubber could not be resolved at dt = 100 ns,
+and the note says what it needs is "a switch model with a defined off-state capacitance, or a
+local time-step control that tightens dt across a commutation". Since then `MIN_TIME_STEP` became
+10 ps and the simulation refines its own step once a circuit shows a period. *Plan: one measured
+retry - place the DCM buck, watch the switch node across a commutation, and find out whether the
+finer floor alone is enough before building anything.*
+
+Not on this list because they are feature work rather than defects: S-parameter (`.s2p`) import
+via rational fitting, behavioural DC-bias capacitance, and the Bode-on-an-imported-model check.
+
 ## Vendor / SPICE model import - FIRST VERSION SHIPPED 2026-08-28
 
 `.SUBCKT` import is in: `src/spice.c` reads the passive subset of a manufacturer's netlist and
