@@ -3924,6 +3924,78 @@ static int meas_check(const char *name, const char *what, double got, double wan
     return bad;
 }
 
+/* ---------------------------------------------------------------------------------------
+ * --fft-test: the spectrum view and the THD number, against closed forms.
+ *
+ * The FFT drives the scope's spectrum view, and THD is the number the Function Generator's
+ * "3rd harmonic > 30 dB down" claim rests on. Neither had a check. Same method as --meas-test:
+ * synthetic waveforms whose spectra are known exactly, fed straight into analysis_fft_compute.
+ *
+ * The inputs are built to make the oracles exact rather than approximate: 1024 samples (the
+ * FFT's own size, so no zero-padding), the fundamental placed on bin 50 exactly (so there is no
+ * leakage for a window to smear), and the rectangular window selected explicitly (so bin
+ * amplitudes are the coefficients themselves). A square wave's odd harmonics fall at 1/h and a
+ * triangle's at 1/h^2, both on exact bins; THD here is defined over harmonics 2..10, which for
+ * those is 42.88 % and 12.05 % - the function's own contract, not the infinite-series 48.3 %.
+ * ------------------------------------------------------------------------------------- */
+static int fft_check(const char *name, const char *what, double got, double want, double tol,
+                     int *fails) {
+    int bad = fabs(got - want) > tol;
+    if (bad) {
+        (*fails)++;
+        printf("[FAIL] fft   %-10s %-14s = %.6g, arithmetic says %.6g (tol %.3g)\n",
+               name, what, got, want, tol);
+    }
+    return bad;
+}
+
+static int fft_test(void) {
+    enum { N = FFT_SIZE, BIN = 50 };
+    const double FS = 102400.0;               /* so bin 50 is exactly 5000 Hz */
+    const double F0 = BIN * FS / (double)N;
+    static AnalysisState st;
+    static double s[N];
+    int fails = 0, checks = 0;
+
+    for (int kind = 0; kind < 3; kind++) {
+        const char *name = kind == 0 ? "sine" : kind == 1 ? "square" : "triangle";
+        for (int i = 0; i < N; i++) {
+            double ph = fmod((double)i * BIN / N, 1.0);
+            s[i] = kind == 0 ? sin(2.0 * M_PI * ph)
+                 : kind == 1 ? (ph < 0.5 ? 1.0 : -1.0)
+                 :             (ph < 0.5 ? 4.0 * ph - 1.0 : 3.0 - 4.0 * ph);
+        }
+        analysis_init(&st);
+        st.fft_window_type = 0;               /* rectangular: bin-exact input needs no window */
+        analysis_fft_compute(&st, s, N, FS, 0);
+        FFTResult *f = &st.fft_results[0];
+
+        checks += 2;
+        fft_check(name, "fundamental", f->fundamental_freq, F0, 0.5, &fails);
+        /* 3rd harmonic relative to the fundamental: -inf, -9.54 dB (1/3), -19.08 dB (1/9) */
+        double rel3 = f->magnitude[3 * BIN] - f->magnitude[BIN];
+        if (kind == 1) fft_check(name, "3rd harmonic", rel3, -9.542, 0.2, &fails);
+        if (kind == 2) fft_check(name, "3rd harmonic", rel3, -19.085, 0.2, &fails);
+        if (kind == 0 && rel3 > -80.0) {
+            fails++;
+            printf("[FAIL] fft   sine       3rd harmonic   = %.4g dB - a pure sine has none\n", rel3);
+        }
+        checks += 1;
+        double thd_want = kind == 0 ? 0.0 : kind == 1 ? 42.879 : 12.047;
+        double thd_tol  = kind == 0 ? 0.1 : 0.5;
+        fft_check(name, "THD", f->thd, thd_want, thd_tol, &fails);
+        if (kind == 0) {
+            checks += 1;
+            if (f->snr < 60.0) {
+                fails++;
+                printf("[FAIL] fft   sine       SNR            = %.4g dB - a clean sine should clear 60\n", f->snr);
+            }
+        }
+    }
+    printf("\nfft-test: %d checks over 3 synthetic spectra, %d failed\n", checks, fails);
+    return fails ? 1 : 0;
+}
+
 static int meas_test(void) {
     enum { N = 4000 };
     static double ts[N], vs[N];
@@ -4720,6 +4792,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--dvdt-test")) return dvdt_test();
         else if (!strcmp(argv[i], "--meas-test")) return meas_test();
+        else if (!strcmp(argv[i], "--fft-test")) return fft_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--label-test")) return label_test();
         else if (!strcmp(argv[i], "--parts-file-test")) return parts_file_test();
