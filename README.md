@@ -2,8 +2,10 @@
 
 **Latest Release: [v3.22.3](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.22.3)** (auto-updating from v3.4.0 on)
 
-A native desktop circuit simulator written in C with SDL2. Build, simulate and analyse circuits
-with a drag-and-drop schematic and a bench oscilloscope.
+A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
+digital solver, a real-time bench oscilloscope with FFT and THD, 187 guided circuits from RC
+filters to power grids, SPICE import, and a 44-suite self-audit battery. Build, simulate and
+analyse circuits with a drag-and-drop schematic.
 
 The look is deliberately **synthwave** - magenta and cyan on deep violet, a CRT-style graticule
 in a recessed bezel, and knobs that look like the front of an instrument from about 1984. It is
