@@ -131,6 +131,26 @@ typedef enum {
     PROP_TRANS_L_PRIMARY,         // Primary inductance (H): the magnetising inductance
     PROP_TRANS_COUPLING,          // Coupling coefficient k (0..1): leakage is 1 - k
 
+    // DC motor: the armature branch and the mechanical side
+    PROP_MOTOR_R,                 // Armature resistance
+    PROP_MOTOR_L,                 // Armature inductance
+    PROP_MOTOR_KV,                // Back-EMF constant (V per rad/s)
+    PROP_MOTOR_KT,                // Torque constant (Nm/A)
+    PROP_MOTOR_J,                 // Rotor inertia
+    PROP_MOTOR_B,                 // Viscous friction
+    PROP_MOTOR_TLOAD,             // Load torque
+
+    // Relay coil and contacts
+    PROP_RELAY_R_COIL,
+    PROP_RELAY_L_COIL,
+    PROP_RELAY_I_PICKUP,
+    PROP_RELAY_I_DROPOUT,
+    PROP_RELAY_R_ON,
+    PROP_RELAY_R_OFF,
+
+    // Controlled sources: the gain is the part
+    PROP_CS_RIN,                  // input resistance (current sensing for CCVS/CCCS)
+
     // Text annotation parameters
     PROP_TEXT_CONTENT,            // Text content string
     PROP_TEXT_SIZE,               // Font size (1=small, 2=normal, 3=large)
@@ -205,11 +225,6 @@ typedef enum {
     // Fuse reset
     PROP_RESET_FUSE,              // Reset blown fuse
 
-    // Microphone
-    PROP_MIC_ENABLED,             // Microphone capture enabled toggle
-    PROP_MIC_GAIN,                // Microphone input gain
-    PROP_MIC_AMPLITUDE,           // Output amplitude
-    PROP_MIC_OFFSET,              // DC offset
     PROP_TYPE_COUNT               /* so an audit can walk every property's action code */
 } PropertyType;
 

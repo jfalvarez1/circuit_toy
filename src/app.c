@@ -1322,6 +1322,20 @@ void app_handle_events(App *app) {
                                     c->props.inductor.ideal = !c->props.inductor.ideal;
                                     model_name = c->props.inductor.ideal ? "Ideal" : "Real (DCR)";
                                     break;
+                                case COMP_DC_MOTOR:
+                                    c->props.dc_motor.ideal = !c->props.dc_motor.ideal;
+                                    model_name = c->props.dc_motor.ideal ? "Ideal (no L, no friction)"
+                                                                         : "Real (L, friction)";
+                                    break;
+                                case COMP_RELAY:
+                                    c->props.relay.ideal = !c->props.relay.ideal;
+                                    model_name = c->props.relay.ideal ? "Ideal (no coil L)"
+                                                                      : "Real (coil L, kickback)";
+                                    break;
+                                case COMP_VCVS: case COMP_VCCS: case COMP_CCVS: case COMP_CCCS:
+                                    c->props.controlled_source.ideal = !c->props.controlled_source.ideal;
+                                    model_name = c->props.controlled_source.ideal ? "Ideal" : "Real (finite R_in)";
+                                    break;
                                 case COMP_TRANSFORMER:
                                 case COMP_TRANSFORMER_CT:
                                     c->props.transformer.ideal = !c->props.transformer.ideal;
@@ -1395,6 +1409,24 @@ void app_handle_events(App *app) {
                                 snprintf(current_value, sizeof(current_value), "%.6g", c->props.capacitor_elec.esr);
                             }
                         }
+                        // DC motor
+                        else if (prop_type == PROP_MOTOR_R)     { snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_motor.r_armature); }
+                        else if (prop_type == PROP_MOTOR_L)     { snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_motor.l_armature); }
+                        else if (prop_type == PROP_MOTOR_KV)    { snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_motor.kv); }
+                        else if (prop_type == PROP_MOTOR_KT)    { snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_motor.kt); }
+                        else if (prop_type == PROP_MOTOR_J)     { snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_motor.j_rotor); }
+                        else if (prop_type == PROP_MOTOR_B)     { snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_motor.b_friction); }
+                        else if (prop_type == PROP_MOTOR_TLOAD) { snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_motor.torque_load); }
+                        // Relay
+                        else if (prop_type == PROP_RELAY_R_COIL)    { snprintf(current_value, sizeof(current_value), "%.6g", c->props.relay.r_coil); }
+                        else if (prop_type == PROP_RELAY_L_COIL)    { snprintf(current_value, sizeof(current_value), "%.6g", c->props.relay.l_coil); }
+                        else if (prop_type == PROP_RELAY_I_PICKUP)  { snprintf(current_value, sizeof(current_value), "%.6g", c->props.relay.i_pickup); }
+                        else if (prop_type == PROP_RELAY_I_DROPOUT) { snprintf(current_value, sizeof(current_value), "%.6g", c->props.relay.i_dropout); }
+                        else if (prop_type == PROP_RELAY_R_ON)      { snprintf(current_value, sizeof(current_value), "%.6g", c->props.relay.r_contact_on); }
+                        else if (prop_type == PROP_RELAY_R_OFF)     { snprintf(current_value, sizeof(current_value), "%.6g", c->props.relay.r_contact_off); }
+                        // Controlled sources
+                        else if (prop_type == PROP_GAIN)   { snprintf(current_value, sizeof(current_value), "%.6g", c->props.controlled_source.gain); }
+                        else if (prop_type == PROP_CS_RIN) { snprintf(current_value, sizeof(current_value), "%.6g", c->props.controlled_source.r_in); }
                         // Transformer: magnetising inductance, coupling, winding resistances
                         else if (prop_type == PROP_TRANS_L_PRIMARY) {
                             snprintf(current_value, sizeof(current_value), "%.6g", c->props.transformer.l_primary);

@@ -15,6 +15,16 @@ one number the part is about - was uneditable, and its two winding resistances h
 handlers with no way to reach them**. That is done: turns ratio, ideal/real, magnetising
 inductance, coupling and both winding resistances, 37 parts offering rows now.
 
+**Batch 2 done:** the DC motor (armature R and L, Kv, Kt, rotor inertia, friction, load torque),
+the relay (coil R and L, pickup and dropout currents, both contact resistances) and the four
+controlled sources, whose gain lived in the enum as PROP_GAIN with nothing on either end of it -
+no row, no handler - so the one number a VCVS is for could not be set by any means. 43 parts offer
+rows now, 107 typed rows, and 35 property types remain unbuilt.
+
+ is the guard for the class: it fails when a property is wired at one end
+only. It is in the battery, and it took two goes to make honest - see the note in its header about
+fallthrough groups.
+
 *Plan: work down the list by how much the simulation actually reads the property, in batches small
 enough to verify. `--prop-test` guards each batch - it checks that every row offered can be
 applied - and `--prop-gap` reports the remaining count. Next in line by that measure: the DC motor

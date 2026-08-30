@@ -1861,6 +1861,192 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                a coupling coefficient and two winding resistances the simulation reads every
                step. Two of those already had working apply handlers with no way to reach them.
                Found by counting: --prop-gap lists the types that offer the panel nothing. */
+            /* A DC motor: the armature branch the stamp reads, and the mechanical side the
+               per-step advance reads. Its physics was corrected on 2026-08-30 and none of it
+               could be configured - a motor could not be given a load torque or a different
+               rotor, which is most of what a motor is for. */
+            case COMP_DC_MOTOR: {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_R;
+                    format_engineering(selected->props.dc_motor.r_armature, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R armature:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_MOTOR_R;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.dc_motor.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+                if (!selected->props.dc_motor.ideal) {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_L;
+                    format_engineering(selected->props.dc_motor.l_armature, "H", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "L armature:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_MOTOR_L;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_B;
+                    snprintf(buf, sizeof(buf), "%.4g", selected->props.dc_motor.b_friction);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Friction b:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_MOTOR_B;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_KV;
+                    snprintf(buf, sizeof(buf), "%.4g", selected->props.dc_motor.kv);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Kv (V.s/rad):", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_MOTOR_KV;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_KT;
+                    snprintf(buf, sizeof(buf), "%.4g", selected->props.dc_motor.kt);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Kt (Nm/A):", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_MOTOR_KT;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_J;
+                    snprintf(buf, sizeof(buf), "%.4g", selected->props.dc_motor.j_rotor);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Inertia J:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_MOTOR_J;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_TLOAD;
+                    snprintf(buf, sizeof(buf), "%.4g", selected->props.dc_motor.torque_load);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Load torque:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_MOTOR_TLOAD;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
+            /* A relay: the coil that decides when it pulls in, and the contacts it closes.
+               The pickup and dropout currents are the whole behaviour of the part. */
+            case COMP_RELAY: {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_RELAY_R_COIL;
+                    format_engineering(selected->props.relay.r_coil, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Coil R:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_RELAY_R_COIL;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.relay.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+                if (!selected->props.relay.ideal) {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_RELAY_L_COIL;
+                    format_engineering(selected->props.relay.l_coil, "H", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Coil L:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_RELAY_L_COIL;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_RELAY_I_PICKUP;
+                    format_engineering(selected->props.relay.i_pickup, "A", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Pickup I:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_RELAY_I_PICKUP;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_RELAY_I_DROPOUT;
+                    format_engineering(selected->props.relay.i_dropout, "A", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Dropout I:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_RELAY_I_DROPOUT;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_RELAY_R_ON;
+                    format_engineering(selected->props.relay.r_contact_on, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Contact on:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_RELAY_R_ON;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_RELAY_R_OFF;
+                    format_engineering(selected->props.relay.r_contact_off, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Contact off:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_RELAY_R_OFF;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
+            /* The four controlled sources. PROP_GAIN sat in the property enum with nothing on
+               either end of it - no row, no handler - so the gain of a VCVS could not be set,
+               and the gain is the entire part. */
+            case COMP_VCVS: case COMP_VCCS: case COMP_CCVS: case COMP_CCCS: {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_GAIN;
+                    snprintf(buf, sizeof(buf), "%.4g", selected->props.controlled_source.gain);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, (selected->type == COMP_VCVS ? "Gain (V/V):" : selected->type == COMP_VCCS ? "Gain (A/V):" : selected->type == COMP_CCVS ? "Gain (V/A):" : "Gain (A/A):"), buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_GAIN;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.controlled_source.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+                if (!selected->props.controlled_source.ideal) {
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_CS_RIN;
+                    format_engineering(selected->props.controlled_source.r_in, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R input:", buf, ed, edit_buf, cursor);
+                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    ui->properties[ui->num_properties].prop_type = PROP_CS_RIN;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                }
+                break;
+            }
+
             case COMP_TRANSFORMER:
             case COMP_TRANSFORMER_CT: {
                 snprintf(buf, sizeof(buf), "%.4g : 1", selected->props.transformer.turns_ratio);

@@ -147,6 +147,21 @@ if [ "$fails" -gt 0 ]; then
     done
 fi
 
+# Source-level, so it needs no binary: every property type has to be wired at both ends. A
+# handler with no row is a part that looks unconfigurable while the plumbing sits there; a row
+# with no handler looks configurable, takes a value and drops it. Both existed.
+if command -v python >/dev/null 2>&1; then
+    if python tools/prop_wiring.py > "$out/propwiring.log" 2>&1; then
+        printf '[ OK ] %-14s %s
+' "prop-wiring" "$(tail -n 1 "$out/propwiring.log" | cut -c1-100)"
+    else
+        printf '[FAIL] %-14s %s
+' "prop-wiring" "$(tail -n 1 "$out/propwiring.log" | cut -c1-100)"
+        grep -i fail "$out/propwiring.log" | head -10
+        fails=$((fails + 1))
+    fi
+fi
+
 # The one check that has to draw: a triggered trace has to stand still between frames, which is
 # a property of the picture and not of any number. Skipped where pillow is not installed.
 if command -v python >/dev/null 2>&1; then

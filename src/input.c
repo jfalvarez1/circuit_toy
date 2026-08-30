@@ -2582,6 +2582,99 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             }
             break;
 
+        /* DC motor. Every one of these is read by the solver every step - the armature branch
+           by the stamp, the mechanical side by the per-step advance in simulation.c - and none
+           of them could be edited until now. */
+        case PROP_MOTOR_R:
+            if (comp->type == COMP_DC_MOTOR && value > 0 && value <= 1e6) {
+                comp->props.dc_motor.r_armature = value; applied = true;
+            }
+            break;
+        case PROP_MOTOR_L:
+            if (comp->type == COMP_DC_MOTOR && value >= 0 && value <= 1e3) {
+                comp->props.dc_motor.l_armature = value; applied = true;
+            }
+            break;
+        case PROP_MOTOR_KV:
+            if (comp->type == COMP_DC_MOTOR && value > 0 && value <= 1e3) {
+                comp->props.dc_motor.kv = value; applied = true;
+            }
+            break;
+        case PROP_MOTOR_KT:
+            if (comp->type == COMP_DC_MOTOR && value > 0 && value <= 1e3) {
+                comp->props.dc_motor.kt = value; applied = true;
+            }
+            break;
+        case PROP_MOTOR_J:
+            /* strictly positive: the rotor's acceleration divides by it */
+            if (comp->type == COMP_DC_MOTOR && value > 0 && value <= 1e3) {
+                comp->props.dc_motor.j_rotor = value; applied = true;
+            }
+            break;
+        case PROP_MOTOR_B:
+            if (comp->type == COMP_DC_MOTOR && value >= 0 && value <= 1e3) {
+                comp->props.dc_motor.b_friction = value; applied = true;
+            }
+            break;
+        case PROP_MOTOR_TLOAD:
+            if (comp->type == COMP_DC_MOTOR && value >= 0 && value <= 1e6) {
+                comp->props.dc_motor.torque_load = value; applied = true;
+            }
+            break;
+
+        /* Relay coil and contacts. */
+        case PROP_RELAY_R_COIL:
+            if (comp->type == COMP_RELAY && value > 0 && value <= 1e9) {
+                comp->props.relay.r_coil = value; applied = true;
+            }
+            break;
+        case PROP_RELAY_L_COIL:
+            if (comp->type == COMP_RELAY && value >= 0 && value <= 1e3) {
+                comp->props.relay.l_coil = value; applied = true;
+            }
+            break;
+        case PROP_RELAY_I_PICKUP:
+            /* pickup above dropout, or the hysteresis is inverted and the armature chatters */
+            if (comp->type == COMP_RELAY && value > 0 && value <= 1e3 &&
+                value > comp->props.relay.i_dropout) {
+                comp->props.relay.i_pickup = value; applied = true;
+            }
+            break;
+        case PROP_RELAY_I_DROPOUT:
+            if (comp->type == COMP_RELAY && value >= 0 && value <= 1e3 &&
+                value < comp->props.relay.i_pickup) {
+                comp->props.relay.i_dropout = value; applied = true;
+            }
+            break;
+        case PROP_RELAY_R_ON:
+            if (comp->type == COMP_RELAY && value > 0 && value <= 1e9) {
+                comp->props.relay.r_contact_on = value; applied = true;
+            }
+            break;
+        case PROP_RELAY_R_OFF:
+            if (comp->type == COMP_RELAY && value > 0 && value <= 1e12) {
+                comp->props.relay.r_contact_off = value; applied = true;
+            }
+            break;
+
+        /* Controlled sources. PROP_GAIN has been in the enum all along with nothing on either
+           end of it - no row, no handler - so the gain of a VCVS, the entire point of the part,
+           could not be set. */
+        case PROP_GAIN:
+            if ((comp->type == COMP_VCVS || comp->type == COMP_VCCS ||
+                 comp->type == COMP_CCVS || comp->type == COMP_CCCS) &&
+                fabs(value) <= 1e9) {
+                comp->props.controlled_source.gain = value; applied = true;
+            }
+            break;
+        case PROP_CS_RIN:
+            if ((comp->type == COMP_VCVS || comp->type == COMP_VCCS ||
+                 comp->type == COMP_CCVS || comp->type == COMP_CCCS) &&
+                value > 0 && value <= 1e12) {
+                comp->props.controlled_source.r_in = value; applied = true;
+            }
+            break;
+
         // Transformer winding resistances
         case PROP_TRANS_R_PRIMARY:
             if ((comp->type == COMP_TRANSFORMER || comp->type == COMP_TRANSFORMER_CT) && value >= 0 && value <= 1e6) {
