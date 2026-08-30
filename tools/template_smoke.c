@@ -34,6 +34,7 @@
 #include "circuits.h"
 #include "spice.h"
 #include "simulation.h"
+#include "analysis.h"
 #include "file_io.h"
 #include "label.h"   /* render_component_value_label: the audit measures the text that is drawn */
 
@@ -3859,6 +3860,102 @@ static int dvdt_relay(void) {
     return bad ? 1 : 0;
 }
 
+/* ---------------------------------------------------------------------------------------
+ * --meas-test: the numbers on the measurements panel, against arithmetic.
+ *
+ * Vpp, Vavg, Vrms, f, T and duty are what a user reads off the scope, and nothing verified
+ * them: the probe suites check waveforms straight from the history, never the derived numbers
+ * the panel shows. Every screenshot taken today read "D:49%" against waveforms that are 50 %
+ * by construction, which is the sort of thing a check finds in a second and a reader shrugs at
+ * for years.
+ *
+ * The inputs are synthetic - a sine, a square and a triangle built here from known parameters,
+ * fed straight into analysis_measure_waveform - so the oracles are exact closed forms and the
+ * solver is not in the loop. Two windows per waveform: a whole number of cycles, where the
+ * answer has no excuse, and a ragged fraction, where the wobble a sliding capture causes is
+ * measured and bounded instead of wondered about.
+ * ------------------------------------------------------------------------------------- */
+typedef struct {
+    const char *name;
+    int kind;                  /* 0 sine, 1 square, 2 triangle */
+    double amp, off, freq, duty;
+    double n_cycles;           /* window length, cycles */
+    /* oracles; negative tolerance fields mean "do not judge this one" */
+    double vpp, vavg, vrms, duty_pct;
+    double tol_pct;            /* on everything, in percent of the true value */
+} MeasCase;
+
+static const MeasCase meas_cases[] = {
+    /* whole windows: exact */
+    { "sine, whole",     0, 1.0, 0.0, 1000.0, 0.5, 8.0, 2.0, 0.0, 0.70711, 50.0, 0.5 },
+    { "sine + offset",   0, 1.0, 2.5, 1000.0, 0.5, 8.0, 2.0, 2.5, 2.59808, 50.0, 0.5 },
+    { "square 50%",      1, 2.5, 2.5, 1000.0, 0.5, 8.0, 5.0, 2.5, 3.53553, 50.0, 0.5 },
+    { "square 25%",      1, 2.5, 2.5, 1000.0, 0.25, 8.0, 5.0, 1.25, 2.5, 25.0, 0.5 },
+    { "triangle, whole", 2, 1.0, 0.0, 1000.0, 0.5, 8.0, 2.0, 0.0, 0.57735, 50.0, 0.5 },
+    /* ragged windows: the same waveforms over 8.37 cycles; the tolerance is the point */
+    /* 5 %: the wobble a window of 8.37 cycles actually has was measured at 4.5 % on the square's
+       average - the 0.37 of a cycle is simply in the numbers, and these rows exist to bound it,
+       not to wish it smaller. The scope's own centring stopped using the window mean for exactly
+       this; the panel still shows it, and this row is what says how far it can be off. */
+    { "sine, ragged",    0, 1.0, 0.0, 1000.0, 0.5, 8.37, 2.0, 0.0, 0.70711, 50.0, 5.0 },
+    { "square, ragged",  1, 2.5, 2.5, 1000.0, 0.5, 8.37, 5.0, 2.5, 3.53553, 50.0, 5.0 },
+};
+
+static double meas_wave(const MeasCase *mc, double t) {
+    double ph = fmod(t * mc->freq, 1.0);
+    switch (mc->kind) {
+        case 1:  return mc->off + (ph < mc->duty ? mc->amp : -mc->amp);
+        case 2:  return mc->off + mc->amp * (ph < 0.5 ? 4.0 * ph - 1.0 : 3.0 - 4.0 * ph);
+        default: return mc->off + mc->amp * sin(2.0 * M_PI * ph);
+    }
+}
+
+static int meas_check(const char *name, const char *what, double got, double want, double tol_pct,
+                      double scale, int *fails) {
+    /* the absolute term is scaled to the waveform, not to the oracle: an oracle of zero (a
+       centred sine's average) must not collapse the tolerance to nothing */
+    double tol = fabs(want) * tol_pct / 100.0 + fabs(scale) * tol_pct / 100.0;
+    int bad = fabs(got - want) > tol;
+    if (bad) {
+        (*fails)++;
+        printf("[FAIL] meas  %-16s %-5s = %.6g, arithmetic says %.6g (tol %.2g%%)\n",
+               name, what, got, want, tol_pct);
+    }
+    return bad;
+}
+
+static int meas_test(void) {
+    enum { N = 4000 };
+    static double ts[N], vs[N];
+    int fails = 0, checks = 0;
+    for (unsigned c = 0; c < sizeof meas_cases / sizeof meas_cases[0]; c++) {
+        const MeasCase *mc = &meas_cases[c];
+        double span = mc->n_cycles / mc->freq;
+        for (int i = 0; i < N; i++) {
+            ts[i] = span * i / (double)N;    /* i/N, not i/(N-1): the endpoint would repeat the
+                                                first sample's phase and bias every average */
+            vs[i] = meas_wave(mc, ts[i]);
+        }
+        WaveformMeasurements m;
+        memset(&m, 0, sizeof m);
+        analysis_measure_waveform(&m, ts, vs, N);
+        if (!m.valid) {
+            printf("[FAIL] meas  %-16s not measured at all\n", mc->name);
+            fails++;
+            continue;
+        }
+        checks += 5;
+        meas_check(mc->name, "Vpp",  m.v_pp,       mc->vpp,      mc->tol_pct, mc->amp, &fails);
+        meas_check(mc->name, "Vavg", m.v_avg,      mc->vavg,     mc->tol_pct, mc->amp, &fails);
+        meas_check(mc->name, "Vrms", m.v_rms,      mc->vrms,     mc->tol_pct, mc->amp, &fails);
+        meas_check(mc->name, "f",    m.frequency,  mc->freq,     mc->tol_pct, 0.0,     &fails);
+        meas_check(mc->name, "D",    m.duty_cycle, mc->duty_pct, mc->tol_pct, 0.0,     &fails);
+    }
+    printf("\nmeas-test: %d checks over %d synthetic waveforms, %d failed\n",
+           checks, (int)(sizeof meas_cases / sizeof meas_cases[0]), fails);
+    return fails ? 1 : 0;
+}
+
 static int dvdt_test(void) {
     int fails = 0;
     printf("dvdt-test: reported current against C dv/dt computed outside the solver\n\n");
@@ -4622,6 +4719,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--shard") && i + 1 < argc) i++;   /* read before this loop */
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--dvdt-test")) return dvdt_test();
+        else if (!strcmp(argv[i], "--meas-test")) return meas_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--label-test")) return label_test();
         else if (!strcmp(argv[i], "--parts-file-test")) return parts_file_test();

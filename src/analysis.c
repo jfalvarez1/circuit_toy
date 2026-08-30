@@ -749,12 +749,20 @@ void analysis_measure_waveform(WaveformMeasurements *meas,
     analysis_measure_rise_fall_time(times, values, count,
                                     &meas->rise_time, &meas->fall_time);
 
-    // Duty cycle (time above midpoint / period)
+    /* Duty cycle: the fraction of time above the midpoint, with the crossing intervals split
+       where the crossing actually is. This used to count an interval only when BOTH its samples
+       were high, which drops about half an interval at every crossing - one sample per cycle -
+       and every 50 % waveform in the program read "D:49%" on the panel, on every screenshot,
+       for as long as the panel has existed. --meas-test asks a synthetic square built from known
+       parameters, so the 25 %% case answers 25 and not 24.8. */
     double midpoint = (meas->v_max + meas->v_min) / 2.0;
     double high_time = 0;
     for (int i = 1; i < count; i++) {
-        if (values[i] > midpoint && values[i-1] > midpoint) {
-            high_time += times[i] - times[i-1];
+        double a = values[i-1], b = values[i], dt_iv = times[i] - times[i-1];
+        if (a > midpoint && b > midpoint) high_time += dt_iv;
+        else if ((a > midpoint) != (b > midpoint) && b != a) {
+            double frac = (midpoint - a) / (b - a);      /* where the crossing sits, 0..1 */
+            high_time += dt_iv * (a > midpoint ? frac : 1.0 - frac);
         }
     }
     double total_time = times[count-1] - times[0];

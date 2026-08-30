@@ -2252,9 +2252,12 @@ bool app_place_template_centered(App *app, CircuitTemplateType type) {
            is drawn beside its symbol and reaches about 60 px past it, and with only 40 px a side
            the Common Emitter's source frequency and the Pierce's rightmost "4.7nF" were clipped
            at the canvas edge. */
-        /* 140 px a side: a source labelled "100mV 1000Hz" is 12 characters at 8 px, drawn
-           entirely to one side of its symbol. 100 px a side still clipped three of them. */
-        float bw = maxx - minx + 280.0f, bh = maxy - miny + 100.0f;
+        /* 160 px a side: enough for a 17-character label drawn entirely to one side of its
+           symbol. 100 px a side clipped the Common Emitter's "100mV 1000Hz", and 140 still
+           clipped the Facility Rating's rightmost load, whose power label carries an exponent
+           ("799  5.64e-20 W"). tools/edge_gui.py renders all 187 templates and checks the
+           canvas border for cut-off content, so the next label to outgrow this is caught. */
+        float bw = maxx - minx + 320.0f, bh = maxy - miny + 100.0f;
         float z = fminf(render->canvas_rect.w / bw, render->canvas_rect.h / bh);
         if (z > 1.0f) z = 1.0f;
         if (z < 0.3f) z = 0.3f;

@@ -1013,6 +1013,8 @@ build/tools/template_smoke.exe --undo-test       # 13 kinds of edit over every t
 build/tools/template_smoke.exe --dvdt-test       # every storage element against C dv/dt, computed outside the solver
 build/tools/template_smoke.exe --flow-test       # current arrows close on every node of every template
 build/tools/template_smoke.exe --restamp-test    # reading a circuit's currents does not change the circuit
+build/tools/template_smoke.exe --meas-test       # the measurements panel's Vpp/Vrms/f/duty, against closed forms
+python tools/edge_gui.py build/circuit-playground.exe   # nothing a template draws is cut off at the canvas edge
 build/tools/template_smoke.exe --class-test      # what each circuit is, and whether it says the same at a finer step
 build/circuit-playground.exe --place-test        # every circuit is recognised from its click and replaces the last
 build/circuit-playground.exe --trig-test         # a repeating waveform stands still, and is drawn from enough samples

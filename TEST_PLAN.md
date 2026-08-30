@@ -810,6 +810,7 @@ canvas, in the panel rather than the schematic, or a number that is technically 
 | 3.33.5 | `[ ]` Load Function Generator | The four bias sources' voltage labels each beside their own symbol; at 60 px columns a label was drawn across the neighbouring source |
 | 3.33.6 | `[ ]` **Automated:** `--geom-test` | Still 0 hard violations after the spacing change |
 | 3.33.7 | `[ ]` Load LDO vs Switcher, read the channel chips | [LDO] and [SW OUT] as separate chips. They are sized from the channel names, which used to happen only at window-resize time - before a template's probes exist - so a chip sized for "CH2" was drawn holding "SW OUT" and the row read "LDOSW OUT". The chips re-lay themselves when a name changes |
+| 3.33.9 | `[ ]` **Automated, before a release:** `python tools/edge_gui.py` | Renders all 187 templates and checks the canvas border for cut-off content. Too slow for the battery (~8 min), so it is the pre-release visual gate. Its first run found a clip on the Facility Rating template that three rounds of hand-read screenshots had missed |
 | 3.33.8 | `[ ]` **Automated:** `keys_gui.py` / `undo_gui.py` | Both aim their clicks from `--state-out`, which now lists every part's screen position through the same transform it is drawn with. They used to click "300,300 is the resistor", which held until the fit margin moved every template by 40 px and five checks failed at once |
 
 Known and left alone, recorded so it is a decision rather than an oversight: a high-power load's
@@ -817,6 +818,17 @@ power label is the instantaneous v^2/R at the drawn frame, so two identical AC l
 "909 kW" and "2.86 MW" if the frame lands near one's zero crossing. The field feeds the overload
 colouring and a burn-in audit that both want the instantaneous value; smoothing only the label
 needs display-side state that does not exist yet.
+
+### 3.34 The numbers on the measurements panel (2026-08-30)
+
+Vpp, Vavg, Vrms, f, T and duty are what a user reads off the scope, and nothing verified them: the
+probe suites check waveforms straight from the history, never the derived numbers the panel shows.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.34.1 | `[ ]` **Automated:** `--meas-test` | Synthetic sine, square and triangle built from known parameters, fed straight into `analysis_measure_waveform`, judged against closed forms. 35 checks, 0 failing |
+| 3.34.2 | `[ ]` Load any 50 % waveform and read D on the panel | 50 %, not 49 %. The duty computation counted an interval only when both its samples were high, dropping half an interval at every crossing - one sample per cycle - and every screenshot ever taken showed "D:49%" against waveforms that are 50 % by construction |
+| 3.34.3 | `[ ]` The ragged-window rows of `--meas-test` | Within 5 %. A window of 8.37 cycles wobbles its average by up to 4.5 % - that is the sliding-capture effect the scope's centring stopped using the window mean for. The panel still shows the window mean, and these rows are what bound how far it can be off |
 
 ## 4. Oscilloscope
 
