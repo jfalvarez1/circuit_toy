@@ -71,6 +71,17 @@ static double scope_y_to_volts(UIState *ui, int y) {
 }
 
 // Is (x,y) on the oscilloscope screen (graticule area, main window)?
+/* An undo that put a whole circuit back leaves the scope set up for the circuit that was on the
+   screen a moment ago - its time base and its trigger belong to something else now. Put the
+   vertical and trigger sections back to neutral and let the scope pick a scale from the data,
+   which is what placing a circuit does. */
+static void undo_settle_scope(Circuit *circuit, UIState *ui) {
+    if (!circuit || !ui || !circuit->undo_restored_circuit) return;
+    circuit->undo_restored_circuit = false;
+    ui_scope_reset_for_template(ui);
+    ui->scope_auto_vdiv_pending = true;
+}
+
 static bool point_in_scope_screen(UIState *ui, int x, int y) {
     if (!ui || ui->scope_popped_out) return false;
     return x >= ui->scope_rect.x && x < ui->scope_rect.x + ui->scope_rect.w &&
@@ -1433,6 +1444,9 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             }
 
             input_handle_key(input, event->key.keysym.sym, circuit, render);
+            /* If that was an undo or a redo that put a whole circuit back, the scope is still
+               set up for the one it replaced. */
+            undo_settle_scope(circuit, ui);
 
             return true;
         }

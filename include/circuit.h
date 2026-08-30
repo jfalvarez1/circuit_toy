@@ -139,6 +139,9 @@ typedef struct Circuit {
        deleted wire was joined to, or the undo stack itself across a recorded clear. Whatever
        would normally be swept up here is what the undo needs to find again. */
     bool undo_preserving;
+    /* Set by the last undo or redo if what it put back was a whole circuit. The scope was set up
+       for the circuit that has just been replaced, and its time base means nothing here. */
+    bool undo_restored_circuit;
     bool modified;          // unsaved changes (cleared on save / new / load)
     bool topology_dirty;    // the STRUCTURE changed - a component or wire was added, moved or
                             // deleted - so the node map and the matrix have to be rebuilt.

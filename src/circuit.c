@@ -1357,6 +1357,7 @@ static bool circuit_undo_one(Circuit *circuit) {
             circuit->undo_preserving = true;
             bool loaded = file_load_circuit(circuit, here);
             circuit->undo_preserving = false;
+            circuit->undo_restored_circuit = loaded;
             remove(here);
             action->snapshot[0] = 0;
             if (loaded && have_now) {
@@ -1585,6 +1586,7 @@ static bool circuit_redo_one(Circuit *circuit) {
             circuit->undo_preserving = true;
             bool loaded = file_load_circuit(circuit, here);
             circuit->undo_preserving = false;
+            circuit->undo_restored_circuit = loaded;
             remove(here);
             action->snapshot[0] = 0;
             if (loaded && have_now && circuit->undo_count < MAX_UNDO) {
@@ -1752,6 +1754,10 @@ void circuit_clear_undo(Circuit *circuit) {
 
     for (int i = 0; i < circuit->undo_count; i++) undo_action_release(&circuit->undo_stack[i]);
     circuit->undo_count = 0;
+    /* Deleting a part or a wire leaves the nodes it was on in place, because an undo may want to
+       reconnect to exactly those. Once no undo can, they are litter: this is the moment to sweep
+       them up, and the only moment where it is certainly safe. */
+    circuit_cleanup_orphaned_nodes(circuit);
 }
 
 bool circuit_has_active_sweep(Circuit *circuit) {

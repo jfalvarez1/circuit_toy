@@ -653,6 +653,30 @@ static int undo_test(void) {
                 }
             }
 
+            /* A recorded delete leaves the nodes it stranded in place, so that an undo can
+               reconnect to exactly those. Once the stack is gone nothing can, and they are
+               litter: discarding the stack is where they are swept up, and this is where that
+               is checked. */
+            if (!why[0]) {
+                circuit_clear_undo(c);
+                circuit_clear_redo(c);
+                int stranded = 0;
+                for (int n = 0; n < c->num_nodes; n++) {
+                    int id = c->nodes[n].id, used = 0;
+                    for (int i = 0; i < c->num_components && !used; i++)
+                        for (int k = 0; k < c->components[i]->num_terminals; k++)
+                            if (c->components[i]->node_ids[k] == id) { used = 1; break; }
+                    for (int i = 0; i < c->num_wires && !used; i++)
+                        if (c->wires[i].start_node_id == id || c->wires[i].end_node_id == id) used = 1;
+                    for (int i = 0; i < c->num_probes && !used; i++)
+                        if (c->probes[i].node_id == id) used = 1;
+                    if (!used) stranded++;
+                }
+                if (stranded)
+                    snprintf(why, sizeof why, "%d nodes left with nothing on them once the undo "
+                             "stack was discarded", stranded);
+            }
+
             if (why[0]) {
                 printf("[FAIL] undo  %-28s %-14s %s\n", ti->name, op_name[op], why);
                 fails++;
