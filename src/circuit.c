@@ -8,7 +8,8 @@
 #include <math.h>
 #include "circuit.h"
 #include "matrix.h"
-#include "component.h"  // For COMP_GROUND type check
+#include "component.h"  // For COMP_GROUND type
+#include "file_io.h"       // a whole-canvas undo record is a file check
 
 // Forward declarations
 static double get_mapped_voltage(Circuit *circuit, int node_id);
@@ -30,8 +31,15 @@ Circuit *circuit_create(void) {
     return circuit;
 }
 
+static void undo_action_release(UndoAction *a);   /* defined below; used by circuit_free */
+
 void circuit_free(Circuit *circuit) {
     if (!circuit) return;
+
+    /* the undo and redo stacks own component copies and snapshot files */
+    for (int i = 0; i < circuit->undo_count; i++) undo_action_release(&circuit->undo_stack[i]);
+    for (int i = 0; i < circuit->redo_count; i++) undo_action_release(&circuit->redo_stack[i]);
+    circuit->undo_count = circuit->redo_count = 0;
 
     // Free all components
     for (int i = 0; i < circuit->num_components; i++) {
@@ -44,6 +52,14 @@ void circuit_free(Circuit *circuit) {
     }
 
     free(circuit);
+}
+
+/* A snapshot record owns a file. Dropping the record without deleting it leaves the circuit
+   behind in the temporary directory for good. */
+static void undo_action_release(UndoAction *a) {
+    if (!a) return;
+    if (a->component_backup) { component_free(a->component_backup); a->component_backup = NULL; }
+    if (a->type == UNDO_SNAPSHOT && a->snapshot[0]) { remove(a->snapshot); a->snapshot[0] = 0; }
 }
 
 void circuit_clear(Circuit *circuit) {
@@ -73,13 +89,16 @@ void circuit_clear(Circuit *circuit) {
     memset(circuit->node_map, 0, sizeof(circuit->node_map));
     circuit->num_matrix_nodes = 0;
 
-    // Clear undo stack
-    circuit_clear_undo(circuit);
+    /* Clearing the canvas normally means starting again, and a stack of records about a
+       circuit that no longer exists is worse than none. The exception is a clear that has just
+       been recorded whole - there the stack is the only way back, and keep_undo says so. */
+    if (!circuit->undo_preserving) circuit_clear_undo(circuit);
 
-    // Reset IDs
-    circuit->next_component_id = 1;
-    circuit->next_node_id = 1;
-    circuit->next_wire_id = 1;
+    /* The id counters keep counting. Starting them again meant a part on the new canvas could
+       carry the number of a part on the old one, and an undo stack full of records that name
+       things by number then cannot tell them apart: redoing a swap of circuits removed the
+       wrong source, because both circuits had one and both were id 1. Ids are cheap and a
+       session does not run out of them; being able to say which part you mean is worth more. */
 
     circuit->modified = true;
     circuit->topology_dirty = true;
@@ -123,8 +142,8 @@ void circuit_remove_component(Circuit *circuit, int comp_id) {
             circuit->topology_dirty = true;
     circuit->topology_dirty = true;
 
-            // Clean up orphaned nodes
-            circuit_cleanup_orphaned_nodes(circuit);
+            // Clean up orphaned nodes - unless an undo may want to reconnect to them
+            if (!circuit->undo_preserving) circuit_cleanup_orphaned_nodes(circuit);
             return;
         }
     }
@@ -191,6 +210,22 @@ Node *circuit_find_node_at(Circuit *circuit, float x, float y, float threshold) 
     return NULL;
 }
 
+/* The node nearest a remembered position, or -1. Restoring a wire wants the node that is there
+   now, not the first one that happens to be within reach: a component restored a moment earlier
+   put its node at its terminal, which can sit a few pixels from where the wire's node was, and
+   the first-match rule would either miss it - leaving two nodes where there was one - or, with a
+   wider reach, grab a neighbour and weld two separate nets together. */
+static int node_nearest(Circuit *circuit, float x, float y, float max_dist) {
+    int best = -1;
+    float best_d2 = max_dist * max_dist;
+    for (int i = 0; i < circuit->num_nodes; i++) {
+        float dx = circuit->nodes[i].x - x, dy = circuit->nodes[i].y - y;
+        float d2 = dx * dx + dy * dy;
+        if (d2 <= best_d2) { best_d2 = d2; best = circuit->nodes[i].id; }
+    }
+    return best;
+}
+
 int circuit_find_or_create_node(Circuit *circuit, float x, float y, float threshold) {
     Node *node = circuit_find_node_at(circuit, x, y, threshold);
     if (node) return node->id;
@@ -246,8 +281,8 @@ void circuit_remove_wire(Circuit *circuit, int wire_id) {
             circuit->topology_dirty = true;
     circuit->topology_dirty = true;
 
-            // Clean up orphaned nodes
-            circuit_cleanup_orphaned_nodes(circuit);
+            // Clean up orphaned nodes - unless an undo may want to reconnect to them
+            if (!circuit->undo_preserving) circuit_cleanup_orphaned_nodes(circuit);
             return;
         }
     }
@@ -1059,9 +1094,7 @@ static void circuit_push_redo_internal(Circuit *circuit, UndoActionType type, in
     // Shift stack if full
     if (circuit->redo_count >= MAX_UNDO) {
         // Free the oldest backup if it exists
-        if (circuit->redo_stack[0].component_backup) {
-            component_free(circuit->redo_stack[0].component_backup);
-        }
+        undo_action_release(&circuit->redo_stack[0]);
         // Shift everything down
         for (int i = 0; i < MAX_UNDO - 1; i++) {
             circuit->redo_stack[i] = circuit->redo_stack[i + 1];
@@ -1083,12 +1116,7 @@ static void circuit_push_redo_internal(Circuit *circuit, UndoActionType type, in
 void circuit_clear_redo(Circuit *circuit) {
     if (!circuit) return;
 
-    for (int i = 0; i < circuit->redo_count; i++) {
-        if (circuit->redo_stack[i].component_backup) {
-            component_free(circuit->redo_stack[i].component_backup);
-            circuit->redo_stack[i].component_backup = NULL;
-        }
-    }
+    for (int i = 0; i < circuit->redo_count; i++) undo_action_release(&circuit->redo_stack[i]);
     circuit->redo_count = 0;
 }
 
@@ -1102,9 +1130,7 @@ void circuit_push_undo(Circuit *circuit, UndoActionType type, int id, Component 
     // Shift stack if full
     if (circuit->undo_count >= MAX_UNDO) {
         // Free the oldest backup if it exists
-        if (circuit->undo_stack[0].component_backup) {
-            component_free(circuit->undo_stack[0].component_backup);
-        }
+        undo_action_release(&circuit->undo_stack[0]);
         // Shift everything down
         for (int i = 0; i < MAX_UNDO - 1; i++) {
             circuit->undo_stack[i] = circuit->undo_stack[i + 1];
@@ -1125,6 +1151,40 @@ void circuit_push_undo(Circuit *circuit, UndoActionType type, int id, Component 
     action->wire_start = (type == UNDO_ADD_WIRE || type == UNDO_REMOVE_WIRE) ? (int)old_x : 0;
     action->wire_end   = (type == UNDO_ADD_WIRE || type == UNDO_REMOVE_WIRE) ? (int)old_y : 0;
     action->batch = circuit->undo_batch_current;
+}
+
+/* Where a snapshot goes: beside the settings, in a file named for its place on the stack. They
+   are small, there are at most a few, and they are cleaned up when the stack is. */
+static void snapshot_path_for(char *out, size_t n, int serial) {
+    /* The system's temporary directory, which is what it is for. Not SDL's preferences path:
+       this file is compiled into the headless audit tool too, which has no SDL. */
+    const char *dir = getenv("TEMP");
+    if (!dir) dir = getenv("TMPDIR");
+    if (!dir) dir = getenv("TMP");
+    if (dir && dir[0]) snprintf(out, n, "%s/circuit_undo_%d.cpg", dir, serial);
+    else snprintf(out, n, "circuit_undo_%d.cpg", serial);
+}
+
+bool circuit_push_snapshot_undo(Circuit *circuit) {
+    if (!circuit) return false;
+    static int serial = 0;
+    char path[264];
+    snapshot_path_for(path, sizeof path, serial++);
+    if (!file_save_circuit(circuit, path)) return false;
+    circuit_push_undo(circuit, UNDO_SNAPSHOT, 0, NULL, 0, 0);
+    if (circuit->undo_count > 0)
+        snprintf(circuit->undo_stack[circuit->undo_count - 1].snapshot, 264, "%s", path);
+    return true;
+}
+
+/* Clear the canvas without discarding the undo stack. Clearing normally means starting again,
+   and records about a circuit that no longer exists are worse than none - but a clear that has
+   just been recorded whole is the one case where the stack is the only way back. */
+void circuit_clear_after_snapshot(Circuit *circuit) {
+    if (!circuit) return;
+    circuit->undo_preserving = true;
+    circuit_clear(circuit);
+    circuit->undo_preserving = false;
 }
 
 void circuit_push_probe_undo(Circuit *circuit, int probe_id) {
@@ -1203,7 +1263,13 @@ void circuit_delete_component(Circuit *circuit, int comp_id) {
         if (circuit->components[i]->id == comp_id) { victim = circuit->components[i]; break; }
     if (!victim) return;
     circuit_push_undo(circuit, UNDO_REMOVE_COMPONENT, comp_id, component_clone(victim), 0, 0);
+    /* Keep the nodes it was on, for the same reason a recorded wire delete does: a wire deleted
+       in the same act remembers which nodes it joined by id, and sweeping them up here is what
+       leaves that wire with nowhere to go - its two ends resolve to one node and it cannot come
+       back at all. An empty node is inert. */
+    circuit->undo_preserving = true;
     circuit_remove_component(circuit, comp_id);
+    circuit->undo_preserving = false;
 }
 
 void circuit_delete_wire(Circuit *circuit, int wire_id) {
@@ -1273,6 +1339,35 @@ static bool circuit_undo_one(Circuit *circuit) {
                 action->component_backup = NULL;  // Don't free it
             }
             break;
+
+        case UNDO_SNAPSHOT: {
+            /* Put the recorded circuit back, and record the one being replaced so redo can
+               return to it. Loading clears the undo stack, so the record is taken out of the way
+               first and the stacks are restored around it. */
+            char here[264];
+            snprintf(here, sizeof here, "%s", action->snapshot);
+            char now[264];
+            static int redo_serial = 100000;
+            snapshot_path_for(now, sizeof now, redo_serial++);
+            bool have_now = file_save_circuit(circuit, now);
+
+            /* Loading a circuit clears the canvas, and clearing it normally throws the undo
+               stack away with it - which would take this record and every other one, and the
+               files they own, with it. undo_preserving says the stack is the way back. */
+            circuit->undo_preserving = true;
+            bool loaded = file_load_circuit(circuit, here);
+            circuit->undo_preserving = false;
+            remove(here);
+            action->snapshot[0] = 0;
+            if (loaded && have_now) {
+                circuit_push_redo_internal(circuit, UNDO_SNAPSHOT, 0, NULL, 0, 0, 0, 0);
+                if (circuit->redo_count > 0)
+                    snprintf(circuit->redo_stack[circuit->redo_count - 1].snapshot, 264, "%s", now);
+            } else if (!loaded && have_now) {
+                remove(now);
+            }
+            break;
+        }
 
         case UNDO_ADD_PROBE:
             circuit_push_redo_internal(circuit, UNDO_REMOVE_PROBE, action->id, NULL,
@@ -1361,13 +1456,22 @@ static bool circuit_undo_one(Circuit *circuit) {
             /* The nodes this wire joined may have gone with it: a node nothing else touches is
                cleaned up the moment the wire leaves. Put them back where they were and rejoin
                those - otherwise the wire returns attached to nothing and the circuit settles
-               differently than it did before the delete. */
-            if (!circuit_get_node(circuit, action->wire_start))
-                action->wire_start = circuit_find_or_create_node(circuit, action->wire_x0,
-                                                                 action->wire_y0, 5.0f);
-            if (!circuit_get_node(circuit, action->wire_end))
-                action->wire_end = circuit_find_or_create_node(circuit, action->wire_x1,
-                                                               action->wire_y1, 5.0f);
+               differently than it did before the delete.
+
+               The position recorded is the node's own, so it is matched exactly. The ten pixels
+               a component's terminal is allowed to reach for is wrong here in both directions:
+               too small and the wire misses a node that is still there, too large and it grabs a
+               neighbour and two nets that were separate become one. */
+            if (!circuit_get_node(circuit, action->wire_start)) {
+                int n0 = node_nearest(circuit, action->wire_x0, action->wire_y0, 10.0f);
+                action->wire_start = (n0 > 0) ? n0
+                    : circuit_create_node(circuit, action->wire_x0, action->wire_y0);
+            }
+            if (!circuit_get_node(circuit, action->wire_end)) {
+                int n1 = node_nearest(circuit, action->wire_x1, action->wire_y1, 10.0f);
+                action->wire_end = (n1 > 0) ? n1
+                    : circuit_create_node(circuit, action->wire_x1, action->wire_y1);
+            }
             int wire_id = circuit_add_wire(circuit, action->wire_start, action->wire_end);
             // Push to redo stack (redo will remove it)
             circuit_push_redo_internal(circuit, UNDO_ADD_WIRE, wire_id, NULL,
@@ -1470,6 +1574,30 @@ static bool circuit_redo_one(Circuit *circuit) {
         /* On the redo stack a type names what the undo did, and redo does the opposite - the
            same convention the component cases above use. UNDO_ADD_PROBE here means the undo put
            a probe back, so redoing takes it off again. */
+        case UNDO_SNAPSHOT: {
+            char here[264];
+            snprintf(here, sizeof here, "%s", action->snapshot);
+            char now[264];
+            static int undo_serial = 200000;
+            snapshot_path_for(now, sizeof now, undo_serial++);
+            bool have_now = file_save_circuit(circuit, now);
+
+            circuit->undo_preserving = true;
+            bool loaded = file_load_circuit(circuit, here);
+            circuit->undo_preserving = false;
+            remove(here);
+            action->snapshot[0] = 0;
+            if (loaded && have_now && circuit->undo_count < MAX_UNDO) {
+                UndoAction *undo = &circuit->undo_stack[circuit->undo_count++];
+                memset(undo, 0, sizeof *undo);
+                undo->type = UNDO_SNAPSHOT;
+                snprintf(undo->snapshot, sizeof undo->snapshot, "%s", now);
+            } else if (!loaded && have_now) {
+                remove(now);
+            }
+            break;
+        }
+
         case UNDO_ADD_PROBE:
             if (circuit->undo_count < MAX_UNDO) {
                 UndoAction *undo = &circuit->undo_stack[circuit->undo_count++];
@@ -1566,12 +1694,16 @@ static bool circuit_redo_one(Circuit *circuit) {
         }
 
         case UNDO_REMOVE_WIRE: {
-            if (!circuit_get_node(circuit, action->wire_start))
-                action->wire_start = circuit_find_or_create_node(circuit, action->wire_x0,
-                                                                 action->wire_y0, 5.0f);
-            if (!circuit_get_node(circuit, action->wire_end))
-                action->wire_end = circuit_find_or_create_node(circuit, action->wire_x1,
-                                                               action->wire_y1, 5.0f);
+            if (!circuit_get_node(circuit, action->wire_start)) {
+                int n0 = node_nearest(circuit, action->wire_x0, action->wire_y0, 10.0f);
+                action->wire_start = (n0 > 0) ? n0
+                    : circuit_create_node(circuit, action->wire_x0, action->wire_y0);
+            }
+            if (!circuit_get_node(circuit, action->wire_end)) {
+                int n1 = node_nearest(circuit, action->wire_x1, action->wire_y1, 10.0f);
+                action->wire_end = (n1 > 0) ? n1
+                    : circuit_create_node(circuit, action->wire_x1, action->wire_y1);
+            }
             int wire_id = circuit_add_wire(circuit, action->wire_start, action->wire_end);
             // Push to undo stack (undo will remove it)
             if (circuit->undo_count < MAX_UNDO) {
@@ -1618,12 +1750,7 @@ bool circuit_redo(Circuit *circuit) {
 void circuit_clear_undo(Circuit *circuit) {
     if (!circuit) return;
 
-    for (int i = 0; i < circuit->undo_count; i++) {
-        if (circuit->undo_stack[i].component_backup) {
-            component_free(circuit->undo_stack[i].component_backup);
-            circuit->undo_stack[i].component_backup = NULL;
-        }
-    }
+    for (int i = 0; i < circuit->undo_count; i++) undo_action_release(&circuit->undo_stack[i]);
     circuit->undo_count = 0;
 }
 

@@ -1058,7 +1058,12 @@ void app_handle_events(App *app) {
                     const CircuitTemplateInfo *info = circuit_template_get_info(circuit_type);
                     char msg[160];
                     simulation_reset(app->simulation);
-                    circuit_clear(app->circuit);
+                    /* Picking a circuit from the palette replaces what was on the canvas, and
+                       somebody who did not mean to should get it back. The whole circuit is
+                       recorded before it goes - piece by piece would mean rebuilding a netlist
+                       exactly, and a file already does that. */
+                    circuit_push_snapshot_undo(app->circuit);
+                    circuit_clear_after_snapshot(app->circuit);
                     input_cancel_action(&app->input);
                     app->input.selected_component = NULL;
                     app->has_file = false;
@@ -2568,7 +2573,9 @@ void app_render(App *app) {
 
 void app_new_circuit(App *app) {
     simulation_reset(app->simulation);
-    circuit_clear(app->circuit);
+    /* recorded whole, so a mis-clicked New is one Ctrl+Z away from the circuit that was there */
+    circuit_push_snapshot_undo(app->circuit);
+    circuit_clear_after_snapshot(app->circuit);
     app->has_file = false;
     app->current_file[0] = '\0';
     input_cancel_action(&app->input);

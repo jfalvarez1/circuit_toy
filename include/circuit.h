@@ -55,7 +55,12 @@ typedef enum {
     /* Probes are edits too: putting one on a node and taking it off again are things a user
        does constantly, and neither could be taken back. */
     UNDO_ADD_PROBE,
-    UNDO_REMOVE_PROBE
+    UNDO_REMOVE_PROBE,
+    /* The whole canvas as it was. Clearing it, or picking a circuit from the palette - which
+       clears the last one - changes everything at once, and putting that back piece by piece
+       means reconstructing a netlist exactly: which node was which, which wire joined them.
+       A file does that already and is checked template by template, so the record is a file. */
+    UNDO_SNAPSHOT
 } UndoActionType;
 
 // Undo action
@@ -76,9 +81,15 @@ typedef struct {
     /* A probe is small and owns nothing, so the record carries the whole of it - node, position,
        colour, channel and the name, which is the one thing a user typed. */
     Probe probe_backup;
+    char snapshot[264];           /* UNDO_SNAPSHOT: the circuit as it was, on disk */
 } UndoAction;
 
-#define MAX_UNDO 100
+/* Deep enough to hold a whole circuit. Clearing the canvas, or picking a circuit from the
+   palette - which clears the last one - is recorded as one act made of one record per part,
+   wire and probe, and a large template is a few hundred of those. At a hundred entries the
+   oldest were shifted off the bottom and the act could only be half taken back. The stacks live
+   on the heap with the circuit, so this costs memory nothing else was using. */
+#define MAX_UNDO 4000
 
 // Circuit structure
 typedef struct Circuit {
@@ -124,6 +135,10 @@ typedef struct Circuit {
     int undo_batch_next;
 
     // Modified flag
+    /* Set while something is being taken away that an undo record depends on: the nodes a
+       deleted wire was joined to, or the undo stack itself across a recorded clear. Whatever
+       would normally be swept up here is what the undo needs to find again. */
+    bool undo_preserving;
     bool modified;          // unsaved changes (cleared on save / new / load)
     bool topology_dirty;    // the STRUCTURE changed - a component or wire was added, moved or
                             // deleted - so the node map and the matrix have to be rebuilt.
@@ -135,6 +150,12 @@ typedef struct Circuit {
 Circuit *circuit_create(void);
 void circuit_free(Circuit *circuit);
 void circuit_clear(Circuit *circuit);
+/* Clear the canvas without discarding the undo stack - for a clear that has just been recorded
+   whole by circuit_push_snapshot_undo, where the stack is the only way back. */
+void circuit_clear_after_snapshot(Circuit *circuit);
+/* Record the whole circuit as it is now, so one Ctrl+Z brings all of it back. For the acts that
+   replace everything: clearing the canvas, or picking a circuit from the palette. */
+bool circuit_push_snapshot_undo(Circuit *circuit);
 
 // Component operations
 int circuit_add_component(Circuit *circuit, Component *comp);

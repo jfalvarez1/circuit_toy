@@ -363,12 +363,29 @@ static void circuit_compare_ex(Circuit *a, Circuit *b, bool strict, char *why, s
            removing a part shifts the rest down and putting it back appends it - and comparing
            the fifth of one against the fifth of the other then reports every part after the
            edit as changed. The id is what follows a part through all of it. */
+        static bool claimed[MAX_COMPONENTS];
+        memset(claimed, 0, sizeof claimed);
         for (int i = 0; i < a->num_components && !why[0]; i++) {
+            /* Pair by id where the ids still mean the same thing, and by what the part is
+               where they do not. A circuit loaded from a file has been given its own numbers
+               starting at one, and a canvas that has been cleared and refilled has moved on -
+               so the same part can be id 1 on one side and id 400 on the other. Each part on
+               the other side can only be claimed once, or two identical parts would both match
+               the same one and a missing part would go unnoticed. */
             Component *ca = a->components[i], *cb = NULL;
             for (int j = 0; j < b->num_components; j++)
-                if (b->components[j]->id == ca->id) { cb = b->components[j]; break; }
+                if (!claimed[j] && b->components[j]->id == ca->id) { cb = b->components[j]; claimed[j] = true; break; }
             if (!cb) {
-                snprintf(why, whyn, "%s (id %d) is not there any more", ca->label, ca->id);
+                for (int j = 0; j < b->num_components; j++) {
+                    Component *cand = b->components[j];
+                    if (claimed[j] || cand->type != ca->type) continue;
+                    if (fabsf(cand->x - ca->x) > 0.5f || fabsf(cand->y - ca->y) > 0.5f) continue;
+                    cb = cand; claimed[j] = true; break;
+                }
+            }
+            if (!cb) {
+                snprintf(why, whyn, "%s (id %d, a %d at %g,%g) is not there any more",
+                         ca->label, ca->id, ca->type, ca->x, ca->y);
                 break;
             }
             if (ca->type != cb->type)
@@ -470,7 +487,8 @@ static int undo_test(void) {
     static const char *op_name[] = { "add a part", "delete a part", "move a part",
                                      "add a wire", "delete a wire", "delete a selection",
                                      "rotate a part", "edit a value", "duplicate a part",
-                                     "add a probe", "delete a probe" };
+                                     "add a probe", "delete a probe",
+                                     "clear the canvas", "swap the circuit" };
     int fails = 0, checks = 0, templates = 0;
 
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -479,7 +497,7 @@ static int undo_test(void) {
         if (!ti) continue;
         templates++;
 
-        for (int op = 0; op < 11; op++) {
+        for (int op = 0; op < 13; op++) {
             Circuit *c = circuit_create();
             if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); break; }
             if (!file_save_circuit(c, "undo_before.cpg")) { circuit_free(c); break; }
@@ -544,6 +562,23 @@ static int undo_test(void) {
                         circuit_push_edit_undo(c, r);
                         r->props.resistor.resistance *= 3.0;
                         did = true;
+                    }
+                    break;
+                }
+                case 11: {  /* clear the canvas, recorded whole */
+                    if (c->num_components > 0 && circuit_push_snapshot_undo(c)) {
+                        circuit_clear_after_snapshot(c);
+                        did = true;
+                    }
+                    break;
+                }
+                case 12: {  /* what picking a circuit from the palette does: the canvas recorded,
+                               then cleared, then another circuit placed on it */
+                    if (c->num_components > 0 && circuit_push_snapshot_undo(c)) {
+                        CircuitTemplateType other = (CircuitTemplateType)
+                            (t + 1 < CIRCUIT_TYPE_COUNT ? t + 1 : CIRCUIT_NONE + 1);
+                        circuit_clear_after_snapshot(c);
+                        if (circuit_place_template(c, other, 0, 0) > 0) did = true;
                     }
                     break;
                 }

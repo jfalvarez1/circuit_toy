@@ -951,6 +951,8 @@ bool input_handle_event(InputState *input, SDL_Event *event,
 
                 // Multi-drag completion: push undo for all moved components
                 if (input->is_multi_dragging && input->multi_selected_count > 0) {
+                    /* dragging a selection is one act, so one press puts it all back */
+                    circuit_undo_batch_begin(circuit);
                     for (int i = 0; i < input->multi_selected_count; i++) {
                         Component *comp = input->multi_selected[i];
                         if (comp && (comp->x != input->multi_drag_start_x[i] ||
@@ -959,6 +961,7 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                                              input->multi_drag_start_x[i], input->multi_drag_start_y[i]);
                         }
                     }
+                    circuit_undo_batch_end(circuit);
                 }
 
                 input->left.down = false;
