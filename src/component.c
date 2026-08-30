@@ -12,6 +12,12 @@
 
 // Global environment state (affects LDR and thermistor components)
 Vector *g_stamp_prev_step = NULL;
+/* Set while a component is being stamped only to read a current back out of it, not to advance
+   the simulation. A stamp that remembers something - a MOSFET's gate-capacitor charge, say -
+   must not remember anything from one of these: the display recovers terminal currents by
+   re-stamping every component once a frame, and that would overwrite the device's memory of the
+   step that actually happened with values worked out from the linearisation. */
+bool g_stamp_read_only = false;
 
 EnvironmentState g_environment = {
     .light_level = 0.5,     // Default: medium light (0.0=dark to 1.0=bright)
@@ -3090,6 +3096,35 @@ CapCompanion component_cap_companion(const Component *comp, double dt, bool tran
     return cc;
 }
 
+/* A junction capacitance across a diode, integrated trapezoidally like any other capacitor.
+   Every diode in this program has carried a cjo in its properties - 1 pF for a signal diode,
+   5 pF for a Schottky, 50 pF for a varactor - and nothing has ever read it, so a reverse-biased
+   junction carried no displacement current at all. On a 60 Hz rectifier that is invisible; on a
+   switching node moving volts per nanosecond it is microamps that no terminal reported and that
+   the flow display then had to spread across the net.
+
+   The capacitance is taken at zero bias rather than as the usual Cjo/(1 - V/Vj)^m: the bias
+   dependence matters for a varactor's tuning and not for the charge that has to be accounted
+   for here, and a constant is one thing to be right about rather than three. */
+static void stamp_junction_cap(Component *comp, Matrix *A, Vector *b, const int *n,
+                               double cjo, double dt) {
+    (void)comp;
+    if (cjo <= 0 || dt <= 0 || !g_stamp_prev_step) return;   /* DC: a capacitor is an open */
+    /* Backward Euler, and deliberately so. A trapezoidal companion needs the branch current from
+       the last accepted step as well as its voltage, and that is state - state which is advanced
+       once per step for the capacitors the solver knows about and would be advanced once per
+       Newton iteration if it lived in here. One order of accuracy is a fair price for a term
+       that exists to account for picoamp-scale charge rather than to shape a waveform. */
+    double a_ = (n[0] > 0) ? vector_get(g_stamp_prev_step, n[0] - 1) : 0;
+    double k_ = (n[1] > 0) ? vector_get(g_stamp_prev_step, n[1] - 1) : 0;
+    double v_prev = a_ - k_;
+    double G = cjo / dt;
+    double Ieq = G * v_prev;
+    STAMP_CONDUCTANCE(n[0], n[1], G);
+    if (n[0] > 0) vector_add(b, n[0] - 1, -Ieq);
+    if (n[1] > 0) vector_add(b, n[1] - 1, Ieq);
+}
+
 void component_stamp(Component *comp, Matrix *A, Vector *b,
                      int *node_map, int num_nodes,
                      double time, Vector *prev_solution, double dt) {
@@ -3342,6 +3377,7 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             STAMP_CONDUCTANCE(n[0], n[1], Gd);
             if (n[0] > 0) vector_add(b, n[0]-1, -Ieq);
             if (n[1] > 0) vector_add(b, n[1]-1, Ieq);
+            stamp_junction_cap(comp, A, b, n, comp->props.diode.cjo, dt);
             break;
         }
 
@@ -3418,6 +3454,11 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             STAMP_CONDUCTANCE(n[0], n[1], Gd);
             if (n[0] > 0) vector_add(b, n[0]-1, -Ieq);
             if (n[1] > 0) vector_add(b, n[1]-1, Ieq);
+            /* A Schottky's junction capacitance is five times a signal diode's and it is the
+               part that sits across a switching node, which is where it matters. An LED has no
+               cjo of its own to read. */
+            if (comp->type == COMP_SCHOTTKY)
+                stamp_junction_cap(comp, A, b, n, comp->props.schottky.cjo, dt);
             break;
         }
 
@@ -3744,11 +3785,13 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 if (n[0] > 0) vector_add(b, n[0]-1, -I_cgd_eq);
                 if (n[1] > 0) vector_add(b, n[1]-1, I_cgd_eq);
 
-                // Update state for next iteration
-                comp->props.mosfet.i_cgs = G_cgs * Vgs_curr - I_cgs_eq;
-                comp->props.mosfet.i_cgd = G_cgd * Vgd_curr - I_cgd_eq;
-                comp->props.mosfet.vgs_prev = Vgs_curr;
-                comp->props.mosfet.vgd_prev = Vgd_curr;
+                // Update state for next iteration - unless this stamp is only being read
+                if (!g_stamp_read_only) {
+                    comp->props.mosfet.i_cgs = G_cgs * Vgs_curr - I_cgs_eq;
+                    comp->props.mosfet.i_cgd = G_cgd * Vgd_curr - I_cgd_eq;
+                    comp->props.mosfet.vgs_prev = Vgs_curr;
+                    comp->props.mosfet.vgd_prev = Vgd_curr;
+                }
             }
             break;
         }

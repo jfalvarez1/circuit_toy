@@ -921,6 +921,9 @@ int component_get_terminal_at(Component *comp, float px, float py, float thresho
 // The solver sets this before Newton iteration; prev_solution passed to component_stamp is
 // the current Newton iterate, which must NOT be used as the storage element's memory.
 extern Vector *g_stamp_prev_step;
+/* True while a stamp is being taken apart for its currents rather than to advance time: a
+   stateful device must not update its memory during one. */
+extern bool g_stamp_read_only;
 
 /* Delay line: what a port launched at time t, and the per-step record of both ports. */
 double delay_line_history(const Component *comp, int port, double t);

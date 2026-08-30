@@ -116,6 +116,57 @@ either a switch model with a defined off-state capacitance, or a local time-step
 tightens dt across a commutation. Until then the DCM lesson lives in the CCM vs DCM notes of
 Discrete Buck, Node by Node rather than in a template of its own.
 
+## Terminal currents and displacement current - measured 2026-08-30
+
+The three circuits that cannot close their node KCL are Pierce, Discrete Buck Node by Node and
+Pull-up Sizing, and `--flow-test` now says how far out each one is - both at the node and across
+the whole net, because those are different faults. Measured with the exemptions lifted:
+
+| circuit | node disagrees by | net is out by | what is on the node |
+|---------|-------------------|---------------|----------------------|
+| Pierce Crystal Oscillator | 0.85 uA | 6.8 uA | one resistor terminal |
+| Discrete Buck, Node by Node | 3.9 uA | 15.4 uA | one Schottky terminal |
+| Pull-up Sizing | 1.3 uA | 6.4 uA | one capacitor terminal |
+
+The net being out by more than the node settles what is happening. Wire currents are the
+minimum-norm solution of a net's conservation equations with the terminal currents as its
+demands, so current that no terminal reports does not vanish - it is spread across the net and
+lands hardest on whichever node has least of its own. The node named in the failure is a symptom;
+the missing current is somewhere else on the net.
+
+The cause of the largest one was that the diode had a junction capacitance in its *properties*
+(`cjo`, 1 pF signal, 5 pF Schottky, 50 pF varactor) that **nothing read**. It was a default value
+with no stamp behind it, so a reverse-biased junction carried no displacement current at all.
+
+**Fixed 2026-08-30.** The diode and the Schottky stamp their junction capacitance, and the buck
+closes: 15 uA accounted for, and it is audited again rather than exempt. Backward Euler
+deliberately - a trapezoidal companion needs the branch current from the last accepted step, and
+that is state which would be advanced once per Newton iteration rather than once per step.
+
+Two consequences worth recording, because neither was obvious:
+
+- The Function Generator's shaped sine moved from 0.324 to 0.302 on the rms/peak-to-peak
+  measure, and it is real. The shaper bends a triangle at four diode breakpoints, and at a
+  breakpoint the diode's own dynamic resistance is megohms - the same order as a picofarad's
+  reactance at these frequencies. The capacitance softens exactly the corners the shaping
+  depends on. A real shaper has the same limit, which is why they carry a maximum frequency.
+  The expectation moved with it, and says why.
+- The template was already sitting one part in twenty inside its tolerance before this. A check
+  that passes by that margin is not really passing.
+
+What is left, in the order that would help:
+
+1. Report the crystal's motional-arm current as a terminal current rather than leaving it to the
+   residual. That is Pierce, 6.8 uA.
+2. The capacitor bus in Pull-up Sizing is 3.6 % out on its own current, which is the known
+   flow-display limitation and the smallest of the three.
+
+Recovering a terminal current no longer disturbs the device it is recovered from: the display
+re-stamps every component once a frame, and a stamp that remembers something - a MOSFET's gate
+charge - was overwriting its memory of the step that actually happened with values worked out
+from the linearisation. `g_stamp_read_only` says the stamp is being read, not run. It changed
+none of the numbers above, which is worth knowing too.
+
 ## Terminal currents and displacement current (2026-08-28)
 
 --flow-test audits node KCL by comparing wire currents against terminal currents. Terminal currents

@@ -1100,7 +1100,9 @@ void simulation_compute_terminal_currents(Simulation *sim) {
 
         Vector *lin = (sim->last_linearization && sim->last_linearization->size == M)
                       ? sim->last_linearization : sim->solution;
+        g_stamp_read_only = true;    /* reading a current out, not advancing the circuit */
         component_stamp(comp, A, b, circuit->node_map, num_nodes, sim->time - dt, lin, dt);   /* the accepted step was stamped before time advanced */
+        g_stamp_read_only = false;
 
         int ground_t = -1, ground_count = 0; double sum = 0.0;
         for (int t = 0; t < comp->num_terminals; t++) {

@@ -1027,8 +1027,7 @@ static int flow_test(void) {
            the step is bound by the kick's own width the oscillator runs, and the flow display
            splits the microamps on the crystal's net about two to one against the terminal
            currents. The solve is right (MNA enforces KCL); it is the arrows that are wrong. */
-        int kcl_exempt = (t == CIRCUIT_IV_BUCK_NODES || t == CIRCUIT_IV_PULLUP_SIZING ||
-                          t == CIRCUIT_PIERCE);
+        int kcl_exempt = (t == CIRCUIT_IV_PULLUP_SIZING || t == CIRCUIT_PIERCE);
         if (!simulation_dc_analysis(sim)) { ok = 0; snprintf(why, sizeof why, "DC failed"); }
         simulation_auto_time_step(sim);
         simulation_start(sim);
@@ -1129,7 +1128,39 @@ static int flow_test(void) {
                real KCL break - a missing wire, a mis-assigned terminal - is 100 %, not 0.01 %. */
             if (fabs(inflow - demand) > 1e-6 * (imax + 1e-9) + 5e-3 * fabs(demand) + 1e-8 +
                                         1e-4 * (node_imax > term_imax ? node_imax : term_imax)) {
-                ok = 0; snprintf(why, sizeof why, "KCL at node %d: wires %.4g vs demand %.4g", id, inflow, demand);
+                /* Name what is on the node. "KCL does not close" is a number; which part is on
+                   the net and what it says it is drawing is the beginning of an answer. */
+                char who[140] = "";
+                size_t at = 0;
+                for (int j = 0; j < c->num_components && at < sizeof who - 24; j++) {
+                    Component *comp2 = c->components[j];
+                    for (int k = 0; k < comp2->num_terminals; k++) {
+                        if (comp2->node_ids[k] != id) continue;
+                        at += (size_t)snprintf(who + at, sizeof who - at, "%s%s.%d=%.3g",
+                                               at ? " " : "", comp2->label, k,
+                                               comp2->terminal_current[k]);
+                        break;
+                    }
+                }
+                /* And how far out the whole net is. Wire currents are the minimum-norm
+                   solution of the net's conservation equations with the terminal currents as
+                   demands, so any current a device does not report is spread over the net and
+                   lands on whichever node has least of its own. A net that sums to zero and a
+                   single node that disagrees are two different faults. */
+                double net_sum = 0;
+                int matrix_node = c->node_map[id];
+                for (int j = 0; j < c->num_components; j++) {
+                    Component *comp2 = c->components[j];
+                    if (comp2->type == COMP_GROUND) continue;
+                    for (int k = 0; k < comp2->num_terminals; k++) {
+                        int nid = comp2->node_ids[k];
+                        if (nid < 0 || nid >= MAX_NODES) continue;
+                        if (c->node_map[nid] == matrix_node) net_sum += comp2->terminal_current[k];
+                    }
+                }
+                ok = 0;
+                snprintf(why, sizeof why, "KCL at node %d: wires %.4g vs demand %.4g, net %.4g "
+                         "out [%s]", id, inflow, demand, net_sum, who);
             }
         }
         /* Series templates: uniform |I| on every wire, equal to the resistor current */
@@ -1202,7 +1233,13 @@ static int osc_test(void) {
         { CIRCUIT_PHASE_SHIFT_OSC, 0.010, 5973.0, 0, 0.41 },    /* ideal 1/(2 pi R C sqrt 6) = 6497; loading the last section pulls it down 8 % */
         { CIRCUIT_RELAXATION_OSC, 0.040, 455.0, 0, 0.500 },
         { CIRCUIT_TRI_SQUARE_GEN, 0.004, 5000.0, 2e-7, 0.289 },
-        { CIRCUIT_FUNCTION_GEN, 0.004, 5000.0, 2e-7, 0.354 },
+        /* 0.30, not the 0.354 of a sine. The shaper makes its sine by bending a triangle at
+           four diode breakpoints, and right at a breakpoint the diode's own dynamic resistance
+           is megohms - which is the same order as a picofarad's reactance here. So the junction
+           capacitance, now that the diodes have one, softens exactly the corners the shaping
+           depends on and the output sits a little closer to the triangle it started as. A real
+           shaper has the same limit; it is why they are specified to a maximum frequency. */
+        { CIRCUIT_FUNCTION_GEN, 0.004, 5000.0, 2e-7, 0.302 },
         { CIRCUIT_COLPITTS, 60e-6, 712e3, 5e-9, 0.354 },
         { CIRCUIT_RING_OSC, 200e-6, 145e3, 2e-8, 0.500 },
         { CIRCUIT_HARTLEY, 80e-6, 534188, 5e-9, 0.354 },        /* ideal 1/(2 pi sqrt((L1+L2)C)) = 503 kHz; the tap is only an AC ground through the supply */
