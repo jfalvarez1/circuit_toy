@@ -1011,6 +1011,7 @@ build/tools/template_smoke.exe --span-test       # turning the time/div up does 
 build/tools/template_smoke.exe --parts-file-test # one of all 124 component types, through both file formats
 build/tools/template_smoke.exe --undo-test       # 13 kinds of edit over every template, undone and redone
 build/tools/template_smoke.exe --dvdt-test       # every storage element against C dv/dt, computed outside the solver
+build/tools/template_smoke.exe --flow-test       # current arrows close on every node of every template
 build/tools/template_smoke.exe --class-test      # what each circuit is, and whether it says the same at a finer step
 build/circuit-playground.exe --place-test        # every circuit is recognised from its click and replaces the last
 build/circuit-playground.exe --trig-test         # a repeating waveform stands still, and is drawn from enough samples
@@ -1021,12 +1022,16 @@ build/circuit-playground.exe --bounce-test       # a settled trace holds its ver
 
 Two of those exist because of faults nothing else could see.
 
-`--dvdt-test` compares what a capacitor, an electrolytic, an inductor and a diode's junction
-capacitance report against `C dv/dt` worked out **outside** the solver. Every conservation check in
-the suite is blind to a stamp's sign: a terminal current is recovered by re-stamping the device and
+`--dvdt-test` compares what a capacitor, an electrolytic, an inductor, both junction capacitances
+and a MOSFET's gate against `C dv/dt` worked out **outside** the solver. Every conservation check in
+the suite is blind to what it catches: a terminal current is recovered by re-stamping the device and
 reading its residual, so the report agrees with the stamp whatever the stamp says, and KCL closes
-around an error exactly as it closes around the truth. A sign inversion in the junction capacitance
-shipped once for want of this check.
+around an error exactly as it closes around the truth. It has found three faults nothing else could
+see - a junction capacitance stamped with its sign inverted, a crystal read with the next step's
+state, and a MOSFET gate whose companion advanced once per Newton iteration and turned a DC gate
+bias into 24 mA of current that was not there. With all three fixed, `--flow-test` closes on every
+node of all 187 templates with **no exemptions and no skipped nodes**, where it used to carry two
+exemptions and skip every MOSFET gate.
 
 `--class-test` runs every template at the app's own step and again at a finer one, and asks whether
 it comes back the same circuit. Judging 187 circuits by one rule - run thirty divisions, expect a

@@ -72,12 +72,11 @@ static int bounce_test(double dt_force) {
         return 0;
     }
 
-    /* Thirty frames, not sixty, and the trade is worth stating rather than hiding: with the
-       centring fix reverted, sixty frames catch 16 templates and thirty catch 15. The one that
-       slips through is the price of halving this suite, which was 503 s of a 670 s battery on its
-       own - and on a four-core CI runner, where three suites run at a time, total work is what
-       decides the wall clock. The fault it guards against is fixed; this is regression cover, and
-       15 of 16 is enough of it to be worth twice the batteries. */
+    /* Thirty frames, not sixty, which halves a suite that was 503 s of a 670 s battery on its own
+       - and on a four-core CI runner, where three suites run at a time, total work is what decides
+       the wall clock. Thirty cost one template of detection when the centring was a whole-cycle
+       average; against the midpoint estimator that replaced it they catch the same 16 as sixty do,
+       so there is nothing being traded away here any more. */
     enum { FRAMES = 30 };
     const double FRAME_DT = 1.0 / 60.0;
     const double LIMIT_PX = 1.0;

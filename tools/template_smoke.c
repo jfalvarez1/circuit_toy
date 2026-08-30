@@ -1146,7 +1146,12 @@ static int flow_test(void) {
         /* Pierce is audited again as of 2026-08-30: its 6.8 uA was the crystal being re-stamped
            with the next step's companion state when its terminal currents were read back, not
            anything about the crystal. Pull-up Sizing is the one exemption left. */
-        int kcl_exempt = (t == CIRCUIT_IV_PULLUP_SIZING);
+        /* No exemptions. Both that this suite carried were bugs: Pierce's 6.8 uA was the
+           crystal re-stamped with the next step's companion state, and Pull-up Sizing's 3.6 % was
+           the MOSFET gate capacitance advancing its state once per Newton iteration. Kept as a
+           named variable rather than deleted, so the next one has to be written down deliberately
+           and with a reason. */
+        int kcl_exempt = 0;
         if (!simulation_dc_analysis(sim)) { ok = 0; snprintf(why, sizeof why, "DC failed"); }
         simulation_auto_time_step(sim);
         simulation_start(sim);
@@ -1221,27 +1226,23 @@ static int flow_test(void) {
                 }
                 if (behavioural) continue;
             }
-            {   /* A MOSFET gate carries no conduction current and its displacement current
-                   (through C_gs and C_gd) is not reported as a terminal current, so the KCL
-                   sum at a gate node is short by exactly that while the gate is moving. Skip
-                   gate nodes; every other terminal of the device is still checked. */
-                int gate_node = 0, mos_net = 0, has_comp = 0;
-                int mine = (id >= 0 && id < MAX_NODES) ? c->node_map[id] : 0;
-                for (int j = 0; j < c->num_components; j++) {
-                    Component *gc = c->components[j];
-                    for (int k = 0; k < gc->num_terminals; k++) if (gc->node_ids[k] == id) has_comp = 1;
-                    if (gc->type != COMP_NMOS && gc->type != COMP_PMOS) continue;
-                    for (int k = 0; k < gc->num_terminals; k++) {
-                        int gid = gc->node_ids[k];
-                        int gm = (gid >= 0 && gid < MAX_NODES) ? c->node_map[gid] : 0;
-                        if (gm > 0 && gm == mine) { mos_net = 1; if (k == 0) gate_node = 1; }
-                    }
-                }
-                /* the gate node itself, and any bare wire corner on a net a MOSFET sits on:
-                   the displacement current has to come out somewhere in the wire flow, and it
-                   is not in any terminal current. Nodes with real components are still checked. */
-                if (gate_node || (mos_net && !has_comp)) continue;
-            }
+            /* MOSFET gate nodes used to be skipped here. The reason given was that a gate carries
+               no conduction current and its displacement current is not reported as a terminal
+               current, so the sum at a gate node was always short by exactly that.
+
+               The premise was true and the cause was a bug, not a limitation. The gate
+               capacitances kept their companion state on the component and advanced it inside the
+               stamp - once per Newton iteration rather than once per accepted step - so what they
+               contributed at the converged point was neither the displacement current nor nothing,
+               but the output of an alternating recurrence. Fixed 2026-08-30, and gate nodes are
+               checked like every other node now: 187/187 with no skip and no exemption at all.
+
+               Worth remembering when the next audit wants an exemption. Both of the ones this
+               suite carried - Pierce at 6.8 uA and Pull-up Sizing at 3.6 % - were written up as
+               limitations of the current-flow display, and both turned out to be the same kind of
+               fault underneath: a companion read at the wrong moment. An exemption is a place a
+               bug can hide indefinitely, so it should be the last resort and it should say what
+               would settle it. */
             double inflow = 0, node_imax = 0;
             for (int w = 0; w < c->num_wires; w++) {
                 if (c->wires[w].end_node_id == id) inflow += c->wires[w].current;
@@ -1604,7 +1605,13 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_GS_PIDS,          COMP_RESISTOR,  1, 0, "max", 8.482,   0.03, 3.0,    "RTU input, loop normal" },
     { CIRCUIT_MOS_IDVGS,        COMP_RESISTOR,  1, 0, "max", 0.1886,  0.05, 20e-3,  "2N7000 at Vgs 4 V: 189 mA through the 1 ohm sense" },
     { CIRCUIT_MOS_IDVDS,        COMP_RESISTOR,  5, 0, "max", 0.1896,  0.05, 20e-3,  "Vgs 3.5 V curve: 95 mA through the 2 ohm sense" },
-    { CIRCUIT_MOS_TUNED,        COMP_RESISTOR,  4, 0, "amp", 1.2458, 0.06, 4e-3,  "gain peaks as the sweep passes the 100 kHz tank" },
+    /* 1.495 is where this converges: 1.4937 at dt = 2 ns and 1.4953 at 1 ns. It was 1.2458 until
+       2026-08-30, which was not physics - it was a record of the MOSFET gate capacitance advancing
+       its companion state once per Newton iteration, and 17 %% below the truth. The tolerance is
+       wide enough for the app's own step, which reads 1.42: the tank is sharp and the step
+       resolves it coarsely, and that 5 %% is recorded in docs/ROADMAP.md rather than hidden by
+       pinning the expectation to it. */
+    { CIRCUIT_MOS_TUNED,        COMP_RESISTOR,  4, 0, "amp", 1.4950, 0.10, 4e-3,  "gain peaks as the sweep passes the 100 kHz tank" },
     { CIRCUIT_MOS_CG,           COMP_RESISTOR,  4, 0, "amp", 0.5519, 0.05, 400e-6, "common gate: 20 mV in, g_m R_D = 28x, in phase" },
     { CIRCUIT_MOS_CASCODE,      COMP_RESISTOR,  6, 0, "amp", 0.3553, 0.05, 400e-6, "cascode: 10 mV in, gain 36 with almost no Miller" },
     { CIRCUIT_MOS_DIFF,         COMP_RESISTOR,  0, 1, "amp", 0.3943, 0.05, 4e-3,  "one drain of the pair, 20 mV antiphase drive" },
@@ -3502,17 +3509,26 @@ typedef struct {
     double freq;
     double amp;
     double cycles;         /* where to stop, in periods: at a phase where the answer is at a peak */
+    int gate;              /* three-terminal: drive terminal 0, tie 1 and 2 to ground */
     const char *note;
 } DvdtCase;
 
 /* Every value here is written onto the component, so a changed default cannot quietly move the
    oracle with the measurement. What the defaults are is part-test's business. */
 static const DvdtCase dvdt_cases[] = {
-    { "capacitor",    COMP_CAPACITOR,      0.0,  1e-6,  0, 1000.0, 1.0, 2.0, "1 uF, the reference case" },
-    { "electrolytic", COMP_CAPACITOR_ELEC, 2.0,  1e-6,  0, 1000.0, 1.0, 2.0, "polarised, biased forward" },
-    { "diode cjo",    COMP_DIODE,         -5.0,  1e-12, 0, 1e6,    1.0, 2.0, "1 pF junction, held 5 V in reverse" },
-    { "schottky cjo", COMP_SCHOTTKY,      -5.0,  5e-12, 0, 1e6,    1.0, 2.0, "5 pF junction, held 5 V in reverse" },
-    { "inductor",     COMP_INDUCTOR,       0.0,  1e-3,  1, 1000.0, 1.0, 1.5, "1 mH: the current is the integral, so read it at the peak of 1-cos" },
+    { "capacitor",    COMP_CAPACITOR,      0.0,  1e-6,  0, 1000.0, 1.0, 2.0, 0, "1 uF, the reference case" },
+    { "electrolytic", COMP_CAPACITOR_ELEC, 2.0,  1e-6,  0, 1000.0, 1.0, 2.0, 0, "polarised, biased forward" },
+    { "diode cjo",    COMP_DIODE,         -5.0,  1e-12, 0, 1e6,    1.0, 2.0, 0, "1 pF junction, held 5 V in reverse" },
+    { "schottky cjo", COMP_SCHOTTKY,      -5.0,  5e-12, 0, 1e6,    1.0, 2.0, 0, "5 pF junction, held 5 V in reverse" },
+    { "inductor",     COMP_INDUCTOR,       0.0,  1e-3,  1, 1000.0, 1.0, 1.5, 0, "1 mH: the current is the integral, so read it at the peak of 1-cos" },
+    /* The gate of a MOSFET held in cutoff, where Meyer's model leaves only the overlap
+       capacitances and they are constants: Cgs + Cgd = (cgso + cgdo) * W, set explicitly below.
+       Drain and source are grounded, so the only current into the gate is displacement current.
+       This case exists because the gate capacitances advance their companion state inside the
+       stamp, which runs once per Newton iteration and not once per accepted step - the same fault
+       the diode's junction capacitance had, and invisible to every conservation check for the same
+       reason. --flow-test skips gate nodes outright, so nothing else in the suite looks here. */
+    { "mosfet gate",  COMP_NMOS,          -3.0,  2e-12, 0, 1e6,    1.0, 2.0, 1, "cutoff: 2 pF of overlap, drain and source grounded" },
 };
 
 /* i = C dv/dt with the tool's own sign convention: terminal_current[0] > 0 means current
@@ -3541,6 +3557,13 @@ static double dvdt_measure(const DvdtCase *dc, double *expect_out, int *ok) {
                                   dev->props.inductor.ideal = true; break;
         case COMP_DIODE:          dev->props.diode.cjo = dc->value; break;
         case COMP_SCHOTTKY:       dev->props.schottky.cjo = dc->value; break;
+        case COMP_NMOS: case COMP_PMOS:
+            /* the gate capacitances only exist in the non-ideal model */
+            dev->props.mosfet.ideal = false;
+            dev->props.mosfet.w = 10e-6;
+            dev->props.mosfet.cgso = dc->value / (2.0 * 10e-6);   /* so cgso*W + cgdo*W = value */
+            dev->props.mosfet.cgdo = dc->value / (2.0 * 10e-6);
+            break;
         default: break;
     }
     Component *g1 = pt_add(c, COMP_GROUND, 160, 160, 0);
@@ -3548,6 +3571,7 @@ static double dvdt_measure(const DvdtCase *dc, double *expect_out, int *ok) {
     int top = pt_node(c, 80, 20), gnd0 = pt_node(c, 0, 140), gnd1 = pt_node(c, 160, 140);
     v->node_ids[0] = top; v->node_ids[1] = gnd0; g0->node_ids[0] = gnd0;
     dev->node_ids[0] = top; dev->node_ids[1] = gnd1; g1->node_ids[0] = gnd1;
+    if (dc->gate && dev->num_terminals > 2) dev->node_ids[2] = gnd1;   /* source to the same ground */
     circuit_add_wire(c, gnd0, gnd1);
 
     Simulation *sim = simulation_create(c);

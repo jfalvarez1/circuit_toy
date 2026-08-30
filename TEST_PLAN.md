@@ -769,6 +769,32 @@ Notes for whoever reads this next:
   1.13 px observed. `--bounce-test` subtracts that floor rather than tolerating it by a round
   number, so it stays sharp - with the bug reverted it still catches 16 templates.
 
+### 3.32 Every node of every template, with nothing excused (2026-08-30)
+
+`--flow-test` carried two exemptions and skipped every MOSFET gate node. All three were written up
+as limitations of the current-flow display. All three were bugs in how a companion is read.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.32.1 | `[ ]` **Automated:** `--flow-test` | 187/187, no exemption and no skipped node. It used to exempt Pierce and Pull-up Sizing and skip gate nodes |
+| 3.32.2 | `[ ]` **Automated:** `--dvdt-test` | Six elements against `C dv/dt` computed outside the solver, all within 0.1 %. The MOSFET gate case reads 1.25658e-05 A against 1.25664e-05 |
+| 3.32.3 | `[ ]` Load Pierce, Node by Node, watch the arrows | They close. The 6.8 uA was the crystal being re-stamped with the next step's companion state when its terminal currents were read back |
+| 3.32.4 | `[ ]` Load Pull-up Sizing, Node by Node | They close. The 3.6 % was the MOSFET gate capacitance advancing its state once per Newton iteration |
+| 3.32.5 | `[ ]` Put a non-ideal MOSFET on a DC-biased gate and watch the gate current | Microamps of displacement current, not milliamps. It used to draw about 4 G V_bias for ever - 24 mA on a 2 pF gate at 3 V |
+| 3.32.6 | `[ ]` Read the MOSFET Tuned Amplifier's gain | About 1.42 on screen, 1.495 converged. The expectation was 1.2458 until this was fixed, which was a record of the broken model rather than of the circuit |
+| 3.32.7 | `[ ]` **Automated:** `--bounce-test` | 0 of 187. With the centring reverted it catches 16 |
+| 3.32.8 | `[ ]` **Automated:** the whole battery | `bash tools/run_audits.sh` - 41 suites |
+
+Two notes for whoever adds the next audit:
+
+- **An exemption is a place a bug can hide.** Every exemption this suite ever carried turned out to
+  be a fault rather than a limitation. If one is unavoidable, it should say what would settle it.
+- **The scope's centring is the midpoint of the extremes, deliberately.** The mean of the captured
+  window bounces because the window is a ragged fraction of a cycle; averaging over whole cycles
+  fixes that but steps by the difference whenever the window drifts in and out of holding a second
+  crossing. Both were measured, both moved the trace, and the reasoning is written where the
+  function is.
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.

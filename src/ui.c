@@ -3337,64 +3337,41 @@ static double cardinal_spline_interp(double p0, double p1, double p2, double p3,
  * takes its volts per division from (hi - lo) / 2.
  */
 static double ui_scope_dc_level(const double *v, int n) {
+    /* Where a channel puts its zero line when it is AC-coupled or drawn in a fitted band: the
+       midpoint of the extremes, and nothing cleverer, because stability is the property this has
+       to have and the extremes are the stable thing about a captured window.
+
+       Two other estimators were tried and both moved the trace.
+
+       The plain mean of the window is what was here originally. The window is a ragged fraction of
+       a cycle whose length changes from frame to frame - 250 samples, then 225, because the
+       capture takes whatever history falls inside the time base - so the mean of it changes too,
+       and the Common Emitter's trace bounced 3.4 px under a waveform that was standing perfectly
+       still.
+
+       Averaging over whole cycles between mid-level crossings fixes that and is the right DC in
+       principle. But it only works while the window holds two crossings, and a window that drifts
+       in and out of holding a second one switches between two different quantities: an average of
+       a waveform and an average of two points. On the MOSFET Transfer Curves that was 0.0943 V
+       against 0.0328 V, back and forth, and the trace jumped 14 px with it. Falling back to the
+       window mean instead of the midpoint made the join continuous and put the original bounce
+       back on every one-shot. There is no continuous join between those two quantities, so this
+       does not attempt one.
+
+       The midpoint is stable in every regime that was measured - periodic, one-shot, DC, stepped,
+       clipped - because lo and hi do not move while the window slides across a settled waveform.
+       It is also what the fitted band already assumes: it takes its volts per division from
+       (hi - lo) / 2, so centring on (hi + lo) / 2 puts the waveform symmetrically in its band.
+
+       What it gives up: on an asymmetric waveform an AC-coupled view centres on the middle of the
+       swing rather than on the true mean, so a 10 %% duty pulse sits centred rather than mostly
+       below the line the way a coupling capacitor would put it. That is a difference in where a
+       trace is drawn, not in what it says, and it buys a display that holds still. */
     if (!v || n <= 0) return 0.0;
     double lo = v[0], hi = v[0];
     for (int i = 1; i < n; i++) { if (v[i] < lo) lo = v[i]; if (v[i] > hi) hi = v[i]; }
-    double mid = 0.5 * (lo + hi);
-    if (hi - lo < 1e-12) return mid;
-    /* Rising crossings of the mid-level, with hysteresis - the waveform has to go properly below
-       the middle before the next crossing up counts. Without it a waveform with any structure near
-       its own middle (a Pierce oscillator's drain, which is a long way from a sine) is counted
-       several times a cycle, the span between the first and the last crossing is no longer a whole
-       number of periods, and the average over it carries a slice of a partial cycle that changes
-       with the window. That was worth 1.6 % of amplitude on the Pierce - about a pixel of bounce
-       left over after the whole-cycle averaging had removed the rest. It is the same hysteresis a
-       real trigger has, and for the same reason. */
-    double hyst = 0.05 * (hi - lo);
-    int first = -1, last = -1, armed = 0;
-    for (int i = 1; i < n; i++) {
-        if (v[i] < mid - hyst) armed = 1;
-        else if (armed && v[i - 1] < mid && v[i] >= mid) {
-            if (first < 0) first = i;
-            last = i;
-            armed = 0;
-        }
-    }
-    if (first < 0 || last <= first) return mid;
-
-    /* Where the crossings actually are, between samples. Snapping them to the nearest sample
-       leaves a fraction of a sample of the cycle in or out of the average, and the fraction is
-       different every frame because the samples fall in different places - which is the same
-       fault in miniature, worth about a pixel on a crystal oscillator's 300 px swing. Interpolate
-       the two endpoints and integrate with the trapezoid rule over exactly that span. */
-    double a = (first - 1) + (mid - v[first - 1]) / (v[first] - v[first - 1]);
-    double b = (last  - 1) + (mid - v[last  - 1]) / (v[last]  - v[last  - 1]);
-    if (!(b > a)) return mid;
-
-    double area = 0;
-    int i0 = (int)floor(a), i1 = (int)floor(b);
-    for (int i = i0; i <= i1 && i < n - 1; i++) {
-        double x0 = (double)i, x1 = (double)(i + 1);
-        double lo_x = x0 > a ? x0 : a, hi_x = x1 < b ? x1 : b;
-        if (hi_x <= lo_x) continue;
-        /* the sample line across this interval, evaluated at the clipped ends */
-        double f_lo = v[i] + (v[i + 1] - v[i]) * (lo_x - x0);
-        double f_hi = v[i] + (v[i + 1] - v[i]) * (hi_x - x0);
-        area += 0.5 * (f_lo + f_hi) * (hi_x - lo_x);
-    }
-    /* DC_DEBUG=1 prints what this decided and over what span. A centring that moves is a fraction
-       of a volt, and the difference between "the cycles averaged changed" and "the samples inside
-       them changed" is not visible on the screen or in the pixel a test measures. It is how the
-       Pierce oscillator's last pixel was settled: the span came back one sample longer on the odd
-       frame, and 15/249 V is exactly what that is worth. */
-    {   static int dbg = -1;
-        if (dbg < 0) dbg = getenv("DC_DEBUG") ? 1 : 0;
-        if (dbg) fprintf(stderr, "dc n=%d first=%d last=%d a=%.6f b=%.6f span=%.6f dc=%.6g lo=%.4g hi=%.4g\n",
-                         n, first, last, a, b, b - a, area / (b - a), lo, hi);
-    }
-    return area / (b - a);
+    return 0.5 * (lo + hi);
 }
-
 void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim, void *analysis_ptr) {
     AnalysisState *analysis = (AnalysisState *)analysis_ptr;
     Rect *r = &ui->scope_rect;

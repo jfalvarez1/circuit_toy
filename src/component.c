@@ -3767,38 +3767,41 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                     Cgd = cgdo * W;  // Only overlap in saturation
                 }
 
-                // Get current voltages for capacitor integration
-                double vG = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
-                double vD = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
-                double vS = (n[2] > 0) ? vector_get(prev_solution, n[2]-1) : 0;
+                /* Backward Euler against the previous accepted step, the same companion the
+                   diode's junction capacitance uses, and for the same reason.
 
-                double Vgs_curr = vG - vS;
-                double Vgd_curr = vG - vD;
+                   This was a trapezoidal companion carrying its own state on the component -
+                   vgs_prev, i_cgs - and updating it inside the stamp. A stamp runs once per Newton
+                   iteration, not once per accepted step, so "the previous timestep" became "the
+                   previous iterate": as Newton converged, vgs_prev approached Vgs_curr and the
+                   recurrence I_eq = 2 G V(k-1) - I_eq(k-1) alternated instead of settling. A
+                   MOSFET holding a DC gate bias drew a large steady current into its gate - 24 mA
+                   on a 2 pF gate biased at 3 V, where the displacement current is 12.6 uA. No
+                   conservation check could see it, because a terminal current is read back out of
+                   the same stamp that produced it, and --flow-test skips gate nodes outright.
+                   --dvdt-test is the check that can: it compares against C dv/dt worked out
+                   outside the solver.
 
-                // Trapezoidal integration: G_eq = 2*C/dt, I_eq = G_eq*V_prev + I_prev
-                double G_cgs = 2.0 * Cgs / dt;
-                double G_cgd = 2.0 * Cgd / dt;
+                   Stateless, so there is nothing to advance and nothing to advance at the wrong
+                   time; and +Ieq on the gate, the way an ordinary capacitor and the crystal's
+                   holder capacitance are stamped. It was -Ieq here. */
+                if (g_stamp_prev_step) {
+                    double pG = (n[0] > 0) ? vector_get(g_stamp_prev_step, n[0]-1) : 0;
+                    double pD = (n[1] > 0) ? vector_get(g_stamp_prev_step, n[1]-1) : 0;
+                    double pS = (n[2] > 0) ? vector_get(g_stamp_prev_step, n[2]-1) : 0;
 
-                // Equivalent currents from previous timestep
-                double I_cgs_eq = G_cgs * comp->props.mosfet.vgs_prev + comp->props.mosfet.i_cgs;
-                double I_cgd_eq = G_cgd * comp->props.mosfet.vgd_prev + comp->props.mosfet.i_cgd;
+                    double G_cgs = Cgs / dt;
+                    double G_cgd = Cgd / dt;
+                    double I_cgs_eq = G_cgs * (pG - pS);
+                    double I_cgd_eq = G_cgd * (pG - pD);
 
-                // Stamp Cgs (between gate n[0] and source n[2])
-                STAMP_CONDUCTANCE(n[0], n[2], G_cgs);
-                if (n[0] > 0) vector_add(b, n[0]-1, -I_cgs_eq);
-                if (n[2] > 0) vector_add(b, n[2]-1, I_cgs_eq);
+                    STAMP_CONDUCTANCE(n[0], n[2], G_cgs);
+                    if (n[0] > 0) vector_add(b, n[0]-1, I_cgs_eq);
+                    if (n[2] > 0) vector_add(b, n[2]-1, -I_cgs_eq);
 
-                // Stamp Cgd (between gate n[0] and drain n[1])
-                STAMP_CONDUCTANCE(n[0], n[1], G_cgd);
-                if (n[0] > 0) vector_add(b, n[0]-1, -I_cgd_eq);
-                if (n[1] > 0) vector_add(b, n[1]-1, I_cgd_eq);
-
-                // Update state for next iteration - unless this stamp is only being read
-                if (!g_stamp_read_only) {
-                    comp->props.mosfet.i_cgs = G_cgs * Vgs_curr - I_cgs_eq;
-                    comp->props.mosfet.i_cgd = G_cgd * Vgd_curr - I_cgd_eq;
-                    comp->props.mosfet.vgs_prev = Vgs_curr;
-                    comp->props.mosfet.vgd_prev = Vgd_curr;
+                    STAMP_CONDUCTANCE(n[0], n[1], G_cgd);
+                    if (n[0] > 0) vector_add(b, n[0]-1, I_cgd_eq);
+                    if (n[1] > 0) vector_add(b, n[1]-1, -I_cgd_eq);
                 }
             }
             break;

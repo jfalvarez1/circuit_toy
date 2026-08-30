@@ -279,19 +279,38 @@ instead. Taken at the top of the step rather than just before the advance, so a 
 a step - which the step-rejection path does - sees this step's state and not the last one's.
 Pierce is audited again and `--flow-test` is 187/187 with one exemption left.
 
-What is left:
+**Pull-up Sizing closed 2026-08-30, and `--flow-test` now has no exemptions and no skips at all.**
 
-1. The capacitor bus in Pull-up Sizing is 3.6 % out on its own current: 6.4 uA on a net carrying
-   330 uA, between a resistor, a capacitor and a MOSFET drain. Unchanged by the crystal fix, so it
-   is something else.
-2. While looking for it: **the MOSFET's gate capacitances update their companion state inside the
-   stamp**, which runs once per Newton iteration rather than once per accepted step. That is the
-   same fault the diode's junction capacitance had. As Newton converges `vgs_prev` approaches
-   `Vgs_curr`, which drives the modelled dv/dt toward zero - so the gate capacitance may be doing
-   very little at the converged point, and `--flow-test` skips gate nodes on the grounds that their
-   displacement current is not reported, which would be masking it. Not yet measured. The way to
-   measure it is `--dvdt-test`: drive a gate with a known sine and compare against
-   (Cgs + Cgd) dv/dt worked out outside the solver.
+The suspicion recorded here - that the MOSFET's gate capacitances advanced their companion state
+inside the stamp, once per Newton iteration instead of once per accepted step - was measured and
+was worse than suspected. A gate case was added to `--dvdt-test`: an NMOS held in cutoff, where
+Meyer's model leaves only the overlap capacitances and they are constants, drain and source
+grounded, gate driven by a known sine. The oracle is 12.6 uA. It read **-0.024 A**: two thousand
+times too large, the wrong sign, and not a displacement current at all but the output of an
+alternating recurrence, `I_eq(k) = 2 G V(k-1) - I_eq(k-1)`, which never settles. In plain terms a
+non-ideal MOSFET holding a DC gate bias drew about `4 G V_bias` into its gate for ever.
+
+Replaced with the stateless backward-Euler companion the diode's junction capacitance uses - the
+previous accepted step read from the solution vector, nothing kept on the component, nothing to
+advance at the wrong moment - and `+Ieq` on the gate, where it had been `-Ieq`. The gate now reads
+1.25658e-05 A against an oracle of 1.25664e-05.
+
+Three consequences:
+
+- Pull-up Sizing's 3.6 % is gone. It was the same bug.
+- The gate-node skip in `--flow-test` is gone. It existed because "a gate's displacement current is
+  not reported as a terminal current", which was true, and was a bug rather than a limitation.
+- `--flow-test` is 187/187 with every node of every template checked.
+
+The general lesson, and it is the third time this pattern has appeared today: **both exemptions this
+suite carried were written up as limitations of the current-flow display, and both were the same
+kind of fault underneath - a companion read at the wrong moment.** An exemption is a place a bug can
+hide indefinitely. It should be the last resort, and it should say what would settle it.
+
+And the reason none of this was visible before: a terminal current is recovered by re-stamping a
+device and reading its residual, so it agrees with the stamp whatever the stamp says. Conservation
+checks cannot see any of these faults. `--dvdt-test`, which compares against arithmetic done outside
+the solver, has now caught three: the diode's inverted sign, the crystal's stale state, and this.
 
 Recovering a terminal current no longer disturbs the device it is recovered from: the display
 re-stamps every component once a frame, and a stamp that remembers something - a MOSFET's gate
