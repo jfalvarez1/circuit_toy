@@ -899,8 +899,26 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     } else {
         snprintf(speed_text, sizeof(speed_text), "%.1fx", ui->speed_value);
     }
-    SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);
+    /* Amber when the stepper is not keeping up with what the slider asked for.
+     *
+     * The speed control asks the stepper to advance delta_time * speed of circuit time each
+     * frame. It never changes dt - every step is a full step at the same accuracy - so turning it
+     * up cannot make an answer wrong. What it can do is fail: the frame gives up after 12 ms of
+     * wall clock so the interface stays alive, and on a heavy circuit that means fewer steps than
+     * were asked for. app->sim_realtime_ratio has measured exactly that all along, and the field
+     * it is copied into carries the comment "shown next to speed" - and nothing drew it. So the
+     * toolbar showed the request as though it were the fact, and a circuit crawling at a twentieth
+     * of real time looked identical to one keeping up.
+     *
+     * The number itself does not fit: between the speed text and the dt label there is room for
+     * about four characters, and the first attempt at "(0.04x)" was drawn straight across
+     * "dt:200ps". So the signal is the colour, which costs no space and answers the question that
+     * matters - am I seeing this in real time or not. app.c parks the ratio at 1.0 while the
+     * simulation is not running, so a pause does not leave the toolbar amber. */
+    if (ui->sim_realtime_ratio < 0.95) SDL_SetRenderDrawColor(renderer, 0xff, 0xa0, 0x30, 0xff);
+    else                               SDL_SetRenderDrawColor(renderer, SYNTH_GREEN, 0xff);
     ui_draw_text(renderer, speed_text, slider_x + ui->speed_slider.w + 5, ui->speed_slider.y - 2);
+
 
     // Time step label and value
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);

@@ -1895,7 +1895,10 @@ void app_update(App *app) {
             ui_scope_autotrigger(&app->ui, app->simulation);
         }
     }
-    app->ui.sim_realtime_ratio = app->sim_realtime_ratio;
+    /* Parked at 1.0 unless the simulation is actually running, so the toolbar's "what you are
+       really getting" readout cannot show a stale number from before a pause. */
+    app->ui.sim_realtime_ratio = (app->simulation && app->simulation->state == SIM_RUNNING)
+                                 ? app->sim_realtime_ratio : 1.0;
 
     // Keep dt in step with the scope's time/div (only acts when time/div changed)
     app_sync_time_step_to_scope(app);

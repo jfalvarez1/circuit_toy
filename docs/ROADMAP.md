@@ -1,5 +1,34 @@
 # Roadmap
 
+## The speed control is safe, and it was not honest (2026-08-30)
+
+Asked whether the 1.0x speed slider is dangerous - whether running faster can break the
+simulation. It cannot, and the reason is worth writing down: **speed never touches dt.** The
+stepper asks for `delta_time * speed / dt` steps a frame, every one of them a full step at the
+same accuracy, so 100x is the same arithmetic as 1x and simply more of it. What it can do is fail
+to finish: an interactive frame gives up after 12 ms of wall clock so the interface stays alive,
+and on a heavy circuit that means fewer steps than were asked for. Nothing is skipped, nothing is
+approximated, and no partial step is ever taken - the loop breaks between steps. Scripted runs
+(`--shot`, `--record`) do not use the wall-clock budget at all; they take a fixed, capped count so
+a screenshot is reproducible.
+
+So the trade the slider makes is exactly the one it was designed for: real time when the machine
+can afford it, slower when it cannot. The original goal - a 100 Hz wave that looks like 100 Hz
+rather than a slideshow - is met whenever the step budget allows, and the budget is the honest
+limit rather than a fudge.
+
+What was wrong was the reporting. `sim_realtime_ratio` has been measuring the achieved fraction
+every frame, and the UI field it is copied into carries the comment "shown next to speed" - and
+nothing drew it. The toolbar showed the request as though it were the fact, so a circuit crawling
+at a twentieth of real time looked identical to one keeping up. The speed number is now drawn
+amber when the stepper is behind.
+
+The figure itself is not drawn, and that is a decision rather than an omission: there is room for
+about four characters between the speed text and the dt label. The first attempt drew a second
+multiplier there and it landed on top of the dt readout; the second, a compact percentage, was
+correctly suppressed by its own fit guard, which is how it became clear the space is not there.
+The colour costs nothing and answers the question that matters - am I seeing this in real time.
+
 ## Open items, ordered by what they cost (2026-08-30)
 
 Everything below is either a recorded limitation or a warning the suites deliberately do not fail
