@@ -214,14 +214,31 @@ testing a different program that happens to share source code. `--class-test` ex
 class of thing - it runs at the step the app itself picks and asks whether the answer survives
 refinement.
 
-Still open:
+The suspicion about Hartley and Clapp - that the coarse step might have been sustaining them, an
+oscillator oscillating because of its own integration error - was checked and is wrong. Their
+amplitude is 13.98 V and 2.355 V and does not move across a sixteenfold change of step; a
+numerically sustained oscillation collapses when the step is refined, and neither does. What was
+actually happening was in the classifier: it judged the whole record, start-up included, and an
+oscillator building up has crossing intervals that genuinely disagree because it is genuinely
+changing. It now takes a provisional period from the median interval, finds where the envelope
+stopped changing, and judges the crossings after that - and reports amplitude and level for the
+settled part too, which is what a reader means by them. Clapp reads periodic at every step now.
 
-- **Hartley (MOSFET) and Clapp (MOSFET)** stop reading as clean oscillations at a finer step. That
-  may mean the coarse step was sustaining them - an oscillator that oscillates because of its
-  integration error - which would make them wrong rather than imprecise. Not established either
-  way. They are the two remaining `--class-test` warnings.
-- **X-Y Plotter (upload)** reads static at one step and stepped at another; its content is uploaded
-  rather than generated, so this is most likely the classifier meeting a signal that is neither.
+Three `--class-test` warnings remain, and none of them is a circuit fault:
+
+- **Hartley (MOSFET)** still reads periodic at the app's step and stepped at a finer one. 188
+  samples a cycle and a steady 13.98 V either way, so this is the 5 % interval-agreement threshold
+  being marginal for it rather than anything about the circuit.
+- **Tesla Coil** is a ring-down burst - a spark gap firing and the tank decaying - which is neither
+  periodic nor stepped in any clean sense, and lands on either side of the line depending on the
+  step.
+- **X-Y Plotter (upload)** idles at about 1e-10 V of solver residue at the app's step and a little
+  more at a finer one. A microvolt floor was added so residue is not mistaken for a signal, and it
+  reads static at the app's step now; at a quarter of the step it still crosses the line.
+
+Tightening these three further means tuning thresholds until the classifier agrees with a
+particular set of circuits, which is how a check stops meaning anything. They are reported with
+their numbers and do not fail the battery.
 
 What is left, in the order that would help:
 

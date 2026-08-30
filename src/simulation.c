@@ -1748,7 +1748,10 @@ void simulation_characterise(Simulation *sim, int probe_idx, SignalCharacter *ou
     /* "Does not move" has to be relative to the size of the thing: a 5 V rail wobbling by a
        millivolt is static, and a millivolt signal swinging by a millivolt is not. */
     double scale = fabs(hi) > fabs(lo) ? fabs(hi) : fabs(lo);
-    if (span <= 1e-6 * (scale + 1e-12) + 1e-12) return;
+    /* Relative to the size of the thing, and never below a microvolt in absolute terms. The
+       X-Y Plotter idles at about 1e-10 V of solver residue, which is not a signal by any measure
+       this program can display, and calling it one made its class depend on the time step. */
+    if (span <= 1e-6 * (scale + 1e-12) + 1e-6) return;
 
     /* Rising crossings of the mid-level, interpolated, and the intervals between them. A periodic
        signal has intervals that agree; a sweep or a staircase has intervals that march. */
@@ -1767,9 +1770,50 @@ void simulation_characterise(Simulation *sim, int probe_idx, SignalCharacter *ou
     if (nx < 3) {
         out->cls = SIGNAL_ONESHOT;      /* it moved, and crossed its own middle once or not at all */
     } else {
-        double mean_iv = (xt[nx - 1] - xt[0]) / (double)(nx - 1);
+        /* Judge the settled part, not the start-up. An oscillator building up has intervals that
+           genuinely disagree - it is changing - and reading the whole record at once made the
+           Hartley and the Clapp come out "stepped" at one step and "periodic" at another, which
+           is a statement about where the run happened to stop rather than about the circuit. Take
+           a provisional period from the median interval, use it to find where the envelope stopped
+           changing, and judge from the crossings after that. Every circuit settles at its own rate;
+           this is how a suite asks each one on its own terms rather than on a fixed schedule. */
+        static double iv[MAX_HISTORY];
+        for (int i = 1; i < nx; i++) iv[i - 1] = xt[i] - xt[i - 1];
+        int niv = nx - 1;
+        for (int i = 1; i < niv; i++) {          /* insertion sort: niv is small and nearly sorted */
+            double k = iv[i]; int j = i - 1;
+            while (j >= 0 && iv[j] > k) { iv[j + 1] = iv[j]; j--; }
+            iv[j + 1] = k;
+        }
+        double prov = iv[niv / 2];
+
+        double t_from = th[0];
+        if (prov > 0) {
+            double w = 3.0 * prov;
+            double f_lo = 1e300, f_hi = -1e300;
+            for (int i = n - 1; i >= 0 && th[n - 1] - th[i] <= w; i--) {
+                if (tv[i] < f_lo) f_lo = tv[i];
+                if (tv[i] > f_hi) f_hi = tv[i];
+            }
+            double tol = 0.02 * (f_hi - f_lo) + 1e-12;
+            for (int i = 0; i < n; i++) {
+                double w_lo = 1e300, w_hi = -1e300;
+                for (int j = i; j < n && th[j] - th[i] <= w; j++) {
+                    if (tv[j] < w_lo) w_lo = tv[j];
+                    if (tv[j] > w_hi) w_hi = tv[j];
+                }
+                if (fabs(w_lo - f_lo) <= tol && fabs(w_hi - f_hi) <= tol) { t_from = th[i]; break; }
+            }
+        }
+        out->settle_time = t_from;
+
+        int s0 = 0;
+        while (s0 < nx && xt[s0] < t_from) s0++;
+        if (nx - s0 < 3) s0 = 0;        /* nothing settled to speak of: judge what there is */
+
+        double mean_iv = (xt[nx - 1] - xt[s0]) / (double)(nx - 1 - s0);
         double worst = 0;
-        for (int i = 1; i < nx; i++) {
+        for (int i = s0 + 1; i < nx; i++) {
             double e = fabs((xt[i] - xt[i - 1]) - mean_iv);
             if (e > worst) worst = e;
         }
@@ -1782,6 +1826,16 @@ void simulation_characterise(Simulation *sim, int probe_idx, SignalCharacter *ou
         } else {
             out->cls = SIGNAL_STEPPED;
         }
+
+        /* the amplitude and level of the settled part, which is what a reader means by them */
+        double slo = 1e300, shi = -1e300, ssum = 0; int sn = 0;
+        for (int i = 0; i < n; i++) {
+            if (th[i] < t_from) continue;
+            if (tv[i] < slo) slo = tv[i];
+            if (tv[i] > shi) shi = tv[i];
+            ssum += tv[i]; sn++;
+        }
+        if (sn > 1) { out->amplitude = (shi - slo) / 2.0; out->dc = ssum / sn; }
     }
 
     /* When it settled: the first moment from which the envelope already looks like the envelope at

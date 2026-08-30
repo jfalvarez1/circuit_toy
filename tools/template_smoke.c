@@ -1063,7 +1063,7 @@ static int class_run(CircuitTemplateType t, double dt_scale, SignalCharacter *ou
 static int class_test(double fine) {
     int total = 0, fails = 0, thin = 0, drifted = 0;
     int counts[4] = { 0, 0, 0, 0 };
-    printf("%-30s %-9s %12s %12s %9s  %s\n", "template", "class", "period", "settled", "samp/cyc", "note");
+    printf("%-30s %-9s %12s %12s %10s %9s  %s\n", "template", "class", "period", "settled", "amplitude", "samp/cyc", "note");
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
         if (shard_skip(t)) continue;
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
@@ -1102,9 +1102,9 @@ static int class_test(double fine) {
         counts[a.cls]++;
         if (bad) fails++;
         if (drifts) drifted++;
-        printf("%s %-28s %-9s %12.5g %12.5g %9.1f  %s\n",
+        printf("%s %-28s %-9s %12.5g %12.5g %10.4g %9.1f  %s\n",
                bad ? "[FAIL]" : drifts ? "[WARN]" : "[ OK ]", ti->name, class_name(a.cls),
-               a.period, a.settle_time, spc, note);
+               a.period, a.settle_time, a.amplitude, spc, note);
     }
     printf("\nclass-test: %d templates - %d static, %d periodic, %d one-shot, %d stepped; "
            "%d thin on samples a cycle, %d whose answer moves with the step (docs/ROADMAP.md), "
