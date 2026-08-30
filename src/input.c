@@ -1611,7 +1611,17 @@ void input_handle_key(InputState *input, SDL_Keycode key,
 
         case SDLK_a:
             if (ctrl) {
+                /* Select All marked every part as selected and nothing acted on it: deleting and
+                   dragging work from the input layer's own list, which a box selection fills and
+                   this did not touch. Ctrl+A then Delete removed nothing at all. Wires are part
+                   of "all" too, and they were never in it. */
                 circuit_select_all(circuit);
+                input->multi_selected_count = 0;
+                int room = (int)(sizeof input->multi_selected / sizeof input->multi_selected[0]);
+                for (int i = 0; i < circuit->num_components && input->multi_selected_count < room; i++)
+                    input->multi_selected[input->multi_selected_count++] = circuit->components[i];
+                for (int i = 0; i < circuit->num_wires; i++) circuit->wires[i].selected = true;
+                input->selected_component = NULL;
             }
             break;
 

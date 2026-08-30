@@ -139,6 +139,19 @@ if command -v python >/dev/null 2>&1; then
     fi
 fi
 
+# and the shortcuts, asked of the app itself rather than of a picture
+if command -v python >/dev/null 2>&1; then
+    if python tools/keys_gui.py "$APP" > "$out/keysgui.log" 2>&1; then
+        printf '[ OK ] %-14s %s
+' "keys-gui" "$(tail -n 1 "$out/keysgui.log" | cut -c1-100)"
+    else
+        printf '[FAIL] %-14s %s
+' "keys-gui" "$(tail -n 1 "$out/keysgui.log" | cut -c1-100)"
+        grep -m5 FAIL "$out/keysgui.log"
+        fails=$((fails + 1))
+    fi
+fi
+
 echo
 echo "audits: $fails of $(echo $SHARD_MODES $SMOKE_MODES $APP_MODES | wc -w) suites failed, ${JOBS} at a time, $(( $(date +%s) - start ))s"
 [ "$fails" -eq 0 ]

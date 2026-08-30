@@ -2362,6 +2362,14 @@ static void app_cli_capture(App *app) {
             ev.type = SDL_KEYUP; ev.key.keysym.sym = (SDL_Keycode)combo;
             ev.key.keysym.mod = KMOD_LCTRL; SDL_PushEvent(&ev);
         }
+        /* the keys that are not characters: '#' is Delete, '%' is Escape */
+        else if (ch == '#' || ch == '%') {
+            SDL_Event ev; memset(&ev, 0, sizeof ev);
+            ev.type = SDL_KEYDOWN;
+            ev.key.keysym.sym = (ch == '#') ? SDLK_DELETE : SDLK_ESCAPE;
+            ev.key.keysym.scancode = (ch == '#') ? SDL_SCANCODE_DELETE : SDL_SCANCODE_ESCAPE;
+            SDL_PushEvent(&ev);
+        }
         else if (ch == '^') ui_spotlight_open(&app->ui);
         else if (ch == '|') {
             SDL_Event ev; memset(&ev, 0, sizeof ev);
@@ -2408,6 +2416,7 @@ static void app_cli_capture(App *app) {
     bool done = true;
     if (app->cli_shot_path[0]) {
         if (app->cli_frame == app->cli_shot_frame) {
+            if (app->cli_state_path[0]) app_write_state(app, app->cli_state_path);
             if (app_save_window_bmp(app, app->cli_shot_path)) printf("Saved %s\n", app->cli_shot_path);
             else fprintf(stderr, "Screenshot failed: %s\n", SDL_GetError());
             if (app->ui.scope_popped_out && app->ui.scope_popup_renderer) {
@@ -2593,6 +2602,32 @@ void app_render(App *app) {
         // Present popup window
         SDL_RenderPresent(popup_r);
     }
+}
+
+/* What the app is, in numbers, for a scripted run to check. Pixels can say that a picture
+   changed; they cannot say a part was duplicated, or which tool is in hand, or how deep the undo
+   stack is. Everything here is something a test has wanted to assert. One line, no newlines to
+   escape - it is read by a script, not by a person. */
+void app_write_state(App *app, const char *path) {
+    if (!app || !path || !path[0]) return;
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+    Circuit *c = app->circuit;
+    Component *sel = app->input.selected_component;
+    fprintf(f, "{\"components\": %d, \"wires\": %d, \"probes\": %d, \"nodes\": %d, "
+               "\"selected_id\": %d, \"selected_type\": %d, \"selected_rotation\": %d, "
+               "\"selected_count\": %d, \"tool\": %d, \"sim_running\": %d, "
+               "\"undo_depth\": %d, \"redo_depth\": %d, \"modified\": %d, "
+               "\"time_div\": %.6g, \"volt_div\": %.6g, \"trigger_channel\": %d, "
+               "\"trigger_level\": %.6g}",
+            c->num_components, c->num_wires, c->num_probes, c->num_nodes,
+            sel ? sel->id : -1, sel ? (int)sel->type : -1, sel ? sel->rotation : -1,
+            app->input.multi_selected_count, (int)app->input.current_tool,
+            (app->simulation && app->simulation->state == SIM_RUNNING) ? 1 : 0,
+            c->undo_count, c->redo_count, c->modified ? 1 : 0,
+            app->ui.scope_time_div, app->ui.scope_volt_div,
+            app->ui.trigger_channel, app->ui.trigger_level);
+    fclose(f);
 }
 
 void app_new_circuit(App *app) {

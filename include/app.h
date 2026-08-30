@@ -49,6 +49,7 @@ typedef struct {
     struct { int x, y, x2, y2, frame; bool drag, done; } cli_mouse[12];
     int  cli_mouse_n;
     int  cli_mod_until;          // frame at which a scripted Ctrl release takes effect
+    char cli_state_path[260];    // --state-out FILE: what the app is, in numbers, at the shot
 
     // Auto-update (GitHub releases)
     UpdaterState updater;
@@ -118,6 +119,8 @@ void app_handle_events(App *app);
 
 // File operations
 void app_new_circuit(App *app);
+/* --state-out: the app's own account of itself, written beside the screenshot. */
+void app_write_state(App *app, const char *path);
 void app_save_circuit(App *app);
 void app_save_circuit_as(App *app);
 void app_load_circuit(App *app);

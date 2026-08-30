@@ -807,6 +807,7 @@ static void attach_parent_console(void) {
 int main(int argc, char *argv[]) {
     if (argc > 1) attach_parent_console();
     const char *cli_template = NULL, *cli_shot = NULL, *cli_record = NULL, *cli_size = NULL;
+    const char *cli_state = NULL;
     int cli_frame = 90, cli_rec_n = 0, cli_rec_every = 1, cli_scroll = -1, cli_tab = -1; bool cli_exit = false, no_update = false, no_auto_update = false;
     const char *cli_keys = NULL; int cli_keys_frame = 30, cli_keys_every = 6;
     struct { int x, y, x2, y2, frame; bool drag; } cli_mouse[12]; int cli_mouse_n = 0;
@@ -816,6 +817,7 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--template") && i + 1 < argc) cli_template = argv[++i];
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) cli_shot = argv[++i];
+        else if (!strcmp(argv[i], "--state-out") && i + 1 < argc) cli_state = argv[++i];
         else if (!strcmp(argv[i], "--frame") && i + 1 < argc) cli_frame = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--size") && i + 1 < argc) cli_size = argv[++i];
         else if (!strcmp(argv[i], "--record") && i + 3 < argc) { cli_record = argv[++i]; cli_rec_n = atoi(argv[++i]); cli_rec_every = atoi(argv[++i]); }
@@ -919,6 +921,7 @@ int main(int argc, char *argv[]) {
         if (sscanf(cli_size, "%dx%d", &w, &h) == 2 && w > 200 && h > 200) SDL_SetWindowSize(app.window, w, h);
     }
     if (cli_shot) { strncpy(app.cli_shot_path, cli_shot, sizeof app.cli_shot_path - 1); }
+    if (cli_state) { strncpy(app.cli_state_path, cli_state, sizeof app.cli_state_path - 1); }
     if (cli_record) { strncpy(app.cli_record_dir, cli_record, sizeof app.cli_record_dir - 1); app.cli_record_frames = cli_rec_n; app.cli_record_every = cli_rec_every; }
     app.cli_shot_frame = cli_frame;
     if (cli_keys) { strncpy(app.cli_keys, cli_keys, sizeof app.cli_keys - 1); app.cli_keys_frame = cli_keys_frame; app.cli_keys_every = cli_keys_every; }
