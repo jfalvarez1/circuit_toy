@@ -1018,6 +1018,7 @@ build/tools/template_smoke.exe --restamp-test    # reading a circuit's currents 
 build/tools/template_smoke.exe --meas-test       # the measurements panel's Vpp/Vrms/f/duty, against closed forms
 build/tools/template_smoke.exe --fft-test        # the spectrum view and THD, against known spectra
 python tools/edge_gui.py build/circuit-playground.exe   # nothing a template draws is cut off at the canvas edge
+python tools/svg_audit.py                        # every template's SVG export, opened by a real XML parser
 build/tools/template_smoke.exe --class-test      # what each circuit is, and whether it says the same at a finer step
 build/circuit-playground.exe --place-test        # every circuit is recognised from its click and replaces the last
 build/circuit-playground.exe --trig-test         # a repeating waveform stands still, and is drawn from enough samples

@@ -4832,7 +4832,15 @@ int main(int argc, char **argv) {
         if (svg_dir) {
             char path[512], safe[64];
             int k = 0;
-            for (const char *c = name; *c && k < 60; c++) safe[k++] = (*c == ' ' || *c == '/' || *c == '+') ? '_' : *c;
+            /* A whitelist, not a blacklist. This replaced space, slash and plus and let the
+               colon through, and on NTFS a colon in a filename starts an alternate data stream:
+               fopen succeeds, the bytes go into an invisible stream, and the visible file is
+               empty. Six templates with ":" in their names exported nothing, silently, until
+               tools/svg_audit.py opened every file with a real XML parser. */
+            for (const char *c = name; *c && k < 60; c++) {
+                unsigned char ch = (unsigned char)*c;
+                safe[k++] = (isalnum(ch) || ch == '-' || ch == '.') ? *c : '_';
+            }
             safe[k] = 0;
             snprintf(path, sizeof path, "%s/%02d_%s.svg", svg_dir, t, safe);
             if (!file_export_svg(circuit, path)) printf("      (svg export failed: %s)\n", path);
