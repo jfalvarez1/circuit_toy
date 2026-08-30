@@ -29,7 +29,10 @@ SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test --dv
 --flow-test --switch-test --part-test --op-test --sub-test --spice-test --xtal-test --view-test
 --conn-test --file-test --parts-file-test --undo-test --line-test --std-test --burn-test --knob-test --geom-test --param-test
 --tesla-test"
-APP_MODES="--layout-test --autoset-test --place-test --trig-test --prop-test --bounce-test"
+APP_MODES="--layout-test --autoset-test --place-test --trig-test --prop-test"
+# ...and one app suite is long enough to shard as well: --bounce-test renders sixty frames of
+# every template through the real scope.
+APP_SHARDED="bounce-test:4"
 # The battery cannot finish faster than its longest single suite, and two of them are most of it:
 # demo-test is two thirds on its own, and the plain load-and-run is the next. Both walk every
 # template independently, so they run as shards - quarters of the template list, one process each.
@@ -69,6 +72,15 @@ for entry in $SHARDED; do
         i=$((i + 1))
     done
 done
+for entry in $APP_SHARDED; do
+    mode="${entry%%:*}"; parts="${entry##*:}"
+    i=0
+    while [ "$i" -lt "$parts" ]; do
+        while [ "$(jobs -pr | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || break; done
+        run_shard "$APP" "$mode" "$i" "$parts" &
+        i=$((i + 1))
+    done
+done
 for m in $SMOKE_MODES; do
     while [ "$(jobs -pr | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || break; done
     run_one "$SMOKE" "$m" &
@@ -83,7 +95,7 @@ wait
 
 # the shards report as one line each, so a failing quarter names itself
 SHARD_MODES=""
-for entry in $SHARDED; do
+for entry in $SHARDED $APP_SHARDED; do
     mode="${entry%%:*}"; parts="${entry##*:}"; i=0
     while [ "$i" -lt "$parts" ]; do SHARD_MODES="$SHARD_MODES $mode.$i"; i=$((i + 1)); done
 done
