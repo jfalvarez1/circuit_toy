@@ -795,6 +795,29 @@ Two notes for whoever adds the next audit:
   crossing. Both were measured, both moved the trace, and the reasoning is written where the
   function is.
 
+### 3.33 The screenshots were looked at (2026-08-30)
+
+Ten templates rendered at 1400x900 and actually read, which is how every one of these was found -
+none of them is visible to a pixel-diff or to the geometry audit, because each is either off the
+canvas, in the panel rather than the schematic, or a number that is technically true.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.33.1 | `[ ]` `--template "Digital Clock"` | Places the clock: a unique piece of a name is a match. An unmatched or ambiguous name exits 2 with candidates listed - it used to carry on and screenshot an empty canvas with exit 0 |
+| 3.33.2 | `[ ]` Load MOSFET Output Curves, read the scope's voltage row | Four channels with space between them, wrapping to a second line if the row fills. It read "OUT:0.18VDEV2:17.6mDEV3:80.5mV" - a fixed 80 px pitch worked until a channel was named SW OUT or there were four |
+| 3.33.3 | `[ ]` Load Crosstalk, read the toolbar | dt:200ps. A 200 ps step used to display as "dt:0ns" |
+| 3.33.4 | `[ ]` Load Common Emitter / Pierce | The source's "1000Hz" and the rightmost "4.7nF" inside the canvas: the fit-on-place margin now leaves room for value labels, which its bounding boxes never included |
+| 3.33.5 | `[ ]` Load Function Generator | The four bias sources' voltage labels each beside their own symbol; at 60 px columns a label was drawn across the neighbouring source |
+| 3.33.6 | `[ ]` **Automated:** `--geom-test` | Still 0 hard violations after the spacing change |
+| 3.33.7 | `[ ]` Load LDO vs Switcher, read the channel chips | [LDO] and [SW OUT] as separate chips. They are sized from the channel names, which used to happen only at window-resize time - before a template's probes exist - so a chip sized for "CH2" was drawn holding "SW OUT" and the row read "LDOSW OUT". The chips re-lay themselves when a name changes |
+| 3.33.8 | `[ ]` **Automated:** `keys_gui.py` / `undo_gui.py` | Both aim their clicks from `--state-out`, which now lists every part's screen position through the same transform it is drawn with. They used to click "300,300 is the resistor", which held until the fit margin moved every template by 40 px and five checks failed at once |
+
+Known and left alone, recorded so it is a decision rather than an oversight: a high-power load's
+power label is the instantaneous v^2/R at the drawn frame, so two identical AC loads can read
+"909 kW" and "2.86 MW" if the frame lands near one's zero crossing. The field feeds the overload
+colouring and a burn-in audit that both want the instantaneous value; smoothing only the label
+needs display-side state that does not exist yet.
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.

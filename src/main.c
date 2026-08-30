@@ -1231,13 +1231,45 @@ int main(int argc, char *argv[]) {
             const CircuitTemplateInfo *info = circuit_template_get_info((CircuitTemplateType)t);
             if (info && (!_stricmp(info->name, cli_template) || !_stricmp(info->short_name, cli_template))) { found = (CircuitTemplateType)t; break; }
         }
+        /* No exact match: a unique case-insensitive substring of the full name is accepted, so
+           "--template Pierce" and "--template \"Digital Clock\"" both work. Ambiguity is an
+           error, not a guess - a script that asked for "Buck" should be told there are three. */
+        int ambiguous = 0;
         if (found == CIRCUIT_NONE) {
+            char want[128];
+            snprintf(want, sizeof want, "%s", cli_template);
+            for (char *p = want; *p; p++) *p = (char)tolower((unsigned char)*p);
+            for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+                const CircuitTemplateInfo *info = circuit_template_get_info((CircuitTemplateType)t);
+                if (!info) continue;
+                char have[128];
+                snprintf(have, sizeof have, "%s", info->name);
+                for (char *p = have; *p; p++) *p = (char)tolower((unsigned char)*p);
+                if (strstr(have, want)) {
+                    if (found != CIRCUIT_NONE) { ambiguous = 1; fprintf(stderr, "  matches: %s\n", info->name); }
+                    else found = (CircuitTemplateType)t;
+                }
+            }
+            if (ambiguous) {
+                const CircuitTemplateInfo *fi = circuit_template_get_info(found);
+                fprintf(stderr, "  matches: %s\n", fi ? fi->name : "?");
+                fprintf(stderr, "--template '%s' is ambiguous.\n", cli_template);
+                return 2;
+            }
+        }
+        if (found == CIRCUIT_NONE) {
+            /* This used to print the list and then carry on with an empty canvas, which is the
+               worst thing a scripted flag can do: the run exits 0, the screenshot exists, and it
+               is a picture of nothing. An audit driving the app through --template would judge an
+               empty canvas and pass. Unknown means stop. */
             fprintf(stderr, "Unknown template '%s'. Available:\n", cli_template);
             for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
                 const CircuitTemplateInfo *info = circuit_template_get_info((CircuitTemplateType)t);
                 if (info) fprintf(stderr, "  %-8s %s\n", info->short_name, info->name);
             }
-        } else {
+            return 2;
+        }
+        {
             // a few frames first so the resize event lands and the canvas rect is laid out
             for (int k = 0; k < 4; k++) { app_handle_events(&app); app_update(&app); app_render(&app); SDL_Delay(16); }
             app_place_template_centered(&app, found);

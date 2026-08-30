@@ -3800,6 +3800,65 @@ static int dvdt_motor(void) {
     return bad ? 1 : 0;
 }
 
+/* A relay's coil is an RL branch, so its current has the same analytic answer an inductor's does:
+   switched onto a DC supply it rises as (V/R)(1 - exp(-t/tau)) with tau = L/R. The default coil is
+   200 ohm and 100 mH, so tau is 500 us, and the pull-in threshold crosses on that curve - which is
+   what makes the timing matter: a relay that reaches 63 % of its coil current in one time step
+   pulls in immediately, and a delay circuit built on it (the classic RC-relay flasher) has no
+   delay. The coil current is advanced inside the stamp today, once per Newton iteration; this case
+   is the measurement that precedes the fix, the same order the motor's took. */
+static int dvdt_relay(void) {
+    Circuit *c = circuit_create();
+    if (!c) return 1;
+    Component *v = pt_add(c, COMP_DC_VOLTAGE, 0, 60, 0);
+    v->props.dc_voltage.voltage = 12.0;
+    Component *g0 = pt_add(c, COMP_GROUND, 0, 160, 0);
+    Component *k = pt_add(c, COMP_RELAY, 160, 60, 0);
+    if (!k) { circuit_free(c); return 1; }
+    Component *g1 = pt_add(c, COMP_GROUND, 160, 160, 0);
+    Component *g2 = pt_add(c, COMP_GROUND, 260, 160, 0);
+    int top = pt_node(c, 80, 20), gnd0 = pt_node(c, 0, 140), gnd1 = pt_node(c, 160, 140);
+    int gnd2 = pt_node(c, 260, 140);
+    v->node_ids[0] = top; v->node_ids[1] = gnd0; g0->node_ids[0] = gnd0;
+    /* coil across the supply; both contact terminals grounded so no subnet floats */
+    k->node_ids[0] = top; k->node_ids[1] = gnd1; g1->node_ids[0] = gnd1;
+    k->node_ids[2] = gnd2; k->node_ids[3] = gnd2; g2->node_ids[0] = gnd2;
+    circuit_add_wire(c, gnd0, gnd1);
+    circuit_add_wire(c, gnd1, gnd2);
+
+    double R = k->props.relay.r_coil, L = k->props.relay.l_coil;
+    double tau = (R > 0) ? L / R : 0;
+    double i_final = (R > 0) ? 12.0 / R : 0;
+
+    Simulation *sim = simulation_create(c);
+    int ok = sim && simulation_dc_analysis(sim);
+    /* From rest: the DC operating point of an RL coil on a supply is the final current, so zero
+       the state after the operating point or there is no transient to time. */
+    k->props.relay.i_coil = 0.0;
+    k->props.relay.energized = false;
+    simulation_enable_adaptive(sim, false);
+    simulation_set_time_step(sim, tau / 1000.0);
+    simulation_start(sim);
+    simulation_set_time_step(sim, tau / 1000.0);
+    k->props.relay.i_coil = 0.0;
+    k->props.relay.energized = false;
+
+    double t_63 = -1;
+    int guard = 0;
+    while (ok && sim->time < 5.0 * tau && guard++ < 100000) {
+        if (!simulation_step(sim)) { ok = 0; break; }
+        if (t_63 < 0 && k->props.relay.i_coil >= 0.6321 * i_final) t_63 = sim->time;
+    }
+    simulation_free(sim);
+    circuit_free(c);
+
+    int bad = !ok || t_63 <= 0 || fabs(t_63 - tau) > 0.05 * tau;
+    printf("%s %-14s %14.6g %14.6g %7.2f%%   %s\n", bad ? "[FAIL]" : "[ OK ]", "relay coil",
+           t_63, tau, (tau > 0 && t_63 > 0) ? 100.0 * (t_63 - tau) / tau : -100.0,
+           "coil current to 63 % of V/R against tau = L/R");
+    return bad ? 1 : 0;
+}
+
 static int dvdt_test(void) {
     int fails = 0;
     printf("dvdt-test: reported current against C dv/dt computed outside the solver\n\n");
@@ -3821,8 +3880,9 @@ static int dvdt_test(void) {
                ok ? "" : "  [simulation failed]");
     }
     fails += dvdt_motor();
+    fails += dvdt_relay();
     printf("\ndvdt-test: %d elements, %d failed\n",
-           (int)(sizeof dvdt_cases / sizeof dvdt_cases[0]) + 1, fails);
+           (int)(sizeof dvdt_cases / sizeof dvdt_cases[0]) + 2, fails);
     return fails ? 1 : 0;
 }
 

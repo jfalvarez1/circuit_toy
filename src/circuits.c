@@ -8201,7 +8201,9 @@ static int place_function_gen(Circuit *circuit, float x, float y) {
     struct { double r, vb; int neg; } br[4] = { {22e3, 2.0, 0}, {5.6e3, 3.7, 0}, {22e3, -2.0, 1}, {5.6e3, -3.7, 1} };
     int prev = s2;
     for (int k = 0; k < 4; k++) {
-        float bx = x + 600 + k * 60;
+        /* 80 px columns, not 60: each branch's bias source carries a voltage label ("3.7V")
+           drawn beside its circle, and at 60 px it was drawn across the neighbouring source. */
+        float bx = x + 600 + k * 80;
         int top = TN(bx, y + 140);
         if (k) TW(prev, top);
         prev = top;

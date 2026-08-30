@@ -2248,7 +2248,13 @@ bool app_place_template_centered(App *app, CircuitTemplateType type) {
         if (x0 + w > maxx) maxx = x0 + w; if (y0 + h > maxy) maxy = y0 + h;
     }
     if (maxx > minx && maxy > miny) {
-        float bw = maxx - minx + 80.0f, bh = maxy - miny + 80.0f;
+        /* Margin for the value labels, which the boxes above do not include: a source's "1000Hz"
+           is drawn beside its symbol and reaches about 60 px past it, and with only 40 px a side
+           the Common Emitter's source frequency and the Pierce's rightmost "4.7nF" were clipped
+           at the canvas edge. */
+        /* 140 px a side: a source labelled "100mV 1000Hz" is 12 characters at 8 px, drawn
+           entirely to one side of its symbol. 100 px a side still clipped three of them. */
+        float bw = maxx - minx + 280.0f, bh = maxy - miny + 100.0f;
         float z = fminf(render->canvas_rect.w / bw, render->canvas_rect.h / bh);
         if (z > 1.0f) z = 1.0f;
         if (z < 0.3f) z = 0.3f;
@@ -2627,6 +2633,21 @@ void app_write_state(App *app, const char *path) {
             c->undo_count, c->redo_count, c->modified ? 1 : 0,
             app->ui.scope_time_div, app->ui.scope_volt_div,
             app->ui.trigger_channel, app->ui.trigger_level);
+    /* Where each part is on the screen, through the same transform it is drawn with. The checks
+       that drive the app used to click hardcoded pixels ("the resistor is at 300,300"), which
+       held only until anything about placement moved - widening the fit-on-place margin by 40 px
+       shifted every template and five shortcut checks reported "selected 0" at once. A script
+       should ask the app where a part is, not remember where one used to be. */
+    fseek(f, -1, SEEK_CUR);   /* re-open the closing brace */
+    fprintf(f, ", \"parts\": [");
+    int limit = c->num_components < 24 ? c->num_components : 24;
+    for (int i = 0; i < limit; i++) {
+        Component *k = c->components[i];
+        int sx = 0, sy = 0;
+        render_world_to_screen(app->render, k->x, k->y, &sx, &sy);
+        fprintf(f, "%s{\"type\": %d, \"x\": %d, \"y\": %d}", i ? ", " : "", (int)k->type, sx, sy);
+    }
+    fprintf(f, "]}");
     fclose(f);
 }
 

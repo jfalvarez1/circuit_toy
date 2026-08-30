@@ -1160,8 +1160,10 @@ bool simulation_step(Simulation *sim) {
         comp->trap_i_solve = comp->trap_i_prev;
         comp->cap_vc_solve = comp->cap_vc;
         if (comp->type == COMP_DC_MOTOR) {
-            comp->motor_w_solve = comp->props.dc_motor.omega;
-            comp->motor_i_solve = comp->props.dc_motor.current;
+            comp->state_w_solve = comp->props.dc_motor.omega;
+            comp->state_i_solve = comp->props.dc_motor.current;
+        } else if (comp->type == COMP_RELAY) {
+            comp->state_i_solve = comp->props.relay.i_coil;
         }
     }
 
@@ -1317,6 +1319,34 @@ bool simulation_step(Simulation *sim) {
             if (omega_new < 0) omega_new = 0;
             comp->props.dc_motor.omega = omega_new;
             comp->props.dc_motor.current = I_new;
+        }
+
+        /* A relay's coil current, and the pull-in/drop-out decision made from it - once per
+           accepted step, for the same reason as the motor above it. Hysteresis belongs here too:
+           energizing is a decision about a step's converged current, not about a Newton iterate. */
+        for (int i = 0; i < circuit->num_components; i++) {
+            Component *comp = circuit->components[i];
+            if (!comp || comp->type != COMP_RELAY) continue;
+            double R_coil = comp->props.relay.r_coil;
+            double L_coil = comp->props.relay.l_coil;
+            if (!(R_coil > 0)) continue;
+            int a = circuit->node_map[comp->node_ids[0]], b2 = circuit->node_map[comp->node_ids[1]];
+            double v0 = (a > 0) ? vector_get(sim->solution, a - 1) : 0;
+            double v1 = (b2 > 0) ? vector_get(sim->solution, b2 - 1) : 0;
+            double V_coil = v0 - v1;
+            double I_new;
+            if (comp->props.relay.ideal || L_coil < 1e-9 || !(dt > 0)) {
+                I_new = V_coil / R_coil;
+            } else {
+                double R_eq = R_coil + L_coil / dt;
+                I_new = (V_coil + (L_coil / dt) * comp->props.relay.i_coil) / R_eq;
+            }
+            comp->props.relay.i_coil = I_new;
+            double I_abs = fabs(I_new);
+            if (!comp->props.relay.energized && I_abs >= comp->props.relay.i_pickup)
+                comp->props.relay.energized = true;
+            else if (comp->props.relay.energized && I_abs <= comp->props.relay.i_dropout)
+                comp->props.relay.energized = false;
         }
 
         // Swept sources: advance the accumulated phase by the instantaneous frequency

@@ -5012,7 +5012,12 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double L_coil = comp->props.relay.l_coil;
             double i_pickup = comp->props.relay.i_pickup;
             double i_dropout = comp->props.relay.i_dropout;
-            double I_prev = comp->props.relay.i_coil;
+            /* Read the state; do not advance it. The coil current and the armature are advanced
+               once per accepted step, in simulation.c, next to every other companion - measured
+               first, as the motor was: switched onto its 12 V supply, the default coil reached
+               63 %% of V/R in 10.5 us where tau = L/R says 500 us. A relay that pulls in with no
+               delay makes every delay circuit built on one a lie. */
+            double I_prev = g_stamp_read_only ? comp->state_i_solve : comp->props.relay.i_coil;
             bool energized = comp->props.relay.energized;
 
             // --- Coil Circuit (R + L in series) ---
@@ -5020,16 +5025,6 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 // Ideal mode: just coil resistance, no inductance
                 STAMP_CONDUCTANCE(n[0], n[1], 1.0/R_coil);
 
-                // Estimate coil current from voltage for hysteresis
-                double V_coil = 0;
-                if (prev_solution) {
-                    double v0 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
-                    double v1 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
-                    V_coil = v0 - v1;
-                }
-                I_prev = V_coil / R_coil;
-                /* not while the stamp is only being read: --restamp-test measures this */
-                if (!g_stamp_read_only) comp->props.relay.i_coil = I_prev;
             } else {
                 // Non-ideal: R + L companion model
                 // V = I*R + L*dI/dt -> V = I*R_eq + V_eq
@@ -5043,42 +5038,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 if (n[0] > 0) vector_add(b, n[0]-1, -I_eq);
                 if (n[1] > 0) vector_add(b, n[1]-1, I_eq);
 
-                // Update coil current from solution for next iteration
-                // (done after matrix solve, but we can estimate from voltage)
-                if (prev_solution) {
-                    double v0 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
-                    double v1 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
-                    double V_coil = v0 - v1;
-                    // I = (V - V_eq) / R_eq = (V - L/dt * I_prev) / R_eq
-                    double I_new = (V_coil + (L_coil / dt) * I_prev) / R_eq;
-                    if (!g_stamp_read_only) comp->props.relay.i_coil = I_new;
-                    I_prev = I_new;  // Use updated current for hysteresis
-                }
             }
-
-            // --- Hysteresis Logic ---
-            // Apply hysteresis: energize at pickup, de-energize at dropout
-            /* The coil current and the armature both live on the component, and a stamp that is
-               only being read - the one that recovers terminal currents for the current-flow
-               display - must not move either. Reading what a circuit is doing may not change what
-               it does; --restamp-test runs every template and every component type twice, once
-               with the display updating, and requires the two runs to agree to the last bit. The
-               relay was the one part that failed it.
-
-               A deeper thing is still true here and is recorded in docs/ROADMAP.md: I_prev is
-               advanced inside the stamp, so it moves once per Newton iteration rather than once
-               per accepted step. That is the fault the MOSFET's gate capacitance had. It is left
-               alone for now because no template uses a relay and the fix wants coverage first. */
-            double I_abs = fabs(I_prev);
-            if (!g_stamp_read_only) {
-                if (!energized && I_abs >= i_pickup) {
-                    comp->props.relay.energized = true;      // pull-in
-                    energized = true;
-                } else if (energized && I_abs <= i_dropout) {
-                    comp->props.relay.energized = false;     // drop-out
-                    energized = false;
-                }
-            }
+            (void)i_pickup; (void)i_dropout;   /* hysteresis moved to the per-step advance */
 
             // --- Contact Circuit (NO to COM) ---
             double R_contact = energized ?
@@ -5820,8 +5781,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                speed was exactly right, which is why nothing noticed - d_omega is zero at steady
                state however many times it is added, so every check that looked at where a motor
                ends up was satisfied. --dvdt-test times the getting there instead. */
-            double omega_prev = g_stamp_read_only ? comp->motor_w_solve : comp->props.dc_motor.omega;
-            double I_prev     = g_stamp_read_only ? comp->motor_i_solve : comp->props.dc_motor.current;
+            double omega_prev = g_stamp_read_only ? comp->state_w_solve : comp->props.dc_motor.omega;
+            double I_prev     = g_stamp_read_only ? comp->state_i_solve : comp->props.dc_motor.current;
 
             // Back-EMF voltage
             double V_bemf = kv * omega_prev;

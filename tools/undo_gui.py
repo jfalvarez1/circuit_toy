@@ -51,8 +51,23 @@ with tempfile.TemporaryDirectory() as tmp:
         sys.exit(1)
 
     # Pause first: the app refuses to delete while the simulation is running, and a scripted
-    # run starts it. Then the Delete tool, then the resistor in the middle of the circuit.
-    PAUSE, DELETE_TOOL, A_PART = "300,25,15", "39,184,20", "300,300,30"
+    # run starts it. Then the Delete tool, then a part the app itself locates: --state-out lists
+    # each part's screen position, because a hardcoded "the resistor is at 300,300" broke the day
+    # the fit-on-place margin moved every template by 40 px.
+    import json
+    sp = os.path.join(tmp, "aim.json")
+    subprocess.run([exe, "--template", TEMPLATE, "--tab", "parts", "--size", "%dx%d" % (W, H),
+                    "--frame", "40", "--shot", os.path.join(tmp, "aim.bmp"),
+                    "--state-out", sp, "--exit", "--no-update-check"],
+                   capture_output=True, text=True)
+    spot = None
+    if os.path.exists(sp):
+        with open(sp) as fh:
+            spot = next((p for p in (json.load(fh).get("parts") or []) if p.get("type") == 1), None)
+    if spot is None:
+        print("[FAIL] undo-gui  the state lists no resistor to aim at")
+        sys.exit(1)
+    PAUSE, DELETE_TOOL, A_PART = "300,25,15", "39,184,20", "%d,%d,30" % (spot["x"], spot["y"])
     deleted = run(os.path.join(tmp, "b.bmp"), "--click", PAUSE, "--click", DELETE_TOOL,
                   "--click", A_PART)
     if deleted is None or not differs(plain, deleted):

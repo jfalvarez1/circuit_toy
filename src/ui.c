@@ -913,8 +913,11 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
         snprintf(dt_text, sizeof(dt_text), "%.1fms", dt * 1e3);
     } else if (dt >= 1e-6) {
         snprintf(dt_text, sizeof(dt_text), "%.1fus", dt * 1e6);
+    } else if (dt >= 1e-9) {
+        snprintf(dt_text, sizeof(dt_text), "%.1fns", dt * 1e9);
     } else {
-        snprintf(dt_text, sizeof(dt_text), "%.0fns", dt * 1e9);
+        /* the floor is 10 ps, and "%.0fns" showed a 200 ps step as "dt:0ns" */
+        snprintf(dt_text, sizeof(dt_text), "%.0fps", dt * 1e12);
     }
     SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
     ui_draw_text(renderer, dt_text, ui->timestep_display_x + 24, 17);
@@ -4378,22 +4381,31 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
     // Channel info with voltage readings
     info_y += 15;
-    for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
-        if (!ui->scope_channels[ch].enabled) continue;
+    /* Advance by what was actually drawn, not by a fixed 80 px pitch. A fixed pitch worked for
+       "IN:" and "OUT:" and ran channels into each other the day one was named "SW OUT" or there
+       were four of them - the MOSFET curve tracer's row read "OUT:0.18VDEV2:17.6mDEV3:80.5mV".
+       Wraps to a second line when the row is full; everything below already positions itself
+       relative to info_y, so the measurements move down with it. */
+    {
+        int rx = r->x;
+        for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
+            if (!ui->scope_channels[ch].enabled) continue;
 
-        SDL_SetRenderDrawColor(renderer,
-            ui->scope_channels[ch].color.r,
-            ui->scope_channels[ch].color.g,
-            ui->scope_channels[ch].color.b, 0xff);
+            double voltage = 0;
+            if (sim && sim->circuit && ch < sim->circuit->num_probes) {
+                voltage = sim->circuit->probes[ch].voltage;
+            }
+            { char vs[32]; ui_volt_readout(vs, sizeof vs, voltage); snprintf(buf, sizeof(buf), "%s:%s", ui_channel_name(ui, ch), vs); }
 
-        // Get current voltage from probe
-        double voltage = 0;
-        if (sim && sim->circuit && ch < sim->circuit->num_probes) {
-            voltage = sim->circuit->probes[ch].voltage;
+            int w = (int)strlen(buf) * 8;
+            if (rx > r->x && rx + w > r->x + r->w) { rx = r->x; info_y += 13; }
+            SDL_SetRenderDrawColor(renderer,
+                ui->scope_channels[ch].color.r,
+                ui->scope_channels[ch].color.g,
+                ui->scope_channels[ch].color.b, 0xff);
+            ui_draw_text(renderer, buf, rx, info_y);
+            rx += w + 10;
         }
-
-        { char vs[32]; ui_volt_readout(vs, sizeof vs, voltage); snprintf(buf, sizeof(buf), "%s:%s", ui_channel_name(ui, ch), vs); }
-        ui_draw_text(renderer, buf, r->x + ch * 80, info_y);
     }
 
     // Show "No probes" message if no channels active
@@ -7412,6 +7424,7 @@ void ui_update_scope_channels(UIState *ui, Circuit *circuit) {
     // Update oscilloscope channels based on probes in circuit
     ui->scope_num_channels = circuit->num_probes;
 
+    int names_changed = 0;
     for (int i = 0; i < circuit->num_probes && i < MAX_PROBES; i++) {
         ui->scope_channels[i].enabled = true;
         ui->scope_channels[i].probe_idx = i;
@@ -7424,6 +7437,7 @@ void ui_update_scope_channels(UIState *ui, Circuit *circuit) {
         circuit->probes[i].color = PROBE_COLORS[i];
         if (probe_label_is_default(circuit->probes[i].label))
             snprintf(circuit->probes[i].label, sizeof(circuit->probes[i].label), "CH%d", i + 1);
+        if (strcmp(ui->scope_channels[i].name, circuit->probes[i].label) != 0) names_changed = 1;
         snprintf(ui->scope_channels[i].name, sizeof ui->scope_channels[i].name, "%s", circuit->probes[i].label);
     }
 
@@ -7431,6 +7445,16 @@ void ui_update_scope_channels(UIState *ui, Circuit *circuit) {
     for (int i = circuit->num_probes; i < MAX_PROBES; i++) {
         ui->scope_channels[i].enabled = false;
     }
+
+    /* The channel chips are sized from these names, but they are laid out in ui_update_layout,
+       which runs when the window is sized - before any template has attached its probes. So a
+       chip sized for "CH2" was later drawn holding "SW OUT", and the LDO vs Switcher's chip row
+       read "LDOSW OUT". When a name actually changes, re-run the same layout call the resize
+       path makes; the guard on scope_rect.w skips the call that arrives before first layout. */
+    if (names_changed && ui->scope_rect.w > 0)
+        ui_layout_scope_buttons(ui, ui->scope_rect.x,
+                                ui->scope_rect.y + ui->scope_rect.h + 5 - ui->scope_controls_scroll,
+                                ui->scope_rect.x + ui->scope_rect.w);
 }
 
 static void scope_button_list(UIState *ui, Button *out[SCOPE_BTN_N]) {

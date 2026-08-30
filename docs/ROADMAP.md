@@ -194,13 +194,19 @@ It runs both ways round, because neither alone is enough:
   among the parts that write their own state inside their stamp. The relay failed it - its coil
   current and its armature both moved when the display asked what the current was - and is fixed.
 
-One thing it does not yet cover, and one it uncovered:
+Two things it uncovered, both since fixed:
 
-1. **The relay's coil current advances once per Newton iteration**, not once per accepted step -
-   the same fault the MOSFET's gate capacitance had, and the reason its inductor companion
-   integrates faster than the circuit does. Guarding the read-only path made reading harmless
-   without fixing this. It wants the same treatment the crystal got: advance once per accepted
-   step in `simulation.c`. No template uses a relay, so that fix needs coverage built first.
+1. **The relay's coil current** advanced once per Newton iteration, and it was measured before it
+   was fixed, the same order the motor's took. `--dvdt-test` switches the default coil (200 ohm,
+   100 mH) onto its 12 V supply and times the current to 63 % of V/R against `tau = L/R = 500 us`,
+   worked out outside the solver. It read **10.5 us** - 48 times too fast, so a relay pulled in
+   with essentially no delay and every delay circuit built on one would have been a lie.
+
+   **Fixed 2026-08-30.** The coil current advances once per accepted step in `simulation.c`, and so
+   does the pull-in/drop-out decision, because energizing is a decision about a step's converged
+   current, not about a Newton iterate. The stamp only reads, through the solve-time snapshot. It
+   now times at 500.5 us against 500 us, and with the relay runnable, `--restamp-test` covers all
+   122 component types clean.
 2. **The DC motor** did the same, and it was measured before it was fixed. `--dvdt-test` spins one
    up from rest on a 10 V supply and times it to 63 % of its final speed, against
    `tau = J / (b + kt kv / R)` worked out outside the solver. The oracle is 99 ms. It read

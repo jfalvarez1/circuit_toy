@@ -1068,6 +1068,12 @@ Scripted runs are also reproducible: `--shot` and `--record` step a fixed frame 
 number of solver steps rather than following the wall clock, so the same command draws the same
 scope twice.
 
+`--template` takes the full name, the short name, or any unique case-insensitive piece of the
+name - `--template Pierce` and `--template "Digital Clock"` both work. A name that matches
+nothing, or more than one thing, is an **error and exit code 2**, with the candidates listed.
+It used to print the list and then carry on with an empty canvas, which is the worst thing a
+scripted flag can do: the run exited 0, the screenshot existed, and it was a picture of nothing.
+
 ### GUI smoke test
 
 The modes above link the simulation and ask it questions. `tools/gui_smoke.py` does not: it

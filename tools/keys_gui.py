@@ -21,8 +21,13 @@ if not os.path.exists(exe):
 
 TEMPLATE = "RC Low Pass"
 PAUSE = "300,25,15"          # the Pause button: several things are refused while running
-A_PART = "300,300,25"        # the resistor in the middle of the circuit
 W, H = 1200, 800
+COMP_RESISTOR = 1            # ComponentType ordinal, stable since the enum is append-only
+# A_PART is not a constant any more. It was "the resistor is at 300,300", and that held only
+# until anything about template placement moved - widening the fit margin by 40 px shifted every
+# circuit and five of these checks failed at once, all saying "selected 0". The app now reports
+# each part's screen position in --state-out, so the run asks rather than remembers.
+A_PART = None
 
 
 def state(tmp, name, keys=None, clicks=(), frame=80):
@@ -48,6 +53,12 @@ with tempfile.TemporaryDirectory() as tmp:
     if base is None:
         print("[FAIL] keys-gui  the app wrote no state at all")
         sys.exit(1)
+    parts = base.get("parts") or []
+    spot = next((p for p in parts if p.get("type") == COMP_RESISTOR), None)
+    if spot is None:
+        print("[FAIL] keys-gui  the state lists no resistor to aim at")
+        sys.exit(1)
+    A_PART = "%d,%d,25" % (spot["x"], spot["y"])
 
     # (label, keys, clicks, what it should have done)
     checks = [
