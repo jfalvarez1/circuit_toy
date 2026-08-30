@@ -728,16 +728,16 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             if (input->selected_component == comp) {
                                 input->selected_component = NULL;
                             }
-                            circuit_remove_component(circuit, comp->id);
-                            ui_set_status(ui, "Component deleted");
+                            circuit_delete_component(circuit, comp->id);
+                            ui_set_status(ui, "Component deleted (Ctrl+Z to undo)");
                             break;
                         }
 
                         // Delete wire
                         Wire *wire = circuit_find_wire_at(circuit, wx, wy, 5);
                         if (wire) {
-                            circuit_remove_wire(circuit, wire->id);
-                            ui_set_status(ui, "Wire deleted");
+                            circuit_delete_wire(circuit, wire->id);
+                            ui_set_status(ui, "Wire deleted (Ctrl+Z to undo)");
                         }
                         break;
                     }
@@ -1836,7 +1836,7 @@ void input_delete_selected(InputState *input, Circuit *circuit) {
         // Delete multi-selected components
         for (int i = 0; i < input->multi_selected_count; i++) {
             if (input->multi_selected[i]) {
-                circuit_remove_component(circuit, input->multi_selected[i]->id);
+                circuit_delete_component(circuit, input->multi_selected[i]->id);
             }
         }
         input->multi_selected_count = 0;
@@ -1845,7 +1845,7 @@ void input_delete_selected(InputState *input, Circuit *circuit) {
         // Delete all selected wires (iterate backwards to avoid index shifting)
         for (int i = circuit->num_wires - 1; i >= 0; i--) {
             if (circuit->wires[i].selected) {
-                circuit_remove_wire(circuit, circuit->wires[i].id);
+                circuit_delete_wire(circuit, circuit->wires[i].id);
             }
         }
         input->selected_wire_idx = -1;
@@ -1854,7 +1854,7 @@ void input_delete_selected(InputState *input, Circuit *circuit) {
 
     // Delete single selected component
     if (input->selected_component) {
-        circuit_remove_component(circuit, input->selected_component->id);
+        circuit_delete_component(circuit, input->selected_component->id);
         input->selected_component = NULL;
         return;
     }
@@ -1863,7 +1863,7 @@ void input_delete_selected(InputState *input, Circuit *circuit) {
     if (input->selected_wire_idx >= 0 && input->selected_wire_idx < circuit->num_wires) {
         circuit->wires[input->selected_wire_idx].selected = false;
         int wire_id = circuit->wires[input->selected_wire_idx].id;
-        circuit_remove_wire(circuit, wire_id);
+        circuit_delete_wire(circuit, wire_id);
         input->selected_wire_idx = -1;
         return;
     }

@@ -334,15 +334,15 @@ static double circuit_signature(Circuit *c, int *ok_out) {
 
 /* one leg of the round trip: write with save_fn, read with load_fn, and say what came back
    different. Returns "" when the circuit survived. */
-static void roundtrip_leg(Circuit *a, const char *path,
-                          bool (*save_fn)(Circuit *, const char *),
-                          bool (*load_fn)(Circuit *, const char *),
-                          char *why, size_t whyn) {
+/* Two circuits, judged the same way whatever put them side by side - a save and a load, or
+   an edit and an undo. Both ask the same question: is this the circuit it was? */
+/* strict: also compare the raw property block and the printed value. That is right for a save
+   and a load, whose two circuits have had identical histories. It is wrong after an undo:
+   properties carry live state - the power a part is dissipating, its temperature - and one of
+   the two circuits has been solved more times than the other. The structure, the connections and
+   the operating point are compared either way, and those are what an undo has to get right. */
+static void circuit_compare_ex(Circuit *a, Circuit *b, bool strict, char *why, size_t whyn) {
     why[0] = 0;
-    if (!save_fn(a, path)) { snprintf(why, whyn, "save failed"); return; }
-    Circuit *b = circuit_create();
-    if (!load_fn(b, path)) { snprintf(why, whyn, "load failed"); circuit_free(b); return; }
-
     if (b->num_components != a->num_components) {
         /* name the odd one out: which type appeared or vanished, and where */
         char extra[80] = "";
@@ -355,8 +355,18 @@ static void roundtrip_leg(Circuit *a, const char *path,
     else if (b->num_wires != a->num_wires)
         snprintf(why, whyn, "%d wires saved, %d came back", a->num_wires, b->num_wires);
     else {
+        /* Paired by id, not by position. A save and a load keep the order; an undo does not -
+           removing a part shifts the rest down and putting it back appends it - and comparing
+           the fifth of one against the fifth of the other then reports every part after the
+           edit as changed. The id is what follows a part through all of it. */
         for (int i = 0; i < a->num_components && !why[0]; i++) {
-            Component *ca = a->components[i], *cb = b->components[i];
+            Component *ca = a->components[i], *cb = NULL;
+            for (int j = 0; j < b->num_components; j++)
+                if (b->components[j]->id == ca->id) { cb = b->components[j]; break; }
+            if (!cb) {
+                snprintf(why, whyn, "%s (id %d) is not there any more", ca->label, ca->id);
+                break;
+            }
             if (ca->type != cb->type)
                 snprintf(why, whyn, "part %d is type %d, came back %d", i, ca->type, cb->type);
             else if (fabsf(ca->x - cb->x) > 0.5f || fabsf(ca->y - cb->y) > 0.5f)
@@ -369,13 +379,13 @@ static void roundtrip_leg(Circuit *a, const char *path,
                 char va[96] = "", vb[96] = "";
                 render_component_value_label(ca, va, sizeof va, NULL, NULL);
                 render_component_value_label(cb, vb, sizeof vb, NULL, NULL);
-                if (strcmp(va, vb))
+                if (strict && strcmp(va, vb))
                     snprintf(why, whyn, "%s reads '%s', came back '%s'", ca->label, va, vb);
                 /* the printed value is only the headline: compare the whole property block, so
                    a series resistance or an ideal flag that did not survive is named too. The
                    two types that own memory through the union hold pointers there, and those
                    are meant to differ. */
-                else if (ca->type != COMP_DELAY_LINE && ca->type != COMP_SUBCIRCUIT &&
+                else if (strict && ca->type != COMP_DELAY_LINE && ca->type != COMP_SUBCIRCUIT &&
                          memcmp(&ca->props, &cb->props, sizeof ca->props)) {
                     const unsigned char *pa = (const unsigned char *)&ca->props;
                     const unsigned char *pb2 = (const unsigned char *)&cb->props;
@@ -388,14 +398,29 @@ static void roundtrip_leg(Circuit *a, const char *path,
         { int d1=0,d2=0; circuit_signature(a,&d1); circuit_signature(b,&d2); }   /* build both node maps */
         /* the connections themselves, named: two circuits can hold identical parts at identical
            values and still be different circuits */
-        for (int i = 0; i < a->num_components && !why[0]; i++) {
-            Component *ca = a->components[i], *cb = b->components[i];
-            for (int k = 0; k < ca->num_terminals; k++) {
-                int na = a->node_map[ca->node_ids[k]], nb = b->node_map[cb->node_ids[k]];
-                if (na != nb) {
-                    snprintf(why, whyn, "%s pin %d was on net %d, came back on %d",
-                             ca->label, k, na, nb);
-                    break;
+        /* What matters is which pins share a net, not what the nets are called. A save and a
+           load keep the numbers; an undo renumbers freely, and a circuit that comes back
+           electrically identical with different net numbers has come back. So both sides are
+           relabelled in the order their pins are walked - first net seen becomes 1, and so on -
+           and the two labellings have to agree. That is the same test for a dropped connection
+           and no test at all for arithmetic on names. */
+        {
+            int lab_a[MAX_NODES + 1], lab_b[MAX_NODES + 1];
+            for (int i = 0; i <= MAX_NODES; i++) { lab_a[i] = 0; lab_b[i] = 0; }
+            int next_a = 1, next_b = 1;
+            for (int i = 0; i < a->num_components && !why[0]; i++) {
+                Component *ca = a->components[i], *cb = b->components[i];
+                for (int k = 0; k < ca->num_terminals; k++) {
+                    int na = a->node_map[ca->node_ids[k]], nb = b->node_map[cb->node_ids[k]];
+                    if (na < 0 || na > MAX_NODES || nb < 0 || nb > MAX_NODES) continue;
+                    if (!lab_a[na]) lab_a[na] = next_a++;
+                    if (!lab_b[nb]) lab_b[nb] = next_b++;
+                    if (lab_a[na] != lab_b[nb]) {
+                        snprintf(why, whyn, "%s pin %d shares a net with a different pin than it "
+                                 "did (net %d of %d became %d of %d)", ca->label, k,
+                                 lab_a[na], next_a - 1, lab_b[nb], next_b - 1);
+                        break;
+                    }
                 }
             }
         }
@@ -408,7 +433,141 @@ static void roundtrip_leg(Circuit *a, const char *path,
                 snprintf(why, whyn, "settles differently: sum|V| %.6g -> %.6g", sa, sb);
         }
     }
+}
+
+static void circuit_compare(Circuit *a, Circuit *b, char *why, size_t whyn) {
+    circuit_compare_ex(a, b, true, why, whyn);
+}
+
+static void roundtrip_leg(Circuit *a, const char *path,
+                          bool (*save_fn)(Circuit *, const char *),
+                          bool (*load_fn)(Circuit *, const char *),
+                          char *why, size_t whyn) {
+    why[0] = 0;
+    if (!save_fn(a, path)) { snprintf(why, whyn, "save failed"); return; }
+    Circuit *b = circuit_create();
+    if (!load_fn(b, path)) { snprintf(why, whyn, "load failed"); circuit_free(b); return; }
+
+    circuit_compare(a, b, why, whyn);
     circuit_free(b);
+}
+
+/* --undo-test: Ctrl+Z has to put the circuit back exactly as it was, and Ctrl+Y has to put the
+   edit back. Every kind of edit the undo stack records is exercised on every template: add a
+   part, delete a part, move a part, add a wire, delete a wire. The circuit is written to a file
+   before the edit and loaded back afterwards to compare against - save and load are already
+   held to the same standard by --file-test, so this borrows their snapshot rather than growing
+   a second way to copy a circuit.
+
+   The comparison is the one the file audits use: part for part, wire for wire, terminal for
+   terminal, and the operating point at the end. An undo that leaves a component behind, or
+   leaves it a pixel from where it was, or drops the net it was wired to, fails here. */
+static int undo_test(void) {
+    static const char *op_name[] = { "add a part", "delete a part", "move a part",
+                                     "add a wire", "delete a wire" };
+    int fails = 0, checks = 0, templates = 0;
+
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti) continue;
+        templates++;
+
+        for (int op = 0; op < 5; op++) {
+            Circuit *c = circuit_create();
+            if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); break; }
+            if (!file_save_circuit(c, "undo_before.cpg")) { circuit_free(c); break; }
+
+            bool did = false;
+            switch (op) {
+                case 0: {   /* add a part: the app pushes UNDO_ADD_COMPONENT after placing */
+                    Component *n = component_create(COMP_RESISTOR, -400, -400);
+                    if (n && circuit_add_component(c, n) >= 0) {
+                        circuit_push_undo(c, UNDO_ADD_COMPONENT, n->id, NULL, 0, 0);
+                        did = true;
+                    } else if (n) component_free(n);
+                    break;
+                }
+                case 1: {   /* delete a part, the way the delete tool does */
+                    if (c->num_components > 0) {
+                        circuit_delete_component(c, c->components[c->num_components - 1]->id);
+                        did = true;
+                    }
+                    break;
+                }
+                case 2: {   /* move a part */
+                    if (c->num_components > 0) {
+                        Component *m = c->components[0];
+                        circuit_push_undo(c, UNDO_MOVE_COMPONENT, m->id, NULL, m->x, m->y);
+                        m->x += 120; m->y -= 80;
+                        /* dragging a part takes its nodes with it: the app does this on every
+                           mouse move, and without it the part and its terminals disagree */
+                        circuit_update_component_nodes(c, m);
+                        did = true;
+                    }
+                    break;
+                }
+                case 3: {   /* add a wire between two nodes that are not already joined */
+                    if (c->num_nodes >= 2) {
+                        int wid = circuit_add_wire(c, c->nodes[0].id, c->nodes[c->num_nodes - 1].id);
+                        if (wid >= 0) { circuit_push_undo(c, UNDO_ADD_WIRE, wid, NULL, 0, 0); did = true; }
+                    }
+                    break;
+                }
+                default: {  /* delete a wire, the way the delete tool does */
+                    if (c->num_wires > 0) {
+                        circuit_delete_wire(c, c->wires[c->num_wires - 1].id);
+                        did = true;
+                    }
+                    break;
+                }
+            }
+            if (!did) { circuit_free(c); continue; }
+
+            checks++;
+            char why[240] = "";
+            /* the edited circuit, to hold redo to */
+            bool have_after = file_save_circuit(c, "undo_after.cpg");
+
+            if (!circuit_undo(c)) {
+                snprintf(why, sizeof why, "undo did nothing at all");
+            } else {
+                Circuit *before = circuit_create();
+                if (file_load_circuit(before, "undo_before.cpg"))
+                    circuit_compare_ex(before, c, false, why, sizeof why);
+                else
+                    snprintf(why, sizeof why, "could not read the snapshot back");
+                circuit_free(before);
+            }
+
+            /* and back again: redo has to return the circuit the edit made */
+            if (!why[0] && have_after) {
+                if (!circuit_redo(c)) {
+                    snprintf(why, sizeof why, "redo did nothing at all");
+                } else {
+                    Circuit *after = circuit_create();
+                    if (file_load_circuit(after, "undo_after.cpg")) {
+                        char rwhy[200] = "";
+                        circuit_compare_ex(after, c, false, rwhy, sizeof rwhy);
+                        if (rwhy[0]) snprintf(why, sizeof why, "redo: %s", rwhy);
+                    }
+                    circuit_free(after);
+                }
+            }
+
+            if (why[0]) {
+                printf("[FAIL] undo  %-28s %-14s %s\n", ti->name, op_name[op], why);
+                fails++;
+            }
+            circuit_free(c);
+        }
+    }
+
+    remove("undo_before.cpg");
+    remove("undo_after.cpg");
+    printf("\nundo-test: %d edits over %d templates, %d that undo did not put back\n",
+           checks, templates, fails);
+    return fails;
 }
 
 /* --parts-file-test: one of every part on a canvas, saved and loaded back.
@@ -3691,6 +3850,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--label-test")) return label_test();
         else if (!strcmp(argv[i], "--parts-file-test")) return parts_file_test();
+        else if (!strcmp(argv[i], "--undo-test")) return undo_test();
         else if (!strcmp(argv[i], "--span-test")) return span_test();
         else if (!strcmp(argv[i], "--geom-test")) return geom_test();
         else if (!strcmp(argv[i], "--sweep-check")) return sweep_check();

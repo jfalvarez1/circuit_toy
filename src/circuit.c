@@ -954,6 +954,19 @@ void circuit_update_wire_currents(Circuit *circuit) {
     }
 }
 
+/* Give a component's terminals nodes at the positions they are actually at, the way adding one
+   does. Restoring an undone delete needs this: the ids it was carrying were cleaned up with it,
+   and ids get reused, so what they name now may belong to another part entirely. */
+void circuit_reattach_component(Circuit *circuit, Component *comp) {
+    if (!circuit || !comp) return;
+    for (int i = 0; i < comp->num_terminals; i++) {
+        float tx, ty;
+        component_get_terminal_pos(comp, i, &tx, &ty);
+        comp->node_ids[i] = circuit_find_or_create_node(circuit, tx, ty, 10);
+    }
+    circuit->topology_dirty = true;
+}
+
 void circuit_update_component_nodes(Circuit *circuit, Component *comp) {
     if (!circuit || !comp) return;
 
@@ -1105,6 +1118,45 @@ void circuit_push_undo(Circuit *circuit, UndoActionType type, int id, Component 
     action->component_backup = backup;
     action->old_x = old_x;
     action->old_y = old_y;
+    /* For a wire, the two coordinates are the nodes it joins - that is the convention the redo
+       path already used, reading them back out of old_x and old_y. They were never copied into
+       the fields undo reads, so a slot recycled from an older action carried whatever endpoints
+       that one had. Nothing hit it, because nothing ever recorded a wire being deleted. */
+    action->wire_start = (type == UNDO_ADD_WIRE || type == UNDO_REMOVE_WIRE) ? (int)old_x : 0;
+    action->wire_end   = (type == UNDO_ADD_WIRE || type == UNDO_REMOVE_WIRE) ? (int)old_y : 0;
+}
+
+/* Delete, and be able to take it back. circuit_remove_component and circuit_remove_wire do what
+   they say and nothing else: they free the thing. Every caller that deletes on a user's behalf
+   has to record what it destroyed first, and none of them did - so Ctrl+Z could bring back a
+   part you moved or added, and nothing you deleted. These two do the recording and then the
+   removing, and they are what the delete tool, the Delete key and the audit all call. */
+void circuit_delete_component(Circuit *circuit, int comp_id) {
+    if (!circuit) return;
+    Component *victim = NULL;
+    for (int i = 0; i < circuit->num_components; i++)
+        if (circuit->components[i]->id == comp_id) { victim = circuit->components[i]; break; }
+    if (!victim) return;
+    circuit_push_undo(circuit, UNDO_REMOVE_COMPONENT, comp_id, component_clone(victim), 0, 0);
+    circuit_remove_component(circuit, comp_id);
+}
+
+void circuit_delete_wire(Circuit *circuit, int wire_id) {
+    if (!circuit) return;
+    for (int i = 0; i < circuit->num_wires; i++) {
+        if (circuit->wires[i].id == wire_id) {
+            int sn = circuit->wires[i].start_node_id, en = circuit->wires[i].end_node_id;
+            Node *ns = circuit_get_node(circuit, sn), *ne = circuit_get_node(circuit, en);
+            circuit_push_undo(circuit, UNDO_REMOVE_WIRE, wire_id, NULL, (float)sn, (float)en);
+            if (circuit->undo_count > 0) {
+                UndoAction *rec = &circuit->undo_stack[circuit->undo_count - 1];
+                rec->wire_x0 = ns ? ns->x : 0; rec->wire_y0 = ns ? ns->y : 0;
+                rec->wire_x1 = ne ? ne->x : 0; rec->wire_y1 = ne ? ne->y : 0;
+            }
+            circuit_remove_wire(circuit, wire_id);
+            return;
+        }
+    }
 }
 
 bool circuit_undo(Circuit *circuit) {
@@ -1144,6 +1196,11 @@ bool circuit_undo(Circuit *circuit) {
             if (action->component_backup) {
                 action->component_backup->id = action->id;
                 circuit->components[circuit->num_components++] = action->component_backup;
+                /* and put it back on the circuit. Removing it cleaned up any node left with
+                   nothing on it, so the ids it is carrying may name nothing - or, since ids are
+                   reused, may name a node that now belongs to another part. Its terminals are
+                   where they always were, and the nodes come from those. */
+                circuit_reattach_component(circuit, action->component_backup);
                 // Push to redo stack (redo will remove it again)
                 circuit_push_redo_internal(circuit, UNDO_ADD_COMPONENT, action->id, NULL, 0, 0, 0, 0);
                 action->component_backup = NULL;  // Don't free it
@@ -1166,14 +1223,39 @@ bool circuit_undo(Circuit *circuit) {
             }
             break;
 
-        case UNDO_ADD_WIRE:
-            // Push to redo stack before removing (redo will re-add it)
+        case UNDO_ADD_WIRE: {
+            /* The wire is still here, so its nodes still are: note where they sit before it
+               goes, or the redo has nothing to attach to once they are cleaned up. */
+            float wx0 = 0, wy0 = 0, wx1 = 0, wy1 = 0;
+            for (int i = 0; i < circuit->num_wires; i++) {
+                if (circuit->wires[i].id != action->id) continue;
+                Node *n0 = circuit_get_node(circuit, circuit->wires[i].start_node_id);
+                Node *n1 = circuit_get_node(circuit, circuit->wires[i].end_node_id);
+                if (n0) { wx0 = n0->x; wy0 = n0->y; }
+                if (n1) { wx1 = n1->x; wy1 = n1->y; }
+                break;
+            }
             circuit_push_redo_internal(circuit, UNDO_REMOVE_WIRE, action->id, NULL, 0, 0,
                                        (int)action->old_x, (int)action->old_y);
+            if (circuit->redo_count > 0) {
+                UndoAction *r = &circuit->redo_stack[circuit->redo_count - 1];
+                r->wire_x0 = wx0; r->wire_y0 = wy0; r->wire_x1 = wx1; r->wire_y1 = wy1;
+            }
             circuit_remove_wire(circuit, action->id);
             break;
+        }
 
         case UNDO_REMOVE_WIRE: {
+            /* The nodes this wire joined may have gone with it: a node nothing else touches is
+               cleaned up the moment the wire leaves. Put them back where they were and rejoin
+               those - otherwise the wire returns attached to nothing and the circuit settles
+               differently than it did before the delete. */
+            if (!circuit_get_node(circuit, action->wire_start))
+                action->wire_start = circuit_find_or_create_node(circuit, action->wire_x0,
+                                                                 action->wire_y0, 5.0f);
+            if (!circuit_get_node(circuit, action->wire_end))
+                action->wire_end = circuit_find_or_create_node(circuit, action->wire_x1,
+                                                               action->wire_y1, 5.0f);
             int wire_id = circuit_add_wire(circuit, action->wire_start, action->wire_end);
             // Push to redo stack (redo will remove it)
             circuit_push_redo_internal(circuit, UNDO_ADD_WIRE, wire_id, NULL,
@@ -1239,6 +1321,7 @@ bool circuit_redo(Circuit *circuit) {
             if (action->component_backup) {
                 action->component_backup->id = action->id;
                 circuit->components[circuit->num_components++] = action->component_backup;
+                circuit_reattach_component(circuit, action->component_backup);
                 // Push to undo stack (undo will remove it)
                 if (circuit->undo_count < MAX_UNDO) {
                     UndoAction *undo = &circuit->undo_stack[circuit->undo_count++];
@@ -1295,6 +1378,12 @@ bool circuit_redo(Circuit *circuit) {
         }
 
         case UNDO_REMOVE_WIRE: {
+            if (!circuit_get_node(circuit, action->wire_start))
+                action->wire_start = circuit_find_or_create_node(circuit, action->wire_x0,
+                                                                 action->wire_y0, 5.0f);
+            if (!circuit_get_node(circuit, action->wire_end))
+                action->wire_end = circuit_find_or_create_node(circuit, action->wire_x1,
+                                                               action->wire_y1, 5.0f);
             int wire_id = circuit_add_wire(circuit, action->wire_start, action->wire_end);
             // Push to undo stack (undo will remove it)
             if (circuit->undo_count < MAX_UNDO) {

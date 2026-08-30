@@ -55,7 +55,11 @@ typedef struct {
     int id;
     Component *component_backup;  // For remove/move actions
     float old_x, old_y;           // For move actions
-    int wire_start, wire_end;     // For wire actions
+    int wire_start, wire_end;     // For wire actions: the nodes it joined
+    /* ...and where those nodes were. Removing a wire can leave a node with nothing else on it,
+       and those are cleaned up straight away - so by the time anyone undoes, the id recorded
+       above may name a node that is gone. The position always still means something. */
+    float wire_x0, wire_y0, wire_x1, wire_y1;
 } UndoAction;
 
 #define MAX_UNDO 100
@@ -128,6 +132,10 @@ void circuit_set_ground(Circuit *circuit, int node_id);
 // Wire operations
 int circuit_add_wire(Circuit *circuit, int start_node_id, int end_node_id);
 void circuit_remove_wire(Circuit *circuit, int wire_id);
+/* Delete on a user's behalf: records what it destroyed on the undo stack, then removes it.
+   The plain remove_ functions above do not record anything. */
+void circuit_delete_component(Circuit *circuit, int comp_id);
+void circuit_delete_wire(Circuit *circuit, int wire_id);
 Wire *circuit_find_wire_at(Circuit *circuit, float x, float y, float threshold);
 int circuit_split_wire_at(Circuit *circuit, Wire *wire, float x, float y);
 
@@ -152,6 +160,9 @@ void circuit_update_meter_readings(Circuit *circuit);
 
 // Update component terminals after movement
 void circuit_update_component_nodes(Circuit *circuit, Component *comp);
+/* Find or make nodes at a component's terminal positions - what adding one does, and what
+   putting a deleted one back needs. update_component_nodes above only moves existing ones. */
+void circuit_reattach_component(Circuit *circuit, Component *comp);
 
 // Copy/paste operations
 void circuit_copy_component(Circuit *circuit, Component *comp);
