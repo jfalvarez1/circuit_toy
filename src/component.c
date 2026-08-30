@@ -5809,22 +5809,24 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double b_f = comp->props.dc_motor.b_friction;
             double T_load = comp->props.dc_motor.torque_load;
 
-            // Get previous state
-            double omega_prev = comp->props.dc_motor.omega;
-            double I_prev = comp->props.dc_motor.current;
+            /* Read the state; do not advance it. The rotor's speed and the armature current are
+               advanced once per accepted step, in simulation.c, next to every other companion.
+
+               They used to be integrated here, and a stamp runs once per Newton iteration. Each
+               iteration therefore advanced the rotor, and the iteration only stops when nothing is
+               changing any more - which for a motor is its steady state. So a time step did not
+               advance the motor by dt, it drove it to where it was heading: 63 % of final speed in
+               a single step of 49.5 us where the mechanical time constant is 99 ms. The final
+               speed was exactly right, which is why nothing noticed - d_omega is zero at steady
+               state however many times it is added, so every check that looked at where a motor
+               ends up was satisfied. --dvdt-test times the getting there instead. */
+            double omega_prev = g_stamp_read_only ? comp->motor_w_solve : comp->props.dc_motor.omega;
+            double I_prev     = g_stamp_read_only ? comp->motor_i_solve : comp->props.dc_motor.current;
 
             // Back-EMF voltage
             double V_bemf = kv * omega_prev;
-            comp->props.dc_motor.v_bemf = V_bemf;
-
-            // Update motor speed using Euler integration
-            // Torque = kt * I, friction torque = b * omega
-            double T_motor = kt * I_prev;
-            double T_friction = b_f * omega_prev;
-            double d_omega = (T_motor - T_friction - T_load) / J;
-            double omega_new = omega_prev + d_omega * dt;
-            if (omega_new < 0) omega_new = 0;  // Prevent negative rotation for simple DC motor
-            comp->props.dc_motor.omega = omega_new;
+            if (!g_stamp_read_only) comp->props.dc_motor.v_bemf = V_bemf;
+            (void)kt; (void)J; (void)b_f; (void)T_load;
 
             // Stamp armature circuit: R_a + L_a with back-EMF
             // Use companion model: V = I*R_eq + V_eq where R_eq = R_a + L_a/dt
@@ -5842,12 +5844,6 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             if (n[0] > 0) vector_add(b, n[0]-1, -I_eq);
             if (n[1] > 0) vector_add(b, n[1]-1, I_eq);
 
-            // Update current from solution (will be done after solve)
-            if (prev_solution) {
-                double v1 = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
-                double v2 = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
-                comp->props.dc_motor.current = (v1 - v2 - V_bemf) / Req + I_prev * L_a / (Req * dt);
-            }
             break;
         }
 

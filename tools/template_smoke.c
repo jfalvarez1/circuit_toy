@@ -3740,6 +3740,66 @@ static double dvdt_measure(const DvdtCase *dc, double *expect_out, int *ok) {
     return got;
 }
 
+/* A rotor is a storage element too, and its companion has an analytic answer just as a capacitor's
+   does. Spin a motor up from rest on a DC supply and the speed rises as 1 - exp(-t/tau), with
+   tau = J / (b + kt kv / R) - the mechanical inertia against friction plus the electrical damping
+   the back-EMF provides. That is arithmetic done outside the solver, which is the point.
+   It is here because the motor integrates its speed inside its stamp, so the integration happens
+   once per Newton iteration rather than once per accepted step, and the spin-up comes out as many
+   times too fast as the solver took iterations. The final speed is unaffected - d_omega is zero at
+   steady state however many times it is added - so nothing that looks at where a motor ends up can
+   see this, and nothing did. */
+static int dvdt_motor(void) {
+    Circuit *c = circuit_create();
+    if (!c) return 1;
+    Component *v = pt_add(c, COMP_DC_VOLTAGE, 0, 60, 0);
+    v->props.dc_voltage.voltage = 10.0;
+    Component *g0 = pt_add(c, COMP_GROUND, 0, 160, 0);
+    Component *m = pt_add(c, COMP_DC_MOTOR, 160, 60, 0);
+    if (!m) { circuit_free(c); return 1; }
+    m->props.dc_motor.ideal = false;
+    m->props.dc_motor.torque_load = 0.0;
+    Component *g1 = pt_add(c, COMP_GROUND, 160, 160, 0);
+    int top = pt_node(c, 80, 20), gnd0 = pt_node(c, 0, 140), gnd1 = pt_node(c, 160, 140);
+    v->node_ids[0] = top; v->node_ids[1] = gnd0; g0->node_ids[0] = gnd0;
+    m->node_ids[0] = top; m->node_ids[1] = gnd1; g1->node_ids[0] = gnd1;
+    circuit_add_wire(c, gnd0, gnd1);
+
+    double R = m->props.dc_motor.r_armature, kt = m->props.dc_motor.kt;
+    double kv = m->props.dc_motor.kv, J = m->props.dc_motor.j_rotor;
+    double bf = m->props.dc_motor.b_friction;
+    double damp = bf + kt * kv / R;
+    double tau = (damp > 0) ? J / damp : 0;
+    double w_final = (damp > 0) ? (kt * 10.0 / R) / damp : 0;
+
+    Simulation *sim = simulation_create(c);
+    int ok = sim && simulation_dc_analysis(sim);
+    simulation_enable_adaptive(sim, false);
+    simulation_set_time_step(sim, tau / 2000.0);
+    simulation_start(sim);
+    simulation_set_time_step(sim, tau / 2000.0);
+
+    /* the moment the speed passes 1 - 1/e of where it is heading */
+    double t_63 = -1;
+    int guard = 0;
+    while (ok && sim->time < 5.0 * tau && guard++ < 200000) {
+        if (!simulation_step(sim)) { ok = 0; break; }
+        if (t_63 < 0 && m->props.dc_motor.omega >= 0.6321 * w_final) t_63 = sim->time;
+    }
+    double w_end = m->props.dc_motor.omega;
+    simulation_free(sim);
+    circuit_free(c);
+
+    int bad = !ok || t_63 <= 0 || fabs(t_63 - tau) > 0.05 * tau;
+    printf("%s %-14s %14.6g %14.6g %7.2f%%   %s\n", bad ? "[FAIL]" : "[ OK ]", "dc motor spin-up",
+           t_63, tau, (tau > 0) ? 100.0 * (t_63 - tau) / tau : 0.0,
+           "time to 63 % of final speed against J / (b + kt kv / R)");
+    if (bad)
+        printf("       final speed %.6g rad/s against %.6g, so it gets there - it is the getting "
+               "there that is timed wrong\n", w_end, w_final);
+    return bad ? 1 : 0;
+}
+
 static int dvdt_test(void) {
     int fails = 0;
     printf("dvdt-test: reported current against C dv/dt computed outside the solver\n\n");
@@ -3760,8 +3820,9 @@ static int dvdt_test(void) {
                dc->name, got, expect, err * 100.0, dc->note,
                ok ? "" : "  [simulation failed]");
     }
+    fails += dvdt_motor();
     printf("\ndvdt-test: %d elements, %d failed\n",
-           (int)(sizeof dvdt_cases / sizeof dvdt_cases[0]), fails);
+           (int)(sizeof dvdt_cases / sizeof dvdt_cases[0]) + 1, fails);
     return fails ? 1 : 0;
 }
 

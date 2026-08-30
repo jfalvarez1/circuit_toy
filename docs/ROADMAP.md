@@ -194,18 +194,28 @@ It runs both ways round, because neither alone is enough:
   among the parts that write their own state inside their stamp. The relay failed it - its coil
   current and its armature both moved when the display asked what the current was - and is fixed.
 
-Two things it does not yet cover, both recorded rather than quietly left:
+One thing it does not yet cover, and one it uncovered:
 
 1. **The relay's coil current advances once per Newton iteration**, not once per accepted step -
    the same fault the MOSFET's gate capacitance had, and the reason its inductor companion
    integrates faster than the circuit does. Guarding the read-only path made reading harmless
    without fixing this. It wants the same treatment the crystal got: advance once per accepted
    step in `simulation.c`. No template uses a relay, so that fix needs coverage built first.
-2. **The DC motor integrates its rotor speed inside the stamp** - `omega += d_omega * dt` once per
-   Newton iteration. Its steady-state speed is unaffected, because at steady state `d_omega` is
-   zero however many times it is added; what is wrong is the spin-up, which is as many times too
-   fast as the solver took iterations, and varies with how hard the step was to converge. No
-   template uses a DC motor either.
+2. **The DC motor** did the same, and it was measured before it was fixed. `--dvdt-test` spins one
+   up from rest on a 10 V supply and times it to 63 % of its final speed, against
+   `tau = J / (b + kt kv / R)` worked out outside the solver. The oracle is 99 ms. It read
+   **49.5 us**, which is one time step: each Newton iteration advanced the rotor, and Newton stops
+   iterating when nothing is changing any more - which for a motor is its steady state. A time step
+   did not advance the motor by dt, it drove it to wherever it was heading.
+
+   The final speed was exactly right, 990.099 rad/s against 990.099, which is why nothing had ever
+   noticed: `d_omega` is zero at steady state however many times it is added, so every check that
+   looks at where a motor ends up was satisfied. Only timing the getting-there could see it.
+
+   **Fixed 2026-08-30.** The rotor and the armature current advance once per accepted step in
+   `simulation.c`, next to every other companion, and the stamp only reads them - through the
+   solve-time snapshot, so reading a terminal current does not see the next step's rotor. It now
+   times at 0.0990099 s against 0.0990099 s.
 
 The general point for the next component: **companion state belongs to a time step, not to a
 stamp.** A stamp runs many times per step - once per Newton iteration, plus once more whenever the

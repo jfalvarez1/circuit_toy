@@ -795,7 +795,10 @@ typedef struct Component {
        that never happened, and the difference landed in the current-flow display as a KCL gap.
        On the Pierce oscillator that gap was 6.8 uA. Read these instead when g_stamp_read_only. */
     double trap_i_solve;
-    double cap_vc_solve;                      // Capacitors: current (terminal 0 -> 1) at the end of the last step (trapezoidal state)
+    double cap_vc_solve;
+    /* the same idea for a motor, whose state is a speed and an armature current */
+    double motor_w_solve;
+    double motor_i_solve;                      // Capacitors: current (terminal 0 -> 1) at the end of the last step (trapezoidal state)
     double cap_vc;                           // Capacitors: voltage across the ideal C itself (terminal voltage minus ESR/ESL drops)
     double tline_ic_prev[2];   // transmission line: shunt-capacitor currents at each end after the last accepted step (theta method)
     int sat_last_rail;                       // Op-amps: rail chosen in the previous Newton iteration (+1/-1/0)

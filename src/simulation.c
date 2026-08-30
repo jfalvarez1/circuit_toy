@@ -1159,6 +1159,10 @@ bool simulation_step(Simulation *sim) {
         if (!comp) continue;
         comp->trap_i_solve = comp->trap_i_prev;
         comp->cap_vc_solve = comp->cap_vc;
+        if (comp->type == COMP_DC_MOTOR) {
+            comp->motor_w_solve = comp->props.dc_motor.omega;
+            comp->motor_i_solve = comp->props.dc_motor.current;
+        }
     }
 
     // Ensure we have a solution (run DC analysis if needed)
@@ -1283,6 +1287,36 @@ bool simulation_step(Simulation *sim) {
                 sim->retune_done++;
                 simulation_set_time_step(sim, want);
             }
+        }
+
+        /* A motor's rotor and its armature current, advanced once here rather than once per
+           Newton iteration inside the stamp. Explicit Euler on the mechanical side, using the
+           torque from the current at the start of the step, which is what the stamp assumed when
+           it was doing this itself - the difference is only that it now happens once. */
+        for (int i = 0; i < circuit->num_components; i++) {
+            Component *comp = circuit->components[i];
+            if (!comp || comp->type != COMP_DC_MOTOR) continue;
+            double R_a = comp->props.dc_motor.r_armature;
+            double L_a = comp->props.dc_motor.l_armature;
+            double kv = comp->props.dc_motor.kv, kt = comp->props.dc_motor.kt;
+            double J = comp->props.dc_motor.j_rotor, b_f = comp->props.dc_motor.b_friction;
+            double T_load = comp->props.dc_motor.torque_load;
+            if (!(J > 0) || !(dt > 0)) continue;
+            double omega_prev = comp->props.dc_motor.omega;
+            double I_prev = comp->props.dc_motor.current;
+            double V_bemf = kv * omega_prev;
+            double Req = R_a + L_a / dt;
+
+            int a = circuit->node_map[comp->node_ids[0]], b2 = circuit->node_map[comp->node_ids[1]];
+            double v1 = (a > 0) ? vector_get(sim->solution, a - 1) : 0;
+            double v2 = (b2 > 0) ? vector_get(sim->solution, b2 - 1) : 0;
+            double I_new = (Req > 0) ? (v1 - v2 - V_bemf) / Req + I_prev * L_a / (Req * dt) : 0;
+
+            double d_omega = (kt * I_prev - b_f * omega_prev - T_load) / J;
+            double omega_new = omega_prev + d_omega * dt;
+            if (omega_new < 0) omega_new = 0;
+            comp->props.dc_motor.omega = omega_new;
+            comp->props.dc_motor.current = I_new;
         }
 
         // Swept sources: advance the accumulated phase by the instantaneous frequency
