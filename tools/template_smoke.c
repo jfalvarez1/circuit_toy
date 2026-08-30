@@ -1143,7 +1143,10 @@ static int flow_test(void) {
            the step is bound by the kick's own width the oscillator runs, and the flow display
            splits the microamps on the crystal's net about two to one against the terminal
            currents. The solve is right (MNA enforces KCL); it is the arrows that are wrong. */
-        int kcl_exempt = (t == CIRCUIT_IV_PULLUP_SIZING || t == CIRCUIT_PIERCE);
+        /* Pierce is audited again as of 2026-08-30: its 6.8 uA was the crystal being re-stamped
+           with the next step's companion state when its terminal currents were read back, not
+           anything about the crystal. Pull-up Sizing is the one exemption left. */
+        int kcl_exempt = (t == CIRCUIT_IV_PULLUP_SIZING);
         if (!simulation_dc_analysis(sim)) { ok = 0; snprintf(why, sizeof why, "DC failed"); }
         simulation_auto_time_step(sim);
         simulation_start(sim);

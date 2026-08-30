@@ -788,7 +788,14 @@ typedef struct Component {
     int voltage_var_idx;
     bool needs_voltage_var;
     double terminal_current[MAX_TERMINALS];  // Current entering each terminal (A), from the last solve
-    double trap_i_prev;                      // Capacitors: current (terminal 0 -> 1) at the end of the last step (trapezoidal state)
+    double trap_i_prev;
+    /* What the companion state was when the current step's solve stamped it. Terminal currents
+       are recovered after the step by re-stamping each device alone, and by then trap_i_prev and
+       cap_vc have been advanced to the next step's values - so the re-stamp reproduced a stamp
+       that never happened, and the difference landed in the current-flow display as a KCL gap.
+       On the Pierce oscillator that gap was 6.8 uA. Read these instead when g_stamp_read_only. */
+    double trap_i_solve;
+    double cap_vc_solve;                      // Capacitors: current (terminal 0 -> 1) at the end of the last step (trapezoidal state)
     double cap_vc;                           // Capacitors: voltage across the ideal C itself (terminal voltage minus ESR/ESL drops)
     double tline_ic_prev[2];   // transmission line: shunt-capacitor currents at each end after the last accepted step (theta method)
     int sat_last_rail;                       // Op-amps: rail chosen in the previous Newton iteration (+1/-1/0)

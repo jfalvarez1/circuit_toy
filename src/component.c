@@ -3085,8 +3085,11 @@ CapCompanion component_cap_companion(const Component *comp, double dt, bool tran
         return cc;
     }
     double R_L = trans ? esl / dt : 0.0;      /* a parasitic inductance has no operating-point drop */
-    double i_prev = trans ? comp->trap_i_prev : 0.0;
-    double vc_prev = trans ? comp->cap_vc : v_prev;
+    /* the state this step's solve used - see trap_i_solve in component.h */
+    double st_i  = g_stamp_read_only ? comp->trap_i_solve : comp->trap_i_prev;
+    double st_vc = g_stamp_read_only ? comp->cap_vc_solve : comp->cap_vc;
+    double i_prev = trans ? st_i : 0.0;
+    double vc_prev = trans ? st_vc : v_prev;
 
     double Rtot = 1.0 / cc.Geq + esr + R_L;
     double E = vc_prev + cc.K * i_prev / cc.Geq - R_L * i_prev;
@@ -4231,7 +4234,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 double v0p = (n[0] > 0) ? vector_get(mem, n[0]-1) : 0;
                 double v1p = (n[1] > 0) ? vector_get(mem, n[1]-1) : 0;
                 matrix_add(A, idx, idx, -(1.0 / ka + Rs + kb));
-                vector_add(b, idx, -(v0p - v1p) - (1.0 / ka - Rs - kb) * i_prev + 2.0 * comp->cap_vc);
+                vector_add(b, idx, -(v0p - v1p) - (1.0 / ka - Rs - kb) * i_prev
+                                   + 2.0 * (g_stamp_read_only ? comp->cap_vc_solve : comp->cap_vc));
             } else {
                 /* operating point: the arm is an open circuit (its capacitor blocks DC), so a
                    large resistance keeps the row solvable without passing current */
@@ -4243,7 +4247,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 double Geq = Cp / (0.6 * dt);
                 double v0p = (n[0] > 0) ? vector_get(mem, n[0]-1) : 0;
                 double v1p = (n[1] > 0) ? vector_get(mem, n[1]-1) : 0;
-                double Ieq = Geq * (v0p - v1p) + (0.4 / 0.6) * comp->trap_i_prev;
+                double Ieq = Geq * (v0p - v1p)
+                           + (0.4 / 0.6) * (g_stamp_read_only ? comp->trap_i_solve : comp->trap_i_prev);
                 STAMP_CONDUCTANCE(n[0], n[1], Geq);
                 if (n[0] > 0) vector_add(b, n[0]-1, Ieq);
                 if (n[1] > 0) vector_add(b, n[1]-1, -Ieq);

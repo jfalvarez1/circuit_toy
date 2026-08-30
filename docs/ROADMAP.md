@@ -265,12 +265,33 @@ Tightening these three further means tuning thresholds until the classifier agre
 particular set of circuits, which is how a check stops meaning anything. They are reported with
 their numbers and do not fail the battery.
 
-What is left, in the order that would help:
+**Pierce closed 2026-08-30, and not for the reason written here.** The note above guessed that the
+crystal's motional-arm current was going unreported and being left to the residual. It was not. The
+crystal keeps its companion state on the component - `trap_i_prev` for the holder capacitance,
+`cap_vc` for the motional arm - and that state is advanced when a step is accepted. Terminal
+currents are recovered *after* that, by re-stamping each device alone and reading its residual, so
+the re-stamp reproduced a stamp that never happened: the right voltages against the next step's
+state. The difference was the 6.8 uA, and it was the flow display's to lose.
 
-1. Report the crystal's motional-arm current as a terminal current rather than leaving it to the
-   residual. That is Pierce, 6.8 uA.
-2. The capacitor bus in Pull-up Sizing is 3.6 % out on its own current, which is the known
-   flow-display limitation and the smallest of the three.
+The fix is the shape the MOSFET's gate capacitance already used: each step records the state its
+own solve is about to use (`trap_i_solve`, `cap_vc_solve`), and a read-only stamp reads that
+instead. Taken at the top of the step rather than just before the advance, so a re-stamp *during*
+a step - which the step-rejection path does - sees this step's state and not the last one's.
+Pierce is audited again and `--flow-test` is 187/187 with one exemption left.
+
+What is left:
+
+1. The capacitor bus in Pull-up Sizing is 3.6 % out on its own current: 6.4 uA on a net carrying
+   330 uA, between a resistor, a capacitor and a MOSFET drain. Unchanged by the crystal fix, so it
+   is something else.
+2. While looking for it: **the MOSFET's gate capacitances update their companion state inside the
+   stamp**, which runs once per Newton iteration rather than once per accepted step. That is the
+   same fault the diode's junction capacitance had. As Newton converges `vgs_prev` approaches
+   `Vgs_curr`, which drives the modelled dv/dt toward zero - so the gate capacitance may be doing
+   very little at the converged point, and `--flow-test` skips gate nodes on the grounds that their
+   displacement current is not reported, which would be masking it. Not yet measured. The way to
+   measure it is `--dvdt-test`: drive a gate with a known sine and compare against
+   (Cgs + Cgd) dv/dt worked out outside the solver.
 
 Recovering a terminal current no longer disturbs the device it is recovered from: the display
 re-stamps every component once a frame, and a stamp that remembers something - a MOSFET's gate

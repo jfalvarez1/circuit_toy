@@ -1149,6 +1149,18 @@ bool simulation_step(Simulation *sim) {
 
     Circuit *circuit = sim->circuit;
 
+    /* Remember the companion state this step is about to solve with. It is read back afterwards,
+       when the terminal currents are recovered by re-stamping each device on its own - and by
+       then the accepted step has advanced trap_i_prev and cap_vc to the next step's values.
+       Taken here rather than just before the advance so that a re-stamp during the step, which
+       the step-rejection path does, sees this step's state and not the last one's. */
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+        if (!comp) continue;
+        comp->trap_i_solve = comp->trap_i_prev;
+        comp->cap_vc_solve = comp->cap_vc;
+    }
+
     // Ensure we have a solution (run DC analysis if needed)
     if (!sim->solution) {
         if (!simulation_dc_analysis(sim)) {
