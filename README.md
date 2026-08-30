@@ -403,6 +403,15 @@ Full-featured virtual oscilloscope with:
 - **8 Channels** - connect multiple voltage probes, and **name them**: click a probe, type `Vout`, and every place the scope said CH2 says Vout
 - **Adjustable Scales** - time/div (10 ns to 100 s), volts/div (1 mV to 500 kV), and **per-channel volts/div**: each input has its own knob on the pop-out panel, and a channel you have not touched follows the main one
 - **Time step follows the scope** - changing time/div re-maps the simulation step to ~50 samples per division (never coarser than the signal-accuracy step); the dt +/- buttons still override until the next time/div change
+- **A circuit with no source sets its own step.** An oscillator is not told how fast it runs by
+  anything in its netlist, so its step used to fall through to the display rule - about twenty
+  samples a cycle, which draws a waveform well and times one badly. Where the period is set by when
+  a threshold is crossed (a comparator flipping, an inverter chain propagating) that quantised the
+  period: the Function Generator and the Triangle/Square generator were shown 10 % fast and the
+  Ring Oscillator 9.4 %. The simulation now measures its own probes as it runs and tightens to a
+  hundred samples a cycle once it has a period to measure - only ever finer, and it keeps looking
+  until there is something to see, because a crystal takes a thousand times longer to start than a
+  comparator
 - **Stacked view** - `Stack` button gives every channel its own band with its own zero line and name tag, so identical signals can be told apart; toggles back to overlay
 - **Time-Based Display** - History decimation follows the visible time window (20 x time/div is kept), so the trace is smooth at every time/div setting
 - **Voltage Scale Labels** - Y-axis shows voltage marks dynamically based on V/div setting

@@ -172,7 +172,7 @@ recovered by re-stamping each device alone and reading its residual, so the repo
 the stamp whatever the stamp says. A sign error is invisible to every conservation check in the
 suite and shows up only in a waveform - which it did, and which was explained away.
 
-## The time step is the answer for five templates
+## The time step was the answer for five templates; three are fixed
 
 `--class-test` runs every template twice, at the step the app itself picks and at a finer one, and
 asks whether it comes back the same circuit. Five say no. This is not a test artefact: the finer
@@ -187,24 +187,41 @@ it.
 | Hartley (MOSFET) | reads periodic | reads stepped at dt/4 | class |
 | Clapp (MOSFET) | reads periodic | reads stepped at dt/4 | class |
 
-The first three share a mechanism. Their period is not set by an RC or an LC but by *when a
-threshold is crossed* - a comparator flipping, an inverter chain propagating - and the step
-quantises that crossing. At the 18 to 20 samples a cycle the automatic step gives them, a period is
-quantised by about one part in eighteen, which is the size of the error observed.
+The first three shared a mechanism, and it is fixed. Their period is not set by an RC or an LC but
+by *when a threshold is crossed* - a comparator flipping, an inverter chain propagating - and the
+step quantised that crossing. None of them has a source with a frequency, so nothing in the netlist
+said how fine the step had to be and it fell through to the display's rule, about twenty samples a
+division. Twenty samples a cycle draws a waveform perfectly well and times one badly.
 
-Two things worth being plain about:
+**Fixed 2026-08-30.** A circuit with no source still has a frequency; it just cannot be known until
+the circuit has run. So the simulation now looks at itself: every 600 accepted steps it
+characterises its own probes, and if it turns out to have a period, it holds the step to the
+hundred samples a cycle a circuit with a real source would have been given. Only ever finer, at
+most twice, and it keeps looking until there is something to measure - a crystal takes a thousand
+times longer to start than a comparator, and giving up on the first flat history would have left
+exactly the slow oscillators unrefined.
 
-- The Function Generator's own oracle passes at 5000 Hz, and 5000 Hz is the converged answer. It
-  passes because `--osc-test` runs a finer step than the app does. So the suite has been verifying
-  a number the user never sees. That is the more serious half of this finding.
-- Hartley and Clapp stop reading as clean oscillations at a finer step. That may mean the coarse
-  step is sustaining them - an oscillator that oscillates because of its integration error - which
-  would make them wrong rather than imprecise. It has not been established either way yet.
+| template | was shown | now | converged answer |
+|---|---|---|---|
+| Triangle/Square Gen | 5.56 kHz | 5.00 kHz | 5.00 kHz |
+| Function Generator | 5.56 kHz | 5.00 kHz | 5.00 kHz |
+| Ring Oscillator | 125 kHz | 138.9 kHz | 138.9 kHz |
 
-What would close it: the automatic step should take the same view for threshold-crossing circuits
-that `simulation_accuracy_time_step` already takes for narrow pulses, and bound itself by how
-finely the crossing has to be resolved rather than only by the source's period. Until then
-`--class-test` reports these as WARN with the measured numbers and does not fail the battery.
+The uncomfortable half of this finding is worth keeping written down: **the Function Generator's own
+oracle passed at 5000 Hz the whole time it was being displayed at 5556 Hz**, because `--osc-test`
+ran a finer step than the app did. A suite that runs its own step is not testing the program; it is
+testing a different program that happens to share source code. `--class-test` exists to catch that
+class of thing - it runs at the step the app itself picks and asks whether the answer survives
+refinement.
+
+Still open:
+
+- **Hartley (MOSFET) and Clapp (MOSFET)** stop reading as clean oscillations at a finer step. That
+  may mean the coarse step was sustaining them - an oscillator that oscillates because of its
+  integration error - which would make them wrong rather than imprecise. Not established either
+  way. They are the two remaining `--class-test` warnings.
+- **X-Y Plotter (upload)** reads static at one step and stepped at another; its content is uploaded
+  rather than generated, so this is most likely the classifier meeting a signal that is neither.
 
 What is left, in the order that would help:
 

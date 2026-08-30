@@ -83,6 +83,13 @@ typedef struct Simulation {
     // Adaptive decimation for history (ensures history covers long time spans)
     int history_decimate_counter;   // Counter for decimation
     int history_decimate_factor;    // Current decimation factor (record every Nth sample)
+    /* A circuit with no source has no frequency until it makes one, so the step it starts with
+       cannot know how fine it needs to be. These count the steps until the next look and record
+       how many times the look has tightened it, so it settles instead of chasing itself. */
+    int retune_countdown;
+    int retune_done;
+    int retune_looks;
+
     int history_prev_factor;        // the factor before an invalidation, so what is already
                                     // recorded can be thinned to the new spacing instead of
                                     // thrown away (a wider time/div used to blank the scope)

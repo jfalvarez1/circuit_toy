@@ -135,6 +135,7 @@ void simulation_free(Simulation *sim) {
 }
 
 void simulation_start(Simulation *sim) {
+    if (sim) { sim->retune_countdown = 600; sim->retune_done = 0; sim->retune_looks = 0; }
     if (sim) {
         sim->state = SIM_RUNNING;
     }
@@ -1247,6 +1248,31 @@ bool simulation_step(Simulation *sim) {
         sim->prev_step_solution = sim->solution;
         sim->solution = trial_solution;
 
+        /* A circuit that makes its own frequency gets its step from the display until it has run
+           long enough to be measured - about twenty samples a cycle, which draws a waveform
+           perfectly well and times one badly. Where the period is set by when a threshold is
+           crossed rather than by an R and a C, the step quantises the crossing: the Function
+           Generator and the Triangle/Square generator ran 10 % fast that way and the Ring
+           Oscillator 9.4 %, and every audit agreed with them because the audits used a finer step
+           than the app did.
+           So once there is enough history to measure, look, and tighten to the hundred samples a
+           cycle a circuit with a real source would have been given. Twice at most, and only ever
+           finer: a measurement must not be able to coarsen the step that produced it, or the two
+           chase each other. */
+        if (sim->retune_done < 2 && sim->retune_looks < 60 && --sim->retune_countdown <= 0) {
+            sim->retune_countdown = 600;
+            sim->retune_looks++;
+            double want = simulation_accuracy_time_step(sim);
+            /* A fifth finer at least, or it is not worth the steps it costs. Nothing to measure
+               yet is not an answer - a crystal takes a thousand times longer to start than a
+               comparator, and giving up the first time the history is still flat would leave
+               exactly the slow oscillators unrefined. The look budget ends it instead. */
+            if (want > 0 && want < sim->time_step * 0.8) {
+                sim->retune_done++;
+                simulation_set_time_step(sim, want);
+            }
+        }
+
         // Swept sources: advance the accumulated phase by the instantaneous frequency
         for (int i = 0; i < circuit->num_components; i++) {
             Component *comp = circuit->components[i];
@@ -1602,6 +1628,31 @@ double simulation_accuracy_time_step(Simulation *sim) {
         // so let the scope's time/div rule decide (it used to force the 100 ns default, which
         // made DC and pulse-only circuits crawl through 2 million steps per screen).
         dt = MAX_TIME_STEP;
+
+        /* ...except that a circuit with no source may still have a frequency: it makes its own.
+           A relaxation oscillator, a ring, an LC tank - nothing in the netlist says how fast, so
+           the step fell through to the display's rule, which is about twenty samples a division.
+           Twenty samples a cycle is enough to draw a waveform and not nearly enough to time one:
+           when the period is set by *when a threshold is crossed* rather than by an RC, the step
+           quantises the crossing, and the Function Generator and the Triangle/Square generator
+           were both shown running 10 % fast, the Ring Oscillator 9.4 %. The audits agreed with
+           them, because the audits used a finer step than the app did.
+
+           The period cannot be known before the circuit runs. It can be measured once it has, so
+           measure it, and hold the step to the hundred samples a cycle a known source would get.
+           Only ever tightening: a measurement that came out slow must not be able to coarsen the
+           step that produced it, which is how a loop like this oscillates. */
+        double self_period = 0;
+        for (int p = 0; p < sim->circuit->num_probes && p < MAX_PROBES; p++) {
+            SignalCharacter sc;
+            simulation_characterise(sim, p, &sc);
+            if (sc.cls != SIGNAL_PERIODIC || sc.period <= 0) continue;
+            if (self_period <= 0 || sc.period < self_period) self_period = sc.period;
+        }
+        if (self_period > 0) {
+            double self_dt = self_period / 100.0;
+            if (self_dt < dt) dt = self_dt;
+        }
     }
 
     /* Five samples across the narrowest pulse, however rare that pulse is. The relaxation
