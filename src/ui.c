@@ -3320,6 +3320,81 @@ static double cardinal_spline_interp(double p0, double p1, double p2, double p3,
 // Higher = smoother curves, but more CPU usage
 #define SCOPE_INTERP_SUBDIVISIONS 8
 
+/* The level a channel centres itself on when it is AC-coupled or drawn in a fitted band.
+ *
+ * The mean of the captured window is the obvious answer and it is the wrong one. The window is a
+ * sliding, ragged fraction of a cycle - 250 samples one frame, 225 the next, because the capture
+ * takes whatever history falls inside the time base - and the mean of a partial cycle depends on
+ * which partial cycle it is. So the centre moved every frame while the waveform itself, being
+ * trigger-anchored, stood perfectly still: the Common Emitter's collector read 9.0861 V one frame
+ * and 9.1005 V the next, and at 235 px per volt the whole trace bounced 3.4 px up and down for
+ * ever. The extremes never moved at all. It was only ever the mean.
+ *
+ * Average over a whole number of cycles instead, delimited by rising crossings of the mid-level -
+ * that is the DC component a coupling capacitor would actually remove, and it does not depend on
+ * where the window happens to end. With no cycle to find (DC, a one-shot, a ramp) fall back to
+ * the midpoint of the extremes: stable, and the centre the fitted scale already assumes, since it
+ * takes its volts per division from (hi - lo) / 2.
+ */
+static double ui_scope_dc_level(const double *v, int n) {
+    if (!v || n <= 0) return 0.0;
+    double lo = v[0], hi = v[0];
+    for (int i = 1; i < n; i++) { if (v[i] < lo) lo = v[i]; if (v[i] > hi) hi = v[i]; }
+    double mid = 0.5 * (lo + hi);
+    if (hi - lo < 1e-12) return mid;
+    /* Rising crossings of the mid-level, with hysteresis - the waveform has to go properly below
+       the middle before the next crossing up counts. Without it a waveform with any structure near
+       its own middle (a Pierce oscillator's drain, which is a long way from a sine) is counted
+       several times a cycle, the span between the first and the last crossing is no longer a whole
+       number of periods, and the average over it carries a slice of a partial cycle that changes
+       with the window. That was worth 1.6 % of amplitude on the Pierce - about a pixel of bounce
+       left over after the whole-cycle averaging had removed the rest. It is the same hysteresis a
+       real trigger has, and for the same reason. */
+    double hyst = 0.05 * (hi - lo);
+    int first = -1, last = -1, armed = 0;
+    for (int i = 1; i < n; i++) {
+        if (v[i] < mid - hyst) armed = 1;
+        else if (armed && v[i - 1] < mid && v[i] >= mid) {
+            if (first < 0) first = i;
+            last = i;
+            armed = 0;
+        }
+    }
+    if (first < 0 || last <= first) return mid;
+
+    /* Where the crossings actually are, between samples. Snapping them to the nearest sample
+       leaves a fraction of a sample of the cycle in or out of the average, and the fraction is
+       different every frame because the samples fall in different places - which is the same
+       fault in miniature, worth about a pixel on a crystal oscillator's 300 px swing. Interpolate
+       the two endpoints and integrate with the trapezoid rule over exactly that span. */
+    double a = (first - 1) + (mid - v[first - 1]) / (v[first] - v[first - 1]);
+    double b = (last  - 1) + (mid - v[last  - 1]) / (v[last]  - v[last  - 1]);
+    if (!(b > a)) return mid;
+
+    double area = 0;
+    int i0 = (int)floor(a), i1 = (int)floor(b);
+    for (int i = i0; i <= i1 && i < n - 1; i++) {
+        double x0 = (double)i, x1 = (double)(i + 1);
+        double lo_x = x0 > a ? x0 : a, hi_x = x1 < b ? x1 : b;
+        if (hi_x <= lo_x) continue;
+        /* the sample line across this interval, evaluated at the clipped ends */
+        double f_lo = v[i] + (v[i + 1] - v[i]) * (lo_x - x0);
+        double f_hi = v[i] + (v[i + 1] - v[i]) * (hi_x - x0);
+        area += 0.5 * (f_lo + f_hi) * (hi_x - lo_x);
+    }
+    /* DC_DEBUG=1 prints what this decided and over what span. A centring that moves is a fraction
+       of a volt, and the difference between "the cycles averaged changed" and "the samples inside
+       them changed" is not visible on the screen or in the pixel a test measures. It is how the
+       Pierce oscillator's last pixel was settled: the span came back one sample longer on the odd
+       frame, and 15/249 V is exactly what that is worth. */
+    {   static int dbg = -1;
+        if (dbg < 0) dbg = getenv("DC_DEBUG") ? 1 : 0;
+        if (dbg) fprintf(stderr, "dc n=%d first=%d last=%d a=%.6f b=%.6f span=%.6f dc=%.6g lo=%.4g hi=%.4g\n",
+                         n, first, last, a, b, b - a, area / (b - a), lo, hi);
+    }
+    return area / (b - a);
+}
+
 void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim, void *analysis_ptr) {
     AnalysisState *analysis = (AnalysisState *)analysis_ptr;
     Rect *r = &ui->scope_rect;
@@ -3898,7 +3973,10 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     double v_avg = v_sum / ui->scope_capture_count;
                     double v_range = v_max - v_min;
                     bool is_dc = (v_range < 0.01);  // Less than 10mV variation = DC
-                    if (ui->scope_ac_coupling || fit) offset -= v_avg;   // AC view / fitted band: centre on the channel's own mean
+                    /* AC view / fitted band: centre on the channel's own DC level, taken over
+                       whole cycles rather than over the ragged captured window - ui_scope_dc_level. */
+                    if (ui->scope_ac_coupling || fit)
+                        offset -= ui_scope_dc_level(ui->scope_capture_values[ch], ui->scope_capture_count);
                     else if (stacked && v_min >= -0.05 * ui->scope_volt_div) offset -= 3.0 * ui->scope_volt_div;   // unipolar (logic) signal: 0 V one division above the band bottom (negative shifts the trace down)
                     ui->scope_ch_shift[ch] = offset - ui->scope_channels[ch].offset;
                     ui->scope_ch_center[ch] = ch_center;

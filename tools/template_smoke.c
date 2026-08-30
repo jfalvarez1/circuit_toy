@@ -998,6 +998,122 @@ static int line_test(void) {
     return fails ? 1 : 0;
 }
 
+/* ---------------------------------------------------------------------------------------
+ * --class-test: what every template is, measured, and whether it says the same thing at two
+ * different time steps.
+ *
+ * This is the suite the other suites should have been built on. Judging 187 circuits by one rule -
+ * run thirty divisions, expect a repeating waveform - flatters the ones that happen to fit it and
+ * libels the rest. A curve tracer has no frequency. A bias network never moves. A crystal takes a
+ * thousand times longer to start than a comparator. So each template is run and asked what it is,
+ * and the answer is printed: its class, the period it actually has, how long it took to settle,
+ * and how many samples a cycle it was drawn with.
+ *
+ * The check is not a table of expected frequencies - that would be a second copy of the circuits,
+ * wrong the day someone changes a resistor. It is that the answer does not depend on the step. A
+ * circuit run at the app's own dt and again at a quarter of it must come back the same class with
+ * the same period; if it does not, the dt is the answer rather than the circuit, which is the
+ * fault this catches. Anything under about ten samples a cycle is reported too, because a period
+ * measured from four samples is a number, not a measurement.
+ * ------------------------------------------------------------------------------------- */
+static const char *class_name(SignalClass c) {
+    switch (c) {
+        case SIGNAL_STATIC:   return "static";
+        case SIGNAL_PERIODIC: return "periodic";
+        case SIGNAL_ONESHOT:  return "one-shot";
+        case SIGNAL_STEPPED:  return "stepped";
+    }
+    return "?";
+}
+
+/* Run one template to a given horizon at a given step and characterise probe 0. */
+static int class_run(CircuitTemplateType t, double dt_scale, SignalCharacter *out, double *dt_used) {
+    Circuit *c = circuit_create();
+    if (!c) return 0;
+    if (circuit_place_template(c, t, 0, 0) <= 0) { circuit_free(c); return 0; }
+    if (c->num_probes < 1) { circuit_free(c); return 0; }
+    Simulation *sim = simulation_create(c);
+    if (!sim) { circuit_free(c); return 0; }
+    for (int i = 0; i < c->num_components; i++)
+        if (c->components[i]->type == COMP_AC_VOLTAGE)
+            c->components[i]->props.ac_voltage.frequency_sweep.enabled = false;
+    int ok = 1;
+    if (!simulation_dc_analysis(sim)) ok = 0;
+    simulation_auto_time_step(sim);
+    /* Take the horizon from the app dt BEFORE the override, or the finer run covers a quarter as
+       much time and every slow circuit reads as a one-shot for want of a second cycle. */
+    double dt_app = sim->time_step;
+    double horizon = 4000.0 * dt_app;
+    double dt = dt_app * dt_scale;
+    simulation_enable_adaptive(sim, false);
+    simulation_set_time_step(sim, dt);
+    simulation_set_history_span(sim, horizon);
+    simulation_start(sim);
+    simulation_set_time_step(sim, dt);
+    int guard = 0;
+    while (ok && sim->time < horizon && guard++ < 2000000)
+        if (!simulation_step(sim)) { ok = 0; break; }
+    if (ok) simulation_characterise(sim, c->probes[0].id - 1 >= 0 ? 0 : 0, out);
+    if (dt_used) *dt_used = dt;
+    simulation_free(sim);
+    circuit_free(c);
+    return ok;
+}
+
+static int class_test(double fine) {
+    int total = 0, fails = 0, thin = 0, drifted = 0;
+    int counts[4] = { 0, 0, 0, 0 };
+    printf("%-30s %-9s %12s %12s %9s  %s\n", "template", "class", "period", "settled", "samp/cyc", "note");
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti) continue;
+        SignalCharacter a, b;
+        double dta = 0, dtb = 0;
+        if (!class_run((CircuitTemplateType)t, 1.0, &a, &dta)) continue;
+        total++;
+        int ok = class_run((CircuitTemplateType)t, fine, &b, &dtb);
+
+        /* Two kinds of finding, and only one of them is a breakage. A template that will not run
+           at a finer step is broken and fails the suite. A template whose answer moves with the
+           step is telling the truth about itself - the step is too coarse for it - and that is a
+           real defect, but it is a standing one with a measured size, tracked in docs/ROADMAP.md
+           rather than held against every commit. Both are printed either way. */
+        char note[200] = "";
+        int bad = 0, drifts = 0;
+        if (!ok) {
+            snprintf(note, sizeof note, "does not run at a finer step");
+            bad = 1;
+        } else if (a.cls != b.cls) {
+            snprintf(note, sizeof note, "reads as %s at dt and %s at dt/4 - the step is the answer, not the circuit",
+                     class_name(a.cls), class_name(b.cls));
+            drifts = 1;
+        } else if (a.cls == SIGNAL_PERIODIC && a.period > 0 && b.period > 0 &&
+                   fabs(a.period - b.period) > 0.05 * a.period) {
+            snprintf(note, sizeof note, "period %.4g at the app step but %.4g finer (%.1f %% apart)",
+                     a.period, b.period, 100.0 * fabs(a.period - b.period) / a.period);
+            drifts = 1;
+        }
+        double spc = (a.cls == SIGNAL_PERIODIC && dta > 0) ? a.period / dta : 0;
+        if (!bad && !drifts && a.cls == SIGNAL_PERIODIC && spc > 0 && spc < 10) {
+            snprintf(note, sizeof note, "only %.1f samples a cycle: the period is a number, not a measurement", spc);
+            thin++;
+        }
+        counts[a.cls]++;
+        if (bad) fails++;
+        if (drifts) drifted++;
+        printf("%s %-28s %-9s %12.5g %12.5g %9.1f  %s\n",
+               bad ? "[FAIL]" : drifts ? "[WARN]" : "[ OK ]", ti->name, class_name(a.cls),
+               a.period, a.settle_time, spc, note);
+    }
+    printf("\nclass-test: %d templates - %d static, %d periodic, %d one-shot, %d stepped; "
+           "%d thin on samples a cycle, %d whose answer moves with the step (docs/ROADMAP.md), "
+           "%d that will not run at a finer step\n",
+           total, counts[SIGNAL_STATIC], counts[SIGNAL_PERIODIC], counts[SIGNAL_ONESHOT],
+           counts[SIGNAL_STEPPED], thin, drifted, fails);
+    return fails ? 1 : 0;
+}
+
 static int flow_test(void) {
     int fails = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -1068,14 +1184,31 @@ static int flow_test(void) {
                     if (comp->type == COMP_GROUND) grounded = 1;
                     else {
                         demand += comp->terminal_current[k];
-                        /* the size of the terms being summed, which is what a cancellation's
-                           absolute error scales with - not the size of the sum */
-                        if (fabs(comp->terminal_current[k]) > term_imax)
-                            term_imax = fabs(comp->terminal_current[k]);
                     }
                 }
             }
             if (grounded) continue;
+            /* The size of the terms being cancelled, over the whole merged net rather than over
+               this one node id. That is what a cancellation's absolute error scales with, and
+               the net is the right scope for two reasons: the wire currents are a minimum-norm
+               solve over the net, so whatever a device fails to report is spread across it and
+               lands on whichever node has least of its own; and the terminals doing the
+               cancelling are usually on neighbouring node ids of the same net, not on this one.
+               The Discrete Buck's switch node is the case in point - it carries 3 A between a
+               MOSFET and an inductor sitting on adjacent ids, and the node itself is left
+               holding a reverse-biased Schottky drawing nanoamps. Scoped to the node id, the
+               tolerance was nanoamps and the 1 ppm of Newton slack on 3 A read as a fault. */
+            for (int j = 0; j < c->num_components; j++) {
+                Component *comp = c->components[j];
+                if (comp->type == COMP_GROUND) continue;
+                for (int k = 0; k < comp->num_terminals; k++) {
+                    int nid = comp->node_ids[k];
+                    if (nid < 0 || nid >= MAX_NODES) continue;
+                    if (c->node_map[nid] != c->node_map[id]) continue;
+                    if (fabs(comp->terminal_current[k]) > term_imax)
+                        term_imax = fabs(comp->terminal_current[k]);
+                }
+            }
             {   // behavioural logic gates do not report terminal currents: skip their nodes
                 int behavioural = 0;
                 for (int j = 0; j < c->num_components && !behavioural; j++) {
@@ -1244,7 +1377,7 @@ static int osc_test(void) {
            capacitance, now that the diodes have one, softens exactly the corners the shaping
            depends on and the output sits a little closer to the triangle it started as. A real
            shaper has the same limit; it is why they are specified to a maximum frequency. */
-        { CIRCUIT_FUNCTION_GEN, 0.004, 5000.0, 2e-7, 0.302 },
+        { CIRCUIT_FUNCTION_GEN, 0.004, 5000.0, 2e-7, 0.324 },
         { CIRCUIT_COLPITTS, 60e-6, 712e3, 5e-9, 0.354 },
         { CIRCUIT_RING_OSC, 200e-6, 145e3, 2e-8, 0.500 },
         { CIRCUIT_HARTLEY, 80e-6, 534188, 5e-9, 0.354 },        /* ideal 1/(2 pi sqrt((L1+L2)C)) = 503 kHz; the tap is only an AC ground through the supply */
@@ -1889,6 +2022,36 @@ static int geom_overlap(Circuit *c, char *why, size_t whyn) {
     return hits;
 }
 
+/* Text sitting on a wire. A title printed across the supply rail is exactly as unreadable as one
+   printed across a transistor, and the symbol check could not see it: a rail is a wire, not a
+   body. The Common Emitter's title sat on its Vcc rail this whole time and every geometry audit
+   called the template clean.
+   Annotations only, and the same reasoning as the symbol check: a value label is placed by the
+   renderer hard against its own part, and its part's own leads are wires. */
+static int geom_text_on_wire(Circuit *c, char *why, size_t whyn) {
+    enum { MAX_TB = 512 };
+    static TextBox tb[MAX_TB];
+    int nb = geom_text_boxes(c, tb, MAX_TB, 0);
+    int hits = 0;
+    for (int i = 0; i < nb; i++) {
+        /* A couple of pixels of clearance is not a collision; the glyph box is generous already. */
+        float x0 = tb[i].x0 + 2, x1 = tb[i].x1 - 2, y0 = tb[i].y0 + 2, y1 = tb[i].y1 - 2;
+        if (x1 <= x0 || y1 <= y0) continue;
+        for (int w = 0; w < c->num_wires; w++) {
+            Node *a = circuit_get_node(c, c->wires[w].start_node_id);
+            Node *b = circuit_get_node(c, c->wires[w].end_node_id);
+            if (!a || !b) continue;
+            if (!seg_hits_box(a->x, a->y, b->x, b->y, x0, y0, x1, y1)) continue;
+            hits++;
+            if (strlen(why) < whyn - 60)
+                snprintf(why + strlen(why), whyn - strlen(why), " textwire:\"%.18s\"@(%.0f,%.0f)x(%.0f,%.0f)",
+                         tb[i].s, x0, y0, x1, y1);
+            break;   /* one report per label: a title on a rail crosses it once, not eight times */
+        }
+    }
+    return hits;
+}
+
 static int geom_test(void) {
     int bad_templates = 0, hard_failures = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -1968,22 +2131,27 @@ static int geom_test(void) {
         int overlap = geom_overlap(c, detail, sizeof detail);
         int texton = geom_text_on_symbol(c, tdetail, sizeof tdetail);
         int textpair = geom_text_on_text(c, tdetail, sizeof tdetail);
+        int textwire = geom_text_on_wire(c, tdetail, sizeof tdetail);
         /* Two of these are hard rules and the rest are cosmetic. No two symbols may overlap and
            no wire may run at an angle - those are design rules, and a template that breaks one
            is wrong. A drawn crossing, a wire passing over an unrelated node, or two terminals
            landing within 12 px are worth reporting and worth tidying, but they are legitimate in
            some topologies (TEST_PLAN 3.19.1b tracks them). Only the hard rules set the exit
            status, so this can gate CI without failing on the tracked cosmetic list. */
-        int hard = diag + overlap;
-        int ok = (diag + cross + through + touch + overlap + texton + textpair) == 0;
-        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d overlap=%d texton=%d textpair=%d%s%s\n",
+        /* Text on a symbol, on a wire, or on other text is a hard rule too. Unlike a drawn
+           crossing there is no topology in which any of them is the right answer: the label
+           cannot be read, and a schematic whose title cannot be read is not finished. */
+        int hard = diag + overlap + texton + textpair + textwire;
+        int ok = (diag + cross + through + touch + overlap + texton + textpair + textwire) == 0;
+        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d overlap=%d texton=%d textpair=%d textwire=%d%s%s\n",
                ok ? " OK " : (hard ? "FAIL" : "WARN"), ti ? ti->name : "?",
-               diag, cross, through, touch, overlap, texton, textpair, tdetail, detail);
+               diag, cross, through, touch, overlap, texton, textpair, textwire, tdetail, detail);
         if (!ok) bad_templates++;
         if (hard) hard_failures++;
         circuit_free(c);
     }
-    printf("\n%d/%d templates geometrically clean; %d with a hard violation (overlapping symbols or a diagonal wire)\n",
+    printf("\n%d/%d templates geometrically clean; %d with a hard violation (overlapping symbols, "
+           "a diagonal wire, or text printed over a symbol, over a wire, or over other text)\n",
            total - bad_templates, total, hard_failures);
     return hard_failures;
 }
@@ -3279,6 +3447,143 @@ static double pc_template(const char *part, CircuitTemplateType t, int *ok) {
     return v;
 }
 
+/* ---------------------------------------------------------------------------------------
+ * --dvdt-test: every storage element against C dv/dt, from outside the solver.
+ *
+ * This suite exists because of a bug that nothing else could see. The diode's junction
+ * capacitance was stamped with its current source the wrong way round - `-Ieq` at the anode
+ * where a capacitor uses `+Ieq` - so the branch carried C(v + v_prev)/dt instead of
+ * C(v - v_prev)/dt: not a memory of the charge but an injection of it. Every conservation
+ * check in this tool passed, and had to, because a terminal current is recovered by
+ * re-stamping the device alone and reading its residual. The report agrees with the stamp
+ * whatever the stamp says, so KCL closes around a sign error exactly as it closes around the
+ * truth. It shipped, and the waveform it changed was explained rather than believed.
+ *
+ * So this compares against arithmetic done outside the simulator. A sine of known amplitude
+ * and frequency is forced across the element by an ideal source, which fixes its voltage for
+ * all time - no transient, no operating point to settle - and the current is read at the peak
+ * of C*A*omega*cos, where the sign is unambiguous. An inverted companion does not read a few
+ * percent low here. It reads the wrong sign, or twice the value, or both.
+ * ------------------------------------------------------------------------------------- */
+typedef struct {
+    const char *name;
+    ComponentType type;
+    double bias;           /* DC offset on the source: reverse bias for a junction */
+    double value;          /* farads, or henries when inductive - set on the part, not assumed */
+    int inductive;
+    double freq;
+    double amp;
+    double cycles;         /* where to stop, in periods: at a phase where the answer is at a peak */
+    const char *note;
+} DvdtCase;
+
+/* Every value here is written onto the component, so a changed default cannot quietly move the
+   oracle with the measurement. What the defaults are is part-test's business. */
+static const DvdtCase dvdt_cases[] = {
+    { "capacitor",    COMP_CAPACITOR,      0.0,  1e-6,  0, 1000.0, 1.0, 2.0, "1 uF, the reference case" },
+    { "electrolytic", COMP_CAPACITOR_ELEC, 2.0,  1e-6,  0, 1000.0, 1.0, 2.0, "polarised, biased forward" },
+    { "diode cjo",    COMP_DIODE,         -5.0,  1e-12, 0, 1e6,    1.0, 2.0, "1 pF junction, held 5 V in reverse" },
+    { "schottky cjo", COMP_SCHOTTKY,      -5.0,  5e-12, 0, 1e6,    1.0, 2.0, "5 pF junction, held 5 V in reverse" },
+    { "inductor",     COMP_INDUCTOR,       0.0,  1e-3,  1, 1000.0, 1.0, 1.5, "1 mH: the current is the integral, so read it at the peak of 1-cos" },
+};
+
+/* i = C dv/dt with the tool's own sign convention: terminal_current[0] > 0 means current
+   enters the device at terminal 0. Returns 0 on a failure to simulate. */
+static double dvdt_measure(const DvdtCase *dc, double *expect_out, int *ok) {
+    *ok = 1; *expect_out = 0;
+    Circuit *c = circuit_create();
+    if (!c) { *ok = 0; return 0; }
+
+    /* source: amplitude on top of a DC offset, straight across the device */
+    Component *v = pt_add(c, COMP_AC_VOLTAGE, 0, 60, 0);
+    v->props.ac_voltage.amplitude = dc->amp;
+    v->props.ac_voltage.frequency = dc->freq;
+    v->props.ac_voltage.offset = dc->bias;
+    Component *g0 = pt_add(c, COMP_GROUND, 0, 160, 0);
+    Component *dev = pt_add(c, dc->type, 160, 60, 0);
+    if (!dev) { circuit_free(c); *ok = 0; return 0; }
+    switch (dc->type) {
+        case COMP_CAPACITOR:      dev->props.capacitor.capacitance = dc->value; break;
+        case COMP_CAPACITOR_ELEC: dev->props.capacitor_elec.capacitance = dc->value;
+                                  dev->props.capacitor_elec.max_voltage = 100.0;
+                                  dev->props.capacitor_elec.esr = 0.0; break;
+        /* Ideal: the DCR and the saturation curve are real and are part-test's business. Here
+           the integral has to be the whole answer, or the oracle is measuring a resistor. */
+        case COMP_INDUCTOR:       dev->props.inductor.inductance = dc->value;
+                                  dev->props.inductor.ideal = true; break;
+        case COMP_DIODE:          dev->props.diode.cjo = dc->value; break;
+        case COMP_SCHOTTKY:       dev->props.schottky.cjo = dc->value; break;
+        default: break;
+    }
+    Component *g1 = pt_add(c, COMP_GROUND, 160, 160, 0);
+
+    int top = pt_node(c, 80, 20), gnd0 = pt_node(c, 0, 140), gnd1 = pt_node(c, 160, 140);
+    v->node_ids[0] = top; v->node_ids[1] = gnd0; g0->node_ids[0] = gnd0;
+    dev->node_ids[0] = top; dev->node_ids[1] = gnd1; g1->node_ids[0] = gnd1;
+    circuit_add_wire(c, gnd0, gnd1);
+
+    Simulation *sim = simulation_create(c);
+    if (!sim) { circuit_free(c); *ok = 0; return 0; }
+
+    /* A thousand steps a cycle, fixed: the companion's own truncation error is then a tenth of
+       a percent, far below anything a sign or a factor of two would do. */
+    double period = 1.0 / dc->freq;
+    double dt = period / 1000.0;
+    simulation_enable_adaptive(sim, false);
+    simulation_set_time_step(sim, dt);
+    if (!simulation_dc_analysis(sim)) { *ok = 0; }
+    simulation_start(sim);
+    simulation_set_time_step(sim, dt);
+
+    /* Stop at a phase where the answer is at a peak and its sign is unambiguous: a capacitor's
+       current is C A w cos, read at cos = +1; an inductor's is the integral of the voltage,
+       (A/wL)(1 - cos), read at cos = -1. Whole cycles first, so nothing about the start is in
+       the answer. */
+    double t_end = dc->cycles * period;
+    int guard = 0;
+    while (*ok && sim->time < t_end - 0.5 * dt) {
+        if (!simulation_step(sim)) { *ok = 0; break; }
+        if (++guard > 20000) { *ok = 0; break; }
+    }
+    simulation_update_flow_display(sim);   /* terminal currents are recovered here, not in step() */
+    double got = *ok ? dev->terminal_current[0] : 0;
+
+    /* The oracle, computed here and not by the solver. */
+    double w = 2.0 * M_PI * dc->freq;
+    *expect_out = dc->inductive
+        ? (dc->amp / (w * dc->value)) * (1.0 - cos(w * sim->time))   /* (1/L) integral of A sin */
+        : dc->value * dc->amp * w * cos(w * sim->time);              /* C dv/dt */
+
+    simulation_free(sim);
+    circuit_free(c);
+    return got;
+}
+
+static int dvdt_test(void) {
+    int fails = 0;
+    printf("dvdt-test: reported current against C dv/dt computed outside the solver\n\n");
+    printf("%-16s %14s %14s %8s   %s\n", "element", "reported", "expected", "error", "note");
+    for (unsigned i = 0; i < sizeof dvdt_cases / sizeof dvdt_cases[0]; i++) {
+        const DvdtCase *dc = &dvdt_cases[i];
+        int ok = 1; double expect = 0;
+        double got = dvdt_measure(dc, &expect, &ok);
+        double err = (fabs(expect) > 0) ? (got - expect) / fabs(expect) : 0;
+        /* 5 %: the companion is first or near-first order and the source is sampled, so a
+           fraction of a percent is expected. A sign error is -200 %, a doubled companion
+           +100 %, an unstamped one -100 %. Nothing lands in between by accident. The inductor
+           gets more room: its answer is an accumulated integral, so the step's truncation
+           error accumulates with it rather than cancelling. */
+        int bad = !ok || fabs(err) > (dc->inductive ? 0.02 : 0.05);
+        if (bad) fails++;
+        printf("%s %-14s %14.6g %14.6g %7.2f%%   %s%s\n", bad ? "[FAIL]" : "[ OK ]",
+               dc->name, got, expect, err * 100.0, dc->note,
+               ok ? "" : "  [simulation failed]");
+    }
+    printf("\ndvdt-test: %d elements, %d failed\n",
+           (int)(sizeof dvdt_cases / sizeof dvdt_cases[0]), fails);
+    return fails ? 1 : 0;
+}
+
 static int part_test(void) {
     int fails = 0, total = 0;
     printf("part-test: every named device at its data sheet's own test condition\n\n");
@@ -3983,6 +4288,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--svg") && i + 1 < argc) svg_dir = argv[++i];
         else if (!strcmp(argv[i], "--scope-test")) return scope_dt_test();
         else if (!strcmp(argv[i], "--flow-test")) return flow_test();
+        else if (!strcmp(argv[i], "--class-test"))
+            return class_test((i + 1 < argc && atof(argv[i + 1]) > 0) ? atof(argv[i + 1]) : 0.25);
         else if (!strcmp(argv[i], "--conn-test")) return conn_test();
         else if (!strcmp(argv[i], "--file-test")) return file_test(i + 1 < argc ? argv[i + 1] : NULL);
         else if (!strcmp(argv[i], "--json-dump") && i + 2 < argc) {
@@ -4011,6 +4318,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--only") && i + 1 < argc) g_only = argv[++i];
         else if (!strcmp(argv[i], "--shard") && i + 1 < argc) i++;   /* read before this loop */
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
+        else if (!strcmp(argv[i], "--dvdt-test")) return dvdt_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--label-test")) return label_test();
         else if (!strcmp(argv[i], "--parts-file-test")) return parts_file_test();

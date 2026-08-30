@@ -735,10 +735,39 @@ circuit from the palette - which replaces everything on it.
 | 3.30.9 | `[ ]` **Automated:** `template_smoke --undo-test` | 2426 edits over 187 templates across thirteen kinds of edit, each undone and redone and compared |
 | 3.30.10 | `[ ]` **Automated:** `python tools/keys_gui.py build/circuit-playground.exe` | Ten shortcuts driven through the real event loop and checked against the app's own account of itself |
 | 3.30.11 | `[ ]` **Automated:** `python tools/undo_gui.py build/circuit-playground.exe` | A part deleted with the tool comes back on Ctrl+Z - the only check that goes through the tool, the key and the drawing |
-| 3.30.12 | `[ ]` Load Discrete Buck, Node by Node and watch the current arrows | They close on every node now: the Schottky's junction capacitance was 15 uA that no terminal reported |
-| 3.30.13 | `[ ]` Read the Function Generator's output | Slightly more triangular than before, and correctly so - the diodes' capacitance softens the breakpoints the shaping depends on |
+| 3.30.12 | `[ ]` Load Discrete Buck, Node by Node and watch the current arrows | They close. The 15 uA that does not appear in any terminal is 1 ppm of the 3 A the switch node carries - Newton slack in a cancellation, not missing displacement current, and the flow test now sizes its tolerance by the net rather than by the node id |
+| 3.30.13 | `[ ]` Read the Function Generator's output | Unchanged, at 0.324 rms/peak-to-peak. A picofarad has megohms of reactance at 5 kHz and cannot round the shaper's corners. v3.22.3 shipped this as 0.302 with an explanation attached; that was an inverted sign in the junction-capacitance stamp, not physics (docs/ROADMAP.md) |
 | 3.30.14 | `[ ]` **Automated:** `--flow-test` | 187/187 with the buck audited rather than exempt; two exemptions left, both recorded in docs/ROADMAP.md |
 | 3.30.15 | `[ ]` **Automated:** the whole battery | `bash tools/run_audits.sh` - 35 suites plus three that drive the app, about four and a half minutes |
+
+### 3.31 A trace that stands still, a title that can be read, and a stamp with the right sign (2026-08-30)
+
+Three faults found from one report each, and in every case the report was one instance of a class
+the audits could not see at all.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.31.1 | `[ ]` Load Common Emitter, let it settle, watch the trace for ten seconds | It does not move. It used to shimmer a few pixels vertically: an AC-coupled or fitted channel centred on the mean of the captured window, and the capture is a ragged fraction of a cycle whose length changes every frame |
+| 3.31.2 | `[ ]` **Automated:** `--bounce-test` | Two frames whose capture has the same envelope and the same cycle count must put the zero line in the same place. 187 templates, 0 failing; with the fix reverted, 16 fail |
+| 3.31.3 | `[ ]` Load Common Emitter and read the title | Above the circuit, not across the Vcc rail |
+| 3.31.4 | `[ ]` **Automated:** `--geom-test` | Text over a symbol, over a wire, or over other text is now a hard failure, not a warning. Text-over-wire was never checked, so a title on a supply rail read as clean; it was on 7 templates, all fixed |
+| 3.31.5 | `[ ]` **Automated:** `--dvdt-test` | A capacitor, an electrolytic, an inductor and both junction capacitances against `C dv/dt` computed outside the solver. All within 0.1 %; with the shipped sign inverted, the junction cases read -159555 % |
+| 3.31.6 | `[ ]` Read the Function Generator's output | 0.324 on the rms/peak-to-peak measure, where it has always been. v3.22.3 shipped 0.302 with an explanation attached; the explanation was wrong and so was the sign behind it |
+| 3.31.7 | `[ ]` **Automated:** `--flow-test` | 187/187 with the buck audited on its merits. Its 15 uA is 1 ppm of the 3 A its switch node carries, and the tolerance now scales with the net rather than with one node id |
+| 3.31.8 | `[ ]` **Automated:** `--class-test` | Every template measured for what it is: 29 static, 146 periodic, 4 one-shot, 8 stepped, each with its real period and settling time. Run again at a finer step, 5 answer differently - the step is the answer rather than the circuit, listed with numbers in docs/ROADMAP.md |
+| 3.31.9 | `[ ]` **Automated:** the whole battery | `bash tools/run_audits.sh` - 38 suites |
+
+Notes for whoever reads this next:
+
+- **A conservation check cannot see a sign error.** Terminal currents are recovered by re-stamping
+  each device alone and reading its residual, so the report always agrees with the stamp. Every
+  KCL check in the suite passed over an inverted junction capacitance. Only an oracle computed
+  outside the solver catches it, which is what 3.31.5 is.
+- **The Pierce oscillator's last 1.13 px was not a fault.** Its output is a hard +/-15 V square at
+  about 50 samples a period, and averaging over whole cycles reconstructs it with straight lines
+  between samples, which across an edge is wrong by up to half a sample: 15/249 V, exactly the
+  1.13 px observed. `--bounce-test` subtracts that floor rather than tolerating it by a round
+  number, so it stays sharp - with the bug reverted it still catches 16 templates.
 
 ## 4. Oscilloscope
 

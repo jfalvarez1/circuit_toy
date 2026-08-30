@@ -173,6 +173,40 @@ double simulation_get_probe_voltage(Simulation *sim, int probe_idx);
 int simulation_get_history(Simulation *sim, int probe_idx,
                            double *times, double *values, int max_points);
 
+/* ---------------------------------------------------------------------------------------
+ * What a probe is actually doing, measured rather than assumed.
+ *
+ * The audits used to judge all 187 templates by one rule: run for thirty divisions, expect a
+ * repeating waveform, expect it to have settled. That rule is wrong for most of them. A crystal
+ * oscillator needs milliseconds to start and a comparator needs microseconds. A curve tracer has
+ * no frequency at all - it is a staircase, and asking what its period is has no answer. A bias
+ * network never moves. A one-shot happens once. Judged by one rule, a circuit doing exactly what
+ * it should looks broken, and one that has quietly stopped oscillating looks fine.
+ *
+ * So a suite asks the run what it is looking at, and judges it on those terms.
+ * ------------------------------------------------------------------------------------- */
+typedef enum {
+    SIGNAL_STATIC,      /* does not move: a bias point, a rail, a divider */
+    SIGNAL_PERIODIC,    /* repeats: an oscillator, a converter, anything a source drives */
+    SIGNAL_ONESHOT,     /* moves once and stops: a step response, a discharge, a monostable */
+    SIGNAL_STEPPED      /* moves repeatedly but not periodically: a sweep, a curve tracer */
+} SignalClass;
+
+typedef struct {
+    SignalClass cls;
+    double period;        /* seconds; 0 unless SIGNAL_PERIODIC */
+    double frequency;     /* 1/period, or 0 */
+    double amplitude;     /* half the peak-to-peak of the record */
+    double dc;            /* the level it sits on */
+    double settle_time;   /* when the envelope first matched its final value, seconds */
+    int cycles;           /* whole cycles in the history */
+    int samples;          /* points the history held */
+} SignalCharacter;
+
+/* Characterise one probe's recorded history. Reads only what is already there - no stepping and
+   no side effects - so a suite may call it whenever it likes. */
+void simulation_characterise(Simulation *sim, int probe_idx, SignalCharacter *out);
+
 // Error handling
 const char *simulation_get_error(Simulation *sim);
 void simulation_clear_error(Simulation *sim);

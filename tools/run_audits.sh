@@ -25,11 +25,11 @@ if [ "$JOBS" -le 0 ]; then
     JOBS=$((JOBS > 2 ? JOBS - 1 : 2))
 fi
 
-SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test
+SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test --dvdt-test --class-test
 --flow-test --switch-test --part-test --op-test --sub-test --spice-test --xtal-test --view-test
 --conn-test --file-test --parts-file-test --undo-test --line-test --std-test --burn-test --knob-test --geom-test --param-test
 --tesla-test"
-APP_MODES="--layout-test --autoset-test --place-test --trig-test --prop-test"
+APP_MODES="--layout-test --autoset-test --place-test --trig-test --prop-test --bounce-test"
 # The battery cannot finish faster than its longest single suite, and two of them are most of it:
 # demo-test is two thirds on its own, and the plain load-and-run is the next. Both walk every
 # template independently, so they run as shards - quarters of the template list, one process each.

@@ -1669,6 +1669,98 @@ int simulation_get_history(Simulation *sim, int probe_idx,
     return count;
 }
 
+/* See the comment in simulation.h. The classification is made from the recorded history rather
+   than from the netlist on purpose: what a circuit is doing is a property of the run, and a
+   template that has quietly stopped oscillating should be reported as static, not excused because
+   its netlist contains a crystal. */
+void simulation_characterise(Simulation *sim, int probe_idx, SignalCharacter *out) {
+    if (!out) return;
+    memset(out, 0, sizeof *out);
+    out->cls = SIGNAL_STATIC;
+    if (!sim) return;
+
+    static double th[MAX_HISTORY], tv[MAX_HISTORY];
+    int n = simulation_get_history(sim, probe_idx, th, tv, MAX_HISTORY);
+    out->samples = n;
+    if (n < 4) return;
+
+    double lo = tv[0], hi = tv[0], sum = 0;
+    for (int i = 0; i < n; i++) {
+        if (tv[i] < lo) lo = tv[i];
+        if (tv[i] > hi) hi = tv[i];
+        sum += tv[i];
+    }
+    double span = hi - lo;
+    out->amplitude = span / 2.0;
+    out->dc = sum / n;
+
+    /* "Does not move" has to be relative to the size of the thing: a 5 V rail wobbling by a
+       millivolt is static, and a millivolt signal swinging by a millivolt is not. */
+    double scale = fabs(hi) > fabs(lo) ? fabs(hi) : fabs(lo);
+    if (span <= 1e-6 * (scale + 1e-12) + 1e-12) return;
+
+    /* Rising crossings of the mid-level, interpolated, and the intervals between them. A periodic
+       signal has intervals that agree; a sweep or a staircase has intervals that march. */
+    double mid = 0.5 * (lo + hi);
+    static double xt[MAX_HISTORY];
+    int nx = 0;
+    for (int i = 1; i < n && nx < MAX_HISTORY; i++) {
+        if (tv[i - 1] < mid && tv[i] >= mid) {
+            double d = tv[i] - tv[i - 1];
+            double frac = (d != 0.0) ? (mid - tv[i - 1]) / d : 0.0;
+            xt[nx++] = th[i - 1] + frac * (th[i] - th[i - 1]);
+        }
+    }
+    out->cycles = nx > 0 ? nx - 1 : 0;
+
+    if (nx < 3) {
+        out->cls = SIGNAL_ONESHOT;      /* it moved, and crossed its own middle once or not at all */
+    } else {
+        double mean_iv = (xt[nx - 1] - xt[0]) / (double)(nx - 1);
+        double worst = 0;
+        for (int i = 1; i < nx; i++) {
+            double e = fabs((xt[i] - xt[i - 1]) - mean_iv);
+            if (e > worst) worst = e;
+        }
+        /* 5 % of the mean interval: loose enough for an adaptive step landing crossings on
+           different samples, tight enough that a sweep does not pass as periodic. */
+        if (mean_iv > 0 && worst <= 0.05 * mean_iv) {
+            out->cls = SIGNAL_PERIODIC;
+            out->period = mean_iv;
+            out->frequency = 1.0 / mean_iv;
+        } else {
+            out->cls = SIGNAL_STEPPED;
+        }
+    }
+
+    /* When it settled: the first moment from which the envelope already looks like the envelope at
+       the end. A few cycles make the comparison window for something periodic, a tenth of the
+       record for anything else. This is what a suite should wait for instead of a fixed number of
+       divisions - a crystal taking milliseconds to start and an RC taking microseconds both get
+       what they need, and neither holds up the run. */
+    {
+        double w = (out->cls == SIGNAL_PERIODIC && out->period > 0)
+                   ? 3.0 * out->period : (th[n - 1] - th[0]) / 10.0;
+        if (w <= 0) { out->settle_time = th[n - 1]; return; }
+
+        double f_lo = 1e300, f_hi = -1e300;
+        for (int i = n - 1; i >= 0 && th[n - 1] - th[i] <= w; i--) {
+            if (tv[i] < f_lo) f_lo = tv[i];
+            if (tv[i] > f_hi) f_hi = tv[i];
+        }
+        double tol = 0.02 * (f_hi - f_lo) + 1e-12;
+        out->settle_time = th[n - 1];
+        for (int i = 0; i < n; i++) {
+            double w_lo = 1e300, w_hi = -1e300;
+            for (int j = i; j < n && th[j] - th[i] <= w; j++) {
+                if (tv[j] < w_lo) w_lo = tv[j];
+                if (tv[j] > w_hi) w_hi = tv[j];
+            }
+            if (fabs(w_lo - f_lo) <= tol && fabs(w_hi - f_hi) <= tol) { out->settle_time = th[i]; break; }
+        }
+    }
+}
+
 const char *simulation_get_error(Simulation *sim) {
     return sim ? sim->error_msg : "No simulation";
 }

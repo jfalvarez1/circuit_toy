@@ -1106,7 +1106,7 @@ static int place_common_emitter(Circuit *circuit, float x, float y) {
     cout->props.capacitor.capacitance = 10e-6;
 
     // Label
-    Component *label = add_comp(circuit, COMP_TEXT, x + 60, y - 100, 0);
+    Component *label = add_comp(circuit, COMP_TEXT, x + 60, y - 160, 0);
     strncpy(label->props.text.text, "Common Emitter Amp", sizeof(label->props.text.text)-1);
     label->props.text.font_size = 2;
 
@@ -1567,7 +1567,7 @@ static int place_multistage_amp(Circuit *circuit, float x, float y) {
     c3->props.capacitor.capacitance = 10e-6;
 
     // Label
-    Component *label = add_comp(circuit, COMP_TEXT, x + 100, y - 120, 0);
+    Component *label = add_comp(circuit, COMP_TEXT, x + 100, y - 180, 0);
     strncpy(label->props.text.text, "Two-Stage CE Amplifier", sizeof(label->props.text.text)-1);
     label->props.text.font_size = 2;
 
@@ -1998,7 +1998,7 @@ static int place_current_mirror(Circuit *circuit, float x, float y) {
     Component *rload = add_comp(circuit, COMP_RESISTOR, x + 180, y - 60, 90);
     rload->props.resistor.resistance = 1000.0;
 
-    Component *label = add_comp(circuit, COMP_TEXT, x + 60, y - 120, 0);
+    Component *label = add_comp(circuit, COMP_TEXT, x + 60, y - 180, 0);
     strncpy(label->props.text.text, "Current Mirror", sizeof(label->props.text.text)-1);
     label->props.text.font_size = 2;
 
@@ -2266,7 +2266,7 @@ static int place_cmos_inverter(Circuit *circuit, float x, float y) {
     Component *cload = add_comp(circuit, COMP_CAPACITOR, x + 140, y + 20, 90);
     cload->props.capacitor.capacitance = 100e-12;
 
-    Component *label = add_comp(circuit, COMP_TEXT, x + 20, y - 100, 0);
+    Component *label = add_comp(circuit, COMP_TEXT, x + 20, y - 160, 0);
     strncpy(label->props.text.text, "CMOS Inverter", sizeof(label->props.text.text)-1);
     label->props.text.font_size = 2;
 
@@ -2705,7 +2705,7 @@ static int place_comparator(Circuit *circuit, float x, float y) {
     Component *rpu = add_comp(circuit, COMP_RESISTOR, x + 180, y - 20, 90);
     rpu->props.resistor.resistance = 10000.0;
 
-    Component *label = add_comp(circuit, COMP_TEXT, x + 20, y - 100, 0);
+    Component *label = add_comp(circuit, COMP_TEXT, x + 20, y - 160, 0);
     strncpy(label->props.text.text, "Voltage Comparator", sizeof(label->props.text.text)-1);
     label->props.text.font_size = 2;
 
@@ -7541,7 +7541,7 @@ static int place_line_model_ladder(Circuit *circuit, float x, float y) {
         TW(bl, tl); TW(tr, n);
         connect_terminals(circuit, ld, 1, g, 0);
         t->node_ids[0] = tl; t->node_ids[1] = tr; ld->node_ids[0] = n;
-        add_label(circuit, x + 40, ry - 70, names[row]);
+        add_label(circuit, x + 80, ry - 70, names[row]);   /* right of the bus at x+60, in the gap above the row it names */
     }
     add_label(circuit, x + 20, y - 100, "Line model ladder: 138 kV, 30 mi, 90 MW - probe the three load buses");
     return 13;
@@ -12688,7 +12688,7 @@ static int place_sevenseg_test(Circuit *circuit, float x, float y) {
         sw->node_ids[1 - sw_in] = TN(x + s * 460.0f, ry);
         TW(TN(x + s * 460.0f, ry), TN(x + s * 540.0f, ry));
 
-        add_label(circuit, tx - 12.0f, py - 26.0f, seg[i].name);
+        add_label(circuit, tx - 12.0f, ry - 24.0f, seg[i].name);   /* top of this pin's turn column, above its driver row */
 
         /* Rail column, drawn as a chain between the rows that tap it. A node sitting on top of
            a wire is not a connection here - only wire ends and coincident nodes are - so the

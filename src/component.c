@@ -3121,8 +3121,13 @@ static void stamp_junction_cap(Component *comp, Matrix *A, Vector *b, const int 
     double G = cjo / dt;
     double Ieq = G * v_prev;
     STAMP_CONDUCTANCE(n[0], n[1], G);
-    if (n[0] > 0) vector_add(b, n[0] - 1, -Ieq);
-    if (n[1] > 0) vector_add(b, n[1] - 1, Ieq);
+    /* +Ieq at the anode, the same way an ordinary capacitor and the crystal's holder
+       capacitance are stamped. Written the other way round the companion does not remember the
+       charge, it injects it: the branch carries C(v + v_prev)/dt instead of C(v - v_prev)/dt.
+       KCL still closes, because the residual only has to agree with whatever was stamped - it is
+       the waveforms that are wrong, and the Function Generator's shaper said so. */
+    if (n[0] > 0) vector_add(b, n[0] - 1, Ieq);
+    if (n[1] > 0) vector_add(b, n[1] - 1, -Ieq);
 }
 
 void component_stamp(Component *comp, Matrix *A, Vector *b,

@@ -34,6 +34,266 @@ static bool rects_overlap(const Rect *a, const Rect *b) {
 
    It needs a renderer because the panel builds its row list while drawing it; the dummy video
    driver is enough (SDL_VIDEODRIVER=dummy), and that is what CI runs it under. */
+/* --bounce-test: a settled trace has to hold its vertical position, not just its horizontal one.
+ *
+ * --trig-test already checks that a repeating waveform stands still left to right. This checks the
+ * other axis, and it caught something that had been on the screen the whole time: an AC-coupled or
+ * fitted channel centred itself on the mean of the captured window, and the capture is a ragged
+ * fraction of a cycle whose length changes from frame to frame (250 samples, then 225). The mean
+ * of a partial cycle depends on which partial cycle it is, so the zero line moved every frame and
+ * took the trace with it - a slow shimmer of a few pixels on a waveform that was otherwise
+ * perfectly triggered. It is exactly the kind of fault a screenshot cannot show and a person
+ * watching the screen for ten seconds cannot miss.
+ *
+ * So this drives the real render path frame by frame, with the real capture and the real band
+ * arithmetic, and measures where each channel's zero line lands in pixels. A settled, triggered
+ * channel may not move more than a pixel over sixty frames.
+ */
+static int bounce_test(double dt_force) {
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        printf("bounce-test: no video (%s) - skipped\n", SDL_GetError());
+        return 0;
+    }
+    SDL_Window *win = SDL_CreateWindow("bounce-test", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                                       1600, 1000, SDL_WINDOW_HIDDEN);
+    SDL_Renderer *ren = win ? SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE) : NULL;
+    if (!ren) {
+        printf("bounce-test: no renderer (%s) - skipped\n", SDL_GetError());
+        if (win) SDL_DestroyWindow(win);
+        SDL_Quit();
+        return 0;
+    }
+
+    enum { FRAMES = 60 };
+    const double FRAME_DT = 1.0 / 60.0;
+    const double LIMIT_PX = 1.0;
+
+    UIState *ui = calloc(1, sizeof *ui);
+    ui_init(ui);
+    ui->window_width = 1600; ui->window_height = 1000;
+    ui_update_layout(ui);
+
+    int fails = 0, judged = 0, skipped = 0, moving = 0, stepped = 0;
+    /* BOUNCE_ONLY=substring runs one template, so SCOPE_DEBUG output is about one circuit instead
+       of 187. Chasing a pixel needs the numbers for the two frames that disagree. */
+    const char *only = getenv("BOUNCE_ONLY");
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti) continue;
+        if (only && only[0] && !strstr(ti->name, only)) continue;
+        Circuit *c = circuit_create();
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        Simulation *sim = simulation_create(c);
+        ui_scope_apply_template_preset(ui, (CircuitTemplateType)t);
+        ui->scope_num_channels = c->num_probes < MAX_PROBES ? c->num_probes : MAX_PROBES;
+        for (int ch = 0; ch < MAX_PROBES; ch++) {
+            ui->scope_channels[ch].enabled = ch < ui->scope_num_channels;
+            ui->scope_channels[ch].probe_idx = ch;
+        }
+        /* Same reason as trig-test: a swept source has no one frequency, and what the screen shows
+           then depends on where in the sweep the run stopped. */
+        for (int i = 0; i < c->num_components; i++)
+            if (c->components[i]->type == COMP_AC_VOLTAGE)
+                c->components[i]->props.ac_voltage.frequency_sweep.enabled = false;
+
+        if (ui->scope_num_channels < 1 || !simulation_dc_analysis(sim)) {
+            simulation_free(sim); circuit_free(c); skipped++; continue;
+        }
+        simulation_auto_time_step(sim);
+        { double dtp = simulation_scope_time_step(sim, ui->scope_time_div);
+          if (dtp > 0 && dtp < sim->time_step) simulation_set_time_step(sim, dtp); }
+        /* `--bounce-test DT` forces the step. Circuits do not all settle at the same rate, and a
+           rate depends on the step they are taking: an answer measured at one dt can be a property
+           of that dt rather than of the circuit. Running the suite at two or three steps is how you
+           tell the difference - a real display fault reads the same at all of them. */
+        if (dt_force > 0) { simulation_enable_adaptive(sim, false); simulation_set_time_step(sim, dt_force); }
+        simulation_set_history_span(sim, 20.0 * ui->scope_time_div);
+        simulation_start(sim);
+        if (dt_force > 0) simulation_set_time_step(sim, dt_force);
+        /* Settle first: a start-up transient moving the trace is the trace being right. Rather
+           than trusting one fixed time for 187 different circuits, watch the waveform and stop
+           when it stops changing - an oscillator building up over milliseconds and an RC settling
+           in microseconds both get what they need, and neither holds up the suite. */
+        int alive = 1;
+        {
+            double last_lo = 1e300, last_hi = -1e300;
+            int stable = 0, rounds = 0;
+            double chunk = ui->scope_time_div;      /* one division at a time */
+            while (stable < 3 && rounds++ < 300 && alive) {
+                double until = sim->time + chunk;
+                int guard = 0;
+                while (sim->time < until && guard++ < 200000)
+                    if (!simulation_step(sim)) { alive = 0; break; }
+                if (!alive) break;
+                double lo = 1e300, hi = -1e300;
+                static double th[MAX_HISTORY], tv[MAX_HISTORY];
+                int hn = simulation_get_history(sim, ui->scope_channels[0].probe_idx, th, tv, MAX_HISTORY);
+                for (int i = 0; i < hn; i++) { if (tv[i] < lo) lo = tv[i]; if (tv[i] > hi) hi = tv[i]; }
+                double span = hi - lo;
+                int same = (fabs(lo - last_lo) <= 1e-3 * (span + 1e-12) &&
+                            fabs(hi - last_hi) <= 1e-3 * (span + 1e-12));
+                stable = same ? stable + 1 : 0;
+                last_lo = lo; last_hi = hi;
+            }
+        }
+        if (!alive) { simulation_free(sim); circuit_free(c); skipped++; continue; }
+
+        /* Ask each channel what it is before judging it, and ask it per channel rather than per
+           template - a schematic can put a clean oscillation on one probe and a waveform still
+           filling out on the next, and the second one has nothing to say about the first.
+           The invariant below - same envelope and same cycle count means same waveform, so the
+           zero line must not move - holds for something periodic and does not hold for something
+           still changing shape. The Pierce oscillator is the case that matters: it clips at its
+           rails, so its envelope is pinned at +/-15 V while the waveform underneath is still
+           filling out, and two frames can agree on every number this suite can see while
+           genuinely showing different things. Judged anyway it reported 1.13 px that no amount of
+           settling would remove, because nothing was wrong. */
+        int ch_stepped[MAX_PROBES];
+        int any_stepped = 0;
+        for (int ch = 0; ch < MAX_PROBES; ch++) ch_stepped[ch] = 0;
+        for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
+            if (!ui->scope_channels[ch].enabled) continue;
+            SignalCharacter sc;
+            simulation_characterise(sim, ui->scope_channels[ch].probe_idx, &sc);
+            if (sc.cls == SIGNAL_STEPPED) { ch_stepped[ch] = 1; any_stepped = 1; }
+        }
+        if (any_stepped) stepped++;
+
+        /* Two things are measured per channel, and the difference between them is the whole
+           point. `drawn` is where the waveform's own top and bottom actually land on the glass,
+           which is what a person sees move. `sig` is the same top and bottom in volts, which is
+           what the circuit is really doing. A trace that moves because the signal moved is a
+           correct trace - a compressor starting, a curve tracer stepping its gate, a converter
+           ramping up. A trace that moves while the volts stand still is the display's fault, and
+           that is the only thing this suite is entitled to fail. */
+        /* One row per frame per channel: the envelope the capture held, the zero line the channel
+           chose from it, and the scale it was drawn at. The comparison happens afterwards. */
+        static double f_lo[MAX_PROBES][FRAMES], f_hi[MAX_PROBES][FRAMES];
+        static double f_dc[MAX_PROBES][FRAMES], f_sc[MAX_PROBES][FRAMES];
+        static int f_x[MAX_PROBES][FRAMES], f_ns[MAX_PROBES][FRAMES];
+        int f_n[MAX_PROBES];
+        for (int ch = 0; ch < MAX_PROBES; ch++) f_n[ch] = 0;
+
+        for (int f = 0; f < FRAMES && alive; f++) {
+            double until = sim->time + FRAME_DT;
+            int fg = 0;
+            while (sim->time < until && fg++ < 20000) if (!simulation_step(sim)) { alive = 0; break; }
+            if (!alive) break;
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+            SDL_RenderClear(ren);
+            ui_render_oscilloscope(ui, ren, sim, NULL);
+            for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
+                if (!ui->scope_channels[ch].enabled) continue;
+                int n = ui->scope_capture_count;
+                if (n < 2 || f_n[ch] >= FRAMES) continue;
+                double vlo = ui->scope_capture_values[ch][0], vhi = vlo;
+                for (int i = 1; i < n; i++) {
+                    double v = ui->scope_capture_values[ch][i];
+                    if (v < vlo) vlo = v;
+                    if (v > vhi) vhi = v;
+                }
+                /* How many times the waveform crosses its own mid-level going up: with the top
+                    and the bottom, that is enough to say two frames are showing the same thing.
+                    The extremes alone are not - a curve tracer stepping its gate revisits a level
+                    with a different waveform under it, and gets compared against itself. */
+                double mid = 0.5 * (vlo + vhi);
+                int xings = 0;
+                for (int i = 1; i < n; i++)
+                    if (ui->scope_capture_values[ch][i - 1] < mid &&
+                        ui->scope_capture_values[ch][i] >= mid) xings++;
+                int k = f_n[ch]++;
+                f_ns[ch][k] = n;
+                f_x[ch][k] = xings;
+                f_lo[ch][k] = vlo;
+                f_hi[ch][k] = vhi;
+                /* the zero line the channel chose, in volts: the centring subtracts it, so the
+                   shift it recorded is that level negated */
+                f_dc[ch][k] = -ui->scope_ch_shift[ch];
+                f_sc[ch][k] = ui->scope_ch_scale[ch];
+            }
+        }
+        if (!alive) { simulation_free(sim); circuit_free(c); skipped++; continue; }
+
+        /* The invariant, and it needs no tolerance on what the circuit is doing: two frames whose
+           captured window has the same top and the same bottom are showing the same waveform, so
+           they must put the zero line in the same place. A signal that is genuinely moving never
+           trips this - its envelope is different every frame, so no two frames are compared. What
+           it catches is a centring that depends on something other than the signal, which is what
+           the mean of a ragged window is: same waveform, different answer, trace bounces. */
+        double worst = 0, worst_sig = 0; int worst_ch = -1;
+        for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
+            if (ch_stepped[ch]) continue;      /* still changing shape: nothing to compare against */
+            for (int i = 0; i < f_n[ch]; i++) {
+                for (int j = i + 1; j < f_n[ch]; j++) {
+                    double sl = fabs(f_lo[ch][i]) + fabs(f_lo[ch][j]);
+                    double sh = fabs(f_hi[ch][i]) + fabs(f_hi[ch][j]);
+                    if (f_x[ch][i] != f_x[ch][j]) continue;
+                    if (fabs(f_lo[ch][i] - f_lo[ch][j]) > 1e-9 * (sl + 1e-12)) continue;
+                    if (fabs(f_hi[ch][i] - f_hi[ch][j]) > 1e-9 * (sh + 1e-12)) continue;
+                    double sc = f_sc[ch][i] > f_sc[ch][j] ? f_sc[ch][i] : f_sc[ch][j];
+                    double moved = fabs(f_dc[ch][i] - f_dc[ch][j]) * sc;
+                    /* What the samples themselves can resolve, subtracted before judging.
+                       Averaging a waveform over whole cycles reconstructs it between samples with
+                       straight lines, and across a discontinuity that is wrong by up to half a
+                       sample of the edge - so the level a square wave reports carries an
+                       irreducible (hi - lo) / N, where N is the number of samples averaged. On the
+                       Pierce oscillator, whose output is a hard +/-15 V square at about 50 samples
+                       a period, that is 15/249 V - which at 9.375 px per volt is the 1.13 px this
+                       suite spent a long time trying to remove. It is not a display fault and no
+                       amount of settling touches it. A smooth waveform has no discontinuity and
+                       this term is negligible, so nothing else is loosened by it. */
+                    int ns = f_ns[ch][i] < f_ns[ch][j] ? f_ns[ch][i] : f_ns[ch][j];
+                    double edge = (f_hi[ch][i] - f_lo[ch][i]) * sc;
+                    double floor_px = (ns > 0) ? edge / (double)ns : 0.0;
+                    moved -= floor_px;
+                    if (moved > worst) { worst = moved; worst_ch = ch; }
+                }
+            }
+            /* how much the envelope moved over the run, for the reader: a large number here says
+               the template is a transient and most of its frames were never comparable */
+            double elo = f_n[ch] ? f_lo[ch][0] : 0, ehi = elo;
+            for (int i = 1; i < f_n[ch]; i++) {
+                if (f_lo[ch][i] < elo) elo = f_lo[ch][i];
+                if (f_lo[ch][i] > ehi) ehi = f_lo[ch][i];
+            }
+            double drift = (ehi - elo) * (f_n[ch] ? f_sc[ch][0] : 0);
+            if (ch == worst_ch || worst_ch < 0) worst_sig = drift;
+        }
+        judged++;
+        int bad = (worst > LIMIT_PX);
+        if (bad) fails++;
+        if (worst_sig > LIMIT_PX) moving++;
+        printf("[%s] bounce %-28s zero line moves %6.2f px between frames showing the same waveform",
+               bad ? "FAIL" : any_stepped ? "NOTE" : " OK ", ti->name, worst);
+        if (any_stepped) printf("  [a channel still changing shape was not judged]");
+        if (bad && worst_ch >= 0) {
+            /* A number on its own is not a report. Say what the offending channel is, so the
+               reader can tell a display fault from a waveform this suite should not be judging. */
+            SignalCharacter wc;
+            simulation_characterise(sim, ui->scope_channels[worst_ch].probe_idx, &wc);
+            printf("  [%s: period %.4g, %d cycles, settled %.4g, %d samples]",
+                   wc.cls == SIGNAL_STATIC ? "static" : wc.cls == SIGNAL_PERIODIC ? "periodic" :
+                   wc.cls == SIGNAL_ONESHOT ? "one-shot" : "stepped",
+                   wc.period, wc.cycles, wc.settle_time, wc.samples);
+        }
+        if (worst_ch >= 0) printf("  (%s, envelope drift %.0f px)", ui_channel_name(ui, worst_ch), worst_sig);
+        printf("\n");
+
+        simulation_free(sim);
+        circuit_free(c);
+    }
+
+    free(ui);
+    SDL_DestroyRenderer(ren);
+    SDL_DestroyWindow(win);
+    SDL_Quit();
+    printf("\nbounce-test: %d templates judged, %d skipped, %d with a channel not judged "
+           "because its waveform is still changing shape, %d whose signal is genuinely still "
+           "moving, %d whose trace moves further than the signal explains over %d frames\n",
+           judged, skipped, stepped, moving, fails, FRAMES);
+    return fails ? 1 : 0;
+}
+
 static int prop_test(void) {
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         printf("prop-test: no video (%s) - skipped\n", SDL_GetError());
@@ -862,6 +1122,8 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--autoset-test")) return autoset_test();
         else if (!strcmp(argv[i], "--place-test")) return place_test();
         else if (!strcmp(argv[i], "--trig-test")) return trig_test();
+        else if (!strcmp(argv[i], "--bounce-test"))
+            return bounce_test((i + 1 < argc) ? atof(argv[i + 1]) : 0.0);
         else if (!strcmp(argv[i], "--prop-test")) return prop_test();
         else if (!strcmp(argv[i], "--crashlog")) { crashlog_dump_last(); return 0; }
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); usage(); return 2; }

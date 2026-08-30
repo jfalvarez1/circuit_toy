@@ -138,21 +138,73 @@ The cause of the largest one was that the diode had a junction capacitance in it
 (`cjo`, 1 pF signal, 5 pF Schottky, 50 pF varactor) that **nothing read**. It was a default value
 with no stamp behind it, so a reverse-biased junction carried no displacement current at all.
 
-**Fixed 2026-08-30.** The diode and the Schottky stamp their junction capacitance, and the buck
-closes: 15 uA accounted for, and it is audited again rather than exempt. Backward Euler
-deliberately - a trapezoidal companion needs the branch current from the last accepted step, and
-that is state which would be advanced once per Newton iteration rather than once per step.
+**Stamped 2026-08-30, and the first version of it was wrong.** The diode and the Schottky stamp
+their junction capacitance now. Backward Euler deliberately - a trapezoidal companion needs the
+branch current from the last accepted step, and that is state which would be advanced once per
+Newton iteration rather than once per step.
 
-Two consequences worth recording, because neither was obvious:
+**Corrected 2026-08-30 (v3.22.4).** As first written the companion was stamped with the current
+source the wrong way round: `-Ieq` at the anode where an ordinary capacitor, and the crystal's
+holder capacitance, both use `+Ieq`. That does not model a capacitor. The branch carried
+`C(v + v_prev)/dt` instead of `C(v - v_prev)/dt` - not a memory of the charge but an injection of
+it, roughly twice the displacement current, in phase with the voltage rather than with its
+derivative.
 
-- The Function Generator's shaped sine moved from 0.324 to 0.302 on the rms/peak-to-peak
-  measure, and it is real. The shaper bends a triangle at four diode breakpoints, and at a
-  breakpoint the diode's own dynamic resistance is megohms - the same order as a picofarad's
-  reactance at these frequencies. The capacitance softens exactly the corners the shaping
-  depends on. A real shaper has the same limit, which is why they carry a maximum frequency.
-  The expectation moved with it, and says why.
-- The template was already sitting one part in twenty inside its tolerance before this. A check
-  that passes by that margin is not really passing.
+Two claims were made for that version and both were artefacts of the sign:
+
+- *"The buck closes: 15 uA accounted for."* It does not. The gap reappears the moment the sign is
+  right, unchanged at 15.4 uA, because a reverse-biased Schottky at the sampled instant carries
+  almost no displacement current - `v - v_prev` is nearly zero between switching edges. What had
+  closed the node was a spurious current large enough to cover the discrepancy. The real gap is
+  1 ppm of the 3 A that the switch node carries between the MOSFET and the inductor: Newton slack
+  in a large cancellation, not missing physics. The flow test's own tolerance already reasons this
+  way, but it sized the cancellation per node id, and those 3 A terminals sit on neighbouring ids
+  of the same merged net. Scoped to the net, the buck passes on its merits and Pierce and Pull-up
+  Sizing still fail, which is the point.
+- *"The Function Generator's shaped sine moved from 0.324 to 0.302, and it is real."* It was not
+  real. With the sign right the measure reads 0.324, exactly where it was before the capacitance
+  existed, and the expectation has been put back. A picofarad has megohms of reactance at 5 kHz;
+  it cannot bend a diode shaper's corners, and the reasoning that said it could was written to
+  explain a number rather than to predict one.
+
+The lesson worth keeping: KCL closing proves nothing about a stamp's sign. Terminal currents are
+recovered by re-stamping each device alone and reading its residual, so the report agrees with
+the stamp whatever the stamp says. A sign error is invisible to every conservation check in the
+suite and shows up only in a waveform - which it did, and which was explained away.
+
+## The time step is the answer for five templates
+
+`--class-test` runs every template twice, at the step the app itself picks and at a finer one, and
+asks whether it comes back the same circuit. Five say no. This is not a test artefact: the finer
+runs agree with each other down to dt/64, so there is a converged answer and the app is not showing
+it.
+
+| template | period at the app's step | converged | out by |
+|---|---|---|---|
+| Triangle/Square Gen | 0.18 ms (5.56 kHz) | 0.2 ms (5 kHz) | 10 % |
+| Function Generator | 0.18 ms (5.56 kHz) | 0.2 ms (5 kHz) | 10 % |
+| Ring Oscillator | 8.0 us (125 kHz) | 7.25 us (138 kHz) | 9.4 % |
+| Hartley (MOSFET) | reads periodic | reads stepped at dt/4 | class |
+| Clapp (MOSFET) | reads periodic | reads stepped at dt/4 | class |
+
+The first three share a mechanism. Their period is not set by an RC or an LC but by *when a
+threshold is crossed* - a comparator flipping, an inverter chain propagating - and the step
+quantises that crossing. At the 18 to 20 samples a cycle the automatic step gives them, a period is
+quantised by about one part in eighteen, which is the size of the error observed.
+
+Two things worth being plain about:
+
+- The Function Generator's own oracle passes at 5000 Hz, and 5000 Hz is the converged answer. It
+  passes because `--osc-test` runs a finer step than the app does. So the suite has been verifying
+  a number the user never sees. That is the more serious half of this finding.
+- Hartley and Clapp stop reading as clean oscillations at a finer step. That may mean the coarse
+  step is sustaining them - an oscillator that oscillates because of its integration error - which
+  would make them wrong rather than imprecise. It has not been established either way yet.
+
+What would close it: the automatic step should take the same view for threshold-crossing circuits
+that `simulation_accuracy_time_step` already takes for narrow pulses, and bound itself by how
+finely the crossing has to be resolved rather than only by the source's period. Until then
+`--class-test` reports these as WARN with the measured numbers and does not fail the battery.
 
 What is left, in the order that would help:
 

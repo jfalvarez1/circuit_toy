@@ -452,8 +452,10 @@ what is being left out:
   ideal mode is Ebers-Moll transport with no Early effect.
 - **Diode / Schottky** - Is, the emission coefficient, the reverse breakdown, and the junction
   capacitance `cjo`, which is stamped: a reverse-biased junction carries displacement current, so
-  a switching node's charge is accounted for and a diode shaper has the frequency limit a real
-  one has.
+  a switching node's charge is accounted for. The companion is stamped the way an ordinary
+  capacitor is, `+Ieq` at the anode; written the other way round it injects the charge instead of
+  remembering it, and every conservation check in the suite still passes, because a terminal
+  current is read back out of the same stamp that produced it.
 - **Capacitor** - ESR, ESL and leakage resistance, all in the solve: ESR puts the current square
   straight onto the ripple, ESL sharpens the edges, leakage bleeds the charge away.
 - **Inductor** - winding resistance (DCR), saturation current.
@@ -999,11 +1001,32 @@ build/tools/template_smoke.exe --label-test      # every probe named for the nod
 build/tools/template_smoke.exe --span-test       # turning the time/div up does not blank the scope
 build/tools/template_smoke.exe --parts-file-test # one of all 124 component types, through both file formats
 build/tools/template_smoke.exe --undo-test       # 13 kinds of edit over every template, undone and redone
+build/tools/template_smoke.exe --dvdt-test       # every storage element against C dv/dt, computed outside the solver
+build/tools/template_smoke.exe --class-test      # what each circuit is, and whether it says the same at a finer step
 build/circuit-playground.exe --place-test        # every circuit is recognised from its click and replaces the last
 build/circuit-playground.exe --trig-test         # a repeating waveform stands still, and is drawn from enough samples
 build/circuit-playground.exe --prop-test         # every row the properties panel offers can actually be applied
 build/circuit-playground.exe --autoset-test      # Autoset leaves every channel on the screen and triggerable
+build/circuit-playground.exe --bounce-test       # a settled trace holds its vertical position, not just its horizontal one
 ```
+
+Two of those exist because of faults nothing else could see.
+
+`--dvdt-test` compares what a capacitor, an electrolytic, an inductor and a diode's junction
+capacitance report against `C dv/dt` worked out **outside** the solver. Every conservation check in
+the suite is blind to a stamp's sign: a terminal current is recovered by re-stamping the device and
+reading its residual, so the report agrees with the stamp whatever the stamp says, and KCL closes
+around an error exactly as it closes around the truth. A sign inversion in the junction capacitance
+shipped once for want of this check.
+
+`--class-test` runs every template at the app's own step and again at a finer one, and asks whether
+it comes back the same circuit. Judging 187 circuits by one rule - run thirty divisions, expect a
+repeating waveform - flatters the ones that fit it and libels the rest: a curve tracer has no
+frequency, a bias network never moves, a crystal takes a thousand times longer to start than a
+comparator. So each one is measured and reported as what it is: **29 static, 146 periodic, 4
+one-shot, 8 stepped**, with its real period, when it settled, and how many samples a cycle it was
+drawn with. Five templates answer differently at a finer step, which means the step is the answer
+rather than the circuit; they are listed with their measured numbers in `docs/ROADMAP.md`.
 
 Two flags help when a suite has something to say: `--only SUBSTRING` runs one template's cases,
 and `--probe-dt N` forces the time step so an expectation can be asked whether it is converged or
