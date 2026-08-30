@@ -5028,7 +5028,8 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                     V_coil = v0 - v1;
                 }
                 I_prev = V_coil / R_coil;
-                comp->props.relay.i_coil = I_prev;
+                /* not while the stamp is only being read: --restamp-test measures this */
+                if (!g_stamp_read_only) comp->props.relay.i_coil = I_prev;
             } else {
                 // Non-ideal: R + L companion model
                 // V = I*R + L*dI/dt -> V = I*R_eq + V_eq
@@ -5050,22 +5051,33 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                     double V_coil = v0 - v1;
                     // I = (V - V_eq) / R_eq = (V - L/dt * I_prev) / R_eq
                     double I_new = (V_coil + (L_coil / dt) * I_prev) / R_eq;
-                    comp->props.relay.i_coil = I_new;
+                    if (!g_stamp_read_only) comp->props.relay.i_coil = I_new;
                     I_prev = I_new;  // Use updated current for hysteresis
                 }
             }
 
             // --- Hysteresis Logic ---
             // Apply hysteresis: energize at pickup, de-energize at dropout
+            /* The coil current and the armature both live on the component, and a stamp that is
+               only being read - the one that recovers terminal currents for the current-flow
+               display - must not move either. Reading what a circuit is doing may not change what
+               it does; --restamp-test runs every template and every component type twice, once
+               with the display updating, and requires the two runs to agree to the last bit. The
+               relay was the one part that failed it.
+
+               A deeper thing is still true here and is recorded in docs/ROADMAP.md: I_prev is
+               advanced inside the stamp, so it moves once per Newton iteration rather than once
+               per accepted step. That is the fault the MOSFET's gate capacitance had. It is left
+               alone for now because no template uses a relay and the fix wants coverage first. */
             double I_abs = fabs(I_prev);
-            if (!energized && I_abs >= i_pickup) {
-                // Pull-in: energize relay
-                comp->props.relay.energized = true;
-                energized = true;
-            } else if (energized && I_abs <= i_dropout) {
-                // Drop-out: de-energize relay
-                comp->props.relay.energized = false;
-                energized = false;
+            if (!g_stamp_read_only) {
+                if (!energized && I_abs >= i_pickup) {
+                    comp->props.relay.energized = true;      // pull-in
+                    energized = true;
+                } else if (energized && I_abs <= i_dropout) {
+                    comp->props.relay.energized = false;     // drop-out
+                    energized = false;
+                }
             }
 
             // --- Contact Circuit (NO to COM) ---

@@ -172,6 +172,46 @@ recovered by re-stamping each device alone and reading its residual, so the repo
 the stamp whatever the stamp says. A sign error is invisible to every conservation check in the
 suite and shows up only in a waveform - which it did, and which was explained away.
 
+## Reading a circuit must not change it
+
+Four faults found on 2026-08-30 were the same fault wearing different clothes: a component's
+companion state read or written at the wrong moment. The diode's junction capacitance stamped with
+an inverted sign, the crystal re-stamped with the next step's state, the MOSFET's gate capacitance
+advancing once per Newton iteration, and the relay's coil doing the same. Finding them one at a
+time is not a method.
+
+`--restamp-test` is the invariant behind all of them, and it needs no oracle and no physics. Every
+component's terminal current is recovered by re-stamping it alone with `g_stamp_read_only` set,
+which says "this stamp is being read, not solved". So: run a circuit twice, identically, and update
+the current-flow display on one of the runs. If a component writes its state while being read, the
+two runs diverge, and which template or which part diverged says where.
+
+It runs both ways round, because neither alone is enough:
+
+- **187 templates**, twice each. Clean.
+- **121 component types**, each on a source-part-load circuit of its own. This pass exists because
+  a DC motor, a relay, a battery and a fuse appear in **no template at all**, and all four are
+  among the parts that write their own state inside their stamp. The relay failed it - its coil
+  current and its armature both moved when the display asked what the current was - and is fixed.
+
+Two things it does not yet cover, both recorded rather than quietly left:
+
+1. **The relay's coil current advances once per Newton iteration**, not once per accepted step -
+   the same fault the MOSFET's gate capacitance had, and the reason its inductor companion
+   integrates faster than the circuit does. Guarding the read-only path made reading harmless
+   without fixing this. It wants the same treatment the crystal got: advance once per accepted
+   step in `simulation.c`. No template uses a relay, so that fix needs coverage built first.
+2. **The DC motor integrates its rotor speed inside the stamp** - `omega += d_omega * dt` once per
+   Newton iteration. Its steady-state speed is unaffected, because at steady state `d_omega` is
+   zero however many times it is added; what is wrong is the spin-up, which is as many times too
+   fast as the solver took iterations, and varies with how hard the step was to converge. No
+   template uses a DC motor either.
+
+The general point for the next component: **companion state belongs to a time step, not to a
+stamp.** A stamp runs many times per step - once per Newton iteration, plus once more whenever the
+display reads a current back - so anything advanced inside one advances at a rate that has nothing
+to do with the clock.
+
 ## A suite that picks its own time step is testing a different program
 
 `--osc-test` is the oracle for every oscillator in the program: what frequency it runs at, how big

@@ -1114,6 +1114,135 @@ static int class_test(double fine) {
     return fails ? 1 : 0;
 }
 
+/* ---------------------------------------------------------------------------------------
+ * --restamp-test: looking at the circuit must not change it.
+ *
+ * Terminal currents are recovered by re-stamping every component on its own and reading the
+ * residual, with g_stamp_read_only set to say "this stamp is being read, not solved". That works
+ * only if every component honours it. A component that writes its own state inside its stamp -
+ * and several do - advances that state again every time the display asks what the current is.
+ *
+ * Three faults of exactly this shape were found and fixed by hand on 2026-08-30: the crystal read
+ * with the next step's companion state, the MOSFET gate capacitance advancing once per Newton
+ * iteration, and the diode's junction capacitance stamped with an inverted sign. Finding them one
+ * at a time is not a method. This is the invariant behind all three, and it needs no oracle and no
+ * physics: run a template twice, identically, and update the current-flow display on one of the
+ * runs. If the two runs disagree, something in the stamp path is writing when it was only asked to
+ * read. Which component it is follows from which template fails.
+ * ------------------------------------------------------------------------------------- */
+static int restamp_run(CircuitTemplateType t, int with_display, double *out, int nout) {
+    Circuit *c = circuit_create();
+    if (!c) return 0;
+    if (circuit_place_template(c, t, 0, 0) <= 0) { circuit_free(c); return 0; }
+    if (c->num_probes < 1) { circuit_free(c); return 0; }
+    Simulation *sim = simulation_create(c);
+    if (!sim) { circuit_free(c); return 0; }
+    for (int i = 0; i < c->num_components; i++)
+        if (c->components[i]->type == COMP_AC_VOLTAGE)
+            c->components[i]->props.ac_voltage.frequency_sweep.enabled = false;
+    int ok = simulation_dc_analysis(sim);
+    double td = circuit_template_scope_time_div(t);
+    if (td <= 0) td = 1e-3;
+    simulation_auto_time_step(sim);
+    { double dtp = simulation_scope_time_step(sim, td);
+      if (dtp > 0 && dtp < sim->time_step) simulation_set_time_step(sim, dtp); }
+    /* fixed, so the two runs take the same steps at the same times whatever else differs */
+    simulation_enable_adaptive(sim, false);
+    simulation_start(sim);
+
+    enum { STEPS = 400 };
+    for (int s = 0; s < STEPS && ok; s++) {
+        if (!simulation_step(sim)) { ok = 0; break; }
+        if (with_display) simulation_update_flow_display(sim);
+    }
+    for (int p = 0; p < nout; p++)
+        out[p] = (p < c->num_probes) ? simulation_get_probe_voltage(sim, p) : 0.0;
+
+    simulation_free(sim);
+    circuit_free(c);
+    return ok;
+}
+
+/* The same question for one component type at a time, on a circuit of its own: a source, the part,
+   and a load. The template pass cannot ask it of everything - a DC motor, a relay, a battery and a
+   fuse appear in no template at all, and those four are among the parts that write their own state
+   inside their stamp, which is exactly the thing this is looking for. */
+static int restamp_type_run(ComponentType ty, int with_display, double *v_out) {
+    Circuit *c = circuit_create();
+    if (!c) return 0;
+    Component *dev = NULL, *src = NULL;
+    int node = pt_build_series(c, ty, 5.0, 1000.0, 1000.0, &dev, &src);
+    if (!dev) { circuit_free(c); return 0; }
+    Simulation *sim = simulation_create(c);
+    if (!sim) { circuit_free(c); return 0; }
+    int ok = simulation_dc_analysis(sim);
+    simulation_enable_adaptive(sim, false);
+    simulation_set_time_step(sim, 1e-5);
+    simulation_start(sim);
+    for (int s = 0; s < 300 && ok; s++) {
+        if (!simulation_step(sim)) { ok = 0; break; }
+        if (with_display) simulation_update_flow_display(sim);
+    }
+    *v_out = simulation_get_node_voltage(sim, node);
+    if (!isfinite(*v_out)) ok = 0;
+    simulation_free(sim);
+    circuit_free(c);
+    return ok;
+}
+
+static int restamp_test(void) {
+    int total = 0, fails = 0;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti) continue;
+        double a[MAX_PROBES], b[MAX_PROBES];
+        if (!restamp_run((CircuitTemplateType)t, 0, a, MAX_PROBES)) continue;
+        if (!restamp_run((CircuitTemplateType)t, 1, b, MAX_PROBES)) continue;
+        total++;
+
+        double worst = 0; int worst_p = -1;
+        for (int p = 0; p < MAX_PROBES; p++) {
+            double scale = fabs(a[p]) > fabs(b[p]) ? fabs(a[p]) : fabs(b[p]);
+            double e = fabs(a[p] - b[p]) / (scale + 1e-9);
+            if (e > worst) { worst = e; worst_p = p; }
+        }
+        /* Not a tolerance on physics - the two runs are the same arithmetic in the same order, so
+           they should agree to the last bit. A part in a billion is room for the summation order
+           inside the flow solve to differ, and nothing else. */
+        int bad = (worst > 1e-9);
+        if (bad) fails++;
+        if (bad || getenv("RESTAMP_VERBOSE"))
+            printf("[%s] restamp %-28s worst probe difference %.3g%s%s\n",
+                   bad ? "FAIL" : " OK ", ti->name, worst,
+                   worst_p >= 0 ? " on probe " : "", worst_p >= 0 ? "" : "");
+    }
+    printf("\nrestamp-test: %d templates run twice, once with the current-flow display updating "
+           "every step; %d where looking at the circuit changed it\n", total, fails);
+
+    /* ...and once per component type, on a circuit built for it */
+    int t_total = 0, t_fails = 0, t_skipped = 0;
+    for (int ty = COMP_NONE + 1; ty < COMP_TYPE_COUNT; ty++) {
+        if (ty == COMP_TEXT || ty == COMP_GROUND) continue;
+        const ComponentTypeInfo *info = component_get_info((ComponentType)ty);
+        if (!info || !info->name || !info->name[0]) continue;
+        double a = 0, b = 0;
+        if (!restamp_type_run((ComponentType)ty, 0, &a)) { t_skipped++; continue; }
+        if (!restamp_type_run((ComponentType)ty, 1, &b)) { t_skipped++; continue; }
+        t_total++;
+        double scale = fabs(a) > fabs(b) ? fabs(a) : fabs(b);
+        double e = fabs(a - b) / (scale + 1e-9);
+        if (e > 1e-9) {
+            t_fails++;
+            printf("[FAIL] restamp %-28s %.10g with the display, %.10g without\n", info->name, b, a);
+        }
+    }
+    printf("restamp-test: %d component types on a circuit of their own (%d could not be run), "
+           "%d that the display changes\n", t_total, t_skipped, t_fails);
+    fails += t_fails;
+    return fails ? 1 : 0;
+}
+
 static int flow_test(void) {
     int fails = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -4340,6 +4469,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--svg") && i + 1 < argc) svg_dir = argv[++i];
         else if (!strcmp(argv[i], "--scope-test")) return scope_dt_test();
         else if (!strcmp(argv[i], "--flow-test")) return flow_test();
+        else if (!strcmp(argv[i], "--restamp-test")) return restamp_test();
         else if (!strcmp(argv[i], "--class-test"))
             return class_test((i + 1 < argc && atof(argv[i + 1]) > 0) ? atof(argv[i + 1]) : 0.25);
         else if (!strcmp(argv[i], "--conn-test")) return conn_test();
