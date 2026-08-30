@@ -715,6 +715,31 @@ the other 74 are saved and loaded by code nobody exercises.
 | 3.29.5 | `[ ]` Place an Arbitrary source, save, reload | It plays a table; a file carrying a bad index loads with table 0 rather than taking the app down |
 | 3.29.6 | `[ ]` **Automated:** the whole battery | `bash tools/run_audits.sh` - 34 suites, several at a time, about four minutes |
 
+### 3.30 Undo that covers everything, Select All, and a diode that has a capacitance (2026-08-30: v3.22.3)
+
+Ctrl+Z could take back an add and a move. Everything else a person does to a circuit went
+unrecorded: deleting anything at all, typing a value, cycling a part number, toggling a model,
+rotating, pasting, duplicating, placing or removing a probe, clearing the canvas, and picking a
+circuit from the palette - which replaces everything on it.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.30.1 | `[ ]` Delete a part with the tool, press Ctrl+Z | It comes back, on the same nets |
+| 3.30.2 | `[ ]` Delete a wire, press Ctrl+Z | It comes back joining the same two nodes; the circuit settles where it did |
+| 3.30.3 | `[ ]` Select a few parts, press Delete, press Ctrl+Z once | All of them come back on one press, not one per part |
+| 3.30.4 | `[ ]` Type a value into the properties panel, press Ctrl+Z | The old value returns |
+| 3.30.5 | `[ ]` Rotate with Ctrl+R, press Ctrl+Z | It rotates back and stays wired to what it was wired to |
+| 3.30.6 | `[ ]` Place a probe, press Ctrl+Z; delete one, press Ctrl+Z | Both come back, with the name they had |
+| 3.30.7 | `[ ]` Pick a circuit from the palette, press Ctrl+Z | The circuit that was on the canvas returns, and the scope settles for it rather than keeping the new one's time base |
+| 3.30.8 | `[ ]` Ctrl+A then Delete | Everything goes. Before this, Ctrl+A marked parts as selected and nothing acted on the mark: Delete removed nothing and a drag moved one part |
+| 3.30.9 | `[ ]` **Automated:** `template_smoke --undo-test` | 2426 edits over 187 templates across thirteen kinds of edit, each undone and redone and compared |
+| 3.30.10 | `[ ]` **Automated:** `python tools/keys_gui.py build/circuit-playground.exe` | Ten shortcuts driven through the real event loop and checked against the app's own account of itself |
+| 3.30.11 | `[ ]` **Automated:** `python tools/undo_gui.py build/circuit-playground.exe` | A part deleted with the tool comes back on Ctrl+Z - the only check that goes through the tool, the key and the drawing |
+| 3.30.12 | `[ ]` Load Discrete Buck, Node by Node and watch the current arrows | They close on every node now: the Schottky's junction capacitance was 15 uA that no terminal reported |
+| 3.30.13 | `[ ]` Read the Function Generator's output | Slightly more triangular than before, and correctly so - the diodes' capacitance softens the breakpoints the shaping depends on |
+| 3.30.14 | `[ ]` **Automated:** `--flow-test` | 187/187 with the buck audited rather than exempt; two exemptions left, both recorded in docs/ROADMAP.md |
+| 3.30.15 | `[ ]` **Automated:** the whole battery | `bash tools/run_audits.sh` - 35 suites plus three that drive the app, about four and a half minutes |
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.
