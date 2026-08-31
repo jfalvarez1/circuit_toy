@@ -208,10 +208,13 @@ Cosmetic, all named per template with their endpoints by `--geom-test`:
 
 ### Known limitations, written up rather than worked around
 
-- **CCM vs DCM** — an asynchronous buck in discontinuous conduction has an interval where neither
-  the switch nor the diode conducts, and with an ideal switch that leaves the switch node
-  undefined. It needs a switch model with a defined off-state capacitance, or local time-step
-  control across a commutation.
+- **CCM vs DCM** — shipped 2026-08-30. It was listed here as blocked: an asynchronous buck in
+  discontinuous conduction has an interval where neither the switch nor the diode conducts, and
+  that was said to leave the switch node undefined. Retried with measurements (`--dcm-test`,
+  nine configurations across load, time step, junction capacitance and ideal-versus-real parts)
+  and no runaway appears in any of them. Neither of the two suspected causes is the answer — it
+  works at a 1 us step and with cjo forced to zero — so one of the stamp corrections since fixed
+  it.
 - **Displacement current and the flow audit** — terminal currents are recovered by re-stamping
   and taking the row residual, which recovers conduction current only. Charge into a MOSFET gate
   or a reverse-biased junction is real current in the wires and appears in no `terminal_current`.

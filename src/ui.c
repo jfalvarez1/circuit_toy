@@ -2250,6 +2250,12 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui->num_properties++;
                 prop_y += 18;
 
+                /* The centre-tapped transformer stops here: its stamp reads only the turns
+                   ratio and hardcodes its source and magnetising resistances, so the model
+                   toggle and the winding resistances below would all be inert for it. The
+                   two-winding transformer does read them. */
+                if (selected->type == COMP_TRANSFORMER_CT) break;
+
                 SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
@@ -4610,12 +4616,28 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         }
         int src_b = ui->cursor_b_channel;
         if (src_b < 0 || src_b >= ui->scope_num_channels || !ui->scope_channels[src_b].enabled) src_b = src;
+        /* The trace is drawn at centre - (v + offset + shift) * scale, where the shift is the
+           AC/fitted centring and the scale comes from the band's own volts per division. The
+           render records all three per channel precisely so this can be inverted; reading only
+           the manual offset and an unfitted scale put the markers on the wrong volts whenever AC
+           coupling or Fit was on - which is the scope's default for a stacked template. Falls
+           back to the geometric frame before the first render has recorded anything. */
         int f_top, f_h, f_center; double f_scale;
         scope_channel_frame(ui, r, src >= 0 ? src : 0, &f_top, &f_h, &f_center, &f_scale);
         double src_offset = (src >= 0) ? ui->scope_channels[src].offset : 0.0;
+        if (src >= 0 && src < MAX_PROBES && ui->scope_ch_scale[src] > 0) {
+            f_center = ui->scope_ch_center[src];
+            f_scale  = ui->scope_ch_scale[src];
+            src_offset += ui->scope_ch_shift[src];
+        }
         int fb_top, fb_h, fb_center; double fb_scale;
         scope_channel_frame(ui, r, src_b >= 0 ? src_b : 0, &fb_top, &fb_h, &fb_center, &fb_scale);
         double srcb_offset = (src_b >= 0) ? ui->scope_channels[src_b].offset : 0.0;
+        if (src_b >= 0 && src_b < MAX_PROBES && ui->scope_ch_scale[src_b] > 0) {
+            fb_center = ui->scope_ch_center[src_b];
+            fb_scale  = ui->scope_ch_scale[src_b];
+            srcb_offset += ui->scope_ch_shift[src_b];
+        }
 
         // --- vertical (time) cursors a and b ---
         int ax = r->x + (int)(ui->cursor1_time * r->w);

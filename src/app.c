@@ -1119,6 +1119,13 @@ void app_handle_events(App *app) {
                                 case COMP_SAWTOOTH_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.sawtooth_wave.amplitude); break;
                                 case COMP_NOISE_SOURCE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.noise_source.amplitude); break;
                                 case COMP_LED: snprintf(current_value, sizeof(current_value), "%.0f", c->props.led.wavelength); break;
+                                /* Added with their panels on 2026-08-30 and missed here, so the
+                                   edit box opened empty and Enter on an untouched field parsed ""
+                                   as a value. */
+                                case COMP_POTENTIOMETER: snprintf(current_value, sizeof(current_value), "%.6g", c->props.potentiometer.resistance); break;
+                                case COMP_BATTERY: snprintf(current_value, sizeof(current_value), "%.6g", c->props.battery.nominal_voltage); break;
+                                case COMP_TRANSFORMER:
+                                case COMP_TRANSFORMER_CT: snprintf(current_value, sizeof(current_value), "%.6g", c->props.transformer.turns_ratio); break;
                                 default: break;
                             }
                         } else if (prop_type == PROP_FREQUENCY) {
@@ -1992,8 +1999,13 @@ void app_update(App *app) {
             int count = simulation_get_history(app->simulation, i, times, values, MAX_HISTORY);
             if (count >= 64) {
                 double sample_rate = count > 1 ? 1.0 / (times[1] - times[0]) : 1000.0;
+                /* The NEWEST samples. simulation_get_history returns the record in
+                   chronological order, so values[0] is the oldest of up to 10000 - passing
+                   `values` transformed the oldest tenth of the history and the spectrum on
+                   screen belonged to a second ago, not to the trace beside it. */
                 int fft_samples = count < FFT_SIZE ? count : FFT_SIZE;
-                analysis_fft_compute(&app->analysis, values, fft_samples, sample_rate, i);
+                analysis_fft_compute(&app->analysis, values + (count - fft_samples),
+                                     fft_samples, sample_rate, i);
             }
         }
     }

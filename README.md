@@ -325,6 +325,7 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **Impedance Matching** (`Zmatch`) - 5 / 50 / 500 ohm on a 50 ohm source
 - **Signal Reflections** (`Refl`) - Artificial 50 ohm line, terminated or not
 - **Loop Stability & Phase Margin** (`Loop`) - The same stage with and without compensation
+- **CCM vs DCM** (`CCMDCM`) - The same buck twice, 6 ohm and 30 ohm: D x Vin holds only while conduction is continuous
 
 **Ideal vs real models**
 - **Ideal vs Real Source** (`IdSrc`) - Internal resistance: the terminal voltage sags
@@ -1044,7 +1045,7 @@ exemptions and skip every MOSFET gate.
 it comes back the same circuit. Judging 188 circuits by one rule - run thirty divisions, expect a
 repeating waveform - flatters the ones that fit it and libels the rest: a curve tracer has no
 frequency, a bias network never moves, a crystal takes a thousand times longer to start than a
-comparator. So each one is measured and reported as what it is: **29 static, 146 periodic, 4
+comparator. So each one is measured and reported as what it is: **29 static, 147 periodic, 4
 one-shot, 8 stepped**, with its real period, when it settled, and how many samples a cycle it was
 drawn with. Five templates answer differently at a finer step, which means the step is the answer
 rather than the circuit; they are listed with their measured numbers in `docs/ROADMAP.md`.

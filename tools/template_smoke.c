@@ -1127,13 +1127,18 @@ static int class_test(double fine) {
  * only if every component honours it. A component that writes its own state inside its stamp -
  * and several do - advances that state again every time the display asks what the current is.
  *
- * Three faults of exactly this shape were found and fixed by hand on 2026-08-30: the crystal read
- * with the next step's companion state, the MOSFET gate capacitance advancing once per Newton
- * iteration, and the diode's junction capacitance stamped with an inverted sign. Finding them one
- * at a time is not a method. This is the invariant behind all three, and it needs no oracle and no
- * physics: run a template twice, identically, and update the current-flow display on one of the
- * runs. If the two runs disagree, something in the stamp path is writing when it was only asked to
- * read. Which component it is follows from which template fails.
+ * What it detects, precisely: a stamp that WRITES while it is only being read. Run a template
+ * twice, identically, updating the current-flow display on one of the runs; if they disagree,
+ * something in the stamp path wrote when it was asked to read. That is how the relay was caught.
+ *
+ * What it does NOT detect, and an earlier version of this comment wrongly claimed it did. A stamp
+ * that misREADS - the crystal taking the next step's companion state, or a subcircuit's internals
+ * being read as uncharged - changes nothing about the circuit, so both runs agree and both are
+ * wrong together. An inverted sign is the same: it is consistent with itself. Those need an oracle
+ * computed outside the solver, which is --dvdt-test, --state-test and --sub-test case 3.
+ *
+ * Two suites, two different questions. This one asks whether looking changes anything; those ask
+ * whether the answer is right.
  * ------------------------------------------------------------------------------------- */
 static int restamp_run(CircuitTemplateType t, int with_display, double *out, int nout) {
     Circuit *c = circuit_create();
@@ -3961,16 +3966,26 @@ static int fft_test(void) {
     static double s[N];
     int fails = 0, checks = 0;
 
-    for (int kind = 0; kind < 3; kind++) {
-        const char *name = kind == 0 ? "sine" : kind == 1 ? "square" : "triangle";
+    /* kind 3 is the same sine sitting on 5 V of DC. Nothing removed the mean before the
+       transform, and a Hann window smears a DC term into bins 0 and +/-1 - so the fundamental
+       search, which starts at k = 1 to skip DC, locked onto the leakage instead and reported the
+       fundamental as one bin for every probe on a rail. The three cases above are all centred on
+       zero and could never have shown it. */
+    for (int kind = 0; kind < 4; kind++) {
+        const char *name = kind == 0 ? "sine" : kind == 1 ? "square" : kind == 2 ? "triangle" : "sine on 5 V";
         for (int i = 0; i < N; i++) {
             double ph = fmod((double)i * BIN / N, 1.0);
             s[i] = kind == 0 ? sin(2.0 * M_PI * ph)
                  : kind == 1 ? (ph < 0.5 ? 1.0 : -1.0)
-                 :             (ph < 0.5 ? 4.0 * ph - 1.0 : 3.0 - 4.0 * ph);
+                 : kind == 2 ? (ph < 0.5 ? 4.0 * ph - 1.0 : 3.0 - 4.0 * ph)
+                 :             5.0 + sin(2.0 * M_PI * ph);
         }
         analysis_init(&st);
-        st.fft_window_type = 0;               /* rectangular: bin-exact input needs no window */
+        /* Rectangular for the three centred cases: the input is bin-exact, so no window is needed
+           and the bin amplitudes are the coefficients themselves. The DC case uses Hanning, the
+           app's own default, because that is where the fault lived: a rectangular window puts
+           exactly zero DC leakage in bin 1, so a rectangular DC case would pass either way. */
+        st.fft_window_type = (kind == 3) ? 1 : 0;
         analysis_fft_compute(&st, s, N, FS, 0);
         FFTResult *f = &st.fft_results[0];
 
@@ -3980,15 +3995,23 @@ static int fft_test(void) {
         double rel3 = f->magnitude[3 * BIN] - f->magnitude[BIN];
         if (kind == 1) fft_check(name, "3rd harmonic", rel3, -9.542, 0.2, &fails);
         if (kind == 2) fft_check(name, "3rd harmonic", rel3, -19.085, 0.2, &fails);
-        if (kind == 0 && rel3 > -80.0) {
+        if ((kind == 0 || kind == 3) && rel3 > -80.0) {
             fails++;
             printf("[FAIL] fft   sine       3rd harmonic   = %.4g dB - a pure sine has none\n", rel3);
         }
+        if (kind == 3) {
+            /* Hanning spreads every line over three bins, so THD and the harmonic levels are not
+               the closed forms the other cases use. The fundamental is the thing that broke and
+               the thing this case exists to hold. */
+            printf("[ OK ] fft   %-10s fundamental %.1f Hz with a 5 V pedestal and a Hann window\n",
+                   name, f->fundamental_freq);
+            continue;
+        }
         checks += 1;
-        double thd_want = kind == 0 ? 0.0 : kind == 1 ? 42.879 : 12.047;
-        double thd_tol  = kind == 0 ? 0.1 : 0.5;
+        double thd_want = (kind == 0 || kind == 3) ? 0.0 : kind == 1 ? 42.879 : 12.047;
+        double thd_tol  = (kind == 0 || kind == 3) ? 0.1 : 0.5;
         fft_check(name, "THD", f->thd, thd_want, thd_tol, &fails);
-        if (kind == 0) {
+        if (kind == 0 || kind == 3) {
             checks += 1;
             if (f->snr < 60.0) {
                 fails++;
@@ -3996,7 +4019,7 @@ static int fft_test(void) {
             }
         }
     }
-    printf("\nfft-test: %d checks over 3 synthetic spectra, %d failed\n", checks, fails);
+    printf("\nfft-test: %d checks over 4 synthetic spectra, %d failed\n", checks, fails);
     return fails ? 1 : 0;
 }
 

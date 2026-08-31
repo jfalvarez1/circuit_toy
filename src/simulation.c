@@ -642,6 +642,24 @@ bool simulation_dc_analysis(Simulation *sim) {
     // Apply post-solve clamping as safety net
     simulation_clamp_opamps(circuit, sim->solution, 0.0);   /* operating point: no slew limit yet */
 
+    /* The relay's coil current and armature, seeded from the operating point. The advance that
+       maintains them runs only on an accepted transient step, so without this the DC result says
+       the coil carries V/R while props.relay.i_coil is still zero and the contacts are open -
+       an operating point that contradicts its own solve, and the initial condition the transient
+       then starts from. */
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+        if (!comp || comp->type != COMP_RELAY) continue;
+        double R_coil = comp->props.relay.r_coil;
+        if (!(R_coil > 0)) continue;
+        int a = circuit->node_map[comp->node_ids[0]], b2 = circuit->node_map[comp->node_ids[1]];
+        double v0 = (a > 0) ? vector_get(sim->solution, a - 1) : 0;
+        double v1 = (b2 > 0) ? vector_get(sim->solution, b2 - 1) : 0;
+        double I = (v0 - v1) / R_coil;
+        comp->props.relay.i_coil = I;
+        comp->props.relay.energized = fabs(I) >= comp->props.relay.i_pickup;
+    }
+
     // Capacitors carry no current at the operating point; swept sources restart their phase
     for (int i = 0; i < circuit->num_components; i++) {
         Component *cc_ = circuit->components[i];

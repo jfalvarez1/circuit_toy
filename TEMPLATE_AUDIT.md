@@ -19,9 +19,9 @@ where every one ends with a TRY or an INTERVIEW line.
 | Interview: I/O & signal integrity | Termination none/series/parallel, Pull-up Sizing, Ground Bounce, Crosstalk, ESD Clamp Diodes |
 | Interview: fundamentals | The Two-Capacitor Problem, The Miller Effect, BJT or MOSFET as a Switch, Hot-Plug Inrush |
 
-Two are deliberately absent and written up in `docs/ROADMAP.md`: **CCM vs DCM** (an ideal switch
-leaves the DCM dead interval undefined) and a **delay-line transmission line** (the L-C ladder
-stands in for it).
+One is deliberately absent and written up in `docs/ROADMAP.md`: a **delay-line transmission line**
+(the L-C ladder stands in for it). **CCM vs DCM** was in that list until 2026-08-30, when the
+runaway it was blocked on turned out not to reproduce in nine measured configurations; it ships.
 
 ---
 

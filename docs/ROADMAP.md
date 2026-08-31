@@ -302,12 +302,20 @@ recovered by re-stamping each device alone and reading its residual, so the repo
 the stamp whatever the stamp says. A sign error is invisible to every conservation check in the
 suite and shows up only in a waveform - which it did, and which was explained away.
 
-## What a review found that the suites did not (2026-08-31)
+## What a review found that the suites did not (2026-08-30)
 
-The v3.23.0 diff was reviewed before publishing, by five independent readers with a verifier
-against each finding whose job was to refute it. Two survived, and both were the same fault this
-release was about - state that belongs to a time step, touched somewhere that is not a time step.
-Neither was visible to any suite that existed, which is the interesting part.
+The v3.23.0 diff was reviewed before publishing, by five independent readers each with a verifier
+whose job was to refute what it found. **Twenty-three survived refutation, and all twenty-three are
+fixed.** No suite in the battery saw any of them, which is the interesting part; where a suite
+should have, the suite was extended rather than the finding waved off.
+
+*(This section said "two" for a day. The notification carrying the result was truncated at the two
+findings I happened to read first, and I wrote the count down without checking the run. The number
+was wrong in the direction that flatters the release, which is the direction to distrust.)*
+
+Two of them were the fault this release was about - state that belongs to a time step, touched
+somewhere that is not a time step - and they get the long write-up below. Then the other twenty-one,
+short.
 
 **The battery emptied itself during the DC operating point.** Its coulomb count lived inside
 `component_stamp`: `charge_coulombs -= |I| * dt`. The operating point stamps with `dc_dt = 1e9`,
@@ -342,6 +350,52 @@ attempts: the first version reused the shared DC drive, and the operating point 
 capacitor to the supply, after which dv/dt is nearly zero and reading the companion as zero changes
 almost nothing. It passed with the bug still in. A check that cannot fail is not a check, and the
 only way to know is to put the bug back and watch.
+
+### The other twenty-one
+
+**Wrong arithmetic, silently (5).** The fuse accumulated i2t inside the stamp, so its blow energy
+was multiplied by the Newton iteration count - measured at exactly 2x on a DC circuit with the
+current-flow display on. The step budget computed a double up to 1e14 and cast it to a 32-bit
+`long`: undefined, and on x86 it lands on INT_MIN, which the `< 1` clamp below turned into one step
+per frame, while the new keeping-up indicator compared progress against that same target of 1 and
+reported a confident 100 %. The FFT transformed `values[0..N)` of a 10000-sample history held
+oldest-first, so the spectrum on screen belonged to a second ago rather than to the trace beside it.
+The FFT never removed DC, and a Hann window smears a DC term into bins 0 and +/-1, so the
+fundamental search - which starts at k=1 precisely to skip DC - landed on the leakage: every probe
+sitting on a rail reported its fundamental as one bin, with THD and SNR computed against that. The
+relay's coil current was left at zero by the operating point, because the advance that maintains it
+runs only on an accepted transient step - a DC answer that contradicted its own solve, and the
+initial condition the transient then started from.
+
+**The panel disagreed with the circuit (6).** `PROP_CJO` wrote `props.diode.cjo` for a Schottky,
+which in that union is `props.schottky.ideal` - typing a junction capacitance silently toggled the
+model. Three types gained a value row this release but were missed in the pre-fill lookup, so the
+edit box opened empty and Enter on an untouched field parsed `""`. Five rows were inert: the
+centre-tapped transformer's model toggle and winding resistances (its stamp reads only the turns
+ratio), primary inductance and coupling on the two-winding transformer, a light level with no
+reader, `CS_RIN` on the two controlled sources that have no input resistance, and Ideal toggles on
+the motor and controlled sources. The scope's cursor overlay inverted the wrong mapping: it read the
+manual offset and an unfitted scale, while the trace is drawn with the fitted centre and shift the
+renderer records per channel - so the markers named the wrong volts whenever AC coupling or Fit was
+on, which is the default for a stacked template. `simulation_reset` had no case for the relay or the
+DC motor, so their state survived a reset.
+
+**Documentation that had drifted from the program (10).** `--restamp-test`'s header claimed it had
+caught three faults it structurally cannot catch: it detects a stamp that *writes* while being read,
+and a stamp that *misreads* - the crystal, the subcircuit snapshot, an inverted sign - is consistent
+with itself and agrees with its own second run. That comment is now explicit about the boundary and
+names the suites that do cover the other side. The README's template list omitted CCM vs DCM and
+quoted a class-test split the tool no longer produces; `TEMPLATE_AUDIT.md` and `docs/STATUS.md` both
+still described CCM vs DCM as deliberately absent and blocked, a day after it shipped; and this
+section reported two findings out of twenty-three.
+
+**A check that could not fail (1).** The DC case added to `--fft-test` to lock in the DC-removal fix
+passed with the fix reverted. It set the window to rectangular, where a DC term produces exactly
+zero leakage - so it tested a configuration in which the bug does not exist, while the app defaults
+to Hann. Fixed to use Hann, and confirmed the only way that means anything: with DC removal disabled
+the case now reports the fundamental of a 5 kHz sine as **100 Hz**. That is the second time this
+release a new check had to be re-run against the restored bug before it was worth anything, and the
+second time it was worthless on the first attempt.
 
 ## Reading a circuit must not change it
 

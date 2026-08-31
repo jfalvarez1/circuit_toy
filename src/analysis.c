@@ -610,6 +610,19 @@ void analysis_fft_compute(AnalysisState *state, double *samples,
     // Apply window function to windowed copy
     double windowed[FFT_SIZE];
     memcpy(windowed, samples, num_samples * sizeof(double));
+
+    /* Subtract the mean first. Nothing removed DC, and a Hann window smears a DC term of V into
+       V/2 at bin 0 and V/4 at bins +/-1 - so the fundamental search, which starts at k = 1 to
+       skip DC, landed on the leakage instead. Every probe sitting on a rail (a 5 V logic node,
+       a biased amplifier output) reported its fundamental as one bin, and THD and SNR were
+       computed against that. A spectrum analyser removes DC before it transforms; so does this. */
+    {
+        double mean = 0;
+        for (int i = 0; i < num_samples; i++) mean += windowed[i];
+        mean /= (double)num_samples;
+        for (int i = 0; i < num_samples; i++) windowed[i] -= mean;
+    }
+
     analysis_fft_window(windowed, num_samples, state->fft_window_type);
 
     // Zero-pad to FFT_SIZE
