@@ -1945,15 +1945,9 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->num_properties++;
                     prop_y += 18;
                 }
-                {
-                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_LIGHT_LEVEL;
-                    snprintf(buf, sizeof(buf), "%.3f", selected->props.photoresistor.light_level);
-                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Light (0-1):", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_LIGHT_LEVEL;
-                    ui->num_properties++;
-                    prop_y += 18;
-                }
+                /* No per-part light level: the photoresistor's stamp reads the global
+                   environment - the Lux slider in the status bar - and not
+                   props.photoresistor.light_level, so a row here sets a field nothing reads. */
                 {
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_LDR_GAMMA;
                     snprintf(buf, sizeof(buf), "%.3f", selected->props.photoresistor.gamma);
@@ -2083,15 +2077,10 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->num_properties++;
                     prop_y += 18;
                 }
-                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
-                ui_draw_text(renderer, selected->props.dc_motor.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
-                ui->num_properties++;
-                prop_y += 18;
-                if (!selected->props.dc_motor.ideal) {
+                /* No Model toggle and no ideal/real split: no stamp reads props.dc_motor.ideal,
+                   so it changed nothing while hiding the armature inductance and the friction,
+                   both of which the solver uses on every step. Always shown now. */
+                {
                 {
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_L;
                     format_engineering(selected->props.dc_motor.l_armature, "H", buf, sizeof(buf));
@@ -2233,15 +2222,11 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui->num_properties++;
                     prop_y += 18;
                 }
-                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
-                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
-                ui_draw_text(renderer, selected->props.controlled_source.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
-                ui->num_properties++;
-                prop_y += 18;
-                if (!selected->props.controlled_source.ideal) {
+                /* likewise: props.controlled_source.ideal is read by no stamp */
+                /* R sense only where it is read: the CCVS and the CCCS sense their control
+                   current through props.controlled_source.r_in (component.c:4943 and 4963); the
+                   VCVS and the VCCS hardcode their input conductance and would ignore it. */
+                if (selected->type == COMP_CCVS || selected->type == COMP_CCCS) {
                 {
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_CS_RIN;
                     format_engineering(selected->props.controlled_source.r_in, "Ohm", buf, sizeof(buf));
@@ -2274,27 +2259,12 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui->num_properties++;
                 prop_y += 18;
 
-                {
-                    bool edit_lp = input && input->editing_property && input->editing_prop_type == PROP_TRANS_L_PRIMARY;
-                    format_engineering(selected->props.transformer.l_primary, "H", buf, sizeof(buf));
-                    draw_property_field(renderer, x + 10, prop_y, prop_w, "L primary:", buf,
-                                       edit_lp, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_TRANS_L_PRIMARY;
-                    ui->num_properties++;
-                    prop_y += 18;
-                }
-
+                /* No L primary and no coupling row. The transformer model is an ideal turns
+                   ratio plus winding resistance: no stamp reads props.transformer.l_primary or
+                   .coupling. Rows for both were added on 2026-08-30 and took a value that went
+                   nowhere, which is worse than having no row - the panel said the model had a
+                   magnetising inductance when it does not. A pre-release review caught it. */
                 if (!selected->props.transformer.ideal) {
-                    bool edit_k = input && input->editing_property && input->editing_prop_type == PROP_TRANS_COUPLING;
-                    snprintf(buf, sizeof(buf), "%.4g", selected->props.transformer.coupling);
-                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Coupling k:", buf,
-                                       edit_k, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_TRANS_COUPLING;
-                    ui->num_properties++;
-                    prop_y += 18;
-
                     bool edit_rp = input && input->editing_property && input->editing_prop_type == PROP_TRANS_R_PRIMARY;
                     format_engineering(selected->props.transformer.r_primary, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "R primary:", buf,

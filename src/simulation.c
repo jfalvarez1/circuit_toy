@@ -254,6 +254,23 @@ void simulation_reset(Simulation *sim) {
                     comp->props.inductor.current = 0.0;
                     break;
 
+                /* The relay's coil current and the motor's rotor are advanced once per accepted
+                   step now, and the stamps only read them - so these fields ARE the initial
+                   condition of the next run. Before that change the relay recomputed i_coil from
+                   the node voltages on every stamp and the motor drove omega to its steady state
+                   within one step, so a stale value corrected itself. Without this, Reset
+                   restarts a motor at full speed with its relay already pulled in. */
+                case COMP_RELAY:
+                    comp->props.relay.i_coil = 0.0;
+                    comp->props.relay.energized = false;
+                    break;
+
+                case COMP_DC_MOTOR:
+                    comp->props.dc_motor.omega = 0.0;
+                    comp->props.dc_motor.current = 0.0;
+                    comp->props.dc_motor.v_bemf = 0.0;
+                    break;
+
                 case COMP_BATTERY:
                     // Reset battery charge to full
                     comp->props.battery.charge_state = 1.0;  // Full charge

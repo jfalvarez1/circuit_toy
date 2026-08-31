@@ -2587,11 +2587,8 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                 comp->props.photoresistor.r_light = value; applied = true;
             }
             break;
-        case PROP_LIGHT_LEVEL:
-            if (comp->type == COMP_PHOTORESISTOR && value >= 0.0 && value <= 1.0) {
-                comp->props.photoresistor.light_level = value; applied = true;
-            }
-            break;
+        /* No PROP_LIGHT_LEVEL handler: the photoresistor's stamp reads the global environment
+           (the Lux slider), not props.photoresistor.light_level. */
         case PROP_LDR_GAMMA:
             if (comp->type == COMP_PHOTORESISTOR && value > 0 && value <= 10.0) {
                 comp->props.photoresistor.gamma = value; applied = true;
@@ -2672,10 +2669,13 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             }
             break;
         case PROP_CJO:
-            /* the diode and the Schottky share the layout of this field */
-            if ((comp->type == COMP_DIODE || comp->type == COMP_SCHOTTKY) &&
-                value >= 0 && value <= 1e-3) {
-                comp->props.diode.cjo = value; applied = true;
+            /* They do NOT share the layout: the diode's struct carries bv and ibv before cjo and
+               the Schottky's carries vf, so props.diode.cjo on a Schottky writes over
+               props.schottky.ideal - silently switching the model - while the cjo the stamp reads
+               keeps its old value. Each type writes its own member. */
+            if (value >= 0 && value <= 1e-3) {
+                if (comp->type == COMP_DIODE)        { comp->props.diode.cjo = value;    applied = true; }
+                else if (comp->type == COMP_SCHOTTKY) { comp->props.schottky.cjo = value; applied = true; }
             }
             break;
 
@@ -2687,27 +2687,12 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             }
             break;
 
-        /* The magnetising inductance and the coupling. The two winding resistances below have
-           had working handlers all along and no way to reach them: the transformer drew no
-           property panel at all, so nothing could edit any of it. */
-        case PROP_TRANS_L_PRIMARY:
-            if ((comp->type == COMP_TRANSFORMER || comp->type == COMP_TRANSFORMER_CT) &&
-                value > 0 && value <= 1e3) {
-                comp->props.transformer.l_primary = value;
-                applied = true;
-            }
-            break;
-
-        case PROP_TRANS_COUPLING:
-            /* k = 1 is a perfect transformer and the model wants a little leakage to stay
-               solvable, so the top of the range is 0.9999 rather than 1. */
-            if ((comp->type == COMP_TRANSFORMER || comp->type == COMP_TRANSFORMER_CT) &&
-                value > 0 && value <= 0.9999) {
-                comp->props.transformer.coupling = value;
-                applied = true;
-            }
-            break;
-
+        /* No PROP_TRANS_L_PRIMARY or PROP_TRANS_COUPLING handler. The transformer model is an
+           ideal turns ratio plus winding resistance and reads neither field, so a handler would
+           only make an unreachable row look reachable. Rows for both shipped briefly on
+           2026-08-30 and took values that went nowhere; a pre-release review caught it. The two
+           winding resistances below ARE read, and had handlers with no way to reach them until
+           the panel was added the same day. */
         /* DC motor. Every one of these is read by the solver every step - the armature branch
            by the stamp, the mechanical side by the per-step advance in simulation.c - and none
            of them could be edited until now. */

@@ -1322,19 +1322,10 @@ void app_handle_events(App *app) {
                                     c->props.inductor.ideal = !c->props.inductor.ideal;
                                     model_name = c->props.inductor.ideal ? "Ideal" : "Real (DCR)";
                                     break;
-                                case COMP_DC_MOTOR:
-                                    c->props.dc_motor.ideal = !c->props.dc_motor.ideal;
-                                    model_name = c->props.dc_motor.ideal ? "Ideal (no L, no friction)"
-                                                                         : "Real (L, friction)";
-                                    break;
                                 case COMP_RELAY:
                                     c->props.relay.ideal = !c->props.relay.ideal;
                                     model_name = c->props.relay.ideal ? "Ideal (no coil L)"
                                                                       : "Real (coil L, kickback)";
-                                    break;
-                                case COMP_VCVS: case COMP_VCCS: case COMP_CCVS: case COMP_CCCS:
-                                    c->props.controlled_source.ideal = !c->props.controlled_source.ideal;
-                                    model_name = c->props.controlled_source.ideal ? "Ideal" : "Real (finite R_in)";
                                     break;
                                 case COMP_TRANSFORMER:
                                 case COMP_TRANSFORMER_CT:
@@ -1412,7 +1403,6 @@ void app_handle_events(App *app) {
                         else if (prop_type == PROP_WIPER_POS)   { snprintf(current_value, sizeof(current_value), "%.4g", c->props.potentiometer.wiper_pos); }
                         else if (prop_type == PROP_R_DARK)      { snprintf(current_value, sizeof(current_value), "%.6g", c->props.photoresistor.r_dark); }
                         else if (prop_type == PROP_R_LIGHT)     { snprintf(current_value, sizeof(current_value), "%.6g", c->props.photoresistor.r_light); }
-                        else if (prop_type == PROP_LIGHT_LEVEL) { snprintf(current_value, sizeof(current_value), "%.4g", c->props.photoresistor.light_level); }
                         else if (prop_type == PROP_LDR_GAMMA)   { snprintf(current_value, sizeof(current_value), "%.4g", c->props.photoresistor.gamma); }
                         else if (prop_type == PROP_R_25)        { snprintf(current_value, sizeof(current_value), "%.6g", c->props.thermistor.r_25); }
                         else if (prop_type == PROP_BETA)        { snprintf(current_value, sizeof(current_value), "%.6g", c->props.thermistor.beta); }
@@ -1429,7 +1419,10 @@ void app_handle_events(App *app) {
                         }
                         else if (prop_type == PROP_ESL)   { snprintf(current_value, sizeof(current_value), "%.6g", c->props.capacitor.esl); }
                         else if (prop_type == PROP_I_SAT) { snprintf(current_value, sizeof(current_value), "%.6g", c->props.inductor.i_sat); }
-                        else if (prop_type == PROP_CJO)   { snprintf(current_value, sizeof(current_value), "%.6g", c->props.diode.cjo); }
+                        else if (prop_type == PROP_CJO)   {
+                            snprintf(current_value, sizeof(current_value), "%.6g",
+                                     c->type == COMP_SCHOTTKY ? c->props.schottky.cjo : c->props.diode.cjo);
+                        }
                         // DC motor
                         else if (prop_type == PROP_MOTOR_R)     { snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_motor.r_armature); }
                         else if (prop_type == PROP_MOTOR_L)     { snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_motor.l_armature); }
@@ -1448,13 +1441,7 @@ void app_handle_events(App *app) {
                         // Controlled sources
                         else if (prop_type == PROP_GAIN)   { snprintf(current_value, sizeof(current_value), "%.6g", c->props.controlled_source.gain); }
                         else if (prop_type == PROP_CS_RIN) { snprintf(current_value, sizeof(current_value), "%.6g", c->props.controlled_source.r_in); }
-                        // Transformer: magnetising inductance, coupling, winding resistances
-                        else if (prop_type == PROP_TRANS_L_PRIMARY) {
-                            snprintf(current_value, sizeof(current_value), "%.6g", c->props.transformer.l_primary);
-                        }
-                        else if (prop_type == PROP_TRANS_COUPLING) {
-                            snprintf(current_value, sizeof(current_value), "%.4g", c->props.transformer.coupling);
-                        }
+                        // Transformer winding resistances
                         else if (prop_type == PROP_TRANS_R_PRIMARY) {
                             snprintf(current_value, sizeof(current_value), "%.6g", c->props.transformer.r_primary);
                         }
@@ -1941,8 +1928,17 @@ void app_update(App *app) {
         // which at dt = 200 ns meant 0.2 ms of circuit time per real second.)
         double dt_now = app->simulation->time_step > 0 ? app->simulation->time_step : 1e-6;
         double want = (double)delta_time * app->simulation->speed / dt_now;
-        long target = (long)(want + app->sim_step_carry);
-        if (target < 1) target = 1;
+        /* Clamped before the conversion, because long is 32 bits on this compiler and the double
+           can far exceed it: dt goes down to 10 ps and speed up to 100x, so want reaches 1e14.
+           An out-of-range double-to-long conversion is undefined, and on x86 it yields INT_MIN -
+           which the "if (target < 1)" below turned into a single step per frame. The simulation
+           then crawled at about 2e-8 of real time while the new keeping-up indicator, comparing
+           done against that same target of 1, reported a confident 100 %. The cap is far above
+           anything a frame can finish; the wall-clock budget below is what actually stops it. */
+        double budget_steps = want + app->sim_step_carry;
+        if (!(budget_steps >= 1.0)) budget_steps = 1.0;         /* also catches NaN */
+        if (budget_steps > 4e6) budget_steps = 4e6;
+        long target = (long)budget_steps;
         app->sim_step_carry = want + app->sim_step_carry - (double)target;
         if (app->sim_step_carry < 0) app->sim_step_carry = 0;
         if (app->sim_step_carry > 1e6) app->sim_step_carry = 0;

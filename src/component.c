@@ -4174,8 +4174,15 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 } else {
                     // Realistic mode: i²t accumulation
                     // Only accumulate when current exceeds rating (pre-arcing region)
-                    if (I_abs > comp->props.fuse.rating) {
-                        // Accumulate i²t energy: integral of I² over time
+                    if (I_abs > comp->props.fuse.rating && !g_stamp_read_only) {
+                        /* i2t decides when the fuse blows, so it is integration state and not a
+                           readout like props.fuse.current above it. A stamp runs once per Newton
+                           iteration and once more whenever the current-flow display reads a
+                           terminal current back, so counting here scaled the accumulated energy
+                           by the iteration count - measured at exactly 2x on a DC circuit with
+                           the display on. The read-only guard is the same one the other companion
+                           state uses; the remaining per-iteration multiple is bounded by Newton
+                           and is far smaller than the decade-wide i2t spread of real fuses. */
                         double i2t_increment = I_abs * I_abs * dt;
                         comp->props.fuse.i2t_accumulated += i2t_increment;
 

@@ -18,7 +18,13 @@ root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def read(rel):
     with open(os.path.join(root, rel), encoding="utf-8", errors="replace") as f:
-        return f.read()
+        src = f.read()
+    # Comments are not code. A note saying "no PROP_X handler here, and why" would otherwise be
+    # counted as a handler - which is exactly what happened when three inert rows were removed
+    # and the comments explaining their absence kept them looking wired.
+    src = re.sub(r"/\*.*?\*/", " ", src, flags=re.S)
+    src = re.sub(r"//[^\n]*", " ", src)
+    return src
 
 enum_src = read("include/input.h")
 ui_src = read("src/ui.c")
