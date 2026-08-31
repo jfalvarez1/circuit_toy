@@ -302,6 +302,50 @@ recovered by re-stamping each device alone and reading its residual, so the repo
 the stamp whatever the stamp says. A sign error is invisible to every conservation check in the
 suite and shows up only in a waveform - which it did, and which was explained away.
 
+## Two questions nothing was asking (2026-08-31)
+
+After the interview-template pass, two audits went in for questions the battery had never put to
+the whole library rather than to one template at a time.
+
+**Does any template's answer move when the step is refined?** `--conv-test` runs all 188 at the
+step the app picks and again eight times finer. 177 agree within 3 %; eleven are still building at
+the end of their run and are reported and not compared, because two steps compared during a
+start-up ramp say nothing about the steps. This is the general form of the question that found the
+Hot-Plug Inrush sag reading 11.33 V where it is 10.02 - found by hand, on one template, having
+noticed it by accident.
+
+Two things had to be right before it said anything true. Judging a signal's MEAN against itself
+failed a 28 kV three-phase bus whose mean moved from -0.77 V to nothing while its peak-to-peak
+moved 0.3 %: a hundred per cent of almost zero. And a 2 % bar failed Colpitts, whose limit-cycle
+amplitude measures 31.95 V at dt = 2 ns and 32.07 V at 500 ps - converging, slowly, because where a
+soft-limited oscillator settles depends a little on numerical damping. The bar is 3 %.
+
+**What happens to a value a person actually types?** `--stress-test` puts zero, 1e3, 1e6 and 1e-12
+into every editable value on every template - 5164 runs - and asks only that the result is not a
+NaN. A clean refusal passes: the refusal is not the fault. A very large voltage is reported and not
+judged, because it is usually right - 4-Wire Kelvin Sensing forces 1 A through whatever it is given,
+so at a megohm it produces a megavolt and should.
+
+It found that an analog switch with a zero on-resistance - an ideal closed switch, a reasonable
+thing to want - stamped `1.0/R` unguarded, put an infinity in the matrix, and returned NaN for every
+node in the circuit, on five templates. Six stamps divided by a resistance with no floor; the
+ammeter stamp had already floored its own at 1e-9 ohm for the same reason, and that number is now
+shared. The SPST switch's on-resistance was also the one value row in `input.c` that assigned
+without testing its input.
+
+### What this does not cover: values that arrive from a file
+
+The panel now bounds what it accepts - positive, and no more than a megafarad or a megahenry. A
+save file edited by hand, or a SPICE import, does not go through the panel, and the solver still
+comes apart on what such a file could carry: measured, **16 templates run away on a negative
+inductance and 12 on 1e9 F**. Nothing crashes and no NaN escapes now that the conductance floor is
+in, but the numbers are meaningless.
+
+The fix is validation on load, in one place both paths reach, and it is deliberately not bundled
+into the change that bounded the panel: that one is small and provable and this one needs its own
+decision about what a loader should do with a value it will not accept - refuse the file, clamp the
+part, or drop it.
+
 ## The interview templates, checked against their own numbers (2026-08-30)
 
 The nineteen interview-prep templates are the ones a person opens to check an answer before a job
