@@ -1772,6 +1772,13 @@ void circuit_clear_undo(Circuit *circuit) {
 
     for (int i = 0; i < circuit->undo_count; i++) undo_action_release(&circuit->undo_stack[i]);
     circuit->undo_count = 0;
+    /* The redo stack goes too. It did not, and its records outlived the circuit they described:
+       open a file and press Ctrl+Y and the app replayed an action belonging to the circuit that
+       was on the canvas before, naming parts by numbers that now mean something else. Its only
+       caller is circuit_clear, which is throwing the whole circuit away - there is no reading of
+       that where a redo of the old one still makes sense. */
+    for (int i = 0; i < circuit->redo_count; i++) undo_action_release(&circuit->redo_stack[i]);
+    circuit->redo_count = 0;
     /* Deleting a part or a wire leaves the nodes it was on in place, because an undo may want to
        reconnect to exactly those. Once no undo can, they are litter: this is the moment to sweep
        them up, and the only moment where it is certainly safe. */

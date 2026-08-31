@@ -692,6 +692,38 @@ static int undo_test(void) {
 
     remove("undo_before.cpg");
     remove("undo_after.cpg");
+
+    /* Nothing may outlive the circuit it describes.
+       circuit_clear_undo released the undo stack and left the REDO stack standing, and its only
+       caller is circuit_clear - which is throwing the whole circuit away. So opening a file kept
+       the redo records of the circuit that was on the canvas before, and one Ctrl+Y replayed an
+       action naming parts by numbers that now meant something else. Node ids restart on a clear
+       too, so those numbers do match something: the wrong part. */
+    {
+        checks++;
+        Circuit *c = circuit_create();
+        circuit_place_template(c, CIRCUIT_RC_LOWPASS, 0, 0);
+        /* an edit, then an undo, which is what fills the redo stack */
+        Component *n = component_create(COMP_RESISTOR, -400, -400);
+        if (n && circuit_add_component(c, n) >= 0) {
+            circuit_push_undo(c, UNDO_ADD_COMPONENT, n->id, NULL, 0, 0);
+            circuit_undo(c);
+        }
+        int redo_before = c->redo_count;
+        circuit_clear(c);
+        if (redo_before <= 0) {
+            printf("[FAIL] undo  could not build a redo stack to test with\n");
+            fails++;
+        } else if (c->redo_count != 0) {
+            printf("[FAIL] undo  %d redo record(s) survived circuit_clear and still name the old "
+                   "circuit's parts\n", c->redo_count);
+            fails++;
+        } else {
+            printf("[ OK ] undo  %d redo record(s) go with the circuit they describe\n", redo_before);
+        }
+        circuit_free(c);
+    }
+
     printf("\nundo-test: %d edits over %d templates, %d that undo did not put back\n",
            checks, templates, fails);
     return fails;
