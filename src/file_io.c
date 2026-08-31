@@ -129,7 +129,17 @@ bool file_load_circuit(Circuit *circuit, const char *filename) {
 
     // Read component count
     int num_components;
-    fread(&num_components, sizeof(int), 1, f);
+    /* Every count in this file is read into a loop bound, and none of them was checked - not the
+       value, and not whether the read succeeded at all. A truncated file left the count as
+       whatever had been on the stack; a corrupted one could say anything. The node and wire loops
+       below write straight into fixed arrays, so a count of 100000 is a write far past the end of
+       the Circuit struct. */
+    if (fread(&num_components, sizeof(int), 1, f) != 1 ||
+        num_components < 0 || num_components > MAX_COMPONENTS) {
+        set_error("Circuit file is corrupt: impossible component count");
+        fclose(f);
+        return false;
+    }
 
     // Read components
     for (int i = 0; i < num_components; i++) {
@@ -181,7 +191,13 @@ bool file_load_circuit(Circuit *circuit, const char *filename) {
     }
 
     // Read node count
-    fread(&circuit->num_nodes, sizeof(int), 1, f);
+    if (fread(&circuit->num_nodes, sizeof(int), 1, f) != 1 ||
+        circuit->num_nodes < 0 || circuit->num_nodes > MAX_NODES) {
+        set_error("Circuit file is corrupt: impossible node count");
+        circuit->num_nodes = 0;
+        fclose(f);
+        return false;
+    }
 
     // Read nodes
     for (int i = 0; i < circuit->num_nodes; i++) {
@@ -191,13 +207,28 @@ bool file_load_circuit(Circuit *circuit, const char *filename) {
         fread(&node->y, sizeof(float), 1, f);
         fread(&node->is_ground, sizeof(bool), 1, f);
 
+        /* A node id is what node_map and the union-find in circuit_build_node_map are indexed
+           by, and both hold MAX_NODES - the same check the JSON loader now makes. */
+        if (node->id < 0 || node->id >= MAX_NODES) {
+            set_error("Circuit file has a node id outside the range this program can hold");
+            circuit->num_nodes = 0;
+            fclose(f);
+            return false;
+        }
+
         if (node->is_ground) {
             circuit->ground_node_id = node->id;
         }
     }
 
     // Read wire count
-    fread(&circuit->num_wires, sizeof(int), 1, f);
+    if (fread(&circuit->num_wires, sizeof(int), 1, f) != 1 ||
+        circuit->num_wires < 0 || circuit->num_wires > MAX_WIRES) {
+        set_error("Circuit file is corrupt: impossible wire count");
+        circuit->num_wires = 0;
+        fclose(f);
+        return false;
+    }
 
     // Read wires
     for (int i = 0; i < circuit->num_wires; i++) {

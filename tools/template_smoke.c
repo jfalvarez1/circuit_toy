@@ -5145,6 +5145,100 @@ static int load_test(void) {
         circuit_free(c);
     }
 
+    /* ---- 5. a truncated binary circuit ------------------------------------------------------
+       The contract here is only that a half a file does not become half a circuit: the loader
+       refuses it and the counts it leaves behind are inside the arrays that hold them.
+
+       Being honest about what this does NOT do: it does not exercise the unbounded-count fault,
+       which case 6 does. A failed fread leaves the count variable untouched, so a truncated file
+       leaves it small whatever the guards say, and these four cases passed before the guards
+       existed and after. They are worth keeping as a statement about truncation and they prove
+       nothing about the counts. */
+    {
+        char path[600];
+        snprintf(path, sizeof path, "%s\\ct_trunc.cpg", tmp);
+
+        Circuit *ref = circuit_create();
+        circuit_place_template(ref, CIRCUIT_RC_LOWPASS, 0, 0);
+        file_save_circuit(ref, path);
+        circuit_free(ref);
+
+        /* how big a good one is, so the truncations are meaningful */
+        FILE *f = fopen(path, "rb");
+        long full = 0;
+        if (f) { fseek(f, 0, SEEK_END); full = ftell(f); fclose(f); }
+
+        static const double frac[] = { 0.10, 0.35, 0.60, 0.85 };
+        for (unsigned q = 0; q < sizeof frac / sizeof frac[0]; q++) {
+            long cut = (long)(full * frac[q]);
+            FILE *r = fopen(path, "rb");
+            static unsigned char buf[1 << 20];
+            size_t got = r ? fread(buf, 1, sizeof buf, r) : 0;
+            if (r) fclose(r);
+            (void)got;
+            char cutpath[600];
+            snprintf(cutpath, sizeof cutpath, "%s\\ct_trunc_%u.cpg", tmp, q);
+            FILE *w = fopen(cutpath, "wb");
+            if (w) { fwrite(buf, 1, (size_t)cut, w); fclose(w); }
+
+            Circuit *c = circuit_create();
+            bool loaded = file_load_circuit(c, cutpath);
+            checks++;
+            /* Either answer is acceptable - a prefix can be a valid smaller circuit - as long as
+               nothing ran off the end of an array. What must hold is that the counts left behind
+               are inside the arrays that hold them. */
+            int bad_counts = (c->num_nodes < 0 || c->num_nodes > MAX_NODES ||
+                              c->num_wires < 0 || c->num_wires > MAX_WIRES ||
+                              c->num_components < 0 || c->num_components > MAX_COMPONENTS);
+            if (bad_counts) {
+                printf("[FAIL] load  a file cut to %.0f%% left nodes=%d wires=%d parts=%d\n",
+                       frac[q] * 100.0, c->num_nodes, c->num_wires, c->num_components);
+                fails++;
+            } else {
+                printf("[ OK ] load  a file cut to %.0f%%: %s, nodes=%d wires=%d parts=%d\n",
+                       frac[q] * 100.0, loaded ? "loaded" : "refused",
+                       c->num_nodes, c->num_wires, c->num_components);
+            }
+            circuit_free(c);
+            remove(cutpath);
+        }
+        remove(path);
+    }
+
+    /* ---- 6. a binary file that STATES an impossible count -----------------------------------
+       The truncation cases above turned out not to prove anything: a failed fread leaves the
+       count variable untouched, so it stays whatever it was, which is small. The real hazard is a
+       file that says a huge number outright - the node and wire loops write straight into fixed
+       arrays, so the loop bound IS the write bound. Built here from the header up, with no
+       components, so the node count sits at a known offset. */
+    {
+        char path[600];
+        snprintf(path, sizeof path, "%s\\ct_huge.cpg", tmp);
+        FILE *w = fopen(path, "wb");
+        if (w) {
+            uint32_t magic = CIRCUIT_FILE_MAGIC, version = CIRCUIT_FILE_VERSION;
+            int zero_components = 0, huge = 100000;
+            fwrite(&magic, sizeof magic, 1, w);
+            fwrite(&version, sizeof version, 1, w);
+            fwrite(&zero_components, sizeof zero_components, 1, w);
+            fwrite(&huge, sizeof huge, 1, w);        /* the node count */
+            /* and nothing after it: the loop would read garbage for 100000 nodes */
+            fclose(w);
+        }
+        Circuit *c = circuit_create();
+        bool loaded = file_load_circuit(c, path);
+        checks++;
+        if (loaded || c->num_nodes > MAX_NODES) {
+            printf("[FAIL] load  a file claiming %d nodes was %s (nodes=%d, the array holds %d)\n",
+                   100000, loaded ? "loaded" : "refused but left behind", c->num_nodes, MAX_NODES);
+            fails++;
+        } else {
+            printf("[ OK ] load  a file claiming 100000 nodes is refused: %s\n", file_get_error());
+        }
+        circuit_free(c);
+        remove(path);
+    }
+
     printf("\nload-test: %d hostile inputs, %d that the loaders accepted anyway\n", checks, fails);
     return fails ? 1 : 0;
 }
