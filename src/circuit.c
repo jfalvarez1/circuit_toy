@@ -6,6 +6,11 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#ifdef _WIN32
+#include <windows.h>       /* GetCurrentProcessId, for the undo snapshot filenames */
+#else
+#include <unistd.h>        /* getpid, likewise */
+#endif
 #include "circuit.h"
 #include "matrix.h"
 #include "component.h"  // For COMP_GROUND type
@@ -1192,14 +1197,27 @@ void circuit_push_undo(Circuit *circuit, UndoActionType type, int id, Component 
 
 /* Where a snapshot goes: beside the settings, in a file named for its place on the stack. They
    are small, there are at most a few, and they are cleaned up when the stack is. */
+/* This process's own id, so two copies of the program do not write each other's undo files.
+   The serial below starts at zero in every process, so a second window wrote circuit_undo_0.cpg
+   over the first window's - and the first window's Ctrl+Z then restored the second window's
+   circuit. Two windows is an ordinary thing to have open. */
+static unsigned long snapshot_owner(void) {
+#ifdef _WIN32
+    return (unsigned long)GetCurrentProcessId();
+#else
+    return (unsigned long)getpid();
+#endif
+}
+
 static void snapshot_path_for(char *out, size_t n, int serial) {
     /* The system's temporary directory, which is what it is for. Not SDL's preferences path:
        this file is compiled into the headless audit tool too, which has no SDL. */
     const char *dir = getenv("TEMP");
     if (!dir) dir = getenv("TMPDIR");
     if (!dir) dir = getenv("TMP");
-    if (dir && dir[0]) snprintf(out, n, "%s/circuit_undo_%d.cpg", dir, serial);
-    else snprintf(out, n, "circuit_undo_%d.cpg", serial);
+    unsigned long who = snapshot_owner();
+    if (dir && dir[0]) snprintf(out, n, "%s/circuit_undo_%lu_%d.cpg", dir, who, serial);
+    else snprintf(out, n, "circuit_undo_%lu_%d.cpg", who, serial);
 }
 
 bool circuit_push_snapshot_undo(Circuit *circuit) {
