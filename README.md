@@ -1,10 +1,10 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.22.3](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.22.3)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.23.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.23.0)** (auto-updating from v3.4.0 on)
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
 digital solver, a real-time bench oscilloscope with FFT and THD, 187 guided circuits from RC
-filters to power grids, SPICE import, and a 44-suite self-audit battery. Build, simulate and
+filters to power grids, SPICE import, and a 46-suite self-audit battery. Build, simulate and
 analyse circuits with a drag-and-drop schematic.
 
 The look is deliberately **synthwave** - magenta and cyan on deep violet, a CRT-style graticule
@@ -981,7 +981,7 @@ two longest are split into shards (`--shard 0/4`) because a battery can never fi
 its slowest single suite.
 
 ```bash
-build/tools/template_smoke.exe             # 182/182 templates passed
+build/tools/template_smoke.exe             # 188/188 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (204 oracles)
@@ -1037,11 +1037,11 @@ around an error exactly as it closes around the truth. It has found three faults
 see - a junction capacitance stamped with its sign inverted, a crystal read with the next step's
 state, and a MOSFET gate whose companion advanced once per Newton iteration and turned a DC gate
 bias into 24 mA of current that was not there. With all three fixed, `--flow-test` closes on every
-node of all 187 templates with **no exemptions and no skipped nodes**, where it used to carry two
+node of all 188 templates with **no exemptions and no skipped nodes**, where it used to carry two
 exemptions and skip every MOSFET gate.
 
 `--class-test` runs every template at the app's own step and again at a finer one, and asks whether
-it comes back the same circuit. Judging 187 circuits by one rule - run thirty divisions, expect a
+it comes back the same circuit. Judging 188 circuits by one rule - run thirty divisions, expect a
 repeating waveform - flatters the ones that fit it and libels the rest: a curve tracer has no
 frequency, a bias network never moves, a crystal takes a thousand times longer to start than a
 comparator. So each one is measured and reported as what it is: **29 static, 146 periodic, 4

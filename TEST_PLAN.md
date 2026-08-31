@@ -833,6 +833,35 @@ probe suites check waveforms straight from the history, never the derived number
 | 3.34.5 | `[ ]` **Automated:** `python tools/svg_audit.py` | Exports all 187 templates to SVG and opens each with a strict XML parser: well-formed, an svg root with a viewBox, enough elements to be a picture, no nan/inf coordinate. Its first run found six templates exporting **zero bytes, silently**: the export filename sanitizer let a colon through, and on NTFS a colon starts an alternate data stream - fopen succeeds, the bytes vanish into an invisible stream, and the visible file is empty. Every template whose name contains ":" was affected |
 | 3.34.4 | `[ ]` **Automated:** `--fft-test` | The spectrum view and THD against known spectra: a bin-exact sine, square and triangle through the real FFT with the rectangular window. The square's 3rd harmonic sits at -9.54 dB and its THD over harmonics 2..10 at 42.88 %; the triangle at -19.08 dB and 12.05 %; a pure sine has no 3rd harmonic above -80 dB and clears 60 dB of SNR. 10 checks, 0 failing - this is also what stands behind the Function Generator's "3rd harmonic > 30 dB down" claim |
 
+### 3.35 v3.23.0 - five components read their own state at the wrong moment (2026-08-30)
+
+The release is mostly one fault found five times, and the checks that can see it. A companion -
+the little source that carries a storage element's memory from one step to the next - belongs to a
+time step. A stamp runs many times per step: once per Newton iteration, and once more whenever the
+current-flow display reads a terminal current back. Anything advanced or read inside one is being
+advanced or read at a rate that has nothing to do with the clock.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.35.1 | `[ ]` **Automated:** `--dvdt-test` | Eight storage elements against arithmetic done outside the solver. It found the diode's junction capacitance stamped with its sign inverted, a MOSFET gate drawing 24 mA where 12.6 uA was due, a DC motor reaching 63 % of speed in one time step instead of 99 ms, and a relay coil at 10.5 us instead of 500 us |
+| 3.35.2 | `[ ]` **Automated:** `--restamp-test` | Reading a circuit's currents must not change the circuit. 187 templates and 122 component types, each run twice with the display on and off. The relay failed it |
+| 3.35.3 | `[ ]` **Automated:** `--flow-test` | 187/187 with **no exemptions and no skipped nodes**. It carried two exemptions and skipped every MOSFET gate this morning; all three were bugs rather than limitations |
+| 3.35.4 | `[ ]` **Automated:** `--meas-test` / `--fft-test` | The measurements panel and the spectrum against closed forms. Found the duty-cycle bias that made every 50 % waveform read "D:49%" on every screenshot ever taken |
+| 3.35.5 | `[ ]` **Automated:** `--class-test` | Every template measured for what it is, then asked again at a finer step. Three self-oscillators were running 10 % fast because their step came from the display rule; the simulation now measures its own period and refines |
+| 3.35.6 | `[ ]` **Automated:** `--bounce-test` | A settled trace holds its vertical position. 14 templates were shimmering; the scope centred on the mean of a ragged capture window |
+| 3.35.7 | `[ ]` Load **CCM vs DCM** (new) | Two identical 12 V bucks at 50 % duty: 6 ohm settles at 5.44 V, 30 ohm at 8.37 V. The roadmap called this unbuildable for two days; the blocker did not reproduce in nine measured configurations |
+| 3.35.8 | `[ ]` Select a transformer, a DC motor, a relay, a VCVS, a potentiometer | All of them have a properties panel now. 53 of 124 types offer rows against 35, and a VCVS's gain - the entire point of the part - could not be set by any means before |
+| 3.35.9 | `[ ]` Run a heavy circuit and watch the speed readout | Amber when the stepper cannot keep up. It showed the request as though it were the fact |
+| 3.35.10 | `[ ]` **Automated:** `python tools/svg_audit.py` | All 188 SVG exports parse. Six were writing zero bytes: a colon in a filename opens an NTFS alternate data stream |
+| 3.35.11 | `[ ]` **Automated:** `python tools/edge_gui.py` | Nothing a template draws is cut off at the canvas edge |
+| 3.35.12 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 46 suites, and it refuses to start if a suite exists in no list |
+
+The thing worth carrying forward: **a check passing is not evidence the thing it checks is right.**
+Conservation checks cannot see a stamp's sign, because a terminal current is recovered from the
+same stamp that produced it. A suite that picks its own time step is testing a different program.
+An exemption is a place a bug can hide - every one this project carried turned out to be a fault.
+The suites added here are the ones that answer to arithmetic done outside the solver.
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.
