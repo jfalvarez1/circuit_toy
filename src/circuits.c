@@ -11477,6 +11477,86 @@ static int ne555_def_id(void) {
     return def->id;
 }
 
+/* ===================================================================================
+ * The BMI discharge stage AS THE PROJECT DREW IT - not as it should be drawn.
+ *
+ * This is the senior-design schematic transcribed without correction: a P-channel
+ * IRF9540 passing the cell current down into R_Sense, an op-amp comparing the sense
+ * voltage against a reference, and its output driving the gate through 1k.
+ *
+ * The loop runs the wrong way. A P-channel passes MORE current as its gate goes DOWN,
+ * and the reference is on + with the sense on -, so a current that is too high drives
+ * the output down, which asks for more current still. That is positive feedback and it
+ * latches at one rail. The corrected version is the "E-Load: Constant Current Sink"
+ * template, which is the same circuit with an N-channel low side and the inputs the
+ * other way round. Both are here on purpose: the parts and their models are the same,
+ * and the only difference is the sign of the loop.
+ *
+ * Internal nodes: 1 BAT, 2 GND, 3 VREF, 4 SENSE, 5 op-amp output, 6 gate.
+ * =================================================================================== */
+int circuits_register_bmi_block(void) {
+    for (int i = 0; i < g_subcircuit_library.count; i++)
+        if (!strcmp(g_subcircuit_library.defs[i].name, "BMI")) return g_subcircuit_library.defs[i].id;
+    if (g_subcircuit_library.count >= MAX_SUBCIRCUIT_DEFS) return 0;
+
+    static const struct { ComponentType t; float x, y; int a, b, c2; } spec[4] = {
+        { COMP_OPAMP,    260, 120,  4, 3, 5 },   /* -(sense) +(vref) out - as drawn */
+        { COMP_RESISTOR, 440, 120,  5, 6, -1 },  /* R1, 1k into the gate */
+        { COMP_PMOS,     600, 220,  6, 4, 1 },   /* G, D(sense), S(cell) */
+        { COMP_RESISTOR, 600, 380,  4, 2, -1 },  /* R_Sense to ground */
+    };
+    const int NPARTS = 4;
+
+    SubCircuitDef *def = &g_subcircuit_library.defs[g_subcircuit_library.count];
+    memset(def, 0, sizeof *def);
+    def->component_data = calloc((size_t)NPARTS, sizeof(Component));
+    if (!def->component_data) return 0;
+    Component *parts = (Component *)def->component_data;
+
+    for (int i = 0; i < NPARTS; i++) {
+        Component *proto = component_create(spec[i].t, spec[i].x, spec[i].y);
+        if (!proto) { free(def->component_data); def->component_data = NULL; return 0; }
+        parts[i] = *proto;
+        free(proto);
+        Component *p = &parts[i];
+        if (spec[i].t == COMP_OPAMP) { p->props.opamp.ideal = true; p->props.opamp.gain = 1e5; }
+        if (spec[i].t == COMP_PMOS) {
+            component_apply_part(p, "IRF9540N");   /* the part the project specified */
+            p->props.mosfet.cgso = p->props.mosfet.cgdo = p->props.mosfet.cgbo = 0.0;
+        }
+        if (spec[i].t == COMP_RESISTOR) {
+            p->props.resistor.resistance = (i == 1) ? 1000.0 : 3.2;   /* gate stopper, then sense */
+            p->props.resistor.power_rating = 10.0;
+        }
+        p->node_ids[0] = spec[i].a;
+        p->node_ids[1] = spec[i].b;
+        if (spec[i].c2 >= 0) p->node_ids[2] = spec[i].c2;
+        snprintf(p->label, sizeof p->label, "%c%d",
+                 (spec[i].t == COMP_RESISTOR) ? 'R' : (spec[i].t == COMP_OPAMP) ? 'U' : 'M', i + 1);
+    }
+
+    def->id = ++g_subcircuit_library.next_id;
+    snprintf(def->name, sizeof def->name, "BMI");
+    def->component_data_size = (size_t)NPARTS * sizeof(Component);
+    def->num_components = NPARTS;
+
+    static const struct { const char *name; int node; } pins[4] = {
+        { "BAT", 1 }, { "VREF", 3 }, { "GND", 2 }, { "SENSE", 4 }
+    };
+    def->num_pins = 4;
+    for (int i = 0; i < 4; i++) {
+        snprintf(def->pins[i].name, sizeof def->pins[i].name, "%s", pins[i].name);
+        def->pins[i].internal_node_id = pins[i].node;
+        def->pins[i].side = (i < 2) ? 0 : 1;
+        def->pins[i].position = i % 2;
+    }
+    def->num_internal_nodes = 2;          /* 5 and 6 */
+    def->internal_width = 760; def->internal_height = 480;
+    def->block_width = 120; def->block_height = 100;
+    g_subcircuit_library.count++;
+    return def->id;
+}
+
 // 11. The classic astable, with the 555 as a block that really contains a 555
 static int place_ne555_astable(Circuit *circuit, float x, float y) {
     int def_id = ne555_def_id();

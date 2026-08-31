@@ -270,6 +270,10 @@ const CircuitTemplateInfo *circuit_template_get_info(CircuitTemplateType type);
 // Returns number of components added, or 0 on failure
 int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, float y);
 
+/* Registers the "BMI" block in My Circuits: the senior-design discharge stage transcribed
+   without correction, positive feedback and all. Returns its definition id, or 0. */
+int circuits_register_bmi_block(void);
+
 // Suggested scope time/div for a template (0 = no preference)
 double circuit_template_scope_time_div(CircuitTemplateType type);
 double circuit_template_scope_volt_div(CircuitTemplateType type);

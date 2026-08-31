@@ -5994,6 +5994,63 @@ static int sub_test(void) {
         circuit_free(c);
     }
 
+    /* ---- the BMI block from My Circuits: does a user block survive Save and Open ----
+       This one is the senior-design discharge stage as drawn, positive feedback and all.
+       It is NOT asked to regulate - it cannot, the loop runs the wrong way and latches at a
+       rail. What is asked is that every part in it works: that the block solves to finite
+       voltages, and that saving and opening it gives back the same circuit. */
+    {
+        int def_id = circuits_register_bmi_block();
+        SubCircuitDef *bmi = NULL;
+        for (int i = 0; i < g_subcircuit_library.count; i++)
+            if (g_subcircuit_library.defs[i].id == def_id) bmi = &g_subcircuit_library.defs[i];
+
+        Circuit *c = circuit_create();
+        Component *cell = pt_add(c, COMP_DC_VOLTAGE, 0, 100, 0);
+        cell->props.dc_voltage.voltage = 7.4;
+        Component *vref = pt_add(c, COMP_DC_VOLTAGE, 0, 400, 0);
+        vref->props.dc_voltage.voltage = 3.2;
+        Component *g0 = pt_add(c, COMP_GROUND, 0, 240, 0);
+        Component *blk = pt_add(c, COMP_SUBCIRCUIT, 300, 200, 0);
+        blk->props.subcircuit.def_id = def_id;
+        blk->num_terminals = 4;
+        int nbat = pt_node(c, 60, 100), nref = pt_node(c, 60, 400);
+        int ngnd = pt_node(c, 0, 220), nsns = pt_node(c, 420, 240);
+        cell->node_ids[0] = nbat; cell->node_ids[1] = ngnd; g0->node_ids[0] = ngnd;
+        vref->node_ids[0] = nref; vref->node_ids[1] = ngnd;
+        blk->node_ids[0] = nbat; blk->node_ids[1] = nref;
+        blk->node_ids[2] = ngnd; blk->node_ids[3] = nsns;
+
+        char why_bin[220] = "", why_json[220] = "", path[600];
+        const char *tmp = getenv("TEMP"); if (!tmp) tmp = ".";
+        snprintf(path, sizeof path, "%s\\ct_bmi_block.json", tmp);
+        roundtrip_leg(c, path, file_save_circuit, file_load_circuit, why_bin, sizeof why_bin);
+        roundtrip_leg(c, path, file_export_json, file_import_json, why_json, sizeof why_json);
+        remove(path);
+
+        Simulation *sim = simulation_create(c);
+        int solved = sim && simulation_dc_analysis(sim);
+        int finite = solved;
+        if (solved)
+            for (int i = 1; i < c->next_node_id; i++) {
+                Node *n = circuit_get_node(c, i);
+                if (n && !isfinite(n->voltage)) { finite = 0; break; }
+            }
+        if (sim) simulation_free(sim);
+
+        total++;
+        int pass = bmi && bmi->num_components == 4 && bmi->num_pins == 4
+                   && !why_bin[0] && !why_json[0] && finite;
+        if (!pass) fails++;
+        printf("%s sub  BMI block save/open        parts=%d pins=%d  %s%s%s%s\n",
+               pass ? " OK " : "FAIL",
+               bmi ? bmi->num_components : -1, bmi ? bmi->num_pins : -1,
+               why_bin[0] ? "binary: " : "", why_bin,
+               why_json[0] ? "json: " : "", pass ? "(as drawn, positive feedback and all)"
+                                                 : (finite ? why_json : "[non-finite solution]"));
+        circuit_free(c);
+    }
+
     printf("\nsub-test: %d checks, %d failed\n", total, fails);
     return fails ? 1 : 0;
 }

@@ -143,6 +143,7 @@ bool app_init(App *app) {
 
     // Initialize UI
     ui_init(&app->ui);
+    circuits_register_bmi_block();   /* so it is in My Circuits from the first frame */
 
     // Initialize input
     input_init(&app->input);
