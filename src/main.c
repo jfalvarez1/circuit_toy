@@ -681,6 +681,22 @@ static int place_test(void) {
         else printf("[ OK ] place %-28s %d parts, %d wires, %d probes\n", ti->name,
                     shared->num_components, shared->num_wires, shared->num_probes);
     }
+
+    /* Node ids must still be inside the arrays that are indexed by them.
+       node_map and the union-find parent[] in circuit_build_node_map both hold MAX_NODES and are
+       indexed BY node id, while circuit_create_node only ever bounded the node COUNT. Ids climbed
+       across the 188 clear-and-place cycles above and passed 2048 around the sixtieth template,
+       and building a node map then wrote off the end of the Circuit struct - a real segfault,
+       found by this suite. */
+    checks++;
+    if (shared->next_node_id >= MAX_NODES) {
+        printf("[FAIL] place node ids reached %d after %d clear-and-place cycles; node_map holds %d\n",
+               shared->next_node_id, checks, MAX_NODES);
+        fails++;
+    } else {
+        printf("[ OK ] place node ids top out at %d over %d cycles, inside node_map's %d\n",
+               shared->next_node_id, checks, MAX_NODES);
+    }
     circuit_free(shared);
 
     /* No other click may land inside a range. A property edit that reads as a plain button is

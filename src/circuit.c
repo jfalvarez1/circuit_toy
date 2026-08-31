@@ -92,13 +92,23 @@ void circuit_clear(Circuit *circuit) {
     /* Clearing the canvas normally means starting again, and a stack of records about a
        circuit that no longer exists is worse than none. The exception is a clear that has just
        been recorded whole - there the stack is the only way back, and keep_undo says so. */
-    if (!circuit->undo_preserving) circuit_clear_undo(circuit);
+    if (!circuit->undo_preserving) {
+        circuit_clear_undo(circuit);
+        /* ...and with no records left to confuse, the NODE ids may start again.
 
-    /* The id counters keep counting. Starting them again meant a part on the new canvas could
-       carry the number of a part on the old one, and an undo stack full of records that name
-       things by number then cannot tell them apart: redoing a swap of circuits removed the
-       wrong source, because both circuits had one and both were id 1. Ids are cheap and a
-       session does not run out of them; being able to say which part you mean is worth more. */
+           "A session does not run out of them" is true of component ids and false of these:
+           node_map is indexed BY node id and holds MAX_NODES entries, as does the union-find
+           parent[] in circuit_build_node_map, so an id past 2048 writes off the end of both. It
+           is reachable - --place-test clears and refills one Circuit 188 times and segfaulted on
+           the sixtieth template.
+
+           Only when the undo stack goes with it. That is what made restarting them unsafe: a
+           record naming a part by number could not tell the old canvas's part from the new one's.
+           Nothing here survives the clear - components, nodes, wires and probes are all gone
+           above - so with the stack cleared too there is nothing left holding an old id.
+           Component ids still keep counting, which is what that argument was really about. */
+        circuit->next_node_id = 1;
+    }
 
     circuit->modified = true;
     circuit->topology_dirty = true;
@@ -174,6 +184,12 @@ Component *circuit_find_component_at(Circuit *circuit, float x, float y) {
 
 int circuit_create_node(Circuit *circuit, float x, float y) {
     if (!circuit || circuit->num_nodes >= MAX_NODES) return -1;
+    /* The id is what node_map and the union-find parent[] are indexed by, and both hold
+       MAX_NODES. num_nodes being under the limit does not bound the id: ids only ever climb, so
+       a long session reaches 2048 while holding forty nodes. Refusing here is not a limit anyone
+       will meet without clearing the canvas once, and it is the difference between stopping and
+       writing off the end of the Circuit struct. */
+    if (circuit->next_node_id >= MAX_NODES) return -1;
 
     Node *node = &circuit->nodes[circuit->num_nodes++];
     node->id = circuit->next_node_id++;
@@ -584,7 +600,9 @@ void circuit_build_node_map(Circuit *circuit) {
     // Map all nodes to their root's index
     for (int i = 0; i < circuit->num_nodes; i++) {
         int node_id = circuit->nodes[i].id;
+        if (node_id < 0 || node_id >= MAX_NODES) continue;   /* see circuit_create_node */
         int root = uf_find(parent, node_id);
+        if (root < 0 || root >= MAX_NODES) continue;
         circuit->node_map[node_id] = circuit->node_map[root];
     }
 
