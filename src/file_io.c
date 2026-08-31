@@ -618,10 +618,29 @@ bool file_import_json(Circuit *circuit, const char *filename) {
                             }
                         }
 
+                        char *end_of_comp = strstr(ptr + 1, "\"type\":");
+
+                        /* The label. It was written and never read: component_create derives one
+                           from the part's id ("R" + id), ids are handed out afresh on load, so a
+                           part saved as R5 came back as whatever its new position made it. The
+                           binary loader has always read it back; this one had not, and it is the
+                           format the Save button writes. */
+                        {
+                            char *lab_ptr = strstr(ptr, "\"label\": \"");
+                            if (lab_ptr && (!end_of_comp || lab_ptr < end_of_comp)) {
+                                const char *q = lab_ptr + strlen("\"label\": \"");
+                                size_t k = 0;
+                                while (q[k] && q[k] != '"' && k < MAX_LABEL_LEN - 1) k++;
+                                if (k > 0) {
+                                    memcpy(comp->label, q, k);
+                                    comp->label[k] = '\0';
+                                }
+                            }
+                        }
+
                         /* The full property block, if the file carries one. It wins over the
                            readable fields above: those are a hand-picked few and everything
                            they omit would otherwise stay at the component's default. */
-                        char *end_of_comp = strstr(ptr + 1, "\"type\":");
                         char *state_ptr = strstr(ptr, "\"state\": \"");
                         if (state_ptr && (!end_of_comp || state_ptr < end_of_comp)) {
                             const char *hex = state_ptr + strlen("\"state\": \"");

@@ -399,6 +399,12 @@ static void circuit_compare_ex(Circuit *a, Circuit *b, bool strict, char *why, s
                 snprintf(why, whyn, "%s moved (%g,%g) -> (%g,%g)", ca->label, ca->x, ca->y, cb->x, cb->y);
             else if (ca->rotation != cb->rotation)
                 snprintf(why, whyn, "%s rotation %d -> %d", ca->label, ca->rotation, cb->rotation);
+            /* The label is what the schematic prints beside the part - R1, C2 - and it was the one
+               field this comparison mentioned in every message and never checked. The JSON writer
+               emitted it and the JSON reader ignored it, so every Open renamed every part, and
+               188 templates round-tripped past this without a word. */
+            else if (strict && strcmp(ca->label, cb->label))
+                snprintf(why, whyn, "%s came back labelled '%s'", ca->label, cb->label);
             else {
                 /* the value the schematic prints: resistance, capacitance, source volts, switch
                    state, part number - everything that carries a label */
