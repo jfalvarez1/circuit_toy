@@ -13322,6 +13322,10 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
 };
 
 // Extra probes (up to 3) for templates that need more than input + output on the scope
+/* Channel names are at most SEVEN characters. Probe.label is char[8], so a longer one is
+   truncated on the way in and there is nothing at the drawing end that can recover it: "PARALLEL"
+   reached the scope as "PARALLE" and "LOW SIDE" as "LOW SID". Three per template, and the scope
+   right-aligns them against the graticule, so a short name is worth more than a precise one. */
 static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_3PH_Y_BALANCED]   = { { COMP_RESISTOR, 5, 0, "PH C" }, { COMP_RESISTOR, 6, 0, "NEUT" } },      // phase C load, neutral (A = source probe)
     [CIRCUIT_DIFFERENTIAL_PAIR] = { { COMP_NPN_BJT, 1, 1, "VC2" } },                                // Q2 collector: the mirror image
@@ -13353,9 +13357,31 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
        is not teaching anything. */
     [CIRCUIT_IV_CAP_ENERGY]    = { { COMP_CAPACITOR, 2, 0, "100R A" },    /* the 100 ohm copy: the */
                                    { COMP_CAPACITOR, 3, 0, "100R B" } },  /* 10 ms transfer, visible */
+
+    /* The rest of the interview set, for the same reason. Each of these is one question answered
+       two or three ways, and with IN and OUT alone the scope showed one answer and left the others
+       undrawn - the comparison was on the canvas and not on the instrument. Ordinals are per type
+       and were read off --trace; if a builder gains a part ahead of one of these, the name on the
+       channel stops matching what it points at, which --iv-test and --view-test will show. */
+    [CIRCUIT_IV_PROBE_COMP]    = { { COMP_CAPACITOR, 1, 0, "UNDER" },
+                                   { COMP_CAPACITOR, 5, 0, "OVER" } },
+    [CIRCUIT_IV_PROBE_LOADING] = { { COMP_CAPACITOR, 1, 0, "1x" },
+                                   { COMP_CAPACITOR, 3, 0, "10x" } },
+    [CIRCUIT_IV_GROUND_LEAD]   = { { COMP_CAPACITOR, 1, 0, "SPRING" } },
+    [CIRCUIT_IV_SCOPE_INPUT_Z] = { { COMP_RESISTOR,  3, 0, "50 OHM" } },
+    [CIRCUIT_IV_SHUNT_SENSE]   = { { COMP_RESISTOR,  0, 1, "LO SIDE" } },
+    [CIRCUIT_IV_BUCK_NODES]    = { { COMP_INDUCTOR,  0, 0, "SW NODE" },
+                                   { COMP_RESISTOR,  1, 1, "GATE" } },
+    [CIRCUIT_IV_BOOTSTRAP]     = { { COMP_CAPACITOR, 1, 0, "STUCK" } },
+    [CIRCUIT_IV_TERMINATION]   = { { COMP_CAPACITOR, 1, 0, "SERIES" },
+                                   { COMP_CAPACITOR, 2, 0, "SHUNT" } },
+    [CIRCUIT_IV_PULLUP_SIZING] = { { COMP_CAPACITOR, 1, 0, "4k7" },
+                                   { COMP_CAPACITOR, 2, 0, "1k" } },
+    [CIRCUIT_IV_GROUND_BOUNCE] = { { COMP_RESISTOR,  1, 0, "QUIET" } },
+    [CIRCUIT_IV_CROSSTALK]     = { { COMP_CAPACITOR, 4, 1, "DRIVEN" } },
     [CIRCUIT_IV_INRUSH]        = { { COMP_CAPACITOR, 1, 0, "LIMITED" } }, /* the 4.7 ohm copy charging */
     [CIRCUIT_IV_SWITCH_CHOICE] = { { COMP_RESISTOR, 2, 1, "MOSFET" } },   /* the 2N7000's drop, beside the BJT's */
-    [CIRCUIT_IV_ESD_CLAMP]     = { { COMP_RESISTOR, 2, 0, "220k PIN" } }, /* the same 6 V through 220 k */
+    [CIRCUIT_IV_ESD_CLAMP]     = { { COMP_RESISTOR, 2, 0, "220k" } }, /* the same 6 V through 220 k */
     [CIRCUIT_IV_MILLER]        = { { COMP_RESISTOR, 7, 1, "C_gd" } },     /* the stage that has the 10 pF */
     /* the digit templates: the clock that drives them, so the scope shows the input that makes
        the count advance next to the segment it lights */

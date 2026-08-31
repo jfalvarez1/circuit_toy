@@ -4401,7 +4401,14 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                             ui->scope_channels[ch].color.r,
                             ui->scope_channels[ch].color.g,
                             ui->scope_channels[ch].color.b, 0xff);
-                        ui_draw_text(renderer, tag, r->x + r->w - (fit ? 110 : 34), band_y + 3);
+                        /* Right-aligned by what the tag actually measures, not by a fixed 34 or
+                           110 px. Those two numbers were the width of "IN" and of "IN 50mV/div",
+                           and any longer channel name ran off the graticule: the Termination
+                           template's "SERIES" and "PARALLEL" bands were drawn as "SERI" and
+                           "PARA" with the rest past the edge. 8 px a glyph, as everywhere else
+                           in this panel. */
+                        int tag_w = (int)strlen(tag) * 8;
+                        ui_draw_text(renderer, tag, r->x + r->w - tag_w - 6, band_y + 3);
                     }
                     band_index++;
 
