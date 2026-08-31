@@ -45,6 +45,33 @@ static void subcircuit_advance_caps(Component *blk, Vector *now, Vector *prev, d
     }
 }
 
+/* Record what a component's companion state is as this step's solve begins, so that reading a
+   terminal current back afterwards - which re-stamps with g_stamp_read_only set, after the state
+   has been advanced - reproduces the stamp that actually happened.
+
+   It has to reach inside subcircuit blocks. A block's internal parts live on its own instance
+   array, not on circuit->components, and subcircuit_advance_caps advances their cap_vc and
+   trap_i_prev every accepted step. Snapshotting only the top level left those internals with
+   cap_vc_solve = 0 for ever, so a charged capacitor inside a user block was re-stamped as though
+   it were empty: a block's reported pin current came out 94x wrong on a 5 mA circuit. That was a
+   regression introduced with the snapshot itself - before it, the read used cap_vc directly,
+   which was one step stale but broadly right. */
+static void snapshot_companion_state(Component *comp) {
+    if (!comp) return;
+    comp->trap_i_solve = comp->trap_i_prev;
+    comp->cap_vc_solve = comp->cap_vc;
+    if (comp->type == COMP_DC_MOTOR) {
+        comp->state_w_solve = comp->props.dc_motor.omega;
+        comp->state_i_solve = comp->props.dc_motor.current;
+    } else if (comp->type == COMP_RELAY) {
+        comp->state_i_solve = comp->props.relay.i_coil;
+    } else if (comp->type == COMP_SUBCIRCUIT) {
+        Component *inner = NULL;
+        int n = component_subcircuit_instance(comp, &inner);
+        for (int i = 0; i < n; i++) snapshot_companion_state(&inner[i]);   /* nested blocks too */
+    }
+}
+
 /* Start a block's storage elements from the operating point, nested ones included. */
 static void subcircuit_seed_state(Component *blk, Vector *solution) {
     Component *inner = NULL;
@@ -1154,18 +1181,7 @@ bool simulation_step(Simulation *sim) {
        then the accepted step has advanced trap_i_prev and cap_vc to the next step's values.
        Taken here rather than just before the advance so that a re-stamp during the step, which
        the step-rejection path does, sees this step's state and not the last one's. */
-    for (int i = 0; i < circuit->num_components; i++) {
-        Component *comp = circuit->components[i];
-        if (!comp) continue;
-        comp->trap_i_solve = comp->trap_i_prev;
-        comp->cap_vc_solve = comp->cap_vc;
-        if (comp->type == COMP_DC_MOTOR) {
-            comp->state_w_solve = comp->props.dc_motor.omega;
-            comp->state_i_solve = comp->props.dc_motor.current;
-        } else if (comp->type == COMP_RELAY) {
-            comp->state_i_solve = comp->props.relay.i_coil;
-        }
-    }
+    for (int i = 0; i < circuit->num_components; i++) snapshot_companion_state(circuit->components[i]);
 
     // Ensure we have a solution (run DC analysis if needed)
     if (!sim->solution) {
@@ -1319,6 +1335,25 @@ bool simulation_step(Simulation *sim) {
             if (omega_new < 0) omega_new = 0;
             comp->props.dc_motor.omega = omega_new;
             comp->props.dc_motor.current = I_new;
+        }
+
+        /* A battery's remaining charge. Integrated once per accepted step, from the accepted
+           solution, for the same reason as the two below: it used to be counted inside the stamp
+           and the DC operating point's 1e9 pseudo-step emptied it before the run began. */
+        for (int i = 0; i < circuit->num_components; i++) {
+            Component *comp = circuit->components[i];
+            if (!comp || comp->type != COMP_BATTERY) continue;
+            if (comp->props.battery.ideal || comp->props.battery.discharged) continue;
+            double cap_mah = comp->props.battery.capacity_mah;
+            if (!(cap_mah > 0) || !(dt > 0)) continue;
+            int vi = circuit->num_matrix_nodes + comp->voltage_var_idx;
+            if (vi < 0 || vi >= sim->solution_size) continue;
+            double I = fabs(vector_get(sim->solution, vi));
+            comp->props.battery.current_draw = I;
+            comp->props.battery.charge_coulombs -= I * dt;
+            if (comp->props.battery.charge_coulombs < 0) comp->props.battery.charge_coulombs = 0;
+            comp->props.battery.charge_state = comp->props.battery.charge_coulombs / (cap_mah * 3.6);
+            if (comp->props.battery.charge_state < 0.01) comp->props.battery.discharged = true;
         }
 
         /* A relay's coil current, and the pull-in/drop-out decision made from it - once per

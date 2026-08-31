@@ -854,6 +854,8 @@ advanced or read at a rate that has nothing to do with the clock.
 | 3.35.9 | `[ ]` Run a heavy circuit and watch the speed readout | Amber when the stepper cannot keep up. It showed the request as though it were the fact |
 | 3.35.10 | `[ ]` **Automated:** `python tools/svg_audit.py` | All 188 SVG exports parse. Six were writing zero bytes: a colon in a filename opens an NTFS alternate data stream |
 | 3.35.11 | `[ ]` **Automated:** `python tools/edge_gui.py` | Nothing a template draws is cut off at the canvas edge |
+| 3.35.12a | `[ ]` **Automated:** `--state-test` | A battery is still full after its own DC operating point. It was not: the coulomb count ran inside the stamp, the operating point stamps with a 1e9 pseudo-step, and every Run began with a flat battery reading 0.72 V instead of 1.5 V |
+| 3.35.12b | `[ ]` **Automated:** `--sub-test` case 3 | A subcircuit that is one capacitor draws C dv/dt through its pin. The solve-time snapshot did not reach inside blocks, so a charged internal capacitor was read back as empty - 94x wrong, and a regression introduced by the snapshot itself |
 | 3.35.12 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 46 suites, and it refuses to start if a suite exists in no list |
 
 The thing worth carrying forward: **a check passing is not evidence the thing it checks is right.**

@@ -4127,6 +4127,102 @@ static int dcm_test(void) {
     return fails ? 1 : 0;
 }
 
+/* --state-test: state that belongs to a time step must not move when it is not a time step.
+ *
+ * Two faults found by a pre-release review, both of the same shape as the five this release
+ * already fixed, and neither visible to any suite that existed.
+ *
+ * 1. The battery counted coulombs inside its stamp. The DC operating point stamps with a pseudo
+ *    step of 1e9 seconds - the trick that makes a capacitor look like an open - so a default AA
+ *    across 100 ohm lost 15 million coulombs before the first transient step and every Run began
+ *    with a flat battery reading 0.72 V instead of 1.5 V. Nothing caught it because --restamp-test
+ *    watches a node voltage over milliseconds, where a real discharge is far below its threshold.
+ *
+ * 2. The solve-time snapshot did not reach inside subcircuit blocks, so an internal capacitor was
+ *    re-stamped as though it were uncharged when the current-flow display read it back. That was a
+ *    regression introduced with the snapshot itself.
+ *
+ * Both are checked directly here: run the operating point and demand the battery still be full,
+ * and read a charged capacitor's block current back and demand it agree with what feeds it.
+ */
+static int state_test(void) {
+    int fails = 0;
+
+    /* --- the battery survives its own operating point --- */
+    {
+        Circuit *c = circuit_create();
+        Component *b = pt_add(c, COMP_BATTERY, 0, 60, 0);
+        Component *g0 = pt_add(c, COMP_GROUND, 0, 160, 0);
+        Component *r = pt_add(c, COMP_RESISTOR, 160, 60, 0);
+        Component *g1 = pt_add(c, COMP_GROUND, 160, 160, 0);
+        r->props.resistor.resistance = 100.0;
+        r->props.resistor.power_rating = 100.0;
+        int top = pt_node(c, 80, 20), gnd0 = pt_node(c, 0, 140), gnd1 = pt_node(c, 160, 140);
+        b->node_ids[0] = top; b->node_ids[1] = gnd0; g0->node_ids[0] = gnd0;
+        r->node_ids[0] = top; r->node_ids[1] = gnd1; g1->node_ids[0] = gnd1;
+        circuit_add_wire(c, gnd0, gnd1);
+
+        double soc_before = b->props.battery.charge_state;
+        Simulation *sim = simulation_create(c);
+        int ok = simulation_dc_analysis(sim);
+        double soc_after = b->props.battery.charge_state;
+        /* and a few real steps: 2500 mAh does not move measurably in a millisecond */
+        simulation_set_time_step(sim, 1e-5);
+        simulation_start(sim);
+        for (int i = 0; i < 100 && ok; i++) if (!simulation_step(sim)) ok = 0;
+        double soc_run = b->props.battery.charge_state;
+        double v = simulation_get_node_voltage(sim, c->nodes[0].id);
+
+        int bad = !ok || soc_after < 0.999 || soc_run < 0.999 || b->props.battery.discharged;
+        if (bad) fails++;
+        printf("%s state  battery      SoC %.4f -> %.4f after the operating point, %.4f after 1 ms "
+               "(terminal %.3f V)\n", bad ? "[FAIL]" : "[ OK ]", soc_before, soc_after, soc_run, v);
+        simulation_free(sim);
+        circuit_free(c);
+    }
+
+    /* --- a capacitor inside a subcircuit is read back as charged --- */
+    {
+        Circuit *c = circuit_create();
+        /* source -> block(IN) , block has R to OUT and C from IN to ground */
+        Component *v = pt_add(c, COMP_AC_VOLTAGE, 0, 60, 0);
+        v->props.ac_voltage.amplitude = 5.0; v->props.ac_voltage.frequency = 200.0;
+        Component *g0 = pt_add(c, COMP_GROUND, 0, 160, 0);
+        Component *cap = pt_add(c, COMP_CAPACITOR, 160, 60, 90);
+        cap->props.capacitor.capacitance = 1e-6;
+        Component *g1 = pt_add(c, COMP_GROUND, 160, 160, 0);
+        int top = pt_node(c, 80, 20), gnd0 = pt_node(c, 0, 140), gnd1 = pt_node(c, 160, 140);
+        v->node_ids[0] = top; v->node_ids[1] = gnd0; g0->node_ids[0] = gnd0;
+        cap->node_ids[0] = top; cap->node_ids[1] = gnd1; g1->node_ids[0] = gnd1;
+        circuit_add_wire(c, gnd0, gnd1);
+
+        Simulation *sim = simulation_create(c);
+        int ok = simulation_dc_analysis(sim);
+        simulation_enable_adaptive(sim, false);
+        simulation_set_time_step(sim, 1e-5);
+        simulation_start(sim);
+        simulation_set_time_step(sim, 1e-5);
+        for (int i = 0; i < 300 && ok; i++) if (!simulation_step(sim)) ok = 0;
+        simulation_update_flow_display(sim);
+
+        /* the capacitor's own reported current against C dv/dt from the accepted steps */
+        double i_rep = cap->terminal_current[0];
+        double w = 2.0 * M_PI * 200.0;
+        double i_true = 1e-6 * 5.0 * w * cos(w * sim->time);
+        double err = fabs(i_rep - i_true) / (fabs(i_true) + 1e-9);
+        int bad = !ok || err > 0.05;
+        if (bad) fails++;
+        printf("%s state  capacitor    reported %.6g A against C dv/dt %.6g A (%.2f %%)\n",
+               bad ? "[FAIL]" : "[ OK ]", i_rep, i_true, err * 100.0);
+        simulation_free(sim);
+        circuit_free(c);
+    }
+
+    printf("\nstate-test: 2 checks that state advances once per step and is read as it was "
+           "stamped, %d failed\n", fails);
+    return fails ? 1 : 0;
+}
+
 static int meas_test(void) {
     enum { N = 4000 };
     static double ts[N], vs[N];
@@ -4601,6 +4697,68 @@ static int sub_test(void) {
                ok ? "(outer 1k into an inner 1k/1k divider)" : "[simulation failed]");
     }
 
+
+    /* ---- 3. the current read back out of a block whose capacitor is CHANGING ----
+       A read-only re-stamp - the one that recovers terminal currents for the current-flow
+       display - has to reproduce the stamp that actually happened, and for a storage element that
+       means reading the companion state the solve used. The snapshot carrying it was added for
+       top-level parts only, and a block's internals live on its own instance array, so an internal
+       capacitor was re-stamped as though it were empty.
+
+       Driven by an AC source on purpose. The first version of this case used the shared DC drive
+       and passed with the bug still in: the operating point charges the capacitor to the supply,
+       after which dv/dt is nearly zero and the companion contributes almost nothing, so reading it
+       as zero changed the answer by less than the tolerance. A check that cannot fail is not a
+       check. With a sine there is a real dv/dt at every instant and the oracle is exact: a block
+       that is nothing but a capacitor draws C dv/dt through its pin. */
+    {
+        Circuit *inner = circuit_create();
+        Component *cap = pt_add(inner, COMP_CAPACITOR, 100, 140, 90);
+        cap->props.capacitor.capacitance = 1e-6;
+        cap->props.capacitor.ideal = true;          /* no ESR/leakage in the oracle */
+        int nin = pt_node(inner, 100, 100), ngnd = pt_node(inner, 100, 180);
+        cap->node_ids[0] = nin; cap->node_ids[1] = ngnd;
+        SubCircuitDef *def = sub_new_def("CAPB");
+        int pins[2] = { nin, ngnd };
+        const char *names[2] = { "IN", "GND" };
+        sub_fill_def(def, inner, pins, names, 2);
+        circuit_free(inner);
+
+        Circuit *c = circuit_create();
+        Component *v = pt_add(c, COMP_AC_VOLTAGE, 0, 100, 0);
+        v->props.ac_voltage.amplitude = 5.0;
+        v->props.ac_voltage.frequency = 200.0;
+        v->props.ac_voltage.ideal = true;
+        Component *g0 = pt_add(c, COMP_GROUND, 0, 200, 0);
+        Component *blk = pt_add(c, COMP_SUBCIRCUIT, 240, 100, 0);
+        blk->props.subcircuit.def_id = def->id;
+        blk->num_terminals = 2;
+        int in = pt_node(c, 60, 100), gnd = pt_node(c, 0, 180);
+        v->node_ids[0] = in; v->node_ids[1] = gnd; g0->node_ids[0] = gnd;
+        blk->node_ids[0] = in; blk->node_ids[1] = gnd;
+
+        Simulation *sim = simulation_create(c);
+        int ok = sim && simulation_dc_analysis(sim);
+        simulation_enable_adaptive(sim, false);
+        simulation_set_time_step(sim, 1e-5);
+        simulation_start(sim);
+        simulation_set_time_step(sim, 1e-5);
+        for (int i = 0; i < 300 && ok; i++) if (!simulation_step(sim)) ok = 0;
+        double pin_i = 0;
+        if (ok) { simulation_update_flow_display(sim); pin_i = blk->terminal_current[0]; }
+        double w = 2.0 * M_PI * 200.0;
+        double i_expect = 1e-6 * 5.0 * w * cos(w * (sim ? sim->time : 0));
+        double err = fabs(pin_i - i_expect) / (fabs(i_expect) + 1e-12);
+        total++;
+        int pass = ok && err < 0.10;
+        if (!pass) fails++;
+        printf("%s sub  block pin current (AC)    IN = %9.6f A  expect %9.6f A (%.1f %%)  %s\n",
+               pass ? " OK " : "FAIL", pin_i, i_expect, err * 100.0,
+               ok ? "(a block that is one capacitor draws C dv/dt)" : "[simulation failed]");
+        if (sim) simulation_free(sim);
+        circuit_free(c);
+    }
+
     printf("\nsub-test: %d checks, %d failed\n", total, fails);
     return fails ? 1 : 0;
 }
@@ -4923,6 +5081,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--dvdt-test")) return dvdt_test();
         else if (!strcmp(argv[i], "--meas-test")) return meas_test();
+        else if (!strcmp(argv[i], "--state-test")) return state_test();
         else if (!strcmp(argv[i], "--dcm-test")) return dcm_test();
         else if (!strcmp(argv[i], "--fft-test")) return fft_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();

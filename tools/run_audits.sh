@@ -25,7 +25,7 @@ if [ "$JOBS" -le 0 ]; then
     JOBS=$((JOBS > 2 ? JOBS - 1 : 2))
 fi
 
-SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test --dvdt-test --meas-test --fft-test --dcm-test --scope-test --class-test --restamp-test
+SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test --dvdt-test --state-test --meas-test --fft-test --dcm-test --scope-test --class-test --restamp-test
 --flow-test --switch-test --part-test --op-test --sub-test --spice-test --xtal-test --view-test
 --conn-test --file-test --parts-file-test --undo-test --line-test --std-test --burn-test --knob-test --geom-test --param-test
 --tesla-test"

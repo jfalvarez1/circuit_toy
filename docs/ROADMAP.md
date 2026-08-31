@@ -302,6 +302,47 @@ recovered by re-stamping each device alone and reading its residual, so the repo
 the stamp whatever the stamp says. A sign error is invisible to every conservation check in the
 suite and shows up only in a waveform - which it did, and which was explained away.
 
+## What a review found that the suites did not (2026-08-31)
+
+The v3.23.0 diff was reviewed before publishing, by five independent readers with a verifier
+against each finding whose job was to refute it. Two survived, and both were the same fault this
+release was about - state that belongs to a time step, touched somewhere that is not a time step.
+Neither was visible to any suite that existed, which is the interesting part.
+
+**The battery emptied itself during the DC operating point.** Its coulomb count lived inside
+`component_stamp`: `charge_coulombs -= |I| * dt`. The operating point stamps with `dc_dt = 1e9`,
+the pseudo-step that makes a capacitor look like an open - so a default AA across 100 ohm lost
+0.015 A x 1e9 s of charge before the first transient step, and **every Run began with a flat
+battery reading 0.72 V instead of 1.5 V**. It also ran once per Newton iteration and once more
+every time the current-flow display read a terminal current back. Moved to the per-step advance in
+`simulation.c` with the motor and the relay.
+
+Why nothing caught it: `--restamp-test` names the battery as one of the parts it is looking for,
+but it compares a node voltage over milliseconds, where a real discharge is far below its
+threshold. The part had no properties panel until this release either, so nobody could place one
+and watch it die.
+
+**The solve-time snapshot did not reach inside subcircuit blocks, and that was a regression
+introduced with the snapshot itself.** A block's internal parts live on its own instance array
+rather than on `circuit->components`, so their `cap_vc_solve` stayed zero for ever while
+`subcircuit_advance_caps` moved the real state every step. A read-only re-stamp therefore treated a
+charged internal capacitor as empty: a block's reported pin current came out **94x wrong**. Before
+the snapshot existed the same read used `cap_vc` directly - one step stale, but broadly right.
+`snapshot_companion_state` recurses now, nested blocks included.
+
+Why nothing caught it: `--restamp-test` detects *mutation* - a stamp that writes when it should
+only read - and this is a *misread*, which changes nothing about the circuit. `--sub-test` had a
+pin-current case, but its block was resistive, and its RC case checked a node voltage, which is
+right either way.
+
+Both now have checks that provably fail without the fix: `--state-test` (the battery is still full
+after its own operating point) and a third `--sub-test` case (a block that is one capacitor draws
+C dv/dt through its pin - 9369 % out with the bug, 1 % with it). The second of those took two
+attempts: the first version reused the shared DC drive, and the operating point charges the
+capacitor to the supply, after which dv/dt is nearly zero and reading the companion as zero changes
+almost nothing. It passed with the bug still in. A check that cannot fail is not a check, and the
+only way to know is to put the bug back and watch.
+
 ## Reading a circuit must not change it
 
 Four faults found on 2026-08-30 were the same fault wearing different clothes: a component's

@@ -4480,29 +4480,16 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 vector_add(b, volt_idx, V_oc);
             }
 
-            // Track discharge over time
-            // dQ = I * dt, where Q is charge in coulombs
-            if (!ideal && !discharged && prev_solution && dt > 0) {
-                // Get current from voltage source variable
-                double I_battery = vector_get(prev_solution, volt_idx);
-                comp->props.battery.current_draw = fabs(I_battery);
-
-                // Discharge: reduce charge_coulombs
-                double dQ = fabs(I_battery) * dt;
-                comp->props.battery.charge_coulombs -= dQ;
-
-                if (comp->props.battery.charge_coulombs < 0) {
-                    comp->props.battery.charge_coulombs = 0;
-                }
-
-                // Update SoC (charge_coulombs / initial_charge)
-                double initial_charge = comp->props.battery.capacity_mah * 3.6;  // mAh to C
-                comp->props.battery.charge_state = comp->props.battery.charge_coulombs / initial_charge;
-
-                if (comp->props.battery.charge_state < 0.01) {
-                    comp->props.battery.discharged = true;
-                }
-            }
+            /* The coulomb count used to live here, and a stamp is the wrong place for an
+               integrator. It ran once per Newton iteration, once more whenever the current-flow
+               display read a terminal current back, and - fatally - once during the DC operating
+               point, where dt is the pseudo-step 1e9 that makes capacitors look like opens. A
+               default AA across 100 ohm therefore lost 0.015 A x 1e9 s of charge before the first
+               transient step: every Run began with a flat battery reading 0.72 V instead of 1.5 V.
+               It is advanced once per accepted step in simulation.c now, with the rest of the
+               companions. Only the display current is recorded here, and not while reading. */
+            if (!ideal && !discharged && prev_solution && !g_stamp_read_only && dt > 0 && dt < 1e6)
+                comp->props.battery.current_draw = fabs(vector_get(prev_solution, volt_idx));
             break;
         }
 
