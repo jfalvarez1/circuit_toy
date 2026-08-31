@@ -866,7 +866,7 @@ advanced or read at a rate that has nothing to do with the clock.
 | 3.35.20 | `[ ]` **Automated:** the step budget | A double reaching 1e14 cast to a 32-bit `long` is undefined and lands on INT_MIN, which the `< 1` clamp turned into one step per frame - while the keeping-up indicator, comparing progress against that same target of 1, reported a confident 100 % |
 | 3.35.21 | `[ ]` **Automated:** the fuse | i2t is integration state, so accumulating it inside the stamp multiplied the blow energy by the Newton iteration count - exactly 2x on a DC circuit with the current-flow display on |
 | 3.35.22 | `[ ]` Reset with a relay or a DC motor placed | Their state clears. `simulation_reset` had a case for neither |
-| 3.35.12 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 47 suites, and it refuses to start if a suite exists in no list |
+| 3.35.12 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 48 suites, and it refuses to start if a suite exists in no list |
 
 3.35.13 through 3.35.22 are the tail of a pre-release review: five independent readers, each finding
 verified by a reader whose job was to refute it, **23 survived and all 23 are fixed.** No suite saw
@@ -877,6 +877,27 @@ Conservation checks cannot see a stamp's sign, because a terminal current is rec
 same stamp that produced it. A suite that picks its own time step is testing a different program.
 An exemption is a place a bug can hide - every one this project carried turned out to be a fault.
 The suites added here are the ones that answer to arithmetic done outside the solver.
+
+### 3.36 Interview prep: the nineteen templates, against their own numbers (2026-08-30)
+
+These are the templates someone opens to check an answer before an interview, so a number printed
+beside the circuit that the solver does not reproduce is wrong in the one place a person is going to
+repeat it out loud. `--iv-test` takes 26 such numbers off those nineteen canvases and measures each
+twice - at the step the app itself would use, and again eight times finer.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.36.1 | `[ ]` **Automated:** `--iv-test` | 26 documented numbers, 0 the solver fails to reproduce. Kelvin's 110 mV against 10 mV, Crosstalk's 3.3 x 2/7, the 2N3904's 0.07 V beside the 2N7000's 0.41 V, Bootstrap's 23.5 V, the two-capacitor problem at exactly 5.000 V both sides |
+| 3.36.2 | `[ ]` **Automated:** the same suite at dt/8 | A number quoted to a person has to be a property of the circuit, not of how finely it was integrated. 25 of 26 hold; Hot-Plug Inrush's rail sag moves 8.2 % and is reported `[NOTE]` with its reason - the step comes from source periods and that event has no source |
+| 3.36.3 | `[ ]` Load **4-Wire (Kelvin) Sensing** and look at CH1 | 110 mV, the two-wire reading. It was parked on the current source's grounded return - a permanent 0 V - so the comparison the template exists for was never on the scope |
+| 3.36.4 | `[ ]` Load **The Two-Capacitor Problem** and **Hot-Plug Inrush** | Both now probe the slow copy as well. They drew two flat lines each: the probed copy finishes in 100 us and 50 us respectively, on a 50 ms screen |
+| 3.36.5 | `[ ]` Load **ESD Clamp Diodes** | The pin clamps at 3.85 V through 1 k, 3.70 V through 220 k, and both are on the scope. The notes said 4.0 V and 2.7 mA - which is (6-3.3)/1k, the current if the pin sat *at* the rail, in the sentence saying it does not |
+| 3.36.6 | `[ ]` Read the **Miller** palette line | 130 pF. It said 110 pF while the notes and the on-canvas label both said 130, which is what a gain of 12 gives |
+| 3.36.7 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 48 suites |
+
+The thing worth carrying forward: **a template's annotation is an assertion, and nothing was
+testing the assertions.** Every suite in the battery checked that these circuits run, converge,
+conserve charge and lay out cleanly. None of them read what the circuit claims about itself.
 
 ## 4. Oscilloscope
 
