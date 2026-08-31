@@ -844,8 +844,8 @@ advanced or read at a rate that has nothing to do with the clock.
 | # | Check | Expected |
 |---|-------|----------|
 | 3.35.1 | `[ ]` **Automated:** `--dvdt-test` | Eight storage elements against arithmetic done outside the solver. It found the diode's junction capacitance stamped with its sign inverted, a MOSFET gate drawing 24 mA where 12.6 uA was due, a DC motor reaching 63 % of speed in one time step instead of 99 ms, and a relay coil at 10.5 us instead of 500 us |
-| 3.35.2 | `[ ]` **Automated:** `--restamp-test` | Reading a circuit's currents must not change the circuit. 187 templates and 122 component types, each run twice with the display on and off. The relay failed it |
-| 3.35.3 | `[ ]` **Automated:** `--flow-test` | 187/187 with **no exemptions and no skipped nodes**. It carried two exemptions and skipped every MOSFET gate this morning; all three were bugs rather than limitations |
+| 3.35.2 | `[ ]` **Automated:** `--restamp-test` | Reading a circuit's currents must not change the circuit. 188 templates and 122 component types, each run twice with the display on and off. The relay failed it. It detects a stamp that *writes* while being read, and nothing else - a stamp that misreads agrees with its own second run |
+| 3.35.3 | `[ ]` **Automated:** `--flow-test` | 188/188 with **no exemptions and no skipped nodes**. It carried two exemptions and skipped every MOSFET gate this morning; all three were bugs rather than limitations |
 | 3.35.4 | `[ ]` **Automated:** `--meas-test` / `--fft-test` | The measurements panel and the spectrum against closed forms. Found the duty-cycle bias that made every 50 % waveform read "D:49%" on every screenshot ever taken |
 | 3.35.5 | `[ ]` **Automated:** `--class-test` | Every template measured for what it is, then asked again at a finer step. Three self-oscillators were running 10 % fast because their step came from the display rule; the simulation now measures its own period and refines |
 | 3.35.6 | `[ ]` **Automated:** `--bounce-test` | A settled trace holds its vertical position. 14 templates were shimmering; the scope centred on the mean of a ragged capture window |
@@ -856,7 +856,21 @@ advanced or read at a rate that has nothing to do with the clock.
 | 3.35.11 | `[ ]` **Automated:** `python tools/edge_gui.py` | Nothing a template draws is cut off at the canvas edge |
 | 3.35.12a | `[ ]` **Automated:** `--state-test` | A battery is still full after its own DC operating point. It was not: the coulomb count ran inside the stamp, the operating point stamps with a 1e9 pseudo-step, and every Run began with a flat battery reading 0.72 V instead of 1.5 V |
 | 3.35.12b | `[ ]` **Automated:** `--sub-test` case 3 | A subcircuit that is one capacitor draws C dv/dt through its pin. The solve-time snapshot did not reach inside blocks, so a charged internal capacitor was read back as empty - 94x wrong, and a regression introduced by the snapshot itself |
-| 3.35.12 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 46 suites, and it refuses to start if a suite exists in no list |
+| 3.35.13 | `[ ]` Probe a node sitting on a rail (a 5 V logic output) and open the spectrum | The fundamental is the signal's, not one bin. The FFT never removed DC, and a Hann window smears a DC term into bins 0 and +/-1 - so the search that starts at k=1 to skip DC landed on the leakage, and THD and SNR were computed against it |
+| 3.35.14 | `[ ]` Watch the spectrum while the trace changes | It follows. The transform read `values[0..N)` of a history held oldest-first, so the spectrum belonged to a second ago rather than to the trace beside it |
+| 3.35.15 | `[ ]` Turn on AC coupling or Fit, then drag a cursor | The readout names the volts the trace is actually drawn at. The overlay inverted the manual offset and an unfitted scale, which is wrong under either - and both are the default for a stacked template |
+| 3.35.16 | `[ ]` Place a relay, Run, and read its coil before the first step | Energised if the DC solve says so. The advance that maintains the coil runs only on an accepted transient step, so the operating point left it at zero - contradicting its own solve, and the initial condition the transient started from |
+| 3.35.17 | `[ ]` Type a junction capacitance into a Schottky | It sets the capacitance. `PROP_CJO` wrote `props.diode.cjo`, which in that union is `props.schottky.ideal` - so it silently toggled the model instead |
+| 3.35.18 | `[ ]` Open the value row on a potentiometer, a battery, a transformer | The box opens with the current value in it. All three gained the row this release and were missed in the pre-fill, so Enter on an untouched field parsed `""` |
+| 3.35.19 | `[ ]` Look for a row that does nothing | There are none. Five were inert: the centre-tapped transformer's model toggle and winding resistances, primary inductance and coupling, a light level with no reader, `CS_RIN` on sources that have no input resistance, and two Ideal toggles |
+| 3.35.20 | `[ ]` **Automated:** the step budget | A double reaching 1e14 cast to a 32-bit `long` is undefined and lands on INT_MIN, which the `< 1` clamp turned into one step per frame - while the keeping-up indicator, comparing progress against that same target of 1, reported a confident 100 % |
+| 3.35.21 | `[ ]` **Automated:** the fuse | i2t is integration state, so accumulating it inside the stamp multiplied the blow energy by the Newton iteration count - exactly 2x on a DC circuit with the current-flow display on |
+| 3.35.22 | `[ ]` Reset with a relay or a DC motor placed | Their state clears. `simulation_reset` had a case for neither |
+| 3.35.12 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 47 suites, and it refuses to start if a suite exists in no list |
+
+3.35.13 through 3.35.22 are the tail of a pre-release review: five independent readers, each finding
+verified by a reader whose job was to refute it, **23 survived and all 23 are fixed.** No suite saw
+any of them. Two are written up at length in `docs/ROADMAP.md`; the rest are above.
 
 The thing worth carrying forward: **a check passing is not evidence the thing it checks is right.**
 Conservation checks cannot see a stamp's sign, because a terminal current is recovered from the
