@@ -243,6 +243,13 @@ void simulation_reset(Simulation *sim) {
 
                 case COMP_CAPACITOR:
                 case COMP_CAPACITOR_ELEC:
+                /* The crystal too. Its motional arm is an L-C-R branch and it keeps its state in
+                   the same two fields - cap_vc for the motional capacitor's voltage and
+                   trap_i_prev for the branch current - which this switch cleared only for the two
+                   capacitor types. So Reset left a crystal ringing: a Pierce oscillator pressed
+                   Reset came straight back at full amplitude instead of starting from nothing and
+                   building up, which is the thing the template exists to show. */
+                case COMP_CRYSTAL:
                     /* The stored state is cap_vc; props.capacitor.voltage is the initial
                        condition the circuit was built with, so a reset must not erase it. */
                     comp->cap_vc = 0.0;

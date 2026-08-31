@@ -1087,6 +1087,14 @@ void app_handle_events(App *app) {
                 else if (app->input.pending_ui_action >= UI_ACTION_PROP_EDIT &&
                     app->input.pending_ui_action < UI_ACTION_PROP_EDIT + 200) {
                     int prop_type = app->input.pending_ui_action - UI_ACTION_PROP_EDIT;
+                    /* A toggle changes the part the moment it is clicked - there is no Enter to
+                       wait for - so the circuit is modified from here. Only one of the six toggle
+                       branches below said so, which meant flipping a MOSFET to depletion mode, or
+                       a part to its ideal model, left no unsaved-changes prompt behind it: close
+                       the window and the change was gone with no warning. Marked once here rather
+                       than in each branch, because the next toggle added will forget too. */
+                    if (property_is_toggle(prop_type) && app->input.selected_component)
+                        app->circuit->modified = true;
                     if (prop_type == PROP_PROBE_NAME) {
                         int pi = app->input.selected_probe_idx;
                         if (pi >= 0 && pi < app->circuit->num_probes && !app->input.editing_property) {

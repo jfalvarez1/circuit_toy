@@ -5063,10 +5063,18 @@ void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
     // Grid
     SDL_SetRenderDrawColor(renderer, 0x20, 0x40, 0x20, 0xff);
 
-    // Horizontal grid lines (magnitude)
-    int num_h_lines = 6;  // -60 to 0 dB in 10dB steps
-    for (int i = 0; i <= num_h_lines; i++) {
-        int y_pos = r->y + (i * r->h) / num_h_lines;
+    /* The scale the trace is drawn on, declared here so the grid and the 0 dB line are drawn on
+       the SAME one. They were not: the trace maps -60 dB to +20 dB across the height, which puts
+       0 dB a quarter of the way down, while the reference line below was drawn at r->h / 2 and
+       labelled 0 dB. By the plot's own mapping that line is -20 dB. The grid said "-60 to 0 dB in
+       10dB steps" in a comment and drew six even intervals across 80 dB, which is 13.3 dB each. */
+    const double db_min = -60.0, db_max = 20.0;
+    const double db_range = db_max - db_min;
+    #define BODE_DB_Y(db) (r->y + (int)((1.0 - ((db) - db_min) / db_range) * r->h))
+
+    // Horizontal grid lines (magnitude), every 10 dB across the range actually plotted
+    for (double db = db_min; db <= db_max + 0.001; db += 10.0) {
+        int y_pos = BODE_DB_Y(db);
         SDL_RenderDrawLine(renderer, r->x, y_pos, r->x + r->w, y_pos);
     }
 
@@ -5079,18 +5087,16 @@ void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim) {
         SDL_RenderDrawLine(renderer, x_pos, r->y, x_pos, r->y + r->h);
     }
 
-    // 0 dB line (reference)
+    // 0 dB line (reference), from the same mapping the trace uses
     SDL_SetRenderDrawColor(renderer, 0x60, 0x60, 0x60, 0xff);
-    int zero_db_y = r->y + r->h / 2;  // 0 dB at middle
+    int zero_db_y = BODE_DB_Y(0.0);
     SDL_RenderDrawLine(renderer, r->x, zero_db_y, r->x + r->w, zero_db_y);
+    ui_draw_text(renderer, "0 dB", r->x + 3, zero_db_y - 10);
 
     // Plot frequency response data
     if (sim && sim->freq_response_count > 1) {
         // Magnitude plot (yellow)
         SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0x00, 0xff);
-
-        double db_min = -60, db_max = 20;  // dB range
-        double db_range = db_max - db_min;
 
         for (int i = 1; i < sim->freq_response_count; i++) {
             FreqResponsePoint *p0 = &sim->freq_response[i - 1];
