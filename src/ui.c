@@ -3621,6 +3621,14 @@ void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     int y = ui->window_height - STATUSBAR_HEIGHT;
     int x = 720;  // Right after Lux/Temp sliders
 
+    /* The meters sit at a fixed x while the readouts to their right are placed from the window
+       edge, so on a narrow window they run straight into them: at 1000 px wide, VM landed on the
+       t= readout and AM on the component count, all three overlapping in the same strip. The
+       status bar already drops its Lux/Temp sliders when the room runs out; the meters do the
+       same now. Found by unpacking the release zip and running it at 1000x700 - --layout-test
+       checks one large size, so nothing else was going to see it. */
+    if (x + 180 > ui->window_width - 370) return;
+
     // Voltmeter
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
     ui_draw_text(renderer, "VM:", x, y + 8);
