@@ -4650,26 +4650,35 @@ static int place_current_source(Circuit *circuit, float x, float y) {
     float cdec_top_x, cdec_top_y;
     component_get_terminal_pos(c_dec, 0, &cdec_top_x, &cdec_top_y);
 
-    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 160, 5.0f);   /* above the source body, not across it */
+    /* The rail sits at y - 200, not y - 160. It had already been lifted once to clear the voltage
+       source's body, and at 160 it ran straight through the decoupling capacitor instead: that
+       part is at y - 140 and its symbol spans y - 174 to y - 106, so the rail crossed its top half
+       and the wire from the rail down to its terminal started inside the component. --geom-test
+       counted it as two wires passing through a body. At 200 the rail clears both, and every drop
+       to a terminal runs downwards, which is how a supply rail is drawn.
+
+       The same "rail at y - 160" line appears in seven other builders and is correct in all of
+       them; only this one has a part tall enough to reach it. */
+    int vcc_rail = circuit_find_or_create_node(circuit, vcc_pos_x, y - 200, 5.0f);
     int vcc_node = circuit_find_or_create_node(circuit, vcc_pos_x, vcc_pos_y, 5.0f);
     circuit_add_wire(circuit, vcc_node, vcc_rail);
     vcc->node_ids[0] = vcc_node;
 
     // Decoupling cap to power rail
     int cdec_top_node = circuit_find_or_create_node(circuit, cdec_top_x, cdec_top_y, 5.0f);
-    int corner_dec = circuit_find_or_create_node(circuit, cdec_top_x, y - 160, 5.0f);
+    int corner_dec = circuit_find_or_create_node(circuit, cdec_top_x, y - 200, 5.0f);
     circuit_add_wire(circuit, vcc_rail, corner_dec);
     circuit_add_wire(circuit, corner_dec, cdec_top_node);
     c_dec->node_ids[0] = cdec_top_node;
 
     int r1_top_node = circuit_find_or_create_node(circuit, r1_top_x, r1_top_y, 5.0f);
-    int corner1 = circuit_find_or_create_node(circuit, r1_top_x, y - 160, 5.0f);
+    int corner1 = circuit_find_or_create_node(circuit, r1_top_x, y - 200, 5.0f);
     circuit_add_wire(circuit, corner_dec, corner1);
     circuit_add_wire(circuit, corner1, r1_top_node);
     r1->node_ids[0] = r1_top_node;
 
     int rload_top_node = circuit_find_or_create_node(circuit, rload_top_x, rload_top_y, 5.0f);
-    int corner2 = circuit_find_or_create_node(circuit, rload_top_x, y - 160, 5.0f);
+    int corner2 = circuit_find_or_create_node(circuit, rload_top_x, y - 200, 5.0f);
     circuit_add_wire(circuit, corner1, corner2);
     circuit_add_wire(circuit, corner2, rload_top_node);
     rload->node_ids[0] = rload_top_node;

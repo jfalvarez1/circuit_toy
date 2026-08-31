@@ -4283,6 +4283,142 @@ static int iv_test(void) {
     return (fails || (moved - excused_drifts) > 0) ? 1 : 0;
 }
 
+/* --conv-test: does any template's ANSWER move when the time step is refined?
+ *
+ * --class-test asks whether a template's *class* survives a finer step, which catches a signal
+ * changing character. It says nothing about the numbers. --iv-test asks that question properly but
+ * only of the nineteen interview templates and only of figures written on their canvases. Between
+ * them nothing asked the general question: run every template at the step the app picks, run it
+ * again eight times finer, and see whether the answer is the same.
+ *
+ * It is the question that found the Hot-Plug Inrush sag reading 11.33 V when it is 10.02 - the
+ * step was chosen from source periods, the event had no source, and the solver walked over it. That
+ * fault was found by hand on one template. This asks all 188.
+ *
+ * Measured on the template's own probed output: its mean over the settled half, and its
+ * peak-to-peak over the same window. A template is flagged when either moves by more than 2 %,
+ * which is far looser than any of these should need and still catches a step that is stepping over
+ * something. Amplitudes below a microvolt are ignored - a probe idling on solver residue has no
+ * meaningful percentage.
+ */
+typedef struct { double level, pp; int ok; int settled; } ConvResult;
+
+static ConvResult conv_measure(CircuitTemplateType t, double scale) {
+    ConvResult r = { 0, 0, 0, 0 };
+    Circuit *c = circuit_create();
+    if (!c) return r;
+    if (circuit_place_template(c, t, 0, 0) <= 0 || c->num_probes < 1) { circuit_free(c); return r; }
+    Simulation *sim = simulation_create(c);
+    if (!sim) { circuit_free(c); return r; }
+
+    /* a swept source makes every run a different circuit; hold it still, as class-test does */
+    for (int i = 0; i < c->num_components; i++)
+        if (c->components[i]->type == COMP_AC_VOLTAGE)
+            c->components[i]->props.ac_voltage.frequency_sweep.enabled = false;
+
+    simulation_dc_analysis(sim);
+    double dt_app = iv_app_step(sim, t);
+    /* The horizon comes from the APP step, so both runs cover the same stretch of circuit time and
+       the comparison is about the step and not about where the run stopped. */
+    double horizon = 4000.0 * dt_app;
+    double latest = 0;
+    for (int i = 0; i < c->num_components; i++) {
+        Component *k = c->components[i];
+        if (k && k->type == COMP_PULSE_SOURCE && k->props.pulse_source.delay > latest)
+            latest = k->props.pulse_source.delay;
+    }
+    if (latest > 0 && horizon < latest * 2.0) horizon = latest * 2.0;
+
+    simulation_set_time_step(sim, dt_app * scale);
+    simulation_start(sim);
+    simulation_set_time_step(sim, dt_app * scale);
+
+    int node = c->probes[0].node_id;
+    double mn = 1e30, mx = -1e30, sum = 0;
+    /* the third quarter and the fourth, kept apart: a circuit whose swing is still growing between
+       them has not settled, and comparing two steps during a start-up ramp says nothing about the
+       steps - see the note at the head of this suite */
+    double q3mn = 1e30, q3mx = -1e30, q4mn = 1e30, q4mx = -1e30;
+    long n = 0, steps = 0;
+    int good = 1;
+    while (sim->time < horizon && steps < 4000000) {
+        if (!simulation_step(sim)) { good = 0; break; }
+        steps++;
+        if (sim->time < horizon * 0.5) continue;
+        Node *nd = circuit_get_node(c, node);
+        double v = nd ? nd->voltage : 0;
+        if (v < mn) mn = v;
+        if (v > mx) mx = v;
+        if (sim->time < horizon * 0.75) { if (v < q3mn) q3mn = v; if (v > q3mx) q3mx = v; }
+        else                            { if (v < q4mn) q4mn = v; if (v > q4mx) q4mx = v; }
+        sum += v;
+        n++;
+    }
+    if (good && n > 0) {
+        r.level = sum / (double)n;
+        r.pp = mx - mn;
+        r.ok = 1;
+        double q3 = q3mx - q3mn, q4 = q4mx - q4mn;
+        double ref = q3 > q4 ? q3 : q4;
+        r.settled = (ref <= 1e-9) || (fabs(q4 - q3) / ref <= 0.05);
+    }
+    simulation_free(sim);
+    circuit_free(c);
+    return r;
+}
+
+static int conv_test(void) {
+    int fails = 0, ran = 0, skipped = 0, unsettled = 0;
+    /* 3 %. Everything here except two self-limiting LC oscillators sits far below it; those two
+       converge, just slowly, because the amplitude a soft-limited oscillator settles at depends
+       a little on numerical damping. Colpitts measures 31.95 V at dt = 2 ns and 32.07 V at 500 ps
+       - 0.4 % for a fourfold refinement - so it is converging and not drifting. A bar at 2 %
+       failed it and said nothing true. */
+    const double TOL = 0.03;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        if (!ti) continue;
+        ConvResult a = conv_measure((CircuitTemplateType)t, 1.0);
+        ConvResult b = conv_measure((CircuitTemplateType)t, 1.0 / 8.0);
+        if (!a.ok || !b.ok) {
+            printf("[FAIL] conv  %-28s did not run at %s\n", ti->name, a.ok ? "dt/8" : "dt");
+            fails++;
+            continue;
+        }
+        if (!a.settled || !b.settled) {
+            unsettled++;
+            printf("[NOTE] conv  %-28s still building at the end of the run - not compared\n",
+                   ti->name);
+            continue;
+        }
+        ran++;
+        /* A probe sitting on solver residue has no meaningful percentage - and neither does the
+           MEAN of a waveform whose true mean is zero. Judging the level against itself made a
+           28 kV three-phase bus fail because its mean moved from -0.77 V to nothing while its
+           peak-to-peak moved 0.3 %: a hundred per cent of almost zero. The level is measured
+           against the signal it sits on. */
+        double scale = fabs(a.level) > fabs(a.pp) ? fabs(a.level) : fabs(a.pp);
+        double lref = scale > 1e-6 ? scale : 0;
+        double pref = fabs(a.pp) > 1e-6 ? fabs(a.pp) : 0;
+        if (lref == 0 && pref == 0) { skipped++; continue; }
+
+        double dl = lref > 0 ? fabs(b.level - a.level) / lref : 0;
+        double dp = pref > 0 ? fabs(b.pp - a.pp) / pref : 0;
+        double worst = dl > dp ? dl : dp;
+        if (worst > TOL) {
+            printf("[FAIL] conv  %-28s level %.6g -> %.6g (%+.1f%%), pp %.6g -> %.6g (%+.1f%%)\n",
+                   ti->name, a.level, b.level, 100.0 * (lref > 0 ? (b.level - a.level) / lref : 0),
+                   a.pp, b.pp, 100.0 * (pref > 0 ? (b.pp - a.pp) / pref : 0));
+            fails++;
+        }
+    }
+    printf("\nconv-test: %d templates run at the app's step and again eight times finer, "
+           "%d whose answer moves by more than %.0f%% (%d idling below a microvolt, "
+           "%d still building and not compared)\n", ran, fails, TOL * 100.0, skipped, unsettled);
+    return fails ? 1 : 0;
+}
+
 static int dcm_test(void) {
     /* R_load, and roughly what it means for a 12 V / 100 kHz / 220 uH buck at 50 % duty:
        critical conduction is near R = 2 L f / (1 - D) ~ 88 ohm, so above that is DCM. */
@@ -5353,6 +5489,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--state-test")) return state_test();
         else if (!strcmp(argv[i], "--dcm-test")) return dcm_test();
         else if (!strcmp(argv[i], "--iv-test")) return iv_test();
+        else if (!strcmp(argv[i], "--conv-test")) return conv_test();
         else if (!strcmp(argv[i], "--fft-test")) return fft_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--label-test")) return label_test();
