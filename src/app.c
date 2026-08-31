@@ -2641,7 +2641,16 @@ void app_render(App *app) {
     ui_render_properties(&app->ui, r, app->input.selected_component, &app->input);
     // Only render oscilloscope in main window if not popped out
     if (!app->ui.scope_popped_out) {
+        /* Clipped to stop at the status bar. The scope's readout rows are laid out downwards from
+           the button block and simply ran off the bottom of the panel, so on a short window the
+           TIME / VOLTS / TRIG line was drawn half above the status bar and half behind it - a row
+           of glyphs sliced through the middle. It is the last row that overflows, so clipping
+           loses nothing that was legible anyway, and the panel scrolls to reach it. */
+        SDL_Rect scope_clip = {0, 0, app->ui.window_width,
+                               app->ui.window_height - STATUSBAR_HEIGHT};
+        SDL_RenderSetClipRect(r, &scope_clip);
         ui_render_oscilloscope(&app->ui, r, app->simulation, &app->analysis);
+        SDL_RenderSetClipRect(r, NULL);
     }
     ui_render_statusbar(&app->ui, r);
     // Render VM/AM measurements after statusbar so they appear on top
@@ -2733,7 +2742,28 @@ void app_write_state(App *app, const char *path) {
         render_world_to_screen(app->render, k->x, k->y, &sx, &sy);
         fprintf(f, "%s{\"type\": %d, \"x\": %d, \"y\": %d}", i ? ", " : "", (int)k->type, sx, sy);
     }
-    fprintf(f, "]}");
+    fprintf(f, "]");
+
+    /* And where the toolbar buttons are, for the same reason and after the same lesson: two of
+       these checks clicked "300,25" to mean Pause, which held until the button strip started 40 px
+       further left and 300 landed on Step instead. The sim then never paused, the delete that
+       needs a paused sim did nothing, and undo-gui reported that deleting was broken. A script
+       should ask where a button is. */
+    {
+        struct { const char *name; Rect b; } tb[] = {
+            { "run",   app->ui.btn_run.bounds },
+            { "pause", app->ui.btn_pause.bounds },
+            { "step",  app->ui.btn_step.bounds },
+            { "reset", app->ui.btn_reset.bounds },
+            { "clear", app->ui.btn_clear.bounds },
+        };
+        fprintf(f, ", \"buttons\": {");
+        for (int i = 0; i < (int)(sizeof tb / sizeof tb[0]); i++)
+            fprintf(f, "%s\"%s\": [%d, %d]", i ? ", " : "", tb[i].name,
+                    tb[i].b.x + tb[i].b.w / 2, tb[i].b.y + tb[i].b.h / 2);
+        fprintf(f, "}");
+    }
+    fprintf(f, "}");
     fclose(f);
 }
 

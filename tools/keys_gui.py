@@ -20,7 +20,11 @@ if not os.path.exists(exe):
     sys.exit(1)
 
 TEMPLATE = "RC Low Pass"
-PAUSE = "300,25,15"          # the Pause button: several things are refused while running
+# The Pause button, asked for rather than remembered - the same lesson as A_PART below, learned
+# a second time. "300,25" meant Pause until the button strip started 40 px further left, at which
+# point it meant Step: the simulation was never paused, and every check that needs a paused app
+# was testing something other than what it said.
+PAUSE = None                 # filled in from --state-out before anything else runs
 W, H = 1200, 800
 COMP_RESISTOR = 1            # ComponentType ordinal, stable since the enum is append-only
 # A_PART is not a constant any more. It was "the resistor is at 300,300", and that held only
@@ -49,6 +53,16 @@ def state(tmp, name, keys=None, clicks=(), frame=80):
 
 fails = 0
 with tempfile.TemporaryDirectory() as tmp:
+    probe = state(tmp, "probe")          # no clicks: this run only asks where the buttons are
+    if probe is None:
+        print("[FAIL] keys-gui  the app wrote no state at all")
+        sys.exit(1)
+    _pb = (probe.get("buttons") or {}).get("pause")
+    if not _pb:
+        print("[FAIL] keys-gui  the state does not say where the Pause button is")
+        sys.exit(1)
+    PAUSE = "%d,%d,15" % (_pb[0], _pb[1])
+
     base = state(tmp, "base", clicks=[PAUSE])
     if base is None:
         print("[FAIL] keys-gui  the app wrote no state at all")

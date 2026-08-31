@@ -176,8 +176,11 @@ void ui_init(UIState *ui) {
     ui->props_resizing = false;
     ui->properties_content_height = 200;  // Default height, updated dynamically
 
+    /* 160, not 200. "Circuit Playground" ends at about x = 145 and the version sits under it, so
+       the old start left 55 px of nothing at the very moment the right-hand end of the toolbar had
+       run out of window. */
     // Initialize toolbar buttons
-    int btn_x = 200;
+    int btn_x = 160;
     int btn_w = 60, btn_h = 30;
 
     ui->btn_run = (Button){{btn_x, 10, btn_w, btn_h}, "Run", "Start simulation (F5)", false, false, true, false};
@@ -208,18 +211,21 @@ void ui_init(UIState *ui) {
     btn_x += 32 + 10;
     ui->btn_import_spice = (Button){{btn_x, 10, 46, btn_h}, "SPICE", "Import a vendor .SUBCKT model", false, false, true, false};
 
-    // Speed slider
-    ui->speed_slider = (Rect){btn_x + btn_w + 30, 15, 100, 20};
+    // Speed slider. The x and w here are placeholders; ui_layout_toolbar_right sets them from
+    // the window width, at start-up and again on every resize.
+    ui->speed_slider = (Rect){0, 15, 100, 20};
+    ui->speed_label_w = 52;
     ui->speed_value = 1.0f;
 
-    // Time step controls - positioned after speed slider text
-    int ts_x = ui->speed_slider.x + 50 + ui->speed_slider.w + 60;  // After speed slider + text
-    ui->timestep_display_x = ts_x;
-    ui->btn_timestep_down = (Button){{ts_x + 70, 12, 20, 20}, "-", "Decrease time step", false, false, true, false};
-    ui->btn_timestep_up = (Button){{ts_x + 92, 12, 20, 20}, "+", "Increase time step", false, false, true, false};
-    ui->btn_timestep_auto = (Button){{ts_x + 115, 10, 40, 24}, "Auto", "Auto time step", false, false, true, false};
+    // Time step controls - right-aligned with the speed slider, see ui_layout_toolbar_right
+    ui->btn_timestep_down = (Button){{0, 12, 20, 20}, "-", "Decrease time step", false, false, true, false};
+    ui->btn_timestep_up = (Button){{0, 12, 20, 20}, "+", "Increase time step", false, false, true, false};
+    ui->btn_timestep_auto = (Button){{0, 10, 40, 24}, "Auto", "Auto time step", false, false, true, false};
     ui->btn_update = (Button){{0, 0, 0, 0}, "Update", "A newer release is available - click to download and install", false, false, true, false};
     ui->display_time_step = 1e-7;  // Default 100 nanoseconds (will be updated from simulation)
+    /* Position the right-hand group now. ui_update_layout runs on resize, but nothing calls it at
+       start-up, so without this the placeholders above would be what the first frame draws. */
+    ui_layout_toolbar_right(ui);
 
     // Environment sliders (positioned in status bar area - will be updated in ui_update_layout)
     // These control global light/temperature for LDR and thermistor components
@@ -871,12 +877,14 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     draw_button(renderer, &ui->btn_zoom_fit);
     draw_button(renderer, &ui->btn_import_spice);
 
-    // Speed slider label
-    SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
-    ui_draw_text(renderer, "Speed:", ui->speed_slider.x, ui->speed_slider.y - 2);
+    // Speed slider label - dropped on a narrow window so the controls right of it still fit
+    if (ui->speed_label_w > 0) {
+        SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
+        ui_draw_text(renderer, "Speed:", ui->speed_slider.x, ui->speed_slider.y - 2);
+    }
 
     // Speed slider background
-    int slider_x = ui->speed_slider.x + 50;
+    int slider_x = ui->speed_slider.x + ui->speed_label_w;
     SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
     SDL_Rect slider_bg = {slider_x, ui->speed_slider.y, ui->speed_slider.w, ui->speed_slider.h};
     SDL_RenderFillRect(renderer, &slider_bg);
@@ -4828,6 +4836,19 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     // Buttons are positioned BEFORE this section (scope -> buttons -> info -> measurements)
     int info_y = ui->scope_buttons_bottom + 8;   // just below the last button row (already scrolled)
 
+    /* A row is drawn only if it fits whole. These readouts are laid out downwards from the button
+       block and the block scrolls, so the last one used to be sliced through the middle by the
+       status bar - the top half of "TIME 200us  VOLTS per-ch  TRIG ..." above the bar and nothing
+       below it. Clipping alone does not fix that, it just decides where the cut lands. A row that
+       does not fit is left out, the panel scrolls to reach it, and the edge stays clean.
+       From the renderer, not ui->window_height: the popped-out scope renders through here into a
+       window of its own, and that one has no status bar. */
+    int out_w = 0, out_h = 0;
+    SDL_GetRendererOutputSize(renderer, &out_w, &out_h);
+    const int panel_bottom = out_h - (ui->scope_popped_out ? 0 : STATUSBAR_HEIGHT);
+    const int ROW_H = 12;
+
+    if (info_y + ROW_H <= panel_bottom) {
     // Time/div with label
     SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
     ui_draw_text(renderer, "TIME", r->x, info_y);
@@ -4858,6 +4879,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         snprintf(buf, sizeof(buf), "%s %s %s %s", ui_channel_name(ui, ui->trigger_channel), lv, edges[ui->trigger_edge % 3], modes[ui->trigger_mode % 3]);
         ui_draw_text(renderer, buf, r->x + 270, info_y);
     }
+    }   /* if the TIME / VOLTS / TRIG row fits */
 
     // Channel info with voltage readings
     info_y += 15;
@@ -4879,6 +4901,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
             int w = (int)strlen(buf) * 8;
             if (rx > r->x && rx + w > r->x + r->w) { rx = r->x; info_y += 13; }
+            if (info_y + ROW_H > panel_bottom) break;
             SDL_SetRenderDrawColor(renderer,
                 ui->scope_channels[ch].color.r,
                 ui->scope_channels[ch].color.g,
@@ -4896,7 +4919,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     }
 
     // Display waveform measurements panel (below channel readings, relative to scope_rect)
-    if (analysis && ui->scope_num_channels > 0) {
+    if (analysis && ui->scope_num_channels > 0 && info_y + 18 + ROW_H <= panel_bottom) {
         // Start measurements below the channel readings (info_y + 15 for spacing)
         int meas_y = info_y + 18;
         int meas_x = r->x;
@@ -7161,7 +7184,7 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         }
 
         // Check speed slider click
-        int slider_x = ui->speed_slider.x + 50;
+        int slider_x = ui->speed_slider.x + ui->speed_label_w;
         Rect slider_bounds = {slider_x, ui->speed_slider.y, ui->speed_slider.w, ui->speed_slider.h};
         if (point_in_rect(x, y, &slider_bounds)) {
             // Map click position to speed value (logarithmic: 1x to 100x)
@@ -7705,7 +7728,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
 
     // Handle speed slider dragging
     if (ui->dragging_speed) {
-        int slider_x = ui->speed_slider.x + 50;
+        int slider_x = ui->speed_slider.x + ui->speed_label_w;
         float normalized = (float)(x - slider_x) / ui->speed_slider.w;
         normalized = CLAMP(normalized, 0.0f, 1.0f);
         // Convert from linear position to logarithmic scale (1x to 100x)
@@ -8042,9 +8065,66 @@ void ui_sync_subcircuit_items(UIState *ui) {
     }
 }
 
+/* The speed slider, the dt readout and the three time-step buttons, laid out from the RIGHT edge
+   of the window.
+
+   They used to be at absolute offsets from the left, computed once at start-up from a 1280-wide
+   window that no longer had room for them: the dt value was cut off mid-character at "dt:10.0",
+   and [-] [+] [Auto] sat at x = 1292 to 1377 - past the edge of a 1280 px window, so at the
+   DEFAULT size three controls were invisible and unclickable, and resizing the window never moved
+   them because nothing re-laid the toolbar. Anchoring to the right edge fixes both: they are
+   always on screen, and they follow a resize.
+
+   There is not room for everything at 1280, so the group gives ground in a fixed order - the
+   slider narrows to 56 px first, and only if that is still not enough does the "Speed:" label go
+   (the slider keeps its tooltip). Nothing is ever dropped or clipped. */
+void ui_layout_toolbar_right(UIState *ui) {
+    if (!ui) return;
+    const int SLIDER_MAX = 100, SLIDER_MIN = 56, LABEL_W = 52;
+    /* everything in the group except the label and the slider: the gap and the speed number, the
+       gap before "dt:", the label and its value, then the three buttons with their gaps */
+    const int FIXED = 5 + 34 + 8 + 24 + 52 + 5 + (20 + 2 + 20 + 3 + 40);
+
+    int right = ui->window_width - 10;
+    int left_limit = ui->btn_import_spice.bounds.x + ui->btn_import_spice.bounds.w + 12;
+    int avail = right - left_limit;
+
+    int label_w = LABEL_W, slider_w = SLIDER_MAX;
+    if (label_w + slider_w + FIXED > avail) slider_w = avail - label_w - FIXED;
+    if (slider_w < SLIDER_MIN) { slider_w = SLIDER_MIN; label_w = 0; }
+    if (slider_w > SLIDER_MAX) slider_w = SLIDER_MAX;
+    if (label_w + slider_w + FIXED > avail) {   /* narrower than anything sensible: stop shrinking
+                                                   and let it sit left of where it would clip */
+        label_w = 0;
+        slider_w = SLIDER_MIN;
+    }
+
+    int gx = right - (label_w + slider_w + FIXED);
+    /* Clamped to the window, NOT to the end of the button strip. Below about 1200 px there is no
+       room for both, and the strip is at fixed offsets from the left; pushing the group right to
+       clear it is what put these controls off the edge in the first place. Overlapping a button
+       is ugly, and a control past the window edge cannot be clicked at all - so the group stays on
+       screen and sits over the strip if it must. At 1280 and up the two do not meet. */
+    (void)left_limit;
+    if (gx < 4) gx = 4;
+
+    ui->speed_label_w = label_w;
+    ui->speed_slider.x = gx;
+    ui->speed_slider.w = slider_w;
+
+    int ts_x = gx + label_w + slider_w + 5 + 34 + 8;
+    ui->timestep_display_x = ts_x;
+    int bx = ts_x + 24 + 52 + 5;
+    ui->btn_timestep_down.bounds = (Rect){bx, 12, 20, 20};
+    ui->btn_timestep_up.bounds   = (Rect){bx + 22, 12, 20, 20};
+    ui->btn_timestep_auto.bounds = (Rect){bx + 44, 10, 40, 24};
+}
+
 void ui_update_layout(UIState *ui) {
     ui_sync_subcircuit_items(ui);
     if (!ui) return;
+
+    ui_layout_toolbar_right(ui);
 
     // Update palette visible height
     ui->palette_visible_height = ui->window_height - TOOLBAR_HEIGHT - PALETTE_TOP_H - STATUSBAR_HEIGHT;
@@ -8083,7 +8163,11 @@ void ui_update_layout(UIState *ui) {
        bar. Four rows now: the channel strip that says which channel the vertical controls move
        sits between the scale row and the tabs. */
     if (!ui->scope_user_sized) {
-        int need_below = 5 + 4 * 26 + 8;
+        /* Four button rows, and then the TIME / VOLTS / TRIG row under them - 8 px of gap, 12 of
+           glyph, 4 of air. Reserving only the buttons left that row hanging over the status bar,
+           where it was drawn sliced in half; it is now simply dropped when it does not fit, so
+           without this the settings a scope user reads most were the ones that disappeared. */
+        int need_below = 5 + 4 * 26 + 8 + 24;
         int max_h = ui->window_height - STATUSBAR_HEIGHT - ui->scope_rect.y - need_below;
         int h = ui->scope_default_h > 0 ? ui->scope_default_h : ui->scope_rect.h;
         if (h > max_h) h = max_h;

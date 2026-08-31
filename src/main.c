@@ -843,6 +843,49 @@ static int layout_test(void) {
             if (ui->scope_buttons_bottom > ui->window_height - STATUSBAR_HEIGHT) { printf("[FAIL] layout %dx%d: scope buttons below the status bar\n", sizes[k][0], sizes[k][1]); fails++; }
             printf("[ OK ] layout %dx%d tab %d: %d visible scope buttons, none overlap, bottom %d\n", sizes[k][0], sizes[k][1], tab, visible, ui->scope_buttons_bottom);
         }
+
+        /* ---- the toolbar's right-hand end ----------------------------------------------------
+           The speed slider, the dt readout and the three time-step buttons were at absolute
+           offsets computed once from a 1280-wide window, and they did not fit in one: the dt value
+           was cut off mid-character and [-] [+] [Auto] sat entirely past the right edge, so at the
+           DEFAULT window size three controls could not be seen or clicked, and no resize moved
+           them. What is asserted is reachability - every control fully inside the window - at every
+           size. Not overlapping the button strip is asserted only from 1280 up, because below that
+           there is genuinely no room for both and staying on screen is the more important half. */
+        {
+            struct { const char *name; Rect b; } tb[] = {
+                { "speed slider", (Rect){ui->speed_slider.x, ui->speed_slider.y,
+                                         ui->speed_label_w + ui->speed_slider.w, ui->speed_slider.h} },
+                { "dt readout",   (Rect){ui->timestep_display_x, 12, 24 + 52, 20} },
+                { "dt -",         ui->btn_timestep_down.bounds },
+                { "dt +",         ui->btn_timestep_up.bounds },
+                { "dt Auto",      ui->btn_timestep_auto.bounds },
+            };
+            int n = (int)(sizeof tb / sizeof tb[0]);
+            for (int i = 0; i < n; i++) {
+                if (tb[i].b.x < 0 || tb[i].b.x + tb[i].b.w > ui->window_width) {
+                    printf("[FAIL] layout %dx%d: toolbar '%s' at x %d..%d is outside a %d px window\n",
+                           sizes[k][0], sizes[k][1], tb[i].name, tb[i].b.x, tb[i].b.x + tb[i].b.w,
+                           ui->window_width);
+                    fails++;
+                }
+                for (int j = i + 1; j < n; j++)
+                    if (rects_overlap(&tb[i].b, &tb[j].b)) {
+                        printf("[FAIL] layout %dx%d: toolbar '%s' overlaps '%s'\n",
+                               sizes[k][0], sizes[k][1], tb[i].name, tb[j].name); fails++;
+                    }
+            }
+            if (ui->window_width >= 1280) {
+                Rect *spice = &ui->btn_import_spice.bounds;
+                for (int i = 0; i < n; i++)
+                    if (rects_overlap(spice, &tb[i].b)) {
+                        printf("[FAIL] layout %dx%d: toolbar '%s' overlaps the SPICE button\n",
+                               sizes[k][0], sizes[k][1], tb[i].name); fails++;
+                    }
+            }
+            printf("[ OK ] layout %dx%d: %d toolbar controls right-aligned inside the window (label %s)\n",
+                   sizes[k][0], sizes[k][1], n, ui->speed_label_w ? "shown" : "dropped");
+        }
     }
     /* ---- pop-out front panel: every knob is hit-testable and every knob moves something ----
        The panel is laid out in the pop-out window's coordinates, so this drives
@@ -1129,6 +1172,60 @@ static void attach_parent_console(void) {
 #endif
 }
 
+/* Resolve --template to a type from the static table alone, so a bad name can be rejected before
+   anything is initialised. It used to be resolved after app_init, which meant a typo opened a
+   window, sized it, ran the update check and drew four frames before printing "Unknown template"
+   and exiting 2 - a visible flash for a person, and an SDL window on a headless runner for a
+   script that was only ever going to be told no. Returns 0 and sets *out on success, 2 on failure
+   having already explained itself. */
+static int resolve_cli_template(const char *cli_template, CircuitTemplateType *out) {
+    CircuitTemplateType found = CIRCUIT_NONE;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *info = circuit_template_get_info((CircuitTemplateType)t);
+        if (info && (!_stricmp(info->name, cli_template) || !_stricmp(info->short_name, cli_template))) { found = (CircuitTemplateType)t; break; }
+    }
+    /* No exact match: a unique case-insensitive substring of the full name is accepted, so
+       "--template Pierce" and "--template \"Digital Clock\"" both work. Ambiguity is an
+       error, not a guess - a script that asked for "Buck" should be told there are three. */
+    int ambiguous = 0;
+    if (found == CIRCUIT_NONE) {
+        char want[128];
+        snprintf(want, sizeof want, "%s", cli_template);
+        for (char *p = want; *p; p++) *p = (char)tolower((unsigned char)*p);
+        for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+            const CircuitTemplateInfo *info = circuit_template_get_info((CircuitTemplateType)t);
+            if (!info) continue;
+            char have[128];
+            snprintf(have, sizeof have, "%s", info->name);
+            for (char *p = have; *p; p++) *p = (char)tolower((unsigned char)*p);
+            if (strstr(have, want)) {
+                if (found != CIRCUIT_NONE) { ambiguous = 1; fprintf(stderr, "  matches: %s\n", info->name); }
+                else found = (CircuitTemplateType)t;
+            }
+        }
+        if (ambiguous) {
+            const CircuitTemplateInfo *fi = circuit_template_get_info(found);
+            fprintf(stderr, "  matches: %s\n", fi ? fi->name : "?");
+            fprintf(stderr, "--template '%s' is ambiguous.\n", cli_template);
+            return 2;
+        }
+    }
+    if (found == CIRCUIT_NONE) {
+        /* This used to print the list and then carry on with an empty canvas, which is the
+           worst thing a scripted flag can do: the run exits 0, the screenshot exists, and it
+           is a picture of nothing. An audit driving the app through --template would judge an
+           empty canvas and pass. Unknown means stop. */
+        fprintf(stderr, "Unknown template '%s'. Available:\n", cli_template);
+        for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+            const CircuitTemplateInfo *info = circuit_template_get_info((CircuitTemplateType)t);
+            if (info) fprintf(stderr, "  %-8s %s\n", info->short_name, info->name);
+        }
+        return 2;
+    }
+    *out = found;
+    return 0;
+}
+
 int main(int argc, char *argv[]) {
     if (argc > 1) attach_parent_console();
     const char *cli_template = NULL, *cli_shot = NULL, *cli_record = NULL, *cli_size = NULL;
@@ -1206,6 +1303,14 @@ int main(int argc, char *argv[]) {
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); usage(); return 2; }
     }
 
+    /* Resolved here, before SDL_Init and the crash log, so --template with a typo costs a
+       message and nothing else. */
+    CircuitTemplateType cli_template_type = CIRCUIT_NONE;
+    if (cli_template) {
+        int rc = resolve_cli_template(cli_template, &cli_template_type);
+        if (rc) return rc;
+    }
+
     printf("Circuit Playground v%s\n", APP_VERSION);
     printf("A circuit simulator inspired by Paul Falstad's circuit.js and The Powder Toy\n\n");
 
@@ -1278,54 +1383,9 @@ int main(int argc, char *argv[]) {
     app.cli_exit = cli_exit;
     if (cli_popout) app_scope_popout(&app, true);   /* --shot then also writes <name>_scope.bmp */
     if (cli_template) {
-        CircuitTemplateType found = CIRCUIT_NONE;
-        for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
-            const CircuitTemplateInfo *info = circuit_template_get_info((CircuitTemplateType)t);
-            if (info && (!_stricmp(info->name, cli_template) || !_stricmp(info->short_name, cli_template))) { found = (CircuitTemplateType)t; break; }
-        }
-        /* No exact match: a unique case-insensitive substring of the full name is accepted, so
-           "--template Pierce" and "--template \"Digital Clock\"" both work. Ambiguity is an
-           error, not a guess - a script that asked for "Buck" should be told there are three. */
-        int ambiguous = 0;
-        if (found == CIRCUIT_NONE) {
-            char want[128];
-            snprintf(want, sizeof want, "%s", cli_template);
-            for (char *p = want; *p; p++) *p = (char)tolower((unsigned char)*p);
-            for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
-                const CircuitTemplateInfo *info = circuit_template_get_info((CircuitTemplateType)t);
-                if (!info) continue;
-                char have[128];
-                snprintf(have, sizeof have, "%s", info->name);
-                for (char *p = have; *p; p++) *p = (char)tolower((unsigned char)*p);
-                if (strstr(have, want)) {
-                    if (found != CIRCUIT_NONE) { ambiguous = 1; fprintf(stderr, "  matches: %s\n", info->name); }
-                    else found = (CircuitTemplateType)t;
-                }
-            }
-            if (ambiguous) {
-                const CircuitTemplateInfo *fi = circuit_template_get_info(found);
-                fprintf(stderr, "  matches: %s\n", fi ? fi->name : "?");
-                fprintf(stderr, "--template '%s' is ambiguous.\n", cli_template);
-                return 2;
-            }
-        }
-        if (found == CIRCUIT_NONE) {
-            /* This used to print the list and then carry on with an empty canvas, which is the
-               worst thing a scripted flag can do: the run exits 0, the screenshot exists, and it
-               is a picture of nothing. An audit driving the app through --template would judge an
-               empty canvas and pass. Unknown means stop. */
-            fprintf(stderr, "Unknown template '%s'. Available:\n", cli_template);
-            for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
-                const CircuitTemplateInfo *info = circuit_template_get_info((CircuitTemplateType)t);
-                if (info) fprintf(stderr, "  %-8s %s\n", info->short_name, info->name);
-            }
-            return 2;
-        }
-        {
-            // a few frames first so the resize event lands and the canvas rect is laid out
-            for (int k = 0; k < 4; k++) { app_handle_events(&app); app_update(&app); app_render(&app); SDL_Delay(16); }
-            app_place_template_centered(&app, found);
-        }
+        // a few frames first so the resize event lands and the canvas rect is laid out
+        for (int k = 0; k < 4; k++) { app_handle_events(&app); app_update(&app); app_render(&app); SDL_Delay(16); }
+        app_place_template_centered(&app, cli_template_type);
     }
 
     // Main loop
