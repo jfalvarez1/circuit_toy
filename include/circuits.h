@@ -216,6 +216,9 @@ typedef enum {
     CIRCUIT_WIRELESS_LINK,
     CIRCUIT_BCD_COUNTER,
     CIRCUIT_DIGITAL_CLOCK,
+    /* Battery monitoring and electronic load - the circuits of a senior-design BMI:
+       a constant-current sink, a two-stage LiPo charger, an NTC cutout and a cell simulator */
+    CIRCUIT_BMI_ELOAD_CC,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 
@@ -240,6 +243,7 @@ typedef enum {
     TG_IV_FUND,         // Interview prep: analog fundamentals
     TG_IV_POWER,        // Interview prep: converters and power delivery
     TG_IV_SI,           // Interview prep: I/O, termination and signal integrity
+    TG_BMI,             // Battery monitoring and electronic load: sink, charger, cutout, simulator
     TG_COUNT
 } TemplateGroup;
 

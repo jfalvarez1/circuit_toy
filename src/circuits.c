@@ -343,6 +343,7 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_WIRELESS_LINK] = {"Wireless Link (TX/RX)", "Wless", "Antenna pair on a shared channel, 50 ohm both ends", TG_IC_IO},
     [CIRCUIT_BCD_COUNTER] = {"BCD Counter to 7-Segment", "Count", "Clock, decade counter, decoder, digit", TG_DIGITAL},
     [CIRCUIT_DIGITAL_CLOCK] = {"Digital Clock (HH:MM:SS)", "Clock", "Six digits, carry chained, reset at 24", TG_DIGITAL},
+    [CIRCUIT_BMI_ELOAD_CC] = {"E-Load: Constant Current Sink", "ELoad", "1 A out of a cell, set by a reference and one resistor", TG_BMI},
 
 
 
@@ -6407,6 +6408,7 @@ static int place_iv_cap_energy(Circuit *circuit, float x, float y);
 static int place_iv_miller(Circuit *circuit, float x, float y);
 static int place_iv_switch_choice(Circuit *circuit, float x, float y);
 static int place_iv_inrush(Circuit *circuit, float x, float y);
+static int place_bmi_eload_cc(Circuit *circuit, float x, float y);
 static int place_tline_real(Circuit *circuit, float x, float y);
 static int place_sevenseg_test(Circuit *circuit, float x, float y);
 static int place_wireless_link(Circuit *circuit, float x, float y);
@@ -6748,6 +6750,7 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_IV_MILLER:          return place_iv_miller(circuit, x, y);
         case CIRCUIT_IV_SWITCH_CHOICE:   return place_iv_switch_choice(circuit, x, y);
         case CIRCUIT_IV_INRUSH:          return place_iv_inrush(circuit, x, y);
+        case CIRCUIT_BMI_ELOAD_CC:       return place_bmi_eload_cc(circuit, x, y);
         case CIRCUIT_TLINE_REAL:         return place_tline_real(circuit, x, y);
         case CIRCUIT_SEVENSEG_TEST:      return place_sevenseg_test(circuit, x, y);
         case CIRCUIT_WIRELESS_LINK:      return place_wireless_link(circuit, x, y);
@@ -7089,6 +7092,12 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "flows in the shunt. HIGH SIDE keeps the load grounded and sees that short, but the 100 mV rides",
         "on 12 V of common mode, so it needs a difference amp and the CMRR of that amp becomes your",
         "accuracy. Both pay the same burden voltage. INTERVIEW: asked at TI and Apple, almost verbatim."},
+    [CIRCUIT_BMI_ELOAD_CC] = {"E-LOAD, CONSTANT CURRENT SINK: the circuit an electronic load is built round, and",
+        "the discharge half of a battery monitoring instrument. The op-amp compares the voltage across the",
+        "sense resistor with a reference and drives the gate until they match, so the current through the",
+        "cell is V_ref / R_sense and nothing else - not the cell voltage, not the temperature, not the",
+        "MOSFET. 3.2 V across 3.2 ohm is 1 A. Change the reference and the current follows it; that is how",
+        "a microcontroller sets the load. PROBE: the sense voltage sits at the reference while it regulates."},
     [CIRCUIT_IV_KELVIN] = {"4-WIRE (KELVIN) SENSING: 1 A forced through a 10 mohm shunt whose leads are 50 mohm each.",
         "Measure at the connector and you read 110 mV: 110 mohm, eleven times the part, and the part is",
         "the smallest thing in the measurement. Land two more wires directly on the resistor body and",
@@ -12591,6 +12600,107 @@ static int place_iv_switch_choice(Circuit *circuit, float x, float y) {
     return 20;
 }
 
+/* =====================================================================================
+ * Battery monitoring and electronic load.
+ *
+ * These are the circuits of a senior-design Battery Monitoring Instrument: an electronic load
+ * that pulls a set current out of a cell, a two-stage LiPo charger, a thermal cutout and a
+ * capacitor standing in for the cell so the whole thing can be exercised in minutes instead of
+ * hours. The values are the ones the project measured, and the notes say where the simulated
+ * answer and the bench answer differ.
+ * =================================================================================== */
+
+static int place_bmi_eload_cc(Circuit *circuit, float x, float y) {
+    /* The op-amp holds the sense resistor at the reference voltage, so the current is
+       V_ref / R_sense and does not care what the cell's voltage is. */
+
+    /* the cell under test - a 2S LiPo at 7.4 V */
+    Component *cell = add_comp(circuit, COMP_DC_VOLTAGE, x + 400, y + 60, 0);  // +(400,20) -(400,100)
+    if (!cell) return 0;
+    cell->props.dc_voltage.voltage = 7.4;
+    cell->props.dc_voltage.r_series = 0.05;      /* a real cell has some */
+    cell->props.dc_voltage.ideal = false;
+    Component *gcell = add_comp(circuit, COMP_GROUND, x + 400, y + 160, 0);
+    gcell->node_ids[0] = TN(x + 400, y + 140);
+    cell->node_ids[0] = TN(x + 400, y + 20); cell->node_ids[1] = TN(x + 400, y + 100);
+    TW(cell->node_ids[1], gcell->node_ids[0]);
+
+    /* the reference the current is set by */
+    Component *vref = add_comp(circuit, COMP_DC_VOLTAGE, x, y + 60, 0);
+    vref->props.dc_voltage.voltage = 3.2;
+    Component *gref = add_comp(circuit, COMP_GROUND, x, y + 160, 0);
+    gref->node_ids[0] = TN(x, y + 140);
+    vref->node_ids[0] = TN(x, y + 20); vref->node_ids[1] = TN(x, y + 100);
+    TW(vref->node_ids[1], gref->node_ids[0]);
+
+    /* the op-amp: + on the reference, - on the sense resistor, out through 1k to the gate */
+    Component *u1 = add_comp(circuit, COMP_OPAMP, x + 160, y + 60, 0);   // -(120,40) +(120,80) out(200,60)
+    u1->props.opamp.ideal = true;
+    u1->props.opamp.gain = 1e5;
+    int minus = TN(x + 120, y + 40), plus = TN(x + 120, y + 80), uout = TN(x + 200, y + 60);
+    u1->node_ids[0] = minus; u1->node_ids[1] = plus; u1->node_ids[2] = uout;
+    /* out to the side before dropping to the + input: straight down from the reference's own
+       terminal would run the wire through the middle of the source symbol */
+    TW(vref->node_ids[0], TN(x + 60, y + 20));
+    TW(TN(x + 60, y + 20), TN(x + 60, y + 80));
+    TW(TN(x + 60, y + 80), plus);
+
+    /* gate resistor, and the pull-down that holds the gate off when the op-amp is not driving */
+    Component *rg = hres(circuit, x + 260, y + 60, 1000.0);              // (220,60)-(300,60)
+    int rgl = TN(x + 220, y + 60), rgr = TN(x + 300, y + 60);
+    rg->node_ids[0] = rgl; rg->node_ids[1] = rgr;
+    TW(uout, rgl);
+
+    Component *rpd = vres(circuit, x + 300, y + 160, 100000.0);          // (300,120)-(300,200)
+    int rpt = TN(x + 300, y + 120), rpb = TN(x + 300, y + 200);
+    rpd->node_ids[0] = rpt; rpd->node_ids[1] = rpb;
+    TW(rgr, rpt);
+    Component *gpd = add_comp(circuit, COMP_GROUND, x + 300, y + 260, 0);
+    gpd->node_ids[0] = TN(x + 300, y + 240);
+    TW(rpb, gpd->node_ids[0]);
+
+    /* the pass device: drain to the cell, source to the sense resistor */
+    Component *m1 = add_comp(circuit, COMP_NMOS, x + 400, y + 260, 0);   // G(380,260) D(420,240) S(420,280)
+    m1->props.mosfet.vth = 2.0;
+    m1->props.mosfet.kp = 2.0;                  /* a power part: amps at a couple of volts of drive */
+    m1->props.mosfet.w = 1e-3; m1->props.mosfet.l = 1e-6;
+    int mg = TN(x + 380, y + 260), md = TN(x + 420, y + 240), ms = TN(x + 420, y + 280);
+    m1->node_ids[0] = mg; m1->node_ids[1] = md; m1->node_ids[2] = ms;
+    /* down a column of its own. x + 300 is the pull-down's column, and a wire straight down it
+       from the gate resistor passes through that resistor's body. */
+    TW(rgr, TN(x + 340, y + 60));
+    TW(TN(x + 340, y + 60), TN(x + 340, y + 260));
+    TW(TN(x + 340, y + 260), mg);
+    TW(cell->node_ids[0], TN(x + 420, y + 20));
+    TW(TN(x + 420, y + 20), md);
+
+    /* the sense resistor: 3.2 V across 3.2 ohm is 1 A */
+    Component *rs = vres(circuit, x + 420, y + 360, 3.2);                // (420,320)-(420,400)
+    rs->props.resistor.power_rating = 10.0;
+    int rst = TN(x + 420, y + 320), rsb = TN(x + 420, y + 400);
+    rs->node_ids[0] = rst; rs->node_ids[1] = rsb;
+    TW(ms, rst);
+    Component *grs = add_comp(circuit, COMP_GROUND, x + 420, y + 460, 0);
+    grs->node_ids[0] = TN(x + 420, y + 440);
+    TW(rsb, grs->node_ids[0]);
+
+    /* the feedback that makes it constant: the sense voltage back to the inverting input */
+    /* returns above everything. y + 20 is the cell's own top terminal row, and a return along it
+       would lie on top of the cell's drain wire - collinear, touching, and with no junction to say
+       whether they meet. */
+    TW(rst, TN(x + 540, y + 320));
+    TW(TN(x + 540, y + 320), TN(x + 540, y - 20));
+    TW(TN(x + 540, y - 20), TN(x + 80, y - 20));
+    TW(TN(x + 80, y - 20), TN(x + 80, y + 40));
+    TW(TN(x + 80, y + 40), minus);
+
+    add_label(circuit, x - 40, y - 80, "E-LOAD, CONSTANT CURRENT SINK: the op-amp drives the gate until the sense resistor");
+    add_label(circuit, x - 40, y - 50, "carries the reference voltage. 3.2 V across 3.2 ohm is 1 A, out of a cell at any voltage.");
+    add_label(circuit, x + 560, y + 300, "R_sense: the only part that sets the current");
+    add_label(circuit, x + 560, y + 330, "I = V_ref / R_sense = 3.2 / 3.2 = 1 A");
+    return 14;
+}
+
 static int place_tline_real(Circuit *circuit, float x, float y) {
     /* One driver, one 5 ns cable, three ways of ending it - the same experiment as the
        Termination template, but with a line that actually delays rather than five L-C
@@ -13305,6 +13415,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_AC_COUPLING]   = { COMP_RESISTOR, 2, 0 },     /* the AC-coupled channel */
     [CIRCUIT_IV_SHUNT_SENSE]   = { COMP_OPAMP, 0, 2 },        /* high-side difference amp output */
     [CIRCUIT_IV_KELVIN]        = { COMP_OPAMP, 0, 2 },        /* the 4-wire differential reading */
+    [CIRCUIT_BMI_ELOAD_CC]     = { COMP_RESISTOR, 2, 0 },     /* the sense resistor: this is the current */
     [CIRCUIT_IV_BUCK_NODES]    = { COMP_RESISTOR, 2, 0 },     /* the output, after L and C */
     /* Resistor 0 is the linear regulator's load, resistor 1 the switcher's. The output probe was
        on 1, so the whole point of the circuit - the two 5 V rails side by side - had a probe on
@@ -13495,6 +13606,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_PROBE_COMP] = 200e-6, [CIRCUIT_IV_PROBE_LOADING] = 200e-9,
     [CIRCUIT_IV_GROUND_LEAD] = 20e-9, [CIRCUIT_IV_SCOPE_INPUT_Z] = 20e-9,
     [CIRCUIT_IV_AC_COUPLING] = 2e-6, [CIRCUIT_IV_SHUNT_SENSE] = 1e-3, [CIRCUIT_IV_KELVIN] = 1e-3,
+    [CIRCUIT_BMI_ELOAD_CC] = 1e-3,
     [CIRCUIT_IV_BUCK_NODES] = 2e-6,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2e-6, [CIRCUIT_IV_BOOTSTRAP] = 2e-6,
     [CIRCUIT_IV_TERMINATION] = 5e-9, [CIRCUIT_IV_PULLUP_SIZING] = 5e-6,
@@ -13551,6 +13663,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_PROBE_COMP] = 0.2, [CIRCUIT_IV_PROBE_LOADING] = 1.0,
     [CIRCUIT_IV_GROUND_LEAD] = 1.0, [CIRCUIT_IV_SCOPE_INPUT_Z] = 0.5,
     [CIRCUIT_IV_AC_COUPLING] = 0.05, [CIRCUIT_IV_SHUNT_SENSE] = 0.5, [CIRCUIT_IV_KELVIN] = 0.05,
+    [CIRCUIT_BMI_ELOAD_CC] = 1.0,
     [CIRCUIT_IV_BUCK_NODES] = 2.0,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2.0, [CIRCUIT_IV_BOOTSTRAP] = 10,
     [CIRCUIT_IV_TERMINATION] = 2, [CIRCUIT_IV_PULLUP_SIZING] = 1.0,
@@ -13733,6 +13846,7 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_AC_COUPLING]   = { DEMO_WAVEFORM, 100000 },
     [CIRCUIT_IV_SHUNT_SENSE]   = { DEMO_DC, 0 },
     [CIRCUIT_IV_KELVIN]        = { DEMO_DC, 0 },
+    [CIRCUIT_BMI_ELOAD_CC]     = { DEMO_DC, 0 },
     [CIRCUIT_IV_BUCK_NODES]    = { DEMO_DC, 0 },
     [CIRCUIT_IV_LDO_VS_BUCK]   = { DEMO_DC, 0 },
     [CIRCUIT_IV_BOOTSTRAP]     = { DEMO_WAVEFORM, 100000 },
@@ -14048,7 +14162,8 @@ const char *circuit_template_group_name(TemplateGroup g) {
     static const char *names[TG_COUNT] = {
         "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients", "IC I/O & drivers", "Residential & commercial", "Grid standards & methods", "Hardware engineering", "Ideal vs real models",
         "Interview: instrumentation & scope", "Interview: fundamentals",
-        "Interview: power & converters", "Interview: I/O & signal integrity"
+        "Interview: power & converters", "Interview: I/O & signal integrity",
+        "Battery monitoring & e-load"
     };
     return (g >= 0 && g < TG_COUNT) ? names[g] : "?";
 }
