@@ -5108,6 +5108,43 @@ static int load_test(void) {
         circuit_free(c);
     }
 
+    /* ---- 4. splitting a wire leaves both halves attached to a node that exists ---------------
+       circuit_remove_wire sweeps orphaned nodes, and the junction used to be created BEFORE the
+       old wire was removed - so at the moment of the sweep it had no wire and no terminal on it,
+       which is the definition of an orphan. It was swept, and the two halves were then wired to
+       an id that named nothing. This happens on an ordinary edit: drawing a wire onto another
+       one, or clicking one to put a junction in it. */
+    {
+        checks++;
+        Circuit *c = circuit_create();
+        Component *r1 = pt_add(c, COMP_RESISTOR, 0, 0, 0);
+        Component *r2 = pt_add(c, COMP_RESISTOR, 400, 0, 0);
+        int a = pt_node(c, 100, 0), b2 = pt_node(c, 300, 0);
+        r1->node_ids[1] = a; r2->node_ids[0] = b2;
+        int wid = circuit_add_wire(c, a, b2);
+        Wire *w = NULL;
+        for (int i = 0; i < c->num_wires; i++) if (c->wires[i].id == wid) w = &c->wires[i];
+
+        int mid = w ? circuit_split_wire_at(c, w, 200, 0) : -1;
+        int halves = 0, dangling = 0;
+        for (int i = 0; i < c->num_wires; i++) {
+            Wire *ww = &c->wires[i];
+            int have_s = circuit_get_node(c, ww->start_node_id) != NULL;
+            int have_e = circuit_get_node(c, ww->end_node_id) != NULL;
+            if (!have_s || !have_e) dangling++;
+            if (ww->start_node_id == mid || ww->end_node_id == mid) halves++;
+        }
+        int mid_exists = (mid >= 0) && (circuit_get_node(c, mid) != NULL);
+        if (mid < 0 || !mid_exists || halves != 2 || dangling != 0) {
+            printf("[FAIL] load  splitting a wire: junction id %d, exists %d, halves on it %d, "
+                   "wires with a missing end %d\n", mid, mid_exists, halves, dangling);
+            fails++;
+        } else {
+            printf("[ OK ] load  splitting a wire leaves two halves on a junction that exists\n");
+        }
+        circuit_free(c);
+    }
+
     printf("\nload-test: %d hostile inputs, %d that the loaders accepted anyway\n", checks, fails);
     return fails ? 1 : 0;
 }

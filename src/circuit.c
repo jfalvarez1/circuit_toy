@@ -357,17 +357,27 @@ int circuit_split_wire_at(Circuit *circuit, Wire *wire, float x, float y) {
     float split_x = start->x + t * dx;
     float split_y = start->y + t * dy;
 
-    // Store original wire info before removing
-    int orig_start_id = wire->start_node_id;
-    int orig_end_id = wire->end_node_id;
+    /* Store the original wire's ENDS AS POSITIONS, not as ids, and make the junction after the
+       old wire is gone rather than before.
+
+       circuit_remove_wire sweeps orphaned nodes. The junction node used to be created first, and
+       at that moment it had no wire on it and no terminal - the definition of an orphan - so
+       removing the old wire swept away the node the two halves were about to be attached to, and
+       both were then wired to an id that no longer named anything. Splitting a wire is an
+       ordinary edit: it happens when a wire is drawn onto another one, and when one is clicked to
+       put a junction in it.
+
+       The two original ends can be swept by the same call for the same reason, if that wire was
+       the only thing holding them, so they are found again by position afterwards. */
+    float sx = start->x, sy = start->y, ex = end->x, ey = end->y;
     int wire_id = wire->id;
 
-    // Create new node at split point
-    int new_node_id = circuit_create_node(circuit, split_x, split_y);
-    if (new_node_id < 0) return -1;
-
-    // Remove original wire
     circuit_remove_wire(circuit, wire_id);
+
+    int orig_start_id = circuit_find_or_create_node(circuit, sx, sy, 5.0f);
+    int orig_end_id   = circuit_find_or_create_node(circuit, ex, ey, 5.0f);
+    int new_node_id   = circuit_create_node(circuit, split_x, split_y);
+    if (new_node_id < 0 || orig_start_id < 0 || orig_end_id < 0) return -1;
 
     // Create two new wires
     circuit_add_wire(circuit, orig_start_id, new_node_id);
@@ -481,6 +491,15 @@ void circuit_remove_probe(Circuit *circuit, int probe_id) {
                 circuit->probes[j] = circuit->probes[j + 1];
             }
             circuit->num_probes--;
+            /* Renumber. circuit_add_probe assigns id = num_probes + 1, so ids are index + 1 - an
+               invariant the rest of the code relies on and this function used to break. Remove the
+               middle of three and the array holds ids 1 and 3; add another and it is given id 3
+               as well, because num_probes is 2. Then removing "probe 3" removes whichever of the
+               two comes first, which is the wrong one half the time.
+
+               Only the id. The label is renameable and belongs to the probe, and channel_num and
+               the colour travel with it. */
+            for (int j = 0; j < circuit->num_probes; j++) circuit->probes[j].id = j + 1;
             return;
         }
     }
