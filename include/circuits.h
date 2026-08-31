@@ -219,6 +219,10 @@ typedef enum {
     /* Battery monitoring and electronic load - the circuits of a senior-design BMI:
        a constant-current sink, a two-stage LiPo charger, an NTC cutout and a cell simulator */
     CIRCUIT_BMI_ELOAD_CC,
+    CIRCUIT_BMI_ELOAD_CR,
+    CIRCUIT_BMI_ELOAD_CV,
+    CIRCUIT_BMI_THERMAL_CUTOUT,
+    CIRCUIT_BMI_SUPERCAP,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 
