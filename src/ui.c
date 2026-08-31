@@ -3975,7 +3975,15 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     // Draw voltage scale labels on Y-axis (left side)
     // 8 divisions total: 4 above center (positive) and 4 below (negative)
     SDL_SetRenderDrawColor(renderer, 0x60, 0x80, 0x60, 0xff);
-    for (int i = 0; i <= 8 && !(ui->scope_stacked && ui->scope_stack_fit); i++) {   // Fit: every band has its own scale (tag per band)
+    /* Not while the channels are stacked, with or without Fit.
+       A stacked channel is drawn with eight divisions inside its OWN band - ch_scale is
+       (band_h / 8) / volts-per-division - so with two channels the screen carries sixteen
+       divisions of signal while this axis labels eight, and its 0 V line falls between the two
+       bands rather than at either channel's zero. Every number on it is wrong by the number of
+       channels. Fit was already excluded for the related reason that each band picks its own
+       scale; the rest of stacked is no better off. The volts per division is in the readout row
+       under the scope, and each band carries its own label when Fit is on. */
+    for (int i = 0; i <= 8 && !ui->scope_stacked; i++) {   // Fit: every band has its ownscale (tag per band)
         int y = r->y + i * div_y;
         // Calculate voltage value: top is +4*V/div, center is 0, bottom is -4*V/div
         double voltage = (4 - i) * ui->scope_volt_div;
@@ -7060,10 +7068,21 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             // Now check trigger level (horizontal yellow line)
             int trig_ch = ui->trigger_channel;
             if (trig_ch < ui->scope_num_channels && ui->scope_channels[trig_ch].enabled) {
-                // Calculate current trigger level Y position
+                /* Where the trigger line is actually drawn, which is inside the trigger
+                   channel's own band, at that channel's own volts-per-division, with the AC and
+                   Fit centring applied. This used the full height, the middle of the screen and
+                   the global V/div, so with the channels stacked - the default for most templates
+                   - the line you can grab was nowhere near the line you can see. The renderer
+                   records the three numbers per channel for exactly this; the cursor overlay was
+                   fixed the same way. */
                 double scale = (sr->h / 8.0) / ui->scope_volt_div;
                 int center_y = sr->y + sr->h / 2;
                 double trig_offset = ui->scope_channels[trig_ch].offset;
+                if (trig_ch >= 0 && trig_ch < MAX_PROBES && ui->scope_ch_scale[trig_ch] > 0) {
+                    center_y = ui->scope_ch_center[trig_ch];
+                    scale = ui->scope_ch_scale[trig_ch];
+                    trig_offset += ui->scope_ch_shift[trig_ch];
+                }
                 int trig_y = center_y - (int)((ui->trigger_level + trig_offset) * scale);
                 trig_y = CLAMP(trig_y, sr->y, sr->y + sr->h);
 
@@ -7738,10 +7757,17 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         Rect *sr = &ui->scope_rect;
         int trig_ch = ui->trigger_channel;
         if (trig_ch < ui->scope_num_channels && ui->scope_channels[trig_ch].enabled) {
-            // Calculate scale and center_y (same as in rendering)
+            // Calculate scale and center_y (the same three the renderer used - see the hit-test)
             double scale = (sr->h / 8.0) / ui->scope_volt_div;
             int center_y = sr->y + sr->h / 2;
             double trig_offset = ui->scope_channels[trig_ch].offset;
+            double vdiv = ui->scope_volt_div;
+            if (trig_ch >= 0 && trig_ch < MAX_PROBES && ui->scope_ch_scale[trig_ch] > 0) {
+                center_y = ui->scope_ch_center[trig_ch];
+                scale = ui->scope_ch_scale[trig_ch];
+                trig_offset += ui->scope_ch_shift[trig_ch];
+                vdiv = ui_channel_volt_div(ui, trig_ch);
+            }
 
             // Convert mouse Y position to trigger level voltage
             // From rendering: trig_y = center_y - (int)((trigger_level + trig_offset) * scale)
@@ -7749,7 +7775,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
             double new_level = (double)(center_y - y) / scale - trig_offset;
 
             // Clamp to reasonable voltage range based on volt_div (4 divisions = 4 * volt_div)
-            double max_level = 4.0 * ui->scope_volt_div;
+            double max_level = 4.0 * vdiv;
             ui->trigger_level = CLAMP(new_level, -max_level, max_level);
         }
         return UI_ACTION_NONE;
