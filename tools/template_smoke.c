@@ -1052,6 +1052,22 @@ static int class_run_span(CircuitTemplateType t, double dt_scale, double horizon
        much time and every slow circuit reads as a one-shot for want of a second cycle. */
     double dt_app = sim->time_step;
     double horizon = horizon_cycles * dt_app;
+
+    /* The window has to contain the thing being measured. The horizon is a multiple of the step,
+       and the step is not related to when a stimulus arrives: Hot-Plug Inrush closes its switch at
+       20 ms, and once its step went to 1 us - because the step rule learned to resolve its 60 us
+       inrush - 4000 steps was 4 ms and the window closed sixteen milliseconds before anything
+       happened. The template read "static", which is a statement about the window.
+
+       So: at least twice the latest source delay, whatever the step works out to. */
+    double latest = 0;
+    for (int i = 0; i < c->num_components; i++) {
+        Component *k = c->components[i];
+        if (!k || k->type != COMP_PULSE_SOURCE) continue;
+        double d = k->props.pulse_source.delay;
+        if (d > latest) latest = d;
+    }
+    if (latest > 0 && horizon < latest * 2.0) horizon = latest * 2.0;
     double dt = dt_app * dt_scale;
     simulation_enable_adaptive(sim, false);
     simulation_set_time_step(sim, dt);
