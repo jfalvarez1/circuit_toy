@@ -5062,6 +5062,52 @@ static int load_test(void) {
         }
     }
 
+    /* ---- 3. a circuit with no solution at all ------------------------------------------------
+       Two ideal voltage sources of different voltages across the same pair of nodes. The system
+       says V = 5 and V = 3 at once, and elimination reduces that to 0 = 2.
+
+       The solver used to fake a pivot of 1e-15 for any zero it met and divide by it, so an
+       equation with no solution came back as a number around 1e15 and was reported as an answer.
+       A zero pivot whose right-hand side is also zero is a different thing - an unwired terminal
+       has an all-zero row, which happens constantly in an editor - and that one is answered with
+       zero, which is why refusing every singular row broke twelve suites. */
+    {
+        Circuit *c = circuit_create();
+        Component *a = pt_add(c, COMP_DC_VOLTAGE, 0, 60, 0);
+        a->props.dc_voltage.voltage = 5.0; a->props.dc_voltage.ideal = true;
+        Component *b2 = pt_add(c, COMP_DC_VOLTAGE, 160, 60, 0);
+        b2->props.dc_voltage.voltage = 3.0; b2->props.dc_voltage.ideal = true;
+        Component *g = pt_add(c, COMP_GROUND, 0, 160, 0);
+        int top = pt_node(c, 0, 20), bot = pt_node(c, 0, 100), gt = pt_node(c, 0, 140);
+        int top2 = pt_node(c, 160, 20), bot2 = pt_node(c, 160, 100);
+        a->node_ids[0] = top;  a->node_ids[1] = bot;
+        b2->node_ids[0] = top2; b2->node_ids[1] = bot2;
+        g->node_ids[0] = gt;
+        circuit_add_wire(c, top, top2);
+        circuit_add_wire(c, bot, bot2);
+        circuit_add_wire(c, bot, gt);
+
+        Simulation *sim = simulation_create(c);
+        bool solved = sim && simulation_dc_analysis(sim);
+        double v = 0;
+        if (solved) { Node *nd = circuit_get_node(c, top); v = nd ? nd->voltage : 0; }
+        checks++;
+        if (solved) {
+            /* The bar is not "is the number large". The old solver answered a confident 5.000 V
+               here, which is the more dangerous kind of wrong: it satisfies one of the two
+               equations and silently drops the other. A system with no solution must not come
+               back as solved. */
+            printf("[FAIL] load  5 V and 3 V sources in parallel reported success, answering "
+                   "%.3f V to a system that also says 3\n", v);
+            fails++;
+        } else {
+            printf("[ OK ] load  5 V and 3 V sources in parallel: no solution, and the solver "
+                   "says so\n");
+        }
+        if (sim) simulation_free(sim);
+        circuit_free(c);
+    }
+
     printf("\nload-test: %d hostile inputs, %d that the loaders accepted anyway\n", checks, fails);
     return fails ? 1 : 0;
 }

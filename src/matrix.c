@@ -180,9 +180,25 @@ Vector *linear_solve(Matrix *A, Vector *b) {
         // Check for singular matrix
         double pivot = aug[col * (n + 1) + col];
         if (fabs(pivot) < 1e-15) {
-            // Matrix is singular, set small value
-            pivot = 1e-15;
-            aug[col * (n + 1) + col] = pivot;
+            /* The column is all zero after pivoting, so this variable is not determined by the
+               system. That happens constantly and harmlessly in an editor - a terminal nobody has
+               wired yet has an all-zero row - and the answer for it is zero, not b/1e-15.
+
+               Faking the pivot at 1e-15 and dividing by it was the old behaviour, and where the
+               right-hand side was also zero it happened to give zero back. Where it was NOT zero
+               the equation says 0 = something, which has no solution, and the divide turned that
+               into a number around 1e15 that the solver then reported as an answer.
+
+               So: an undetermined variable is set to zero, and an inconsistent row is a failure
+               the caller can see. */
+            double rhs = aug[col * (n + 1) + n];
+            if (fabs(rhs) > 1e-9) {
+                free(aug);
+                return NULL;
+            }
+            aug[col * (n + 1) + col] = 1.0;
+            aug[col * (n + 1) + n] = 0.0;
+            continue;                       /* the column below is already zero */
         }
 
         // Eliminate column
