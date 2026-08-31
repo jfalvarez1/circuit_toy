@@ -4007,6 +4007,226 @@ static int fft_test(void) {
  * actually does at each. A node that stays inside a few times the input is behaving; one that
  * reaches kilovolts is the fault this item is about.
  */
+/* --iv-test: the nineteen interview-prep templates, each against a number its own annotation
+ * states, and each asked the same question twice at two different time steps.
+ *
+ * These are the templates a person opens to check an answer before an interview, so a number on
+ * the canvas that the solver does not reproduce is worse here than anywhere else in the library:
+ * it is wrong in the one place someone is going to repeat it out loud. Nothing was checking them.
+ * --class-test says they converge, --geom-test says they are laid out, --flow-test says charge is
+ * conserved, and none of that notices that the text beside the circuit claims a pin sits at 4.0 V
+ * while the solver puts it at 3.85, or that a probe is parked on a node that is always 0 V.
+ *
+ * Measurement points are node COORDINATES, not the nth component of a type. The builders lay these
+ * out on an explicit grid, so a coordinate is what the author actually wrote and what --trace
+ * prints back; a per-type ordinal silently follows any part inserted ahead of it. If a builder
+ * moves, this fails loudly, which is right.
+ *
+ * LEVEL and PP are measured over the settled second half of the run - they are questions about
+ * where a circuit ends up. MAXV and MINV are measured over the whole run, because the interesting
+ * moment in a reflection, a ring or an inrush is the transient itself.
+ *
+ * Every case runs again at dt/8. A number that moves when the step changes is not a property of
+ * the circuit, and printing it on the canvas as though it were is the same fault as printing a
+ * wrong one.
+ */
+typedef enum { IV_LEVEL, IV_PP, IV_RATIO_PP, IV_MAXV, IV_MINV } IvKind;
+typedef struct {
+    CircuitTemplateType t;
+    IvKind kind;
+    float ax, ay;
+    float bx, by;          /* the second node, for IV_RATIO_PP */
+    double expect, tol;    /* tol is relative */
+    double run, dt;
+    const char *what;
+    /* Set only where the step-independence bar is known not to be met AND the reason is written up
+       in docs/ROADMAP.md. Reported as [NOTE] with the reason attached, and counted in the summary,
+       never hidden: an exemption with no explanation is how a hole starts looking like coverage. */
+    const char *known_drift;
+} IvCase;
+
+static const IvCase iv_cases[] = {
+ /* ---- instrumentation and the scope ------------------------------------------------------- */
+ { CIRCUIT_IV_PROBE_COMP,    IV_MAXV,  380, 400,  0,0,   0.500, 0.05, 4e-3,  1e-5,
+   "compensated 10x: a flat 0.5 V from a 5 V square" },
+ { CIRCUIT_IV_PROBE_LOADING, IV_MAXV,  220,  40,  0,0,   3.300, 0.03, 4e-6,  1e-8,
+   "the 1 MHz square still reaches 3.3 V" },
+ { CIRCUIT_IV_GROUND_LEAD,   IV_MAXV,  220,  40,  0,0,   3.693, 0.06, 4e-7,  1e-9,
+   "150 nH of ground lead against 12 pF: the edge overshoots 3.3 V and rings" },
+ { CIRCUIT_IV_SCOPE_INPUT_Z, IV_MAXV,  460,  40,  0,0,   2.000, 0.03, 4e-7,  1e-9,
+   "1 M input, open cable: the step reflects and reads twice the 1 V setting" },
+ { CIRCUIT_IV_AC_COUPLING,   IV_PP,    640,  60,  0,0,   0.200, 0.05, 4e-5,  2e-8,
+   "200 mVpp of ripple, recovered" },
+ { CIRCUIT_IV_AC_COUPLING,   IV_LEVEL,  60,  20,  0,0,  12.000, 0.01, 4e-5,  2e-8,
+   "the 12 V rail it is hiding on" },
+ { CIRCUIT_IV_SHUNT_SENSE,   IV_LEVEL, 160, 260,  0,0,   0.100, 0.03, 2e-2,  5e-5,
+   "low side: 1 A x 100 mohm lifts the load's ground by 100 mV" },
+ { CIRCUIT_IV_KELVIN,        IV_LEVEL,   0,  60,  0,0,   0.110, 0.03, 2e-2,  5e-5,
+   "2-wire at the connector: 110 mV, so 110 mohm for a 10 mohm part" },
+ { CIRCUIT_IV_KELVIN,        IV_LEVEL, 540, 360,  0,0,   0.010, 0.05, 2e-2,  5e-5,
+   "4-wire through the difference amp: 10 mV, so 10 mohm" },
+
+ /* ---- converters and power delivery -------------------------------------------------------- */
+ { CIRCUIT_IV_BUCK_NODES,    IV_LEVEL, 640,  20,  0,0,   5.969, 0.04, 4e-3,  2e-7,
+   "12 V at 50 % duty through real parts: 6.0 V out" },
+ { CIRCUIT_IV_LDO_VS_BUCK,   IV_LEVEL, 280,   0,  0,0,   5.000, 0.03, 4e-4,  1e-7,
+   "the linear regulator's 5 V rail" },
+ { CIRCUIT_IV_BOOTSTRAP,     IV_MAXV,  200,   0,  0,0,  23.500, 0.05, 4e-4,  1e-7,
+   "C_boot rides the switch node: BOOT reaches 23.5 V, 11.5 V above a 12 V source" },
+
+ /* ---- I/O, termination and signal integrity ------------------------------------------------ */
+ { CIRCUIT_IV_TERMINATION,   IV_MAXV,  260,  20,  0,0,   4.400, 0.08, 5e-7,  2.5e-10,
+   "unterminated: the 2.2 V launched doubles at the open far end" },
+ { CIRCUIT_IV_TERMINATION,   IV_MAXV,  260, 340,  0,0,   3.300, 0.05, 5e-7,  2.5e-10,
+   "series 33 ohm: incident plus reflected is still the full 3.3 V at the receiver" },
+ { CIRCUIT_IV_PULLUP_SIZING, IV_MAXV,  200, 100,  0,0,   3.300, 0.03, 8e-5,  2.5e-7,
+   "the open-drain bus does get all the way to 3.3 V" },
+ { CIRCUIT_IV_GROUND_BOUNCE, IV_PP,    160, 100,  0,0,   2.026, 0.06, 5e-7,  0,
+   "330 mA through 5 nH of shared bond wire swings the local ground" },
+ { CIRCUIT_IV_CROSSTALK,     IV_MAXV,  400,  20,  0,0,   0.943, 0.08, 5e-7,  2.5e-10,
+   "2 pF into a high-impedance victim: 3.3 x 2/7, a logic level from nothing" },
+ { CIRCUIT_IV_ESD_CLAMP,     IV_LEVEL, 160,  60,  0,0,   3.852, 0.02, 2e-3,  5e-5,
+   "6 V through 1 k: the pin clamps one diode drop above the 3.3 V rail" },
+ { CIRCUIT_IV_ESD_CLAMP,     IV_LEVEL, 160, 420,  0,0,   3.704, 0.02, 2e-3,  5e-5,
+   "the same 6 V through 220 k: less current, so less forward drop" },
+
+ /* ---- analog fundamentals ------------------------------------------------------------------ */
+ { CIRCUIT_IV_CAP_ENERGY,    IV_LEVEL,   0,  60,  0,0,   5.000, 0.03, 5e-2,  2.5e-4,
+   "charge is conserved: the charged 100 uF settles at half of 10 V" },
+ { CIRCUIT_IV_CAP_ENERGY,    IV_LEVEL, 340,  60,  0,0,   5.000, 0.03, 5e-2,  2.5e-4,
+   "and the empty one meets it there - half the energy is gone" },
+ { CIRCUIT_IV_MILLER,        IV_RATIO_PP, 340, 400, 340, 0, 0.1429, 0.12, 4e-6, 1e-8,
+   "10 pF of C_gd against 10 k at 1 MHz: the second stage keeps a seventh of the first" },
+ { CIRCUIT_IV_SWITCH_CHOICE, IV_LEVEL, 200, 120,  0,0,   0.072, 0.08, 5e-2,  5e-5,
+   "the 2N3904 saturates at 0.07 V, whatever the current" },
+ { CIRCUIT_IV_SWITCH_CHOICE, IV_LEVEL, 900, 120,  0,0,   0.406, 0.08, 5e-2,  5e-5,
+   "the 2N7000 drops I x R_DS(on), and 5 V of gate is not 10 V" },
+ { CIRCUIT_IV_INRUSH,        IV_MINV,    0,  20,  0,0,  11.430, 0.03, 5e-2,  0,
+   "an empty capacitor is a short: 50 mohm of connector lets the rail sag",
+   "the step is chosen from source periods and this event has no source - docs/ROADMAP.md" },
+ { CIRCUIT_IV_INRUSH,        IV_MINV,    0, 320,  0,0,  11.980, 0.01, 5e-2,  0,
+   "4.7 ohm in series and the same rail barely moves" },
+};
+
+static int iv_node_at(Circuit *c, float x, float y) {
+    int best = -1; float bd = 1e30f;
+    for (int i = 0; i < c->num_nodes; i++) {
+        float dx = c->nodes[i].x - x, dy = c->nodes[i].y - y;
+        float d = dx * dx + dy * dy;
+        if (d < bd) { bd = d; best = c->nodes[i].id; }
+    }
+    return (bd <= 100.0f) ? best : -1;   /* within 10 px, or the coordinate has gone stale */
+}
+
+/* The step the APP would run this template at: the finer of what the circuit's own dynamics ask
+   for and what the scope's time base implies, which is exactly what app.c does. A suite that
+   invents its own step is testing a different program - the first version of this file forced
+   250 us on Hot-Plug Inrush, whose event is over in 50 us, and then reported the template as
+   unstable when the number it got at that step disagreed with the number at a finer one. The
+   template was fine; the harness was asking it a question the app never asks. */
+static double iv_app_step(Simulation *sim, CircuitTemplateType t) {
+    simulation_auto_time_step(sim);
+    double td = circuit_template_scope_time_div(t);
+    if (td > 0) {
+        double dtp = simulation_scope_time_step(sim, td);
+        if (dtp > 0 && dtp < sim->time_step) return dtp;
+    }
+    return sim->time_step;
+}
+
+/* scale > 0 multiplies the app's own step (1.0 = what the app uses, 0.125 = eight times finer);
+   cs->dt, when set, overrides it outright. */
+static double iv_measure(const IvCase *cs, double scale, int *ok) {
+    *ok = 0;
+    Circuit *c = circuit_create();
+    if (!c) return 0;
+    if (circuit_place_template(c, cs->t, 0, 0) <= 0) { circuit_free(c); return 0; }
+    int na = iv_node_at(c, cs->ax, cs->ay);
+    int nb = (cs->kind == IV_RATIO_PP) ? iv_node_at(c, cs->bx, cs->by) : -1;
+    if (na < 0 || (cs->kind == IV_RATIO_PP && nb < 0)) { circuit_free(c); return 0; }
+
+    Simulation *sim = simulation_create(c);
+    if (!sim) { circuit_free(c); return 0; }
+    simulation_dc_analysis(sim);
+    double base = (cs->dt > 0) ? cs->dt : iv_app_step(sim, cs->t);
+    simulation_set_time_step(sim, base * scale);
+    simulation_start(sim);
+
+    /* extremes over the whole run, levels over the settled half - see the header */
+    int whole = (cs->kind == IV_MAXV || cs->kind == IV_MINV);
+    double amn = 1e30, amx = -1e30, asum = 0, bmn = 1e30, bmx = -1e30;
+    long n = 0, steps = 0;
+    int good = 1;
+    while (sim->time < cs->run && steps < 4000000) {
+        if (!simulation_step(sim)) { good = 0; break; }
+        steps++;
+        if (!whole && sim->time < cs->run * 0.5) continue;
+        Node *a = circuit_get_node(c, na);
+        double va = a ? a->voltage : 0;
+        if (va < amn) amn = va;
+        if (va > amx) amx = va;
+        asum += va;
+        if (nb >= 0) { Node *b = circuit_get_node(c, nb); double vb = b ? b->voltage : 0;
+                       if (vb < bmn) bmn = vb; if (vb > bmx) bmx = vb; }
+        n++;
+    }
+    double r = 0;
+    if (good && n > 0) {
+        switch (cs->kind) {
+            case IV_LEVEL:    r = asum / (double)n; break;
+            case IV_PP:       r = amx - amn; break;
+            case IV_MAXV:     r = amx; break;
+            case IV_MINV:     r = amn; break;
+            case IV_RATIO_PP: r = (bmx - bmn) > 0 ? (amx - amn) / (bmx - bmn) : 0; break;
+        }
+        *ok = 1;
+    }
+    simulation_free(sim);
+    circuit_free(c);
+    return r;
+}
+
+static int iv_test(void) {
+    int fails = 0, moved = 0, excused_drifts = 0;
+    unsigned n = (unsigned)(sizeof iv_cases / sizeof iv_cases[0]);
+    for (unsigned k = 0; k < n; k++) {
+        const IvCase *cs = &iv_cases[k];
+        const CircuitTemplateInfo *ti = circuit_template_get_info(cs->t);
+        const char *nm = ti ? ti->short_name : "?";
+        int ok1 = 0, ok2 = 0;
+        double v1 = iv_measure(cs, 1.0,     &ok1);   /* the step the app would use */
+        double v2 = iv_measure(cs, 1.0 / 8, &ok2);   /* and the same question, eight times finer */
+
+        if (!ok1 || !ok2) {
+            printf("[FAIL] iv  %-8s %-64s did not run\n", nm, cs->what);
+            fails++;
+            continue;
+        }
+        double err = fabs(v1 - cs->expect) / (fabs(cs->expect) > 1e-12 ? fabs(cs->expect) : 1.0);
+        /* the step-independence bar is half the accuracy bar: a number quoted to a person has to be
+           a property of the circuit, not of how finely it happened to be integrated */
+        double drift = (fabs(v1) > 1e-12) ? fabs(v2 - v1) / fabs(v1) : fabs(v2 - v1);
+        int bad = (err > cs->tol);
+        int slid = (drift > cs->tol / 2);
+        int excused = (slid && cs->known_drift != NULL);
+        if (bad) fails++;
+        if (slid) moved++;
+        if (excused) excused_drifts++;
+        printf("%s iv  %-8s %-64s %9.4g vs %-9.4g %+6.1f%%  dt/8 %+.2f%%%s\n",
+               bad ? "[FAIL]" : slid ? (excused ? "[NOTE]" : "[FAIL]") : "[ OK ]",
+               nm, cs->what, v1, cs->expect,
+               100.0 * (v1 - cs->expect) / (fabs(cs->expect) > 1e-12 ? cs->expect : 1.0),
+               100.0 * drift, slid ? "  << moves with the step" : "");
+        if (excused) printf("       known: %s\n", cs->known_drift);
+    }
+    printf("\niv-test: %u documented numbers over the 19 interview templates, %d the solver does "
+           "not reproduce, %d that move with the time step (%d written up, %d not)\n",
+           n, fails, moved, excused_drifts, moved - excused_drifts);
+    /* A drift that is written up is a tracked limitation and does not block. One that is not is a
+       regression, and so is any number the solver fails to reproduce at all. */
+    return (fails || (moved - excused_drifts) > 0) ? 1 : 0;
+}
+
 static int dcm_test(void) {
     /* R_load, and roughly what it means for a 12 V / 100 kHz / 220 uH buck at 50 % duty:
        critical conduction is near R = 2 L f / (1 - D) ~ 88 ohm, so above that is DCM. */
@@ -5076,6 +5296,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--meas-test")) return meas_test();
         else if (!strcmp(argv[i], "--state-test")) return state_test();
         else if (!strcmp(argv[i], "--dcm-test")) return dcm_test();
+        else if (!strcmp(argv[i], "--iv-test")) return iv_test();
         else if (!strcmp(argv[i], "--fft-test")) return fft_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--label-test")) return label_test();

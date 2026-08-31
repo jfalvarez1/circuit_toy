@@ -335,7 +335,7 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_IV_CROSSTALK] = {"Crosstalk", "Xtalk", "Same coupled charge, two victim impedances", TG_IV_SI},
     [CIRCUIT_IV_ESD_CLAMP] = {"ESD Clamp Diodes", "ESD", "6 V into a 3.3 V pin, through 1 k and through 220 k", TG_IV_SI},
     [CIRCUIT_IV_CAP_ENERGY] = {"The Two-Capacitor Problem", "CapE", "Half the energy leaves, whatever the resistance", TG_IV_FUND},
-    [CIRCUIT_IV_MILLER] = {"The Miller Effect", "Miller", "10 pF of C_gd becomes 110 pF at the input", TG_IV_FUND},
+    [CIRCUIT_IV_MILLER] = {"The Miller Effect", "Miller", "10 pF of C_gd becomes 130 pF at the input", TG_IV_FUND},
     [CIRCUIT_IV_SWITCH_CHOICE] = {"BJT or MOSFET as a Switch", "SwSel", "V_CE(sat) against R_DS(on), and what each costs", TG_IV_FUND},
     [CIRCUIT_IV_INRUSH] = {"Hot-Plug Inrush", "Inrush", "An empty capacitor is a short circuit", TG_IV_FUND},
     [CIRCUIT_TLINE_REAL] = {"Transmission Line (real delay)", "TLdly", "One 5 ns cable, three terminations, actual propagation", TG_HARDWARE},
@@ -7018,15 +7018,15 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "them. The coupled charge is identical: C_m dV = 2 pF x 3.3 V = 6.6 pC. Into a victim with 5 pF of",
         "its own capacitance and only a 10 k pull-down to drain it, that is 3.3 x 2/7 = 0.94 V - a logic",
         "level - and it takes 70 ns to bleed away. Into a 10 ohm driver the same charge is gone in 70 ps.",
-        "nanosecond. The lesson is not 'avoid coupling': it is that coupling becomes a fault only when the",
+        "The lesson is not 'avoid coupling': it is that coupling becomes a fault only when the",
         "victim's impedance lets it. Drive your quiet nets, and never leave an input floating."},
     [CIRCUIT_IV_ESD_CLAMP] = {"ESD CLAMPS: every CMOS input has a diode to each rail, and they exist to survive a strike -",
         "not to be a voltage clamp you design around. Drive 6 V into a 3.3 V pin through 1 k and the pin sits",
-        "at 4.0 V with 2.7 mA flowing INTO the 3.3 V rail: more than the 10 uA to 20 mA of injection a data",
-        "sheet allows, and on a lightly loaded board that current alone can pull the whole supply up. This is",
-        "how a live signal back-powers a board that is switched off, through one input pin. Through 220 k the",
-        "same 6 V injects 12 uA, the pin still reads a solid high, and the only cost is bandwidth."},
-    [CIRCUIT_IV_BUCK_NODES] = {"DISCRETE BUCK, NODE BY NODE: 12 V, 50 % duty at 50 kHz, 5.5 V out, built from real parts",
+        "at 3.85 V - a diode above the rail - with 2.1 mA flowing INTO the 3.3 V rail: more than the 10 uA to",
+        "20 mA of injection a data sheet allows, and on a lightly loaded board that current alone can pull the",
+        "whole supply up. This is how a live signal back-powers a board that is off, through one input pin.",
+        "Through 220 k the same 6 V injects 6.7 uA and the pin still reads a solid high, for a little bandwidth."},
+    [CIRCUIT_IV_BUCK_NODES] = {"DISCRETE BUCK, NODE BY NODE: 12 V, 50 % duty at 50 kHz, 6.0 V out, built from real parts",
         "instead of an ideal switch: an IRF9540N, an NPN to drive it and a Schottky to catch the current.",
         "GATE sits at 12 V and the NPN pulls it to 0.2 V, so Vgs = -11.8 V and the PMOS turns on. The 1 k",
         "gate resistor is why the edges are not instant, and it burns 12 mA whenever the NPN is on. SWITCH",
@@ -12325,8 +12325,8 @@ static int place_iv_esd_clamp(Circuit *circuit, float x, float y) {
     /* an input pin with rail clamps, overdriven two ways */
     static const double rlim[2] = { 1e3, 220e3 };
     static const char *tag[2] = {
-        "1 k series: the pin clamps at 4.0 V and 2.7 mA flows into the 3.3 V rail. That is more than the",
-        "220 k series: the same 6 V outside, 12 uA in. Under every data sheet's injection limit, and the"
+        "1 k series: the pin clamps at 3.85 V and 2.1 mA flows into the 3.3 V rail. That is more than the",
+        "220 k series: the same 6 V outside, 6.7 uA in. Under every data sheet's injection limit, and the"
     };
     for (int k = 0; k < 2; k++) {
         float py = y + k * 360;
@@ -13340,6 +13340,19 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_IO_RS485]         = { { COMP_RESISTOR, 3, 0, "A FAR" }, { COMP_RESISTOR, 3, 1, "B FAR" } },        // A, B at the far termination
     [CIRCUIT_IO_SPMI]          = { { COMP_CAPACITOR, 0, 0, "BUS" } },
     [CIRCUIT_IV_LDO_VS_BUCK]   = { { COMP_RESISTOR, 1, 0, "SW OUT" } },   /* the switcher's rail */
+    /* The interview templates are comparisons - the same question answered two or three ways side
+       by side - and the auto-probe places one channel on the source and one on the "output". On a
+       comparison that lands both channels in the SAME copy, and the branch that carries the point
+       has no trace at all. The Two-Capacitor Problem probed the 1 ohm copy, whose transfer is over
+       in 100 us on a 50 ms screen, and showed two flat lines; Hot-Plug Inrush did the same with the
+       unlimited copy. A template that draws a flat line where its own annotation promises a curve
+       is not teaching anything. */
+    [CIRCUIT_IV_CAP_ENERGY]    = { { COMP_CAPACITOR, 2, 0, "100R A" },    /* the 100 ohm copy: the */
+                                   { COMP_CAPACITOR, 3, 0, "100R B" } },  /* 10 ms transfer, visible */
+    [CIRCUIT_IV_INRUSH]        = { { COMP_CAPACITOR, 1, 0, "LIMITED" } }, /* the 4.7 ohm copy charging */
+    [CIRCUIT_IV_SWITCH_CHOICE] = { { COMP_RESISTOR, 2, 1, "MOSFET" } },   /* the 2N7000's drop, beside the BJT's */
+    [CIRCUIT_IV_ESD_CLAMP]     = { { COMP_RESISTOR, 2, 0, "220k PIN" } }, /* the same 6 V through 220 k */
+    [CIRCUIT_IV_MILLER]        = { { COMP_RESISTOR, 7, 1, "C_gd" } },     /* the stage that has the 10 pF */
     /* the digit templates: the clock that drives them, so the scope shows the input that makes
        the count advance next to the segment it lights */
     [CIRCUIT_BCD_COUNTER]      = { { COMP_CLOCK, 0, 0, "CLK" } },
@@ -13835,6 +13848,30 @@ static const char *derived_probe_name(ComponentType ct, int term) {
 
 /* Place a probe and give it a name. Names have to be unique inside a circuit, because they are
    also the scope's channel names: two traces both called VCAP cannot be told apart. */
+/* Are these two node ids the same piece of copper? Same id, one wire apart, or sitting on the same
+   spot - which is the whole of how a template joins anything, since the builders wire ground with a
+   single TW() and the node merger treats coincident terminals as connected.
+
+   Deliberately NOT circuit_build_node_map: that indexes its union-find by node ID, and
+   --place-test reuses one Circuit across 188 clear-and-place cycles, so the ids climb past
+   MAX_NODES while num_nodes stays small. Calling it from inside template placement segfaulted on
+   the 60th template. One hop is all these builders ever need. */
+static bool nodes_joined(Circuit *circuit, int a, int b) {
+    if (a == b) return true;
+    if (a < 0 || b < 0) return false;
+    for (int i = 0; i < circuit->num_wires; i++) {
+        Wire *w = &circuit->wires[i];
+        if ((w->start_node_id == a && w->end_node_id == b) ||
+            (w->start_node_id == b && w->end_node_id == a)) return true;
+    }
+    Node *na = circuit_get_node(circuit, a), *nb = circuit_get_node(circuit, b);
+    if (na && nb) {
+        float dx = na->x - nb->x, dy = na->y - nb->y;
+        if (dx * dx + dy * dy <= 100.0f) return true;   /* the 10 px the node merger uses */
+    }
+    return false;
+}
+
 static void probe_named(Circuit *circuit, Component *c, int term, const char *name) {
     if (!c || term < 0 || term >= c->num_terminals) return;
     Node *n = circuit_get_node(circuit, c->node_ids[term]);
@@ -13922,10 +13959,21 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
         const TemplateDemo *dm = &template_demo[type];
         bool osc = (dm->kind == DEMO_OSC);   // oscillators: the only 'source' is a start-up kick - do not probe it
         if (src && !osc) {
-            // probe the source terminal that is not ground (a rotated current source has its '+' on ground)
+            /* Probe the source terminal that is not ground (a rotated current source has its '+'
+               on ground). Which terminal that is has to be asked of the NET, not of the node id:
+               the old test looked for a COMP_GROUND whose own node id equalled the source's, and a
+               template that reaches its ground through a short wire - most of them - has two
+               different ids on one net, so the test never fired. On 4-Wire (Kelvin) Sensing that
+               put CH1 on the current source's grounded return, and the scope showed a flat 0 V for
+               the 110 mV two-wire reading the whole template is about. node_map resolves wires and
+               coincident terminals and reserves 0 for the ground net, which is exactly the
+               question being asked. */
             int st = 0;
-            for (int i = 0; i < circuit->num_components; i++)
-                if (circuit->components[i]->type == COMP_GROUND && circuit->components[i]->node_ids[0] == src->node_ids[0]) st = 1;
+            for (int i = 0; i < circuit->num_components && !st; i++) {
+                Component *g = circuit->components[i];
+                if (!g || g->type != COMP_GROUND) continue;
+                if (nodes_joined(circuit, g->node_ids[0], src->node_ids[0])) st = 1;
+            }
             probe_named(circuit, src, st, "IN");
         }
         if (out) probe_named(circuit, out, spec->term, spec->name ? spec->name : "OUT");

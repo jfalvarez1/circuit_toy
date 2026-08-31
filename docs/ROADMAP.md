@@ -302,6 +302,57 @@ recovered by re-stamping each device alone and reading its residual, so the repo
 the stamp whatever the stamp says. A sign error is invisible to every conservation check in the
 suite and shows up only in a waveform - which it did, and which was explained away.
 
+## The interview templates, checked against their own numbers (2026-08-30)
+
+The nineteen interview-prep templates are the ones a person opens to check an answer before a job
+interview, so a number printed beside the circuit that the solver does not reproduce is worse here
+than anywhere else in the library: it is wrong in the one place someone is going to repeat it out
+loud. Nothing was checking them. `--class-test` said they converge, `--geom-test` said they are laid
+out, `--flow-test` said charge is conserved, and none of that notices that the text beside the
+circuit claims a pin sits at 4.0 V while the solver puts it at 3.85.
+
+`--iv-test` now takes 26 numbers off those nineteen canvases and measures each one twice - at the
+step the app itself would use, and again eight times finer. **All 26 reproduce.** Kelvin's 110 mV
+against 10 mV, Crosstalk's 3.3 x 2/7, the 2N3904's 0.07 V beside the 2N7000's 0.41 V, Bootstrap's
+23.5 V, and the two-capacitor problem settling at exactly 5.000 V on both sides.
+
+What it found was not wrong physics. It was three other things.
+
+**Four numbers on the canvas were wrong, and one was a typo of a different note.** The ESD template
+said the pin clamps at 4.0 V with 2.7 mA into the rail; 2.7 mA is (6 - 3.3)/1k, computed as though
+the pin sat *at* the rail, in the same sentence that says it does not. The solver says 3.85 V and
+2.1 mA. The 220 k copy said 12 uA by the same slip and injects 6.7 uA, a third of which goes to the
+1 M input rather than the rail. The Miller template's one-line description said 10 pF becomes 110 pF
+while its notes and its own on-canvas label both said 130 pF - the notes were right, gain is 12. The
+discrete buck said 5.5 V out and delivers 6.0 V. And the Crosstalk note began a line with an orphan
+"nanosecond.", left behind from the Ground Bounce note next to it.
+
+**Six templates were not showing the comparison they are about.** These are all "the same question
+answered two or three ways, side by side", and the auto-probe places one channel on the source and
+one on the output - which on a comparison lands both channels in the *same* copy. The Two-Capacitor
+Problem probed the 1 ohm copy, whose transfer is over in 100 us on a 50 ms screen, and drew two flat
+lines. Hot-Plug Inrush did the same with the unlimited copy. Worst of all, 4-Wire Kelvin Sensing had
+CH1 parked on the current source's grounded return - a permanent 0 V - so the 110 mV two-wire
+reading, which is the entire point of the template, was never on the scope at all. That last one was
+a bug rather than an omission: the code picking the source's live terminal compared a ground
+component's node id against the source's, and a template that reaches ground through a wire has two
+different ids on one net, so the test never fired.
+
+**And one number is not converged.** Hot-Plug Inrush's rail sag moves 8.2 % when the step is
+divided by eight, so what the canvas shows is partly an artefact of the step. The cause is general
+and worth stating plainly: `simulation_accuracy_time_step` picks the step from **source periods and
+pulse widths only**. It never looks at a circuit's own RC time constants. Inrush charges 1 mF
+through 50 mohm - a 50 us event - with no source anywhere near that fast, and the time base is
+5 ms/div, so the step lands at ~125 us and steps straight over the thing the template is named
+after. Every other interview template survives dt/8 within its tolerance, so this is the one place
+it currently bites, but the rule is wrong in general and not only here. `--iv-test` reports this as
+[NOTE] with the reason attached rather than failing on it, and counts it separately, so it stays
+visible without blocking; a drift with no write-up is still a failure.
+
+Fixing it properly means teaching the step chooser about the smallest RC in the circuit, which
+changes the step on all 188 templates and needs its own measurement pass. It is not a one-line
+change and it is not being pretended to be one.
+
 ## What a review found that the suites did not (2026-08-30)
 
 The v3.23.0 diff was reviewed before publishing, by five independent readers each with a verifier
