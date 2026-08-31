@@ -637,6 +637,17 @@ bool file_import_json(Circuit *circuit, const char *filename) {
                                 int id = 0;
                                 while (*q == ' ' || *q == ',') q++;
                                 if (sscanf(q, "%d", &id) != 1) break;
+                                /* A node id is what node_map and the union-find in
+                                   circuit_build_node_map are INDEXED BY, and both hold MAX_NODES.
+                                   This took whatever the file said: a hand-edited or corrupted
+                                   file carrying 999999, or a negative, was stored and then used
+                                   as a subscript. Refuse the file rather than index with it. */
+                                if (id < 0 || id >= MAX_NODES) {
+                                    set_error("Circuit file has a node id outside the range this "
+                                              "program can hold");
+                                    free(buffer);
+                                    return false;
+                                }
                                 comp->node_ids[k] = id;
                                 while (*q && *q != ',' && *q != ']') q++;
                             }

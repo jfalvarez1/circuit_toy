@@ -4942,6 +4942,98 @@ static double ct_primary_current(ComponentType tt, double rload, int *ok) {
 }
 
 
+/* --load-test: what the loaders do with input they cannot hold.
+ *
+ * --file-test round-trips all 188 templates and --spice-test parses well-formed netlists. Both
+ * only ever feed the loaders things the app itself produced. Nothing asked what happens when a
+ * file says something impossible, and the answer in two places was "use it anyway":
+ *
+ *   - the JSON loader took a component's node id straight from the file. Node ids are what
+ *     node_map and the union-find in circuit_build_node_map are INDEXED BY, and both hold
+ *     MAX_NODES, so a hand-edited or corrupted file carrying 999999 became a subscript.
+ *   - the SPICE node table answered 0 when it was full, and 0 is GROUND. A netlist with more
+ *     than SPICE_MAX_NODES nets imported "successfully" with every net past the 256th shorted
+ *     to ground.
+ *
+ * A refusal is the right answer to both. Silence is not.
+ */
+static int load_test(void) {
+    int fails = 0, checks = 0;
+    const char *tmp = getenv("TEMP");
+    if (!tmp) tmp = ".";
+
+    /* ---- 1. a circuit file naming a node id the program cannot hold -------------------------- */
+    {
+        char path[600];
+        snprintf(path, sizeof path, "%s\\ct_badnode.json", tmp);
+        Circuit *ref = circuit_create();
+        circuit_place_template(ref, CIRCUIT_RC_LOWPASS, 0, 0);
+        file_export_json(ref, path);
+        circuit_free(ref);
+
+        /* read it back as text and point a terminal at 999999 */
+        FILE *f = fopen(path, "rb");
+        static char buf[1 << 20];
+        size_t got = f ? fread(buf, 1, sizeof buf - 1, f) : 0;
+        if (f) fclose(f);
+        buf[got] = 0;
+        char *t = strstr(buf, "\"terminals\": [");
+        int wrote = 0;
+        if (t) {
+            char *open_br = strchr(t, '[');
+            char *close_br = open_br ? strchr(open_br, ']') : NULL;
+            if (open_br && close_br && (size_t)(close_br - open_br) > 4) {
+                /* overwrite the first id in place, padding with spaces so the length is kept */
+                char rep[] = "[999999";
+                memcpy(open_br, rep, strlen(rep));
+                for (char *p = open_br + strlen(rep); p < close_br; p++) *p = (*p == ',') ? ',' : ' ';
+                wrote = 1;
+            }
+        }
+        checks++;
+        if (!wrote) {
+            printf("[FAIL] load  could not build a circuit file naming an impossible node\n");
+            fails++;
+        } else {
+            FILE *w = fopen(path, "wb");
+            if (w) { fwrite(buf, 1, strlen(buf), w); fclose(w); }
+            Circuit *c = circuit_create();
+            bool loaded = file_import_json(c, path);
+            if (loaded) {
+                printf("[FAIL] load  a circuit naming node 999999 loaded; node_map holds %d\n", MAX_NODES);
+                fails++;
+            } else {
+                printf("[ OK ] load  a circuit naming node 999999 is refused: %s\n", file_get_error());
+            }
+            circuit_free(c);
+        }
+        remove(path);
+    }
+
+    /* ---- 2. a netlist with more nets than the table holds ------------------------------------ */
+    {
+        static char net[200000];
+        int n = snprintf(net, sizeof net, "* more nets than the table holds\n.SUBCKT BIG in out\n");
+        for (int i = 0; i < 400 && n < (int)sizeof net - 64; i++)
+            n += snprintf(net + n, sizeof net - n, "R%d n%d n%d 1k\n", i, i, i + 1);
+        snprintf(net + n, sizeof net - n, ".ENDS\n.END\n");
+
+        char err[256] = "";
+        int imported = spice_import_text(net, err, sizeof err);
+        checks++;
+        if (imported > 0) {
+            printf("[FAIL] load  a %d-net netlist imported as %d subcircuit(s); everything past "
+                   "node %d was tied to ground\n", 401, imported, 256);
+            fails++;
+        } else {
+            printf("[ OK ] load  a 400-net netlist is refused: %s\n", err[0] ? err : "(no message)");
+        }
+    }
+
+    printf("\nload-test: %d hostile inputs, %d that the loaders accepted anyway\n", checks, fails);
+    return fails ? 1 : 0;
+}
+
 static int dcm_test(void) {
     /* R_load, and roughly what it means for a 12 V / 100 kHz / 220 uH buck at 50 % duty:
        critical conduction is near R = 2 L f / (1 - D) ~ 88 ohm, so above that is DCM. */
@@ -6017,6 +6109,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--mc-test")) return mc_test();
         else if (!strcmp(argv[i], "--bode-test")) return bode_test();
         else if (!strcmp(argv[i], "--sign-test")) return sign_test();
+        else if (!strcmp(argv[i], "--load-test")) return load_test();
         else if (!strcmp(argv[i], "--fft-test")) return fft_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--label-test")) return label_test();

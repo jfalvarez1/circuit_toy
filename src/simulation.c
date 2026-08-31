@@ -1147,19 +1147,30 @@ void simulation_compute_terminal_currents(Simulation *sim) {
             continue;
         }
 
-        // Rows this component can touch
-        int rows[MAX_TERMINALS + 4]; int nrows = 0;
-        for (int t = 0; t < comp->num_terminals; t++) {
+        /* Rows this component can touch: its terminals, and its own auxiliary rows.
+
+           The auxiliary rows are no longer collected into the array. rows[] held
+           MAX_TERMINALS + 4, and component_aux_count() for a SUBCIRCUIT is the number of parts
+           INSIDE it that need a row - a voltage source, a battery, an inductor, an op-amp, a
+           transformer, each counts one - so a block with five of them overflowed a stack array.
+           The guard there was "if (r < M)", which bounds the row's VALUE against the matrix size
+           and says nothing about the index being written.
+
+           They are contiguous, so they can be cleared where they are counted and never stored.
+           That is the whole fix: an array that cannot overflow because nothing unbounded goes
+           into it. */
+        int rows[MAX_TERMINALS]; int nrows = 0;
+        for (int t = 0; t < comp->num_terminals && nrows < MAX_TERMINALS; t++) {
             int id = comp->node_ids[t];
             int idx = (id >= 0 && id < MAX_NODES) ? circuit->node_map[id] : 0;
             if (idx > 0) rows[nrows++] = idx - 1;
         }
-        if (component_aux_count(comp) > 0)      /* a subcircuit's rows belong to what is inside it */
-            for (int k = 0; k < component_aux_count(comp); k++) {   // only this component's own aux rows
-                int r = num_nodes + comp->voltage_var_idx + k;
-                if (r < M) rows[nrows++] = r;
-            }
+        int naux = component_aux_count(comp);   /* a subcircuit's rows belong to what is inside it */
         for (int k = 0; k < nrows; k++) clear_row(A, b, rows[k]);
+        for (int k = 0; k < naux; k++) {
+            int r = num_nodes + comp->voltage_var_idx + k;
+            if (r >= 0 && r < M) clear_row(A, b, r);
+        }
 
         Vector *lin = (sim->last_linearization && sim->last_linearization->size == M)
                       ? sim->last_linearization : sim->solution;
@@ -1193,6 +1204,10 @@ void simulation_compute_terminal_currents(Simulation *sim) {
         if (ground_count == 1) comp->terminal_current[ground_t] = -sum;
 
         for (int k = 0; k < nrows; k++) clear_row(A, b, rows[k]);
+        for (int k = 0; k < naux; k++) {
+            int r = num_nodes + comp->voltage_var_idx + k;
+            if (r >= 0 && r < M) clear_row(A, b, r);
+        }
     }
 
     g_stamp_prev_step = NULL;

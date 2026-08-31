@@ -27,15 +27,21 @@ typedef struct {
     int  ids[SPICE_MAX_NODES];
     int  count;
     int  next_id;
+    bool overflowed;   /* set by node_lookup when it runs out of room - see there */
 } NodeTable;
 
-/* SPICE node 0 is always ground. Everything else gets an id of its own. */
+/* SPICE node 0 is always ground. Everything else gets an id of its own.
+
+   Returns -1 when the table is full, and the caller has to notice. It used to return 0 - which is
+   GROUND - so a netlist with more than SPICE_MAX_NODES nets did not fail: every net after the
+   256th was silently tied to ground, shorting whatever it touched, and the import reported
+   success. A quietly wrong circuit is worse than a refused one. */
 static int node_lookup(NodeTable *t, const char *name) {
     if (!name || !*name) return 0;
     if (!strcmp(name, "0") || !_stricmp(name, "gnd") || !_stricmp(name, "ground")) return 0;
     for (int i = 0; i < t->count; i++)
         if (!_stricmp(t->names[i], name)) return t->ids[i];
-    if (t->count >= SPICE_MAX_NODES) return 0;
+    if (t->count >= SPICE_MAX_NODES) { t->overflowed = true; return -1; }
     snprintf(t->names[t->count], sizeof t->names[0], "%s", name);
     t->ids[t->count] = t->next_id++;
     return t->ids[t->count++];
@@ -118,7 +124,10 @@ static bool subckt_commit(Subckt *sc, char *err, size_t err_size) {
     def->num_pins = sc->num_ports;
     for (int i = 0; i < sc->num_ports; i++) {
         snprintf(def->pins[i].name, sizeof def->pins[i].name, "%s", sc->ports[i]);
-        def->pins[i].internal_node_id = node_lookup(&sc->nodes, sc->ports[i]);
+        {
+            int pn = node_lookup(&sc->nodes, sc->ports[i]);
+            def->pins[i].internal_node_id = (pn >= 0) ? pn : 0;
+        }
         def->pins[i].side = (i < 2) ? 0 : 1;
         def->pins[i].position = i % 2;
     }
@@ -229,8 +238,9 @@ int spice_import_text(const char *text, char *err, size_t err_size) {
             if (kind == 'R') { c->props.resistor.resistance = val; c->props.resistor.power_rating = 1e9; }
             else if (kind == 'L') { c->props.inductor.inductance = val; c->props.inductor.ideal = true; }
             else { c->props.capacitor.capacitance = val; c->props.capacitor.ideal = true; }
-            c->node_ids[0] = node_lookup(&sc.nodes, tok[1]);
-            c->node_ids[1] = node_lookup(&sc.nodes, tok[2]);
+            int na = node_lookup(&sc.nodes, tok[1]), nb = node_lookup(&sc.nodes, tok[2]);
+            c->node_ids[0] = (na >= 0) ? na : 0;
+            c->node_ids[1] = (nb >= 0) ? nb : 0;
             snprintf(c->label, sizeof c->label, "%s", tok[0]);
         } else if (kind == 'X' && nt >= 3) {
             /* X<name> n1 n2 ... <subckt>: an instance of another .SUBCKT in this file */
@@ -248,12 +258,25 @@ int spice_import_text(const char *text, char *err, size_t err_size) {
             int pins = nt - 2;
             if (pins > MAX_TERMINALS) pins = MAX_TERMINALS;
             c->num_terminals = pins;
-            for (int i = 0; i < pins; i++) c->node_ids[i] = node_lookup(&sc.nodes, tok[1 + i]);
+            for (int i = 0; i < pins; i++) {
+                int nn = node_lookup(&sc.nodes, tok[1 + i]);
+                c->node_ids[i] = (nn >= 0) ? nn : 0;
+            }
             snprintf(c->label, sizeof c->label, "%s", tok[0]);
         } else {
             skipped++;
             if (!skipped_first[0]) snprintf(skipped_first, sizeof skipped_first, "%s", tok[0]);
         }
+    }
+
+    /* A full node table is a failed import, not a quiet one. node_lookup used to answer 0 -
+       ground - for every net past the 256th, so a large netlist came in with whole sections
+       shorted together and the import reported success. */
+    if (sc.nodes.overflowed) {
+        if (err && err_size)
+            snprintf(err, err_size, "netlist has more than %d nodes: too large to import",
+                     SPICE_MAX_NODES);
+        return -1;
     }
 
     if (err && err_size && !err[0]) {
