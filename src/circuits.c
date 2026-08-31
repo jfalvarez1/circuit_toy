@@ -7128,12 +7128,12 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "when the NTC reaches 6.67k - about 34 C for a beta of 3950. Cold, the midpoint is 3.0 V and the",
         "output sits near the rail. DRAG THE Tmp SLIDER at the bottom of the window past 35 C and the output",
         "falls to the negative rail. That edge is what a microcontroller reads to stop the charge."},
-    [CIRCUIT_BMI_SUPERCAP] = {"SUPERCAP CELL SIMULATOR: a bench stand-in for a cell, so a charger can be",
-        "tested without waiting hours or risking a real one. A 0.1 F supercapacitor charges through 2 ohm",
-        "with 10 ohm across it, so it settles at 5 * 10/12 = 4.167 V with a time constant of C*(2||10) =",
-        "0.167 s - the same shape as a cell on charge, compressed into a fraction of a second. The bleed",
-        "resistor is what makes it settle below the supply, the way a cell's own leakage does. PROBE: the",
-        "cap voltage rising to 4.167 V. Raise C and the curve stretches; the endpoint does not move."},
+    [CIRCUIT_BMI_SUPERCAP] = {"SUPERCAP CELL SIMULATOR: a bench stand-in for a cell, so a charger can be tested",
+        "without waiting hours or risking a real one. 0.1 F charges through 2 ohm with 10 ohm across it and",
+        "settles at 5 * 10/12 = 4.167 V; tau is C*(2||10) = 0.167 s rising and C*10 = 1 s draining - a cell's",
+        "charge curve compressed into a second. The supply is STEPPED at 0.2 Hz, not held: a solver starts a",
+        "capacitor at its operating point, so a DC rail would show the cap already at 4.167 V and no curve.",
+        "PROBE: the cap. The bleed resistor is why it settles below the supply, as a cell's leakage does."},
     [CIRCUIT_IV_KELVIN] = {"4-WIRE (KELVIN) SENSING: 1 A forced through a 10 mohm shunt whose leads are 50 mohm each.",
         "Measure at the connector and you read 110 mV: 110 mohm, eleven times the part, and the part is",
         "the smallest thing in the measurement. Land two more wires directly on the resistor body and",
@@ -12972,7 +12972,10 @@ static int place_bmi_supercap(Circuit *circuit, float x, float y) {
     /* A bench stand-in for a cell: charges and settles on the same curve, in a fraction of the
        time. The bleed resistor is what makes it settle below the supply, as a cell's own
        leakage does, and it is also the discharge path when the supply is taken away. */
-    Component *vs = dc_rail(circuit, x, y, 5.0);   if (!vs) return 0;     // +(x,y)
+    /* A plain DC rail would show nothing: the solver starts a capacitor at its operating point,
+       so the cap would already be sitting at 4.167 V on the first frame. Stepping the supply
+       0 -> 5 -> 0 at 0.2 Hz puts the charge AND the discharge on the screen, once every 5 s. */
+    Component *vs = square_source(circuit, x, y - 20, 0.2);  if (!vs) return 0;   // +(x,y)
     int rail = TN(x, y);
 
     Component *rchg = hres(circuit, x + 160, y, 2.0);                     // (120,0)-(200,0)
@@ -13002,7 +13005,7 @@ static int place_bmi_supercap(Circuit *circuit, float x, float y) {
     TW(rlb, grl->node_ids[0]);
 
     add_label(circuit, x - 40, y - 120, "SUPERCAP CELL SIMULATOR: 0.1 F charging through 2 ohm with 10 ohm across it. It settles");
-    add_label(circuit, x - 40, y - 90, "at 5 * 10/12 = 4.167 V with a time constant of 0.1 * (2||10) = 0.167 s.");
+    add_label(circuit, x - 40, y - 90, "at 5 * 10/12 = 4.167 V, tau = 0.1 * (2||10) = 0.167 s charging, 0.1 * 10 = 1 s draining.");
     add_label(circuit, x + 500, y + 60, "the bleed resistor is why it settles");
     add_label(circuit, x + 500, y + 90, "below the supply, as a cell's leakage does");
     return 11;
@@ -13918,7 +13921,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_GROUND_LEAD] = 20e-9, [CIRCUIT_IV_SCOPE_INPUT_Z] = 20e-9,
     [CIRCUIT_IV_AC_COUPLING] = 2e-6, [CIRCUIT_IV_SHUNT_SENSE] = 1e-3, [CIRCUIT_IV_KELVIN] = 1e-3,
     [CIRCUIT_BMI_ELOAD_CC] = 1e-3, [CIRCUIT_BMI_ELOAD_CR] = 1e-3, [CIRCUIT_BMI_ELOAD_CV] = 1e-3,
-    [CIRCUIT_BMI_THERMAL_CUTOUT] = 1e-3, [CIRCUIT_BMI_SUPERCAP] = 0.05,
+    [CIRCUIT_BMI_THERMAL_CUTOUT] = 1e-3, [CIRCUIT_BMI_SUPERCAP] = 0.5,
     [CIRCUIT_IV_BUCK_NODES] = 2e-6,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2e-6, [CIRCUIT_IV_BOOTSTRAP] = 2e-6,
     [CIRCUIT_IV_TERMINATION] = 5e-9, [CIRCUIT_IV_PULLUP_SIZING] = 5e-6,
@@ -14163,7 +14166,7 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_ELOAD_CR]     = { DEMO_DC, 0 },
     [CIRCUIT_BMI_ELOAD_CV]     = { DEMO_DC, 0 },
     [CIRCUIT_BMI_THERMAL_CUTOUT] = { DEMO_DC, 0 },
-    [CIRCUIT_BMI_SUPERCAP]     = { DEMO_DC, 0 },
+    [CIRCUIT_BMI_SUPERCAP]     = { DEMO_WAVEFORM, 0 },
     [CIRCUIT_IV_BUCK_NODES]    = { DEMO_DC, 0 },
     [CIRCUIT_IV_LDO_VS_BUCK]   = { DEMO_DC, 0 },
     [CIRCUIT_IV_BOOTSTRAP]     = { DEMO_WAVEFORM, 100000 },
