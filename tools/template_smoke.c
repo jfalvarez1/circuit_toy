@@ -4730,6 +4730,218 @@ static int bode_test(void) {
     return fails ? 1 : 0;
 }
 
+/* --sign-test: the direction a device pushes, against arithmetic done outside the solver.
+ *
+ * This codebase already knows that its conservation checks cannot see a stamp's sign: terminal
+ * currents are recovered by re-stamping the device on its own, so a device wired backwards is
+ * still perfectly consistent with itself and --flow-test passes. Three sign faults were found by
+ * hand in earlier releases for exactly that reason.
+ *
+ * So: build the smallest circuit that has a known answer with a known SIGN, and check the sign as
+ * well as the size. A battery under load must read BELOW its open-circuit voltage. That is not a
+ * modelling opinion, and no amount of internal consistency can rescue it.
+ */
+/* defined below, with the transformer check it serves */
+static double ct_primary_current(ComponentType tt, double rload, int *ok);
+
+typedef struct {
+    const char *what;
+    ComponentType src;
+    double v_oc, r_int, r_load;
+} SignCase;
+
+/* terminal voltage of a source with internal resistance across a load - the divider, and nothing
+   the simulator has any say in */
+static double sign_expect(const SignCase *sc) {
+    return sc->v_oc * sc->r_load / (sc->r_load + sc->r_int);
+}
+
+static double sign_measure(const SignCase *sc, int *ok) {
+    *ok = 0;
+    Circuit *c = circuit_create();
+    if (!c) return 0;
+
+    Component *src = pt_add(c, sc->src, 0, 60, 0);
+    if (!src) { circuit_free(c); return 0; }
+    if (sc->src == COMP_BATTERY) {
+        src->props.battery.nominal_voltage = sc->v_oc;
+        src->props.battery.internal_r = sc->r_int;
+        src->props.battery.ideal = false;
+        src->props.battery.discharged = false;
+        src->props.battery.charge_state = 1.0;
+        src->props.battery.charge_coulombs = 1e9;     /* not the subject of this test */
+    } else {
+        src->props.dc_voltage.voltage = sc->v_oc;
+        src->props.dc_voltage.r_series = sc->r_int;
+        src->props.dc_voltage.ideal = false;
+    }
+    Component *g0 = pt_add(c, COMP_GROUND, 0, 160, 0);
+    Component *rl = pt_add(c, COMP_RESISTOR, 200, 60, 90);
+    rl->props.resistor.resistance = sc->r_load;
+    Component *g1 = pt_add(c, COMP_GROUND, 200, 160, 0);
+
+    int sp = pt_node(c, 0, 20), sm = pt_node(c, 0, 100), gt = pt_node(c, 0, 140);
+    int lt = pt_node(c, 200, 20), lb = pt_node(c, 200, 100), g1t = pt_node(c, 200, 140);
+    src->node_ids[0] = sp; src->node_ids[1] = sm;
+    g0->node_ids[0] = gt;
+    rl->node_ids[0] = lt; rl->node_ids[1] = lb;
+    g1->node_ids[0] = g1t;
+    circuit_add_wire(c, sp, lt);
+    circuit_add_wire(c, sm, gt);
+    circuit_add_wire(c, lb, g1t);
+
+    Simulation *sim = simulation_create(c);
+    double v = 0;
+    if (sim && simulation_dc_analysis(sim)) {
+        Node *nd = circuit_get_node(c, lt);
+        v = nd ? nd->voltage : 0;
+        *ok = 1;
+    }
+    if (sim) simulation_free(sim);
+    circuit_free(c);
+    return v;
+}
+
+static int sign_test(void) {
+    static const SignCase cases[] = {
+        /* the control: a DC source with the same series resistance, which --std-test already
+           holds to documented bus voltages under load */
+        { "DC source, 12 V, 1 ohm internal, 3 ohm load", COMP_DC_VOLTAGE, 12.0, 1.0, 3.0 },
+        { "battery,   12 V, 1 ohm internal, 3 ohm load", COMP_BATTERY,    12.0, 1.0, 3.0 },
+        { "battery,   1.5 V AA, 0.5 ohm, 1 ohm load",    COMP_BATTERY,     1.5, 0.5, 1.0 },
+        { "battery,   9 V, 2 ohm, 100 ohm load (light)", COMP_BATTERY,     9.0, 2.0, 100.0 },
+    };
+    int fails = 0;
+    for (unsigned k = 0; k < sizeof cases / sizeof cases[0]; k++) {
+        const SignCase *sc = &cases[k];
+        int ok = 0;
+        double got = sign_measure(sc, &ok);
+        double want = sign_expect(sc);
+        if (!ok) {
+            printf("[FAIL] sign  %-42s did not solve\n", sc->what);
+            fails++;
+            continue;
+        }
+        /* two questions, and the first one is the one that matters: a source under load cannot
+           read above its own open-circuit voltage, whatever the arithmetic says */
+        int wrong_way = (got > sc->v_oc + 1e-9);
+        int wrong_size = fabs(got - want) > 0.01 * fabs(want) + 1e-9;
+        if (wrong_way || wrong_size) fails++;
+        printf("%s sign  %-42s %.4f V, want %.4f (open circuit %.2f)%s\n",
+               (wrong_way || wrong_size) ? "[FAIL]" : "[ OK ]",
+               sc->what, got, want, sc->v_oc,
+               wrong_way ? "   << ABOVE open circuit: the internal resistance pushes the wrong way"
+                         : "");
+    }
+    /* And a transformer has to be loaded by its own secondary.
+       One that does not reflect its secondary current is a free source: the primary sees only its
+       magnetising branch however hard the secondary is worked. The centre-tapped part was exactly
+       that - it had no current variable at all, so there was nothing to reflect with, and its
+       primary drew the same 0.012 A into a 10 k load as into a 10 ohm one while the two-winding
+       part beside it went up by a factor of 999. Neither --flow-test nor the conservation checks
+       can see it, for the same reason they cannot see a sign: each device is consistent with
+       itself. */
+    {
+        const struct { const char *name; ComponentType t; } kinds[] = {
+            { "two-winding transformer",   COMP_TRANSFORMER },
+            { "centre-tapped transformer", COMP_TRANSFORMER_CT },
+        };
+        for (unsigned k = 0; k < 2; k++) {
+            int o1 = 0, o2 = 0;
+            double light = ct_primary_current(kinds[k].t, 10000.0, &o1);
+            double heavy = ct_primary_current(kinds[k].t, 10.0, &o2);
+            double ratio = (light > 1e-12) ? heavy / light : 0.0;
+            /* a thousandfold drop in load resistance has to show as a large rise in primary
+               current; 100x is far below what either part does and far above doing nothing */
+            int bad = !(o1 && o2) || ratio < 100.0;
+            if (bad) fails++;
+            printf("%s sign  %-42s primary %.4f A into 10k, %.4f A into 10 ohm (x%.0f)%s\n",
+                   bad ? "[FAIL]" : "[ OK ]", kinds[k].name, light, heavy, ratio,
+                   bad ? "   << the secondary's load never reaches the primary" : "");
+        }
+    }
+
+    printf("\nsign-test: %u sources measured against the divider they make with their own load, "
+           "and 2 transformers against their own secondaries, %d wrong\n",
+           (unsigned)(sizeof cases / sizeof cases[0]), fails);
+    return fails ? 1 : 0;
+}
+
+/* Does loading a transformer's secondary load its primary?
+ *
+ * A transformer that does not reflect its secondary current is a free source: the primary sees
+ * only its magnetising branch however hard the secondary is worked, so power out does not come
+ * from power in. The two-winding COMP_TRANSFORMER carries an auxiliary current and stamps -N i_s
+ * into the primary KCL, which is exactly this. COMP_TRANSFORMER_CT has no auxiliary current at
+ * all - it is not in the needs_voltage_var list - so there is nothing to reflect with.
+ *
+ * Measured by putting a sense resistor in series with the primary and reading the current through
+ * it with the secondary lightly and then heavily loaded. A real transformer draws about N^2 times
+ * more; one that does not reflect draws the same either way.
+ */
+static double ct_primary_current(ComponentType tt, double rload, int *ok) {
+    *ok = 0;
+    Circuit *c = circuit_create();
+    if (!c) return 0;
+
+    Component *v = pt_add(c, COMP_AC_VOLTAGE, 0, 60, 0);
+    v->props.ac_voltage.amplitude = 120.0;
+    v->props.ac_voltage.frequency = 60.0;
+    Component *g0 = pt_add(c, COMP_GROUND, 0, 160, 0);
+    Component *rs = pt_add(c, COMP_RESISTOR, 100, 20, 0);      /* primary sense */
+    rs->props.resistor.resistance = 0.01;
+    Component *tx = pt_add(c, tt, 240, 60, 0);
+    Component *rl = pt_add(c, COMP_RESISTOR, 420, 60, 90);
+    rl->props.resistor.resistance = rload;
+    Component *g1 = pt_add(c, COMP_GROUND, 420, 180, 0);
+
+    int sp = pt_node(c, 0, 20), sm = pt_node(c, 0, 100), gt = pt_node(c, 0, 140);
+    int ra = pt_node(c, 60, 20), rb = pt_node(c, 140, 20);
+    int p1 = pt_node(c, 200, 20), p2 = pt_node(c, 200, 100);
+    int s1 = pt_node(c, 280, 20), ct = pt_node(c, 280, 60), s2 = pt_node(c, 280, 100);
+    int la = pt_node(c, 420, 20), lb = pt_node(c, 420, 140), g1t = pt_node(c, 420, 160);
+
+    v->node_ids[0] = sp; v->node_ids[1] = sm;
+    g0->node_ids[0] = gt;
+    rs->node_ids[0] = ra; rs->node_ids[1] = rb;
+    circuit_add_wire(c, sp, ra);
+    circuit_add_wire(c, sm, gt);
+    circuit_add_wire(c, rb, p1);
+    circuit_add_wire(c, p2, gt);
+
+    tx->node_ids[0] = p1; tx->node_ids[1] = p2;
+    tx->node_ids[2] = s1;
+    if (tt == COMP_TRANSFORMER_CT) { tx->node_ids[3] = ct; tx->node_ids[4] = s2; }
+    else                           { tx->node_ids[3] = s2; }
+
+    rl->node_ids[0] = la; rl->node_ids[1] = lb;
+    circuit_add_wire(c, s1, la);
+    circuit_add_wire(c, s2, lb);
+    circuit_add_wire(c, lb, g1t);
+    g1->node_ids[0] = g1t;
+
+    Simulation *sim = simulation_create(c);
+    double ipk = 0;
+    if (sim && simulation_dc_analysis(sim)) {
+        simulation_set_time_step(sim, 1.0 / 60.0 / 400.0);
+        simulation_start(sim);
+        int guard = 0;
+        while (sim->time < 0.05 && guard++ < 40000) {
+            if (!simulation_step(sim)) break;
+            if (sim->time > 0.025) {
+                Node *a = circuit_get_node(c, ra), *b = circuit_get_node(c, rb);
+                double i = (a && b) ? fabs(a->voltage - b->voltage) / 0.01 : 0;
+                if (i > ipk) ipk = i;
+            }
+        }
+        *ok = 1;
+    }
+    if (sim) simulation_free(sim);
+    circuit_free(c);
+    return ipk;
+}
+
+
 static int dcm_test(void) {
     /* R_load, and roughly what it means for a 12 V / 100 kHz / 220 uH buck at 50 % duty:
        critical conduction is near R = 2 L f / (1 - D) ~ 88 ohm, so above that is DCM. */
@@ -5804,6 +6016,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--stress-test")) return stress_test(i + 1 < argc ? argv[++i] : NULL);
         else if (!strcmp(argv[i], "--mc-test")) return mc_test();
         else if (!strcmp(argv[i], "--bode-test")) return bode_test();
+        else if (!strcmp(argv[i], "--sign-test")) return sign_test();
         else if (!strcmp(argv[i], "--fft-test")) return fft_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--label-test")) return label_test();

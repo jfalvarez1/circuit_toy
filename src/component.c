@@ -2297,6 +2297,9 @@ void tline_params(const Component *comp, double *R, double *L, double *C_end) {
 static int component_aux_count_depth(const Component *comp, int depth) {
     if (!comp) return 0;
     if (comp->type == COMP_SOURCE_3PH) return 3;
+    /* one current per half-secondary: without them there is nothing to reflect into the
+       primary, and the winding is a free source - see the stamp */
+    if (comp->type == COMP_TRANSFORMER_CT) return 2;
     if (comp->type == COMP_SUBCIRCUIT) {
         if (depth >= SUBCIRCUIT_MAX_DEPTH) return 0;
         SubCircuitDef *def = subcircuit_find_def(comp->props.subcircuit.def_id);
@@ -2456,6 +2459,7 @@ Component *component_create(ComponentType type, float x, float y) {
                                type == COMP_PULSE_SOURCE ||
                                type == COMP_PWM_SOURCE ||
                                type == COMP_TRANSFORMER ||
+                               type == COMP_TRANSFORMER_CT ||
                                type == COMP_TLINE ||
                                type == COMP_SOURCE_3PH);
 
@@ -4079,25 +4083,48 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double G_mag = 1.0 / R_mag;
             STAMP_CONDUCTANCE(n[0], n[1], G_mag);
 
-            // Upper secondary (S1-CT): VCVS with series resistance
-            // V_s1_ct = N_half * V_primary
-            // Modeled as: I = G_src * (V_s1 - V_ct - N_half * (V_p1 - V_p2))
-            // Expanding: I = G_src * V_s1 - G_src * V_ct - G_src * N_half * V_p1 + G_src * N_half * V_p2
-            STAMP_CONDUCTANCE(n[2], n[3], G_src);
-            // Add VCCS terms to make secondary follow primary
-            if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -G_src * N_half);
-            if (n[2] > 0 && n[1] > 0) matrix_add(A, n[2]-1, n[1]-1, G_src * N_half);
-            if (n[3] > 0 && n[0] > 0) matrix_add(A, n[3]-1, n[0]-1, G_src * N_half);
-            if (n[3] > 0 && n[1] > 0) matrix_add(A, n[3]-1, n[1]-1, -G_src * N_half);
+            /* Two auxiliary currents, one per half-secondary, stamped the way COMP_TRANSFORMER
+               stamps its one:
 
-            // Lower secondary (CT-S2): VCVS with series resistance
-            // V_ct_s2 = N_half * V_primary
-            STAMP_CONDUCTANCE(n[3], n[4], G_src);
-            if (n[3] > 0 && n[0] > 0) matrix_add(A, n[3]-1, n[0]-1, -G_src * N_half);
-            if (n[3] > 0 && n[1] > 0) matrix_add(A, n[3]-1, n[1]-1, G_src * N_half);
-            if (n[4] > 0 && n[0] > 0) matrix_add(A, n[4]-1, n[0]-1, G_src * N_half);
-            if (n[4] > 0 && n[1] > 0) matrix_add(A, n[4]-1, n[1]-1, -G_src * N_half);
+                   V_s1 - V_ct - N_half (V_p1 - V_p2) - R_w i1 = 0      (aux row k)
+                   V_ct - V_s2 - N_half (V_p1 - V_p2) - R_w i2 = 0      (aux row k+1)
+                   I_p1 = -N_half (i1 + i2),  I_p2 = +N_half (i1 + i2)
 
+               The last line is the whole point and it was missing. This part used to be stamped
+               as a pair of voltage-controlled sources with a series conductance: the secondary
+               followed the primary correctly, and nothing carried the secondary's current back.
+               A transformer that does not reflect its load is a free source, and this one was -
+               measured, the primary drew 0.012 A with a 10 k load on the secondary and 0.012 A
+               with 10 ohm, while the two-winding part next to it went up by a factor of 999.
+
+               R_w is the same referred winding resistance the two-winding part uses, and it also
+               keeps the aux row off a zero pivot when the windings are ideal. */
+            int k = num_nodes + comp->voltage_var_idx;
+            double R_w = N_half * N_half * 1e-3 + 1e-3;
+
+            /* upper half: S1 (n[2]) to CT (n[3]) */
+            if (n[2] > 0) matrix_add(A, k, n[2]-1, 1.0);
+            if (n[3] > 0) matrix_add(A, k, n[3]-1, -1.0);
+            if (n[0] > 0) matrix_add(A, k, n[0]-1, -N_half);
+            if (n[1] > 0) matrix_add(A, k, n[1]-1, N_half);
+            matrix_add(A, k, k, -R_w);
+            if (n[2] > 0) matrix_add(A, n[2]-1, k, 1.0);
+            if (n[3] > 0) matrix_add(A, n[3]-1, k, -1.0);
+
+            /* lower half: CT (n[3]) to S2 (n[4]) */
+            if (n[3] > 0) matrix_add(A, k+1, n[3]-1, 1.0);
+            if (n[4] > 0) matrix_add(A, k+1, n[4]-1, -1.0);
+            if (n[0] > 0) matrix_add(A, k+1, n[0]-1, -N_half);
+            if (n[1] > 0) matrix_add(A, k+1, n[1]-1, N_half);
+            matrix_add(A, k+1, k+1, -R_w);
+            if (n[3] > 0) matrix_add(A, n[3]-1, k+1, 1.0);
+            if (n[4] > 0) matrix_add(A, n[4]-1, k+1, -1.0);
+
+            /* and both halves reflected into the primary */
+            if (n[0] > 0) { matrix_add(A, n[0]-1, k, -N_half); matrix_add(A, n[0]-1, k+1, -N_half); }
+            if (n[1] > 0) { matrix_add(A, n[1]-1, k,  N_half); matrix_add(A, n[1]-1, k+1,  N_half); }
+
+            (void)G_src;
             break;
         }
 
@@ -4497,9 +4524,15 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                     matrix_add(A, volt_idx, n[1]-1, -1);
                     matrix_add(A, n[1]-1, volt_idx, -1);
                 }
-                // Add internal resistance term to voltage equation
-                // Current flows from + to -, so I_source is in the positive direction
-                matrix_add(A, volt_idx, volt_idx, R_int);
+                /* NEGATIVE R_int, as COMP_DC_VOLTAGE stamps -r_series a thousand lines above.
+                   The algebra in the comment is right and the convention it assumes is not: this
+                   solver's auxiliary current runs the other way, so +R_int made the internal
+                   resistance push instead of drop. A 12 V battery with 1 ohm internal across a
+                   3 ohm load read 18 V - half again its own open-circuit voltage - and a 1.5 V AA
+                   read 3.0. --flow-test could not see it, because a device wired backwards is
+                   still consistent with itself when its terminal current is recovered by
+                   re-stamping it alone; --sign-test measures it against the divider instead. */
+                matrix_add(A, volt_idx, volt_idx, -R_int);
                 vector_add(b, volt_idx, V_oc);
             }
 
