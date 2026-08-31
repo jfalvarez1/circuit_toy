@@ -348,6 +348,8 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_BMI_ELOAD_CV] = {"E-Load: Constant Voltage", "ELoadCV", "holds the terminal at a set voltage and takes what flows", TG_BMI},
     [CIRCUIT_BMI_THERMAL_CUTOUT] = {"BMI: NTC Thermal Cutout", "ThermCut", "an NTC divider against a reference - drag the Tmp slider", TG_BMI},
     [CIRCUIT_BMI_SUPERCAP] = {"BMI: Supercap Cell Simulator", "SupCap", "a supercapacitor standing in for a cell under charge", TG_BMI},
+    [CIRCUIT_BMI_CHARGER_CC] = {"LiPo Charger: CC Stage", "ChgCC", "1.1 A into the cell, high-side PMOS, sensed in the return", TG_BMI},
+    [CIRCUIT_BMI_CHARGER_CV] = {"LiPo Charger: CV Stage", "ChgCV", "4.2 V from two cascaded LM317s, 200 mA", TG_BMI},
 
 
 
@@ -6417,6 +6419,8 @@ static int place_bmi_eload_cr(Circuit *circuit, float x, float y);
 static int place_bmi_eload_cv(Circuit *circuit, float x, float y);
 static int place_bmi_thermal_cutout(Circuit *circuit, float x, float y);
 static int place_bmi_supercap(Circuit *circuit, float x, float y);
+static int place_bmi_charger_cc(Circuit *circuit, float x, float y);
+static int place_bmi_charger_cv(Circuit *circuit, float x, float y);
 static int place_tline_real(Circuit *circuit, float x, float y);
 static int place_sevenseg_test(Circuit *circuit, float x, float y);
 static int place_wireless_link(Circuit *circuit, float x, float y);
@@ -6763,6 +6767,8 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_BMI_ELOAD_CV:       return place_bmi_eload_cv(circuit, x, y);
         case CIRCUIT_BMI_THERMAL_CUTOUT: return place_bmi_thermal_cutout(circuit, x, y);
         case CIRCUIT_BMI_SUPERCAP:       return place_bmi_supercap(circuit, x, y);
+        case CIRCUIT_BMI_CHARGER_CC:     return place_bmi_charger_cc(circuit, x, y);
+        case CIRCUIT_BMI_CHARGER_CV:     return place_bmi_charger_cv(circuit, x, y);
         case CIRCUIT_TLINE_REAL:         return place_tline_real(circuit, x, y);
         case CIRCUIT_SEVENSEG_TEST:      return place_sevenseg_test(circuit, x, y);
         case CIRCUIT_WIRELESS_LINK:      return place_wireless_link(circuit, x, y);
@@ -7134,6 +7140,18 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "charge curve compressed into a second. The supply is STEPPED at 0.2 Hz, not held: a solver starts a",
         "capacitor at its operating point, so a DC rail would show the cap already at 4.167 V and no curve.",
         "PROBE: the cap. The bleed resistor is why it settles below the supply, as a cell's leakage does."},
+    [CIRCUIT_BMI_CHARGER_CC] = {"LIPO CHARGER, CONSTANT CURRENT STAGE: the first half of a charge cycle - hold",
+        "the current steady and let the cell voltage climb where it likes. A P-channel pass device sits on the",
+        "high side and the sense resistor goes in the RETURN leg, which is the trick worth taking away: sensed",
+        "down there the measurement is referenced to ground and one op-amp does it, where a high-side sense",
+        "would need a difference amp and its CMRR. Note the inputs are the other way round from the e-load -",
+        "a PMOS turns on as its gate goes DOWN. PROBE: the sense, 4.95 V over 4.5 ohm = 1.1 A."},
+    [CIRCUIT_BMI_CHARGER_CV] = {"LIPO CHARGER, CONSTANT VOLTAGE STAGE: the second half - hold 4.2 V and let the",
+        "current fall away as the cell fills. Two LM317s in cascade, not one: the first drops 15 V to about 8 V",
+        "so the second has a sane input, and the heat is split between two packages instead of cooked into one.",
+        "Each is set by its own divider, V = 1.25 * (1 + R2/R1), so 240 and 566 give 4.20 V. Getting 4.2 V right",
+        "is what the whole cell chemistry depends on: 50 mV high shortens its life, 50 mV low leaves capacity",
+        "on the table. PROBE: the output, 4.20 V into 21 ohm = 200 mA."},
     [CIRCUIT_IV_KELVIN] = {"4-WIRE (KELVIN) SENSING: 1 A forced through a 10 mohm shunt whose leads are 50 mohm each.",
         "Measure at the connector and you read 110 mV: 110 mohm, eleven times the part, and the part is",
         "the smallest thing in the measurement. Land two more wires directly on the resistor body and",
@@ -12672,7 +12690,7 @@ static int place_bmi_eload_cc(Circuit *circuit, float x, float y) {
     /* the op-amp: + on the reference, - on the sense resistor, out through 1k to the gate */
     Component *u1 = add_comp(circuit, COMP_OPAMP, x + 160, y + 60, 0);   // -(120,40) +(120,80) out(200,60)
     u1->props.opamp.ideal = true;
-    u1->props.opamp.gain = 1e5;
+    u1->props.opamp.ideal = true; u1->props.opamp.gain = 1e5;
     int minus = TN(x + 120, y + 40), plus = TN(x + 120, y + 80), uout = TN(x + 200, y + 60);
     u1->node_ids[0] = minus; u1->node_ids[1] = plus; u1->node_ids[2] = uout;
     /* out to the side before dropping to the + input: straight down from the reference's own
@@ -12930,7 +12948,7 @@ static int place_bmi_thermal_cutout(Circuit *circuit, float x, float y) {
     TW(ntcb, gntc->node_ids[0]);
 
     Component *u1 = add_comp(circuit, COMP_OPAMP, x + 400, y + 220, 0);   // -(360,200) +(360,240) out(440,220)
-    u1->props.opamp.gain = 1e5;
+    u1->props.opamp.ideal = true; u1->props.opamp.gain = 1e5;
     u1->props.opamp.ideal = false;           /* the rails are the whole output here */
     int minus = TN(x + 360, y + 200), plus = TN(x + 360, y + 240), uout = TN(x + 440, y + 220);
     u1->node_ids[0] = minus; u1->node_ids[1] = plus; u1->node_ids[2] = uout;
@@ -13009,6 +13027,174 @@ static int place_bmi_supercap(Circuit *circuit, float x, float y) {
     add_label(circuit, x + 500, y + 60, "the bleed resistor is why it settles");
     add_label(circuit, x + 500, y + 90, "below the supply, as a cell's leakage does");
     return 11;
+}
+
+/* The pass device, the cell, the sense resistor and the current loop - shared by the constant
+   current stage and by the handover, which is that circuit with a second loop bolted on. The
+   gate is left on a node of its own at (x+460, y+100) so the caller can join to it. */
+static Component *bmi_cc_core(Circuit *circuit, float x, float y, int *gate_join, int *cell_pos,
+                              int *cell_neg) {
+    Component *vcc = dc_rail(circuit, x, y, 15.0);  if (!vcc) return NULL;   // +(x,y)
+    int rail = TN(x, y);
+
+    /* rotated 180 so the source sits at the TOP, where a high-side P-channel belongs. The gate
+       comes out on the right; a rotation cannot mirror, and this is the closest to convention. */
+    Component *m1 = add_comp(circuit, COMP_PMOS, x + 400, y + 100, 180);  // S(380,80) D(380,120) G(420,100)
+    component_apply_part(m1, "IRF9540N");    /* the part the instrument actually used */
+    m1->props.mosfet.cgso = m1->props.mosfet.cgdo = m1->props.mosfet.cgbo = 0.0;
+    /* gate charge off: the displacement current through C_gs and C_gd is not reported as a
+       terminal current, so it makes the gate net fail a KCL audit by a current the audit cannot
+       see. Nothing here is switching - this is a linear regulator with a battery for a load. */
+    int mg = TN(x + 420, y + 100), md = TN(x + 380, y + 120), ms = TN(x + 380, y + 80);
+    m1->node_ids[0] = mg; m1->node_ids[1] = md; m1->node_ids[2] = ms;
+    TW(rail, TN(x + 380, y));
+    TW(TN(x + 380, y), ms);
+
+    Component *bat = add_comp(circuit, COMP_BATTERY, x + 380, y + 260, 0);  // +(380,220) -(380,300)
+    bat->props.battery.nominal_voltage = 3.9;
+    bat->props.battery.ideal = true;         /* a fixed cell, not a discharge model, so the
+                                                current is exactly what the loop asks for */
+    int bp = TN(x + 380, y + 220), bn = TN(x + 380, y + 300);
+    bat->node_ids[0] = bp; bat->node_ids[1] = bn;
+    TW(md, bp);
+
+    Component *rs = vres(circuit, x + 380, y + 380, 4.5);                 // (380,340)-(380,420)
+    rs->props.resistor.power_rating = 10.0;
+    int rst = TN(x + 380, y + 340), rsb = TN(x + 380, y + 420);
+    rs->node_ids[0] = rst; rs->node_ids[1] = rsb;
+    TW(bn, rst);
+    Component *grs = add_comp(circuit, COMP_GROUND, x + 380, y + 480, 0);
+    grs->node_ids[0] = TN(x + 380, y + 460);
+    TW(rsb, grs->node_ids[0]);
+
+    /* sense on +, reference on - : the opposite of the e-load, because a P-channel passes MORE
+       current as its gate goes DOWN, so the loop needs the other sign to stay negative */
+    Component *u1 = add_comp(circuit, COMP_OPAMP, x + 620, y + 400, 0);   // -(580,380) +(580,420) out(660,400)
+    u1->props.opamp.ideal = true; u1->props.opamp.gain = 1e5;
+    int minus = TN(x + 580, y + 380), plus = TN(x + 580, y + 420), uout = TN(x + 660, y + 400);
+    u1->node_ids[0] = minus; u1->node_ids[1] = plus; u1->node_ids[2] = uout;
+    TW(rst, TN(x + 500, y + 340));
+    TW(TN(x + 500, y + 340), TN(x + 500, y + 420));
+    TW(TN(x + 500, y + 420), plus);
+
+    Component *vref = add_comp(circuit, COMP_DC_VOLTAGE, x + 620, y + 180, 0); // +(620,140) -(620,220)
+    vref->props.dc_voltage.voltage = 4.95;   /* 1.1 A x 4.5 ohm */
+    vref->node_ids[0] = TN(x + 620, y + 140); vref->node_ids[1] = TN(x + 620, y + 220);
+    Component *gvr = add_comp(circuit, COMP_GROUND, x + 620, y + 280, 0);
+    gvr->node_ids[0] = TN(x + 620, y + 260);
+    TW(vref->node_ids[1], gvr->node_ids[0]);
+    TW(vref->node_ids[0], TN(x + 560, y + 140));
+    TW(TN(x + 560, y + 140), TN(x + 560, y + 380));
+    TW(TN(x + 560, y + 380), minus);
+
+    /* out and over the top to the gate, stopping short at a junction the voltage loop can join */
+    int join = TN(x + 460, y + 100);
+    TW(uout, TN(x + 760, y + 400));
+    TW(TN(x + 760, y + 400), TN(x + 760, y + 100));
+    TW(TN(x + 760, y + 100), join);
+    TW(join, mg);
+
+    if (gate_join) *gate_join = join;
+    if (cell_pos)  *cell_pos = bp;
+    if (cell_neg)  *cell_neg = bn;
+    return vcc;
+}
+
+static int place_bmi_charger_cc(Circuit *circuit, float x, float y) {
+    if (!bmi_cc_core(circuit, x, y, NULL, NULL, NULL)) return 0;
+    add_label(circuit, x - 40, y - 160, "LIPO CHARGER, CC STAGE: hold the current and let the cell voltage go where it likes. The");
+    add_label(circuit, x - 40, y - 130, "sense resistor is in the RETURN leg, so it is referenced to ground and one op-amp reads it.");
+    add_label(circuit, x + 800, y + 340, "I = V_ref / R_sense");
+    add_label(circuit, x + 800, y + 370, "  = 4.95 / 4.5 = 1.1 A");
+    return 12;
+}
+
+static int place_bmi_charger_cv(Circuit *circuit, float x, float y) {
+    /* Two LM317s in cascade. The first is a pre-regulator: it drops 15 V to about 8 V so the
+       second one is not asked to hold 4.2 V across an 11 V drop on its own. */
+    Component *vcc = dc_rail(circuit, x, y, 15.0);  if (!vcc) return 0;    // +(x,y)
+    int rail = TN(x, y);
+    int n100 = TN(x + 100, y);
+    TW(rail, n100);
+
+    Component *cin = vcap(circuit, x + 100, y + 80, 0.1e-6);              // (100,40)-(100,120)
+    int cint = TN(x + 100, y + 40), cinb = TN(x + 100, y + 120);
+    cin->node_ids[0] = cint; cin->node_ids[1] = cinb;
+    TW(n100, cint);
+    Component *gci = add_comp(circuit, COMP_GROUND, x + 100, y + 180, 0);
+    gci->node_ids[0] = TN(x + 100, y + 160);
+    TW(cinb, gci->node_ids[0]);
+
+    Component *u1 = add_comp(circuit, COMP_LM317, x + 200, y, 0);         // IN(160,0) OUT(240,0) ADJ(200,30)
+    int u1in = TN(x + 160, y), u1out = TN(x + 240, y), u1adj = TN(x + 200, y + 30);
+    u1->node_ids[0] = u1in; u1->node_ids[1] = u1out; u1->node_ids[2] = u1adj;
+    TW(n100, u1in);
+
+    int n280 = TN(x + 280, y);
+    TW(u1out, n280);
+    Component *r1a = vres(circuit, x + 280, y + 60, 240.0);               // (280,20)-(280,100)
+    int r1at = TN(x + 280, y + 20), r1ab = TN(x + 280, y + 100);
+    r1a->node_ids[0] = r1at; r1a->node_ids[1] = r1ab;
+    TW(n280, r1at);
+    int adj1 = TN(x + 200, y + 100);
+    TW(r1ab, adj1);
+    TW(adj1, u1adj);
+    Component *r2a = vres(circuit, x + 200, y + 180, 1300.0);             // (200,140)-(200,220)
+    int r2at = TN(x + 200, y + 140), r2ab = TN(x + 200, y + 220);
+    r2a->node_ids[0] = r2at; r2a->node_ids[1] = r2ab;
+    TW(adj1, r2at);
+    Component *gr2a = add_comp(circuit, COMP_GROUND, x + 200, y + 280, 0);
+    gr2a->node_ids[0] = TN(x + 200, y + 260);
+    TW(r2ab, gr2a->node_ids[0]);
+
+    Component *u2 = add_comp(circuit, COMP_LM317, x + 480, y, 0);         // IN(440,0) OUT(520,0) ADJ(480,30)
+    int u2in = TN(x + 440, y), u2out = TN(x + 520, y), u2adj = TN(x + 480, y + 30);
+    u2->node_ids[0] = u2in; u2->node_ids[1] = u2out; u2->node_ids[2] = u2adj;
+    TW(n280, u2in);
+
+    int n560 = TN(x + 560, y);
+    TW(u2out, n560);
+    Component *r1b = vres(circuit, x + 560, y + 60, 240.0);               // (560,20)-(560,100)
+    int r1bt = TN(x + 560, y + 20), r1bb = TN(x + 560, y + 100);
+    r1b->node_ids[0] = r1bt; r1b->node_ids[1] = r1bb;
+    TW(n560, r1bt);
+    int adj2 = TN(x + 480, y + 100);
+    TW(r1bb, adj2);
+    TW(adj2, u2adj);
+    Component *r2b = vres(circuit, x + 480, y + 180, 566.0);              // (480,140)-(480,220)
+    int r2bt = TN(x + 480, y + 140), r2bb = TN(x + 480, y + 220);
+    r2b->node_ids[0] = r2bt; r2b->node_ids[1] = r2bb;
+    TW(adj2, r2bt);
+    Component *gr2b = add_comp(circuit, COMP_GROUND, x + 480, y + 280, 0);
+    gr2b->node_ids[0] = TN(x + 480, y + 260);
+    TW(r2bb, gr2b->node_ids[0]);
+
+    int n640 = TN(x + 640, y);
+    TW(n560, n640);
+    Component *cout = vcap(circuit, x + 640, y + 80, 1.0e-6);             // (640,40)-(640,120)
+    int coutt = TN(x + 640, y + 40), coutb = TN(x + 640, y + 120);
+    cout->node_ids[0] = coutt; cout->node_ids[1] = coutb;
+    TW(n640, coutt);
+    Component *gco = add_comp(circuit, COMP_GROUND, x + 640, y + 180, 0);
+    gco->node_ids[0] = TN(x + 640, y + 160);
+    TW(coutb, gco->node_ids[0]);
+
+    Component *rload = vres(circuit, x + 760, y + 80, 21.0);              // (760,40)-(760,120)
+    rload->props.resistor.power_rating = 5.0;
+    int rlt = TN(x + 760, y + 40), rlb = TN(x + 760, y + 120);
+    rload->node_ids[0] = rlt; rload->node_ids[1] = rlb;
+    TW(n640, TN(x + 760, y));
+    TW(TN(x + 760, y), rlt);
+    Component *grl = add_comp(circuit, COMP_GROUND, x + 760, y + 180, 0);
+    grl->node_ids[0] = TN(x + 760, y + 160);
+    TW(rlb, grl->node_ids[0]);
+
+    add_label(circuit, x - 40, y - 160, "LIPO CHARGER, CV STAGE: hold 4.2 V and let the current fall away as the cell fills. Two");
+    add_label(circuit, x - 40, y - 130, "LM317s in cascade - the first drops 15 V to about 8 V so the heat is split between two parts.");
+    add_label(circuit, x + 820, y + 40, "V = 1.25 * (1 + R2/R1)");
+    add_label(circuit, x + 820, y + 70, "  = 1.25 * (1 + 566/240) = 4.20 V");
+    add_label(circuit, x + 820, y + 100, "into 21 ohm = 200 mA");
+    return 20;
 }
 
 static int place_tline_real(Circuit *circuit, float x, float y) {
@@ -13730,6 +13916,8 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_ELOAD_CV]     = { COMP_RESISTOR, 2, 1 },     /* the regulated terminal, below R_src */
     [CIRCUIT_BMI_THERMAL_CUTOUT] = { COMP_RESISTOR, 1, 0 },   /* the comparator output */
     [CIRCUIT_BMI_SUPERCAP]     = { COMP_RESISTOR, 1, 0 },     /* the cap terminal, across the bleed resistor */
+    [CIRCUIT_BMI_CHARGER_CC]   = { COMP_RESISTOR, 0, 0 },     /* the sense: 4.95 V over 4.5 ohm is the 1.1 A */
+    [CIRCUIT_BMI_CHARGER_CV]   = { COMP_RESISTOR, 4, 0 },     /* the regulated 4.2 V at the load */
     [CIRCUIT_IV_BUCK_NODES]    = { COMP_RESISTOR, 2, 0 },     /* the output, after L and C */
     /* Resistor 0 is the linear regulator's load, resistor 1 the switcher's. The output probe was
        on 1, so the whole point of the circuit - the two 5 V rails side by side - had a probe on
@@ -13922,6 +14110,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_AC_COUPLING] = 2e-6, [CIRCUIT_IV_SHUNT_SENSE] = 1e-3, [CIRCUIT_IV_KELVIN] = 1e-3,
     [CIRCUIT_BMI_ELOAD_CC] = 1e-3, [CIRCUIT_BMI_ELOAD_CR] = 1e-3, [CIRCUIT_BMI_ELOAD_CV] = 1e-3,
     [CIRCUIT_BMI_THERMAL_CUTOUT] = 1e-3, [CIRCUIT_BMI_SUPERCAP] = 0.5,
+    [CIRCUIT_BMI_CHARGER_CC] = 1e-3, [CIRCUIT_BMI_CHARGER_CV] = 1e-3,
     [CIRCUIT_IV_BUCK_NODES] = 2e-6,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2e-6, [CIRCUIT_IV_BOOTSTRAP] = 2e-6,
     [CIRCUIT_IV_TERMINATION] = 5e-9, [CIRCUIT_IV_PULLUP_SIZING] = 5e-6,
@@ -13980,6 +14169,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_AC_COUPLING] = 0.05, [CIRCUIT_IV_SHUNT_SENSE] = 0.5, [CIRCUIT_IV_KELVIN] = 0.05,
     [CIRCUIT_BMI_ELOAD_CC] = 1.0, [CIRCUIT_BMI_ELOAD_CR] = 0.5, [CIRCUIT_BMI_ELOAD_CV] = 1.0,
     [CIRCUIT_BMI_THERMAL_CUTOUT] = 5.0, [CIRCUIT_BMI_SUPERCAP] = 1.0,
+    [CIRCUIT_BMI_CHARGER_CC] = 2.0, [CIRCUIT_BMI_CHARGER_CV] = 1.0,
     [CIRCUIT_IV_BUCK_NODES] = 2.0,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2.0, [CIRCUIT_IV_BOOTSTRAP] = 10,
     [CIRCUIT_IV_TERMINATION] = 2, [CIRCUIT_IV_PULLUP_SIZING] = 1.0,
@@ -14167,6 +14357,8 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_ELOAD_CV]     = { DEMO_DC, 0 },
     [CIRCUIT_BMI_THERMAL_CUTOUT] = { DEMO_DC, 0 },
     [CIRCUIT_BMI_SUPERCAP]     = { DEMO_WAVEFORM, 0 },
+    [CIRCUIT_BMI_CHARGER_CC]   = { DEMO_DC, 0 },
+    [CIRCUIT_BMI_CHARGER_CV]   = { DEMO_DC, 0 },
     [CIRCUIT_IV_BUCK_NODES]    = { DEMO_DC, 0 },
     [CIRCUIT_IV_LDO_VS_BUCK]   = { DEMO_DC, 0 },
     [CIRCUIT_IV_BOOTSTRAP]     = { DEMO_WAVEFORM, 100000 },
