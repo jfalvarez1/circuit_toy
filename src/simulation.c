@@ -1703,6 +1703,96 @@ double simulation_get_error_estimate(Simulation *sim) {
     return sim ? sim->error_estimate : 0.0;
 }
 
+/* Two node ids on the same net? Uses the solver's own node map, which has already merged wires and
+   coincident terminals, and falls back to identity if it has not been built. */
+static bool nets_equal(Circuit *c, int a, int b) {
+    if (a == b) return true;
+    if (!c || a < 0 || b < 0 || a >= MAX_NODES || b >= MAX_NODES) return false;
+    return c->node_map[a] == c->node_map[b];
+}
+
+/* The fastest natural time constant in the circuit, or 0 if nothing here has one.
+
+   The step rule above asks only what the SOURCES do. That is fine until a circuit's own dynamics
+   are faster than anything driving it: Hot-Plug Inrush charges 1 mF through 50 mohm of connector -
+   a 50 us event - from a DC rail through a switch, so there is no frequency and no pulse width
+   anywhere in the netlist to notice. The step came from the display rule at ~125 us and stepped
+   straight over the inrush the template is named after, and the rail sag it reported moved 8 % when
+   the step was divided by eight.
+
+   The resistance a capacitor works against is, properly, the Thevenin resistance seen at its
+   terminals, which needs a solve of its own. What is used instead is the smallest series
+   resistance sharing a net with it. "Shares a net with" is not "is in series with", so this is an
+   approximation, and the shape of the rule at the call site - only where no source sets the pace,
+   only where the circuit has not measured its own period, and never for a circuit that can
+   resonate - is entirely about keeping that approximation somewhere it cannot do harm.
+
+   Nets, not node ids, because a template joins its parts with wires and two ids on one net are the
+   same piece of copper. node_map is built by the time anything asks for a step. */
+/* What a part looks like as a series resistance, or 0 if it is not one.
+
+   Not only COMP_RESISTOR. Hot-Plug Inrush is the case that proves it: its "50 mohm of connector"
+   is an analog switch's r_on and its supply's is a source r_series, so a scan for resistors found
+   nothing but the load and concluded the circuit was slow. The parasitic resistances ARE the
+   circuit here - they are the only thing between 12 V and an empty capacitor. */
+static double component_series_ohms(const Component *r) {
+    if (!r) return 0;
+    switch (r->type) {
+        case COMP_RESISTOR:       return r->props.resistor.resistance;
+        case COMP_ANALOG_SWITCH:  return r->props.analog_switch.ideal ? 0 : r->props.analog_switch.r_on;
+        case COMP_DC_VOLTAGE:     return r->props.dc_voltage.ideal ? 0 : r->props.dc_voltage.r_series;
+        case COMP_AC_VOLTAGE:     return r->props.ac_voltage.ideal ? 0 : r->props.ac_voltage.r_series;
+        default:                  return 0;
+    }
+}
+
+static double circuit_fastest_time_constant(Circuit *c) {
+    if (!c) return 0;
+
+    /* Nothing at all for a circuit that can resonate. R times C is the scale on which a capacitor
+       settles; it is not the scale on which an LC tank or a crystal does anything, and the two are
+       often orders apart. Guessing an RC for an oscillator and stepping to it broke Colpitts,
+       Hartley and Pierce outright - the tank's own period is the only right answer there, and the
+       measured-period rule above is what supplies it. The circuits this rule exists for - a
+       hot-plug, a switched charge transfer, an RC that settles - have no inductor in them. */
+    for (int i = 0; i < c->num_components; i++) {
+        Component *k = c->components[i];
+        if (!k) continue;
+        if (k->type == COMP_INDUCTOR || k->type == COMP_CRYSTAL ||
+            k->type == COMP_TRANSFORMER) return 0;
+    }
+
+    double best = 0;
+    for (int i = 0; i < c->num_components; i++) {
+        Component *s = c->components[i];
+        if (!s || s->type != COMP_CAPACITOR) continue;
+        double val = s->props.capacitor.capacitance;
+        if (!(val > 0)) continue;
+
+        double r_small = 0;
+        for (int j = 0; j < c->num_components; j++) {
+            Component *r = c->components[j];
+            if (!r) continue;
+            double rv = component_series_ohms(r);
+            if (!(rv > 0)) continue;
+            int touches = 0;
+            for (int a = 0; a < 2 && !touches; a++)
+                for (int b = 0; b < 2 && !touches; b++)
+                    if (nets_equal(c, s->node_ids[a], r->node_ids[b])) touches = 1;
+            if (!touches) continue;
+            if (r_small <= 0 || rv < r_small) r_small = rv;
+        }
+
+        double tau = (r_small > 0) ? r_small * val : 0;
+        if (tau > 0 && (best <= 0 || tau < best)) best = tau;
+    }
+    return best;
+}
+
+/* Set by --no-rc-step. Only so the before and after can be measured on one binary; the rule is
+   on in every build that ships. */
+bool g_rc_step_disabled = false;
+
 double simulation_accuracy_time_step(Simulation *sim) {
     if (!sim || !sim->circuit) return DEFAULT_TIME_STEP;
 
@@ -1799,6 +1889,37 @@ double simulation_accuracy_time_step(Simulation *sim) {
             double self_dt = self_period / 100.0;
             if (self_dt < dt) dt = self_dt;
         }
+
+        /* And ten samples across the circuit's own fastest natural time constant - see
+           circuit_fastest_time_constant for what that is and why a scan for resistors is not
+           enough to find it.
+
+           Only in this branch, where there is no periodic source. That is not timidity, it is the
+           measurement: applied to every circuit the rule tightens the step on templates whose pace
+           is already set by a source, because a non-ideal source carries a default 1 mohm and a
+           power supply's 1000 uF against 1 mohm is a 1 us time constant. Resolving that on a 60 Hz
+           circuit means a 100 ns step where 333 us would do - three thousand times the work to
+           resolve a start-up transient nobody is looking at. The audit battery went from 224
+           seconds to over fifteen minutes and was still running.
+
+           When a source sets the pace, the source and display rules already give a step that
+           resolves what is on screen. When nothing does - a DC circuit, a hot-plug, a switched
+           charge transfer - the circuit's own dynamics are the only thing there is, and they were
+           being ignored entirely. */
+        /* ...and only if the circuit has not already told us its period by running. An LC or
+           crystal oscillator IS its own source, and the measurement above is a far better answer
+           than any guess from an R and a C: applied to those, this rule broke Colpitts, Hartley
+           and Pierce outright. The reason is the same approximation that makes it useful on a
+           hot-plug - "shares a net with" is not "is in series with" - and on an oscillator with a
+           1 M bias resistor touching the tank it collapses the step to the floor and the thing
+           never starts. Measured period first; this only where there is none. */
+        if (!g_rc_step_disabled && self_period <= 0) {
+            double tau = circuit_fastest_time_constant(sim->circuit);
+            if (tau > 0) {
+                double dt_rc = tau / 10.0;
+                if (dt_rc < dt) dt = dt_rc;
+            }
+        }
     }
 
     /* Five samples across the narrowest pulse, however rare that pulse is. The relaxation
@@ -1809,6 +1930,7 @@ double simulation_accuracy_time_step(Simulation *sim) {
         double dt_pulse = min_pulse / 5.0;
         if (dt_pulse < dt) dt = dt_pulse;
     }
+
 
     // Clamp to valid range
     return CLAMP(dt, MIN_TIME_STEP, MAX_TIME_STEP);

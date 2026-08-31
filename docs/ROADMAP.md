@@ -338,20 +338,43 @@ a bug rather than an omission: the code picking the source's live terminal compa
 component's node id against the source's, and a template that reaches ground through a wire has two
 different ids on one net, so the test never fired.
 
-**And one number is not converged.** Hot-Plug Inrush's rail sag moves 8.2 % when the step is
-divided by eight, so what the canvas shows is partly an artefact of the step. The cause is general
-and worth stating plainly: `simulation_accuracy_time_step` picks the step from **source periods and
-pulse widths only**. It never looks at a circuit's own RC time constants. Inrush charges 1 mF
-through 50 mohm - a 50 us event - with no source anywhere near that fast, and the time base is
-5 ms/div, so the step lands at ~125 us and steps straight over the thing the template is named
-after. Every other interview template survives dt/8 within its tolerance, so this is the one place
-it currently bites, but the rule is wrong in general and not only here. `--iv-test` reports this as
-[NOTE] with the reason attached rather than failing on it, and counts it separately, so it stays
-visible without blocking; a drift with no write-up is still a failure.
+**And one number was not converged, which turned out to be a fault in the step rule itself.**
+Hot-Plug Inrush's rail sag moved 8.2 % when the step was divided by eight, so what the canvas showed
+was partly an artefact. The cause was general: `simulation_accuracy_time_step` picked the step from
+**source periods and pulse widths only** and never looked at a circuit's own RC time constants.
+Inrush charges 1 mF through 50 mohm - a 50 us event - with no source anywhere near that fast, so the
+step came from the display rule at ~125 us and stepped straight over the thing the template is named
+after.
 
-Fixing it properly means teaching the step chooser about the smallest RC in the circuit, which
-changes the step on all 188 templates and needs its own measurement pass. It is not a one-line
-change and it is not being pretended to be one.
+It now also takes ten samples across the fastest RC it can find. Getting that in without wrecking
+everything else took three attempts, and the wrong ones are worth recording:
+
+- **Applied to every circuit, it is unaffordable.** A non-ideal source carries a default 1 mohm, so
+  a power supply's 1000 uF against it is a 1 us time constant, and resolving that on a 60 Hz
+  template means a 100 ns step where 333 us would do. The battery went from 224 seconds to over
+  fifteen minutes and was still running when it was killed. It is now applied only where **no
+  source sets the pace** - when one does, the source and display rules already resolve what is on
+  screen, and the fast natural transient is a start-up artefact nobody is looking at.
+- **Applied to oscillators, it breaks them.** Colpitts, Hartley and Pierce have no periodic source
+  either, so they landed in the same branch; a 1 M bias resistor touching the tank made "tau" tiny
+  and collapsed the step to the floor, and they stopped starting. The rule now returns nothing at
+  all for a circuit containing an inductor, a crystal or a transformer: R times C is the scale a
+  capacitor settles on and is simply not the scale an LC tank does anything on. A resonant
+  circuit's own measured period was already the better answer and is what it keeps.
+- **The resistance had to include the parasitics.** The first version scanned for `COMP_RESISTOR`
+  and found only Inrush's load, because the "50 mohm of connector" is an analog switch's `r_on` and
+  the supply's is a source `r_series`. Those parasitics *are* the circuit here - they are the only
+  thing between 12 V and an empty capacitor.
+
+The result: 48 of 48 suites pass in 205 seconds against a 224 second baseline, so the rule costs
+nothing measurable. Two numbers changed, and both were wrong before. The rail sag is **10.02 V, not
+11.33** - 200 A through the supply's own 10 mohm is 2 V, which is what a converged solve says and
+what the coarse step was hiding. And `--probe-test` expected the bulk capacitor to reach 12.65 V,
+"overshooting the rail": an RC circuit cannot overshoot, and that 12.65 was the step stepping over
+the transient. It charges to 11.99 and stops.
+
+The annotation was wrong too, in the same direction: it said 12 / 0.05 = 240 A, forgetting the
+supply's own 10 mohm. It is 12 / 0.06 = 200 A.
 
 ## What a review found that the suites did not (2026-08-30)
 

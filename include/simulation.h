@@ -161,6 +161,7 @@ double simulation_auto_time_step(Simulation *sim);
 //  - scope step: dt that gives ~50 samples per scope division, never coarser than the
 //    accuracy step, snapped down to the 1-2-5 series, clamped to [MIN,MAX]_TIME_STEP
 double simulation_accuracy_time_step(Simulation *sim);
+extern bool g_rc_step_disabled;   /* --no-rc-step: measure the RC rule's cost against itself */
 double simulation_scope_time_step(Simulation *sim, double scope_time_div);
 
 // Adaptive time-stepping control

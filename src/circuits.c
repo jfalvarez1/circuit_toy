@@ -6991,9 +6991,9 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "wins on drop here and loses badly at high current, costs standby current and nothing per edge; the",
         "MOSFET is the other way round. 'Logic level' is a specification, and 5 V is not 10 V."},
     [CIRCUIT_IV_INRUSH] = {"HOT-PLUG INRUSH: an empty capacitor is a short circuit, and the only thing between it and",
-        "12 V is whatever series resistance happens to exist. With 50 mohm of connector and wiring that is",
-        "240 A for the first 50 us. The energy is not the problem - 1/2 C V^2 = 72 mJ either way - the peak",
-        "current is: 240 A through a connector rated for 5 A pits the contacts every time, and the rail sag",
+        "12 V is whatever resistance exists. With 50 mohm of connector and the supply's own 10 mohm that is",
+        "200 A for the first 60 us, and it drags the 12 V rail down to 10 V. The energy is not the problem -",
+        "1/2 C V^2 = 72 mJ either way - the peak current is: 200 A through a 5 A connector pits it, and the sag",
         "browns out everything else on the board. 4.7 ohm in series makes it 2.5 A and charges the cap in",
         "20 ms. That is an inrush limiter: an NTC that falls to a few tenths once warm, or a ramped MOSFET."},
     [CIRCUIT_IV_TERMINATION] = {"TERMINATION: the same 3.3 V driver into the same 50 ohm line, ended three ways.",
@@ -12638,7 +12638,7 @@ static int place_iv_inrush(Circuit *circuit, float x, float y) {
     /* the same bulk capacitor hot-plugged onto the same supply, with and without a limiter */
     static const double rlim[2] = { 0.0, 4.7 };
     static const char *tag[2] = {
-        "STRAIGHT IN: 50 mohm of connector and wiring is all that limits it. 12 / 0.05 = 240 A for the",
+        "STRAIGHT IN: 50 mohm of connector plus the supply's own 10 mohm. 12 / 0.06 = 200 A for the",
         "THROUGH 4.7 ohm: 2.5 A peak, and the cap is charged in 20 ms. That is what an inrush limiter is -"
     };
     for (int k = 0; k < 2; k++) {
