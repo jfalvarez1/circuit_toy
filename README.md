@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.23.1](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.23.1)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.23.2](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.23.2)** (auto-updating from v3.4.0 on)
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
 digital solver, a real-time bench oscilloscope with FFT and THD, 187 guided circuits from RC

@@ -918,6 +918,40 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.38 v3.23.2 - twenty-five faults from an adversarial review (2026-08-31)
+
+Six readers over the source, each with a lens the audit battery does not cover, and a refuter
+against every finding whose job was to argue it away. Twelve survived refutation; the rest of what
+is here I found or corrected while checking their work, and two of their claims I refuted myself
+and did not act on.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.38.1 | `[ ]` Select an AC source, switch on both its sweeps | 19 rows into an array of 16. Row 16's bounds write landed on `num_properties` and `editing_component`, every frame the panel was drawn, and the click handler was clamped where the array was not - so the frequency sweep's Repeat control was drawn and dead. Two clicks reach it |
+| 3.38.2 | `[ ]` Open the Bode plot on **RC Low Pass** | Magnitude within 0.03 dB of 1/sqrt(1+(f/fc)^2) and phase within 3.6 degrees of -atan(f/fc). It was wrong five ways at once: the clock ran at 2 dt per solve, the source ignored the frequency being plotted because its own sweep was still on, phase came out +85 where an RC is -85, the sweep restored nothing but the source frequency, and it ran on a thread while the main loop stepped the same Simulation |
+| 3.38.3 | `[ ]` Put a battery across a load | Below its open-circuit voltage. A 12 V battery with 1 ohm internal read **18 V** across a 3 ohm load, and a 1.5 V AA read 3.0 - the internal resistance was stamped with the sign that makes it push |
+| 3.38.4 | `[ ]` Load a centre-tapped transformer and work the secondary | The primary current follows. It did not move at all - 0.012 A into a 10 k load and 0.012 A into a 10 ohm one - because the part had no current variable and nothing to reflect the load with |
+| 3.38.5 | `[ ]` Set an analog switch's on-resistance to zero | It solves. `1.0/R` was stamped unguarded in six places and a zero put a NaN through every node in the circuit |
+| 3.38.6 | `[ ]` Save a circuit as JSON and open it | The parts keep their names. The writer emitted every label and the reader ignored it, so every Open renamed every part |
+| 3.38.7 | `[ ]` Draw a wire onto another wire | The junction exists and both halves are on it. The junction was created before the old wire was removed, and removing a wire sweeps orphaned nodes - so it was swept, and the halves were wired to nothing |
+| 3.38.8 | `[ ]` Open a file with a part selected | No use-after-free. `file_import_json` clears the circuit and frees every part, and the selection went on pointing at one |
+| 3.38.9 | `[ ]` Two windows, undo in each | They do not share snapshots. Both wrote `circuit_undo_0.cpg` |
+| 3.38.10 | `[ ]` Reset the Pierce oscillator | It starts from nothing. Its motional state lives in the same fields a capacitor uses and only the capacitor cases were cleared |
+| 3.38.11 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 54 suites. `--sign-test`, `--load-test` and `--bode-test` are new here; `--conv-test`, `--stress-test` and `--mc-test` came in just before |
+
+The thing worth carrying forward: **every one of these was verified by putting the bug back and
+watching the check fail.** That is not ceremony. Three checks written during this release passed
+against the broken code and had to be rewritten - a truncated-file case that could not fail because
+a failed read leaves the count untouched, an inconsistency check that asked "is the number large"
+when the wrong answer was a perfectly reasonable 5.000 V, and an FFT case using a window in which
+the bug does not exist. A check that has never failed has not been shown to be a check.
+
+Two of the review's findings were refuted and are recorded as refuted: the MOSFET
+Enhancement/Depletion toggle does flip the sign of Vth, and the report's account of the properties
+overflow spraying 90 KB and enabling an arbitrary action was wrong on both counts. The reported
+`rows[]` overflow is real and takes more than sixteen aux-needing parts in one subcircuit to reach,
+not five.
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.
