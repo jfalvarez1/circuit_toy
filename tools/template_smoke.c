@@ -1032,7 +1032,10 @@ static const char *class_name(SignalClass c) {
 }
 
 /* Run one template to a given horizon at a given step and characterise probe 0. */
-static int class_run(CircuitTemplateType t, double dt_scale, SignalCharacter *out, double *dt_used) {
+/* One pass at a given horizon. class_run wraps this and will ask again over a longer one - see
+   there for why. */
+static int class_run_span(CircuitTemplateType t, double dt_scale, double horizon_cycles,
+                          SignalCharacter *out, double *dt_used, double *horizon_used) {
     Circuit *c = circuit_create();
     if (!c) return 0;
     if (circuit_place_template(c, t, 0, 0) <= 0) { circuit_free(c); return 0; }
@@ -1048,7 +1051,7 @@ static int class_run(CircuitTemplateType t, double dt_scale, SignalCharacter *ou
     /* Take the horizon from the app dt BEFORE the override, or the finer run covers a quarter as
        much time and every slow circuit reads as a one-shot for want of a second cycle. */
     double dt_app = sim->time_step;
-    double horizon = 4000.0 * dt_app;
+    double horizon = horizon_cycles * dt_app;
     double dt = dt_app * dt_scale;
     simulation_enable_adaptive(sim, false);
     simulation_set_time_step(sim, dt);
@@ -1060,9 +1063,47 @@ static int class_run(CircuitTemplateType t, double dt_scale, SignalCharacter *ou
         if (!simulation_step(sim)) { ok = 0; break; }
     if (ok) simulation_characterise(sim, c->probes[0].id - 1 >= 0 ? 0 : 0, out);
     if (dt_used) *dt_used = dt;
+    if (horizon_used) *horizon_used = horizon;
     simulation_free(sim);
     circuit_free(c);
     return ok;
+}
+
+/* Ask over a longer window before calling anything a one-shot.
+
+   The horizon is a multiple of the step, which is a guess at how long the circuit takes to do
+   whatever it does, and for one template the guess was wrong: the Relaxation Oscillator needs
+   about 10 ms to start, the horizon gave it 8, and with fewer than three crossings of its own
+   midpoint it was classified a one-shot. --osc-test, which runs longer, measures it happily at
+   445 Hz. Two suites disagreeing about the same circuit means at least one of them is describing
+   its own window rather than the circuit.
+
+   So when the first pass says one-shot and the signal has real amplitude, ask again over eight
+   times as long. A circuit that is genuinely a one-shot says the same thing twice and costs one
+   extra run; a slow oscillator gets the room it needed. */
+static int class_run(CircuitTemplateType t, double dt_scale, SignalCharacter *out, double *dt_used) {
+    double horizon1 = 0;
+    if (!class_run_span(t, dt_scale, 4000.0, out, dt_used, &horizon1)) return 0;
+    if (out->cls == SIGNAL_ONESHOT && out->amplitude > 0) {
+        SignalCharacter longer;
+        double dt2 = 0;
+        /* The retry is for a circuit that was still starting when the first window closed, so what
+           it may discover is bounded by that first window: a period that would have fitted three
+           times over in it, had the circuit only got going sooner. The Relaxation Oscillator's
+           2.2 ms against 8 ms qualifies.
+
+           Without that bound the longer look finds anything given enough time. The Two-Capacitor
+           Problem's switch closes once every 100 s, and over 320 seconds of circuit time that is a
+           period - technically true, and a worse description than "one-shot" of a template whose
+           whole event is a 10 ms charge transfer. */
+        if (class_run_span(t, dt_scale, 32000.0, &longer, &dt2, NULL) &&
+            longer.cls == SIGNAL_PERIODIC && longer.period > 0 &&
+            longer.period * 3.0 <= horizon1) {
+            *out = longer;
+            if (dt_used) *dt_used = dt2;
+        }
+    }
+    return 1;
 }
 
 static int class_test(double fine) {
@@ -1835,7 +1876,7 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_IV_MILLER,        COMP_NMOS,      1, 1, "amp", 0.0723, 0.15, 5e-6, "10 pF of C_gd: 130 pF at the input rolls it off to a seventh" },
     { CIRCUIT_IV_SWITCH_CHOICE, COMP_NPN_BJT,   0, 1, "dc",  0.072,  0.20, 1e-3, "2N3904 saturated: V_CE(sat), and it barely moves with current" },
     { CIRCUIT_IV_SWITCH_CHOICE, COMP_NMOS,      0, 1, "dc",  0.406,  0.15, 1e-3, "2N7000 at V_GS = 5 V: I x R_DS(on), and R_DS(on) is not the data sheet's 1.2 ohm here" },
-    { CIRCUIT_IV_INRUSH,        COMP_CAPACITOR, 0, 0, "max", 11.99,  0.02, 3e-3,  "straight in: it charges to the rail and stops. It read 12.65 V - an RC cannot overshoot, and that was the step stepping over the transient" },
+    { CIRCUIT_IV_INRUSH,        COMP_CAPACITOR, 0, 0, "max", 11.99,  0.02, 5e-2,  "straight in: it charges to the rail and stops. It read 12.65 V - an RC cannot overshoot, and that was the step stepping over the transient" },
     { CIRCUIT_IV_INRUSH,        COMP_CAPACITOR, 1, 0, "max", 11.46,  0.04, 60e-3, "through 4.7 ohm: no overshoot, and it settles at 12 x 100/104.7" },
     { CIRCUIT_CAP_DCBIAS,       COMP_CAPACITOR, 0, 0, "amp", 0.03125, 0.10, 4e-3, "10 uF unbiased: I(T/2)/C = 62.5 mVpp" },
     { CIRCUIT_CAP_DCBIAS,       COMP_CAPACITOR, 1, 0, "amp", 0.0625,  0.10, 4e-3, "2 V bias halves it: twice the ripple" },

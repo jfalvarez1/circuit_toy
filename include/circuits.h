@@ -267,6 +267,13 @@ double circuit_template_scope_volt_div(CircuitTemplateType type);
 #define SCOPE_FLAG_AC    1
 #define SCOPE_FLAG_STACK 2
 #define SCOPE_FLAG_FIT   4
+/* Arm a single-shot trigger. For a template whose whole event happens once: the switch closes, the
+   charge moves, and from then on the scope in AUTO mode free-runs over a settled circuit and draws
+   flat lines. A person loading The Two-Capacitor Problem sees the 10 ms transfer flash past in the
+   first moments and then two straight traces for as long as they look at it. SNGL catches the
+   event and holds it, which is exactly what the mode is for and what a person would reach for on a
+   bench. */
+#define SCOPE_FLAG_SINGLE 8
 int circuit_template_scope_flags(CircuitTemplateType type);
 
 // HARD RULE: every template declares how it demonstrates itself, and template_smoke

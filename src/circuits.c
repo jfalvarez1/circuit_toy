@@ -12663,7 +12663,11 @@ static int place_iv_inrush(Circuit *circuit, float x, float y) {
         sw->node_ids[0] = si; sw->node_ids[1] = so; sw->node_ids[2] = ctl;
         Component *pw = add_comp(circuit, COMP_PULSE_SOURCE, x + 160, py + 140, 0);  // +(160,100) -(160,180)
         pw->props.pulse_source.v_low = 0; pw->props.pulse_source.v_high = 5.0;
-        pw->props.pulse_source.delay = 2e-3;
+        /* 20 ms, not 2: close it well after the scope has started, the same reason the Two-Capacitor
+           Problem uses. With the single-shot trigger armed, an edge at 2 ms happens before the scope
+           is capturing, the trigger never fires, and because the switch closes once every 100 s it
+           never fires again either - an armed scope showing WAIT over a blank screen for ever. */
+        pw->props.pulse_source.delay = 20e-3;
         pw->props.pulse_source.rise_time = pw->props.pulse_source.fall_time = 1e-6;
         pw->props.pulse_source.pulse_width = 10.0; pw->props.pulse_source.period = 100.0;
         int pp = TN(x + 160, py + 100); pw->node_ids[0] = pp;
@@ -13780,9 +13784,13 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_PULLUP_SIZING] = SCOPE_FLAG_STACK,
     [CIRCUIT_IV_GROUND_BOUNCE] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_IV_CROSSTALK] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
-    [CIRCUIT_IV_CAP_ENERGY] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_IV_CAP_ENERGY] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT | SCOPE_FLAG_SINGLE,
     [CIRCUIT_IV_MILLER] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
-    [CIRCUIT_IV_INRUSH] = SCOPE_FLAG_STACK,
+    [CIRCUIT_IV_INRUSH] = SCOPE_FLAG_STACK | SCOPE_FLAG_SINGLE,
+    /* Governor Droop is a one-shot too and does NOT get the flag: its trigger level sits at the top
+       of its own swing, so an armed single shot never fires and the screen stays blank behind a
+       WAIT. Arming a single shot is only right where the trigger provably catches the event, and
+       that one needs its trigger level sorted out first. AUTO free-runs and shows the trace. */
     [CIRCUIT_TLINE_REAL] = SCOPE_FLAG_STACK,
     /* The neutral shift is the whole point of the unbalanced Y, and it is tens of volts beside
        phases of four hundred: on one shared scale it is a fifth of a division and invisible.

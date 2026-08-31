@@ -8356,6 +8356,7 @@ void ui_scope_apply_template_preset(UIState *ui, CircuitTemplateType type) {
     if (vd > 0) ui->scope_volt_div = vd;
     int fl = circuit_template_scope_flags(type);
     ui->scope_ac_coupling = (fl & SCOPE_FLAG_AC) != 0;
+    ui->trigger_mode = (fl & SCOPE_FLAG_SINGLE) ? TRIG_SINGLE : TRIG_AUTO;
     ui->scope_stacked     = (fl & SCOPE_FLAG_STACK) != 0;
     ui->scope_stack_fit   = (fl & SCOPE_FLAG_FIT) != 0;
     ui->scope_auto_vdiv_pending = true;   /* refine V/div from real data once it flows */
