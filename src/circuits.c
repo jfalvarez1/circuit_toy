@@ -306,6 +306,7 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_HW_MATCH] = {"Impedance Matching", "Zmatch", "5 / 50 / 500 ohm on a 50 ohm source", TG_HARDWARE},
     [CIRCUIT_HW_REFLECT] = {"Signal Reflections", "Refl", "Artificial 50 ohm line, terminated or not", TG_HARDWARE},
     [CIRCUIT_HW_LOOP] = {"Loop Stability & Phase Margin", "Loop", "The same stage with and without compensation", TG_HARDWARE},
+    [CIRCUIT_HW_CCM_DCM] = {"CCM vs DCM", "CCMDCM", "Same duty, two loads: continuous and discontinuous", TG_HARDWARE},
     [CIRCUIT_ID_SOURCE] = {"Ideal vs Real Source", "IdSrc", "Internal resistance: the terminal voltage sags", TG_IDEAL},
     [CIRCUIT_ID_DIODE] = {"Ideal vs Real Diode", "IdDio", "0.7 V brick wall against the Shockley knee", TG_IDEAL},
     [CIRCUIT_ID_CAP] = {"Ideal vs Real Capacitor", "IdCap", "ESR turns the ripple triangle into a square step", TG_IDEAL},
@@ -6360,6 +6361,9 @@ static int place_hw_caps(Circuit *circuit, float x, float y);
 static int place_hw_match(Circuit *circuit, float x, float y);
 static int place_hw_reflect(Circuit *circuit, float x, float y);
 static int place_hw_loop(Circuit *circuit, float x, float y);
+static int place_hw_ccm_dcm(Circuit *circuit, float x, float y);
+/* defined with the probe helpers, far below the builders that want it */
+static void probe_named(Circuit *circuit, Component *c, int term, const char *name);
 static int place_id_source(Circuit *circuit, float x, float y);
 static int place_id_diode(Circuit *circuit, float x, float y);
 static int place_id_cap(Circuit *circuit, float x, float y);
@@ -6703,6 +6707,7 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_HW_MATCH:           return place_hw_match(circuit, x, y);
         case CIRCUIT_HW_REFLECT:         return place_hw_reflect(circuit, x, y);
         case CIRCUIT_HW_LOOP:            return place_hw_loop(circuit, x, y);
+        case CIRCUIT_HW_CCM_DCM:         return place_hw_ccm_dcm(circuit, x, y);
         case CIRCUIT_ID_SOURCE:          return place_id_source(circuit, x, y);
         case CIRCUIT_ID_DIODE:           return place_id_diode(circuit, x, y);
         case CIRCUIT_ID_CAP:             return place_id_cap(circuit, x, y);
@@ -10430,6 +10435,67 @@ static int place_hw_buck(Circuit *circuit, float x, float y) {
     return 16;
 }
 
+/* CCM vs DCM: the same converter twice, differing only in what it is asked to supply.
+ *
+ * Both halves are a 12 V buck at 100 kHz and 50 % duty, 22 uH, identical in every part value. The
+ * top one drives 6 ohm and the bottom one 30 ohm. Textbook says Vout = D Vin = 6 V, and the top one
+ * very nearly obeys at 5.44 V (the diode drop and the winding resistance take the rest). The
+ * bottom one settles at 8.37 V, and the reason is the whole lesson: at that load the
+ * inductor current reaches zero before the cycle ends, the diode stops conducting, and for the
+ * rest of the period neither device carries anything. The output does not get pulled back down
+ * during that third interval, so it drifts up toward Vin. D Vin is a continuous-conduction
+ * result, and it stops being true the moment conduction stops being continuous.
+ *
+ * Boundary for these values: DCM begins below about I_out = (Vin - Vout) D / (2 L fsw) = 680 mA,
+ * which is a load resistance of roughly 9 ohm. 6 ohm is comfortably continuous and 30 ohm is clearly
+ * discontinuous without being pinned at Vin - lighter still and it simply walks up toward 12 V,
+ * which is the same lesson with less to look at (2 k settles at 11.89 V).
+ *
+ * This template was blocked for two days on docs/ROADMAP.md's note that a buck in DCM ran away to
+ * kilovolts, the switch node being undefined during that third interval. It was retried with
+ * measurements (--dcm-test) across load, time step, junction capacitance and ideal-versus-real
+ * parts: nine configurations, no runaway in any of them. Whatever caused it has been fixed by one
+ * of the stamp corrections since.
+ */
+static int place_hw_ccm_dcm(Circuit *circuit, float x, float y) {
+    for (int half = 0; half < 2; half++) {
+        float yy = y + half * 320.0f;
+        double rload = half ? 30.0 : 6.0;
+        double v0 = half ? 8.4 : 5.4;      /* measured settled values, so it does not open cold */
+
+        Component *vin = dc_rail(circuit, x, yy, 12.0); if (!vin) return 0;
+        int in = TN(x, yy);
+        Component *sw = pwm_switch(circuit, x + 140, yy, 100e3, 0.5);
+        int si = TN(x + 100, yy), so = TN(x + 180, yy); TW(in, si);
+        sw->node_ids[0] = si; sw->node_ids[1] = so;
+        int node_sw = TN(x + 240, yy); TW(so, node_sw);
+
+        Component *d = add_comp(circuit, COMP_DIODE, x + 240, yy + 80, 90);
+        int da = TN(x + 240, yy + 40), dk = TN(x + 240, yy + 120);
+        Component *gd = add_comp(circuit, COMP_GROUND, x + 240, yy + 160, 0);
+        TW(node_sw, da);
+        d->node_ids[0] = dk; d->node_ids[1] = da;
+        gd->node_ids[0] = dk;
+
+        Component *l = hind(circuit, x + 340, yy, 22e-6);
+        int ll = TN(x + 300, yy), lr = TN(x + 380, yy); TW(node_sw, ll);
+        l->node_ids[0] = ll; l->node_ids[1] = lr;
+        int out = TN(x + 440, yy); TW(lr, out);
+        Component *load = out_stage(circuit, x + 440, yy, out, 47e-6, rload, v0);
+
+        probe_named(circuit, load, 0, half ? "DCM" : "CCM");
+        add_label(circuit, x + 560, yy - 10, half ? "30 ohm load: DISCONTINUOUS, 8.4 V"
+                                                  : "6 ohm load: continuous, 5.4 V");
+    }
+    add_label(circuit, x - 40, y - 90, "CCM vs DCM: the same 12 V buck twice - 100 kHz, 50 % duty, 22 uH - differing only in the load it drives");
+    add_label(circuit, x - 40, y + 700, "Vout = D x Vin = 6 V is a CONTINUOUS-conduction result. The top half obeys it (5.44 V). The bottom half sits at 8.37 V.");
+    add_label(circuit, x - 40, y + 730, "Below about 680 mA of output (roughly 9 ohm here) the inductor current reaches zero before the cycle ends. The diode");
+    add_label(circuit, x - 40, y + 760, "stops conducting, and for the rest of the period neither device carries anything - a third interval that CCM does not have.");
+    add_label(circuit, x - 40, y + 790, "Nothing holds the output down through it, so it drifts up toward Vin: 30 ohm gives 8.4 V, 120 ohm 10.6 V, 2 k almost 12 V.");
+    add_label(circuit, x - 40, y + 820, "ALSO SEE: Buck Converter for one converter on its own, and Discrete Buck, Node by Node for the same thing built from real parts.");
+    return 32;
+}
+
 // 2. Boost: Vout = Vin / (1 - D)
 static int place_hw_boost(Circuit *circuit, float x, float y) {
     Component *vin = dc_rail(circuit, x, y, 5.0); if (!vin) return 0;
@@ -13196,6 +13262,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_XY_LISSAJOUS]     = { COMP_RESISTOR, 1, 0 },
     [CIRCUIT_XY_PLOTTER]       = { COMP_RESISTOR, 1, 0 },
     [CIRCUIT_HW_BUCK]          = { COMP_RESISTOR, 0, 0 },
+    [CIRCUIT_HW_CCM_DCM]       = { COMP_RESISTOR, 0, 0 },   /* the CCM half's load */
     [CIRCUIT_HW_BOOST]         = { COMP_RESISTOR, 0, 0 },
     [CIRCUIT_HW_BUCKBOOST]     = { COMP_RESISTOR, 0, 0 },
     [CIRCUIT_HW_CUK]           = { COMP_RESISTOR, 0, 0 },
@@ -13421,6 +13488,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_MOS_DIFF] = 5.0, [CIRCUIT_MOS_MIRROR] = 5.0, [CIRCUIT_CMOS_INV] = 2.0,
     [CIRCUIT_CMOS_NAND] = 2.0, [CIRCUIT_CMOS_TGATE] = 2.0,
     [CIRCUIT_XY_LISSAJOUS] = 2.0, [CIRCUIT_XY_PLOTTER] = 2.0,
+    [CIRCUIT_HW_CCM_DCM] = 2.0,
     [CIRCUIT_HW_BUCK] = 2.0, [CIRCUIT_HW_BOOST] = 5.0, [CIRCUIT_HW_BUCKBOOST] = 5.0, [CIRCUIT_HW_CUK] = 10,
     [CIRCUIT_HW_INTERLEAVED] = 2.0, [CIRCUIT_HW_PDN] = 0.5, [CIRCUIT_HW_CAPS] = 1.0,
     [CIRCUIT_HW_MATCH] = 0.5, [CIRCUIT_HW_REFLECT] = 2, [CIRCUIT_HW_LOOP] = 5,
@@ -13583,6 +13651,7 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_XY_LISSAJOUS]     = { DEMO_WAVEFORM, 1000 },
     [CIRCUIT_XY_PLOTTER]       = { DEMO_WAVEFORM, 100 },
     [CIRCUIT_HW_BUCK]          = { DEMO_DC, 0 },
+    [CIRCUIT_HW_CCM_DCM]       = { DEMO_DC, 0 },   /* both halves settle to a DC output */
     [CIRCUIT_HW_BOOST]         = { DEMO_DC, 0 },
     [CIRCUIT_HW_BUCKBOOST]     = { DEMO_DC, 0 },
     [CIRCUIT_HW_CUK]           = { DEMO_WAVEFORM, 100e3 },   // settles to the right mean but still ripples: see ROADMAP
@@ -13664,6 +13733,7 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
        fills its band and the switching node keeps its own. --probe-audit's RIPPLE flag finds
        these: a trace on the screen whose every movement is thinner than a tenth of a division. */
     [CIRCUIT_HW_BUCK] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    [CIRCUIT_HW_CCM_DCM] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_HW_BOOST] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_HW_BUCKBOOST] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_HW_CUK] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,

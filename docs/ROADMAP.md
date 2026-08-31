@@ -210,7 +210,31 @@ value was three decades out. It now runs 30 V pk-pk at 100.6 kHz, just above f_s
 the 4.7 nF load caps. --xtal-test measures |Z| at, below and above resonance and the off-resonance
 ratio; --osc-test checks the frequency.
 
-## CCM vs DCM - not shipped (2026-08-28)
+## CCM vs DCM - SHIPPED 2026-08-30; the blocker does not reproduce
+
+The note below said an asynchronous buck in DCM ran away to hundreds or thousands of volts, and
+that the fix needed a switch model with a defined off-state capacitance or a local time-step
+control across the commutation. **Retried with measurements, and it does not reproduce.**
+
+`--dcm-test` runs nine configurations: loads from 6 ohm to 20 k, the app's own step and forced
+steps of 100 ns and 1 us, the freewheel diode's junction capacitance switched off, and the whole
+thing again with ideal parts - the diode a hard switch and the analog switch at r_off 1e9, which
+is the configuration the note describes. No runaway in any of them. The inductor current is
+measured rather than inferred, so the mode is proved rather than assumed: 0.198..1.62 A at 6 ohm
+never reaches zero, and every lighter load sits at zero for part of each cycle.
+
+Two plausible causes were tested and neither is the answer: the time step (it works at 1 us, a
+tenth of the switching period) and the junction capacitance stamped the same morning (it works
+with cjo forced to zero). Whatever caused the runaway has been fixed by one of the stamp
+corrections since. The original note is kept below, because a diagnosis that turned out to be
+wrong is worth keeping visible.
+
+The template exists now: the same 12 V buck twice, 100 kHz, 50 % duty, identical part values, one
+into 6 ohm (5.44 V, continuous) and one into 30 ohm (8.37 V, discontinuous). Both numbers are
+measured rather than predicted - the first draft used a 2 k load labelled "~9 V" from a 400 us
+run, and that load actually settles at 11.89 V, because 400 us is a twentieth of its RC.
+
+## The original note (2026-08-28)
 
 An asynchronous buck in discontinuous conduction has a third interval where neither the switch nor
 the diode conducts. With an ideal analog switch (r_off 1e9) that leaves the switch node undefined:

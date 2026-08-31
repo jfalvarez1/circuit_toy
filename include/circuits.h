@@ -175,6 +175,7 @@ typedef enum {
     CIRCUIT_HW_MATCH,
     CIRCUIT_HW_REFLECT,
     CIRCUIT_HW_LOOP,
+    CIRCUIT_HW_CCM_DCM,
     /* Ideal vs real: the same circuit twice, one part swapped for its non-ideal model */
     CIRCUIT_ID_SOURCE,
     CIRCUIT_ID_DIODE,

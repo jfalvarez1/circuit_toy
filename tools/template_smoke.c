@@ -4000,6 +4000,133 @@ static int fft_test(void) {
     return fails ? 1 : 0;
 }
 
+/* --dcm-test: the measured retry of the CCM-vs-DCM question.
+ *
+ * An asynchronous buck in discontinuous conduction has a third interval where neither the switch
+ * nor the diode conducts. With an ideal switch (r_off 1e9) that leaves the switch node undefined,
+ * and docs/ROADMAP.md records that it ran away to hundreds or thousands of volts. It was blocked
+ * on the time step: a realistic snubber could not be resolved at dt = 100 ns.
+ *
+ * Two things have changed since. MIN_TIME_STEP is 10 ps rather than 1 ns, and the simulation now
+ * measures its own period and refines its step. So this asks the question again with numbers
+ * instead of assuming the old answer still holds: take the Buck Converter template, walk the load
+ * from heavy (continuous) to very light (deeply discontinuous), and report what the switch node
+ * actually does at each. A node that stays inside a few times the input is behaving; one that
+ * reaches kilovolts is the fault this item is about.
+ */
+static int dcm_test(void) {
+    /* R_load, and roughly what it means for a 12 V / 100 kHz / 220 uH buck at 50 % duty:
+       critical conduction is near R = 2 L f / (1 - D) ~ 88 ohm, so above that is DCM. */
+    static const struct { double rload; double dt_force; int no_cjo; const char *what; } cases[] = {
+        {   5.0, 0, 0, "heavy: deep CCM" },
+        {  50.0, 0, 0, "moderate" },
+        { 200.0, 0, 0, "light: DCM" },
+        { 2000.0, 0, 0, "very light: deep DCM" },
+        { 20000.0, 0, 0, "near open circuit" },
+        /* The same deep-DCM load at the step this was blocked on. docs/ROADMAP.md recorded that a
+           realistic snubber could not be resolved at dt = 100 ns, and the item sat unbuilt on that
+           basis; this row is what says whether the step was really the cause. */
+        { 2000.0, 100e-9, 0, "deep DCM at dt=100ns" },
+        { 2000.0, 1e-6, 0, "deep DCM at dt=1us" },
+        /* The same deep-DCM load with the freewheel diode's junction capacitance switched off.
+           docs/ROADMAP.md said what this item needed was "a switch model with a defined off-state
+           capacitance" - and a junction capacitance was stamped for the first time this morning,
+           for an unrelated reason. This row asks whether that is what defines the switch node
+           during the interval when neither device conducts. */
+        { 2000.0, 0, 1, "deep DCM, cjo = 0" },
+        /* The configuration docs/ROADMAP.md describes: ideal parts, where the diode is a hard
+           switch rather than a Shockley exponential and the analog switch is r_off = 1e9. If the
+           runaway is real, it is here - a real diode always leaks a little, so the node it sits
+           on is never truly floating. */
+        { 2000.0, 0, 2, "deep DCM, ideal parts" },
+    };
+    int fails = 0;
+    printf("dcm-test: the switch node across the conduction boundary\n\n");
+    printf("%-22s %12s %14s %14s   %s\n", "load", "R", "max |V| node", "final Vout", "verdict");
+
+    for (unsigned k = 0; k < sizeof cases / sizeof cases[0]; k++) {
+        Circuit *c = circuit_create();
+        if (!c) return 1;
+        if (circuit_place_template(c, CIRCUIT_HW_BUCK, 0, 0) <= 0) { circuit_free(c); continue; }
+
+        /* the load is the largest resistor in the template; scale it to move the operating point */
+        Component *load = NULL;
+        for (int i = 0; i < c->num_components; i++) {
+            Component *comp = c->components[i];
+            if (comp->type != COMP_RESISTOR) continue;
+            if (!load || comp->props.resistor.resistance > load->props.resistor.resistance) load = comp;
+        }
+        if (!load) { circuit_free(c); continue; }
+        load->props.resistor.resistance = cases[k].rload;
+        load->props.resistor.power_rating = 1e6;   /* not the subject of this test */
+        if (cases[k].no_cjo) {
+            for (int i = 0; i < c->num_components; i++) {
+                Component *d = c->components[i];
+                if (d->type == COMP_DIODE || d->type == COMP_SCHOTTKY) {
+                    d->props.diode.cjo = 0.0;
+                    if (cases[k].no_cjo == 2) d->props.diode.ideal = true;
+                }
+                if (cases[k].no_cjo == 2 && d->type == COMP_ANALOG_SWITCH) d->props.analog_switch.ideal = true;
+            }
+        }
+
+        Simulation *sim = simulation_create(c);
+        if (!sim) { circuit_free(c); continue; }
+        int ok = simulation_dc_analysis(sim);
+        simulation_auto_time_step(sim);
+        { double dtp = simulation_scope_time_step(sim, 2e-6);
+          if (dtp > 0 && dtp < sim->time_step) simulation_set_time_step(sim, dtp); }
+        if (cases[k].dt_force > 0) {
+            simulation_enable_adaptive(sim, false);
+            simulation_set_time_step(sim, cases[k].dt_force);
+        }
+        simulation_start(sim);
+        /* again after start: it re-derives the step, which silently undid the force */
+        if (cases[k].dt_force > 0) simulation_set_time_step(sim, cases[k].dt_force);
+
+        Component *ind = NULL;
+        for (int i = 0; i < c->num_components; i++)
+            if (c->components[i]->type == COMP_INDUCTOR) { ind = c->components[i]; break; }
+        double i_min = 1e300, i_max = -1e300;
+        double vmax = 0, vout = 0;
+        int guard = 0;
+        double t_end = 400e-6;      /* 40 switching cycles at 100 kHz */
+        while (ok && sim->time < t_end && guard++ < 4000000) {
+            if (!simulation_step(sim)) { ok = 0; break; }
+            if (ind && sim->time > 300e-6) {          /* after the start-up ramp */
+                simulation_update_flow_display(sim);
+                double il = ind->terminal_current[0];
+                if (il < i_min) i_min = il;
+                if (il > i_max) i_max = il;
+            }
+            for (int i = 0; i < c->num_nodes; i++) {
+                double v = fabs(c->nodes[i].voltage);
+                if (v > vmax) vmax = v;
+                if (!isfinite(v)) { ok = 0; break; }
+            }
+        }
+        if (ok && c->num_probes > 0) vout = simulation_get_probe_voltage(sim, c->num_probes - 1);
+
+        /* 12 V in: anything past 60 V on any node is the runaway this item is about. */
+        int bad = !ok || vmax > 60.0;
+        if (bad) fails++;
+        /* Whether the cycle is actually discontinuous: the inductor current reaching zero and
+           staying there for part of the cycle is what creates the third interval this item is
+           about. A rising Vout is suggestive; the current is proof. */
+        const char *mode = (i_min > 1e299) ? "?" : (i_min <= 0.001 * i_max) ? "DCM" : "CCM";
+        printf("%s %-20s %12.4g %14.4g %14.4g   %-22s IL %.3g..%.3g A (%s)\n",
+               bad ? "[FAIL]" : "[ OK ]", cases[k].what, cases[k].rload, vmax, vout,
+               !ok ? "did not run" : vmax > 60.0 ? "switch node runs away" : "bounded",
+               i_min > 1e299 ? 0.0 : i_min, i_max < -1e299 ? 0.0 : i_max, mode);
+
+        simulation_free(sim);
+        circuit_free(c);
+    }
+    printf("\ndcm-test: %d loads across the conduction boundary, %d where a node runs away\n",
+           (int)(sizeof cases / sizeof cases[0]), fails);
+    return fails ? 1 : 0;
+}
+
 static int meas_test(void) {
     enum { N = 4000 };
     static double ts[N], vs[N];
@@ -4796,6 +4923,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--osc-test")) return osc_test();
         else if (!strcmp(argv[i], "--dvdt-test")) return dvdt_test();
         else if (!strcmp(argv[i], "--meas-test")) return meas_test();
+        else if (!strcmp(argv[i], "--dcm-test")) return dcm_test();
         else if (!strcmp(argv[i], "--fft-test")) return fft_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--label-test")) return label_test();
