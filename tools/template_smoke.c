@@ -4515,6 +4515,119 @@ static int conv_test(void) {
     return fails ? 1 : 0;
 }
 
+/* --mc-test: the Monte Carlo analysis, against the arithmetic of error propagation.
+ *
+ * The panel offers a tolerance and a number of runs and prints a mean, a standard deviation, a
+ * minimum and a maximum. Nothing checked any of it. A Monte Carlo that forgot to randomise would
+ * print a standard deviation of zero and look like a very well designed circuit.
+ *
+ * The oracle is a two-resistor divider, built here so its composition is known exactly rather
+ * than read off a template that might gain a part. Its output is
+ *
+ *     Vout = V . R2 / (R1 + R2)
+ *
+ * and the analysis varies V, R1 and R2 independently by a relative sigma s - the code takes the
+ * quoted tolerance as three sigma, which is the usual reading of a tolerance band. Propagating:
+ *
+ *     dVout/dV  . dV  = Vout . s
+ *     dVout/dR1 . dR1 = -V R1 R2 / (R1+R2)^2 . s
+ *     dVout/dR2 . dR2 =  V R1 R2 / (R1+R2)^2 . s
+ *
+ * so the relative spread of the output is
+ *
+ *     sigma_rel = s . sqrt( 1 + 2 (R1/(R1+R2))^2 )
+ *
+ * which for equal resistors is 1.2247 s. That number comes from calculus and not from the
+ * simulator, which is the point.
+ *
+ * The bands are loose because a sample of N runs knows its own sigma only to about 1/sqrt(2N) -
+ * 3.5 % at 400 runs - and because a Gaussian fed through a division is not exactly Gaussian.
+ */
+static int mc_test(void) {
+    int fails = 0, checks = 0;
+    static const struct { double r1, r2, tol_pct; int runs; } cases[] = {
+        { 10000.0, 10000.0, 10.0, 400 },
+        { 10000.0, 10000.0,  1.0, 400 },
+        {  1000.0, 10000.0,  5.0, 400 },
+    };
+
+    for (unsigned k = 0; k < sizeof cases / sizeof cases[0]; k++) {
+        double R1 = cases[k].r1, R2 = cases[k].r2, V = 10.0;
+        Circuit *c = circuit_create();
+        if (!c) { fails++; continue; }
+        Component *src = pt_add(c, COMP_DC_VOLTAGE, 0, 60, 0);
+        src->props.dc_voltage.voltage = V;
+        Component *g0 = pt_add(c, COMP_GROUND, 0, 160, 0);
+        Component *r1 = pt_add(c, COMP_RESISTOR, 120, 20, 0);
+        r1->props.resistor.resistance = R1;
+        Component *r2 = pt_add(c, COMP_RESISTOR, 240, 60, 90);
+        r2->props.resistor.resistance = R2;
+        Component *g1 = pt_add(c, COMP_GROUND, 240, 160, 0);
+
+        int sp = pt_node(c, 0, 20), sm = pt_node(c, 0, 100), gt = pt_node(c, 0, 140);
+        int ra = pt_node(c, 80, 20), rb = pt_node(c, 160, 20);
+        int mid = pt_node(c, 240, 20), r2b = pt_node(c, 240, 100), g1t = pt_node(c, 240, 140);
+        src->node_ids[0] = sp; src->node_ids[1] = sm;
+        g0->node_ids[0] = gt;
+        r1->node_ids[0] = ra; r1->node_ids[1] = rb;
+        r2->node_ids[0] = mid; r2->node_ids[1] = r2b;
+        g1->node_ids[0] = g1t;
+        circuit_add_wire(c, sp, ra);
+        circuit_add_wire(c, rb, mid);
+        circuit_add_wire(c, sm, gt);
+        circuit_add_wire(c, r2b, g1t);
+        Node *mn = circuit_get_node(c, mid);
+        circuit_add_probe(c, mid, mn ? mn->x : 240, mn ? mn->y : 20);
+
+        Simulation *sim = simulation_create(c);
+        AnalysisState an;
+        analysis_init(&an);
+        analysis_monte_carlo_init(&an, cases[k].runs, true, cases[k].tol_pct);
+        static MCBackup backup;
+        memset(&backup, 0, sizeof backup);
+        int guard = 0;
+        while (!analysis_monte_carlo_step(&an, c, sim, 0, &backup) && guard++ < 5000) { }
+
+        MonteCarloAnalysis *mc = &an.monte_carlo;
+        double nominal = V * R2 / (R1 + R2);
+        double s = cases[k].tol_pct / 100.0 / 3.0;
+        double frac = R1 / (R1 + R2);
+        double want_rel = s * sqrt(1.0 + 2.0 * frac * frac);
+        double got_rel = (mc->mean != 0) ? mc->std_dev / fabs(mc->mean) : 0;
+
+        checks += 2;
+        int bad_mean = !(fabs(mc->mean - nominal) <= 0.02 * nominal + 1e-9);
+        /* the sample knows its own sigma to about 1/sqrt(2N); 25 % is far outside that */
+        int bad_sd = !(want_rel > 0 && fabs(got_rel - want_rel) <= 0.25 * want_rel);
+        if (bad_mean) fails++;
+        if (bad_sd) fails++;
+
+        printf("%s mc    R1=%-7.0f R2=%-7.0f tol=%-4.1f%% n=%d  mean %.4f (want %.4f)  "
+               "sigma/mean %.4f (want %.4f)  results=%d\n",
+               (bad_mean || bad_sd) ? "[FAIL]" : "[ OK ]",
+               R1, R2, cases[k].tol_pct, cases[k].runs, mc->mean, nominal,
+               got_rel, want_rel, mc->num_results);
+
+        /* and the values have to come back afterwards: an analysis that leaves the circuit
+           randomised has quietly edited the user's schematic */
+        checks++;
+        if (fabs(r1->props.resistor.resistance - R1) > 1e-6 * R1 ||
+            fabs(r2->props.resistor.resistance - R2) > 1e-6 * R2 ||
+            fabs(src->props.dc_voltage.voltage - V) > 1e-9) {
+            printf("[FAIL] mc    the circuit was left randomised: R1 %.4g, R2 %.4g, V %.4g\n",
+                   r1->props.resistor.resistance, r2->props.resistor.resistance,
+                   src->props.dc_voltage.voltage);
+            fails++;
+        }
+
+        simulation_free(sim);
+        circuit_free(c);
+    }
+    printf("\nmc-test: %d checks over %u divider cases against propagated error, %d failed\n",
+           checks, (unsigned)(sizeof cases / sizeof cases[0]), fails);
+    return fails ? 1 : 0;
+}
+
 static int dcm_test(void) {
     /* R_load, and roughly what it means for a 12 V / 100 kHz / 220 uH buck at 50 % duty:
        critical conduction is near R = 2 L f / (1 - D) ~ 88 ohm, so above that is DCM. */
@@ -5587,6 +5700,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--iv-test")) return iv_test();
         else if (!strcmp(argv[i], "--conv-test")) return conv_test();
         else if (!strcmp(argv[i], "--stress-test")) return stress_test(i + 1 < argc ? argv[++i] : NULL);
+        else if (!strcmp(argv[i], "--mc-test")) return mc_test();
         else if (!strcmp(argv[i], "--fft-test")) return fft_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--label-test")) return label_test();

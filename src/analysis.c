@@ -183,34 +183,12 @@ void analysis_monte_carlo_init(AnalysisState *state, int num_runs,
     state->monte_carlo.complete = false;
 }
 
-void analysis_monte_carlo_run(AnalysisState *state, Circuit *circuit,
-                              Simulation *sim, int probe_idx) {
-    if (!state->monte_carlo.active || state->monte_carlo.complete) return;
-
-    MonteCarloAnalysis *mc = &state->monte_carlo;
-
-    // Get output value from simulation
-    if (sim && probe_idx >= 0) {
-        double times[MAX_HISTORY], values[MAX_HISTORY];
-        int count = simulation_get_history(sim, probe_idx, times, values, 50);
-
-        if (count > 0) {
-            // Use RMS as the output metric
-            double sum_sq = 0;
-            for (int i = 0; i < count; i++) {
-                sum_sq += values[i] * values[i];
-            }
-            mc->output_values[mc->current_run] = sqrt(sum_sq / count);
-            mc->num_results = mc->current_run + 1;
-        }
-    }
-
-    mc->current_run++;
-    if (mc->current_run >= mc->num_runs) {
-        mc->complete = true;
-        analysis_monte_carlo_stats(state);
-    }
-}
+/* analysis_monte_carlo_run() used to live here: a second Monte Carlo that recorded an RMS and
+   never randomised anything. Nothing called it - the app runs analysis_monte_carlo_step() - so it
+   was a spare implementation of the same feature that would have reported a standard deviation of
+   zero, which reads as a very well designed circuit rather than as a bug. Deleted rather than
+   fixed, because one of these is enough and --mc-test now holds the remaining one to the
+   arithmetic of error propagation. */
 
 static int compare_double(const void *a, const void *b) {
     double da = *(const double*)a;

@@ -232,8 +232,6 @@ void analysis_sweep_reset(AnalysisState *state);
 // Monte Carlo analysis
 void analysis_monte_carlo_init(AnalysisState *state, int num_runs,
                                bool use_tolerance, double global_tol);
-void analysis_monte_carlo_run(AnalysisState *state, Circuit *circuit,
-                              Simulation *sim, int probe_idx);
 void analysis_monte_carlo_stats(AnalysisState *state);
 void analysis_monte_carlo_reset(AnalysisState *state);
 
