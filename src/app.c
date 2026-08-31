@@ -1064,8 +1064,7 @@ void app_handle_events(App *app) {
                        exactly, and a file already does that. */
                     circuit_push_snapshot_undo(app->circuit);
                     circuit_clear_after_snapshot(app->circuit);
-                    input_cancel_action(&app->input);
-                    app->input.selected_component = NULL;
+                    input_forget_circuit(&app->input);
                     app->has_file = false;
                     app->current_file[0] = '\0';
 
@@ -2778,8 +2777,7 @@ void app_new_circuit(App *app) {
     circuit_clear_after_snapshot(app->circuit);
     app->has_file = false;
     app->current_file[0] = '\0';
-    input_cancel_action(&app->input);
-    app->input.selected_component = NULL;
+    input_forget_circuit(&app->input);
     ui_set_status(&app->ui, "New circuit created");
 }
 
@@ -2822,6 +2820,9 @@ void app_load_circuit(App *app) {
                       "Circuit files (*.json;*.ckt)\0*.json;*.ckt\0All files (*.*)\0*.*\0"))
         filename = picked;
 
+    /* Before the load, not after: file_import_json clears the circuit and frees every part, and
+       the selection points into it. */
+    input_forget_circuit(&app->input);
     if (file_import_json(app->circuit, filename)) {
         strncpy(app->current_file, filename, sizeof(app->current_file) - 1);
         app->has_file = true;

@@ -1856,6 +1856,28 @@ void input_cancel_action(InputState *input) {
     input->box_selecting = false;
 }
 
+/* Let go of every pointer into the circuit.
+   Anything that replaces the circuit wholesale - New, opening a file, loading a template - frees
+   every component, and these are raw Component pointers into that array. Opening a file did not
+   drop them at all: file_import_json calls circuit_clear, which frees every part, and
+   input.selected_component went on pointing at one. ui_render_properties is handed that pointer
+   every frame, so the freed part was read on the next one. New and the template load cleared
+   selected_component by hand and left multi_selected[] behind, which is the same fault with a
+   longer fuse - the next box-select or Ctrl+A would walk it.
+
+   A property being typed goes too. It is applied to whichever part is selected when Enter is
+   pressed, so an edit left half-typed across a load would land on a part of the new circuit. */
+void input_forget_circuit(InputState *input) {
+    if (!input) return;
+    input_cancel_action(input);
+    input->selected_component = NULL;
+    for (int i = 0; i < 64; i++) input->multi_selected[i] = NULL;
+    input->multi_selected_count = 0;
+    input->selected_probe_idx = -1;
+    input->editing_property = false;
+    input->input_buffer[0] = '\0';
+}
+
 void input_delete_selected(InputState *input, Circuit *circuit) {
     if (!input || !circuit) return;
 

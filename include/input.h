@@ -333,6 +333,8 @@ void input_start_placing(InputState *input, ComponentType type);
 
 // Cancel current action
 void input_cancel_action(InputState *input);
+/* Drop every pointer into the circuit - call whenever the circuit is replaced wholesale */
+void input_forget_circuit(InputState *input);
 
 // Delete selected component
 void input_delete_selected(InputState *input, Circuit *circuit);
