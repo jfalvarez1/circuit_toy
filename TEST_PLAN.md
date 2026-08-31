@@ -899,6 +899,25 @@ The thing worth carrying forward: **a template's annotation is an assertion, and
 testing the assertions.** Every suite in the battery checked that these circuits run, converge,
 conserve charge and lay out cleanly. None of them read what the circuit claims about itself.
 
+### 3.37 v3.23.1 - the interview templates, and the step rule behind one of them (2026-08-31)
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.37.1 | `[ ]` **Automated:** `--iv-test` | 26 of 26 documented numbers reproduce and **none moves at dt/8**, with no exemptions. Inrush moved 8.2 % until the step rule learned to look at a circuit's own RC |
+| 3.37.2 | `[ ]` **Automated:** the step rule | `simulation_accuracy_time_step` took the step from source periods and pulse widths only. It now also takes ten samples across the fastest RC - but only where no source sets the pace, only where the circuit has not measured its own period, and never for a circuit with an inductor, a crystal or a transformer. Each of those three conditions is a bug it caused without them, written up in `docs/ROADMAP.md` |
+| 3.37.3 | `[ ]` Load **Hot-Plug Inrush** | The rail sags to 10.0 V, not 11.3: 200 A through the supply's own 10 mohm is 2 V, and the coarse step was hiding it. The annotation said 12/0.05 = 240 A and forgot that same 10 mohm |
+| 3.37.4 | `[ ]` Load **The Two-Capacitor Problem** and **Hot-Plug Inrush** | The scope catches the event and holds it. Both are one-shots that were left on AUTO, so the scope free-ran over a settled circuit and drew flat lines |
+| 3.37.5 | `[ ]` Load any interview template and count the traces | Every one of the nineteen puts its own comparison on the scope. Eleven were showing one answer of the two or three they are about |
+| 3.37.6 | `[ ]` Load **Termination** | Three bands: 4.55 V open, 3.28 V series, 2.45 V shunt. And the band labels sit inside the graticule - the tag was placed at a fixed offset that fitted "IN" and clipped "SERIES" to "SERI" |
+| 3.37.7 | `[ ]` **Automated:** `--class-test` | The Relaxation Oscillator reads periodic at 2.2478 ms, which is the 445 Hz `--osc-test` had been measuring all along. It read "one-shot" because the class horizon gave it 8 ms and it needs 10 to start |
+| 3.37.8 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 48 suites, 0 failed, ~205 s |
+
+The thing worth carrying forward: **three of the faults in this release were a fixed pixel offset
+standing in for a measured width** - the toolbar controls off the right edge of the window, the
+scope's readout row sliced by the status bar, and the channel tag clipped at the graticule. The
+fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
+standing in for what the circuit does.
+
 ## 4. Oscilloscope
 
 Setup: AC 1 V 1 kHz + 2nd probe on divider output; square 500 Hz on CH3.
