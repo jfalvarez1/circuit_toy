@@ -3109,6 +3109,22 @@ CapCompanion component_cap_companion(const Component *comp, double dt, bool tran
    The capacitance is taken at zero bias rather than as the usual Cjo/(1 - V/Vj)^m: the bias
    dependence matters for a varactor's tuning and not for the charge that has to be accounted
    for here, and a constant is one thing to be right about rather than three. */
+/* A conductance from a resistance, with a floor.
+
+   Dividing straight by a resistance is how a zero a user typed reaches the matrix as an infinity,
+   and one infinity makes every node in the circuit come back NaN - which the scope then draws and
+   the measurements panel then prints. --stress-test found it on the analog switch, where an
+   on-resistance of zero is a perfectly reasonable thing to ask for and produced "NaN at node 1"
+   across five templates.
+
+   1e-9 ohm is the floor the ammeter stamp already used for the same reason, kept here so there is
+   one number rather than two. The condition is written so that a NaN or a negative also lands on
+   the floor rather than sailing through. */
+static double conductance_of(double R) {
+    if (!(R > 1e-9)) R = 1e-9;
+    return 1.0 / R;
+}
+
 static void stamp_junction_cap(Component *comp, Matrix *A, Vector *b, const int *n,
                                double cjo, double dt) {
     (void)comp;
@@ -3230,7 +3246,7 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             /* A real current source is a Norton pair: the shunt resistance carries some of the
                current once the compliance voltage rises. Ideal mode (the default) omits it. */
             if (!comp->props.dc_current.ideal && comp->props.dc_current.r_parallel > 0)
-                STAMP_CONDUCTANCE(n[0], n[1], 1.0 / comp->props.dc_current.r_parallel);
+                STAMP_CONDUCTANCE(n[0], n[1], conductance_of(comp->props.dc_current.r_parallel));
             if (n[0] > 0) vector_add(b, n[0]-1, -I);
             if (n[1] > 0) vector_add(b, n[1]-1, I);
             break;
@@ -4992,10 +5008,10 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double R_ca = (pos == 0) ? r_on : r_off;
             double R_cb = (pos == 1) ? r_on : r_off;
 
-            STAMP_CONDUCTANCE(n[0], n[2], 1.0/R_ca);  // C1 to A
-            STAMP_CONDUCTANCE(n[0], n[3], 1.0/R_cb);  // C1 to B
-            STAMP_CONDUCTANCE(n[1], n[2], 1.0/R_cb);  // C2 to A (opposite)
-            STAMP_CONDUCTANCE(n[1], n[3], 1.0/R_ca);  // C2 to B (opposite)
+            STAMP_CONDUCTANCE(n[0], n[2], conductance_of(R_ca));  // C1 to A
+            STAMP_CONDUCTANCE(n[0], n[3], conductance_of(R_cb));  // C1 to B
+            STAMP_CONDUCTANCE(n[1], n[2], conductance_of(R_cb));  // C2 to A (opposite)
+            STAMP_CONDUCTANCE(n[1], n[3], conductance_of(R_ca));  // C2 to B (opposite)
             break;
         }
 
@@ -5017,7 +5033,7 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // --- Coil Circuit (R + L in series) ---
             if (comp->props.relay.ideal || L_coil < 1e-9) {
                 // Ideal mode: just coil resistance, no inductance
-                STAMP_CONDUCTANCE(n[0], n[1], 1.0/R_coil);
+                STAMP_CONDUCTANCE(n[0], n[1], conductance_of(R_coil));
 
             } else {
                 // Non-ideal: R + L companion model
@@ -5039,7 +5055,7 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double R_contact = energized ?
                               comp->props.relay.r_contact_on :
                               comp->props.relay.r_contact_off;
-            STAMP_CONDUCTANCE(n[2], n[3], 1.0/R_contact);
+            STAMP_CONDUCTANCE(n[2], n[3], conductance_of(R_contact));
             break;
         }
 
@@ -5054,7 +5070,7 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                                                        : (v_ctl >= comp->props.analog_switch.v_on);
             comp->props.analog_switch.state = on;   // so a manual click starts from the state it is in
             double R = on ? comp->props.analog_switch.r_on : comp->props.analog_switch.r_off;
-            STAMP_CONDUCTANCE(n[0], n[1], 1.0/R);
+            STAMP_CONDUCTANCE(n[0], n[1], conductance_of(R));
             break;
         }
 

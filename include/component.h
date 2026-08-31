@@ -770,6 +770,18 @@ typedef union {
 } ComponentProps;
 
 // Component structure
+/* The largest storage values the solver stays conditioned at. A capacitor's companion is a
+   conductance of C/dt, and dt goes down to 10 ps, so a big enough C puts a number in the matrix
+   that swamps every real conductance in the circuit and the solve comes apart: --stress-test
+   measures a clean solve at 1e6 F and a runaway to -4e5 V in a twelve volt circuit at 1e9. The
+   same for an inductor at 1e9 H and above.
+
+   A megafarad and a megahenry are already absurd - the largest supercapacitors made are a few
+   thousand farads - so this refuses nothing anyone would ask for, and it refuses it at the point
+   the value is typed rather than letting the scope show a number that is not a number. */
+#define MAX_CAPACITANCE 1e6
+#define MAX_INDUCTANCE  1e6
+
 typedef struct Component {
     int id;
     ComponentType type;

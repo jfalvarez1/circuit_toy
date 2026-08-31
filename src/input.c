@@ -2092,14 +2092,18 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                 case COMP_RESISTOR:
                     if (value > 0) { comp->props.resistor.resistance = value; applied = true; }
                     break;
+                /* An upper bound as well as a lower one - see MAX_CAPACITANCE. "value > 0" alone
+                   accepted 1e12 F, which is positive and which the solver cannot carry: the
+                   companion conductance C/dt swamps the circuit and the scope shows a runaway
+                   rather than a refusal. */
                 case COMP_CAPACITOR:
-                    if (value > 0) { comp->props.capacitor.capacitance = value; applied = true; }
+                    if (value > 0 && value <= MAX_CAPACITANCE) { comp->props.capacitor.capacitance = value; applied = true; }
                     break;
                 case COMP_CAPACITOR_ELEC:
-                    if (value > 0) { comp->props.capacitor_elec.capacitance = value; applied = true; }
+                    if (value > 0 && value <= MAX_CAPACITANCE) { comp->props.capacitor_elec.capacitance = value; applied = true; }
                     break;
                 case COMP_INDUCTOR:
-                    if (value > 0) { comp->props.inductor.inductance = value; applied = true; }
+                    if (value > 0 && value <= MAX_INDUCTANCE) { comp->props.inductor.inductance = value; applied = true; }
                     break;
                 case COMP_SQUARE_WAVE:
                     if (value > 0) { comp->props.square_wave.amplitude = value; applied = true; }
@@ -2637,7 +2641,9 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             if ((comp->type == COMP_SPST_SWITCH || comp->type == COMP_SPDT_SWITCH ||
                  comp->type == COMP_DPDT_SWITCH || comp->type == COMP_PUSH_BUTTON) &&
                 value > 0 && value <= 1e9) {
-                comp->props.switch_spst.r_on = value; applied = true;
+                /* Every other value row tests what it was given; this one took anything,
+                   including the zero that reaches the switch stamp as a division. */
+                if (value > 0) { comp->props.switch_spst.r_on = value; applied = true; }
             }
             break;
         case PROP_R_OFF:
