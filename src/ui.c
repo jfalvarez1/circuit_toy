@@ -8,6 +8,10 @@
 
 #include <math.h>
 #include "ui.h"
+
+/* Defined below, next to the panel it serves; declared here because draw_sweep_config
+   emits rows before that point. */
+static PropertyField *ui_prop_slot(UIState *ui);
 #include "input.h"
 #include "circuits.h"
 #include "analysis.h"
@@ -1417,8 +1421,8 @@ static int draw_sweep_config(SDL_Renderer *renderer, UIState *ui, int x, int pro
         SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
     }
     ui_draw_text(renderer, sweep->enabled ? "[ON]" : "[OFF]", x + 100, prop_y + 2);
-    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 40, 14};
-    ui->properties[ui->num_properties].prop_type = enable_prop;
+    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, 40, 14};
+    (*ui_prop_slot(ui)).prop_type = enable_prop;
     ui->num_properties++;
     prop_y += 16;
 
@@ -1432,8 +1436,8 @@ static int draw_sweep_config(SDL_Renderer *renderer, UIState *ui, int x, int pro
         SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
         snprintf(buf, sizeof(buf), "[%s]", mode_names[mode_idx]);
         ui_draw_text(renderer, buf, x + 100, prop_y + 2);
-        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 60, 14};
-        ui->properties[ui->num_properties].prop_type = mode_prop;
+        (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, 60, 14};
+        (*ui_prop_slot(ui)).prop_type = mode_prop;
         ui->num_properties++;
         prop_y += 16;
 
@@ -1442,8 +1446,8 @@ static int draw_sweep_config(SDL_Renderer *renderer, UIState *ui, int x, int pro
         snprintf(buf, sizeof(buf), "%.3g %s", sweep->start_value, unit);
         draw_property_field(renderer, x + 10, prop_y, prop_w, "  Start:", buf,
                            edit_start, input ? input->input_buffer : "", input ? input->input_cursor : 0);
-        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-        ui->properties[ui->num_properties].prop_type = start_prop;
+        (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+        (*ui_prop_slot(ui)).prop_type = start_prop;
         ui->num_properties++;
         prop_y += 16;
 
@@ -1452,8 +1456,8 @@ static int draw_sweep_config(SDL_Renderer *renderer, UIState *ui, int x, int pro
         snprintf(buf, sizeof(buf), "%.3g %s", sweep->end_value, unit);
         draw_property_field(renderer, x + 10, prop_y, prop_w, "  End:", buf,
                            edit_end, input ? input->input_buffer : "", input ? input->input_cursor : 0);
-        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-        ui->properties[ui->num_properties].prop_type = end_prop;
+        (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+        (*ui_prop_slot(ui)).prop_type = end_prop;
         ui->num_properties++;
         prop_y += 16;
 
@@ -1462,8 +1466,8 @@ static int draw_sweep_config(SDL_Renderer *renderer, UIState *ui, int x, int pro
         snprintf(buf, sizeof(buf), "%.3g s", sweep->sweep_time);
         draw_property_field(renderer, x + 10, prop_y, prop_w, "  Time:", buf,
                            edit_time, input ? input->input_buffer : "", input ? input->input_cursor : 0);
-        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-        ui->properties[ui->num_properties].prop_type = time_prop;
+        (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+        (*ui_prop_slot(ui)).prop_type = time_prop;
         ui->num_properties++;
         prop_y += 16;
 
@@ -1473,8 +1477,8 @@ static int draw_sweep_config(SDL_Renderer *renderer, UIState *ui, int x, int pro
             snprintf(buf, sizeof(buf), "%d", sweep->num_steps);
             draw_property_field(renderer, x + 10, prop_y, prop_w, "  Steps:", buf,
                                edit_steps, input ? input->input_buffer : "", input ? input->input_cursor : 0);
-            ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-            ui->properties[ui->num_properties].prop_type = steps_prop;
+            (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+            (*ui_prop_slot(ui)).prop_type = steps_prop;
             ui->num_properties++;
             prop_y += 16;
         }
@@ -1488,8 +1492,8 @@ static int draw_sweep_config(SDL_Renderer *renderer, UIState *ui, int x, int pro
             SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
         }
         ui_draw_text(renderer, sweep->repeat ? "[Yes]" : "[No]", x + 100, prop_y + 2);
-        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 40, 14};
-        ui->properties[ui->num_properties].prop_type = repeat_prop;
+        (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, 40, 14};
+        (*ui_prop_slot(ui)).prop_type = repeat_prop;
         ui->num_properties++;
         prop_y += 16;
     }
@@ -1511,6 +1515,27 @@ bool probe_label_is_default(const char *label) {
     if (label[0] != 'C' || label[1] != 'H') return false;
     for (const char *p = label + 2; *p; p++) if (*p < '0' || *p > '9') return false;
     return label[2] != '\0';
+}
+
+/* The slot the next property row goes in, or a bin if the panel has run out.
+
+   Every row in this panel is emitted as
+       ui->properties[ui->num_properties].bounds = ...;
+       ui->properties[ui->num_properties].prop_type = ...;
+       ui->num_properties++;
+   at 157 places, and not one of them tested num_properties against the size of the array. An AC
+   voltage source with both its amplitude and frequency sweeps enabled emits 17 rows into 16 slots,
+   and the fields that follow the array are num_properties itself and editing_component - so row 16
+   set num_properties to a screen coordinate and editing_component to a pair of rectangle
+   dimensions, and the next store went wherever that coordinate pointed. Two clicks on the panel
+   reach it, and it repeats every frame the panel is drawn.
+
+   Writes past the end land in the bin and are dropped. Nothing reads the bin. */
+static PropertyField *ui_prop_slot(UIState *ui) {
+    static PropertyField overflow_bin;
+    if (!ui || ui->num_properties < 0 || ui->num_properties >= UI_MAX_PROPERTY_ROWS)
+        return &overflow_bin;
+    return &ui->properties[ui->num_properties];
 }
 
 void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *selected, struct InputState *input) {
@@ -1600,8 +1625,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
             ui_draw_text(renderer, "Part:", x + 10, prop_y + 2);
             SDL_SetRenderDrawColor(renderer, 0xff, 0xd7, 0x4a, 0xff);
             ui_draw_text(renderer, selected->part[0] ? selected->part : "[generic]", x + 100, prop_y + 2);
-            ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-            ui->properties[ui->num_properties].prop_type = PROP_PART;
+            (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+            (*ui_prop_slot(ui)).prop_type = PROP_PART;
             ui->num_properties++;
             prop_y += 16;
             if (selected->part[0]) {
@@ -1630,8 +1655,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.dc_voltage.voltage);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Voltage:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -1640,8 +1665,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.dc_voltage.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -1650,8 +1675,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool edit_rs = input && input->editing_property && input->editing_prop_type == PROP_R_SERIES;
                     format_engineering(selected->props.dc_voltage.r_series, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "R_series:", buf, edit_rs, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_R_SERIES;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_R_SERIES;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -1671,32 +1696,32 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.ac_voltage.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                 ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.ac_voltage.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_FREQUENCY;
                 ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.1f deg", selected->props.ac_voltage.phase);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Phase:", buf,
                                    editing_phase, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_PHASE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_PHASE;
                 ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.ac_voltage.offset);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Offset:", buf,
                                    editing_offset, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_OFFSET;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_OFFSET;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -1705,8 +1730,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.ac_voltage.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -1715,8 +1740,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool edit_rs = input && input->editing_property && input->editing_prop_type == PROP_R_SERIES;
                     format_engineering(selected->props.ac_voltage.r_series, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "R_series:", buf, edit_rs, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_R_SERIES;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_R_SERIES;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -1745,8 +1770,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g A", selected->props.dc_current.current);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Current:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -1755,8 +1780,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.dc_current.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -1765,8 +1790,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool edit_rp = input && input->editing_property && input->editing_prop_type == PROP_R_PARALLEL;
                     format_engineering(selected->props.dc_current.r_parallel, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "R_parallel:", buf, edit_rp, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_R_PARALLEL;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_R_PARALLEL;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -1786,8 +1811,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g Ohm", selected->props.resistor.resistance);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Resistance:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -1796,8 +1821,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.resistor.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -1806,8 +1831,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool edit_tc = input && input->editing_property && input->editing_prop_type == PROP_TEMP_COEFF;
                     snprintf(buf, sizeof(buf), "%.0f ppm/C", selected->props.resistor.temp_coeff);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Temp Coef:", buf, edit_tc, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_TEMP_COEFF;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_TEMP_COEFF;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -1837,8 +1862,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g F", selected->props.capacitor.capacitance);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Capacitance:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -1847,8 +1872,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.capacitor.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -1860,8 +1885,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     else
                         snprintf(buf, sizeof(buf), "none (C0G)");
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Bias 1/2:", buf, edit_vh, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_CAP_VHALF;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_CAP_VHALF;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -1869,8 +1894,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool edit_esr = input && input->editing_property && input->editing_prop_type == PROP_ESR;
                     format_engineering(selected->props.capacitor.esr, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "ESR:", buf, edit_esr, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_ESR;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_ESR;
                     ui->num_properties++;
                     prop_y += 18;
 
@@ -1881,8 +1906,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_LEAKAGE;
                     format_engineering(selected->props.capacitor.leakage, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Leakage:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_LEAKAGE;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_LEAKAGE;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -1890,8 +1915,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_ESL;
                     format_engineering(selected->props.capacitor.esl, "H", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "ESL:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_ESL;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_ESL;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -1917,8 +1942,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_VALUE;
                     format_engineering(selected->props.potentiometer.resistance, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Resistance:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -1926,8 +1951,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_WIPER_POS;
                     snprintf(buf, sizeof(buf), "%.3f", selected->props.potentiometer.wiper_pos);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Wiper (0-1):", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_WIPER_POS;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_WIPER_POS;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -1939,8 +1964,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_R_DARK;
                     format_engineering(selected->props.photoresistor.r_dark, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "R dark:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_R_DARK;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_R_DARK;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -1948,8 +1973,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_R_LIGHT;
                     format_engineering(selected->props.photoresistor.r_light, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "R light:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_R_LIGHT;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_R_LIGHT;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -1960,8 +1985,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_LDR_GAMMA;
                     snprintf(buf, sizeof(buf), "%.3f", selected->props.photoresistor.gamma);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Gamma:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_LDR_GAMMA;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_LDR_GAMMA;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -1973,8 +1998,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_R_25;
                     format_engineering(selected->props.thermistor.r_25, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "R at 25C:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_R_25;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_R_25;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -1982,8 +2007,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_BETA;
                     snprintf(buf, sizeof(buf), "%.0f", selected->props.thermistor.beta);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Beta (K):", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_BETA;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_BETA;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -1995,8 +2020,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_IDSS;
                     format_engineering(selected->props.jfet.idss, "A", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Idss:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_IDSS;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_IDSS;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2004,8 +2029,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_VP;
                     snprintf(buf, sizeof(buf), "%.3f V", selected->props.jfet.vp);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Vp:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_VP;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_VP;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2013,8 +2038,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_JFET_LAMBDA;
                     snprintf(buf, sizeof(buf), "%.4f", selected->props.jfet.lambda);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Lambda:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_JFET_LAMBDA;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_JFET_LAMBDA;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2026,8 +2051,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_VALUE;
                     format_engineering(selected->props.battery.nominal_voltage, "V", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Voltage:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2035,8 +2060,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_BATT_CAPACITY;
                     snprintf(buf, sizeof(buf), "%.0f", selected->props.battery.capacity_mah);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Capacity mAh:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_BATT_CAPACITY;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_BATT_CAPACITY;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2044,8 +2069,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_BATT_R;
                     format_engineering(selected->props.battery.internal_r, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Internal R:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_BATT_R;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_BATT_R;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2058,8 +2083,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_R_ON;
                     format_engineering(selected->props.switch_spst.r_on, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Contact on:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_R_ON;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_R_ON;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2067,8 +2092,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_R_OFF;
                     format_engineering(selected->props.switch_spst.r_off, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Contact off:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_R_OFF;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_R_OFF;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2080,8 +2105,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_R;
                     format_engineering(selected->props.dc_motor.r_armature, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "R armature:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_MOTOR_R;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_MOTOR_R;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2093,8 +2118,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_L;
                     format_engineering(selected->props.dc_motor.l_armature, "H", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "L armature:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_MOTOR_L;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_MOTOR_L;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2102,8 +2127,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_B;
                     snprintf(buf, sizeof(buf), "%.4g", selected->props.dc_motor.b_friction);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Friction b:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_MOTOR_B;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_MOTOR_B;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2112,8 +2137,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_KV;
                     snprintf(buf, sizeof(buf), "%.4g", selected->props.dc_motor.kv);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Kv (V.s/rad):", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_MOTOR_KV;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_MOTOR_KV;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2121,8 +2146,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_KT;
                     snprintf(buf, sizeof(buf), "%.4g", selected->props.dc_motor.kt);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Kt (Nm/A):", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_MOTOR_KT;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_MOTOR_KT;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2130,8 +2155,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_J;
                     snprintf(buf, sizeof(buf), "%.4g", selected->props.dc_motor.j_rotor);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Inertia J:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_MOTOR_J;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_MOTOR_J;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2139,8 +2164,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_MOTOR_TLOAD;
                     snprintf(buf, sizeof(buf), "%.4g", selected->props.dc_motor.torque_load);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Load torque:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_MOTOR_TLOAD;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_MOTOR_TLOAD;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2154,8 +2179,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_RELAY_R_COIL;
                     format_engineering(selected->props.relay.r_coil, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Coil R:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_RELAY_R_COIL;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_RELAY_R_COIL;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2163,8 +2188,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.relay.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
                 if (!selected->props.relay.ideal) {
@@ -2172,8 +2197,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_RELAY_L_COIL;
                     format_engineering(selected->props.relay.l_coil, "H", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Coil L:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_RELAY_L_COIL;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_RELAY_L_COIL;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2182,8 +2207,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_RELAY_I_PICKUP;
                     format_engineering(selected->props.relay.i_pickup, "A", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Pickup I:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_RELAY_I_PICKUP;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_RELAY_I_PICKUP;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2191,8 +2216,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_RELAY_I_DROPOUT;
                     format_engineering(selected->props.relay.i_dropout, "A", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Dropout I:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_RELAY_I_DROPOUT;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_RELAY_I_DROPOUT;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2200,8 +2225,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_RELAY_R_ON;
                     format_engineering(selected->props.relay.r_contact_on, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Contact on:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_RELAY_R_ON;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_RELAY_R_ON;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2209,8 +2234,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_RELAY_R_OFF;
                     format_engineering(selected->props.relay.r_contact_off, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Contact off:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_RELAY_R_OFF;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_RELAY_R_OFF;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2225,8 +2250,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_GAIN;
                     snprintf(buf, sizeof(buf), "%.4g", selected->props.controlled_source.gain);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, (selected->type == COMP_VCVS ? "Gain (V/V):" : selected->type == COMP_VCCS ? "Gain (A/V):" : selected->type == COMP_CCVS ? "Gain (V/A):" : "Gain (A/A):"), buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_GAIN;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_GAIN;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2239,8 +2264,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_CS_RIN;
                     format_engineering(selected->props.controlled_source.r_in, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "R input:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_CS_RIN;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_CS_RIN;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2253,8 +2278,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.4g : 1", selected->props.transformer.turns_ratio);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Turns N2/N1:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -2268,8 +2293,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.transformer.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -2283,8 +2308,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     format_engineering(selected->props.transformer.r_primary, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "R primary:", buf,
                                        edit_rp, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_TRANS_R_PRIMARY;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_TRANS_R_PRIMARY;
                     ui->num_properties++;
                     prop_y += 18;
 
@@ -2292,8 +2317,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     format_engineering(selected->props.transformer.r_secondary, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "R secondary:", buf,
                                        edit_rs, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_TRANS_R_SECONDARY;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_TRANS_R_SECONDARY;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2304,8 +2329,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g H", selected->props.inductor.inductance);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Inductance:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -2314,8 +2339,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.inductor.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -2324,8 +2349,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool edit_dcr = input && input->editing_property && input->editing_prop_type == PROP_DCR;
                     format_engineering(selected->props.inductor.dcr, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "DCR:", buf, edit_dcr, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_DCR;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_DCR;
                     ui->num_properties++;
                     prop_y += 18;
 
@@ -2335,8 +2360,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_I_SAT;
                     format_engineering(selected->props.inductor.i_sat, "A", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "I_sat:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_I_SAT;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_I_SAT;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2348,24 +2373,24 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.square_wave.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                 ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.square_wave.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_FREQUENCY;
                 ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.0f %%", selected->props.square_wave.duty * 100);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Duty:", buf,
                                    editing_duty, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_DUTY;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_DUTY;
                 ui->num_properties++;
 
                 // Amplitude sweep
@@ -2391,16 +2416,16 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.triangle_wave.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                 ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.triangle_wave.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_FREQUENCY;
                 ui->num_properties++;
 
                 // Amplitude sweep
@@ -2426,16 +2451,16 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.sawtooth_wave.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                 ui->num_properties++;
 
                 prop_y += 18;
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.sawtooth_wave.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    editing_freq, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_FREQUENCY;
                 ui->num_properties++;
 
                 // Phase
@@ -2444,8 +2469,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.1f deg", selected->props.sawtooth_wave.phase);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Phase:", buf,
                                    edit_saw_phase, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_PHASE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_PHASE;
                 ui->num_properties++;
 
                 // Offset
@@ -2454,8 +2479,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.sawtooth_wave.offset);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Offset:", buf,
                                    edit_saw_offset, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_OFFSET;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_OFFSET;
                 ui->num_properties++;
 
                 // Amplitude sweep
@@ -2481,8 +2506,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.noise_source.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                 ui->num_properties++;
 
                 // Bandwidth
@@ -2491,8 +2516,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 format_engineering(selected->props.noise_source.bandwidth, "Hz", buf, sizeof(buf));
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Bandwidth:", buf,
                                    edit_noise_bw, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_BANDWIDTH;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_BANDWIDTH;
                 ui->num_properties++;
 
                 // Amplitude sweep
@@ -2511,8 +2536,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.clock.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    edit_clock_freq, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_FREQUENCY;
                 ui->num_properties++;
 
                 // V_high
@@ -2521,8 +2546,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.clock.v_high);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "V_high:", buf,
                                    edit_v_high, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_V_HIGH;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_V_HIGH;
                 ui->num_properties++;
 
                 // V_low
@@ -2531,8 +2556,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.clock.v_low);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "V_low:", buf,
                                    edit_v_low, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_V_LOW;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_V_LOW;
                 ui->num_properties++;
 
                 // Duty cycle
@@ -2541,8 +2566,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.0f %%", selected->props.clock.duty * 100);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Duty:", buf,
                                    edit_clock_duty, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_DUTY;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_DUTY;
                 ui->num_properties++;
                 break;
             }
@@ -2553,8 +2578,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.pulse_source.v_low);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "V_low:", buf,
                                    edit_pulse_v_low, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_V_LOW;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_V_LOW;
                 ui->num_properties++;
 
                 // V_high
@@ -2563,8 +2588,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.pulse_source.v_high);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "V_high:", buf,
                                    edit_pulse_v_high, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_V_HIGH;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_V_HIGH;
                 ui->num_properties++;
 
                 // Delay
@@ -2573,8 +2598,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 format_engineering(selected->props.pulse_source.delay, "s", buf, sizeof(buf));
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Delay:", buf,
                                    edit_pulse_delay, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_DELAY;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_DELAY;
                 ui->num_properties++;
 
                 // Rise time
@@ -2583,8 +2608,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 format_engineering(selected->props.pulse_source.rise_time, "s", buf, sizeof(buf));
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Rise:", buf,
                                    edit_pulse_rise, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_RISE_TIME;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_RISE_TIME;
                 ui->num_properties++;
 
                 // Fall time
@@ -2593,8 +2618,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 format_engineering(selected->props.pulse_source.fall_time, "s", buf, sizeof(buf));
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Fall:", buf,
                                    edit_pulse_fall, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_FALL_TIME;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_FALL_TIME;
                 ui->num_properties++;
 
                 // Pulse width
@@ -2603,8 +2628,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 format_engineering(selected->props.pulse_source.pulse_width, "s", buf, sizeof(buf));
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Width:", buf,
                                    edit_pulse_width, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_PULSE_WIDTH;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_PULSE_WIDTH;
                 ui->num_properties++;
 
                 // Period
@@ -2613,8 +2638,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 format_engineering(selected->props.pulse_source.period, "s", buf, sizeof(buf));
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Period:", buf,
                                    edit_pulse_period, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_PERIOD;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_PERIOD;
                 ui->num_properties++;
                 break;
             }
@@ -2625,8 +2650,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.pwm_source.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
                                    edit_pwm_amp, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                 ui->num_properties++;
 
                 // Frequency
@@ -2635,8 +2660,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.pwm_source.frequency);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
                                    edit_pwm_freq, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_FREQUENCY;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_FREQUENCY;
                 ui->num_properties++;
 
                 // Duty cycle
@@ -2645,8 +2670,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.0f %%", selected->props.pwm_source.duty * 100);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Duty:", buf,
                                    edit_pwm_duty, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_DUTY;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_DUTY;
                 ui->num_properties++;
 
                 // Offset
@@ -2655,8 +2680,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.pwm_source.offset);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Offset:", buf,
                                    edit_pwm_offset, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_OFFSET;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_OFFSET;
                 ui->num_properties++;
                 break;
             }
@@ -2667,8 +2692,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.diode.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -2689,8 +2714,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool edit_bv = input && input->editing_property && input->editing_prop_type == PROP_BV;
                     snprintf(buf, sizeof(buf), "%.1f V", selected->props.diode.bv);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "BV:", buf, edit_bv, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_BV;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_BV;
                     ui->num_properties++;
                     prop_y += 18;
 
@@ -2700,8 +2725,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_CJO;
                     format_engineering(selected->props.diode.cjo, "F", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Cjo:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_CJO;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_CJO;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2714,8 +2739,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_3PH_V;
                     snprintf(buf, sizeof(buf), "%.4g V", selected->props.source_3ph.v_peak);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Vpk L-N:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_3PH_V;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_3PH_V;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2723,8 +2748,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_3PH_F;
                     snprintf(buf, sizeof(buf), "%.4g Hz", selected->props.source_3ph.frequency);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Freq:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_3PH_F;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_3PH_F;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2732,8 +2757,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_3PH_PHASE;
                     snprintf(buf, sizeof(buf), "%.1f deg", selected->props.source_3ph.phase);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Phase A:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_3PH_PHASE;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_3PH_PHASE;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2741,8 +2766,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_3PH_R;
                     snprintf(buf, sizeof(buf), "%.4g Ohm", selected->props.source_3ph.r_series);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "R/phase:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_3PH_R;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_3PH_R;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2750,8 +2775,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_3PH_L;
                     snprintf(buf, sizeof(buf), "%.4g H", selected->props.source_3ph.l_series);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "L/phase:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_3PH_L;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_3PH_L;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2767,8 +2792,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_LINE_Z0;
                     snprintf(buf, sizeof(buf), "%.4g Ohm", selected->props.delay_line.z0);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Z0:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_LINE_Z0;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_LINE_Z0;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2779,8 +2804,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     else if (td >= 1e-9) snprintf(buf, sizeof(buf), "%.4g ns", td * 1e9);
                     else                 snprintf(buf, sizeof(buf), "%.4g ps", td * 1e12);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Delay:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_LINE_DELAY;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_LINE_DELAY;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2798,8 +2823,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_TLINE_LENGTH;
                     snprintf(buf, sizeof(buf), "%.4g mi", selected->props.tline.length_mi);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Length:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_TLINE_LENGTH;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_TLINE_LENGTH;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2807,8 +2832,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_TLINE_R;
                     snprintf(buf, sizeof(buf), "%.4g Ohm", selected->props.tline.r_per_mi);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "R/mi:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_TLINE_R;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_TLINE_R;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2816,8 +2841,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_TLINE_X;
                     snprintf(buf, sizeof(buf), "%.4g Ohm", selected->props.tline.x_per_mi);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "X/mi:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_TLINE_X;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_TLINE_X;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2825,8 +2850,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_TLINE_B;
                     snprintf(buf, sizeof(buf), "%.4g uS", selected->props.tline.b_us_per_mi);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "B/mi:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_TLINE_B;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_TLINE_B;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2834,8 +2859,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_TLINE_MODEL;
                     snprintf(buf, sizeof(buf), "%d (0=R 1=RL 2=pi)", selected->props.tline.model);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Model:", buf, ed, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_TLINE_MODEL;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_TLINE_MODEL;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -2853,15 +2878,15 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 bool e1 = input && input->editing_property && input->editing_prop_type == PROP_SPARK_GAP_MM;
                 snprintf(buf, sizeof(buf), "%.2f mm (%.3g kV)", selected->props.spark_gap.gap_mm, spark_gap_breakdown(selected) / 1e3);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Gap:", buf, e1, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_SPARK_GAP_MM;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_SPARK_GAP_MM;
                 ui->num_properties++;
                 prop_y += 18;
                 bool e2 = input && input->editing_property && input->editing_prop_type == PROP_SPARK_GAP_RON;
                 snprintf(buf, sizeof(buf), "%.3g Ohm", selected->props.spark_gap.r_on);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "R arc:", buf, e2, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_SPARK_GAP_RON;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_SPARK_GAP_RON;
                 ui->num_properties++;
                 prop_y += 18;
                 SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
@@ -2874,15 +2899,15 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 bool e1 = input && input->editing_property && input->editing_prop_type == PROP_TOROID_MAJOR;
                 snprintf(buf, sizeof(buf), "%.1f in", selected->props.toroid.major_in);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Outer D:", buf, e1, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_TOROID_MAJOR;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_TOROID_MAJOR;
                 ui->num_properties++;
                 prop_y += 18;
                 bool e2 = input && input->editing_property && input->editing_prop_type == PROP_TOROID_MINOR;
                 snprintf(buf, sizeof(buf), "%.1f in", selected->props.toroid.minor_in);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Tube d:", buf, e2, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_TOROID_MINOR;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_TOROID_MINOR;
                 ui->num_properties++;
                 prop_y += 18;
                 SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
@@ -2897,8 +2922,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 bool edit_vz = input && input->editing_property && input->editing_prop_type == PROP_VZ;
                 snprintf(buf, sizeof(buf), "%.2f V", selected->props.zener.vz);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Vz:", buf, edit_vz, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VZ;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VZ;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -2907,8 +2932,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.zener.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -2917,8 +2942,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool edit_rz = input && input->editing_property && input->editing_prop_type == PROP_RZ;
                     format_engineering(selected->props.zener.rz, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Rz:", buf, edit_rz, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_RZ;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_RZ;
                     ui->num_properties++;
                     prop_y += 18;
 
@@ -2935,8 +2960,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 bool edit_vf = input && input->editing_property && input->editing_prop_type == PROP_LED_VF;
                 snprintf(buf, sizeof(buf), "%.2f V", selected->props.schottky.vf);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Vf:", buf, edit_vf, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_LED_VF;  // Reuse LED_VF for forward voltage
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_LED_VF;  // Reuse LED_VF for forward voltage
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -2945,8 +2970,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.schottky.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -2966,8 +2991,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g F", selected->props.capacitor_elec.capacitance);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Capacitance:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -2975,8 +3000,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 bool edit_vmax = input && input->editing_property && input->editing_prop_type == PROP_MAX_VOLTAGE;
                 snprintf(buf, sizeof(buf), "%.1f V", selected->props.capacitor_elec.max_voltage);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Max Voltage:", buf, edit_vmax, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_MAX_VOLTAGE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_MAX_VOLTAGE;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -2985,8 +3010,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.capacitor_elec.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -2994,8 +3019,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool edit_esr = input && input->editing_property && input->editing_prop_type == PROP_ESR;
                     format_engineering(selected->props.capacitor_elec.esr, "Ohm", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "ESR:", buf, edit_esr, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_ESR;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_ESR;
                     ui->num_properties++;
                 }
                 break;
@@ -3006,8 +3031,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 bool edit_gain = input && input->editing_property && input->editing_prop_type == PROP_OPAMP_GAIN;
                 format_engineering(selected->props.opamp.gain, "", buf, sizeof(buf));
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "A_OL:", buf, edit_gain, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_OPAMP_GAIN;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_OPAMP_GAIN;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3016,8 +3041,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.opamp.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_OPAMP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_OPAMP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3025,16 +3050,16 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 bool edit_vmax = input && input->editing_property && input->editing_prop_type == PROP_OPAMP_VMAX;
                 snprintf(buf, sizeof(buf), "%.1f V", selected->props.opamp.vmax);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "V+:", buf, edit_vmax, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_OPAMP_VMAX;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_OPAMP_VMAX;
                 ui->num_properties++;
                 prop_y += 18;
 
                 bool edit_vmin = input && input->editing_property && input->editing_prop_type == PROP_OPAMP_VMIN;
                 snprintf(buf, sizeof(buf), "%.1f V", selected->props.opamp.vmin);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "V-:", buf, edit_vmin, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_OPAMP_VMIN;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_OPAMP_VMIN;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3043,8 +3068,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool edit_gbw = input && input->editing_property && input->editing_prop_type == PROP_OPAMP_GBW;
                     format_engineering(selected->props.opamp.gbw, "Hz", buf, sizeof(buf));
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "GBW:", buf, edit_gbw, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_OPAMP_GBW;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_OPAMP_GBW;
                     ui->num_properties++;
                     prop_y += 18;
 
@@ -3052,8 +3077,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     bool edit_slew = input && input->editing_property && input->editing_prop_type == PROP_OPAMP_SLEW;
                     snprintf(buf, sizeof(buf), "%.2f V/us", selected->props.opamp.slew_rate);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Slew:", buf, edit_slew, edit_buf, cursor);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_OPAMP_SLEW;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_OPAMP_SLEW;
                     ui->num_properties++;
                     prop_y += 18;
 
@@ -3079,8 +3104,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "R2R:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.opamp.rail_to_rail ? "[Yes]" : "[No]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_OPAMP_R2R;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_OPAMP_R2R;
                 ui->num_properties++;
                 break;
             }
@@ -3096,8 +3121,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 snprintf(buf, sizeof(buf), "[%s] v", color_names[color_idx]);
                 ui_draw_text(renderer, buf, x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_LED_COLOR;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_LED_COLOR;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3112,8 +3137,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.led.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3122,8 +3147,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.2f V", selected->props.led.vf);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Fwd Voltage:", buf,
                                    editing_vf, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_LED_VF;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_LED_VF;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3132,8 +3157,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.0f mA", selected->props.led.max_current * 1000);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Max Current:", buf,
                                    editing_imax, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_LED_IMAX;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_LED_IMAX;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3164,8 +3189,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 snprintf(buf, sizeof(buf), "[%s] v", color_names[color_idx]);
                 ui_draw_text(renderer, buf, x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_LED_ARRAY_COLOR;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_LED_ARRAY_COLOR;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3188,8 +3213,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.1f", selected->props.bjt.bf);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Beta (BF):", buf,
                                    editing_beta, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_BJT_BETA;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_BJT_BETA;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3198,8 +3223,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 format_engineering(selected->props.bjt.is, "A", buf, sizeof(buf));
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Is:", buf,
                                    editing_is, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_BJT_IS;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_BJT_IS;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3208,8 +3233,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.1f V", selected->props.bjt.vaf);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "VAF:", buf,
                                    editing_vaf, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_BJT_VAF;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_BJT_VAF;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3223,8 +3248,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);
                     ui_draw_text(renderer, "[SPICE]", x + 100, prop_y + 2);
                 }
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_BJT_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_BJT_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3247,8 +3272,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.2f V", selected->props.mosfet.vth);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Vth:", buf,
                                    editing_vth, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_MOS_VTH;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_MOS_VTH;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3257,8 +3282,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 format_engineering(selected->props.mosfet.kp, "A/V2", buf, sizeof(buf));
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "u*Cox:", buf,
                                    editing_kp, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_MOS_KP;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_MOS_KP;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3267,8 +3292,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 format_engineering(selected->props.mosfet.w, "m", buf, sizeof(buf));
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "W:", buf,
                                    editing_w, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_MOS_W;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_MOS_W;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3277,8 +3302,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 format_engineering(selected->props.mosfet.l, "m", buf, sizeof(buf));
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "L:", buf,
                                    editing_l, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_MOS_L;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_MOS_L;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3286,8 +3311,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 bool editing_wl = input && input->editing_property && input->editing_prop_type == PROP_MOS_WL;
                 snprintf(buf, sizeof(buf), "%.4g", selected->props.mosfet.l > 0 ? selected->props.mosfet.w / selected->props.mosfet.l : 0);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "W/L:", buf, editing_wl, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_MOS_WL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_MOS_WL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3295,8 +3320,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 bool editing_kn = input && input->editing_property && input->editing_prop_type == PROP_MOS_KN;
                 format_engineering(selected->props.mosfet.kp * (selected->props.mosfet.l > 0 ? selected->props.mosfet.w / selected->props.mosfet.l : 0), "A/V2", buf, sizeof(buf));
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Kn:", buf, editing_kn, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_MOS_KN;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_MOS_KN;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3304,8 +3329,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 bool editing_lam = input && input->editing_property && input->editing_prop_type == PROP_MOS_LAMBDA;
                 snprintf(buf, sizeof(buf), "%.4g /V", selected->props.mosfet.lambda);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "lambda:", buf, editing_lam, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_MOS_LAMBDA;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_MOS_LAMBDA;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3313,8 +3338,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 bool editing_tox = input && input->editing_property && input->editing_prop_type == PROP_MOS_TOX;
                 format_engineering(selected->props.mosfet.tox, "m", buf, sizeof(buf));
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "tox:", buf, editing_tox, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_MOS_TOX;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_MOS_TOX;
                 ui->num_properties++;
                 prop_y += 18;
                 {
@@ -3336,8 +3361,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     ui_draw_text(renderer, "Type:", x + 10, prop_y + 2);
                     SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
                     ui_draw_text(renderer, depl ? "[Depletion]" : "[Enhancement]", x + 100, prop_y + 2);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_MOS_TYPE;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_MOS_TYPE;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -3381,8 +3406,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     SDL_SetRenderDrawColor(renderer, 0xff, 0xaa, 0x00, 0xff);
                     ui_draw_text(renderer, "[SPICE]", x + 100, prop_y + 2);
                 }
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_MOS_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_MOS_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3403,8 +3428,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 bool edit_text = input && input->editing_property && input->editing_prop_type == PROP_TEXT_CONTENT;
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Text:", selected->props.text.text,
                                    edit_text, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_TEXT_CONTENT;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_TEXT_CONTENT;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3418,8 +3443,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 snprintf(buf, sizeof(buf), "[%s]", size_names[size_idx]);
                 ui_draw_text(renderer, buf, x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, 60, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_TEXT_SIZE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, 60, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_TEXT_SIZE;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3436,8 +3461,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
                 }
                 ui_draw_text(renderer, "[B]", toggle_x, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){toggle_x, prop_y, 24, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_TEXT_BOLD;
+                (*ui_prop_slot(ui)).bounds = (Rect){toggle_x, prop_y, 24, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_TEXT_BOLD;
                 ui->num_properties++;
                 toggle_x += 30;
 
@@ -3448,8 +3473,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
                 }
                 ui_draw_text(renderer, "[I]", toggle_x, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){toggle_x, prop_y, 24, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_TEXT_ITALIC;
+                (*ui_prop_slot(ui)).bounds = (Rect){toggle_x, prop_y, 24, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_TEXT_ITALIC;
                 ui->num_properties++;
                 toggle_x += 30;
 
@@ -3460,8 +3485,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
                 }
                 ui_draw_text(renderer, "[U]", toggle_x, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){toggle_x, prop_y, 24, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_TEXT_UNDERLINE;
+                (*ui_prop_slot(ui)).bounds = (Rect){toggle_x, prop_y, 24, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_TEXT_UNDERLINE;
                 ui->num_properties++;
                 break;
             }
@@ -3471,8 +3496,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 snprintf(buf, sizeof(buf), "%.3g A", selected->props.fuse.rating);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Rating:", buf,
                                    editing_value, edit_buf, cursor);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_VALUE;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3481,8 +3506,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.fuse.ideal ? "[Ideal]" : "[i2t]", x + 100, prop_y + 2);
-                ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-                ui->properties[ui->num_properties].prop_type = PROP_IDEAL;
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
                 ui->num_properties++;
                 prop_y += 18;
 
@@ -3502,8 +3527,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 if (selected->props.fuse.blown) {
                     SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
                     ui_draw_text(renderer, "[Reset Fuse]", x + 10, prop_y + 2);
-                    ui->properties[ui->num_properties].bounds = (Rect){x + 10, prop_y, 90, 14};
-                    ui->properties[ui->num_properties].prop_type = PROP_RESET_FUSE;
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 10, prop_y, 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_RESET_FUSE;
                     ui->num_properties++;
                     prop_y += 18;
                 }
@@ -3538,8 +3563,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
         bool editing = input->editing_property && input->editing_prop_type == PROP_PROBE_NAME;
         draw_property_field(renderer, x + 10, prop_y, prop_w, "Name:", pr->label,
                             editing, input->input_buffer, input->input_cursor);
-        ui->properties[ui->num_properties].bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
-        ui->properties[ui->num_properties].prop_type = PROP_PROBE_NAME;
+        (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+        (*ui_prop_slot(ui)).prop_type = PROP_PROBE_NAME;
         ui->num_properties++;
         prop_y += 22;
 
@@ -7311,7 +7336,7 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
 
         // Check property fields for click-to-edit
         // Each property field stores its prop_type directly
-        for (int i = 0; i < ui->num_properties && i < 16; i++) {
+        for (int i = 0; i < ui->num_properties && i < UI_MAX_PROPERTY_ROWS; i++) {
             if (point_in_rect(x, y, &ui->properties[i].bounds)) {
                 return UI_ACTION_PROP_EDIT + ui->properties[i].prop_type;
             }

@@ -342,7 +342,9 @@ static int prop_gap(void) {
         total++;
         ui->num_properties = 0;
         ui_render_properties(ui, ren, comp, in);
-        int rows = ui->num_properties;
+        /* clamped: num_properties counts rows the panel wanted, which can exceed
+           what the array holds - see ui_prop_slot() */
+        int rows = ui->num_properties < UI_MAX_PROPERTY_ROWS ? ui->num_properties : UI_MAX_PROPERTY_ROWS;
         if (rows > 0) { with_rows++; component_free(comp); continue; }
         empty++;
         /* Parts that genuinely have nothing to offer: structural and decorative ones. */
@@ -392,7 +394,9 @@ static int prop_test(void) {
         in->selected_component = comp;
         ui->num_properties = 0;
         ui_render_properties(ui, ren, comp, in);
-        int rows = ui->num_properties;
+        /* clamped: num_properties counts rows the panel wanted, which can exceed
+           what the array holds - see ui_prop_slot() */
+        int rows = ui->num_properties < UI_MAX_PROPERTY_ROWS ? ui->num_properties : UI_MAX_PROPERTY_ROWS;
         if (rows > 0) parts_with_rows++;
 
         for (int r = 0; r < rows; r++) {
@@ -442,6 +446,55 @@ static int prop_test(void) {
             component_free(fresh);
         }
         component_free(comp);
+    }
+
+    /* And the panel must not ask for more rows than it has room for.
+       Everything above renders a part exactly as component_create() leaves it, which for a source
+       means both of its sweeps switched off and seven rows - so nothing here ever approached the
+       end of the array. Switch both sweeps on, as two clicks on the panel do, and an AC voltage
+       source asks for seventeen rows; put either sweep in Step mode and it asks for twenty. The
+       array held sixteen, and the two fields that follow it are num_properties itself and
+       editing_component. Rows past the sixteenth were also drawn and dead, because the click
+       handler was clamped where the array was not. */
+    {
+        static const ComponentType swept[] = { COMP_AC_VOLTAGE, COMP_SQUARE_WAVE, COMP_TRIANGLE_WAVE,
+                                               COMP_SAWTOOTH_WAVE, COMP_NOISE_SOURCE };
+        for (unsigned k = 0; k < sizeof swept / sizeof swept[0]; k++) {
+            Component *comp = component_create(swept[k], 200, 200);
+            if (!comp) continue;
+            const ComponentTypeInfo *info = component_get_info(swept[k]);
+            /* both sweeps on, and the widest mode each offers */
+            SweepConfig *a = NULL, *f = NULL;
+            switch (swept[k]) {
+                case COMP_AC_VOLTAGE:     a = &comp->props.ac_voltage.amplitude_sweep;
+                                          f = &comp->props.ac_voltage.frequency_sweep; break;
+                case COMP_SQUARE_WAVE:    a = &comp->props.square_wave.amplitude_sweep;
+                                          f = &comp->props.square_wave.frequency_sweep; break;
+                case COMP_TRIANGLE_WAVE:  a = &comp->props.triangle_wave.amplitude_sweep;
+                                          f = &comp->props.triangle_wave.frequency_sweep; break;
+                case COMP_SAWTOOTH_WAVE:  a = &comp->props.sawtooth_wave.amplitude_sweep;
+                                          f = &comp->props.sawtooth_wave.frequency_sweep; break;
+                case COMP_NOISE_SOURCE:   a = &comp->props.noise_source.amplitude_sweep; break;
+                default: break;
+            }
+            if (a) { a->enabled = true; a->mode = SWEEP_STEP; }
+            if (f) { f->enabled = true; f->mode = SWEEP_STEP; }
+
+            memset(in, 0, sizeof *in);
+            in->selected_component = comp;
+            ui->num_properties = 0;
+            ui_render_properties(ui, ren, comp, in);
+            int want = ui->num_properties;
+            if (want > UI_MAX_PROPERTY_ROWS) {
+                printf("[FAIL] prop  %-22s asks for %d rows with both sweeps on; the panel holds %d\n",
+                       info ? info->name : "?", want, UI_MAX_PROPERTY_ROWS);
+                fails++;
+            } else {
+                printf("[ OK ] prop  %-22s asks for %d rows with both sweeps on (room for %d)\n",
+                       info ? info->name : "?", want, UI_MAX_PROPERTY_ROWS);
+            }
+            component_free(comp);
+        }
     }
 
     printf("\nprop-test: %d typed rows and %d toggles over %d parts, %d that the panel "

@@ -45,6 +45,8 @@
 #define SYNTH_BORDER_LIGHT  0x7a, 0x2a, 0x9a  // Light purple border
 
 // Button state
+#define UI_MAX_PROPERTY_ROWS 24
+
 typedef struct {
     Rect bounds;
     const char *label;
@@ -247,7 +249,12 @@ typedef struct {
     bool placing_subcircuit;         // True when placing a user subcircuit
 
     // Properties panel
-    PropertyField properties[16];
+    /* 24, not 16. The panel emits a row at a time and never checked the count: an AC source with
+       both its sweeps switched on emits 17 rows, and in Step mode 20, so row 16 landed exactly on
+       num_properties and editing_component, which follow the array. Two ordinary clicks reach that
+       state. See ui_prop_slot() for the guard that now makes the write itself safe - this size is
+       what makes the guard almost never fire. */
+    PropertyField properties[UI_MAX_PROPERTY_ROWS];
     int num_properties;
     Component *editing_component;
 

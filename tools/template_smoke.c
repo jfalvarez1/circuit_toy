@@ -4628,6 +4628,108 @@ static int mc_test(void) {
     return fails ? 1 : 0;
 }
 
+/* --bode-test: the frequency sweep against the transfer function of an RC low-pass.
+ *
+ * The Bode plot had no check of any kind. It is a whole analysis - sweep a source, measure
+ * magnitude and phase at each point, draw the result - and nothing said whether the numbers on it
+ * were right.
+ *
+ * The oracle is first-year: for R in series with C to ground,
+ *
+ *     |H(f)| = 1 / sqrt(1 + (f/fc)^2)        arg H(f) = -atan(f/fc)        fc = 1/(2 pi R C)
+ *
+ * The RC Low Pass template is 1 k and 100 nF, so fc = 1591.55 Hz, the magnitude there is -3.01 dB
+ * and the phase -45 degrees, and a decade above it the magnitude is -20 dB below the passband.
+ * None of those numbers comes from the simulator.
+ */
+static int bode_test(void) {
+    int fails = 0, checks = 0;
+    const double R = 1000.0, C = 100e-9;
+    const double fc = 1.0 / (2.0 * M_PI * R * C);
+
+    Circuit *c = circuit_create();
+    if (!c || circuit_place_template(c, CIRCUIT_RC_LOWPASS, 0, 0) <= 0) {
+        printf("[FAIL] bode  the RC low-pass will not place\n");
+        if (c) circuit_free(c);
+        return 1;
+    }
+    /* the probed output is the capacitor's top terminal, which is what the template probes */
+    int probe_node = (c->num_probes > 1) ? c->probes[1].node_id
+                   : (c->num_probes > 0) ? c->probes[0].node_id : 0;
+
+    Simulation *sim = simulation_create(c);
+    if (!sim) { circuit_free(c); return 1; }
+    simulation_dc_analysis(sim);
+
+    /* what the app does when the Bode button is pressed */
+    if (!simulation_freq_sweep(sim, 100.0, 20000.0, 0, probe_node, 40)) {
+        printf("[FAIL] bode  the sweep did not run: %s\n", simulation_get_error(sim));
+        simulation_free(sim); circuit_free(c);
+        return 1;
+    }
+
+    FreqResponsePoint pts[MAX_FREQ_POINTS];
+    int n = simulation_get_freq_response(sim, pts, MAX_FREQ_POINTS);
+    if (n < 10) {
+        printf("[FAIL] bode  %d points came back\n", n);
+        simulation_free(sim); circuit_free(c);
+        return 1;
+    }
+
+    /* Compare every point against the transfer function, and report the worst. A tolerance of
+       1.5 dB is loose - the sweep measures peak-to-peak over two cycles and reads phase off a
+       zero crossing, so it is not going to be exact - and still nowhere near wide enough to
+       accept a response measured at the wrong frequency. */
+    double worst_mag = 0, worst_at = 0, worst_phase = 0, worst_phase_at = 0;
+    for (int i = 0; i < n; i++) {
+        double f = pts[i].frequency;
+        if (!(f > 0)) continue;
+        double want_mag = 20.0 * log10(1.0 / sqrt(1.0 + (f / fc) * (f / fc)));
+        double want_ph  = -atan(f / fc) * 180.0 / M_PI;
+        double dm = fabs(pts[i].magnitude_db - want_mag);
+        double dp = fabs(pts[i].phase_deg - want_ph);
+        if (dm > worst_mag) { worst_mag = dm; worst_at = f; }
+        if (dp > worst_phase) { worst_phase = dp; worst_phase_at = f; }
+    }
+
+    checks++;
+    if (worst_mag > 1.5) {
+        printf("[FAIL] bode  magnitude is %.2f dB out at %.0f Hz (fc = %.1f Hz)\n",
+               worst_mag, worst_at, fc);
+        fails++;
+    } else {
+        printf("[ OK ] bode  magnitude within %.2f dB of 1/sqrt(1+(f/fc)^2) over %d points\n",
+               worst_mag, n);
+    }
+
+    checks++;
+    if (worst_phase > 12.0) {
+        printf("[FAIL] bode  phase is %.1f degrees out at %.0f Hz\n", worst_phase, worst_phase_at);
+        fails++;
+    } else {
+        printf("[ OK ] bode  phase within %.1f degrees of -atan(f/fc)\n", worst_phase);
+    }
+
+    /* and the sweep must give the circuit back as it found it: it is run on the live simulation,
+       so a clock or a step left where the sweep put them is the user's running circuit disturbed */
+    checks++;
+    Component *src = NULL;
+    for (int i = 0; i < c->num_components; i++)
+        if (c->components[i]->type == COMP_AC_VOLTAGE) { src = c->components[i]; break; }
+    if (src && !src->props.ac_voltage.frequency_sweep.enabled) {
+        printf("[FAIL] bode  the source's own frequency sweep was left switched off\n");
+        fails++;
+    } else {
+        printf("[ OK ] bode  the source is back the way the sweep found it\n");
+    }
+
+    printf("\nbode-test: %d checks against the RC transfer function (fc = %.1f Hz), %d failed\n",
+           checks, fc, fails);
+    simulation_free(sim);
+    circuit_free(c);
+    return fails ? 1 : 0;
+}
+
 static int dcm_test(void) {
     /* R_load, and roughly what it means for a 12 V / 100 kHz / 220 uH buck at 50 % duty:
        critical conduction is near R = 2 L f / (1 - D) ~ 88 ohm, so above that is DCM. */
@@ -5701,6 +5803,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--conv-test")) return conv_test();
         else if (!strcmp(argv[i], "--stress-test")) return stress_test(i + 1 < argc ? argv[++i] : NULL);
         else if (!strcmp(argv[i], "--mc-test")) return mc_test();
+        else if (!strcmp(argv[i], "--bode-test")) return bode_test();
         else if (!strcmp(argv[i], "--fft-test")) return fft_test();
         else if (!strcmp(argv[i], "--probe-test")) return probe_test();
         else if (!strcmp(argv[i], "--label-test")) return label_test();

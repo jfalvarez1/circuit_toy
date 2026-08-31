@@ -1926,8 +1926,12 @@ void app_update(App *app) {
         simulation_set_history_span(app->simulation, want > raw ? want : raw);
     }
 
+    /* Not while the frequency sweep is running. That sweep steps the SAME Simulation from its own
+       thread - it sets time_step, zeroes the solution vectors and calls simulation_step in a loop -
+       and nothing stopped the main loop stepping it at the same time. Two threads in one solver,
+       one of them freeing and cloning the vectors the other is reading. */
     // Run simulation if active
-    if (app->simulation->state == SIM_RUNNING) {
+    if (app->simulation->state == SIM_RUNNING && !app->freq_sweep_thread_running) {
         // Calculate steps based on speed
         // Real-time target: advance sim time by delta_time * speed, i.e. (delta_time*speed/dt)
         // steps, but never spend more than ~12 ms of wall clock per frame so the UI stays

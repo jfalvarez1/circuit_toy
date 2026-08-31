@@ -2172,8 +2172,22 @@ bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
         return false;
     }
 
-    // Save original frequency
+    /* Everything the sweep is about to move, so the live circuit gets it back. This runs on the
+       user's own Simulation, not a copy, so anything left where the sweep put it is the running
+       circuit quietly disturbed. */
     double orig_freq = ac_source->props.ac_voltage.frequency;
+    bool orig_fsweep = ac_source->props.ac_voltage.frequency_sweep.enabled;
+    double orig_time = sim->time;
+    double orig_step = sim->time_step;
+    Vector *keep_solution = sim->solution ? vector_clone(sim->solution) : NULL;
+    Vector *keep_prev = sim->prev_solution ? vector_clone(sim->prev_solution) : NULL;
+
+    /* And the source's OWN frequency sweep goes off for the duration. The stamp reads
+       sweep_get_value(&frequency_sweep, freq, time), so while that is enabled the source ignores
+       the frequency this analysis is setting and plays whatever its own sweep says instead - and
+       the RC Low Pass, the first template in the app, ships with it enabled. Every point of its
+       Bode plot was measured at the wrong frequency. */
+    ac_source->props.ac_voltage.frequency_sweep.enabled = false;
     double amplitude = ac_source->props.ac_voltage.amplitude;
 
     sim->freq_start = start_freq;
@@ -2247,8 +2261,11 @@ bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
         double measure_start = (num_cycles - 2) * period;
         for (int step = 0; step < num_steps; step++) {
             sim->time_step = dt;
+            /* simulation_step advances sim->time by dt itself. Adding it again here ran the clock
+               at 2 dt per solve: the companion models integrated one dt while the source's phase
+               and the analytic reference below moved two, so magnitude and phase were both read
+               off a circuit being driven at twice the rate the integrator thought. */
             simulation_step(sim);
-            sim->time += dt;
 
             // Get input (AC source output) and output voltages
             double t = sim->time;
@@ -2286,8 +2303,12 @@ bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
         // Phase in degrees
         double phase_deg = 0;
         if (found_in_zero && found_out_zero) {
+            /* Negated. The output of a low-pass LAGS its input, so the output's rising zero
+               crossing happens later and out - in is positive - but a lag is a negative phase.
+               The plot read +85 degrees where an RC at twelve times its corner is -85, and the
+               sign was wrong at every point that had any phase in it at all. */
             double time_diff = out_zero_cross_time - in_zero_cross_time;
-            phase_deg = (time_diff / period) * 360.0;
+            phase_deg = -(time_diff / period) * 360.0;
             // Normalize to -180 to +180
             while (phase_deg > 180) phase_deg -= 360;
             while (phase_deg < -180) phase_deg += 360;
@@ -2300,8 +2321,19 @@ bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
         sim->freq_response_count++;
     }
 
-    // Restore original frequency
+    // Restore everything the sweep moved
     ac_source->props.ac_voltage.frequency = orig_freq;
+    ac_source->props.ac_voltage.frequency_sweep.enabled = orig_fsweep;
+    sim->time = orig_time;
+    sim->time_step = orig_step;
+    if (keep_solution) {
+        if (sim->solution) vector_free(sim->solution);
+        sim->solution = keep_solution;
+    }
+    if (keep_prev) {
+        if (sim->prev_solution) vector_free(sim->prev_solution);
+        sim->prev_solution = keep_prev;
+    }
 
     sim->freq_sweep_running = false;
     sim->freq_sweep_complete = true;
