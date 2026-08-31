@@ -2050,45 +2050,15 @@ static int seg_hits_box(float ax, float ay, float bx, float by, float x0, float 
 /* Every piece of text on the canvas, as a box: the annotations a template places and the value
    label each component draws beside itself ("10k", "CLOSED", "2N7000  1.2 ohm"). The value
    labels come from the renderer's own function, so what is measured is what is drawn. */
-typedef struct { float x0, y0, x1, y1; char s[40]; int is_value; const Component *owner; } TextBox;
+typedef CanvasTextBox TextBox;   /* the enumeration moved to label.c - see canvas_text_boxes */
 
+/* Delegates to label.c. This function used to hold its own copy of where every piece of canvas
+   text goes, and label.c's header comment already said why that is a mistake - "keeping one copy
+   is the point, since a second one would drift". It drifted the moment the probe readout started
+   moving to avoid other text: a check that computes a position independently of the renderer is
+   not checking the renderer. */
 static int geom_text_boxes(Circuit *c, TextBox *out, int max, int with_values) {
-    int n = 0;
-    for (int i = 0; i < c->num_components && n < max; i++) {
-        Component *t = c->components[i];
-        if (t->type != COMP_TEXT && !with_values) continue;
-        if (t->type == COMP_TEXT) {
-            const char *str = t->props.text.text;
-            int len = (int)strlen(str);
-            if (len <= 0) continue;
-            int fs = t->props.text.font_size;
-            if (fs < 1) fs = 1; if (fs > 3) fs = 3;
-            /* the wrapped box: as wide as the longest line it breaks into, as tall as the
-               number of lines - the same call the renderer makes */
-            float cell = (float)CANVAS_TEXT_PX * fs;
-            int st[CANVAS_TEXT_MAX_LINES], ln[CANVAS_TEXT_MAX_LINES];
-            int nl = label_wrap(str, CANVAS_TEXT_WRAP, st, ln, CANVAS_TEXT_MAX_LINES);
-            int widest = 0;
-            for (int k = 0; k < nl; k++) if (ln[k] > widest) widest = ln[k];
-            if (nl <= 0) { widest = len; nl = 1; }
-            out[n].x0 = t->x; out[n].x1 = t->x + cell * widest;
-            out[n].y0 = t->y; out[n].y1 = t->y + (float)nl * (cell + 2.0f);
-            snprintf(out[n].s, sizeof out[n].s, "%.20s", str);
-            out[n].is_value = 0; out[n].owner = t;
-            n++;
-        } else {
-            char buf[96]; float lx, ly;
-            if (!render_component_value_label(t, buf, sizeof buf, &lx, &ly)) continue;
-            int len = (int)strlen(buf);
-            if (len <= 0) continue;
-            out[n].x0 = lx; out[n].x1 = lx + (float)CANVAS_TEXT_PX * len;
-            out[n].y0 = ly; out[n].y1 = ly + (float)CANVAS_TEXT_PX;
-            snprintf(out[n].s, sizeof out[n].s, "%.20s", buf);
-            out[n].is_value = 1; out[n].owner = t;
-            n++;
-        }
-    }
-    return n;
+    return canvas_text_boxes(c, out, max, with_values);
 }
 
 /* Text landing on other text. Two labels on top of each other are unreadable in a way that is

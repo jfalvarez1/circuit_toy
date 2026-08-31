@@ -74,6 +74,173 @@ int label_wrap(const char *s, int max_chars, int *starts, int *lens, int max_lin
     return n;
 }
 
+/* The probe's voltage readout. Here rather than in render.c because --geom-test measures the box
+   this text occupies and template_smoke does not link the renderer - the same reason
+   render_component_value_label lives here. What is checked is then what is drawn. */
+void render_volt_str(char *out, size_t n, double v) {
+    if (fabs(v) >= 1000.0) snprintf(out, n, "%.4gkV", v / 1e3);
+    else snprintf(out, n, "%.2fV", v);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   Text on the canvas, and getting a probe's readout out of the way of it.
+
+   The audit that finds text printed over other text could only see half the text: it walked
+   components, and a probe is not a component. A probe draws its channel name by the grip and its
+   live voltage at tip + (10, 10), and that put "0.09V" straight through the coupling capacitor's
+   "10uF" on Common Emitter - on 47 of 188 templates, once the audit could finally see it.
+
+   The readout is the thing that gives way. A value label is placed hard against the part it
+   belongs to and a template's annotation was written where its author wanted it; a probe's number
+   only has to be near its own tip. So it tries a short ladder of offsets around the tip and takes
+   the first that is clear, and if none is clear it stays where it was rather than wandering off.
+   --------------------------------------------------------------------------------------------- */
+
+static int box_hits(const CanvasTextBox *a, int n, float x0, float y0, float x1, float y1) {
+    for (int i = 0; i < n; i++)   /* 2 px of slack, as the audit uses: abutting is fine */
+        if (a[i].x0 < x1 - 2 && x0 < a[i].x1 - 2 && a[i].y0 < y1 - 2 && y0 < a[i].y1 - 2)
+            return 1;
+    return 0;
+}
+
+/* the static text: annotations, and the value labels; no probes */
+static int canvas_static_boxes(const Circuit *c, CanvasTextBox *out, int max, int with_values) {
+    int n = 0;
+    for (int i = 0; i < c->num_components && n < max; i++) {
+        Component *t = c->components[i];
+        if (!t) continue;
+        if (t->type != COMP_TEXT && !with_values) continue;
+        if (t->type == COMP_TEXT) {
+            const char *str = t->props.text.text;
+            int len = (int)strlen(str);
+            if (len <= 0) continue;
+            int fs = t->props.text.font_size;
+            if (fs < 1) fs = 1;
+            if (fs > 3) fs = 3;
+            /* the wrapped box: as wide as the longest line it breaks into, as tall as the
+               number of lines - the same call the renderer makes */
+            float cell = (float)CANVAS_TEXT_PX * fs;
+            int st[CANVAS_TEXT_MAX_LINES], ln[CANVAS_TEXT_MAX_LINES];
+            int nl = label_wrap(str, CANVAS_TEXT_WRAP, st, ln, CANVAS_TEXT_MAX_LINES);
+            int widest = 0;
+            for (int k = 0; k < nl; k++) if (ln[k] > widest) widest = ln[k];
+            if (nl <= 0) { widest = len; nl = 1; }
+            out[n].x0 = t->x; out[n].x1 = t->x + cell * widest;
+            out[n].y0 = t->y; out[n].y1 = t->y + (float)nl * (cell + 2.0f);
+            snprintf(out[n].s, sizeof out[n].s, "%.20s", str);
+            out[n].is_value = 0; out[n].owner = t;
+            n++;
+        } else {
+            char buf[96]; float lx, ly;
+            if (!render_component_value_label(t, buf, sizeof buf, &lx, &ly)) continue;
+            int len = (int)strlen(buf);
+            if (len <= 0) continue;
+            out[n].x0 = lx; out[n].x1 = lx + (float)CANVAS_TEXT_PX * len;
+            out[n].y0 = ly; out[n].y1 = ly + (float)CANVAS_TEXT_PX;
+            snprintf(out[n].s, sizeof out[n].s, "%.20s", buf);
+            out[n].is_value = 1; out[n].owner = t;
+            n++;
+        }
+    }
+    return n;
+}
+
+/* the probe's channel name, at its home position by the grip - the far end of the handle */
+static const char *probe_name_home(const Probe *p, float *x, float *y) {
+    *x = p->x - 25.0f - 10.0f - 8.0f;    /* handle_dx - 10, then the renderer's -8 in screen px */
+    *y = p->y - 35.0f + 5.0f;            /* handle_dy + 5 */
+    return p->label[0] ? p->label : "CH?";
+}
+
+/* Take the first offset in a ladder that puts a w x h box clear of everything placed so far, and
+   record it as an obstacle for whatever comes next. Falls back to the home position: a readout
+   that cannot find room should stay by its own probe, not wander to the far side of the canvas. */
+static void place_text(CanvasTextBox *b, int *n, int maxb, float hx, float hy, float w, float h,
+                       const float *dx, const float *dy, int nd, float *ox, float *oy) {
+    float bx = hx, by = hy;
+    for (int k = 0; k < nd; k++) {
+        float x = hx + dx[k], y = hy + dy[k];
+        if (!box_hits(b, *n, x, y, x + w, y + h)) { bx = x; by = y; break; }
+    }
+    *ox = bx; *oy = by;
+    if (*n < maxb) {
+        b[*n].x0 = bx; b[*n].x1 = bx + w;
+        b[*n].y0 = by; b[*n].y1 = by + h;
+        b[*n].s[0] = 0; b[*n].is_value = 1; b[*n].owner = NULL;
+        (*n)++;
+    }
+}
+
+void probe_text_positions(const Circuit *c, float *name_x, float *name_y,
+                          float *volt_x, float *volt_y) {
+    /* Ladders in world units. Both start at 0,0 - the home position - so a probe with room around
+       it does not move at all, and only a colliding one is pushed. The name is allowed a smaller
+       range than the voltage because it belongs to the grip and reads wrong far from it. */
+    static const float ndx[] = { 0,   0,   0, -14,  14,   0 };
+    static const float ndy[] = { 0, -14,  14,   0,   0, -28 };
+    static const float vdx[] = { 0,  0,  0, -20, -20, -20,  0, -20 };
+    static const float vdy[] = { 0, -32, 16,   0, -32,  16, -44,  28 };
+
+    if (!c) return;
+
+    enum { MAX_B = 512 };
+    static CanvasTextBox b[MAX_B];
+    int n = canvas_static_boxes(c, b, MAX_B, 1);
+
+    /* Names first, then voltages. Both in probe order, each placement becoming an obstacle for
+       the next - so two probes on the same node do not step aside into the same empty space. */
+    for (int i = 0; i < c->num_probes && i < MAX_PROBES; i++) {
+        float hx, hy, ox, oy;
+        const char *nm = probe_name_home(&c->probes[i], &hx, &hy);
+        place_text(b, &n, MAX_B, hx, hy, (float)CANVAS_TEXT_PX * (float)strlen(nm),
+                   (float)CANVAS_TEXT_PX, ndx, ndy, (int)(sizeof ndx / sizeof ndx[0]), &ox, &oy);
+        if (name_x) name_x[i] = ox;
+        if (name_y) name_y[i] = oy;
+    }
+    for (int i = 0; i < c->num_probes && i < MAX_PROBES; i++) {
+        char vs[16];
+        render_volt_str(vs, sizeof vs, c->probes[i].voltage);
+        float ox, oy;
+        place_text(b, &n, MAX_B, c->probes[i].x + 10.0f, c->probes[i].y + 10.0f,
+                   (float)CANVAS_TEXT_PX * (float)strlen(vs), (float)CANVAS_TEXT_PX,
+                   vdx, vdy, (int)(sizeof vdx / sizeof vdx[0]), &ox, &oy);
+        if (volt_x) volt_x[i] = ox;
+        if (volt_y) volt_y[i] = oy;
+    }
+}
+
+int canvas_text_boxes(const Circuit *c, CanvasTextBox *out, int max, int with_values) {
+    int n = canvas_static_boxes(c, out, max, with_values);
+    if (!with_values) return n;   /* the annotations-only set is read for its owner pointers */
+
+    float nx[MAX_PROBES], ny[MAX_PROBES], vx[MAX_PROBES], vy[MAX_PROBES];
+    probe_text_positions(c, nx, ny, vx, vy);
+
+    for (int i = 0; i < c->num_probes && i < MAX_PROBES && n < max; i++) {
+        const Probe *p = &c->probes[i];
+
+        char vs[16];
+        render_volt_str(vs, sizeof vs, p->voltage);
+        int vlen = (int)strlen(vs);
+        if (vlen > 0) {
+            out[n].x0 = vx[i]; out[n].x1 = vx[i] + (float)CANVAS_TEXT_PX * vlen;
+            out[n].y0 = vy[i]; out[n].y1 = vy[i] + (float)CANVAS_TEXT_PX;
+            snprintf(out[n].s, sizeof out[n].s, "%.20s", vs);
+            out[n].is_value = 1; out[n].owner = NULL;
+            n++;
+        }
+        if (n >= max) break;
+
+        const char *nm = p->label[0] ? p->label : "CH?";
+        out[n].x0 = nx[i]; out[n].x1 = nx[i] + (float)CANVAS_TEXT_PX * (float)strlen(nm);
+        out[n].y0 = ny[i]; out[n].y1 = ny[i] + (float)CANVAS_TEXT_PX;
+        snprintf(out[n].s, sizeof out[n].s, "%.20s", nm);
+        out[n].is_value = 1; out[n].owner = NULL;
+        n++;
+    }
+    return n;
+}
+
 bool render_component_value_label(const Component *comp, char *out, size_t outn,
                                   float *out_x, float *out_y) {
     char buf[64] = "";

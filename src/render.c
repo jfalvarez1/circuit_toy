@@ -25,10 +25,6 @@ static void render_component_value(RenderContext *ctx, Component *comp) {
     int sx, sy; render_world_to_screen(ctx, lx, ly, &sx, &sy);
     render_draw_text_small(ctx, buf, sx, sy, (Color){0xa0, 0xb4, 0xc8, 0xff});
 }
-static void render_volt_str(char *out, size_t n, double v) {
-    if (fabs(v) >= 1000.0) snprintf(out, n, "%.4gkV", v / 1e3);
-    else snprintf(out, n, "%.2fV", v);
-}
 void render_toroid(RenderContext *ctx, Component *comp);
 void render_tline(RenderContext *ctx, Component *comp);
 void render_source_3ph(RenderContext *ctx, Component *comp);
@@ -1650,7 +1646,7 @@ void render_node(RenderContext *ctx, Node *node, bool show_voltage) {
     render_fill_circle(ctx, node->x, node->y, 4);
 }
 
-void render_probe(RenderContext *ctx, Probe *probe, int index) {
+void render_probe(RenderContext *ctx, Circuit *circuit, Probe *probe, int index) {
     if (!probe) return;
 
     // Probe dimensions (in world coordinates)
@@ -1721,21 +1717,35 @@ void render_probe(RenderContext *ctx, Probe *probe, int index) {
     render_set_color(ctx, COLOR_TEXT);
     render_draw_circle(ctx, grip_x, grip_y, 7);
 
-    // Draw channel label near handle
+    /* Channel name and voltage, at whichever offsets around the probe are clear of the text
+       already on the canvas. Both were pinned, which on 47 of 188 templates printed one of them
+       straight through a component's value label or a template's annotation. label.c decides, so
+       the audit that measures this asks the same question rather than keeping its own answer. */
     int sx, sy;
-    render_world_to_screen(ctx, tip_x + handle_dx - 10, tip_y + handle_dy + 5, &sx, &sy);
+    float nx[MAX_PROBES], ny[MAX_PROBES], vx[MAX_PROBES], vy[MAX_PROBES];
+    int placed = circuit && index >= 0 && index < circuit->num_probes && index < MAX_PROBES;
+    if (placed) probe_text_positions(circuit, nx, ny, vx, vy);
+
+    // Draw channel label near handle
+    if (placed) render_world_to_screen(ctx, nx[index], ny[index], &sx, &sy);
+    else        render_world_to_screen(ctx, tip_x + handle_dx - 10 - 8, tip_y + handle_dy + 5, &sx, &sy);
     if (probe->label[0]) {
-        render_draw_text(ctx, probe->label, sx - 8, sy, probe->color);
+        render_draw_text(ctx, probe->label, sx, sy, probe->color);
     } else {
         char buf[16];
         snprintf(buf, sizeof(buf), "CH%d", index + 1);
-        render_draw_text(ctx, buf, sx - 12, sy, probe->color);
+        render_draw_text(ctx, buf, sx - 4, sy, probe->color);
     }
 
-    // Draw voltage reading near the tip
+    /* Voltage reading near the tip - at whichever of a few offsets around it is clear of the
+       text already on the canvas. It was pinned to tip + (10, 10), which on 47 of 188 templates
+       printed it straight through a component's value label. label.c decides, so the audit that
+       measures this asks the same question rather than keeping its own copy of the answer. */
     char volt_str[16];
     render_volt_str(volt_str, sizeof(volt_str), probe->voltage);
-    render_world_to_screen(ctx, tip_x + 10, tip_y + 10, &sx, &sy);
+    float rx = tip_x + 10, ry = tip_y + 10;
+    if (placed) { rx = vx[index]; ry = vy[index]; }
+    render_world_to_screen(ctx, rx, ry, &sx, &sy);
     render_draw_text(ctx, volt_str, sx, sy, probe->color);
 }
 
@@ -1894,7 +1904,7 @@ void render_circuit(RenderContext *ctx, Circuit *circuit) {
 
     // Draw probes
     for (int i = 0; i < circuit->num_probes; i++) {
-        render_probe(ctx, &circuit->probes[i], i);
+        render_probe(ctx, circuit, &circuit->probes[i], i);
     }
 }
 

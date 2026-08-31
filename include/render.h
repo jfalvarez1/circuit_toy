@@ -83,7 +83,7 @@ void render_grid(RenderContext *ctx);
 void render_component(RenderContext *ctx, Component *comp);
 void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit);
 void render_node(RenderContext *ctx, Node *node, bool show_voltage);
-void render_probe(RenderContext *ctx, Probe *probe, int index);
+void render_probe(RenderContext *ctx, Circuit *circuit, Probe *probe, int index);
 void render_circuit(RenderContext *ctx, Circuit *circuit);
 
 // Component shape rendering
