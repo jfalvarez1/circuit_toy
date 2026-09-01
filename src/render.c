@@ -771,6 +771,42 @@ void render_grid(RenderContext *ctx) {
     render_draw_line(ctx, 0, -20, 0, 20);
 }
 
+/* A TO-220 package carries its name INSIDE the body, and the body scales with the zoom while
+   the 8x8 font does not. Drawn from a fixed pixel offset, "LM317" is 40 px wide against a box
+   that is 50 px only at zoom 1: zoom out and the name hangs out of both sides of the part it
+   is naming. Centre it on its own width, and leave it out once the box is too small to hold
+   it - an unlabelled box reads as a package, a box with text through its walls reads as a
+   fault. The pin names sit outside the body, so they hug the drawn edge rather than a fixed
+   offset, and they go once there is no room to tell which pin they belong to. */
+#define REG_HALF_W 25.0f          /* render_regulator_box draws -25..+25 by -25..+20 */
+#define REG_HALF_H 20.0f
+
+static void render_package_label(RenderContext *ctx, float wx, float wy, const char *name) {
+    int sx, sy;
+    /* Above the body, not inside it, and centred on the string. A TO-220 is 50 units wide and
+       the name wants 40 pixels of an 8x8 font that does not scale, so inside the box it only
+       ever fits at full zoom - and hiding it below that leaves the part anonymous. Outside it
+       always fits and always reads, which is what the MOSFET and BJT symbols already do.
+
+       The offset is in pixels, not world units, for the same reason the pin names are: text
+       that backs off in world units closes on text that does not, and at half zoom the part
+       number lands on top of "IN". 34 clears the heat tab at full zoom and clears the pin
+       row - which sits at -12 - at every zoom below it. */
+    render_world_to_screen(ctx, wx, wy, &sx, &sy);
+    render_draw_text_small(ctx, name, sx - (int)strlen(name) * 4, sy - 34, COLOR_TEXT);
+}
+
+static void render_package_pins(RenderContext *ctx, float wx, float wy,
+                                const char *left, const char *right, const char *bottom) {
+    if (ctx->zoom < 0.35f) return;          /* nothing legible to attach them to */
+    int sx, sy;
+    render_world_to_screen(ctx, wx, wy, &sx, &sy);
+    int hw = (int)(REG_HALF_W * ctx->zoom), hh = (int)(REG_HALF_H * ctx->zoom);
+    render_draw_text_small(ctx, left,  sx - hw - (int)strlen(left) * 8 - 2, sy - 12, COLOR_ACCENT);
+    render_draw_text_small(ctx, right, sx + hw + 3, sy - 12, COLOR_ACCENT);
+    render_draw_text_small(ctx, bottom, sx - (int)strlen(bottom) * 4, sy + hh + 14, COLOR_ACCENT);
+}
+
 void render_component(RenderContext *ctx, Component *comp) {
     if (!comp) return;
 
@@ -1407,32 +1443,20 @@ void render_component(RenderContext *ctx, Component *comp) {
         // Voltage regulators - use TO-220 style box with labels
         case COMP_LM317: {
             render_regulator_box(ctx, comp->x, comp->y, comp->rotation);
-            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
-            render_draw_text_small(ctx, "LM317", sx - 18, sy - 4, COLOR_TEXT);
-            // Terminal labels: IN (left), OUT (right), ADJ (bottom)
-            render_draw_text_small(ctx, "IN", sx - 38, sy - 12, COLOR_ACCENT);
-            render_draw_text_small(ctx, "OUT", sx + 28, sy - 12, COLOR_ACCENT);
-            render_draw_text_small(ctx, "ADJ", sx - 10, sy + 40, COLOR_ACCENT);
+            render_package_label(ctx, comp->x, comp->y, "LM317");
+            render_package_pins(ctx, comp->x, comp->y, "IN", "OUT", "ADJ");
             break;
         }
         case COMP_7805: {
             render_regulator_box(ctx, comp->x, comp->y, comp->rotation);
-            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
-            render_draw_text_small(ctx, "7805", sx - 14, sy - 4, COLOR_TEXT);
-            // Terminal labels: IN (left), OUT (right), GND (bottom)
-            render_draw_text_small(ctx, "IN", sx - 38, sy - 12, COLOR_ACCENT);
-            render_draw_text_small(ctx, "OUT", sx + 28, sy - 12, COLOR_ACCENT);
-            render_draw_text_small(ctx, "GND", sx - 10, sy + 40, COLOR_ACCENT);
+            render_package_label(ctx, comp->x, comp->y, "7805");
+            render_package_pins(ctx, comp->x, comp->y, "IN", "OUT", "GND");
             break;
         }
         case COMP_TL431: {
             render_regulator_box(ctx, comp->x, comp->y, comp->rotation);
-            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
-            render_draw_text_small(ctx, "TL431", sx - 18, sy - 4, COLOR_TEXT);
-            // Terminal labels: K (left), A (right), REF (bottom)
-            render_draw_text_small(ctx, "K", sx - 38, sy - 12, COLOR_ACCENT);
-            render_draw_text_small(ctx, "A", sx + 32, sy - 12, COLOR_ACCENT);
-            render_draw_text_small(ctx, "REF", sx - 10, sy + 40, COLOR_ACCENT);
+            render_package_label(ctx, comp->x, comp->y, "TL431");
+            render_package_pins(ctx, comp->x, comp->y, "K", "A", "REF");
             break;
         }
 

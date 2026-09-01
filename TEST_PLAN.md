@@ -918,6 +918,49 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.39 v3.24.0 - the circuits of a battery instrument (2026-08-31)
+
+Seven templates in a new **Battery monitoring & electronic load** group, built from a
+senior-design BMI: the load that discharges a cell, the two stages that charge it, the thermal
+cutout and a supercapacitor standing in for the cell. Each has an arithmetic answer and hits it.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.39.1 | `[ ]` **E-Load: Constant Current Sink** | 3.200 V on a 3.2 ohm sense = 1.000 A, and the cell sags 7.4 -> 7.35 across its own 0.05 ohm, which is the same amp measured a second way |
+| 3.39.2 | `[ ]` **E-Load: Constant Resistance** | cell 7.363 V, sense 0.7363 V - divide and it is 10.00 ohm, the value the divider ratio asks for |
+| 3.39.3 | `[ ]` **E-Load: Constant Voltage** | the terminal sits at 3.000 V and 4.4 V across 4.4 ohm is 1.000 A. The inputs are the other way round from the sink, on purpose |
+| 3.39.4 | `[ ]` **LiPo Charger: CC Stage** | 4.95 V on a 4.5 ohm sense = 1.100 A. The sense is in the return leg so one op-amp reads it against ground |
+| 3.39.5 | `[ ]` **LiPo Charger: CV Stage** | 4.201 V into 21 ohm. The divider is 580 and not the textbook 566: this LM317 model puts its 0.1 ohm of output impedance outside the divider, so 200 mA costs 68 mV that never gets corrected |
+| 3.39.6 | `[ ]` **BMI: NTC Thermal Cutout** | 13.5 V at 25 C; drag the **Tmp** slider past 35 C and it falls to the negative rail |
+| 3.39.7 | `[ ]` **BMI: Supercap Cell Simulator** | rises to 4.167 V with tau 0.167 s and drains with tau 1 s - the asymmetry is the two resistors, and both are on the screen |
+| 3.39.8 | `[ ]` **My Circuits -> BMI**, place it and Save, then Open | the same block comes back. It is the original schematic uncorrected, positive feedback and all, and it is not asked to regulate - only that its parts work and that it survives a round trip |
+| 3.39.9 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 54 suites, 0 failed |
+
+Three faults found while building them, all in code that was already shipped:
+
+**An op-amp could report two million volts.** When Newton flip-flops between the two rails, the
+stamp falls back to a linear one so it has something to converge on - and a linear stamp has
+nothing left to keep the output inside the supplies. Open the feedback loop round a gain of 1e5
+and out comes 1e5 times the input difference, on a part running on 15 V. It surfaced as nine
+undo/redo failures, because whether the solver landed on that root or on a rail depended on
+where it started. The fall-back now lowers the gain just enough to land on the rail.
+
+**The ripple check was firing on round-off.** `--probe-audit` asks whether a trace moves too
+little to see, and "moves" was `amp > 0`. A flat DC rail comes back from a solve with its last
+bit wobbling - 4.4e-16 on a 3.2 V node, two ULP - so a dead-flat trace read as invisible ripple.
+It now wants movement four orders above round-off.
+
+**A wire lying on top of another wire passed the geometry suite.** The first draft of the
+current sink returned its feedback along the row the cell's own drain wire uses: collinear,
+touching, with no junction to say whether they meet. `--geom-test` counts crossings and wires
+through component bodies and had nothing to say about two wires sharing a line.
+
+One template was cut rather than shipped broken. A CC-CV handover - both loops driving one gate
+through a diode OR - is bistable in the constant-current region: the voltage amplifier sitting
+at its negative rail drags the gate below itself through the diode and latches there, fully on,
+with the current amplifier saturated and unable to pull it back. Both roots satisfy the
+equations. The two stages ship separately and the note in each says what the join would need.
+
 ### 3.38 v3.23.2 - twenty-five faults from an adversarial review (2026-08-31)
 
 Six readers over the source, each with a lens the audit battery does not cover, and a refuter

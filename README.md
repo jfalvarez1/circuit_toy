@@ -1,6 +1,6 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.23.2](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.23.2)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.24.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.24.0)** (auto-updating from v3.4.0 on)
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
 digital solver, a real-time bench oscilloscope with FFT and THD, 187 guided circuits from RC
@@ -887,6 +887,41 @@ and the answer on the screen is wrong because of how it was measured.
 - **Hot-Plug Inrush** (`Inrush`) - 1000 uF meeting 12 V through a closing connector: 240 A for
   50 us, or 2.5 A through a 4.7 ohm limiter
 
+### Battery monitoring & electronic load
+
+The circuits of a battery instrument: the load that discharges a cell at a set rate, the two
+stages that charge it back up, the sensor that stops the charge if it gets hot, and a bench
+stand-in for the cell itself. Every one of them has an answer you can check on paper, and the
+notes give it.
+
+- **E-Load: Constant Current Sink** (`ELoad`) - the circuit an electronic load is built round.
+  An op-amp holds the sense resistor at a reference, so the current is V_ref / R_sense and the
+  cell's voltage does not enter into it: 3.2 V across 3.2 ohm is 1 A
+- **E-Load: Constant Resistance** (`ELoadCR`) - the same sink with the reference taken from a
+  90k/10k divider off the cell instead of a fixed source. The current now tracks the cell, so
+  V/I stays at R_sense/k = 10 ohm however far it sags. A constant-resistance mode with no
+  multiplier in it
+- **E-Load: Constant Voltage** (`ELoadCV`) - holds its own terminal at a setpoint and takes
+  whatever that needs. The inputs go the opposite way round from the current sink, because a
+  terminal that is too high needs MORE current to pull it down. 7.4 V behind 4.4 ohm held at
+  3.0 V is exactly 1 A
+- **LiPo Charger: CC Stage** (`ChgCC`) - a high-side IRF9540 passing 1.1 A, with the sense
+  resistor in the RETURN leg where one op-amp can read it against ground. A high-side sense
+  would need a difference amp and its CMRR
+- **LiPo Charger: CV Stage** (`ChgCV`) - 4.20 V from two LM317s in cascade, the first dropping
+  15 V to about 8 so the heat is split between two packages. 200 mA into 21 ohm
+- **BMI: NTC Thermal Cutout** (`ThermCut`) - a 10k NTC against a 10k resistor on 6 V, compared
+  with 2.4 V. Drag the **Tmp** slider at the bottom of the window past 35 C and the comparator
+  flips; that edge is what stops the charge
+- **BMI: Supercap Cell Simulator** (`SupCap`) - 0.1 F charging through 2 ohm with 10 ohm across
+  it, settling at 4.167 V. The supply is stepped rather than held, because a solver starts a
+  capacitor at its operating point and a DC rail would show the answer with no curve
+
+**My Circuits** also carries **BMI**, the same discharge stage transcribed from the original
+senior-design schematic *without* correction - a P-channel low side with the reference on + and
+the sense on -, which is positive feedback and latches. It is there on purpose next to the
+corrected one: the parts and their models are identical and only the sign of the loop differs.
+
 ### Ideal vs real models
 
 | | |
@@ -982,7 +1017,7 @@ two longest are split into shards (`--shard 0/4`) because a battery can never fi
 its slowest single suite.
 
 ```bash
-build/tools/template_smoke.exe             # 188/188 templates passed
+build/tools/template_smoke.exe             # 195/195 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (204 oracles)
@@ -1038,7 +1073,7 @@ around an error exactly as it closes around the truth. It has found three faults
 see - a junction capacitance stamped with its sign inverted, a crystal read with the next step's
 state, and a MOSFET gate whose companion advanced once per Newton iteration and turned a DC gate
 bias into 24 mA of current that was not there. With all three fixed, `--flow-test` closes on every
-node of all 188 templates with **no exemptions and no skipped nodes**, where it used to carry two
+node of all 195 templates with **no exemptions and no skipped nodes**, where it used to carry two
 exemptions and skip every MOSFET gate.
 
 `--class-test` runs every template at the app's own step and again at a finer one, and asks whether

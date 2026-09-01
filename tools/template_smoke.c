@@ -2299,7 +2299,7 @@ static int geom_test(void) {
         Circuit *c = circuit_create();
         if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
         total++;
-        int diag = 0, cross = 0, through = 0, touch = 0;
+        int diag = 0, cross = 0, through = 0, touch = 0, colin = 0;
         char detail[400] = "";
         /* Through-body findings get their own buffer. They matter more than crossings, and
            sharing one meant a busy schematic's crossings crowded them out of the line. */
@@ -2318,6 +2318,30 @@ static int geom_test(void) {
                 if (seg_intersect(a->x, a->y, b->x, b->y, cc->x, cc->y, d->x, d->y)) {
                     cross++;
                     if (strlen(detail) < 300) snprintf(detail + strlen(detail), sizeof detail - strlen(detail), " cross@(%.0f,%.0f)", (a->x + b->x + cc->x + d->x) / 4, (a->y + b->y + cc->y + d->y) / 4);
+                }
+                /* Two wires lying along the same line and sharing more than a point. Crossing
+                   at a point is ordinary draughting; running one wire on top of another is not,
+                   because the drawing then cannot say whether they meet - there is no junction
+                   to see, and the two are only distinct because their node ids happen to
+                   differ. seg_intersect answers the crossing question and says nothing about
+                   this one, so a feedback run laid along a supply row read as clean. */
+                int a_h = fabsf(a->y - b->y) <= 0.5f, c_h = fabsf(cc->y - d->y) <= 0.5f;
+                int a_v = fabsf(a->x - b->x) <= 0.5f, c_v = fabsf(cc->x - d->x) <= 0.5f;
+                float ov = -1.0f, oy = 0, ox = 0;
+                if (a_h && c_h && fabsf(a->y - cc->y) <= 0.5f) {
+                    float lo1 = fminf(a->x, b->x), hi1 = fmaxf(a->x, b->x);
+                    float lo2 = fminf(cc->x, d->x), hi2 = fmaxf(cc->x, d->x);
+                    ov = fminf(hi1, hi2) - fmaxf(lo1, lo2);
+                    ox = fmaxf(lo1, lo2); oy = a->y;
+                } else if (a_v && c_v && fabsf(a->x - cc->x) <= 0.5f) {
+                    float lo1 = fminf(a->y, b->y), hi1 = fmaxf(a->y, b->y);
+                    float lo2 = fminf(cc->y, d->y), hi2 = fmaxf(cc->y, d->y);
+                    ov = fminf(hi1, hi2) - fmaxf(lo1, lo2);
+                    ox = a->x; oy = fmaxf(lo1, lo2);
+                }
+                if (ov > 0.5f) {
+                    colin++;
+                    if (strlen(detail) < 300) snprintf(detail + strlen(detail), sizeof detail - strlen(detail), " onwire@(%.0f,%.0f)x%.0f", ox, oy, ov);
                 }
             }
             /* through a body: skip components that own one of the wire's endpoints */
@@ -2380,11 +2404,13 @@ static int geom_test(void) {
         /* Text on a symbol, on a wire, or on other text is a hard rule too. Unlike a drawn
            crossing there is no topology in which any of them is the right answer: the label
            cannot be read, and a schematic whose title cannot be read is not finished. */
+        /* colin is reported but not fatal yet: it found 40 templates the day it was written,
+           which is a backlog to work through, not something to fail the suite on today. */
         int hard = diag + overlap + texton + textpair + textwire;
-        int ok = (diag + cross + through + touch + overlap + texton + textpair + textwire) == 0;
-        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d overlap=%d texton=%d textpair=%d textwire=%d%s%s\n",
+        int ok = (diag + cross + through + touch + overlap + texton + textpair + textwire + colin) == 0;
+        printf("[%s] geom  %-28s diag=%d cross=%d through=%d touch=%d overlap=%d texton=%d textpair=%d textwire=%d onwire=%d%s%s\n",
                ok ? " OK " : (hard ? "FAIL" : "WARN"), ti ? ti->name : "?",
-               diag, cross, through, touch, overlap, texton, textpair, textwire, tdetail, detail);
+               diag, cross, through, touch, overlap, texton, textpair, textwire, colin, tdetail, detail);
         if (!ok) bad_templates++;
         if (hard) hard_failures++;
         circuit_free(c);
