@@ -1,4 +1,4 @@
-# Prebuilt Circuit Template Audit (182 templates, 19 palette groups)
+# Prebuilt Circuit Template Audit (195 templates, 20 palette groups)
 
 ## Added since the blocks below were written
 
@@ -17,6 +17,7 @@ where every one ends with a TRY or an INTERVIEW line.
 | Interview: instrumentation & scope | Probe Compensation, Probe Loading (1x vs 10x), Ground Lead Ringing, Scope Input: 1 M vs 50 ohm, AC Coupling, Current Sense: High vs Low Side, 4-Wire (Kelvin) Sensing |
 | Interview: power & converters | Discrete Buck Node by Node, LDO vs Switcher, Bootstrap High-Side Drive |
 | Interview: I/O & signal integrity | Termination none/series/parallel, Pull-up Sizing, Ground Bounce, Crosstalk, ESD Clamp Diodes |
+| Battery monitoring & e-load | E-Load: Constant Current Sink, E-Load: Constant Resistance, E-Load: Constant Voltage, LiPo Charger: CC Stage, LiPo Charger: CV Stage, BMI: NTC Thermal Cutout, BMI: Supercap Cell Simulator |
 | Interview: fundamentals | The Two-Capacitor Problem, The Miller Effect, BJT or MOSFET as a Switch, Hot-Plug Inrush |
 
 One is deliberately absent and written up in `docs/ROADMAP.md`: a **delay-line transmission line**
