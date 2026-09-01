@@ -1990,6 +1990,18 @@ static void part_2n7002(Component *c) {
     c->props.mosfet.lambda = 0.02;
     c->props.mosfet.ideal = false;
 }
+/* A logic-level N-channel: it is fully on at V_GS = 5 V, which is why a design driving a
+   gate straight from a 3.3 V or 5 V logic output uses one of these and not an IRF540N, whose
+   threshold alone is 4 V. The battery instrument's pass devices are all IRLZ44N for exactly
+   that reason - the gate comes from a 74AHC1G08. */
+static void part_irlz44n(Component *c) {
+    c->props.mosfet.vth = 1.5;        /* V_GS(th) 1.0 - 2.0 V */
+    c->props.mosfet.kp = 13.0;        /* R_DS(on) 22 mohm max at V_GS = 5 V, I_D = 25 A */
+    c->props.mosfet.w = 1e-6; c->props.mosfet.l = 1e-6;
+    c->props.mosfet.lambda = 0.005;
+    c->props.mosfet.ideal = false;
+}
+
 static void part_irf540n(Component *c) {
     c->props.mosfet.vth = 4.0;        /* V_GS(th) 2 - 4 V */
     c->props.mosfet.kp = 3.8;         /* R_DS(on) 44 mohm max at V_GS = 10 V, I_D = 17 A */
@@ -2149,6 +2161,7 @@ static const PartModel g_parts[] = {
     { "2N7000",  COMP_NMOS,    "logic-level NMOS, V_th 2.1 V, R_DS(on) 1.2 ohm at V_GS 10 V", part_2n7000 },
     { "2N7002",  COMP_NMOS,    "SOT-23 NMOS, V_th 1.6 V, R_DS(on) 2 ohm at V_GS 10 V",        part_2n7002 },
     { "IRF540N", COMP_NMOS,    "power NMOS, V_th 4 V, R_DS(on) 44 mohm at V_GS 10 V",         part_irf540n },
+    { "IRLZ44N", COMP_NMOS,    "logic-level NMOS, V_th 1.5 V, R_DS(on) 22 mohm at V_GS 5 V",  part_irlz44n },
     { "BS250",   COMP_PMOS,    "P-channel, V_th -3 V, R_DS(on) 14 ohm at V_GS -10 V",         part_bs250 },
     { "IRF9540N",COMP_PMOS,    "power P-channel, V_th -3 V, R_DS(on) 0.2 ohm at V_GS -10 V",  part_irf9540n },
     { "2N3904",  COMP_NPN_BJT, "general-purpose NPN, h_FE 200 at 10 mA, V_AF 74 V",           part_2n3904 },

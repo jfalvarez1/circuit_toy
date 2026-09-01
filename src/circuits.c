@@ -350,6 +350,7 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_BMI_SUPERCAP] = {"BMI: Supercap Cell Simulator", "SupCap", "a supercapacitor standing in for a cell under charge", TG_BMI},
     [CIRCUIT_BMI_CHARGER_CC] = {"LiPo Charger: CC Stage", "ChgCC", "1.1 A into the cell, high-side PMOS, sensed in the return", TG_BMI},
     [CIRCUIT_BMI_CHARGER_CV] = {"LiPo Charger: CV Stage", "ChgCV", "4.2 V from two cascaded LM317s, 200 mA", TG_BMI},
+    [CIRCUIT_BMI_INSTRUMENT] = {"BMI: Full Instrument", "BMI", "the window comparator, the enable and the pass device", TG_BMI},
 
 
 
@@ -6421,6 +6422,7 @@ static int place_bmi_thermal_cutout(Circuit *circuit, float x, float y);
 static int place_bmi_supercap(Circuit *circuit, float x, float y);
 static int place_bmi_charger_cc(Circuit *circuit, float x, float y);
 static int place_bmi_charger_cv(Circuit *circuit, float x, float y);
+static int place_bmi_instrument(Circuit *circuit, float x, float y);
 static int place_tline_real(Circuit *circuit, float x, float y);
 static int place_sevenseg_test(Circuit *circuit, float x, float y);
 static int place_wireless_link(Circuit *circuit, float x, float y);
@@ -6769,6 +6771,7 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_BMI_SUPERCAP:       return place_bmi_supercap(circuit, x, y);
         case CIRCUIT_BMI_CHARGER_CC:     return place_bmi_charger_cc(circuit, x, y);
         case CIRCUIT_BMI_CHARGER_CV:     return place_bmi_charger_cv(circuit, x, y);
+        case CIRCUIT_BMI_INSTRUMENT:     return place_bmi_instrument(circuit, x, y);
         case CIRCUIT_TLINE_REAL:         return place_tline_real(circuit, x, y);
         case CIRCUIT_SEVENSEG_TEST:      return place_sevenseg_test(circuit, x, y);
         case CIRCUIT_WIRELESS_LINK:      return place_wireless_link(circuit, x, y);
@@ -7152,6 +7155,12 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "Each is set by its own divider, V = 1.25 * (1 + R2/R1), so 240 and 580 land 4.20 V at the load. Getting it right",
         "is what the whole cell chemistry depends on: 50 mV high shortens its life, 50 mV low leaves capacity",
         "on the table. PROBE: the output, 4.20 V into 21 ohm = 200 mA."},
+    [CIRCUIT_BMI_INSTRUMENT] = {"THE INSTRUMENT ITSELF: what makes a battery monitor a monitor is not the",
+        "charger or the load, it is the circuit that decides whether either may run at all. A divider",
+        "sets two thresholds from the 5 V rail - 6437, 1420 and 10k give 3.20 V and 2.80 V - and two",
+        "comparators ask whether the cell is between them. Their answers are ANDed, and ANDed again with",
+        "the microcontroller's enable, and only that drives the pass MOSFET. Cell inside the window and",
+        "enable high: 0.3 A through the 10 ohm load. Outside it, or enable low: nothing. EDIT THE CELL."},
     [CIRCUIT_IV_KELVIN] = {"4-WIRE (KELVIN) SENSING: 1 A forced through a 10 mohm shunt whose leads are 50 mohm each.",
         "Measure at the connector and you read 110 mV: 110 mohm, eleven times the part, and the part is",
         "the smallest thing in the measurement. Land two more wires directly on the resistor body and",
@@ -13288,6 +13297,137 @@ static int place_bmi_charger_cv(Circuit *circuit, float x, float y) {
     return 20;
 }
 
+static int place_bmi_instrument(Circuit *circuit, float x, float y) {
+    /* The battery instrument's decision path, transcribed from its schematic: the threshold
+       divider, the two comparators that bracket the cell, the AND with the microcontroller's
+       enable, and the pass device all of that exists to switch. The rails are drawn as plain
+       sources rather than as their MC34063 buck converters - what those produce is 3.3 V and
+       5 V, and the switching that produces it is a different lesson. */
+    Component *v5 = dc_rail(circuit, x, y, 5.0);   if (!v5) return 0;    // +(x,y)
+    int rail = TN(x, y);
+
+    /* 6437 + 1420 + 10k across 5 V: 280 uA, so the taps land at 3.197 V and 2.800 V. Those two
+       numbers are the whole specification of the cell chemistry's safe range. */
+    Component *r10 = vres(circuit, x + 160, y + 60, 6437.0);             // (160,20)-(160,100)
+    int r10t = TN(x + 160, y + 20), r10b = TN(x + 160, y + 100);
+    r10->node_ids[0] = r10t; r10->node_ids[1] = r10b;
+    TW(rail, TN(x + 160, y));
+    TW(TN(x + 160, y), r10t);
+    Component *r11 = vres(circuit, x + 160, y + 180, 1420.0);            // (160,140)-(160,220)
+    int r11t = TN(x + 160, y + 140), r11b = TN(x + 160, y + 220);
+    r11->node_ids[0] = r11t; r11->node_ids[1] = r11b;
+    TW(r10b, r11t);
+    Component *r12 = vres(circuit, x + 160, y + 300, 10000.0);           // (160,260)-(160,340)
+    int r12t = TN(x + 160, y + 260), r12b = TN(x + 160, y + 340);
+    r12->node_ids[0] = r12t; r12->node_ids[1] = r12b;
+    TW(r11b, r12t);
+    Component *gdiv = add_comp(circuit, COMP_GROUND, x + 160, y + 400, 0);
+    gdiv->node_ids[0] = TN(x + 160, y + 380);
+    TW(r12b, gdiv->node_ids[0]);
+
+    /* the cell, and the sense line that every comparator watches */
+    Component *bat = add_comp(circuit, COMP_BATTERY, x + 1180, y + 120, 0);  // +(1180,80) -(1180,160)
+    bat->props.battery.nominal_voltage = 3.0;      /* inside the window, so it starts enabled */
+    bat->props.battery.ideal = true;
+    int bp = TN(x + 1180, y + 80), bn = TN(x + 1180, y + 160);
+    bat->node_ids[0] = bp; bat->node_ids[1] = bn;
+    Component *gbat = add_comp(circuit, COMP_GROUND, x + 1180, y + 220, 0);
+    gbat->node_ids[0] = TN(x + 1180, y + 200);
+    TW(bn, gbat->node_ids[0]);
+    /* The sense line runs above everything and drops to each comparator on its own column.
+       One long vertical with the two inputs tapped off its middle looks the same and is not:
+       a wire connects at its ends, so a node placed part way along it belongs to nothing, and
+       --conn-test says so. Every tap here is the end of a segment. */
+    TW(bp, TN(x + 1180, y - 40));
+    TW(TN(x + 1180, y - 40), TN(x + 340, y - 40));
+    TW(TN(x + 340, y - 40), TN(x - 60, y - 40));
+    TW(TN(x + 340, y - 40), TN(x + 340, y + 100));
+    TW(TN(x - 60, y - 40), TN(x - 60, y + 440));
+    TW(TN(x - 60, y + 440), TN(x + 350, y + 440));
+    TW(TN(x + 350, y + 440), TN(x + 350, y + 320));
+
+    /* U7: is the cell BELOW the top of the window? + on the upper tap, - on the cell. */
+    Component *u7 = add_comp(circuit, COMP_OPAMP, x + 420, y + 120, 0);  // -(380,100) +(380,140) out(460,120)
+    u7->props.opamp.gain = 1e5;
+    u7->props.opamp.vmax = 5.0; u7->props.opamp.vmin = 0.0;   /* the levels the gate expects */
+    int u7m = TN(x + 380, y + 100), u7p = TN(x + 380, y + 140), u7o = TN(x + 460, y + 120);
+    u7->node_ids[0] = u7m; u7->node_ids[1] = u7p; u7->node_ids[2] = u7o;
+    TW(r11t, TN(x + 380, y + 140));
+    TW(TN(x + 340, y + 100), u7m);
+
+    /* U8: is it ABOVE the bottom? The inputs are the other way round, which is the whole
+       difference between an over-voltage check and an under-voltage one. */
+    Component *u8 = add_comp(circuit, COMP_OPAMP, x + 420, y + 300, 0);  // -(380,280) +(380,320) out(460,300)
+    u8->props.opamp.gain = 1e5;
+    u8->props.opamp.vmax = 5.0; u8->props.opamp.vmin = 0.0;
+    int u8m = TN(x + 380, y + 280), u8p = TN(x + 380, y + 320), u8o = TN(x + 460, y + 300);
+    u8->node_ids[0] = u8m; u8->node_ids[1] = u8p; u8->node_ids[2] = u8o;
+    TW(r12t, TN(x + 300, y + 260));
+    TW(TN(x + 300, y + 260), TN(x + 300, y + 280));
+    TW(TN(x + 300, y + 280), u8m);
+    TW(TN(x + 350, y + 320), u8p);
+
+    Component *and1 = add_comp(circuit, COMP_AND_GATE, x + 600, y + 210, 0);  // A(560,190) B(560,230) OUT(640,210)
+    int a1a = TN(x + 560, y + 190), a1b = TN(x + 560, y + 230), a1o = TN(x + 640, y + 210);
+    and1->node_ids[0] = a1a; and1->node_ids[1] = a1b; and1->node_ids[2] = a1o;
+    TW(u7o, TN(x + 520, y + 120));
+    TW(TN(x + 520, y + 120), TN(x + 520, y + 190));
+    TW(TN(x + 520, y + 190), a1a);
+    TW(u8o, TN(x + 520, y + 300));
+    TW(TN(x + 520, y + 300), TN(x + 520, y + 230));
+    TW(TN(x + 520, y + 230), a1b);
+
+    /* the microcontroller's enable. On the real sheet this is a pin on an ESP PICO W called
+       Signal 1; here it is the 5 V it drives, because what the firmware decides is not a
+       circuit question. Set it to 0 and the instrument refuses to conduct however good the
+       cell is, which is the point of it being in series. */
+    Component *ven = add_comp(circuit, COMP_DC_VOLTAGE, x + 600, y + 480, 0);
+    ven->props.dc_voltage.voltage = 5.0;
+    ven->node_ids[0] = TN(x + 600, y + 440); ven->node_ids[1] = TN(x + 600, y + 520);
+    Component *gen = add_comp(circuit, COMP_GROUND, x + 600, y + 580, 0);
+    gen->node_ids[0] = TN(x + 600, y + 560);
+    TW(ven->node_ids[1], gen->node_ids[0]);
+
+    Component *and2 = add_comp(circuit, COMP_AND_GATE, x + 840, y + 300, 0);  // A(800,280) B(800,320) OUT(880,300)
+    int a2a = TN(x + 800, y + 280), a2b = TN(x + 800, y + 320), a2o = TN(x + 880, y + 300);
+    and2->node_ids[0] = a2a; and2->node_ids[1] = a2b; and2->node_ids[2] = a2o;
+    TW(a1o, TN(x + 760, y + 210));
+    TW(TN(x + 760, y + 210), TN(x + 760, y + 280));
+    TW(TN(x + 760, y + 280), a2a);
+    TW(ven->node_ids[0], TN(x + 720, y + 440));
+    TW(TN(x + 720, y + 440), TN(x + 720, y + 320));
+    TW(TN(x + 720, y + 320), a2b);
+
+    Component *q2 = add_comp(circuit, COMP_NMOS, x + 1040, y + 300, 0);  // G(1020,300) D(1060,280) S(1060,320)
+    component_apply_part(q2, "IRLZ44N");
+    q2->props.mosfet.cgso = q2->props.mosfet.cgdo = q2->props.mosfet.cgbo = 0.0;
+    int qg = TN(x + 1020, y + 300), qd = TN(x + 1060, y + 280), qs = TN(x + 1060, y + 320);
+    q2->node_ids[0] = qg; q2->node_ids[1] = qd; q2->node_ids[2] = qs;
+    TW(a2o, qg);
+    TW(bp, TN(x + 1240, y + 80));
+    TW(TN(x + 1240, y + 80), TN(x + 1240, y + 280));
+    TW(TN(x + 1240, y + 280), qd);
+
+    Component *r19 = vres(circuit, x + 1060, y + 400, 10.0);             // (1060,360)-(1060,440)
+    r19->props.resistor.power_rating = 5.0;
+    int r19t = TN(x + 1060, y + 360), r19b = TN(x + 1060, y + 440);
+    r19->node_ids[0] = r19t; r19->node_ids[1] = r19b;
+    TW(qs, r19t);
+    Component *gr19 = add_comp(circuit, COMP_GROUND, x + 1060, y + 500, 0);
+    gr19->node_ids[0] = TN(x + 1060, y + 480);
+    TW(r19b, gr19->node_ids[0]);
+
+    add_label(circuit, x - 40, y - 140, "THE BATTERY MONITORING INSTRUMENT: the divider sets the window, the two comparators");
+    add_label(circuit, x - 40, y - 110, "ask whether the cell is inside it, and nothing conducts unless they and the firmware agree.");
+    add_label(circuit, x + 100, y + 440, "6437 / 1420 / 10k across 5 V");
+    add_label(circuit, x + 100, y + 470, "  upper tap 3.20 V");
+    add_label(circuit, x + 100, y + 500, "  lower tap 2.80 V");
+    add_label(circuit, x + 900, y + 520, "cell 3.0 V, inside the window:");
+    add_label(circuit, x + 900, y + 550, "0.3 A through the 10 ohm load.");
+    add_label(circuit, x + 900, y + 580, "EDIT THE CELL outside 2.8-3.2 and it stops.");
+    return 18;
+}
+
 static int place_tline_real(Circuit *circuit, float x, float y) {
     /* One driver, one 5 ns cable, three ways of ending it - the same experiment as the
        Termination template, but with a line that actually delays rather than five L-C
@@ -14009,6 +14149,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_SUPERCAP]     = { COMP_RESISTOR, 1, 0 },     /* the cap terminal, across the bleed resistor */
     [CIRCUIT_BMI_CHARGER_CC]   = { COMP_RESISTOR, 0, 0 },     /* the sense: 4.95 V over 4.5 ohm is the 1.1 A */
     [CIRCUIT_BMI_CHARGER_CV]   = { COMP_RESISTOR, 4, 0 },     /* the regulated 4.2 V at the load */
+    [CIRCUIT_BMI_INSTRUMENT]   = { COMP_RESISTOR, 3, 0 },     /* across the load: on when the cell is in range */
     [CIRCUIT_IV_BUCK_NODES]    = { COMP_RESISTOR, 2, 0 },     /* the output, after L and C */
     /* Resistor 0 is the linear regulator's load, resistor 1 the switcher's. The output probe was
        on 1, so the whole point of the circuit - the two 5 V rails side by side - had a probe on
@@ -14201,7 +14342,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_AC_COUPLING] = 2e-6, [CIRCUIT_IV_SHUNT_SENSE] = 1e-3, [CIRCUIT_IV_KELVIN] = 1e-3,
     [CIRCUIT_BMI_ELOAD_CC] = 1e-3, [CIRCUIT_BMI_ELOAD_CR] = 1e-3, [CIRCUIT_BMI_ELOAD_CV] = 1e-3,
     [CIRCUIT_BMI_THERMAL_CUTOUT] = 1e-3, [CIRCUIT_BMI_SUPERCAP] = 0.5,
-    [CIRCUIT_BMI_CHARGER_CC] = 1e-3, [CIRCUIT_BMI_CHARGER_CV] = 1e-3,
+    [CIRCUIT_BMI_CHARGER_CC] = 1e-3, [CIRCUIT_BMI_CHARGER_CV] = 1e-3, [CIRCUIT_BMI_INSTRUMENT] = 1e-3,
     [CIRCUIT_IV_BUCK_NODES] = 2e-6,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2e-6, [CIRCUIT_IV_BOOTSTRAP] = 2e-6,
     [CIRCUIT_IV_TERMINATION] = 5e-9, [CIRCUIT_IV_PULLUP_SIZING] = 5e-6,
@@ -14260,7 +14401,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_AC_COUPLING] = 0.05, [CIRCUIT_IV_SHUNT_SENSE] = 0.5, [CIRCUIT_IV_KELVIN] = 0.05,
     [CIRCUIT_BMI_ELOAD_CC] = 2.0, [CIRCUIT_BMI_ELOAD_CR] = 0.5, [CIRCUIT_BMI_ELOAD_CV] = 1.0,
     [CIRCUIT_BMI_THERMAL_CUTOUT] = 5.0, [CIRCUIT_BMI_SUPERCAP] = 2.0,
-    [CIRCUIT_BMI_CHARGER_CC] = 5.0, [CIRCUIT_BMI_CHARGER_CV] = 5.0,
+    [CIRCUIT_BMI_CHARGER_CC] = 5.0, [CIRCUIT_BMI_CHARGER_CV] = 5.0, [CIRCUIT_BMI_INSTRUMENT] = 1.0,
     [CIRCUIT_IV_BUCK_NODES] = 2.0,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2.0, [CIRCUIT_IV_BOOTSTRAP] = 10,
     [CIRCUIT_IV_TERMINATION] = 2, [CIRCUIT_IV_PULLUP_SIZING] = 1.0,
@@ -14450,6 +14591,7 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_SUPERCAP]     = { DEMO_WAVEFORM, 0 },
     [CIRCUIT_BMI_CHARGER_CC]   = { DEMO_DC, 0 },
     [CIRCUIT_BMI_CHARGER_CV]   = { DEMO_DC, 0 },
+    [CIRCUIT_BMI_INSTRUMENT]   = { DEMO_DC, 0 },
     [CIRCUIT_IV_BUCK_NODES]    = { DEMO_DC, 0 },
     [CIRCUIT_IV_LDO_VS_BUCK]   = { DEMO_DC, 0 },
     [CIRCUIT_IV_BOOTSTRAP]     = { DEMO_WAVEFORM, 100000 },

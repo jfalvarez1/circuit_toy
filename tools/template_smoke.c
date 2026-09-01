@@ -3559,6 +3559,7 @@ static const PartCheck part_checks[] = {
     { "2N7002",  PC_RDSON,  10.0, 2.0,   0.15, 0, "R_DS(on) 2 ohm typ at V_GS = 10 V" },
     { "2N7002",  PC_ID_MIN,  4.5, 0.050, 0,    0, "I_D(on) 50 mA min at V_GS = 4.5 V" },
     { "IRF540N", PC_RDSON,  10.0, 0.044, 0.15, 0, "R_DS(on) 44 mohm max at V_GS = 10 V" },
+    { "IRLZ44N", PC_RDSON,   5.0, 0.022, 0.20, 0, "R_DS(on) 22 mohm max at V_GS = 5 V (logic level)" },
     { "IRF540N", PC_ID_MIN,  6.0, 1.0,   0,    0, "well into conduction one volt above V_GS(th) + 1" },
     { "BS250",   PC_RDSON, -10.0, 10.0,  0.20, 0, "R_DS(on) 14 ohm max at V_GS = -10 V (10 typ)" },
     { "IRF9540N",PC_RDSON, -10.0, 0.20,  0.20, 0, "R_DS(on) 0.2 ohm max at V_GS = -10 V" },
@@ -3763,7 +3764,48 @@ static int bias_test(void) {
                r.ok ? (pass ? "" : "<-- MISMATCH") : "[solve failed]");
         printf("        %s\n", cases[i].why);
     }
-    printf("\nbias-test: %d stages, %d whose region or V_CE did not match the arithmetic\n",
+    /* ---- the instrument's protection window ----
+       The whole point of a battery monitor is that it refuses. Place the instrument, move its
+       cell to each side of the 2.8 - 3.2 V window its divider defines, and check that the load
+       current follows: on in the middle, off at both ends. A window comparator that says yes
+       to everything passes every other audit in this program. */
+    {
+        printf("\n");
+        static const struct { double cell; bool conduct; const char *why; } wcases[] = {
+            { 3.00, true,  "inside the window - both comparators high, so the pass device is on" },
+            { 2.50, false, "below 2.80 V: the under-voltage comparator drops and the load is cut" },
+            { 3.40, false, "above 3.20 V: the over-voltage comparator drops and the load is cut" },
+        };
+        for (size_t i = 0; i < sizeof wcases / sizeof wcases[0]; i++) {
+            Circuit *c = circuit_create();
+            double ic = 0; int ok = 0;
+            if (circuit_place_template(c, CIRCUIT_BMI_INSTRUMENT, 0, 0) > 0) {
+                Component *bat = NULL, *load = NULL; int nres = 0;
+                for (int k = 0; k < c->num_components; k++) {
+                    if (c->components[k]->type == COMP_BATTERY) bat = c->components[k];
+                    if (c->components[k]->type == COMP_RESISTOR && nres++ == 3) load = c->components[k];
+                }
+                if (bat) bat->props.battery.nominal_voltage = wcases[i].cell;
+                Simulation *sim = simulation_create(c);
+                ok = sim && simulation_dc_analysis(sim) && bat && load;
+                if (ok) {
+                    Node *n = circuit_get_node(c, load->node_ids[0]);
+                    ic = (n ? n->voltage : 0) / load->props.resistor.resistance;
+                    if (!isfinite(ic)) ok = 0;
+                }
+                if (sim) simulation_free(sim);
+            }
+            circuit_free(c);
+            total++;
+            int pass = ok && (wcases[i].conduct ? (ic > 0.2 && ic < 0.4) : (fabs(ic) < 1e-3));
+            if (!pass) fails++;
+            printf("%s bias window: cell %.2f V -> load %7.4f A   expect %-3s  %s\n",
+                   pass ? " OK " : "FAIL", wcases[i].cell, ic,
+                   wcases[i].conduct ? "ON" : "off", ok ? wcases[i].why : "[solve failed]");
+        }
+    }
+
+    printf("\nbias-test: %d checks, %d whose region, V_CE or protection did not match the arithmetic\n",
            total, fails);
     return fails ? 1 : 0;
 }
