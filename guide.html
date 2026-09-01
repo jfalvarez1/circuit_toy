@@ -1984,6 +1984,42 @@ Probe readouts, the scope channel labels and the measurements switch to kV autom
                 BJT vs MOSFET as a switch, hot-plug inrush.</li>
             </ul>
 
+            <h3>Battery Monitoring &amp; Electronic Load</h3>
+            <p>The circuits of a battery instrument: the load that discharges a cell at a set
+            rate, the two stages that charge it back up, the sensor that stops the charge if it
+            gets hot, and a bench stand-in for the cell itself. Each one has an answer you can
+            work out on paper, and the note on the canvas gives it.</p>
+            <ul>
+                <li><strong>E-Load: Constant Current Sink</strong> - the circuit an electronic load
+                is built round. An op-amp holds the sense resistor at a reference, so the current is
+                V_ref / R_sense and the cell's voltage does not enter into it: 3.2 V across
+                3.2 &#937; is 1 A.</li>
+                <li><strong>E-Load: Constant Resistance</strong> - the same sink with the reference
+                taken from a 90k/10k divider off the cell instead of a fixed source, so V/I stays at
+                10 &#937; however far the cell sags. A constant-resistance mode with no multiplier
+                in it.</li>
+                <li><strong>E-Load: Constant Voltage</strong> - holds its own terminal at a setpoint
+                and takes whatever that needs. The inputs go the opposite way round from the current
+                sink, because a terminal that is too high needs MORE current to pull it down.</li>
+                <li><strong>LiPo Charger: CC Stage</strong> - a high-side IRF9540 passing 1.1 A with
+                the sense resistor in the RETURN leg, where one op-amp can read it against ground; a
+                high-side sense would need a difference amp and its CMRR.</li>
+                <li><strong>LiPo Charger: CV Stage</strong> - 4.20 V from two LM317s in cascade, the
+                first dropping 15 V to about 8 so the heat is split between two packages.</li>
+                <li><strong>BMI: NTC Thermal Cutout</strong> - a 10k NTC against a 10k resistor on
+                6 V, compared with 2.4 V. Drag the <strong>Tmp</strong> slider at the bottom of the
+                window past 35 &#176;C and the comparator flips.</li>
+                <li><strong>BMI: Supercap Cell Simulator</strong> - 0.1 F settling at 4.167 V, rising
+                with &#964; 0.167 s and draining with &#964; 1 s. The supply is stepped rather than
+                held: a solver starts a capacitor at its operating point, so a DC rail would show the
+                answer with no curve to watch.</li>
+            </ul>
+            <p><strong>My Circuits</strong> also carries <strong>BMI</strong>, the same discharge
+            stage transcribed from the original schematic <em>without</em> correction - a P-channel
+            low side with the reference on + and the sense on -, which is positive feedback and
+            latches. It sits beside the corrected one on purpose: the parts and their models are
+            identical, and only the sign of the loop differs.</p>
+
             <!-- Basic Circuits -->
             <h3>Basic Circuits</h3>
             <div class="component-grid">
