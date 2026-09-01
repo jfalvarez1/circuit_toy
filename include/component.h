@@ -157,6 +157,20 @@ typedef union {
         double ise;        // ISE - B-E leakage saturation current (A), default: 0
         double isc;        // ISC - B-C leakage saturation current (A), default: 0
 
+        /* Charge storage. Without these a transistor has no frequency limit at all: f_T is
+           infinite, a common-emitter stage holds its midband gain to a gigahertz, and the
+           Miller effect - which is a whole lesson on its own - cannot be demonstrated because
+           there is no C_bc to multiply. TF is what sets f_T (f_T = 1/(2 pi TF) at high current);
+           CJE and CJC are the depletion capacitances that dominate at low current and at
+           reverse bias. Zero by default, so a part that has not been given a data sheet
+           behaves exactly as it did before. */
+        double tf;         // TF  - Forward transit time (s), default: 0 (no charge storage)
+        double tr;         // TR  - Reverse transit time (s), default: 0
+        double cje;        // CJE - B-E zero-bias depletion capacitance (F), default: 0
+        double cjc;        // CJC - B-C zero-bias depletion capacitance (F), default: 0
+        double vje;        // VJE - B-E junction potential (V), default: 0.75
+        double vjc;        // VJC - B-C junction potential (V), default: 0.75
+
         // Temperature
         double temp;       // Operating temperature (K), default: 300
 

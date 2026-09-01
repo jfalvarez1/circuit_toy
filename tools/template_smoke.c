@@ -3535,6 +3535,7 @@ typedef enum {
     PC_ID_MIN,      /* MOSFET: saturation current at a stated V_GS must clear the I_D(on) minimum */
     PC_HFE,         /* BJT: force I_B, measure I_C/I_B */
     PC_VBE,         /* BJT: V_BE at the same operating point */
+    PC_FT,          /* BJT: f_T, from the current gain measured into an AC short */
     PC_VF,          /* diode: force I_F, read the forward drop */
     PC_VZ,          /* zener: force I_ZT, read the reverse voltage */
     PC_OPAMP_VOS,   /* op-amp: a unity buffer with its input grounded outputs its offset */
@@ -3567,6 +3568,12 @@ static const PartCheck part_checks[] = {
     { "2N3904",  PC_VBE,   50e-6, 0.66,  0.12, 0, "V_BE(on) 0.65 V typ at I_C = 10 mA" },
     { "BC547B",  PC_HFE,   10e-6, 290.0, 0.15, 0, "h_FE 200 - 450 (B grade)" },
     { "2N3906",  PC_HFE,   50e-6, 180.0, 0.15, 0, "h_FE 100 - 300 at I_C = 10 mA" },
+    /* f_T. The data sheet gives a minimum, the SPICE model is fitted to a typical part, so the
+       expected value here is what the model asks for: gm / 2pi(C_be + C_bc) worked out by hand
+       from the operating point and the TF/CJE/CJC the part carries. That is an arithmetic
+       oracle, and the measurement it is checked against is a transient. */
+    { "2N3904",  PC_FT,    50e-6, 490e6, 0.20, 0, "f_T 300 MHz min; gm/2pi(Cbe+Cbc) = 490 MHz" },
+    { "BC547B",  PC_FT,    10e-6, 208e6, 0.20, 0, "f_T at I_C = 3 mA; 300 MHz typ at 10 mA" },
     /* --- diodes and the zener: forced current, measured drop --- */
     { "1N4148",  PC_VF,     5e-3, 0.72,  0.12, 0, "V_F 0.72 V at 5 mA" },
     { "1N4148",  PC_VF,    10e-3, 0.80,  0.15, 0, "V_F 1.0 V max at 10 mA" },
@@ -3670,6 +3677,86 @@ static double pc_mos_id(const char *part, double vgs, int *ok) {
 }
 
 /* Forced base current; returns I_C through a 100 ohm collector resistor and V_BE. */
+/* f_T, measured the way a data sheet measures it: collector shorted to AC ground, a small
+   signal current into the base, and the ratio of collector to base current read at a frequency
+   well inside the region where beta falls as 1/f. There beta(f) = f_T/f, so f_T is the test
+   frequency times the ratio that comes out.
+
+   This is the check that the charge storage is there at all. With TF, CJE and CJC left at zero
+   a transistor has no frequency limit: the current gain never falls, beta(f) stays at h_FE, and
+   what this returns is h_FE times the test frequency - about ten times too big. */
+static double pc_bjt_ft(const char *part, double ib_bias, double f_test, int *ok) {
+    ComponentType ty = part_type(part);
+    bool pnp = (ty == COMP_PNP_BJT);
+    double sgn = pnp ? -1.0 : 1.0;
+    Circuit *c = circuit_create();
+    Component *q = pt_add(c, ty, 100, 100, 0);
+    if (!q || !component_apply_part(q, part)) { circuit_free(c); *ok = 0; return 0; }
+
+    Component *vcc = pt_add(c, COMP_DC_VOLTAGE, 300, 40, 0);
+    vcc->props.dc_voltage.voltage = sgn * 5.0;
+    Component *gv = pt_add(c, COMP_GROUND, 300, 140, 0);
+    Component *rc = pt_add(c, COMP_RESISTOR, 240, 60, 0);
+    rc->props.resistor.resistance = 100.0;
+    rc->props.resistor.power_rating = 10.0;
+    /* bias and signal from one source: the offset sets the operating point, the amplitude is
+       the small signal. 10 % of the bias is small enough to stay linear. */
+    Component *ibs = pt_add(c, COMP_AC_CURRENT, 0, 100, 0);
+    ibs->props.ac_current.offset = sgn * ib_bias;
+    ibs->props.ac_current.amplitude = sgn * ib_bias * 0.1;
+    ibs->props.ac_current.frequency = f_test;
+    ibs->props.ac_current.phase = 0;
+    ibs->props.ac_current.ideal = true;
+    Component *gi = pt_add(c, COMP_GROUND, 0, 200, 0);
+    Component *ge = pt_add(c, COMP_GROUND, 200, 260, 0);
+    /* the AC short at the collector. A data sheet's f_T is measured into a short so that the
+       Miller effect plays no part - without it C_bc is multiplied by the stage gain and what
+       comes out is the stage's bandwidth, not the transistor's. */
+    Component *cc = pt_add(c, COMP_CAPACITOR, 240, 160, 90);
+    cc->props.capacitor.capacitance = 1e-6;
+    cc->props.capacitor.ideal = true;
+    Component *gc = pt_add(c, COMP_GROUND, 240, 260, 0);
+
+    int base = pt_node(c, 60, 100), coll = pt_node(c, 180, 60), emit = pt_node(c, 180, 160);
+    int rail = pt_node(c, 300, 0), rr = pt_node(c, 280, 60);
+    int gnd1 = pt_node(c, 0, 180), gnd2 = pt_node(c, 300, 120), gnd3 = pt_node(c, 200, 240);
+    int ct = pt_node(c, 240, 120), cb = pt_node(c, 240, 200), gnd4 = pt_node(c, 240, 240);
+    ibs->node_ids[0] = gnd1; ibs->node_ids[1] = base; gi->node_ids[0] = gnd1;
+    vcc->node_ids[0] = rail; vcc->node_ids[1] = gnd2; gv->node_ids[0] = gnd2;
+    rc->node_ids[0] = rr; rc->node_ids[1] = coll; circuit_add_wire(c, rail, rr);
+    ge->node_ids[0] = gnd3; circuit_add_wire(c, emit, gnd3);
+    cc->node_ids[0] = ct; cc->node_ids[1] = cb;
+    circuit_add_wire(c, coll, ct);
+    gc->node_ids[0] = gnd4; circuit_add_wire(c, cb, gnd4);
+    q->node_ids[0] = base; q->node_ids[1] = coll; q->node_ids[2] = emit;
+
+    Simulation *sim = simulation_create(c);
+    *ok = sim && simulation_dc_analysis(sim);
+    double ft = 0;
+    if (*ok) {
+        double period = 1.0 / f_test;
+        double dt = period / 200.0;
+        simulation_set_time_step(sim, dt);
+        simulation_start(sim);
+        double t_end = 8.0 * period, t_meas = 6.0 * period;
+        double ic_lo = 1e30, ic_hi = -1e30, ib_lo = 1e30, ib_hi = -1e30;
+        while (sim->time < t_end) {
+            if (!simulation_step(sim)) { *ok = 0; break; }
+            if (sim->time < t_meas) continue;         /* let the bias settle first */
+            simulation_compute_terminal_currents(sim);
+            double ibq = q->terminal_current[0], icq = q->terminal_current[1];
+            if (ibq < ib_lo) ib_lo = ibq;  if (ibq > ib_hi) ib_hi = ibq;
+            if (icq < ic_lo) ic_lo = icq;  if (icq > ic_hi) ic_hi = icq;
+        }
+        double ib_pp = ib_hi - ib_lo, ic_pp = ic_hi - ic_lo;
+        if (*ok && ib_pp > 1e-15) ft = f_test * (ic_pp / ib_pp);
+        if (!isfinite(ft)) *ok = 0;
+    }
+    if (sim) simulation_free(sim);
+    circuit_free(c);
+    return ft;
+}
+
 static void pc_bjt(const char *part, double ib, double *hfe, double *vbe, int *ok) {
     ComponentType ty = part_type(part);
     bool pnp = (ty == COMP_PNP_BJT);
@@ -5570,6 +5657,7 @@ static int part_test(void) {
             }
             case PC_ID_MIN: got = pc_mos_id(pc->part, pc->bias, &ok); unit = "A"; break;
             case PC_HFE: { double h = 0, vb = 0; pc_bjt(pc->part, pc->bias, &h, &vb, &ok); got = h; unit = ""; break; }
+            case PC_FT: got = pc_bjt_ft(pc->part, pc->bias, 20e6, &ok); break;
             case PC_VBE: { double h = 0, vb = 0; pc_bjt(pc->part, pc->bias, &h, &vb, &ok); got = vb; unit = "V"; break; }
             case PC_VF:  got = pc_diode_v(pc->part, pc->bias, false, &ok); unit = "V"; break;
             case PC_VZ:  got = fabs(pc_diode_v(pc->part, pc->bias, true, &ok)); unit = "V"; break;
@@ -5589,7 +5677,7 @@ static int part_test(void) {
         printf("%s part %-9s %-12s = %10.4g %-4s  data sheet %-9.4g  %s%s\n",
                pass ? " OK " : "FAIL", pc->part,
                pc->kind == PC_RDSON ? "R_DS(on)" : pc->kind == PC_ID_MIN ? "I_D(on)" :
-               pc->kind == PC_HFE ? "h_FE" : pc->kind == PC_VBE ? "V_BE" :
+               pc->kind == PC_HFE ? "h_FE" : pc->kind == PC_VBE ? "V_BE" : pc->kind == PC_FT ? "f_T" :
                pc->kind == PC_VF ? "V_F" : pc->kind == PC_VZ ? "V_Z" :
                pc->kind == PC_OPAMP_VOS ? "V_offset" : pc->kind == PC_OPAMP_SR ? "slew rate" : "V_out",
                got, unit, pc->expect, pc->note, ok ? "" : "  [simulation failed]");

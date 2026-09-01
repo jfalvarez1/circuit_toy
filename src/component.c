@@ -275,6 +275,12 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
             .nr = 1.0,          // Reverse emission coefficient
             .ise = 0.0,         // B-E leakage saturation current
             .isc = 0.0,         // B-C leakage saturation current
+            .tf = 0.0,          // Forward transit time - zero until a part model sets it
+            .tr = 0.0,          // Reverse transit time
+            .cje = 0.0,         // B-E depletion capacitance
+            .cjc = 0.0,         // B-C depletion capacitance
+            .vje = 0.75,        // B-E junction potential
+            .vjc = 0.75,        // B-C junction potential
             .temp = 300.0,      // Temperature (K)
             .ideal = true       // Use ideal (simplified) model
         }}
@@ -294,6 +300,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
             .nr = 1.0,
             .ise = 0.0,
             .isc = 0.0,
+            .tf = 0.0, .tr = 0.0, .cje = 0.0, .cjc = 0.0, .vje = 0.75, .vjc = 0.75,
             .temp = 300.0,
             .ideal = true
         }}
@@ -2009,6 +2016,11 @@ static void part_2n3904(Component *c) {
     c->props.bjt.is = 6.7e-15;        /* gives V_BE ~ 0.66 V at 10 mA */
     c->props.bjt.vaf = 74;
     c->props.bjt.nf = 1.0;
+    /* Charge storage, from the ON Semi SPICE model. f_T = 300 MHz min at I_C = 10 mA on the
+       data sheet; TF 301 ps with these depletion terms puts the model there. */
+    c->props.bjt.tf = 301.2e-12; c->props.bjt.tr = 239.5e-9;
+    c->props.bjt.cje = 4.493e-12; c->props.bjt.cjc = 3.638e-12;
+    c->props.bjt.vje = 0.75; c->props.bjt.vjc = 0.75;
     c->props.bjt.ideal = false;
 }
 static void part_bc547b(Component *c) {
@@ -2016,6 +2028,11 @@ static void part_bc547b(Component *c) {
     c->props.bjt.is = 7.0e-15;
     c->props.bjt.vaf = 63;
     c->props.bjt.nf = 1.0;
+    /* NXP SPICE model. C_jc 4 pF is the one that matters in a common-emitter stage: the Miller
+       effect multiplies it by the stage gain and that is what sets the input pole. */
+    c->props.bjt.tf = 560e-12; c->props.bjt.tr = 120e-9;
+    c->props.bjt.cje = 13e-12; c->props.bjt.cjc = 4e-12;
+    c->props.bjt.vje = 0.6; c->props.bjt.vjc = 0.55;
     c->props.bjt.ideal = false;
 }
 static void part_2n3906(Component *c) {
@@ -2023,6 +2040,11 @@ static void part_2n3906(Component *c) {
     c->props.bjt.is = 1.4e-14;
     c->props.bjt.vaf = 100;
     c->props.bjt.nf = 1.0;
+    /* ON Semi SPICE model. A PNP of this family is slower than its NPN complement and carries
+       more junction capacitance, which is why a PNP output stage rolls off first. */
+    c->props.bjt.tf = 179.3e-12; c->props.bjt.tr = 33.42e-9;
+    c->props.bjt.cje = 8.063e-12; c->props.bjt.cjc = 9.728e-12;
+    c->props.bjt.vje = 0.75; c->props.bjt.vjc = 0.75;
     c->props.bjt.ideal = false;
 }
 static void part_1n4148(Component *c) {
@@ -3169,6 +3191,23 @@ static void stamp_junction_cap(Component *comp, Matrix *A, Vector *b, const int 
     if (n[1] > 0) vector_add(b, n[1] - 1, -Ieq);
 }
 
+/* A junction's depletion capacitance at a given bias.
+
+   Cj0 / (1 - V/Vj)^m is the textbook form and it is singular at V = Vj, which a forward-biased
+   base-emitter junction sits very close to. SPICE linearises above FC*Vj (FC = 0.5) and so does
+   this: below that the exact expression, above it the tangent at the change-over, which is
+   finite, continuous and has a continuous derivative - the three things Newton needs. */
+static double junction_cj(double cj0, double vj, double v) {
+    if (cj0 <= 0) return 0.0;
+    if (vj <= 0) vj = 0.75;
+    const double m = 0.33, FC = 0.5;
+    if (v < FC * vj) return cj0 / pow(1.0 - v / vj, m);
+    /* tangent at v = FC*vj, extended upwards */
+    double f = pow(1.0 - FC, -m);                  /* value there, in units of cj0 */
+    double dfdv = (m / vj) * pow(1.0 - FC, -(m + 1.0));
+    return cj0 * (f + dfdv * (v - FC * vj));
+}
+
 void component_stamp(Component *comp, Matrix *A, Vector *b,
                      int *node_map, int num_nodes,
                      double time, Vector *prev_solution, double dt) {
@@ -3633,6 +3672,32 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // Newton equivalent current source for the collector current
             if (n[1] > 0) vector_add(b, n[1]-1, -Ieq_c);
             if (n[2] > 0) vector_add(b, n[2]-1, Ieq_c);
+
+            /* Charge storage: what gives the device a bandwidth. Two capacitances, each the
+               sum of a diffusion term (transit time x the junction's own transconductance,
+               which is the charge in transit) and a depletion term (the bias-dependent
+               junction capacitance). C_bc is the one the Miller effect multiplies.
+
+               Both are zero unless a part model set TF/TR/CJE/CJC, so nothing that was here
+               before this changes. The companion is stamped between base-emitter and
+               base-collector, the same backward-Euler form the diode's junction capacitance
+               uses, and for the same reason: a trapezoidal companion needs the branch current
+               from the last accepted step, which is state that would have to be advanced once
+               per step rather than once per Newton iteration. */
+            {
+                double tf = comp->props.bjt.tf, tr = comp->props.bjt.tr;
+                double cje = comp->props.bjt.cje, cjc = comp->props.bjt.cjc;
+                if (tf > 0 || tr > 0 || cje > 0 || cjc > 0) {
+                    /* Gbe and Gbc are dIb/dV; the charge in transit follows the TRANSPORT
+                       current, so the diffusion term uses the transconductances. */
+                    double cbe = tf * fabs(Gm) + junction_cj(cje, comp->props.bjt.vje, Vbe);
+                    double cbc = tr * fabs(Gmr) + junction_cj(cjc, comp->props.bjt.vjc, Vbc);
+                    int nbe[2] = { n[0], n[2] };
+                    int nbc[2] = { n[0], n[1] };
+                    stamp_junction_cap(comp, A, b, nbe, cbe, dt);
+                    stamp_junction_cap(comp, A, b, nbc, cbc, dt);
+                }
+            }
             break;
         }
 
