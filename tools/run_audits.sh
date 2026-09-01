@@ -27,7 +27,7 @@ fi
 
 SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test --dvdt-test --state-test --meas-test --fft-test --dcm-test --iv-test --conv-test --stress-test --mc-test --bode-test --sign-test --load-test --scope-test --class-test --restamp-test
 --flow-test --switch-test --part-test --op-test --sub-test --spice-test --xtal-test --view-test
---conn-test --file-test --parts-file-test --undo-test --line-test --std-test --burn-test --knob-test --geom-test --param-test
+--conn-test --file-test --parts-file-test --undo-test --bias-test --line-test --std-test --burn-test --knob-test --geom-test --param-test
 --tesla-test"
 APP_MODES="--layout-test --autoset-test --place-test --trig-test --prop-test"
 # ...and one app suite is long enough to shard as well: --bounce-test renders sixty frames of

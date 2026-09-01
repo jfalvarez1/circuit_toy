@@ -3677,6 +3677,97 @@ static double pc_mos_id(const char *part, double vgs, int *ok) {
 }
 
 /* Forced base current; returns I_C through a 100 ohm collector resistor and V_BE. */
+/* ===================================================================================
+ * --bias-test: does the reported operating region match what the arithmetic says?
+ *
+ * The single most useful thing a simulator can tell a reader who has just built a stage is
+ * that its transistor is not in the active region, because a solver will happily linearise
+ * about a device that is hard on or hard off and report a gain for it. Every case below has
+ * its region and its V_CE worked out by hand from the resistors before the solver is asked.
+ * =================================================================================== */
+typedef struct { int region; double vce, ic; int ok; } BiasResult;
+
+/* A base-resistor-biased common-emitter stage: the textbook way to show saturation, because
+   the collector current follows the base current until the collector resistor will not let it
+   any further. base_to_rail false ties the base to ground instead, which is cut off. */
+static BiasResult bias_stage(const char *part, double rb, double rc, double vcc, bool base_to_rail) {
+    BiasResult r = { -1, 0, 0, 0 };
+    ComponentType ty = part_type(part);
+    Circuit *c = circuit_create();
+    Component *q = pt_add(c, ty, 100, 100, 0);
+    if (!q || !component_apply_part(q, part)) { circuit_free(c); return r; }
+    Component *vs = pt_add(c, COMP_DC_VOLTAGE, 300, 40, 0);
+    vs->props.dc_voltage.voltage = vcc;
+    Component *gv = pt_add(c, COMP_GROUND, 300, 140, 0);
+    Component *rcc = pt_add(c, COMP_RESISTOR, 240, 60, 0);
+    rcc->props.resistor.resistance = rc; rcc->props.resistor.power_rating = 10.0;
+    Component *rbb = pt_add(c, COMP_RESISTOR, 20, 60, 0);
+    rbb->props.resistor.resistance = rb; rbb->props.resistor.power_rating = 10.0;
+    Component *gb = pt_add(c, COMP_GROUND, 20, 200, 0);
+    Component *ge = pt_add(c, COMP_GROUND, 200, 260, 0);
+
+    int base = pt_node(c, 60, 100), coll = pt_node(c, 180, 60), emit = pt_node(c, 180, 160);
+    int rail = pt_node(c, 300, 0), rr = pt_node(c, 280, 60), rbtop = pt_node(c, 0, 60);
+    int gnd2 = pt_node(c, 300, 120), gnd3 = pt_node(c, 200, 240), gndb = pt_node(c, 20, 180);
+    vs->node_ids[0] = rail; vs->node_ids[1] = gnd2; gv->node_ids[0] = gnd2;
+    rcc->node_ids[0] = rr; rcc->node_ids[1] = coll; circuit_add_wire(c, rail, rr);
+    rbb->node_ids[0] = rbtop; rbb->node_ids[1] = base;
+    if (base_to_rail) { circuit_add_wire(c, rail, rbtop); gb->node_ids[0] = gndb; }
+    else              { gb->node_ids[0] = gndb; circuit_add_wire(c, rbtop, gndb); }
+    ge->node_ids[0] = gnd3; circuit_add_wire(c, emit, gnd3);
+    q->node_ids[0] = base; q->node_ids[1] = coll; q->node_ids[2] = emit;
+
+    Simulation *sim = simulation_create(c);
+    r.ok = sim && simulation_dc_analysis(sim);
+    if (r.ok) {
+        r.region = q->props.bjt.op_region;
+        r.vce = q->props.bjt.op_vce;
+        r.ic = q->props.bjt.op_ic;
+        if (!isfinite(r.vce) || !isfinite(r.ic)) r.ok = 0;
+    }
+    if (sim) simulation_free(sim);
+    circuit_free(c);
+    return r;
+}
+
+static int bias_test(void) {
+    int fails = 0, total = 0;
+    printf("bias-test: the reported operating region against the arithmetic\n\n");
+    static const char *names[4] = { "CUT OFF", "ACTIVE", "SATURATED", "REVERSE" };
+
+    struct { const char *what; double rb, rc, vcc; bool to_rail; int want; double vce_lo, vce_hi;
+             const char *why; } cases[] = {
+        /* Ib = (10 - 0.7)/470k = 19.8 uA, Ic = beta x that = 4.2 mA, V_CE = 10 - 4.2 = 5.8 V */
+        { "base 470k, collector 1k",  470e3, 1e3,  10.0, true,  1, 3.0, 8.0,
+          "Ib 19.8 uA x beta = 4.2 mA, V_CE 5.8 V - mid supply, the point of a bias network" },
+        /* Ib = 198 uA, beta x that = 42 mA, but 1k from 10 V cannot pass more than 9.8 mA */
+        { "base 47k, collector 1k",   47e3,  1e3,  10.0, true,  2, -0.5, 0.4,
+          "beta asks for 42 mA, the collector resistor allows 9.8 - so it saturates" },
+        /* the R2 = 10k mistake in EE_Review module-05/lesson-06, in miniature */
+        { "base 22k, collector 6k",   22e3,  6e3,  12.0, true,  2, -0.5, 0.4,
+          "2.4 mA asked through 6k from 12 V wants 14 V of drop: saturated" },
+        { "base tied to ground",      470e3, 1e3,  10.0, false, 0, 9.0, 10.5,
+          "no base current, so no collector current and V_CE is the whole supply" },
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        BiasResult r = bias_stage("2N3904", cases[i].rb, cases[i].rc, cases[i].vcc, cases[i].to_rail);
+        total++;
+        int rg_ok = r.ok && r.region == cases[i].want;
+        int v_ok  = r.ok && r.vce >= cases[i].vce_lo && r.vce <= cases[i].vce_hi;
+        int pass = rg_ok && v_ok;
+        if (!pass) fails++;
+        printf("%s bias %-26s %-9s V_CE %7.3f V  I_C %8.3f mA  expect %-9s %s\n",
+               pass ? " OK " : "FAIL", cases[i].what,
+               (r.region >= 0 && r.region < 4) ? names[r.region] : "?",
+               r.vce, r.ic * 1e3, names[cases[i].want],
+               r.ok ? (pass ? "" : "<-- MISMATCH") : "[solve failed]");
+        printf("        %s\n", cases[i].why);
+    }
+    printf("\nbias-test: %d stages, %d whose region or V_CE did not match the arithmetic\n",
+           total, fails);
+    return fails ? 1 : 0;
+}
+
 /* f_T, measured the way a data sheet measures it: collector shorted to AC ground, a small
    signal current into the base, and the ratio of collector to base current read at a frequency
    well inside the region where beta falls as 1/f. There beta(f) = f_T/f, so f_T is the test
@@ -6485,6 +6576,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--part-test")) return part_test();
         else if (!strcmp(argv[i], "--op-test")) return op_test();
         else if (!strcmp(argv[i], "--sub-test")) return sub_test();
+        else if (!strcmp(argv[i], "--bias-test")) return bias_test();
         else if (!strcmp(argv[i], "--spice-test")) return spice_test();
         else if (!strcmp(argv[i], "--xtal-test")) return xtal_test();
         else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt_forced = atof(argv[++i]);

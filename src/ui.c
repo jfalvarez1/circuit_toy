@@ -3261,6 +3261,62 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     prop_y += 14;
                     snprintf(buf, sizeof(buf), "VAR=%.1fV T=%.0fK", selected->props.bjt.var, selected->props.bjt.temp);
                     ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                    prop_y += 14;
+                    if (selected->props.bjt.tf > 0 || selected->props.bjt.cje > 0) {
+                        char t1[24], t2[24], t3[24];
+                        format_engineering(selected->props.bjt.tf, "s", t1, sizeof t1);
+                        format_engineering(selected->props.bjt.cje, "F", t2, sizeof t2);
+                        format_engineering(selected->props.bjt.cjc, "F", t3, sizeof t3);
+                        snprintf(buf, sizeof(buf), "TF %s CJE %s CJC %s", t1, t2, t3);
+                        ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                        prop_y += 14;
+                    }
+                }
+
+                /* Where the device is actually working. A reader who has just built a stage and
+                   is looking at a flat or tiny waveform is nearly always looking at a bias
+                   problem, and nothing in the waveform says so - the solver linearises happily
+                   about a transistor that is hard on or hard off and reports the result. */
+                {
+                    static const char *regions[4] = { "CUT OFF", "ACTIVE", "SATURATED", "REVERSE ACTIVE" };
+                    int rg = selected->props.bjt.op_region;
+                    if (rg < 0 || rg > 3) rg = 0;
+                    prop_y += 4;
+                    SDL_SetRenderDrawColor(renderer, 0x80, 0x80, 0x80, 0xff);
+                    ui_draw_text(renderer, "Operating point", x + 10, prop_y + 2);
+                    prop_y += 16;
+                    if (rg == 1) SDL_SetRenderDrawColor(renderer, 0x00, 0xff, 0x88, 0xff);
+                    else         SDL_SetRenderDrawColor(renderer, 0xff, 0x60, 0x40, 0xff);
+                    ui_draw_text(renderer, regions[rg], x + 10, prop_y + 2);
+                    prop_y += 16;
+                    SDL_SetRenderDrawColor(renderer, 0x00, 0xcc, 0xff, 0xff);
+                    char v1[24], v2[24], v3[24];
+                    format_engineering(selected->props.bjt.op_vbe, "V", v1, sizeof v1);
+                    format_engineering(selected->props.bjt.op_vce, "V", v2, sizeof v2);
+                    snprintf(buf, sizeof(buf), "Vbe %s  Vce %s", v1, v2);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                    prop_y += 14;
+                    format_engineering(selected->props.bjt.op_ic, "A", v1, sizeof v1);
+                    format_engineering(selected->props.bjt.op_ib, "A", v2, sizeof v2);
+                    format_engineering(selected->props.bjt.op_gm, "S", v3, sizeof v3);
+                    snprintf(buf, sizeof(buf), "Ic %s  Ib %s", v1, v2);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                    prop_y += 14;
+                    snprintf(buf, sizeof(buf), "gm %s", v3);
+                    ui_draw_text(renderer, buf, x + 10, prop_y + 2);
+                    prop_y += 14;
+                    /* The sentence that is the whole point of showing any of this. */
+                    if (rg != 1) {
+                        SDL_SetRenderDrawColor(renderer, 0xff, 0x60, 0x40, 0xff);
+                        ui_draw_text(renderer, rg == 2 ? "Saturated: it cannot amplify."
+                                                       : "Not conducting: it cannot amplify.",
+                                     x + 10, prop_y + 2);
+                        prop_y += 14;
+                        ui_draw_text(renderer, "Any gain measured here is", x + 10, prop_y + 2);
+                        prop_y += 14;
+                        ui_draw_text(renderer, "meaningless. Fix the bias first.", x + 10, prop_y + 2);
+                        prop_y += 14;
+                    }
                 }
                 break;
             }

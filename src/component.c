@@ -2221,6 +2221,10 @@ void component_cycle_part(Component *c) {
     double op_id = c->props.mosfet.op_id, op_gm = c->props.mosfet.op_gm;
     int op_region = c->props.mosfet.op_region;
     bool is_mos = (c->type == COMP_NMOS || c->type == COMP_PMOS);
+    double q_vbe = c->props.bjt.op_vbe, q_vce = c->props.bjt.op_vce;
+    double q_ic = c->props.bjt.op_ic, q_ib = c->props.bjt.op_ib, q_gm = c->props.bjt.op_gm;
+    int q_region = c->props.bjt.op_region;
+    bool is_bjt = (c->type == COMP_NPN_BJT || c->type == COMP_PNP_BJT);
 
     int next = cur + 1;
     if (next >= n) {                               /* wrap back to the generic component */
@@ -2234,6 +2238,11 @@ void component_cycle_part(Component *c) {
         c->props.mosfet.op_vgs = op_vgs; c->props.mosfet.op_vds = op_vds;
         c->props.mosfet.op_id = op_id;   c->props.mosfet.op_gm = op_gm;
         c->props.mosfet.op_region = op_region;
+    }
+    if (is_bjt) {
+        c->props.bjt.op_vbe = q_vbe; c->props.bjt.op_vce = q_vce;
+        c->props.bjt.op_ic = q_ic;   c->props.bjt.op_ib = q_ib; c->props.bjt.op_gm = q_gm;
+        c->props.bjt.op_region = q_region;
     }
 }
 
@@ -3568,6 +3577,11 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                taken straight from the node voltages - reading it back out of the clamped Vbc
                would cap V_CE near 0.8 V and shrink the effect to a tenth of its size. */
             double Vce_real = 0.2 * sign;
+            /* The terminal voltages before the exp() clamps. The clamp holds a reverse-biased
+               junction at about -0.13 V, which is fine for the exponential and useless for
+               deciding what region the device is in - every cut-off transistor would read as
+               though its collector junction were nearly conducting. */
+            double Vbe_raw = Vbe, Vbc_raw = Vbc;
             if (prev_solution) {
                 double vB = (n[0] > 0) ? vector_get(prev_solution, n[0]-1) : 0;
                 double vC = (n[1] > 0) ? vector_get(prev_solution, n[1]-1) : 0;
@@ -3575,11 +3589,13 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 Vbe = sign * (vB - vE);
                 Vbc = sign * (vB - vC);
                 Vce_real = sign * (vC - vE);
+                Vbe_raw = Vbe; Vbc_raw = Vbc;
                 Vbe = CLAMP(Vbe, -5*nf*Vt, 40*nf*Vt);
                 Vbc = CLAMP(Vbc, -5*nf*Vt, 40*nf*Vt);
             }
 
             double Gbe, Gbc, Gm, Gmr, Ieq_be, Ieq_bc, Ieq_c;
+            double op_ic = 0, op_ib = 0;   /* for the operating point the panel reports */
 
             if (ideal) {
                 // Ideal Ebers-Moll model (simplified)
@@ -3601,6 +3617,7 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 Gm = (Is / (nf * Vt)) * expBE;
                 Gmr = -(Is / (nf * Vt)) * expBC;
                 Ieq_c = Ic - Gm * Vbe - Gmr * Vbc;
+                op_ic = Ic; op_ib = Ibe + Ibc;
             } else {
                 // Non-ideal Gummel-Poon model with Early effect
                 double br = comp->props.bjt.br;
@@ -3636,6 +3653,31 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 Gm = (Is / (nf * Vt)) * expBE * early_factor;       // dIc/dVbe
                 Gmr = -(Is / (nr * Vt)) * expBC;                     // dIc/dVbc
                 Ieq_c = Ic - Gm * Vbe - Gmr * Vbc;
+                op_ic = Ic; op_ib = Ibe + Ibc;
+            }
+
+            /* Which region the device is working in, by the state of its two junctions - the
+               classification a textbook gives and the one a reader is taught to check first.
+               Both junctions off is cut off; base-emitter on and base-collector off is the
+               active region, the only one in which a small-signal gain means anything; both on
+               is saturation, where the collector cannot follow the base any further.
+
+               0.4 V is the threshold. A silicon junction passing any current worth the name is
+               above 0.6 V, and one that is genuinely off sits below 0.2, so the boundary is
+               wide and nothing sits on it by accident. */
+            {
+                int rg;
+                bool be_on = Vbe_raw > 0.4, bc_on = Vbc_raw > 0.4;
+                if (!be_on && !bc_on)     rg = 0;   /* cut off */
+                else if (be_on && !bc_on) rg = 1;   /* active - the useful one */
+                else if (be_on && bc_on)  rg = 2;   /* saturated */
+                else                      rg = 3;   /* reverse active */
+                comp->props.bjt.op_region = rg;
+                comp->props.bjt.op_vbe = Vbe_raw;
+                comp->props.bjt.op_vce = Vce_real;
+                comp->props.bjt.op_ic = op_ic;
+                comp->props.bjt.op_ib = op_ib;
+                comp->props.bjt.op_gm = Gm;
             }
 
             // Apply sign for PNP. Conductances/transconductances are the same for both

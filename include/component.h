@@ -174,6 +174,12 @@ typedef union {
         // Temperature
         double temp;       // Operating temperature (K), default: 300
 
+        /* Live operating point, written by the stamp and read by the properties panel and the
+           bias warning. A small-signal answer taken about a transistor that is saturated or cut
+           off is not a small answer, it is a wrong one, and nothing in a waveform says so. */
+        double op_vbe, op_vce, op_ic, op_ib, op_gm;
+        int op_region;     // 0 cutoff, 1 active, 2 saturated, 3 reverse-active
+
         // Mode
         bool ideal;        // Use ideal (simplified) model, default: true
     } bjt;
