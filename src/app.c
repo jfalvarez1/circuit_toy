@@ -2719,6 +2719,9 @@ void app_render(App *app) {
     ui_render_monte_carlo_panel(&app->ui, r, &app->analysis);
 
     // Render synthwave LED trim on top
+    /* over everything, including the panels: it is a different circuit being looked at */
+    ui_render_subcircuit_view(&app->ui, app->render);
+
     ui_render_neon_trim(&app->ui, r);
     ui_render_tooltip(&app->ui, r);
     ui_render_brightness(&app->ui, r, app->ui.window_width, app->ui.window_height);

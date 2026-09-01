@@ -509,6 +509,12 @@ typedef struct {
 
 
 
+/* Looking inside a subcircuit: a read-only view of what the block is made of. */
+void ui_open_subcircuit_view(UIState *ui, int def_id);
+void ui_close_subcircuit_view(UIState *ui);
+bool ui_subcircuit_view_open(const UIState *ui);
+void ui_render_subcircuit_view(UIState *ui, RenderContext *ctx);
+
 // Initialize UI
 void ui_init(UIState *ui);
 

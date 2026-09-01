@@ -110,6 +110,12 @@ bool input_handle_event(InputState *input, SDL_Event *event,
 
     switch (event->type) {
         case SDL_MOUSEBUTTONDOWN: {
+            /* While a block is open, the canvas behind it is not live: the next click puts it
+               away rather than reaching through and selecting something under the panel. */
+            if (ui_subcircuit_view_open(ui)) {
+                ui_close_subcircuit_view(ui);
+                return true;
+            }
             int x = event->button.x;
             int y = event->button.y;
 
@@ -469,6 +475,12 @@ bool input_handle_event(InputState *input, SDL_Event *event,
                             // Find component at click position
                             Component *comp = circuit_find_component_at(circuit, wx, wy);
                             if (comp) {
+                                /* Double-click a block to see what is in it. SDL counts the
+                                   clicks for us, so there is no timer here to get wrong. */
+                                if (event->button.clicks >= 2 && comp->type == COMP_SUBCIRCUIT) {
+                                    ui_open_subcircuit_view(ui, comp->props.subcircuit.def_id);
+                                    break;
+                                }
                                 // Clear previous selections
                                 if (input->selected_component && input->selected_component != comp) {
                                     input->selected_component->selected = false;
@@ -1423,6 +1435,10 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             }
 
             // Close panels on ESC
+            if (event->key.keysym.sym == SDLK_ESCAPE && ui_subcircuit_view_open(ui)) {
+                ui_close_subcircuit_view(ui);
+                return true;
+            }
             if (event->key.keysym.sym == SDLK_ESCAPE && ui) {
                 if (ui->update_countdown_active) {   /* stop an auto-update that is about to run */
                     ui->update_countdown_active = false;

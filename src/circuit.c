@@ -1885,10 +1885,12 @@ Circuit *circuit_from_subcircuit_def(int def_id, char *name_out, size_t name_siz
     if (name_out && name_size) snprintf(name_out, name_size, "%s", def->name);
 
     const Component *src = (const Component *)def->component_data;
-    /* first terminal seen on each internal node, to wire the rest of that net back to */
+    /* The last terminal seen on each net, so a net of three parts is drawn as a chain of short
+       hops rather than as three long ones back to whichever terminal happened to come first. */
     enum { VIEW_MAX_NET = 256 };
-    int anchor[VIEW_MAX_NET];
-    for (int i = 0; i < VIEW_MAX_NET; i++) anchor[i] = 0;
+    int last_node[VIEW_MAX_NET];
+    float last_x[VIEW_MAX_NET], last_y[VIEW_MAX_NET];
+    for (int i = 0; i < VIEW_MAX_NET; i++) last_node[i] = 0;
 
     for (int i = 0; i < def->num_components; i++) {
         Component *p = component_create(src[i].type, src[i].x, src[i].y);
@@ -1910,8 +1912,27 @@ Circuit *circuit_from_subcircuit_def(int def_id, char *name_out, size_t name_siz
             int internal = src[i].node_ids[t];
             if (internal <= 0 || internal >= VIEW_MAX_NET) continue;
             int nid = p->node_ids[t];
-            if (anchor[internal] == 0) anchor[internal] = nid;
-            else if (anchor[internal] != nid) circuit_add_wire(c, anchor[internal], nid);
+            float tx, ty;
+            component_get_terminal_pos(p, t, &tx, &ty);
+            if (last_node[internal] == 0) {
+                last_node[internal] = nid; last_x[internal] = tx; last_y[internal] = ty;
+                continue;
+            }
+            if (last_node[internal] != nid) {
+                /* An elbow rather than a straight line between the two terminals. A definition
+                   stores no wires, so these are invented - and a schematic drawn with diagonals
+                   reads as a pile of string. Across, then down: two segments when the terminals
+                   do not already share a row or a column, one when they do. */
+                float ax = last_x[internal], ay = last_y[internal];
+                if (fabsf(ax - tx) > 0.5f && fabsf(ay - ty) > 0.5f) {
+                    int elbow = circuit_find_or_create_node(c, tx, ay, 5.0f);
+                    circuit_add_wire(c, last_node[internal], elbow);
+                    circuit_add_wire(c, elbow, nid);
+                } else {
+                    circuit_add_wire(c, last_node[internal], nid);
+                }
+            }
+            last_node[internal] = nid; last_x[internal] = tx; last_y[internal] = ty;
         }
     }
     return c;

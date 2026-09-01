@@ -48,6 +48,99 @@ static void ui_draw_text(SDL_Renderer *r, const char *text, int x, int y) {
     render_text_at(r, text, x, y, 8, (Color){ cr, cg, cb, ca });
 }
 
+/* ===================================================================================
+ * Looking inside a block.
+ *
+ * A subcircuit on the canvas is a box with pins, which is the whole point of it - and a
+ * reader who wants to know what the box IS has nothing to open. Double-clicking one builds a
+ * throwaway circuit from its definition and draws it over the canvas, read only. The circuit
+ * underneath is untouched: this is a window onto the definition, not an edit of anything.
+ * =================================================================================== */
+void ui_open_subcircuit_view(UIState *ui, int def_id) {
+    if (!ui) return;
+    ui_close_subcircuit_view(ui);
+    ui->inspect_circuit = circuit_from_subcircuit_def(def_id, ui->inspect_name,
+                                                      sizeof ui->inspect_name);
+    ui->inspect_def_id = ui->inspect_circuit ? def_id : -1;
+    if (!ui->inspect_circuit) ui_set_status(ui, "That block has nothing in it to show");
+}
+
+void ui_close_subcircuit_view(UIState *ui) {
+    if (!ui) return;
+    if (ui->inspect_circuit) circuit_free(ui->inspect_circuit);
+    ui->inspect_circuit = NULL;
+    ui->inspect_def_id = -1;
+    ui->inspect_name[0] = 0;
+}
+
+bool ui_subcircuit_view_open(const UIState *ui) {
+    return ui && ui->inspect_circuit != NULL;
+}
+
+void ui_render_subcircuit_view(UIState *ui, RenderContext *ctx) {
+    if (!ui || !ui->inspect_circuit || !ctx || !ctx->renderer) return;
+    SDL_Renderer *r = ctx->renderer;
+    int W = ui->window_width, H = ui->window_height;
+
+    /* everything behind goes dim, so it is obvious this is a different thing being looked at */
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(r, 0x05, 0x02, 0x10, 0xd0);
+    SDL_Rect full = { 0, 0, W, H };
+    SDL_RenderFillRect(r, &full);
+
+    SDL_Rect panel = { W / 12, H / 12, W - 2 * (W / 12), H - 2 * (H / 12) };
+    SDL_SetRenderDrawColor(r, SYNTH_BG_MID, 0xff);
+    SDL_RenderFillRect(r, &panel);
+    SDL_SetRenderDrawColor(r, SYNTH_CYAN, 0xff);
+    SDL_RenderDrawRect(r, &panel);
+
+    char title[128];
+    snprintf(title, sizeof title, "Inside  %s  -  %d parts, %d wires",
+             ui->inspect_name[0] ? ui->inspect_name : "block",
+             ui->inspect_circuit->num_components, ui->inspect_circuit->num_wires);
+    SDL_SetRenderDrawColor(r, SYNTH_CYAN, 0xff);
+    ui_draw_text(r, title, panel.x + 12, panel.y + 10);
+    SDL_SetRenderDrawColor(r, SYNTH_TEXT_DIM, 0xff);
+    ui_draw_text(r, "read only - Esc or click to close", panel.x + 12, panel.y + panel.h - 20);
+
+    /* Frame the definition inside the panel. The context is borrowed and put back exactly as it
+       was: the canvas behind this is still the user's circuit and must not move. */
+    Rect save_rect = ctx->canvas_rect;
+    float save_zoom = ctx->zoom, save_ox = ctx->offset_x, save_oy = ctx->offset_y;
+    bool save_current = ctx->show_current, save_volt = ctx->show_voltages;
+
+    Rect inner = { panel.x + 10, panel.y + 32, panel.w - 20, panel.h - 64 };
+    float minx = 1e9f, miny = 1e9f, maxx = -1e9f, maxy = -1e9f;
+    for (int i = 0; i < ui->inspect_circuit->num_components; i++) {
+        Component *c = ui->inspect_circuit->components[i];
+        if (c->x - 40 < minx) minx = c->x - 40;
+        if (c->y - 40 < miny) miny = c->y - 40;
+        if (c->x + 40 > maxx) maxx = c->x + 40;
+        if (c->y + 40 > maxy) maxy = c->y + 40;
+    }
+    if (maxx > minx && maxy > miny) {
+        float bw = maxx - minx + 60.0f, bh = maxy - miny + 60.0f;
+        float z = fminf(inner.w / bw, inner.h / bh);
+        if (z > 2.0f) z = 2.0f;
+        if (z < 0.1f) z = 0.1f;
+        ctx->canvas_rect = inner;
+        ctx->zoom = z;
+        ctx->offset_x = inner.w * 0.5f - (minx + maxx) * 0.5f * z;
+        ctx->offset_y = inner.h * 0.5f - (miny + maxy) * 0.5f * z;
+        /* no flow dots and no node voltages: nothing here is being solved */
+        ctx->show_current = false;
+        ctx->show_voltages = false;
+        SDL_Rect clip = { inner.x, inner.y, inner.w, inner.h };
+        SDL_RenderSetClipRect(r, &clip);
+        render_circuit(ctx, ui->inspect_circuit);
+        SDL_RenderSetClipRect(r, NULL);
+    }
+
+    ctx->canvas_rect = save_rect;
+    ctx->zoom = save_zoom; ctx->offset_x = save_ox; ctx->offset_y = save_oy;
+    ctx->show_current = save_current; ctx->show_voltages = save_volt;
+}
+
 void ui_init(UIState *ui) {
     memset(ui, 0, sizeof(UIState));
 
