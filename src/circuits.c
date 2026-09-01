@@ -351,6 +351,8 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_BMI_CHARGER_CC] = {"LiPo Charger: CC Stage", "ChgCC", "1.1 A into the cell, high-side PMOS, sensed in the return", TG_BMI},
     [CIRCUIT_BMI_CHARGER_CV] = {"LiPo Charger: CV Stage", "ChgCV", "4.2 V from two cascaded LM317s, 200 mA", TG_BMI},
     [CIRCUIT_BMI_INSTRUMENT] = {"BMI: Full Instrument", "BMI", "the window comparator, the enable and the pass device", TG_BMI},
+    [CIRCUIT_BMI_CC_OUTPUT] = {"BMI: CC Output (LM317 current source)", "CCout", "one resistor round an LM317 makes a current source", TG_BMI},
+    [CIRCUIT_BMI_OCP] = {"BMI: Over-current Trip", "OCP", "sense, threshold, relay - and the load goes away", TG_BMI},
 
 
 
@@ -6423,6 +6425,8 @@ static int place_bmi_supercap(Circuit *circuit, float x, float y);
 static int place_bmi_charger_cc(Circuit *circuit, float x, float y);
 static int place_bmi_charger_cv(Circuit *circuit, float x, float y);
 static int place_bmi_instrument(Circuit *circuit, float x, float y);
+static int place_bmi_cc_output(Circuit *circuit, float x, float y);
+static int place_bmi_ocp(Circuit *circuit, float x, float y);
 static int place_tline_real(Circuit *circuit, float x, float y);
 static int place_sevenseg_test(Circuit *circuit, float x, float y);
 static int place_wireless_link(Circuit *circuit, float x, float y);
@@ -6772,6 +6776,8 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_BMI_CHARGER_CC:     return place_bmi_charger_cc(circuit, x, y);
         case CIRCUIT_BMI_CHARGER_CV:     return place_bmi_charger_cv(circuit, x, y);
         case CIRCUIT_BMI_INSTRUMENT:     return place_bmi_instrument(circuit, x, y);
+        case CIRCUIT_BMI_CC_OUTPUT:      return place_bmi_cc_output(circuit, x, y);
+        case CIRCUIT_BMI_OCP:            return place_bmi_ocp(circuit, x, y);
         case CIRCUIT_TLINE_REAL:         return place_tline_real(circuit, x, y);
         case CIRCUIT_SEVENSEG_TEST:      return place_sevenseg_test(circuit, x, y);
         case CIRCUIT_WIRELESS_LINK:      return place_wireless_link(circuit, x, y);
@@ -7161,6 +7167,18 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "comparators ask whether the cell is between them. Their answers are ANDed, and ANDed again with",
         "the microcontroller's enable, and only that drives the pass MOSFET. Cell inside the window and",
         "enable high: 0.3 A through the 10 ohm load. Outside it, or enable low: nothing. EDIT THE CELL."},
+    [CIRCUIT_BMI_CC_OUTPUT] = {"CC OUTPUT: an LM317 with ONE resistor is not a voltage regulator, it is a",
+        "current source. The part works to hold 1.25 V between its output and its adjust pin, and if the only",
+        "thing between them is R then the current through R is 1.25/R whatever is downstream - here 1.25 /",
+        "2025.6 = 617 uA. Nothing sets the voltage at all; the load does. CHANGE THE LOAD from 1k to 5k and",
+        "the voltage across it triples while the current does not move. The 7805 beside it is the ordinary",
+        "use of the same idea with the adjust pin tied down instead. PROBE: the load - 617 uA x 1k = 0.617 V."},
+    [CIRCUIT_BMI_OCP] = {"OVER-CURRENT TRIP: a sense resistor, something to compare its voltage against,",
+        "and a switch the comparison can open. The load current runs through 1 ohm, a 350/650 divider takes",
+        "65 % of that to a BC547's base, and when it reaches a base-emitter drop the transistor pulls a relay",
+        "coil whose contact shorts the pass MOSFET's gate to its own source - which turns it off. 0.65 of the",
+        "sense voltage reaching 0.65 V means the trip is at about 1 A. LOWER THE LOAD from 10 ohm to 2 and it",
+        "trips; it does not latch, so it retries - which is what a protection without a reset button does."},
     [CIRCUIT_IV_KELVIN] = {"4-WIRE (KELVIN) SENSING: 1 A forced through a 10 mohm shunt whose leads are 50 mohm each.",
         "Measure at the connector and you read 110 mV: 110 mohm, eleven times the part, and the part is",
         "the smallest thing in the measurement. Land two more wires directly on the resistor body and",
@@ -13428,6 +13446,186 @@ static int place_bmi_instrument(Circuit *circuit, float x, float y) {
     return 18;
 }
 
+static int place_bmi_cc_output(Circuit *circuit, float x, float y) {
+    /* Two regulators from the same family doing opposite jobs. The 7805 holds a voltage; the
+       LM317 below it, with nothing between OUT and ADJ but a single resistor, holds a CURRENT.
+       Both are the same trick - the part drives its output until the reference voltage appears
+       across whatever is in the feedback path - and which one you get depends only on where
+       that path goes. */
+    Component *vss = dc_rail(circuit, x, y, 15.0);  if (!vss) return 0;   // +(x,y)
+    int rail = TN(x, y);
+
+    /* Through the LM317's tap on the way, not past it. Two wires from the rail along the same
+       row - one to x+60 and one to x+100 - share the stretch between them, which is a wire
+       lying on a wire and reads as one line with no way to tell where anything joins. */
+    int n60 = TN(x + 60, y), n100 = TN(x + 100, y);
+    TW(rail, n60);
+    TW(n60, n100);
+    Component *c5 = vcap(circuit, x + 100, y + 80, 0.1e-6);              // (100,40)-(100,120)
+    c5->node_ids[0] = TN(x + 100, y + 40); c5->node_ids[1] = TN(x + 100, y + 120);
+    TW(n100, c5->node_ids[0]);
+    Component *gc5 = add_comp(circuit, COMP_GROUND, x + 100, y + 180, 0);
+    gc5->node_ids[0] = TN(x + 100, y + 160);
+    TW(c5->node_ids[1], gc5->node_ids[0]);
+
+    Component *u3 = add_comp(circuit, COMP_7805, x + 200, y, 0);          // IN(160,0) OUT(240,0) GND(200,30)
+    int u3in = TN(x + 160, y), u3out = TN(x + 240, y), u3g = TN(x + 200, y + 30);
+    u3->node_ids[0] = u3in; u3->node_ids[1] = u3out; u3->node_ids[2] = u3g;
+    TW(n100, u3in);
+    Component *gu3 = add_comp(circuit, COMP_GROUND, x + 200, y + 120, 0);
+    gu3->node_ids[0] = TN(x + 200, y + 100);
+    TW(u3g, gu3->node_ids[0]);
+
+    int n300 = TN(x + 300, y);
+    TW(u3out, n300);
+    Component *c6 = vcap(circuit, x + 300, y + 80, 100e-9);              // (300,40)-(300,120)
+    c6->node_ids[0] = TN(x + 300, y + 40); c6->node_ids[1] = TN(x + 300, y + 120);
+    TW(n300, c6->node_ids[0]);
+    Component *gc6 = add_comp(circuit, COMP_GROUND, x + 300, y + 180, 0);
+    gc6->node_ids[0] = TN(x + 300, y + 160);
+    TW(c6->node_ids[1], gc6->node_ids[0]);
+
+    /* something for the 5 V rail to drive, so the node has a value rather than floating */
+    Component *rvcc = vres(circuit, x + 400, y + 80, 1000.0);            // (400,40)-(400,120)
+    rvcc->node_ids[0] = TN(x + 400, y + 40); rvcc->node_ids[1] = TN(x + 400, y + 120);
+    TW(n300, TN(x + 400, y));
+    TW(TN(x + 400, y), rvcc->node_ids[0]);
+    Component *grv = add_comp(circuit, COMP_GROUND, x + 400, y + 180, 0);
+    grv->node_ids[0] = TN(x + 400, y + 160);
+    TW(rvcc->node_ids[1], grv->node_ids[0]);
+
+    /* the current source. Down its own column from the rail, well clear of the 7805's parts. */
+    Component *u4 = add_comp(circuit, COMP_LM317, x + 200, y + 300, 0);   // IN(160,300) OUT(240,300) ADJ(200,330)
+    int u4in = TN(x + 160, y + 300), u4out = TN(x + 240, y + 300), u4adj = TN(x + 200, y + 330);
+    u4->node_ids[0] = u4in; u4->node_ids[1] = u4out; u4->node_ids[2] = u4adj;
+    TW(n60, TN(x + 60, y + 300));
+    TW(TN(x + 60, y + 300), u4in);
+
+    Component *r6 = hres(circuit, x + 320, y + 300, 2025.6);             // (280,300)-(360,300)
+    int r6l = TN(x + 280, y + 300), r6r = TN(x + 360, y + 300);
+    r6->node_ids[0] = r6l; r6->node_ids[1] = r6r;
+    TW(u4out, r6l);
+
+    /* ADJ to the far side of R6, and NOT to ground: that is the whole difference. The part now
+       has 1.25 V to hold across R6 and no say in the voltage anywhere else. */
+    TW(u4adj, TN(x + 200, y + 380));
+    TW(TN(x + 200, y + 380), TN(x + 400, y + 380));
+    TW(TN(x + 400, y + 380), TN(x + 400, y + 300));
+    TW(TN(x + 400, y + 300), r6r);
+
+    Component *rl = vres(circuit, x + 460, y + 380, 1000.0);             // (460,340)-(460,420)
+    rl->props.resistor.power_rating = 1.0;
+    int rlt = TN(x + 460, y + 340), rlb = TN(x + 460, y + 420);
+    rl->node_ids[0] = rlt; rl->node_ids[1] = rlb;
+    TW(TN(x + 400, y + 300), TN(x + 460, y + 300));
+    TW(TN(x + 460, y + 300), rlt);
+    Component *grl = add_comp(circuit, COMP_GROUND, x + 460, y + 480, 0);
+    grl->node_ids[0] = TN(x + 460, y + 460);
+    TW(rlb, grl->node_ids[0]);
+
+    add_label(circuit, x - 40, y - 120, "CC OUTPUT: the 7805 above holds a VOLTAGE. The LM317 below, with one resistor between");
+    add_label(circuit, x - 40, y - 90, "its output and its adjust pin and nothing else, holds a CURRENT: 1.25 / 2025.6 = 617 uA.");
+    add_label(circuit, x + 520, y + 340, "I = 1.25 / R6 = 617 uA");
+    add_label(circuit, x + 520, y + 370, "CHANGE THE LOAD 1k -> 5k:");
+    add_label(circuit, x + 520, y + 400, "the voltage triples, the current does not move.");
+    return 16;
+}
+
+static int place_bmi_ocp(Circuit *circuit, float x, float y) {
+    /* Every protection circuit is these four things in a row: something that turns current into
+       a voltage, something that decides the voltage is too big, something that acts, and a
+       switch in the path. Here they are a 1 ohm shunt, a divider and a BC547's base-emitter
+       drop, a relay coil, and a P-channel whose gate that relay shorts to its own source. */
+    Component *vbms = dc_rail(circuit, x, y, 5.0);  if (!vbms) return 0;  // +(x,y)
+    int rail = TN(x, y);
+    int n280 = TN(x + 280, y), n480 = TN(x + 480, y), n560 = TN(x + 560, y);
+    TW(rail, n280); TW(n280, n480); TW(n480, n560);
+
+    /* the pass device, on unless something turns it off */
+    Component *m1 = add_comp(circuit, COMP_PMOS, x + 300, y + 100, 180);  // S(280,80) D(280,120) G(320,100)
+    component_apply_part(m1, "IRF9540N");
+    m1->props.mosfet.cgso = m1->props.mosfet.cgdo = m1->props.mosfet.cgbo = 0.0;
+    int mg = TN(x + 320, y + 100), md = TN(x + 280, y + 120), ms = TN(x + 280, y + 80);
+    m1->node_ids[0] = mg; m1->node_ids[1] = md; m1->node_ids[2] = ms;
+    TW(n280, ms);
+
+    int gate = TN(x + 400, y + 100);
+    TW(mg, gate);
+    /* pulled down, so the default state is conducting: a protection that fails off protects
+       nothing anyone will keep using */
+    Component *rg = vres(circuit, x + 400, y + 180, 10000.0);             // (400,140)-(400,220)
+    int rgt = TN(x + 400, y + 140), rgb = TN(x + 400, y + 220);
+    rg->node_ids[0] = rgt; rg->node_ids[1] = rgb;
+    TW(gate, rgt);
+    Component *ggr = add_comp(circuit, COMP_GROUND, x + 400, y + 280, 0);
+    ggr->node_ids[0] = TN(x + 400, y + 260);
+    TW(rgb, ggr->node_ids[0]);
+
+    Component *rl = vres(circuit, x + 280, y + 280, 10.0);                // (280,240)-(280,320)
+    rl->props.resistor.power_rating = 10.0;
+    int rlt = TN(x + 280, y + 240), rlb = TN(x + 280, y + 320);
+    rl->node_ids[0] = rlt; rl->node_ids[1] = rlb;
+    TW(md, rlt);
+
+    Component *rs = vres(circuit, x + 280, y + 400, 1.0);                 // (280,360)-(280,440)
+    rs->props.resistor.power_rating = 10.0;
+    int rst = TN(x + 280, y + 360), rsb = TN(x + 280, y + 440);
+    rs->node_ids[0] = rst; rs->node_ids[1] = rsb;
+    TW(rlb, rst);
+    Component *grs = add_comp(circuit, COMP_GROUND, x + 280, y + 500, 0);
+    grs->node_ids[0] = TN(x + 280, y + 480);
+    TW(rsb, grs->node_ids[0]);
+
+    /* the threshold. The board puts a trimmer here; two resistors say the same thing with the
+       ratio written down: 650/(350+650) = 0.65, so 0.65 V of base drive wants 1 V of shunt. */
+    Component *ra = hres(circuit, x + 400, y + 360, 350.0);               // (360,360)-(440,360)
+    int ral = TN(x + 360, y + 360), rar = TN(x + 440, y + 360);
+    ra->node_ids[0] = ral; ra->node_ids[1] = rar;
+    TW(rst, ral);
+    Component *rb = vres(circuit, x + 440, y + 440, 650.0);               // (440,400)-(440,480)
+    int rbt = TN(x + 440, y + 400), rbb = TN(x + 440, y + 480);
+    rb->node_ids[0] = rbt; rb->node_ids[1] = rbb;
+    TW(rar, rbt);
+    Component *grb = add_comp(circuit, COMP_GROUND, x + 440, y + 540, 0);
+    grb->node_ids[0] = TN(x + 440, y + 520);
+    TW(rbb, grb->node_ids[0]);
+
+    Component *q1 = add_comp(circuit, COMP_NPN_BJT, x + 660, y + 220, 0); // B(640,220) C(680,200) E(680,240)
+    component_apply_part(q1, "BC547B");
+    int qb = TN(x + 640, y + 220), qc = TN(x + 680, y + 200), qe = TN(x + 680, y + 240);
+    q1->node_ids[0] = qb; q1->node_ids[1] = qc; q1->node_ids[2] = qe;
+    TW(rar, TN(x + 640, y + 360));
+    TW(TN(x + 640, y + 360), qb);
+    Component *gqe = add_comp(circuit, COMP_GROUND, x + 680, y + 360, 0);
+    gqe->node_ids[0] = TN(x + 680, y + 340);
+    TW(qe, TN(x + 680, y + 340));
+
+    /* Turned round so the contact faces the gate it has to short. The coil is wound for this
+       rail: 100 ohm and a 30 mA pickup pulls in on 5 V, where the 200 ohm default would not. */
+    Component *k1 = add_comp(circuit, COMP_RELAY, x + 520, y + 60, 180);  // C+(560,80) C-(560,40) NO(480,80) COM(480,40)
+    k1->props.relay.r_coil = 100.0;
+    k1->props.relay.i_pickup = 0.03;
+    k1->props.relay.i_dropout = 0.008;
+    int kcp = TN(x + 560, y + 80), kcm = TN(x + 560, y + 40);
+    int kno = TN(x + 480, y + 80), kcom = TN(x + 480, y + 40);
+    k1->node_ids[0] = kcp; k1->node_ids[1] = kcm; k1->node_ids[2] = kno; k1->node_ids[3] = kcom;
+    TW(kcom, n480);
+    TW(kno, TN(x + 400, y + 80));
+    TW(TN(x + 400, y + 80), gate);
+    TW(kcm, n560);
+    TW(kcp, TN(x + 560, y + 140));
+    TW(TN(x + 560, y + 140), TN(x + 600, y + 140));
+    TW(TN(x + 600, y + 140), TN(x + 600, y + 200));
+    TW(TN(x + 600, y + 200), qc);
+
+    add_label(circuit, x - 40, y - 140, "OVER-CURRENT TRIP: 1 ohm turns the load current into a voltage, 65 % of that reaches a");
+    add_label(circuit, x - 40, y - 110, "BC547's base, and at a base-emitter drop it pulls a relay that shorts the gate off.");
+    add_label(circuit, x + 740, y + 380, "trip at about 1 A:");
+    add_label(circuit, x + 740, y + 410, "0.65 x (1 A x 1 ohm) = 0.65 V");
+    add_label(circuit, x + 740, y + 440, "LOWER THE LOAD 10 -> 2 ohm to see it go.");
+    return 19;
+}
+
 static int place_tline_real(Circuit *circuit, float x, float y) {
     /* One driver, one 5 ns cable, three ways of ending it - the same experiment as the
        Termination template, but with a line that actually delays rather than five L-C
@@ -14150,6 +14348,8 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_CHARGER_CC]   = { COMP_RESISTOR, 0, 0 },     /* the sense: 4.95 V over 4.5 ohm is the 1.1 A */
     [CIRCUIT_BMI_CHARGER_CV]   = { COMP_RESISTOR, 4, 0 },     /* the regulated 4.2 V at the load */
     [CIRCUIT_BMI_INSTRUMENT]   = { COMP_RESISTOR, 3, 0 },     /* across the load: on when the cell is in range */
+    [CIRCUIT_BMI_CC_OUTPUT]    = { COMP_RESISTOR, 2, 0 },     /* the load the current source is driving */
+    [CIRCUIT_BMI_OCP]          = { COMP_RESISTOR, 1, 0 },     /* the load: live until the trip takes it away */
     [CIRCUIT_IV_BUCK_NODES]    = { COMP_RESISTOR, 2, 0 },     /* the output, after L and C */
     /* Resistor 0 is the linear regulator's load, resistor 1 the switcher's. The output probe was
        on 1, so the whole point of the circuit - the two 5 V rails side by side - had a probe on
@@ -14343,6 +14543,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_ELOAD_CC] = 1e-3, [CIRCUIT_BMI_ELOAD_CR] = 1e-3, [CIRCUIT_BMI_ELOAD_CV] = 1e-3,
     [CIRCUIT_BMI_THERMAL_CUTOUT] = 1e-3, [CIRCUIT_BMI_SUPERCAP] = 0.5,
     [CIRCUIT_BMI_CHARGER_CC] = 1e-3, [CIRCUIT_BMI_CHARGER_CV] = 1e-3, [CIRCUIT_BMI_INSTRUMENT] = 1e-3,
+    [CIRCUIT_BMI_CC_OUTPUT] = 1e-3, [CIRCUIT_BMI_OCP] = 1e-3,
     [CIRCUIT_IV_BUCK_NODES] = 2e-6,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2e-6, [CIRCUIT_IV_BOOTSTRAP] = 2e-6,
     [CIRCUIT_IV_TERMINATION] = 5e-9, [CIRCUIT_IV_PULLUP_SIZING] = 5e-6,
@@ -14402,6 +14603,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_ELOAD_CC] = 2.0, [CIRCUIT_BMI_ELOAD_CR] = 0.5, [CIRCUIT_BMI_ELOAD_CV] = 1.0,
     [CIRCUIT_BMI_THERMAL_CUTOUT] = 5.0, [CIRCUIT_BMI_SUPERCAP] = 2.0,
     [CIRCUIT_BMI_CHARGER_CC] = 5.0, [CIRCUIT_BMI_CHARGER_CV] = 5.0, [CIRCUIT_BMI_INSTRUMENT] = 1.0,
+    [CIRCUIT_BMI_CC_OUTPUT] = 0.5, [CIRCUIT_BMI_OCP] = 2.0,
     [CIRCUIT_IV_BUCK_NODES] = 2.0,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2.0, [CIRCUIT_IV_BOOTSTRAP] = 10,
     [CIRCUIT_IV_TERMINATION] = 2, [CIRCUIT_IV_PULLUP_SIZING] = 1.0,
@@ -14592,6 +14794,8 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_CHARGER_CC]   = { DEMO_DC, 0 },
     [CIRCUIT_BMI_CHARGER_CV]   = { DEMO_DC, 0 },
     [CIRCUIT_BMI_INSTRUMENT]   = { DEMO_DC, 0 },
+    [CIRCUIT_BMI_CC_OUTPUT]    = { DEMO_DC, 0 },
+    [CIRCUIT_BMI_OCP]          = { DEMO_DC, 0 },
     [CIRCUIT_IV_BUCK_NODES]    = { DEMO_DC, 0 },
     [CIRCUIT_IV_LDO_VS_BUCK]   = { DEMO_DC, 0 },
     [CIRCUIT_IV_BOOTSTRAP]     = { DEMO_WAVEFORM, 100000 },

@@ -654,6 +654,7 @@ bool simulation_dc_analysis(Simulation *sim) {
        the coil carries V/R while props.relay.i_coil is still zero and the contacts are open -
        an operating point that contradicts its own solve, and the initial condition the transient
        then starts from. */
+    bool armature_moved = false;
     for (int i = 0; i < circuit->num_components; i++) {
         Component *comp = circuit->components[i];
         if (!comp || comp->type != COMP_RELAY) continue;
@@ -664,7 +665,25 @@ bool simulation_dc_analysis(Simulation *sim) {
         double v1 = (b2 > 0) ? vector_get(sim->solution, b2 - 1) : 0;
         double I = (v0 - v1) / R_coil;
         comp->props.relay.i_coil = I;
-        comp->props.relay.energized = fabs(I) >= comp->props.relay.i_pickup;
+        bool now = fabs(I) >= comp->props.relay.i_pickup;
+        if (now != comp->props.relay.energized) armature_moved = true;
+        comp->props.relay.energized = now;
+    }
+
+    /* And if one moved, solve again. Seeding the state was only half of it: the voltages above
+       were computed with the contacts where they used to be, so an operating point that ends
+       with a relay newly energized is describing a circuit that no longer exists - which is how
+       an over-current trip could report itself tripped and its load still drawing current.
+
+       Three passes is the cap. A protection whose contact removes the very current that closed
+       it never settles, because there is no operating point to find: that is a relaxation
+       oscillator and the transient is where it belongs. Stopping leaves the last consistent
+       pair rather than looping. */
+    if (armature_moved && sim->dc_relay_pass < 3) {
+        sim->dc_relay_pass++;
+        bool again = simulation_dc_analysis(sim);
+        sim->dc_relay_pass--;
+        return again;
     }
 
     // Capacitors carry no current at the operating point; swept sources restart their phase

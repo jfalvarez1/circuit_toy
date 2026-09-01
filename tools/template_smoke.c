@@ -3805,8 +3805,91 @@ static int bias_test(void) {
         }
     }
 
-    printf("\nbias-test: %d checks, %d whose region, V_CE or protection did not match the arithmetic\n",
-           total, fails);
+    /* ---- a current source has to ignore its load ----
+       The claim the CC Output template makes is that an LM317 with one resistor between OUT and
+       ADJ delivers 1.25/R whatever is downstream. A voltage source with a load resistor would
+       also read 617 uA into 1k; the only thing that tells them apart is changing the load. */
+    {
+        printf("\n");
+        static const double loads[] = { 1000.0, 5000.0, 200.0 };
+        double first = 0;
+        for (size_t i = 0; i < sizeof loads / sizeof loads[0]; i++) {
+            Circuit *c = circuit_create();
+            double ic = 0, vl = 0; int ok = 0;
+            if (circuit_place_template(c, CIRCUIT_BMI_CC_OUTPUT, 0, 0) > 0) {
+                Component *load = NULL; int nres = 0;
+                for (int k = 0; k < c->num_components; k++)
+                    if (c->components[k]->type == COMP_RESISTOR && nres++ == 2) load = c->components[k];
+                if (load) load->props.resistor.resistance = loads[i];
+                Simulation *sim = simulation_create(c);
+                ok = sim && simulation_dc_analysis(sim) && load;
+                if (ok) {
+                    Node *n = circuit_get_node(c, load->node_ids[0]);
+                    vl = n ? n->voltage : 0;
+                    ic = vl / loads[i];
+                    if (!isfinite(ic)) ok = 0;
+                }
+                if (sim) simulation_free(sim);
+            }
+            circuit_free(c);
+            if (i == 0) first = ic;
+            total++;
+            /* 1.25/2025.6 = 617.1 uA, and it must not move as the load changes by 25x */
+            int pass = ok && fabs(ic - 617.1e-6) < 15e-6 && fabs(ic - first) < 5e-6;
+            if (!pass) fails++;
+            printf("%s bias LM317 source into %5.0f ohm -> %7.1f uA across %6.3f V   expect 617.1 uA\n",
+                   pass ? " OK " : "FAIL", loads[i], ic * 1e6, vl);
+        }
+    }
+
+    /* ---- the over-current trip has to actually trip ----
+       A protection that conducts at its rated load and also conducts at five times it is not a
+       protection, and every other audit in this program would pass it. The load is moved from
+       10 ohm to 2 and the current has to stop being proportional. */
+    {
+        printf("\n");
+        static const struct { double rload; bool conduct; } tcases[] = {
+            { 10.0, true }, { 2.0, false },
+        };
+        for (size_t i = 0; i < sizeof tcases / sizeof tcases[0]; i++) {
+            Circuit *c = circuit_create();
+            double il = 0; int ok = 0;
+            if (circuit_place_template(c, CIRCUIT_BMI_OCP, 0, 0) > 0) {
+                Component *load = NULL, *sense = NULL; int nres = 0;
+                for (int k = 0; k < c->num_components; k++)
+                    if (c->components[k]->type == COMP_RESISTOR) {
+                        if (nres == 1) load = c->components[k];
+                        if (nres == 2) sense = c->components[k];
+                        nres++;
+                    }
+                if (load) load->props.resistor.resistance = tcases[i].rload;
+                Simulation *sim = simulation_create(c);
+                ok = sim && simulation_dc_analysis(sim) && load && sense;
+                if (ok) {
+                    /* the current the shunt actually sees, not what the load would like */
+                    Node *n = circuit_get_node(c, sense->node_ids[0]);
+                    il = (n ? n->voltage : 0) / sense->props.resistor.resistance;
+                    if (!isfinite(il)) ok = 0;
+                }
+                if (sim) simulation_free(sim);
+            }
+            circuit_free(c);
+            total++;
+            /* untripped: near 5/(R+1+Rds). tripped: whatever it is, it is not that. */
+            double would_be = 5.0 / (tcases[i].rload + 1.7);
+            int pass = ok && (tcases[i].conduct ? fabs(il - would_be) < 0.1 * would_be
+                                                : il < 0.5 * would_be);
+            if (!pass) fails++;
+            printf("%s bias trip: load %5.1f ohm -> %6.3f A   unprotected it would be %6.3f A  %s\n",
+                   pass ? " OK " : "FAIL", tcases[i].rload, il, would_be,
+                   ok ? (tcases[i].conduct ? "(under the threshold, so it conducts)"
+                                           : "(over it: the relay takes the gate)")
+                      : "[solve failed]");
+        }
+    }
+
+    printf("\nbias-test: %d checks, %d where the region, V_CE, protection or current did not\n"
+           "           match the arithmetic\n", total, fails);
     return fails ? 1 : 0;
 }
 

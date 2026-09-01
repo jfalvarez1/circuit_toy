@@ -70,6 +70,10 @@ typedef struct Simulation {
     Vector *prev_step_solution;     // Converged solution of the previous accepted time step
     Vector *last_linearization;     // Newton iterate the final linear solve was linearized at
     int solution_size;
+    /* How many times the operating point has been re-solved because a relay armature moved.
+       Kept per simulation rather than in a file static so a sweep on its own thread cannot
+       share it. */
+    int dc_relay_pass;
 
     // Convergence tracking
     int iteration_count;
