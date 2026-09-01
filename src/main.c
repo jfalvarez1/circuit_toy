@@ -1274,6 +1274,7 @@ static void usage(void) {
            "  --exit               quit when the shot / recording is done\n"
            "  --no-update-check    do not query GitHub for a newer release (also CIRCUIT_TOY_NO_UPDATE=1)\n"
            "  --no-auto-update     check, but do not install by itself (also CIRCUIT_TOY_NO_AUTO_UPDATE=1)\n"
+           "  --ss N               supersample the frame N times (1 = off, default 2, max 4)\n"
            "  --version            print the version and exit\n"
            "  --update-check       query the latest GitHub release and exit; --update-now also installs it\n"
            "  --layout-test        headless UI layout self-check (no window)\n"
@@ -1416,6 +1417,10 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--popout")) cli_popout = true;
         else if (!strcmp(argv[i], "--import-spice") && i + 1 < argc) cli_spice = argv[++i];
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
+        else if (!strcmp(argv[i], "--ss") && i + 1 < argc) {
+            int v = atoi(argv[++i]);
+            g_render_supersample = (v < 1) ? 1 : (v > 4) ? 4 : v;
+        }
         else if (!strcmp(argv[i], "--layout-test")) return layout_test();
         else if (!strcmp(argv[i], "--symbol-test")) return symbol_test();
         else if (!strcmp(argv[i], "--autoset-test")) return autoset_test();
@@ -1489,6 +1494,28 @@ int main(int argc, char *argv[]) {
     if (cli_size) {
         int w = 0, h = 0;
         if (sscanf(cli_size, "%dx%d", &w, &h) == 2 && w > 200 && h > 200) SDL_SetWindowSize(app.window, w, h);
+    } else if (!cli_shot && !cli_record) {
+        /* Open at a useful fraction of the screen rather than a fixed 1280x720. On a 1440p
+           display that fixed size is a quarter of the desktop, and a schematic drawn into it
+           has to be zoomed out until the labels are a few pixels tall - which is a resolution
+           problem that no amount of smoothing fixes.
+
+           Only for an interactive run. --shot and --record keep the fixed size on purpose:
+           every screenshot the audits compare, and every crop in the documentation, is taken
+           at 1280x720, and a window that changed with the machine would make those unrepeatable. */
+        SDL_DisplayMode dm;
+        if (SDL_GetDesktopDisplayMode(SDL_GetWindowDisplayIndex(app.window), &dm) == 0
+            && dm.w > 0 && dm.h > 0) {
+            int w = (int)(dm.w * 0.85), h = (int)(dm.h * 0.85);
+            if (w < WINDOW_WIDTH)  w = WINDOW_WIDTH;
+            if (h < WINDOW_HEIGHT) h = WINDOW_HEIGHT;
+            if (w > dm.w) w = dm.w;
+            if (h > dm.h) h = dm.h;
+            if (w > WINDOW_WIDTH || h > WINDOW_HEIGHT) {
+                SDL_SetWindowSize(app.window, w, h);
+                SDL_SetWindowPosition(app.window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+            }
+        }
     }
     if (cli_shot) { strncpy(app.cli_shot_path, cli_shot, sizeof app.cli_shot_path - 1); }
     if (cli_state) { strncpy(app.cli_state_path, cli_state, sizeof app.cli_state_path - 1); }

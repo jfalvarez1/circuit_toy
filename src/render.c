@@ -340,6 +340,10 @@ RenderContext *render_create(SDL_Renderer *renderer) {
     ctx->offset_x = (CANVAS_WIDTH / 2 / GRID_SIZE) * GRID_SIZE;
     ctx->offset_y = (CANVAS_HEIGHT / 2 / GRID_SIZE) * GRID_SIZE;
     ctx->zoom = 1.0f;
+    /* Two is the whole of it: four times the pixels, which is where the smooth diagonals and
+       the readable small text come from, and nothing this program draws is fill-bound. The
+       command line can set it to 1 on a machine that cannot spare the memory. */
+    ctx->ss = g_render_supersample;
     ctx->show_grid = true;
     ctx->snap_to_grid = true;
 
@@ -355,6 +359,7 @@ RenderContext *render_create(SDL_Renderer *renderer) {
 
 void render_free(RenderContext *ctx) {
     if (!ctx) return;
+    if (ctx->ss_tex) SDL_DestroyTexture(ctx->ss_tex);
     if (ctx->font_atlas) SDL_DestroyTexture(ctx->font_atlas);
     free(ctx);
 }
@@ -397,11 +402,65 @@ void render_set_color(RenderContext *ctx, Color color) {
     SDL_SetRenderDrawColor(ctx->renderer, color.r, color.g, color.b, color.a);
 }
 
+/* One line, at the weight it should have.
+
+   Everything is drawn in logical coordinates and the frame is rendered into a target ss times
+   that size, so a line SDL draws one device pixel wide comes back 1/ss of a pixel after the
+   downscale - smooth, and much too faint to read as a wire. Drawing ss copies a fraction of a
+   logical pixel apart puts the weight back and keeps the softened edge, which is the point of
+   rendering large in the first place. */
+void render_line_dev(RenderContext *ctx, float x1, float y1, float x2, float y2) {
+    int n = (ctx && ctx->ss > 1) ? ctx->ss : 1;
+    if (n == 1) {
+        SDL_RenderDrawLine(ctx->renderer, (int)(x1 + 0.5f), (int)(y1 + 0.5f),
+                                          (int)(x2 + 0.5f), (int)(y2 + 0.5f));
+        return;
+    }
+    float dx = x2 - x1, dy = y2 - y1;
+    float len = sqrtf(dx * dx + dy * dy);
+    float px = 0.0f, py = 0.0f;
+    if (len > 1e-6f) { px = -dy / len; py = dx / len; }   /* unit normal */
+    for (int k = 0; k < n; k++) {
+        float o = (float)k / (float)n;                    /* within one logical pixel */
+        SDL_RenderDrawLineF(ctx->renderer, x1 + px * o, y1 + py * o,
+                                           x2 + px * o, y2 + py * o);
+    }
+}
+
 void render_draw_line(RenderContext *ctx, float x1, float y1, float x2, float y2) {
     int sx1, sy1, sx2, sy2;
     render_world_to_screen(ctx, x1, y1, &sx1, &sy1);
     render_world_to_screen(ctx, x2, y2, &sx2, &sy2);
-    SDL_RenderDrawLine(ctx->renderer, sx1, sy1, sx2, sy2);
+    render_line_dev(ctx, (float)sx1, (float)sy1, (float)sx2, (float)sy2);
+}
+
+/* Bind the oversized target and put the renderer into logical coordinates. Everything between
+   this and render_frame_end draws exactly as it did before; it just lands on more pixels. */
+void render_frame_begin(RenderContext *ctx, int win_w, int win_h) {
+    if (!ctx || !ctx->renderer || ctx->ss <= 1 || win_w <= 0 || win_h <= 0) return;
+    if (ctx->ss_tex && (ctx->ss_w != win_w || ctx->ss_h != win_h)) {
+        SDL_DestroyTexture(ctx->ss_tex);
+        ctx->ss_tex = NULL;
+    }
+    if (!ctx->ss_tex) {
+        /* linear, so the downscale averages rather than picks - the smoothing IS the result */
+        SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+        ctx->ss_tex = SDL_CreateTexture(ctx->renderer, SDL_PIXELFORMAT_RGBA32,
+                                        SDL_TEXTUREACCESS_TARGET,
+                                        win_w * ctx->ss, win_h * ctx->ss);
+        if (!ctx->ss_tex) { ctx->ss = 1; return; }   /* no target: carry on at 1x */
+        ctx->ss_w = win_w; ctx->ss_h = win_h;
+        SDL_SetTextureScaleMode(ctx->ss_tex, SDL_ScaleModeLinear);
+    }
+    if (SDL_SetRenderTarget(ctx->renderer, ctx->ss_tex) != 0) { ctx->ss = 1; return; }
+    SDL_RenderSetScale(ctx->renderer, (float)ctx->ss, (float)ctx->ss);
+}
+
+void render_frame_end(RenderContext *ctx) {
+    if (!ctx || !ctx->renderer || ctx->ss <= 1 || !ctx->ss_tex) return;
+    SDL_RenderSetScale(ctx->renderer, 1.0f, 1.0f);
+    SDL_SetRenderTarget(ctx->renderer, NULL);
+    SDL_RenderCopy(ctx->renderer, ctx->ss_tex, NULL, NULL);
 }
 
 void render_draw_rect(RenderContext *ctx, float x, float y, float w, float h) {
@@ -431,7 +490,7 @@ void render_draw_circle(RenderContext *ctx, float cx, float cy, float r) {
         int y1 = sy + (int)(sr * sin(rad1));
         int x2 = sx + (int)(sr * cos(rad2));
         int y2 = sy + (int)(sr * sin(rad2));
-        SDL_RenderDrawLine(ctx->renderer, x1, y1, x2, y2);
+        render_line_dev(ctx, x1, y1, x2, y2);
     }
 }
 
@@ -442,12 +501,12 @@ void render_fill_circle(RenderContext *ctx, float cx, float cy, float r) {
 
     for (int dy = -sr; dy <= sr; dy++) {
         int dx = (int)sqrt(sr*sr - dy*dy);
-        SDL_RenderDrawLine(ctx->renderer, sx - dx, sy + dy, sx + dx, sy + dy);
+        render_line_dev(ctx, sx - dx, sy + dy, sx + dx, sy + dy);
     }
 }
 
 void render_draw_line_screen(RenderContext *ctx, int x1, int y1, int x2, int y2) {
-    SDL_RenderDrawLine(ctx->renderer, x1, y1, x2, y2);
+    render_line_dev(ctx, x1, y1, x2, y2);
 }
 
 void render_draw_rect_screen(RenderContext *ctx, int x, int y, int w, int h) {
@@ -682,10 +741,10 @@ void render_neon_glow_wire(RenderContext *ctx, float x1, float y1, float x2, flo
         SDL_SetRenderDrawColor(ctx->renderer, r, g, b, alpha);
 
         // Draw offset lines on both sides
-        SDL_RenderDrawLine(ctx->renderer,
+        render_line_dev(ctx,
             sx1 + (int)(px * offset), sy1 + (int)(py * offset),
             sx2 + (int)(px * offset), sy2 + (int)(py * offset));
-        SDL_RenderDrawLine(ctx->renderer,
+        render_line_dev(ctx,
             sx1 - (int)(px * offset), sy1 - (int)(py * offset),
             sx2 - (int)(px * offset), sy2 - (int)(py * offset));
     }
@@ -693,7 +752,7 @@ void render_neon_glow_wire(RenderContext *ctx, float x1, float y1, float x2, flo
     // Bright core line
     uint8_t core_alpha = (uint8_t)(pulse * 180);
     SDL_SetRenderDrawColor(ctx->renderer, 0xff, 0x80, 0xa0, core_alpha);
-    SDL_RenderDrawLine(ctx->renderer, sx1, sy1, sx2, sy2);
+    render_line_dev(ctx, sx1, sy1, sx2, sy2);
 
     SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
 }
@@ -811,6 +870,9 @@ static void render_package_pins(RenderContext *ctx, float wx, float wy,
 /* How many components have been drawn with no symbol of their own since the counter was last
    read. --symbol-test asserts this stays zero across every placeable type. */
 int g_render_missing_symbol = 0;
+
+/* Supersample factor new contexts are built with. 2 unless --ss says otherwise. */
+int g_render_supersample = 2;
 
 void render_component(RenderContext *ctx, Component *comp) {
     if (!comp) return;
@@ -955,7 +1017,7 @@ void render_component(RenderContext *ctx, Component *comp) {
                         int screen_radius = (int)(radius * ctx->zoom);
                         for (int dy = -screen_radius; dy <= screen_radius; dy++) {
                             int dx = (int)sqrt(screen_radius * screen_radius - dy * dy);
-                            SDL_RenderDrawLine(ctx->renderer, scr_x - dx, scr_y + dy, scr_x + dx, scr_y + dy);
+                            render_line_dev(ctx, scr_x - dx, scr_y + dy, scr_x + dx, scr_y + dy);
                         }
                     }
                     SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
@@ -973,7 +1035,7 @@ void render_component(RenderContext *ctx, Component *comp) {
                         int screen_radius = (int)(radius * ctx->zoom);
                         for (int dy = -screen_radius; dy <= screen_radius; dy++) {
                             int dx = (int)sqrt(screen_radius * screen_radius - dy * dy);
-                            SDL_RenderDrawLine(ctx->renderer, scr_x - dx, scr_y + dy, scr_x + dx, scr_y + dy);
+                            render_line_dev(ctx, scr_x - dx, scr_y + dy, scr_x + dx, scr_y + dy);
                         }
                     }
                     SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);

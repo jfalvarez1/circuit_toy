@@ -14,6 +14,14 @@ typedef struct {
     SDL_Renderer *renderer;
     SDL_Texture *canvas_texture;
 
+    /* Supersampling. The frame is drawn into a target this many times the window's size and
+       scaled back down when it is presented, which is the whole of the resolution difference:
+       diagonals and circles stop being staircases, and glyphs come off a 48-pixel atlas with
+       enough detail left to be worth smoothing. 1 turns it off. */
+    int ss;
+    SDL_Texture *ss_tex;
+    int ss_w, ss_h;             // window size the target was built for
+
     // Viewport
     float offset_x;
     float offset_y;
@@ -61,6 +69,11 @@ void render_reset_view(RenderContext *ctx);
 // Drawing primitives (in world coordinates)
 void render_set_color(RenderContext *ctx, Color color);
 void render_draw_line(RenderContext *ctx, float x1, float y1, float x2, float y2);
+void render_line_dev(RenderContext *ctx, float x1, float y1, float x2, float y2);
+
+/* Draw the frame into the supersampled target, then scale it down onto the window. */
+void render_frame_begin(RenderContext *ctx, int win_w, int win_h);
+void render_frame_end(RenderContext *ctx);
 void render_draw_rect(RenderContext *ctx, float x, float y, float w, float h);
 void render_fill_rect(RenderContext *ctx, float x, float y, float w, float h);
 void render_draw_circle(RenderContext *ctx, float cx, float cy, float r);
@@ -84,6 +97,9 @@ void render_component(RenderContext *ctx, Component *comp);
 
 /* Counts components drawn with no symbol - see the default case in render_component. */
 extern int g_render_missing_symbol;
+
+/* Supersample factor for new render contexts; --ss sets it. */
+extern int g_render_supersample;
 void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit);
 void render_node(RenderContext *ctx, Node *node, bool show_voltage);
 void render_probe(RenderContext *ctx, Circuit *circuit, Probe *probe, int index);

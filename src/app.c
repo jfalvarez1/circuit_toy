@@ -2548,6 +2548,11 @@ void app_render(App *app) {
     app_update_poll(app);
     SDL_Renderer *r = app->renderer;
 
+    /* Everything from here to render_frame_end lands on a target several times the window's
+       size, and is scaled back down at the end. The drawing code is unchanged - it still works
+       in window coordinates - it simply has more pixels underneath it. */
+    render_frame_begin(app->render, app->ui.window_width, app->ui.window_height);
+
     // Clear screen
     SDL_SetRenderDrawColor(r, COLOR_BG.r, COLOR_BG.g, COLOR_BG.b, 255);
     SDL_RenderClear(r);
@@ -2688,6 +2693,10 @@ void app_render(App *app) {
     ui_render_neon_trim(&app->ui, r);
     ui_render_tooltip(&app->ui, r);
     ui_render_brightness(&app->ui, r, app->ui.window_width, app->ui.window_height);
+
+    /* down onto the window, then present. The screenshot that follows reads the window, so
+       captures stay at window resolution and every pixel-based audit still lines up. */
+    render_frame_end(app->render);
 
     // Present main window
     SDL_RenderPresent(r);
