@@ -946,7 +946,31 @@ static int layout_test(void) {
     int fails = 0;
     UIState *ui = calloc(1, sizeof *ui);
     ui_init(ui);
-    static const int sizes[][2] = { {1024, 600}, {1280, 720}, {1920, 1080} };
+    /* The UI sizes that can actually occur. A display taller than 900 is scaled rather than
+       given more UI pixels, so everything from 1080p up lands on about 1600x900 and the small
+       end is what needs the checking - 1024x600 is a netbook panel and 1366x768 is still the
+       commonest laptop screen there is. */
+    static const int sizes[][2] = { {1024, 600}, {1280, 720}, {1366, 768}, {1600, 900} };
+    {
+        /* and the mapping that produces them: a device height, the UI height it should give */
+        static const struct { int dev_h; int want_lo, want_hi; } scal[] = {
+            { 600,  600,  600 },   /* below the baseline: no scaling, every pixel is UI */
+            { 768,  768,  768 },
+            { 900,  900,  900 },   /* exactly the baseline */
+            { 1080, 895,  905 },   /* 1.2x */
+            { 1440, 895,  905 },   /* 1.6x */
+            { 2160, 895,  905 },   /* 2.4x */
+        };
+        for (unsigned k = 0; k < sizeof scal / sizeof scal[0]; k++) {
+            float s = render_ui_scale(scal[k].dev_h);
+            int lh = (int)(scal[k].dev_h / s);
+            if (lh < scal[k].want_lo || lh > scal[k].want_hi) {
+                printf("[FAIL] layout %d px display -> %d UI px (scale %.2f), expected %d-%d\n",
+                       scal[k].dev_h, lh, s, scal[k].want_lo, scal[k].want_hi);
+                fails++;
+            }
+        }
+    }
     for (unsigned k = 0; k < sizeof sizes / sizeof sizes[0]; k++) {
         ui->window_width = sizes[k][0]; ui->window_height = sizes[k][1];
         for (int tab = 0; tab < 3; tab++) {
@@ -1274,6 +1298,7 @@ static void usage(void) {
            "  --exit               quit when the shot / recording is done\n"
            "  --no-update-check    do not query GitHub for a newer release (also CIRCUIT_TOY_NO_UPDATE=1)\n"
            "  --no-auto-update     check, but do not install by itself (also CIRCUIT_TOY_NO_AUTO_UPDATE=1)\n"
+           "  --ui-scale S         UI pixels to device pixels (default: from the display height)\n"
            "  --ss N               supersample the frame N times (1 = off, default 2, max 4)\n"
            "  --version            print the version and exit\n"
            "  --update-check       query the latest GitHub release and exit; --update-now also installs it\n"
@@ -1417,6 +1442,11 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--popout")) cli_popout = true;
         else if (!strcmp(argv[i], "--import-spice") && i + 1 < argc) cli_spice = argv[++i];
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
+        else if (!strcmp(argv[i], "--ui-scale") && i + 1 < argc) {
+            g_ui_scale_override = (float)atof(argv[++i]);
+            if (g_ui_scale_override < 0.5f) g_ui_scale_override = 0.5f;
+            if (g_ui_scale_override > 4.0f) g_ui_scale_override = 4.0f;
+        }
         else if (!strcmp(argv[i], "--ss") && i + 1 < argc) {
             int v = atoi(argv[++i]);
             g_render_supersample = (v < 1) ? 1 : (v > 4) ? 4 : v;
@@ -1517,6 +1547,10 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+    /* After any resize above, and before the first frame: the UI size and the scale both come
+       from the window, so nothing is laid out until the window is the size it will be. */
+    app_update_window_metrics(&app);
+
     if (cli_shot) { strncpy(app.cli_shot_path, cli_shot, sizeof app.cli_shot_path - 1); }
     if (cli_state) { strncpy(app.cli_state_path, cli_state, sizeof app.cli_state_path - 1); }
     if (cli_record) { strncpy(app.cli_record_dir, cli_record, sizeof app.cli_record_dir - 1); app.cli_record_frames = cli_rec_n; app.cli_record_every = cli_rec_every; }

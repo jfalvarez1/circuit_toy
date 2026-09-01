@@ -91,6 +91,7 @@ typedef struct {
 bool app_init(App *app);
 // Place a template at the canvas centre with its scope presets and auto-start (used by --template)
 bool app_place_template_centered(App *app, CircuitTemplateType type);
+void app_update_window_metrics(App *app);  // UI size and scale from the window size
 void app_zoom_to_fit(App *app);   // frame every placed component in the canvas
 
 /* Ask the user for a file. Returns false if they cancelled, or if the platform has no dialog -

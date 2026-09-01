@@ -223,6 +223,24 @@ void app_handle_events(App *app) {
     SDL_Event event;
 
     while (SDL_PollEvent(&event)) {
+        /* SDL reports the pointer in device pixels; every hit test in this program is written
+           in UI pixels. Converting here, once, is the whole of it - the alternative is dividing
+           at each of the places that read a coordinate and finding the one that was missed by
+           clicking somewhere that does nothing. */
+        {
+            float us = app->render ? app->render->ui_scale : 1.0f;
+            if (us > 1.0f) {
+                if (event.type == SDL_MOUSEMOTION) {
+                    event.motion.x = (int)(event.motion.x / us);
+                    event.motion.y = (int)(event.motion.y / us);
+                    event.motion.xrel = (int)(event.motion.xrel / us);
+                    event.motion.yrel = (int)(event.motion.yrel / us);
+                } else if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP) {
+                    event.button.x = (int)(event.button.x / us);
+                    event.button.y = (int)(event.button.y / us);
+                }
+            }
+        }
         switch (event.type) {
             case SDL_QUIT:
                 app->running = false;
@@ -246,21 +264,8 @@ void app_handle_events(App *app) {
                         app->ui.scope_popped_out = false;
                         ui_set_status(&app->ui, "Oscilloscope docked");
                     }
-                } else if (event.window.event == SDL_WINDOWEVENT_RESIZED || event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-                    // Handle main window resize
-                    int w, h;
-                    SDL_GetWindowSize(app->window, &w, &h);
-
-                    // Update UI dimensions
-                    app->ui.window_width = w;
-                    app->ui.window_height = h;
-
-                    // Update canvas area
-                    app->render->canvas_rect.w = w - PALETTE_WIDTH - app->ui.properties_width;
-                    app->render->canvas_rect.h = h - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
-
-                    // Update UI layout (scope position, buttons, etc.)
-                    ui_update_layout(&app->ui);
+                } else if (event.window.event == SDL_WINDOWEVENT_RESIZED || event.window.event== SDL_WINDOWEVENT_SIZE_CHANGED) {
+                    app_update_window_metrics(app);
                 }
                 break;
 
@@ -2248,6 +2253,30 @@ static void app_update_poll(App *app) {
 
 /* Frame everything that is placed. The same arithmetic app_place_template_centered does for a
    freshly placed template, but over the whole circuit and on demand. */
+/* Work out the UI size from the window's real size.
+
+   Everything in the layout is written in UI pixels against a 720p window. On a larger display
+   those are scaled up so the result is the right physical size, which means the UI size is the
+   window divided by that scale rather than the window itself - and every mouse position has to
+   come back the same way. Called once at start-up and on every resize, so a window dragged
+   between a laptop panel and an external monitor re-lays itself out. */
+void app_update_window_metrics(App *app) {
+    if (!app || !app->window) return;
+    int w = 0, h = 0;
+    SDL_GetWindowSize(app->window, &w, &h);
+    if (w <= 0 || h <= 0) return;
+    float s = render_ui_scale(h);
+    app->render->ui_scale = s;
+    int lw = (int)(w / s), lh = (int)(h / s);
+    if (lw < 640) lw = 640;
+    if (lh < 400) lh = 400;
+    app->ui.window_width = lw;
+    app->ui.window_height = lh;
+    app->render->canvas_rect.w = lw - PALETTE_WIDTH - app->ui.properties_width;
+    app->render->canvas_rect.h = lh - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
+    ui_update_layout(&app->ui);
+}
+
 void app_zoom_to_fit(App *app) {
     if (!app || !app->circuit || app->circuit->num_components == 0) return;
     RenderContext *render = app->render;
@@ -2845,6 +2874,10 @@ void app_load_circuit(App *app) {
         strncpy(app->current_file, filename, sizeof(app->current_file) - 1);
         app->has_file = true;
         simulation_reset(app->simulation);
+        /* Frame it. A template fits itself as it is placed, and a file did not: a circuit drawn
+           on a big canvas, or saved from a window a different size to this one, opened somewhere
+           off the edge of the view and looked like nothing had loaded at all. */
+        app_zoom_to_fit(app);
         ui_set_status(&app->ui, "Circuit loaded");
     } else {
         ui_set_status(&app->ui, file_get_error());

@@ -278,6 +278,43 @@ static SDL_Texture *font_atlas_build(SDL_Renderer *renderer) {
 }
 
 /* One character at an arbitrary pixel size. Returns how far to advance. */
+/* The same antialiased atlas, reachable with only a renderer.
+
+   The panels drew every glyph as up to 64 individual points, one per bit of an 8x8 bitmap.
+   That is hard-edged by construction, and once the UI is scaled each of those points becomes a
+   1.6-pixel square with seams showing between them - which is what the panel text looked like.
+   The canvas has had a coverage-antialiased atlas of the same font all along; this shares it.
+   Two renderers exist at most (the window and a popped-out scope), so a cache of four is
+   generous. */
+static struct { SDL_Renderer *r; SDL_Texture *tex; } g_atlas_cache[4];
+
+SDL_Texture *render_shared_font_atlas(SDL_Renderer *r) {
+    if (!r) return NULL;
+    for (int i = 0; i < 4; i++) if (g_atlas_cache[i].r == r) return g_atlas_cache[i].tex;
+    for (int i = 0; i < 4; i++) if (!g_atlas_cache[i].r) {
+        g_atlas_cache[i].r = r;
+        g_atlas_cache[i].tex = font_atlas_build(r);
+        return g_atlas_cache[i].tex;
+    }
+    return NULL;
+}
+
+void render_text_at(SDL_Renderer *r, const char *text, int x, int y, int px, Color col) {
+    if (!text || !*text || px <= 0) return;
+    SDL_Texture *atlas = render_shared_font_atlas(r);
+    if (!atlas) return;
+    SDL_SetTextureColorMod(atlas, col.r, col.g, col.b);
+    SDL_SetTextureAlphaMod(atlas, col.a);
+    for (; *text; text++) {
+        char c = *text;
+        if (c < 32 || c > 126) c = '?';
+        SDL_Rect src = { (c - 32) * FONT_CELL_PX, 0, FONT_CELL_PX, FONT_CELL_PX };
+        SDL_Rect dst = { x, y, px, px };
+        SDL_RenderCopy(r, atlas, &src, &dst);
+        x += px;
+    }
+}
+
 static int font_draw_char(RenderContext *ctx, char c, int x, int y, int size_px, Color col) {
     if (!ctx->font_atlas) {
         if (ctx->font_atlas_tried) return size_px;
@@ -436,9 +473,17 @@ void render_draw_line(RenderContext *ctx, float x1, float y1, float x2, float y2
 
 /* Bind the oversized target and put the renderer into logical coordinates. Everything between
    this and render_frame_end draws exactly as it did before; it just lands on more pixels. */
+/* win_w/win_h are UI pixels. Two scales are in play and they do different jobs: ui_scale makes
+   a UI pixel bigger so the layout is the right physical size on the display, and ss makes each
+   of those land on more device pixels so its edges are smooth. The target is sized for both and
+   the renderer is put into UI coordinates, so nothing downstream has to know about either. */
 void render_frame_begin(RenderContext *ctx, int win_w, int win_h) {
-    if (!ctx || !ctx->renderer || ctx->ss <= 1 || win_w <= 0 || win_h <= 0) return;
-    if (ctx->ss_tex && (ctx->ss_w != win_w || ctx->ss_h != win_h)) {
+    if (!ctx || !ctx->renderer || win_w <= 0 || win_h <= 0) return;
+    float us = (ctx->ui_scale > 0.0f) ? ctx->ui_scale : 1.0f;
+    if (ctx->ss <= 1 && us <= 1.0f) return;             /* nothing to do at 1:1 */
+    int tw = (int)(win_w * us * ctx->ss + 0.5f), th = (int)(win_h * us * ctx->ss + 0.5f);
+    if (tw <= 0 || th <= 0) return;
+    if (ctx->ss_tex && (ctx->ss_w != tw || ctx->ss_h != th)) {
         SDL_DestroyTexture(ctx->ss_tex);
         ctx->ss_tex = NULL;
     }
@@ -446,18 +491,17 @@ void render_frame_begin(RenderContext *ctx, int win_w, int win_h) {
         /* linear, so the downscale averages rather than picks - the smoothing IS the result */
         SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
         ctx->ss_tex = SDL_CreateTexture(ctx->renderer, SDL_PIXELFORMAT_RGBA32,
-                                        SDL_TEXTUREACCESS_TARGET,
-                                        win_w * ctx->ss, win_h * ctx->ss);
+                                        SDL_TEXTUREACCESS_TARGET, tw, th);
         if (!ctx->ss_tex) { ctx->ss = 1; return; }   /* no target: carry on at 1x */
-        ctx->ss_w = win_w; ctx->ss_h = win_h;
+        ctx->ss_w = tw; ctx->ss_h = th;
         SDL_SetTextureScaleMode(ctx->ss_tex, SDL_ScaleModeLinear);
     }
     if (SDL_SetRenderTarget(ctx->renderer, ctx->ss_tex) != 0) { ctx->ss = 1; return; }
-    SDL_RenderSetScale(ctx->renderer, (float)ctx->ss, (float)ctx->ss);
+    SDL_RenderSetScale(ctx->renderer, us * ctx->ss, us * ctx->ss);
 }
 
 void render_frame_end(RenderContext *ctx) {
-    if (!ctx || !ctx->renderer || ctx->ss <= 1 || !ctx->ss_tex) return;
+    if (!ctx || !ctx->renderer || !ctx->ss_tex) return;
     SDL_RenderSetScale(ctx->renderer, 1.0f, 1.0f);
     SDL_SetRenderTarget(ctx->renderer, NULL);
     SDL_RenderCopy(ctx->renderer, ctx->ss_tex, NULL, NULL);
@@ -873,6 +917,26 @@ int g_render_missing_symbol = 0;
 
 /* Supersample factor new contexts are built with. 2 unless --ss says otherwise. */
 int g_render_supersample = 2;
+
+/* Set by --ui-scale; 0 means work it out from the display. */
+float g_ui_scale_override = 0.0f;
+
+/* How many device pixels one UI pixel should be.
+
+   The layout is written in pixels against a 720p window, so on a 1440p screen it draws at half
+   the physical size it was designed at - legible only if you lean in, and the reason the text
+   looked thin rather than small. Scaling by height against 900 holds the physical size roughly
+   constant while still giving a large screen more room than a small one: 1366x768 keeps all of
+   its pixels, and anything from 1080p up gets about 1600x900 of logical space with everything
+   on it drawn correspondingly larger. */
+float render_ui_scale(int device_h) {
+    if (g_ui_scale_override > 0.0f) return g_ui_scale_override;
+    if (device_h <= 0) return 1.0f;
+    float s = (float)device_h / 900.0f;
+    if (s < 1.0f) s = 1.0f;
+    if (s > 3.0f) s = 3.0f;
+    return s;
+}
 
 void render_component(RenderContext *ctx, Component *comp) {
     if (!comp) return;

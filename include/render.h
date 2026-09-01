@@ -19,6 +19,7 @@ typedef struct {
        diagonals and circles stop being staircases, and glyphs come off a 48-pixel atlas with
        enough detail left to be worth smoothing. 1 turns it off. */
     int ss;
+    float ui_scale;             // device pixels per UI pixel
     SDL_Texture *ss_tex;
     int ss_w, ss_h;             // window size the target was built for
 
@@ -88,6 +89,9 @@ void render_fill_rect_screen(RenderContext *ctx, int x, int y, int w, int h);
 int  render_text_px(RenderContext *ctx, int font_size);   /* glyph height at the current zoom */
 void render_draw_text(RenderContext *ctx, const char *text, int x, int y, Color color);
 void render_draw_text_small(RenderContext *ctx, const char *text, int x, int y, Color color);
+
+/* Panel text: the same antialiased glyph atlas, reachable with only a renderer. */
+void render_text_at(SDL_Renderer *r, const char *text, int x, int y, int px, Color col);
 void render_draw_text_styled(RenderContext *ctx, const char *text, int x, int y, Color color,
                              int font_size, bool bold, bool italic, bool underline);
 
@@ -100,6 +104,11 @@ extern int g_render_missing_symbol;
 
 /* Supersample factor for new render contexts; --ss sets it. */
 extern int g_render_supersample;
+
+/* Device pixels per UI pixel. The layout works in UI pixels throughout; this is applied once,
+   when the frame is drawn and when a mouse position comes in. --ui-scale overrides it. */
+extern float g_ui_scale_override;
+float render_ui_scale(int device_h);
 void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit);
 void render_node(RenderContext *ctx, Node *node, bool show_voltage);
 void render_probe(RenderContext *ctx, Circuit *circuit, Probe *probe, int index);

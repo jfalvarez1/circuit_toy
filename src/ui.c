@@ -120,26 +120,26 @@ static const unsigned char ui_font8x8[95][8] = {
     {0x6E,0x3B,0x00,0x00,0x00,0x00,0x00,0x00}, // '~'
 };
 
+/* Panel text, through the shared antialiased atlas.
+
+   These used to plot the 8x8 bitmap a point at a time, which is hard-edged by construction and
+   became visibly so once the UI started being scaled: each point turns into a 1.6-pixel square
+   with seams between them. The atlas is the same font resampled to a coverage map, so the
+   glyphs are identical in shape and spacing - one cell, still eight pixels wide - and simply
+   have soft edges. Every one of the three hundred callers is unchanged, including the colour:
+   they set the draw colour first, so that is what is read back and used to tint the glyph. */
 static void ui_draw_char(SDL_Renderer *r, char c, int x, int y) {
-    if (c < 32 || c > 126) c = '?';
-    const unsigned char *glyph = ui_font8x8[c - 32];
-    for (int row = 0; row < 8; row++) {
-        unsigned char bits = glyph[row];
-        for (int col = 0; col < 8; col++) {
-            if (bits & (1 << col)) {
-                SDL_RenderDrawPoint(r, x + col, y + row);
-            }
-        }
-    }
+    char s[2] = { c, 0 };
+    Uint8 cr, cg, cb, ca;
+    SDL_GetRenderDrawColor(r, &cr, &cg, &cb, &ca);
+    render_text_at(r, s, x, y, 8, (Color){ cr, cg, cb, ca });
 }
 
 static void ui_draw_text(SDL_Renderer *r, const char *text, int x, int y) {
     if (!text) return;  // Safety check for NULL
-    while (*text) {
-        ui_draw_char(r, *text, x, y);
-        x += 8;
-        text++;
-    }
+    Uint8 cr, cg, cb, ca;
+    SDL_GetRenderDrawColor(r, &cr, &cg, &cb, &ca);
+    render_text_at(r, text, x, y, 8, (Color){ cr, cg, cb, ca });
 }
 
 void ui_init(UIState *ui) {
