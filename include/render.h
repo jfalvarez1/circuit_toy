@@ -81,6 +81,9 @@ void render_draw_text_styled(RenderContext *ctx, const char *text, int x, int y,
 // Circuit rendering
 void render_grid(RenderContext *ctx);
 void render_component(RenderContext *ctx, Component *comp);
+
+/* Counts components drawn with no symbol - see the default case in render_component. */
+extern int g_render_missing_symbol;
 void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit);
 void render_node(RenderContext *ctx, Node *node, bool show_voltage);
 void render_probe(RenderContext *ctx, Circuit *circuit, Probe *probe, int index);

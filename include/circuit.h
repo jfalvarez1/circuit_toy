@@ -162,6 +162,12 @@ bool circuit_push_snapshot_undo(Circuit *circuit);
 
 // Component operations
 int circuit_add_component(Circuit *circuit, Component *comp);
+
+/* Build a standalone circuit from a subcircuit definition: every part at the position the
+   definition gave it, and a wire between every pair of terminals that share an internal node.
+   This is how a block is opened up to be looked at. NULL if the definition is empty; caller
+   frees the circuit. */
+Circuit *circuit_from_subcircuit_def(int def_id, char *name_out, size_t name_size);
 void circuit_remove_component(Circuit *circuit, int comp_id);
 Component *circuit_get_component(Circuit *circuit, int comp_id);
 Component *circuit_find_component_at(Circuit *circuit, float x, float y);

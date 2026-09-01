@@ -6263,6 +6263,34 @@ static int sub_test(void) {
         circuit_free(c);
     }
 
+    /* ---- looking inside a block: the definition turned back into a drawing ----
+       A definition stores parts and the internal node each terminal sits on, and no wires. The
+       viewer has to put the wires back, and the check is that the topology survives: the same
+       parts, and terminals that shared an internal node sharing a net in the drawing. */
+    {
+        int def_id = circuits_register_bmi_block();
+        char nm[64] = "";
+        Circuit *v = circuit_from_subcircuit_def(def_id, nm, sizeof nm);
+        int parts = v ? v->num_components : 0;
+        int wires = v ? v->num_wires : 0;
+        /* The wire count is arithmetic, not a guess. A net with k terminals on it needs k-1
+           wires to draw, and the BMI block's six nets carry 1, 1, 1, 3, 2 and 2 terminals -
+           BAT, GND and VREF reach one part each, the sense node joins the op-amp's inverting
+           input to the PMOS drain and the sense resistor, and the two internal nets each join a
+           pair. 0 + 0 + 0 + 2 + 1 + 1 = 4.
+
+           It is NOT asked to solve. A block's insides have every pin hanging in the air and no
+           ground among them; that is what makes it a block. Requiring a solve here was the
+           first version of this check and it failed for exactly that reason. */
+        total++;
+        int pass = v && parts == 4 && wires == 4 && !strcmp(nm, "BMI");
+        if (!pass) fails++;
+        printf("%s sub  block viewed inside       name=%-6s parts=%d wires=%d  %s\n",
+               pass ? " OK " : "FAIL", nm[0] ? nm : "?", parts, wires,
+               pass ? "(6 nets of 1,1,1,3,2,2 terminals -> 4 wires)" : "[wrong shape]");
+        if (v) circuit_free(v);
+    }
+
     printf("\nsub-test: %d checks, %d failed\n", total, fails);
     return fails ? 1 : 0;
 }

@@ -498,7 +498,16 @@ typedef struct {
     int subcircuit_selected_pin;            // Currently selected pin for editing
     int subcircuit_editing_field;           // 0=name, 1+=pin names
     int subcircuit_editing_def_id;          // -1 = creating new, >=0 = editing existing def
+
+    /* Looking inside a block. A subcircuit on the canvas is a box with pins, which is the
+       point of it - but a reader who wants to know what a block IS has nothing to open. These
+       hold a throwaway circuit built from the definition, drawn read-only over the canvas. */
+    int inspect_def_id;                     // -1 = not looking inside anything
+    Circuit *inspect_circuit;               // built from that definition; owned here
+    char inspect_name[64];                  // the block's name, for the panel title
 } UIState;
+
+
 
 // Initialize UI
 void ui_init(UIState *ui);

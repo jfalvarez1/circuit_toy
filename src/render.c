@@ -18,6 +18,7 @@ static void render_draw_line_rotated(RenderContext *ctx, float cx, float cy,
 static void render_draw_circle_rotated(RenderContext *ctx, float cx, float cy,
                                        float dx, float dy, float r, int rotation);
 void render_load_hp(RenderContext *ctx, float x, float y, int rotation);
+void render_battery(RenderContext *ctx, float x, float y, int rotation);
 static void render_component_value(RenderContext *ctx, Component *comp) {
     char buf[96];
     float lx, ly;
@@ -807,6 +808,10 @@ static void render_package_pins(RenderContext *ctx, float wx, float wy,
     render_draw_text_small(ctx, bottom, sx - (int)strlen(bottom) * 4, sy + hh + 14, COLOR_ACCENT);
 }
 
+/* How many components have been drawn with no symbol of their own since the counter was last
+   read. --symbol-test asserts this stays zero across every placeable type. */
+int g_render_missing_symbol = 0;
+
 void render_component(RenderContext *ctx, Component *comp) {
     if (!comp) return;
 
@@ -1460,6 +1465,25 @@ void render_component(RenderContext *ctx, Component *comp) {
             break;
         }
 
+        /* These four had no case at all and so drew nothing: on the canvas a battery, a
+           high-power load and the two table/expression sources were two terminal dots with the
+           wire running between them, which reads as a wire and not as a part. render_load_hp
+           had even been written - it was just never called. */
+        case COMP_BATTERY:
+            render_battery(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_LOAD_HP:
+            render_load_hp(ctx, comp->x, comp->y, comp->rotation);
+            break;
+        case COMP_PWL_SOURCE:
+        case COMP_EXPR_SOURCE: {
+            render_voltage_source(ctx, comp->x, comp->y, comp->rotation, false);
+            int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            const char *tag = (comp->type == COMP_PWL_SOURCE) ? "PWL" : "f(t)";
+            render_draw_text_small(ctx, tag, sx - (int)strlen(tag) * 4, sy - 34, COLOR_TEXT);
+            break;
+        }
+
         // Variable/modulated voltage sources
         case COMP_VADC_SOURCE:
         case COMP_AM_SOURCE:
@@ -1476,6 +1500,23 @@ void render_component(RenderContext *ctx, Component *comp) {
         }
 
         default:
+            /* No symbol for this type. Silently drawing nothing is how a battery spent its
+               life looking like a piece of wire: the part was in the netlist, carried current
+               and appeared in every audit, and the only thing wrong with it was that you could
+               not see it. A dashed box with a question mark says what is actually true. */
+            g_render_missing_symbol++;
+            for (int dx = -18; dx < 18; dx += 8) {
+                render_draw_line_rotated(ctx, comp->x, comp->y, (float)dx, -18, (float)dx + 4, -18, comp->rotation);
+                render_draw_line_rotated(ctx, comp->x, comp->y, (float)dx, 18, (float)dx + 4, 18, comp->rotation);
+            }
+            for (int dy = -18; dy < 18; dy += 8) {
+                render_draw_line_rotated(ctx, comp->x, comp->y, -18, (float)dy, -18, (float)dy + 4, comp->rotation);
+                render_draw_line_rotated(ctx, comp->x, comp->y, 18, (float)dy, 18, (float)dy + 4, comp->rotation);
+            }
+            {
+                int sx, sy; render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+                render_draw_text_small(ctx, "?", sx - 4, sy - 4, COLOR_TEXT);
+            }
             break;
     }
 
@@ -1981,6 +2022,29 @@ void render_ground(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_line_rotated(ctx, x, y, -15, 0, 15, 0, rotation);
     render_draw_line_rotated(ctx, x, y, -10, 6, 10, 6, rotation);
     render_draw_line_rotated(ctx, x, y, -5, 12, 5, 12, rotation);
+}
+
+/* A battery: alternating long and short plates, the symbol everyone learns first.
+
+   There was no case for COMP_BATTERY in render_component at all, so a cell drew nothing but its
+   two terminal dots and read on the canvas as a piece of bare wire with a gap in it - present in
+   the netlist, carrying current, invisible on the schematic. Terminals are at (0,-40) and
+   (0,+40); two cells are drawn, long plate at the positive end. */
+void render_battery(RenderContext *ctx, float x, float y, int rotation) {
+    /* leads in to the outermost plates */
+    render_draw_line_rotated(ctx, x, y, 0, -40, 0, -18, rotation);
+    render_draw_line_rotated(ctx, x, y, 0,  18, 0,  40, rotation);
+    /* plate pairs: long (positive) then short, twice */
+    const float plate[4][2] = { { -18, 14 }, { -10, 7 }, { 2, 14 }, { 10, 7 } };
+    for (int i = 0; i < 4; i++) {
+        float py = plate[i][0], half = plate[i][1];
+        render_draw_line_rotated(ctx, x, y, -half, py, half, py, rotation);
+    }
+    /* the gaps between plates are the cell; join the pairs so it reads as one part */
+    render_draw_line_rotated(ctx, x, y, 0, -10, 0, 2, rotation);
+    /* + beside the long plate, so which way round it goes is on the drawing */
+    render_draw_line_rotated(ctx, x, y, 14, -24, 20, -24, rotation);
+    render_draw_line_rotated(ctx, x, y, 17, -27, 17, -21, rotation);
 }
 
 void render_voltage_source(RenderContext *ctx, float x, float y, int rotation, bool is_ac) {

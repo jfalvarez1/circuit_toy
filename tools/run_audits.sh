@@ -29,7 +29,7 @@ SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test --dv
 --flow-test --switch-test --part-test --op-test --sub-test --spice-test --xtal-test --view-test
 --conn-test --file-test --parts-file-test --undo-test --bias-test --line-test --std-test --burn-test --knob-test --geom-test --param-test
 --tesla-test"
-APP_MODES="--layout-test --autoset-test --place-test --trig-test --prop-test"
+APP_MODES="--layout-test --symbol-test --autoset-test --place-test --trig-test --prop-test"
 # ...and one app suite is long enough to shard as well: --bounce-test renders sixty frames of
 # every template through the real scope.
 APP_SHARDED="bounce-test:4"

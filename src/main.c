@@ -886,6 +886,62 @@ static int autoset_test(void) {
 }
 
 /* Headless UI layout self-check: no SDL window needed. */
+/* --symbol-test: does every part that can be placed have a symbol to draw?
+
+   COMP_BATTERY had none. It was in the netlist, it solved, it carried current, every audit
+   passed it - and on the canvas it was two terminal dots with the wire running between them,
+   which reads as a wire. Three others were the same: the high-power load (whose symbol had
+   even been written, and never called), and the PWL and expression sources.
+
+   Nothing that looked at voltages could have found this, so this looks at the drawing: one of
+   every type is rendered into an off-screen surface, and render_component's default case -
+   the one that means "no symbol for this" - is counted. */
+static int symbol_test(void) {
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        printf("[FAIL] symbol  SDL_Init: %s\n", SDL_GetError());
+        return 1;
+    }
+    SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormat(0, 400, 400, 32, SDL_PIXELFORMAT_RGBA32);
+    SDL_Renderer *ren = surf ? SDL_CreateSoftwareRenderer(surf) : NULL;
+    if (!ren) {
+        printf("[FAIL] symbol  no software renderer: %s\n", SDL_GetError());
+        if (surf) SDL_FreeSurface(surf);
+        SDL_Quit();
+        return 1;
+    }
+    RenderContext ctx;
+    memset(&ctx, 0, sizeof ctx);
+    ctx.renderer = ren;
+    ctx.zoom = 1.0f;
+    ctx.offset_x = 200; ctx.offset_y = 200;
+    ctx.canvas_rect = (Rect){ 0, 0, 400, 400 };
+
+    int missing = 0, checked = 0, skipped = 0;
+    for (int t = COMP_NONE + 1; t < COMP_TYPE_COUNT; t++) {
+        const ComponentTypeInfo *info = component_get_info((ComponentType)t);
+        if (!info || !info->name || !info->name[0]) { skipped++; continue; }
+        /* A block draws itself from a definition it has not got here, and the two text parts
+           are text by nature - none of the three has a fixed symbol to check. */
+        if (t == COMP_SUBCIRCUIT || t == COMP_TEXT || t == COMP_LABEL) { skipped++; continue; }
+        Component *c = component_create((ComponentType)t, 0, 0);
+        if (!c) { skipped++; continue; }
+        int before = g_render_missing_symbol;
+        render_component(&ctx, c);
+        if (g_render_missing_symbol > before) {
+            printf("[FAIL] symbol  %-24s draws no symbol of its own\n", info->name);
+            missing++;
+        }
+        checked++;
+        component_free(c);
+    }
+    SDL_DestroyRenderer(ren);
+    SDL_FreeSurface(surf);
+    SDL_Quit();
+    printf("symbol-test: %d part types drawn, %d with no symbol, %d not applicable\n",
+           checked, missing, skipped);
+    return missing ? 1 : 0;
+}
+
 static int layout_test(void) {
     int fails = 0;
     UIState *ui = calloc(1, sizeof *ui);
@@ -1361,6 +1417,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--import-spice") && i + 1 < argc) cli_spice = argv[++i];
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
         else if (!strcmp(argv[i], "--layout-test")) return layout_test();
+        else if (!strcmp(argv[i], "--symbol-test")) return symbol_test();
         else if (!strcmp(argv[i], "--autoset-test")) return autoset_test();
         else if (!strcmp(argv[i], "--place-test")) return place_test();
         else if (!strcmp(argv[i], "--trig-test")) return trig_test();

@@ -1868,3 +1868,51 @@ bool circuit_has_active_sweep(Circuit *circuit) {
     }
     return false;
 }
+
+/* Turn a subcircuit definition back into a circuit you can look at.
+
+   A definition stores parts and the internal node each terminal sits on; it does not store
+   wires, because it never needed them - the solver works from node numbers. A drawing does need
+   them, so every terminal is placed at its own position and one wire is run between consecutive
+   terminals that share an internal node. That is a star per net rather than the routing someone
+   would draw by hand, but it is the true topology, which is what the question "what is inside
+   this block" is asking. */
+Circuit *circuit_from_subcircuit_def(int def_id, char *name_out, size_t name_size) {
+    SubCircuitDef *def = subcircuit_find_def(def_id);
+    if (!def || def->num_components <= 0 || !def->component_data) return NULL;
+    Circuit *c = circuit_create();
+    if (!c) return NULL;
+    if (name_out && name_size) snprintf(name_out, name_size, "%s", def->name);
+
+    const Component *src = (const Component *)def->component_data;
+    /* first terminal seen on each internal node, to wire the rest of that net back to */
+    enum { VIEW_MAX_NET = 256 };
+    int anchor[VIEW_MAX_NET];
+    for (int i = 0; i < VIEW_MAX_NET; i++) anchor[i] = 0;
+
+    for (int i = 0; i < def->num_components; i++) {
+        Component *p = component_create(src[i].type, src[i].x, src[i].y);
+        if (!p) continue;
+        p->props = src[i].props;
+        /* rotation before the add: circuit_add_component makes the nodes from the terminal
+           positions, and those depend on it */
+        p->rotation = src[i].rotation;
+        p->num_terminals = src[i].num_terminals;
+        snprintf(p->label, sizeof p->label, "%s", src[i].label);
+        snprintf(p->part, sizeof p->part, "%s", src[i].part);
+        if (p->type == COMP_SUBCIRCUIT) {          /* a block inside a block keeps no instance */
+            p->props.subcircuit.inst_data = NULL;
+            p->props.subcircuit.inst_count = 0;
+            p->props.subcircuit.inst_def_id = 0;
+        }
+        if (circuit_add_component(c, p) < 0) { free(p); continue; }
+        for (int t = 0; t < p->num_terminals && t < MAX_TERMINALS; t++) {
+            int internal = src[i].node_ids[t];
+            if (internal <= 0 || internal >= VIEW_MAX_NET) continue;
+            int nid = p->node_ids[t];
+            if (anchor[internal] == 0) anchor[internal] = nid;
+            else if (anchor[internal] != nid) circuit_add_wire(c, anchor[internal], nid);
+        }
+    }
+    return c;
+}

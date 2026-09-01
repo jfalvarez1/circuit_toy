@@ -455,6 +455,9 @@ void ui_init(UIState *ui) {
     ui->selected_subcircuit_def_id = -1;
     ui->placing_subcircuit = false;
     ui->subcircuit_editing_def_id = -1;  // -1 = creating new
+    ui->inspect_def_id = -1;
+    ui->inspect_circuit = NULL;
+    ui->inspect_name[0] = 0;
 
     // The Circuits palette is generated from circuits.c: every template appears, grouped by
     // TemplateGroup, labelled with its short_name. Bounds are laid out in ui_render_palette.
