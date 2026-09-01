@@ -7149,7 +7149,7 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
     [CIRCUIT_BMI_CHARGER_CV] = {"LIPO CHARGER, CONSTANT VOLTAGE STAGE: the second half - hold 4.2 V and let the",
         "current fall away as the cell fills. Two LM317s in cascade, not one: the first drops 15 V to about 8 V",
         "so the second has a sane input, and the heat is split between two packages instead of cooked into one.",
-        "Each is set by its own divider, V = 1.25 * (1 + R2/R1), so 240 and 566 give 4.20 V. Getting 4.2 V right",
+        "Each is set by its own divider, V = 1.25 * (1 + R2/R1), so 240 and 580 land 4.20 V at the load. Getting it right",
         "is what the whole cell chemistry depends on: 50 mV high shortens its life, 50 mV low leaves capacity",
         "on the table. PROBE: the output, 4.20 V into 21 ohm = 200 mA."},
     [CIRCUIT_IV_KELVIN] = {"4-WIRE (KELVIN) SENSING: 1 A forced through a 10 mohm shunt whose leads are 50 mohm each.",
@@ -12795,9 +12795,14 @@ static int place_bmi_eload_cc(Circuit *circuit, float x, float y) {
 
     /* the pass device: drain to the cell, source to the sense resistor */
     Component *m1 = add_comp(circuit, COMP_NMOS, x + 400, y + 260, 0);   // G(380,260) D(420,240) S(420,280)
-    m1->props.mosfet.vth = 2.0;
-    m1->props.mosfet.kp = 2.0;                  /* a power part: amps at a couple of volts of drive */
-    m1->props.mosfet.w = 1e-3; m1->props.mosfet.l = 1e-6;
+    component_apply_part(m1, "IRF540N");     /* a real power N-channel, and the N counterpart of
+                                                the IRF9540 the instrument used on its high side.
+                                                Set by hand it is easy to write a device that
+                                                reaches an amp on 30 mV of overdrive - a thousand
+                                                times steeper than anything real, and steep enough
+                                                that the solver cannot settle it once the loop is
+                                                opened. The part preset is the honest answer. */
+    m1->props.mosfet.cgso = m1->props.mosfet.cgdo = m1->props.mosfet.cgbo = 0.0;
     int mg = TN(x + 380, y + 260), md = TN(x + 420, y + 240), ms = TN(x + 420, y + 280);
     m1->node_ids[0] = mg; m1->node_ids[1] = md; m1->node_ids[2] = ms;
     /* down a column of its own. x + 300 is the pull-down's column, and a wire straight down it
@@ -12885,8 +12890,9 @@ static int place_bmi_eload_cr(Circuit *circuit, float x, float y) {
     TW(rpb, gpd->node_ids[0]);
 
     Component *m1 = add_comp(circuit, COMP_NMOS, x + 520, y + 140, 0);    // G(500,140) D(540,120) S(540,160)
-    m1->props.mosfet.vth = 2.0; m1->props.mosfet.kp = 2.0;
-    m1->props.mosfet.w = 1e-3; m1->props.mosfet.l = 1e-6;
+    component_apply_part(m1, "IRF540N");     /* a real power N-channel, and the N counterpart of
+                                                the IRF9540 the instrument used on its high side */
+    m1->props.mosfet.cgso = m1->props.mosfet.cgdo = m1->props.mosfet.cgbo = 0.0;
     int mg = TN(x + 500, y + 140), md = TN(x + 540, y + 120), ms = TN(x + 540, y + 160);
     m1->node_ids[0] = mg; m1->node_ids[1] = md; m1->node_ids[2] = ms;
     TW(rgr, mg);
@@ -12961,8 +12967,9 @@ static int place_bmi_eload_cv(Circuit *circuit, float x, float y) {
     TW(rpb, gpd->node_ids[0]);
 
     Component *m1 = add_comp(circuit, COMP_NMOS, x + 400, y + 260, 0);    // G(380,260) D(420,240) S(420,280)
-    m1->props.mosfet.vth = 2.0; m1->props.mosfet.kp = 2.0;
-    m1->props.mosfet.w = 1e-3; m1->props.mosfet.l = 1e-6;
+    component_apply_part(m1, "IRF540N");     /* a real power N-channel, and the N counterpart of
+                                                the IRF9540 the instrument used on its high side */
+    m1->props.mosfet.cgso = m1->props.mosfet.cgdo = m1->props.mosfet.cgbo = 0.0;
     int mg = TN(x + 380, y + 260), md = TN(x + 420, y + 240), ms = TN(x + 420, y + 280);
     m1->node_ids[0] = mg; m1->node_ids[1] = md; m1->node_ids[2] = ms;
     TW(rgr, TN(x + 340, y + 60));
@@ -13241,7 +13248,11 @@ static int place_bmi_charger_cv(Circuit *circuit, float x, float y) {
     int adj2 = TN(x + 480, y + 100);
     TW(r1bb, adj2);
     TW(adj2, u2adj);
-    Component *r2b = vres(circuit, x + 480, y + 180, 566.0);              // (480,140)-(480,220)
+    /* 566 is the textbook value for 4.198 V and it arrives as 4.13. This LM317 model puts its
+       0.1 ohm of output impedance OUTSIDE the divider, so the drop at 200 mA is not sensed and
+       not corrected - 1.6 % of load regulation where a real part manages 0.1 %. 580 is what
+       delivers 4.20 V AT THE LOAD, which is the number the cell cares about. */
+    Component *r2b = vres(circuit, x + 480, y + 180, 580.0);              // (480,140)-(480,220)
     int r2bt = TN(x + 480, y + 140), r2bb = TN(x + 480, y + 220);
     r2b->node_ids[0] = r2bt; r2b->node_ids[1] = r2bb;
     TW(adj2, r2bt);
@@ -13272,7 +13283,7 @@ static int place_bmi_charger_cv(Circuit *circuit, float x, float y) {
     add_label(circuit, x - 40, y - 160, "LIPO CHARGER, CV STAGE: hold 4.2 V and let the current fall away as the cell fills. Two");
     add_label(circuit, x - 40, y - 130, "LM317s in cascade - the first drops 15 V to about 8 V so the heat is split between two parts.");
     add_label(circuit, x + 820, y + 40, "V = 1.25 * (1 + R2/R1)");
-    add_label(circuit, x + 820, y + 70, "  = 1.25 * (1 + 566/240) = 4.20 V");
+    add_label(circuit, x + 820, y + 70, "  = 1.25 * (1 + 580/240) = 4.20 V");
     add_label(circuit, x + 820, y + 100, "into 21 ohm = 200 mA");
     return 20;
 }
@@ -14247,9 +14258,9 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_IV_PROBE_COMP] = 0.2, [CIRCUIT_IV_PROBE_LOADING] = 1.0,
     [CIRCUIT_IV_GROUND_LEAD] = 1.0, [CIRCUIT_IV_SCOPE_INPUT_Z] = 0.5,
     [CIRCUIT_IV_AC_COUPLING] = 0.05, [CIRCUIT_IV_SHUNT_SENSE] = 0.5, [CIRCUIT_IV_KELVIN] = 0.05,
-    [CIRCUIT_BMI_ELOAD_CC] = 1.0, [CIRCUIT_BMI_ELOAD_CR] = 0.5, [CIRCUIT_BMI_ELOAD_CV] = 1.0,
-    [CIRCUIT_BMI_THERMAL_CUTOUT] = 5.0, [CIRCUIT_BMI_SUPERCAP] = 1.0,
-    [CIRCUIT_BMI_CHARGER_CC] = 2.0, [CIRCUIT_BMI_CHARGER_CV] = 1.0,
+    [CIRCUIT_BMI_ELOAD_CC] = 2.0, [CIRCUIT_BMI_ELOAD_CR] = 0.5, [CIRCUIT_BMI_ELOAD_CV] = 1.0,
+    [CIRCUIT_BMI_THERMAL_CUTOUT] = 5.0, [CIRCUIT_BMI_SUPERCAP] = 2.0,
+    [CIRCUIT_BMI_CHARGER_CC] = 5.0, [CIRCUIT_BMI_CHARGER_CV] = 5.0,
     [CIRCUIT_IV_BUCK_NODES] = 2.0,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2.0, [CIRCUIT_IV_BOOTSTRAP] = 10,
     [CIRCUIT_IV_TERMINATION] = 2, [CIRCUIT_IV_PULLUP_SIZING] = 1.0,

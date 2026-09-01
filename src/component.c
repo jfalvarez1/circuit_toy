@@ -2985,7 +2985,7 @@ static bool opamp_stamp_output(Component *comp, Matrix *A, Vector *b, Vector *pr
         matrix_add(A, out_idx-1, volt_idx, 1.0);
     }
 
-    bool saturated = false;
+    bool saturated = false, forced_linear = false;
     double rail = 0.0;
     if (prev_solution && vmax > vmin) {
         double vp = (plus_idx > 0)  ? vector_get(prev_solution, plus_idx-1)  : 0.0;
@@ -3007,16 +3007,32 @@ static bool opamp_stamp_output(Component *comp, Matrix *A, Vector *b, Vector *pr
         int rail_sign = saturated ? ((rail == vmax) ? 1 : -1) : 0;
         if (rail_sign != 0 && comp->sat_last_rail != 0 && rail_sign != comp->sat_last_rail) comp->sat_flips++;
         comp->sat_last_rail = rail_sign;
-        if (comp->sat_flips >= 2) saturated = false;
+        if (comp->sat_flips >= 2) { saturated = false; forced_linear = true; }
     }
 
     if (saturated) {
         // Output pinned to the rail: V_out = rail (no dependence on the inputs)
         vector_add(b, volt_idx, rail);
     } else {
+        /* The fall-back above drops the rail stamp, and a plain linear stamp has nothing left
+           to keep the output inside the supplies: an opened feedback loop then reports gain
+           times the input difference, which for a gain of 1e5 is megavolts out of a part
+           running on 15. Lower the gain just enough to land on the rail instead. It stays
+           linear, so Newton still has something it can converge on, and the answer stays
+           somewhere the op-amp could actually go. Only the fall-back path is touched; a
+           normally-behaved op-amp stamps its full gain as before. */
+        double g_eff = gain;
+        if (forced_linear && prev_solution && vmax > vmin) {
+            double vp = (plus_idx > 0)  ? vector_get(prev_solution, plus_idx-1)  : 0.0;
+            double vm = (minus_idx > 0) ? vector_get(prev_solution, minus_idx-1) : 0.0;
+            double dv = vp - vm;
+            if (dv > 1e-12 && gain * dv > vmax)      g_eff = vmax / dv;
+            else if (dv < -1e-12 && gain * dv < vmin) g_eff = vmin / dv;
+            if (g_eff < 1.0) g_eff = 1.0;
+        }
         // Linear region: V_out - gain*V+ + gain*V- = 0
-        if (plus_idx > 0)  matrix_add(A, volt_idx, plus_idx-1,  -gain);
-        if (minus_idx > 0) matrix_add(A, volt_idx, minus_idx-1,  gain);
+        if (plus_idx > 0)  matrix_add(A, volt_idx, plus_idx-1,  -g_eff);
+        if (minus_idx > 0) matrix_add(A, volt_idx, minus_idx-1,  g_eff);
     }
     return saturated;
 }

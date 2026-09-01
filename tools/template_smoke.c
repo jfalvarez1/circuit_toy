@@ -3237,9 +3237,16 @@ static int probe_audit(const char *filter) {
                division, so the circuit looks like it has no ripple at all, which is the one
                thing that circuit is for. AC coupling or a per-channel band fixes it. */
             int ac_coupled = (circuit_template_scope_flags(t) & SCOPE_FLAG_AC) != 0;
-            if (ok && np >= 2 && vd > 0 && !ac_coupled && amp > 0 &&
+            /* "amp > 0" is not the same question as "the trace moves". A flat DC rail carried
+               through a solve comes back with its last bit wobbling - 4.4e-16 on a 3.2 V node,
+               which is two ULP and not ripple. Ask for movement four orders above round-off
+               instead. A converter's rail, the case this check exists for, is percent-level
+               and nowhere near the floor. */
+            int really_moves = amp > 1e-12 * fabs(peak);
+            if (ok && np >= 2 && vd > 0 && !ac_coupled && really_moves &&
                 amp < 0.1 * vd && peak > 0.5 * vd)
                 strcat(flags, "RIPPLE ");
+            if (getenv("CT_SHOW_AMP")) printf("        amp=%.6g peak=%.6g vd=%g\n", amp, peak, vd);
         }
         printf("[%s] %-26s td=%-7.3g vd=%-7.3g probes=%d  t=%.4g steps=%ld  %s\n", flags[0] ? "FLAG" : " OK ", ti->name, td, vd, np, sim->time, steps, flags);
         for (int i = 0; i < np && i < MAX_PROBES; i++) {
