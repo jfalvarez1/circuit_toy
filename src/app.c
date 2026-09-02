@@ -18,6 +18,7 @@
 
 #include "app.h"
 #include "spice.h"
+#include "netlist.h"
 #include "crashlog.h"
 #include "version.h"
 #include "label.h"   /* label_wrap: framing has to measure text the way it is drawn */
@@ -312,6 +313,30 @@ void app_handle_events(App *app) {
             case UI_ACTION_LOAD:
                 app_load_circuit(app);
                 break;
+            /* A parts list on the clipboard becomes a circuit. This is the whole point of the
+               netlist reader being here: the course hands a reader a table, and the distance
+               between that table and a running circuit should be one button. */
+            case UI_ACTION_PASTE_NETLIST: {
+                char *clip = SDL_GetClipboardText();
+                if (!clip || !clip[0]) {
+                    if (clip) SDL_free(clip);
+                    ui_set_status(&app->ui, "Nothing on the clipboard. Copy a parts list first: one per line, like  R1 in vm1 10k");
+                    break;
+                }
+                char msg[192] = "";
+                input_forget_circuit(&app->input);   /* the parse can only add, but be sure */
+                int n = netlist_build(app->circuit, clip, msg, sizeof msg);
+                SDL_free(clip);
+                if (n > 0) {
+                    simulation_reset(app->simulation);
+                    app_zoom_to_fit(app);
+                    ui_set_status(&app->ui, msg[0] ? msg : "Circuit built from the clipboard");
+                } else {
+                    ui_set_status(&app->ui, "Nothing on the clipboard looked like a parts list");
+                }
+                break;
+            }
+
             case UI_ACTION_IMPORT_SPICE: {
                 char picked[512];
                 if (!app_pick_file(picked, sizeof picked, "Import a SPICE model",

@@ -213,6 +213,8 @@ void ui_init(UIState *ui) {
     ui->btn_zoom_fit = (Button){{btn_x, 10, 32, btn_h}, "Fit", "Zoom to fit the whole circuit", false, false, true, false};
     btn_x += 32 + 10;
     ui->btn_import_spice = (Button){{btn_x, 10, 46, btn_h}, "SPICE", "Import a vendor .SUBCKT model", false, false, true, false};
+    btn_x += 46 + 10;
+    ui->btn_paste_netlist = (Button){{btn_x, 10, 46, btn_h}, "Paste", "Build a circuit from a parts list on the clipboard: one part per line, R1 in vm1 10k", false, false, true, false};
 
     // Speed slider. The x and w here are placeholders; ui_layout_toolbar_right sets them from
     // the window width, at start-up and again on every resize.
@@ -882,6 +884,7 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     draw_button(renderer, &ui->btn_zoom_in);
     draw_button(renderer, &ui->btn_zoom_fit);
     draw_button(renderer, &ui->btn_import_spice);
+    draw_button(renderer, &ui->btn_paste_netlist);
 
     // Speed slider label - dropped on a narrow window so the controls right of it still fit
     if (ui->speed_label_w > 0) {
@@ -7280,6 +7283,7 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_zoom_in.bounds)  && ui->btn_zoom_in.enabled)  return UI_ACTION_ZOOM_IN;
         if (point_in_rect(x, y, &ui->btn_zoom_fit.bounds) && ui->btn_zoom_fit.enabled) return UI_ACTION_ZOOM_FIT;
         if (point_in_rect(x, y, &ui->btn_import_spice.bounds) && ui->btn_import_spice.enabled) return UI_ACTION_IMPORT_SPICE;
+        if (point_in_rect(x, y, &ui->btn_paste_netlist.bounds) && ui->btn_paste_netlist.enabled) return UI_ACTION_PASTE_NETLIST;
         if (point_in_rect(x, y, &ui->btn_screenshot.bounds) && ui->btn_screenshot.enabled) {
             return UI_ACTION_SCREENSHOT;
         }
@@ -7910,6 +7914,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         ui->btn_zoom_in.hovered  = point_in_rect(x, y, &ui->btn_zoom_in.bounds);
         ui->btn_zoom_fit.hovered = point_in_rect(x, y, &ui->btn_zoom_fit.bounds);
         ui->btn_import_spice.hovered = point_in_rect(x, y, &ui->btn_import_spice.bounds);
+        ui->btn_paste_netlist.hovered = point_in_rect(x, y, &ui->btn_paste_netlist.bounds);
         ui->btn_timestep_up.hovered = point_in_rect(x, y, &ui->btn_timestep_up.bounds);
         ui->btn_timestep_down.hovered = point_in_rect(x, y, &ui->btn_timestep_down.bounds);
         ui->btn_timestep_auto.hovered = point_in_rect(x, y, &ui->btn_timestep_auto.bounds);
@@ -8208,7 +8213,13 @@ void ui_layout_toolbar_right(UIState *ui) {
     const int FIXED = 5 + 34 + 8 + 24 + 52 + 5 + (20 + 2 + 20 + 3 + 40);
 
     int right = ui->window_width - 10;
-    int left_limit = ui->btn_import_spice.bounds.x + ui->btn_import_spice.bounds.w + 12;
+    /* From the rightmost toolbar button, whichever that currently is - reading it off a
+       particular button by name is how adding one to the end put the speed slider underneath
+       it. */
+    int last_btn = ui->btn_import_spice.bounds.x + ui->btn_import_spice.bounds.w;
+    if (ui->btn_paste_netlist.bounds.x + ui->btn_paste_netlist.bounds.w > last_btn)
+        last_btn = ui->btn_paste_netlist.bounds.x + ui->btn_paste_netlist.bounds.w;
+    int left_limit = last_btn + 12;
     int avail = right - left_limit;
 
     int label_w = LABEL_W, slider_w = SLIDER_MAX;
