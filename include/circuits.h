@@ -228,6 +228,7 @@ typedef enum {
     CIRCUIT_BMI_INSTRUMENT,
     CIRCUIT_BMI_CC_OUTPUT,
     CIRCUIT_BMI_OCP,
+    CIRCUIT_BMI_RAIL,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 

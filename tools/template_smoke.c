@@ -4062,8 +4062,61 @@ static int bias_test(void) {
         }
     }
 
-    printf("\nbias-test: %d checks, %d where the region, V_CE, protection or current did not\n"
-           "           match the arithmetic\n", total, fails);
+    /* ---- a regulated rail is regulated by its divider, not by its duty ----
+       The switching rail's claim is that 1.25 x (1 + R5/R4) decides the output and nothing
+       else does. A converter told a duty cycle would also sit at 3.36 V with the right duty -
+       what separates them is changing the load, which moves the duty and must not move the
+       rail, and changing the divider, which must. Run to steady state and average; a DC solve
+       says nothing about a circuit whose whole behaviour is switching. */
+    {
+        printf("\n");
+        static const struct { double rload, r5; double expect; const char *why; } rcases[] = {
+            {  33.0, 2025.6, 3.36, "as drawn: 1.25 x (1 + 2025.6/1200)" },
+            { 100.0, 2025.6, 3.36, "a third of the load: the duty falls, the rail does not move" },
+            {  33.0, 3600.0, 5.00, "divider changed to 3600/1200: 1.25 x 4 = 5.00 V" },
+        };
+        for (size_t i = 0; i < sizeof rcases / sizeof rcases[0]; i++) {
+            Circuit *c = circuit_create();
+            double mean = 0; int ok = 0, n = 0;
+            if (circuit_place_template(c, CIRCUIT_BMI_RAIL, 0, 0) > 0) {
+                Component *load = NULL, *r5 = NULL; int nres = 0;
+                for (int k = 0; k < c->num_components; k++)
+                    if (c->components[k]->type == COMP_RESISTOR) {
+                        if (nres == 0) load = c->components[k];
+                        if (nres == 1) r5 = c->components[k];
+                        nres++;
+                    }
+                if (load) load->props.resistor.resistance = rcases[i].rload;
+                if (r5) r5->props.resistor.resistance = rcases[i].r5;
+                Simulation *sim = simulation_create(c);
+                ok = sim && simulation_dc_analysis(sim) && load;
+                if (ok) {
+                    simulation_set_time_step(sim, 1e-6);
+                    simulation_start(sim);
+                    double t_end = 0.05, t_meas = 0.04;   /* 100 uF into 33 ohm settles slowly */
+                    while (sim->time < t_end) {
+                        if (!simulation_step(sim)) { ok = 0; break; }
+                        if (sim->time < t_meas) continue;
+                        Node *nd = circuit_get_node(c, load->node_ids[0]);
+                        if (nd) { mean += nd->voltage; n++; }
+                    }
+                    if (n) mean /= n;
+                    if (!isfinite(mean)) ok = 0;
+                }
+                if (sim) simulation_free(sim);
+            }
+            circuit_free(c);
+            total++;
+            int pass = ok && n > 100 && fabs(mean - rcases[i].expect) < 0.10 * rcases[i].expect;
+            if (!pass) fails++;
+            printf("%s bias rail: %5.0f ohm, R5 %6.1f -> %5.3f V   expect %4.2f  %s\n",
+                   pass ? " OK " : "FAIL", rcases[i].rload, rcases[i].r5, mean, rcases[i].expect,
+                   ok ? rcases[i].why : "[did not run]");
+        }
+    }
+
+    printf("\nbias-test: %d checks, %d where the region, V_CE, protection, current or rail did\n"
+           "           not match the arithmetic\n", total, fails);
     return fails ? 1 : 0;
 }
 

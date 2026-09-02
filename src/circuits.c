@@ -353,6 +353,7 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_BMI_INSTRUMENT] = {"BMI: Full Instrument", "BMI", "the window comparator, the enable and the pass device", TG_BMI},
     [CIRCUIT_BMI_CC_OUTPUT] = {"BMI: CC Output (LM317 current source)", "CCout", "one resistor round an LM317 makes a current source", TG_BMI},
     [CIRCUIT_BMI_OCP] = {"BMI: Over-current Trip", "OCP", "sense, threshold, relay - and the load goes away", TG_BMI},
+    [CIRCUIT_BMI_RAIL] = {"BMI: Switching Rail (MC34063)", "Rail", "a divider sets the output, not a duty cycle", TG_BMI},
 
 
 
@@ -6427,6 +6428,7 @@ static int place_bmi_charger_cv(Circuit *circuit, float x, float y);
 static int place_bmi_instrument(Circuit *circuit, float x, float y);
 static int place_bmi_cc_output(Circuit *circuit, float x, float y);
 static int place_bmi_ocp(Circuit *circuit, float x, float y);
+static int place_bmi_rail(Circuit *circuit, float x, float y);
 static int place_tline_real(Circuit *circuit, float x, float y);
 static int place_sevenseg_test(Circuit *circuit, float x, float y);
 static int place_wireless_link(Circuit *circuit, float x, float y);
@@ -6778,6 +6780,7 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_BMI_INSTRUMENT:     return place_bmi_instrument(circuit, x, y);
         case CIRCUIT_BMI_CC_OUTPUT:      return place_bmi_cc_output(circuit, x, y);
         case CIRCUIT_BMI_OCP:            return place_bmi_ocp(circuit, x, y);
+        case CIRCUIT_BMI_RAIL:           return place_bmi_rail(circuit, x, y);
         case CIRCUIT_TLINE_REAL:         return place_tline_real(circuit, x, y);
         case CIRCUIT_SEVENSEG_TEST:      return place_sevenseg_test(circuit, x, y);
         case CIRCUIT_WIRELESS_LINK:      return place_wireless_link(circuit, x, y);
@@ -7179,6 +7182,12 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "coil whose contact shorts the pass MOSFET's gate to its own source - which turns it off. 0.65 of the",
         "sense voltage reaching 0.65 V means the trip is at about 1 A. LOWER THE LOAD from 10 ohm to 2 and it",
         "trips; it does not latch, so it retries - which is what a protection without a reset button does."},
+    [CIRCUIT_BMI_RAIL] = {"THE SWITCHING RAIL: the instrument's 3.3 V comes from an MC34063, and the thing",
+        "worth taking from it is that NOTHING here sets a duty cycle. A comparator watches a divider against",
+        "an internal 1.25 V and closes the switch whenever the output has sagged below it, so the output is",
+        "1.25 x (1 + 2025.6/1200) = 3.36 V and the duty cycle is whatever that happens to need. Change the",
+        "load and the duty changes on its own; change the divider and the output moves. Compare with Buck",
+        "Converter, which is the same power stage told a duty cycle instead. PROBE: the rail, and the switch."},
     [CIRCUIT_IV_KELVIN] = {"4-WIRE (KELVIN) SENSING: 1 A forced through a 10 mohm shunt whose leads are 50 mohm each.",
         "Measure at the connector and you read 110 mV: 110 mohm, eleven times the part, and the part is",
         "the smallest thing in the measurement. Land two more wires directly on the resistor body and",
@@ -13626,6 +13635,110 @@ static int place_bmi_ocp(Circuit *circuit, float x, float y) {
     return 19;
 }
 
+static int place_bmi_rail(Circuit *circuit, float x, float y) {
+    /* The power stage is an ordinary buck - switch, catch diode, inductor, output capacitor.
+       What makes it the instrument's rail is the loop around it: a comparator holding a divider
+       at 1.25 V by opening and closing the switch. An MC34063 is that comparator, that
+       reference and that switch in one package, and the duty cycle it runs at is a consequence
+       rather than a setting. */
+    Component *vin = dc_rail(circuit, x, y, 12.0);  if (!vin) return 0;    // +(x,y)
+    int in = TN(x, y);
+
+    Component *sw = add_comp(circuit, COMP_ANALOG_SWITCH, x + 160, y, 0);  // IN(120,0) OUT(200,0) CTL(160,20)
+    sw->props.analog_switch.r_on = 0.2;
+    sw->props.analog_switch.r_off = 1e6;
+    sw->props.analog_switch.v_on = 2.5;
+    sw->props.analog_switch.v_off = 1.0;    /* the hysteresis that sets the switching rate */
+    int swi = TN(x + 120, y), swo = TN(x + 200, y), swc = TN(x + 160, y + 20);
+    sw->node_ids[0] = swi; sw->node_ids[1] = swo; sw->node_ids[2] = swc;
+    TW(in, swi);
+
+    int node_sw = TN(x + 260, y);
+    TW(swo, node_sw);
+
+    /* the catch diode, cathode up: it takes the inductor current over when the switch opens */
+    Component *d1 = add_comp(circuit, COMP_SCHOTTKY, x + 260, y + 80, 270); // K(260,40) A(260,120)
+    int dk = TN(x + 260, y + 40), da = TN(x + 260, y + 120);
+    d1->node_ids[0] = da; d1->node_ids[1] = dk;
+    TW(node_sw, dk);
+    Component *gd = add_comp(circuit, COMP_GROUND, x + 260, y + 180, 0);
+    gd->node_ids[0] = TN(x + 260, y + 160);
+    TW(da, gd->node_ids[0]);
+
+    Component *l1 = hind(circuit, x + 360, y, 149e-6);                     // (320,0)-(400,0)
+    int ll = TN(x + 320, y), lr = TN(x + 400, y);
+    l1->node_ids[0] = ll; l1->node_ids[1] = lr;
+    TW(node_sw, ll);
+
+    int out = TN(x + 460, y);
+    TW(lr, out);
+    Component *co = vcap(circuit, x + 460, y + 80, 100e-6);                // (460,40)-(460,120)
+    co->node_ids[0] = TN(x + 460, y + 40); co->node_ids[1] = TN(x + 460, y + 120);
+    TW(out, co->node_ids[0]);
+    Component *gco = add_comp(circuit, COMP_GROUND, x + 460, y + 180, 0);
+    gco->node_ids[0] = TN(x + 460, y + 160);
+    TW(co->node_ids[1], gco->node_ids[0]);
+
+    Component *rl = vres(circuit, x + 560, y + 80, 33.0);                  // (560,40)-(560,120)
+    rl->props.resistor.power_rating = 5.0;
+    rl->node_ids[0] = TN(x + 560, y + 40); rl->node_ids[1] = TN(x + 560, y + 120);
+    TW(out, TN(x + 560, y));
+    TW(TN(x + 560, y), rl->node_ids[0]);
+    Component *grl = add_comp(circuit, COMP_GROUND, x + 560, y + 180, 0);
+    grl->node_ids[0] = TN(x + 560, y + 160);
+    TW(rl->node_ids[1], grl->node_ids[0]);
+
+    /* the divider that decides everything: 1.25 x (1 + 2025.6/1200) = 3.36 V */
+    Component *r5 = vres(circuit, x + 660, y + 80, 2025.6);                // (660,40)-(660,120)
+    int r5t = TN(x + 660, y + 40), r5b = TN(x + 660, y + 120);
+    r5->node_ids[0] = r5t; r5->node_ids[1] = r5b;
+    TW(TN(x + 560, y), TN(x + 660, y));
+    TW(TN(x + 660, y), r5t);
+    int fb = TN(x + 660, y + 150);
+    Component *r4 = vres(circuit, x + 660, y + 220, 1200.0);               // (660,180)-(660,260)
+    int r4t = TN(x + 660, y + 180), r4b = TN(x + 660, y + 260);
+    r4->node_ids[0] = r4t; r4->node_ids[1] = r4b;
+    TW(r5b, fb); TW(fb, r4t);
+    Component *gr4 = add_comp(circuit, COMP_GROUND, x + 660, y + 320, 0);
+    gr4->node_ids[0] = TN(x + 660, y + 300);
+    TW(r4b, gr4->node_ids[0]);
+
+    /* the comparator, and the 1.25 V it is comparing against */
+    Component *u1 = add_comp(circuit, COMP_OPAMP, x + 340, y + 420, 0);    // -(300,400) +(300,440) out(380,420)
+    u1->props.opamp.gain = 1e5;
+    u1->props.opamp.vmax = 5.0; u1->props.opamp.vmin = 0.0;
+    int um = TN(x + 300, y + 400), up = TN(x + 300, y + 440), uo = TN(x + 380, y + 420);
+    u1->node_ids[0] = um; u1->node_ids[1] = up; u1->node_ids[2] = uo;
+    TW(fb, TN(x + 760, y + 150));
+    TW(TN(x + 760, y + 150), TN(x + 760, y + 400));
+    TW(TN(x + 760, y + 400), um);
+
+    Component *vref = add_comp(circuit, COMP_DC_VOLTAGE, x + 180, y + 420, 0);
+    vref->props.dc_voltage.voltage = 1.25;
+    vref->node_ids[0] = TN(x + 180, y + 380); vref->node_ids[1] = TN(x + 180, y + 460);
+    Component *gvr = add_comp(circuit, COMP_GROUND, x + 180, y + 520, 0);
+    gvr->node_ids[0] = TN(x + 180, y + 500);
+    TW(vref->node_ids[1], gvr->node_ids[0]);
+    TW(vref->node_ids[0], TN(x + 240, y + 380));
+    TW(TN(x + 240, y + 380), TN(x + 240, y + 440));
+    TW(TN(x + 240, y + 440), up);
+
+    /* and back up to the switch, round the outside of everything */
+    TW(uo, TN(x + 420, y + 420));
+    TW(TN(x + 420, y + 420), TN(x + 420, y + 620));
+    TW(TN(x + 420, y + 620), TN(x + 100, y + 620));
+    TW(TN(x + 100, y + 620), TN(x + 100, y + 60));
+    TW(TN(x + 100, y + 60), TN(x + 160, y + 60));
+    TW(TN(x + 160, y + 60), swc);
+
+    add_label(circuit, x - 40, y - 100, "THE SWITCHING RAIL: nothing here sets a duty cycle. A comparator holds the divider at");
+    add_label(circuit, x - 40, y - 70, "1.25 V by closing the switch whenever the rail sags, and the duty follows from that.");
+    add_label(circuit, x + 820, y + 60, "1.25 x (1 + 2025.6/1200) = 3.36 V");
+    add_label(circuit, x + 820, y + 90, "CHANGE THE LOAD: the duty moves, the rail does not.");
+    add_label(circuit, x + 820, y + 120, "CHANGE R5: the rail moves.");
+    return 20;
+}
+
 static int place_tline_real(Circuit *circuit, float x, float y) {
     /* One driver, one 5 ns cable, three ways of ending it - the same experiment as the
        Termination template, but with a line that actually delays rather than five L-C
@@ -14350,6 +14463,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_INSTRUMENT]   = { COMP_RESISTOR, 3, 0 },     /* across the load: on when the cell is in range */
     [CIRCUIT_BMI_CC_OUTPUT]    = { COMP_RESISTOR, 2, 0 },     /* the load the current source is driving */
     [CIRCUIT_BMI_OCP]          = { COMP_RESISTOR, 1, 0 },     /* the load: live until the trip takes it away */
+    [CIRCUIT_BMI_RAIL]         = { COMP_RESISTOR, 0, 0 },     /* the rail the divider is holding up */
     [CIRCUIT_IV_BUCK_NODES]    = { COMP_RESISTOR, 2, 0 },     /* the output, after L and C */
     /* Resistor 0 is the linear regulator's load, resistor 1 the switcher's. The output probe was
        on 1, so the whole point of the circuit - the two 5 V rails side by side - had a probe on
@@ -14543,7 +14657,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_ELOAD_CC] = 1e-3, [CIRCUIT_BMI_ELOAD_CR] = 1e-3, [CIRCUIT_BMI_ELOAD_CV] = 1e-3,
     [CIRCUIT_BMI_THERMAL_CUTOUT] = 1e-3, [CIRCUIT_BMI_SUPERCAP] = 0.5,
     [CIRCUIT_BMI_CHARGER_CC] = 1e-3, [CIRCUIT_BMI_CHARGER_CV] = 1e-3, [CIRCUIT_BMI_INSTRUMENT] = 1e-3,
-    [CIRCUIT_BMI_CC_OUTPUT] = 1e-3, [CIRCUIT_BMI_OCP] = 1e-3,
+    [CIRCUIT_BMI_CC_OUTPUT] = 1e-3, [CIRCUIT_BMI_OCP] = 1e-3, [CIRCUIT_BMI_RAIL] = 2e-5,
     [CIRCUIT_IV_BUCK_NODES] = 2e-6,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2e-6, [CIRCUIT_IV_BOOTSTRAP] = 2e-6,
     [CIRCUIT_IV_TERMINATION] = 5e-9, [CIRCUIT_IV_PULLUP_SIZING] = 5e-6,
@@ -14603,7 +14717,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_ELOAD_CC] = 2.0, [CIRCUIT_BMI_ELOAD_CR] = 0.5, [CIRCUIT_BMI_ELOAD_CV] = 1.0,
     [CIRCUIT_BMI_THERMAL_CUTOUT] = 5.0, [CIRCUIT_BMI_SUPERCAP] = 2.0,
     [CIRCUIT_BMI_CHARGER_CC] = 5.0, [CIRCUIT_BMI_CHARGER_CV] = 5.0, [CIRCUIT_BMI_INSTRUMENT] = 1.0,
-    [CIRCUIT_BMI_CC_OUTPUT] = 0.5, [CIRCUIT_BMI_OCP] = 2.0,
+    [CIRCUIT_BMI_CC_OUTPUT] = 0.5, [CIRCUIT_BMI_OCP] = 2.0, [CIRCUIT_BMI_RAIL] = 2.0,
     [CIRCUIT_IV_BUCK_NODES] = 2.0,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2.0, [CIRCUIT_IV_BOOTSTRAP] = 10,
     [CIRCUIT_IV_TERMINATION] = 2, [CIRCUIT_IV_PULLUP_SIZING] = 1.0,
@@ -14796,6 +14910,7 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_INSTRUMENT]   = { DEMO_DC, 0 },
     [CIRCUIT_BMI_CC_OUTPUT]    = { DEMO_DC, 0 },
     [CIRCUIT_BMI_OCP]          = { DEMO_DC, 0 },
+    [CIRCUIT_BMI_RAIL]         = { DEMO_DC, 0 },
     [CIRCUIT_IV_BUCK_NODES]    = { DEMO_DC, 0 },
     [CIRCUIT_IV_LDO_VS_BUCK]   = { DEMO_DC, 0 },
     [CIRCUIT_IV_BOOTSTRAP]     = { DEMO_WAVEFORM, 100000 },
@@ -14898,6 +15013,11 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BCD_COUNTER] = SCOPE_FLAG_FIT, [CIRCUIT_DIGITAL_CLOCK] = SCOPE_FLAG_FIT,
     /* LC oscillators swing about a 12 V rail: AC-couple them so the tank waveform is centred */
     [CIRCUIT_COLPITTS] = SCOPE_FLAG_AC, [CIRCUIT_HARTLEY] = SCOPE_FLAG_AC, [CIRCUIT_CLAPP] = SCOPE_FLAG_AC,
+    /* The switching rail's whole subject is a 7 mV ripple sitting on 3.36 V. At any volts/div
+       that shows the rail, that ripple is a fraction of a pixel - which is the case --probe-audit
+       flags, and it is right to. Each channel gets its own band so the ripple is legible beside
+       the 12 V input rather than a flat line under it. */
+    [CIRCUIT_BMI_RAIL] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_SUMMING_AMP] = SCOPE_FLAG_STACK, [CIRCUIT_DIFFERENCE_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_INSTR_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_SUPERPOSITION] = SCOPE_FLAG_STACK,
 };
