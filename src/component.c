@@ -3382,7 +3382,17 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                plain theta-method companion. (void)C keeps the shared type dispatch above. */
             (void)C;
             CapCompanion cc = component_cap_companion(comp, dt, trap && mem, v_prev);
-            if (!mem) cc.Ieq = 0;
+            /* No memory means no companion current - but the initial condition is not memory.
+               It is a source of a value the circuit was built with, and component_cap_companion
+               returns it as Ieq through the same field. Zeroing that turned a capacitor built at
+               10 V into a plain 1 mohm resistor across its own terminals, which shorts it to
+               whatever it sits on: The Two-Capacitor Problem solved its operating point with the
+               charged capacitor at 0 V, and the flow display drew 10 kA on the wire (1 V of node
+               error is 1000 A at 1 mohm). It survived or not depending on whether Newton had a
+               prev_solution yet, so an unrelated second circuit on the sheet changed the answer. */
+            bool ic_source = (comp->type == COMP_CAPACITOR      && comp->props.capacitor.voltage != 0.0) ||
+                             (comp->type == COMP_CAPACITOR_ELEC && comp->props.capacitor_elec.voltage != 0.0);
+            if (!mem && !ic_source) cc.Ieq = 0;
 
             STAMP_CONDUCTANCE(n[0], n[1], cc.G);
             if (cc.G_leak > 0) STAMP_CONDUCTANCE(n[0], n[1], cc.G_leak);

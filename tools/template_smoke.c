@@ -1349,6 +1349,198 @@ static int restamp_test(void) {
     return fails ? 1 : 0;
 }
 
+/* Two circuits on one sheet. Every other suite in this file places a single template on an
+   empty canvas, so the case a user actually works in has never been simulated: two circuits
+   side by side, electrically independent, sharing nothing but the ground symbol they each
+   carry - which does join them, into one matrix and one net m0.
+
+   The oracle is outside the solver. A circuit's wire currents measured alone are the truth;
+   putting a neighbour next to it must not move them. That catches the failures worth catching -
+   current from one circuit leaking into the other's arrows, a shared ground turning into a
+   shared return path, an island balance that pushes one circuit's residue into the other's
+   ground symbol - without needing a second model of what the currents ought to be.
+
+   Wires and components are matched by position rather than by index: placing the second
+   template runs the collinear tidy pass across the whole sheet, which may renumber. */
+static int pair_geom(Circuit *c, int w, float *x0, float *y0, float *x1, float *y1) {
+    Node *a = circuit_get_node(c, c->wires[w].start_node_id);
+    Node *b = circuit_get_node(c, c->wires[w].end_node_id);
+    if (!a || !b) return 0;
+    /* Ends in a fixed order, so a wire drawn the other way round still matches - and so the
+       sign comparison below means "the same direction along the same line". */
+    if (a->x > b->x || (a->x == b->x && a->y > b->y)) { Node *t = a; a = b; b = t; }
+    *x0 = a->x; *y0 = a->y; *x1 = b->x; *y1 = b->y;
+    return 1;
+}
+
+static double pair_wire_current(Circuit *c, int w) {
+    Node *a = circuit_get_node(c, c->wires[w].start_node_id);
+    Node *b = circuit_get_node(c, c->wires[w].end_node_id);
+    if (!a || !b) return 0;
+    /* Reported along the canonical direction, so a flipped wire does not read as reversed. */
+    if (a->x > b->x || (a->x == b->x && a->y > b->y)) return -c->wires[w].current;
+    return c->wires[w].current;
+}
+
+#define PAIR_OFFSET 6000.0f
+
+static int pair_test(void) {
+    int fails = 0, total = 0;
+    long matched = 0, carrying = 0; double seen_max = 0; char seen_name[64] = "-";
+    double worst_all = 0; char worst_name[64] = "-";
+
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
+        if (t == CIRCUIT_VOLTAGE_DIVIDER) continue;      /* it is the neighbour */
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        const char *name = ti ? ti->name : "?";
+
+        Circuit *solo = circuit_create();
+        if (!solo) continue;
+        if (circuit_place_template(solo, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(solo); continue; }
+        Simulation *s1 = simulation_create(solo);
+        if (!s1 || !simulation_dc_analysis(s1)) { simulation_free(s1); circuit_free(solo); continue; }
+        /* Both the operating point and a running circuit: the flow display is an animation, and
+           two circuits stepping side by side is the case the user is looking at. */
+        simulation_auto_time_step(s1);
+        double step = s1->time_step;
+        s1->adaptive_enabled = false;
+        simulation_start(s1);
+        int nsteps = 0;
+        double t_end1 = 0.000125 + 2.0 * step;
+        while (s1->time < t_end1 && nsteps < 4000) { if (!simulation_step(s1)) break; nsteps++; }
+        simulation_update_flow_display(s1);
+
+        Circuit *both = circuit_create();
+        if (!both) { simulation_free(s1); circuit_free(solo); continue; }
+        circuit_place_template(both, (CircuitTemplateType)t, 0, 0);
+        circuit_place_template(both, CIRCUIT_VOLTAGE_DIVIDER, PAIR_OFFSET, 0);
+        Simulation *s2 = simulation_create(both);
+        total++;
+        int ok = 1; char why[220] = "";
+        if (!s2 || !simulation_dc_analysis(s2)) {
+            ok = 0;
+            snprintf(why, sizeof why, "DC fails with a second circuit on the sheet but not alone");
+        } else {
+            /* Pinned to the solo run's step and step count. The neighbour is a resistive divider
+               and constrains nothing, but pinning makes this an exact comparison rather than an
+               approximately fair one, and adaptive stepping off means the two runs cannot drift
+               apart simply by choosing different steps. */
+            simulation_auto_time_step(s2);
+            s2->time_step = step;
+            s2->adaptive_enabled = false;
+            simulation_start(s2);
+            for (int n = 0; n < nsteps; n++) if (!simulation_step(s2)) break;
+            simulation_update_flow_display(s2);
+
+            double imax = 0;
+            for (int w = 0; w < solo->num_wires; w++) {
+                double v = pair_wire_current(solo, w);
+                if (fabs(v) > imax) imax = fabs(v);
+            }
+            double tol = 1e-6 * imax + 1e-12;
+            double worst = 0; int worst_w = -1; double worst_a = 0, worst_b = 0;
+
+            for (int w = 0; w < solo->num_wires; w++) {
+                float ax0, ay0, ax1, ay1;
+                if (!pair_geom(solo, w, &ax0, &ay0, &ax1, &ay1)) continue;
+                int found = -1;
+                for (int u = 0; u < both->num_wires; u++) {
+                    float bx0, by0, bx1, by1;
+                    if (!pair_geom(both, u, &bx0, &by0, &bx1, &by1)) continue;
+                    if (fabsf(bx0 - ax0) < 0.5f && fabsf(by0 - ay0) < 0.5f &&
+                        fabsf(bx1 - ax1) < 0.5f && fabsf(by1 - ay1) < 0.5f) { found = u; break; }
+                }
+                if (found < 0) continue;   /* the tidy pass may have redrawn it; not this suite's business */
+                matched++;
+                double a = pair_wire_current(solo, w), b = pair_wire_current(both, found);
+                if (fabs(a) > seen_max) { seen_max = fabs(a); snprintf(seen_name, sizeof seen_name, "%s", name); }
+                if (fabs(a) > 1e-12) carrying++;
+                if (fabs(a - b) > worst) { worst = fabs(a - b); worst_w = w; worst_a = a; worst_b = b; }
+            }
+            if (worst > worst_all) { worst_all = worst; snprintf(worst_name, sizeof worst_name, "%s", name); }
+            if (worst > tol) {
+                ok = 0;
+                snprintf(why, sizeof why,
+                         "wire at (%.0f,%.0f) carries %.6g A alone and %.6g A with a neighbour "
+                         "(moved %.3g, tol %.3g)",
+                         worst_w >= 0 ? circuit_get_node(solo, solo->wires[worst_w].start_node_id)->x : 0.0f,
+                         worst_w >= 0 ? circuit_get_node(solo, solo->wires[worst_w].start_node_id)->y : 0.0f,
+                         worst_a, worst_b, worst, tol);
+            }
+        }
+        if (!ok) { fails++; printf("[FAIL] pair  %-28s %s\n", name, why); }
+
+        simulation_free(s2); circuit_free(both);
+        simulation_free(s1); circuit_free(solo);
+    }
+    /* The counts are here so a pass means something. A suite that matched no wires, or matched
+       only wires carrying nothing, would report a clean zero drift while checking nothing at
+       all - which is the failure mode of every comparison test. */
+    printf("\npair-test: %d templates simulated beside a second circuit, %d disturbed "
+           "(worst drift %.3g A, %s); %ld wires compared, %ld of them carrying current, "
+           "largest %.4g A (%s)\n", total, fails, worst_all, worst_name, matched, carrying,
+           seen_max, seen_name);
+    return fails ? 1 : 0;
+}
+
+/* A capacitor built with an initial voltage must be sitting at that voltage once the operating
+   point is solved. component_cap_companion stamps it as a 1 mohm source of exactly that value
+   to make it so, and says why: seeding the stored state alone would leave the first transient
+   step with a companion that believes 10 V while the node sits at 0. Nothing checked it.
+
+   The tolerance is not cosmetic. At 1 mohm, a volt of node error is a thousand amps of
+   recovered terminal current - and that is what the flow display draws on the wire. */
+static int ic_test(void) {
+    int fails = 0, total = 0, caps = 0;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        const char *name = ti ? ti->name : "?";
+        Circuit *c = circuit_create();
+        if (!c) continue;
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+
+        int has_ic = 0;
+        for (int i = 0; i < c->num_components; i++) {
+            Component *comp = c->components[i];
+            if (comp->type == COMP_CAPACITOR && comp->props.capacitor.voltage != 0.0) has_ic = 1;
+            if (comp->type == COMP_CAPACITOR_ELEC && comp->props.capacitor_elec.voltage != 0.0) has_ic = 1;
+        }
+        if (!has_ic) { circuit_free(c); continue; }
+
+        Simulation *sim = simulation_create(c);
+        total++;
+        int ok = 1; char why[220] = "";
+        if (!sim || !simulation_dc_analysis(sim)) { ok = 0; snprintf(why, sizeof why, "DC failed"); }
+        for (int i = 0; ok && i < c->num_components; i++) {
+            Component *comp = c->components[i];
+            double ic = 0;
+            if (comp->type == COMP_CAPACITOR) ic = comp->props.capacitor.voltage;
+            else if (comp->type == COMP_CAPACITOR_ELEC) ic = comp->props.capacitor_elec.voltage;
+            else continue;
+            if (ic == 0.0) continue;
+            caps++;
+            Node *a = circuit_get_node(c, comp->node_ids[0]);
+            Node *b = circuit_get_node(c, comp->node_ids[1]);
+            double v = (a ? a->voltage : 0) - (b ? b->voltage : 0);
+            /* 1 mV: a thousand times finer than the volt that would mean a kiloamp arrow, and
+               far coarser than the solve's own residual. */
+            if (fabs(v - ic) > 1e-3 * (fabs(ic) + 1.0)) {
+                ok = 0;
+                snprintf(why, sizeof why, "%s built at %.4g V sits at %.6g V after the operating "
+                         "point (%.3g A of flow at 1 mohm)", comp->label, ic, v, (ic - v) * 1000.0);
+            }
+        }
+        if (!ok) { fails++; printf("[FAIL] ic    %-28s %s\n", name, why); }
+        simulation_free(sim);
+        circuit_free(c);
+    }
+    printf("\nic-test: %d templates build a capacitor pre-charged (%d of them), %d that do not "
+           "hold it at the operating point\n", total, caps, fails);
+    return fails ? 1 : 0;
+}
+
 static int flow_test(void) {
     int fails = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -6935,6 +7127,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--svg") && i + 1 < argc) svg_dir = argv[++i];
         else if (!strcmp(argv[i], "--scope-test")) return scope_dt_test();
         else if (!strcmp(argv[i], "--flow-test")) return flow_test();
+        else if (!strcmp(argv[i], "--pair-test")) return pair_test();
+        else if (!strcmp(argv[i], "--ic-test")) return ic_test();
         else if (!strcmp(argv[i], "--restamp-test")) return restamp_test();
         else if (!strcmp(argv[i], "--class-test"))
             return class_test((i + 1 < argc && atof(argv[i + 1]) > 0) ? atof(argv[i + 1]) : 0.25);
