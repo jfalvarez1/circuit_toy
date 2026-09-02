@@ -1301,6 +1301,7 @@ static void usage(void) {
            "  --no-auto-update     check, but do not install by itself (also CIRCUIT_TOY_NO_AUTO_UPDATE=1)\n"
            "  --netlist FILE       build a circuit from a written-down one (one part per line)\n"
            "  --inspect NAME       open a My Circuits block and show what is inside it\n"
+           "  --line-weight W      canvas stroke weight in pixels (default 1.7)\n"
            "  --ui-scale S         UI pixels to device pixels (default: from the display height)\n"
            "  --ss N               supersample the frame N times (1 = off, default 2, max 4)\n"
            "  --version            print the version and exit\n"
@@ -1448,6 +1449,11 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
         else if (!strcmp(argv[i], "--inspect") && i + 1 < argc) cli_inspect = argv[++i];
         else if (!strcmp(argv[i], "--netlist") && i + 1 < argc) cli_netlist = argv[++i];
+        else if (!strcmp(argv[i], "--line-weight") && i + 1 < argc) {
+            g_render_line_weight = (float)atof(argv[++i]);
+            if (g_render_line_weight < 0.5f) g_render_line_weight = 0.5f;
+            if (g_render_line_weight > 4.0f) g_render_line_weight = 4.0f;
+        }
         else if (!strcmp(argv[i], "--ui-scale") && i + 1 < argc) {
             g_ui_scale_override = (float)atof(argv[++i]);
             if (g_ui_scale_override < 0.5f) g_ui_scale_override = 0.5f;

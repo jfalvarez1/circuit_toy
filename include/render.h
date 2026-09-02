@@ -61,6 +61,7 @@ void render_free(RenderContext *ctx);
 // Coordinate transforms
 void render_screen_to_world(RenderContext *ctx, int sx, int sy, float *wx, float *wy);
 void render_world_to_screen(RenderContext *ctx, float wx, float wy, int *sx, int *sy);
+void render_world_to_screen_f(RenderContext *ctx, float wx, float wy, float *sx, float *sy);
 
 // Viewport control
 void render_pan(RenderContext *ctx, int dx, int dy);
@@ -108,6 +109,9 @@ extern int g_render_supersample;
 /* Device pixels per UI pixel. The layout works in UI pixels throughout; this is applied once,
    when the frame is drawn and when a mouse position comes in. --ui-scale overrides it. */
 extern float g_ui_scale_override;
+
+/* Canvas stroke weight in logical pixels; --line-weight sets it. */
+extern float g_render_line_weight;
 float render_ui_scale(int device_h);
 void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit);
 void render_node(RenderContext *ctx, Node *node, bool show_voltage);

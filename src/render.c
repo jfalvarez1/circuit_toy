@@ -447,28 +447,90 @@ void render_set_color(RenderContext *ctx, Color color) {
    logical pixel apart puts the weight back and keeps the softened edge, which is the point of
    rendering large in the first place. */
 void render_line_dev(RenderContext *ctx, float x1, float y1, float x2, float y2) {
-    int n = (ctx && ctx->ss > 1) ? ctx->ss : 1;
-    if (n == 1) {
-        SDL_RenderDrawLine(ctx->renderer, (int)(x1 + 0.5f), (int)(y1 + 0.5f),
-                                          (int)(x2 + 0.5f), (int)(y2 + 0.5f));
-        return;
-    }
+    if (!ctx || !ctx->renderer) return;
+    /* Device pixels per logical pixel: the UI scale and the supersample factor together, which
+       is exactly what SDL_RenderSetScale was given in render_frame_begin. */
+    float us = (ctx->ui_scale > 0.0f) ? ctx->ui_scale : 1.0f;
+    float S = us * (ctx->ss > 1 ? (float)ctx->ss : 1.0f);
+    if (S < 1.0f) S = 1.0f;
+
+    /* A stroke is drawn as parallel copies of itself, because SDL rasterises a line one device
+       pixel wide however the world is scaled. Two things about the spacing matter and both were
+       wrong before:
+
+       The copies must be ONE DEVICE PIXEL apart - 1/S of a logical pixel. They used to be
+       1/ss apart, which was right until the UI gained a scale of its own: at 1.36x that is
+       1.36 device pixels between copies, each one pixel wide, so every stroke was drawn with
+       gaps down it. That is the pixellation, and no amount of supersampling hides it because
+       the holes are in the geometry rather than in the sampling.
+
+       And they must be centred on the line. Laying them all to one side moves every stroke half
+       its own width, which on a symbol drawn from a dozen strokes is a dozen small
+       inconsistencies in where its edges are. */
+    float w = g_render_line_weight;
+    if (w < 0.3f) w = 0.3f;
+
     float dx = x2 - x1, dy = y2 - y1;
     float len = sqrtf(dx * dx + dy * dy);
-    float px = 0.0f, py = 0.0f;
-    if (len > 1e-6f) { px = -dy / len; py = dx / len; }   /* unit normal */
-    for (int k = 0; k < n; k++) {
-        float o = (float)k / (float)n;                    /* within one logical pixel */
-        SDL_RenderDrawLineF(ctx->renderer, x1 + px * o, y1 + py * o,
-                                           x2 + px * o, y2 + py * o);
+    if (len < 1e-6f) { dx = 1.0f; dy = 0.0f; len = 1.0f; }
+    float ux = dx / len, uy = dy / len;                   /* along */
+    float px = -uy, py = ux;                              /* across */
+
+    /* Drawn as a quad with its edges faded out, rather than as a stack of one-pixel lines.
+
+       Stacked lines are only ever as smooth as the supersampling underneath them: at 2x a
+       diagonal has four levels of coverage to work with, which is still a visible staircase.
+       Fading the last device pixel of each edge to nothing gives the rasteriser a real coverage
+       ramp, so a shallow diagonal is smooth at any weight - including a hairline, which is the
+       point. The feather is one device pixel wide however the world is scaled, so it neither
+       fattens the line when zoomed in nor disappears when zoomed out.
+
+       The ends are extended by half the width so that two segments meeting at a right angle -
+       which on a schematic is most of them - fill their corner instead of leaving a notch. */
+    float half = w * 0.5f;
+    float f = 1.0f / S;                                   /* one device pixel, in logical units */
+    x1 -= ux * half; y1 -= uy * half;
+    x2 += ux * half; y2 += uy * half;
+
+    Uint8 cr, cg, cb, ca;
+    SDL_GetRenderDrawColor(ctx->renderer, &cr, &cg, &cb, &ca);
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+    SDL_Color solid = { cr, cg, cb, ca };
+    SDL_Color clear = { cr, cg, cb, 0 };
+
+    float o[4] = { half + f, half, -half, -(half + f) };
+    SDL_Color col[4] = { clear, solid, solid, clear };
+    SDL_Vertex v[8];
+    for (int k = 0; k < 4; k++) {
+        v[k].position.x     = x1 + px * o[k]; v[k].position.y     = y1 + py * o[k];
+        v[k + 4].position.x = x2 + px * o[k]; v[k + 4].position.y = y2 + py * o[k];
+        v[k].color = v[k + 4].color = col[k];
+        v[k].tex_coord.x = v[k].tex_coord.y = 0;
+        v[k + 4].tex_coord.x = v[k + 4].tex_coord.y = 0;
     }
+    /* three strips: the faded edge, the solid core, the other faded edge */
+    static const int idx[18] = { 0,1,5, 0,5,4,  1,2,6, 1,6,5,  2,3,7, 2,7,6 };
+    SDL_RenderGeometry(ctx->renderer, NULL, v, 8, idx, 18);
+}
+
+/* The same transform as render_world_to_screen, without the rounding.
+
+   That rounding is what stops a line being smooth at every zoom rather than at some of them:
+   an endpoint snapped to a whole pixel has had its position thrown away before the antialiaser
+   ever sees it, so a diagonal steps as the view moves and a circle drawn from short chords
+   comes out as a polygon with visibly flat sides. Hit-testing still wants the integer version
+   and keeps it; only what gets drawn is carried in floating point. */
+void render_world_to_screen_f(RenderContext *ctx, float wx, float wy, float *sx, float *sy) {
+    if (!ctx) { *sx = wx; *sy = wy; return; }
+    *sx = wx * ctx->zoom + ctx->offset_x + (float)ctx->canvas_rect.x;
+    *sy = wy * ctx->zoom + ctx->offset_y + (float)ctx->canvas_rect.y;
 }
 
 void render_draw_line(RenderContext *ctx, float x1, float y1, float x2, float y2) {
-    int sx1, sy1, sx2, sy2;
-    render_world_to_screen(ctx, x1, y1, &sx1, &sy1);
-    render_world_to_screen(ctx, x2, y2, &sx2, &sy2);
-    render_line_dev(ctx, (float)sx1, (float)sy1, (float)sx2, (float)sy2);
+    float sx1, sy1, sx2, sy2;
+    render_world_to_screen_f(ctx, x1, y1, &sx1, &sy1);
+    render_world_to_screen_f(ctx, x2, y2, &sx2, &sy2);
+    render_line_dev(ctx, sx1, sy1, sx2, sy2);
 }
 
 /* Bind the oversized target and put the renderer into logical coordinates. Everything between
@@ -522,19 +584,27 @@ void render_fill_rect(RenderContext *ctx, float x, float y, float w, float h) {
 }
 
 void render_draw_circle(RenderContext *ctx, float cx, float cy, float r) {
-    int sx, sy;
-    render_world_to_screen(ctx, cx, cy, &sx, &sy);
-    int sr = (int)(r * ctx->zoom);
+    float sx, sy;
+    render_world_to_screen_f(ctx, cx, cy, &sx, &sy);
+    float sr = r * ctx->zoom;
+    if (sr < 0.5f) sr = 0.5f;
 
-    // Simple circle drawing algorithm
-    for (int angle = 0; angle < 360; angle += 5) {
-        float rad1 = angle * M_PI / 180;
-        float rad2 = (angle + 5) * M_PI / 180;
-        int x1 = sx + (int)(sr * cos(rad1));
-        int y1 = sy + (int)(sr * sin(rad1));
-        int x2 = sx + (int)(sr * cos(rad2));
-        int y2 = sy + (int)(sr * sin(rad2));
-        render_line_dev(ctx, x1, y1, x2, y2);
+    /* Enough chords that each is about two device pixels long, so a big circle does not show
+       its corners and a small one does not pay for segments nobody can see. In floating point
+       throughout: rounding each chord's ends to whole pixels was what made a source symbol
+       read as a polygon. */
+    float us = (ctx->ui_scale > 0.0f) ? ctx->ui_scale : 1.0f;
+    float S = us * (ctx->ss > 1 ? (float)ctx->ss : 1.0f);
+    int seg = (int)(sr * S * 1.6f);
+    if (seg < 16) seg = 16;
+    if (seg > 180) seg = 180;
+
+    float prevx = sx + sr, prevy = sy;
+    for (int i = 1; i <= seg; i++) {
+        float a = (float)i * 2.0f * (float)M_PI / (float)seg;
+        float nx = sx + sr * cosf(a), ny = sy + sr * sinf(a);
+        render_line_dev(ctx, prevx, prevy, nx, ny);
+        prevx = nx; prevy = ny;
     }
 }
 
@@ -920,6 +990,11 @@ int g_render_supersample = 2;
 
 /* Set by --ui-scale; 0 means work it out from the display. */
 float g_ui_scale_override = 0.0f;
+
+/* Stroke weight for everything drawn on the canvas, in logical pixels. One pixel is what a
+   plotter gives you and it reads as thin and fragile on a screen; a little over one and a half
+   is what a printed schematic looks like. --line-weight sets it. */
+float g_render_line_weight = 1.4f;
 
 /* How many device pixels one UI pixel should be.
 

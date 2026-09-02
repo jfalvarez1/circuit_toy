@@ -2295,6 +2295,11 @@ void app_update_window_metrics(App *app) {
     int lw = (int)(w / s), lh = (int)(h / s);
     if (lw < 640) lw = 640;
     if (lh < 400) lh = 400;
+    if (getenv("CT_SHOW_METRICS")) {
+        int ow = 0, oh = 0;
+        SDL_GetRendererOutputSize(app->render->renderer, &ow, &oh);
+        printf("window %dx%d  renderer %dx%d  ui_scale %.3f  logical %dx%d\n", w, h, ow, oh, s, lw, lh);
+    }
     app->ui.window_width = lw;
     app->ui.window_height = lh;
     app->render->canvas_rect.w = lw - PALETTE_WIDTH - app->ui.properties_width;
