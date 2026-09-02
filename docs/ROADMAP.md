@@ -1,5 +1,68 @@
 # Roadmap
 
+## A programmable block that runs pasted Arduino code (2026-09-02, proposed)
+
+**The goal is not an Arduino emulator.** Nobody needs AVR instruction timing here, and building
+it would be months of work for a result whose value to a circuit is nil. What is wanted is much
+smaller and much more useful: **a part on the canvas with pins, that runs sketch-shaped code and
+drives those pins.** Paste
+
+```
+void setup() { pinMode(13, OUTPUT); }
+void loop()  { digitalWrite(13, HIGH); delay(500); digitalWrite(13, LOW); delay(500); }
+```
+
+into it, wire pin 13 to an LED and a resistor, press Run, and watch the LED blink on the scope
+along with everything else in the circuit. That is the whole feature, and almost every sketch a
+beginner writes is that shape.
+
+### Why this is a circuit feature and not a novelty
+
+Half of what a learner builds now has a microcontroller in it, and the BMS this program's
+battery templates came from is a good example: its charge enable, its discharge enable and its
+thermal cutout are all *decisions* taken by an ESP PICO W. Circuit Toy models the analog around
+those decisions and then draws the decision itself as a 5 V source, because that is all it can
+do. A block that runs `digitalWrite(EN, LOW)` when the cell voltage crosses a threshold turns
+those templates from an analog fragment into the instrument.
+
+### What has to exist
+
+- **The block.** A component with a configurable pin count, each pin one of: driven output
+  (a voltage source with a series resistance), high-impedance input (reads the node voltage and
+  thresholds it), or PWM output (a pulse source whose duty the code sets). Pin names on the
+  symbol, so a table can wire to `D13` by name now that named nets exist.
+- **A parser and interpreter** for the subset that matters: `setup`/`loop`, `pinMode`,
+  `digitalWrite`, `digitalRead`, `analogWrite`, `analogRead`, `delay`, `delayMicroseconds`,
+  `millis`, `micros`, integer and float variables, `if`/`else`, `for`, `while`, the usual
+  operators, and function definitions. Explicitly NOT: pointers, `String`, classes, libraries,
+  interrupts, `Serial` beyond a print that goes to the status bar.
+- **A clock that agrees with the simulation.** The interpreter runs against `sim->time`, not
+  wall clock: `delay(500)` means the block does nothing until simulated time has advanced half a
+  second. This is the part that will be got wrong first if it is not designed for on day one -
+  a sketch that runs at wall-clock speed against a simulation running at a hundredth of real
+  time produces nonsense, and produces it silently.
+- **Somewhere to type it.** The properties panel is too small; this wants the same treatment the
+  netlist paste got - a button that takes the clipboard, and a file path on the command line.
+
+### How it should be checked
+
+The same way everything else here is: a suite that runs sketches whose behaviour is arithmetic.
+Blink at 500 ms has a period that can be measured off the node. A sketch that reads a divider
+and switches an output at a threshold has a switching point that can be computed from the
+resistors. A `for` loop that steps `analogWrite` has a duty ramp with a known slope. If the
+interpreter drifts, those move.
+
+### What to be careful of
+
+- **Timing granularity.** `delayMicroseconds(1)` against a 10 us simulation step cannot mean
+  what it says. The block should say so rather than round silently - the same principle as the
+  time-step warnings already here.
+- **The temptation to grow it.** Every sketch that does not run will look like a small missing
+  feature. The line to hold is: this drives pins in response to pin states and time. Anything
+  that is really about the language rather than the circuit belongs outside.
+
+---
+
 ## The speed control is safe, and it was not honest (2026-08-30)
 
 Asked whether the 1.0x speed slider is dangerous - whether running faster can break the
