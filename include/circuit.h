@@ -9,12 +9,19 @@
 #include "component.h"
 
 // Circuit node
+#define NET_NAME_MAX 16
+
 typedef struct {
     int id;
     float x, y;
     double voltage;
     bool is_ground;
     int connection_count;
+    /* Net name. Anything sharing one is one wire, wherever it sits on the sheet - which is how
+       a build table connects up: the table says a part goes to "vm1" and never says where vm1
+       is, so two parts naming it are joined with no wire drawn between them. Empty for the
+       ordinary case, where position and wires do the joining. */
+    char name[NET_NAME_MAX];
 } Node;
 
 // Wire segment

@@ -1835,6 +1835,39 @@ void render_node(RenderContext *ctx, Node *node, bool show_voltage) {
     }
 
     render_fill_circle(ctx, node->x, node->y, 4);
+
+    /* A named net says so on the drawing, because in a circuit that came from a table the names
+       ARE the wires and a wire you cannot see is indistinguishable from one that is not there.
+
+       Not the reference, though. Naming the ground net "0" next to a ground symbol says nothing
+       the symbol has not already said, and it says it once per terminal - which on a circuit
+       with a dozen grounded parts is a dozen labels carrying no information at all. Dimmed and
+       tied to the same F2 that hides component values, so a drawing can be read without them. */
+    if (node->name[0] && !node->is_ground && strcmp(node->name, "0") != 0 && ctx->show_values) {
+        int sx, sy;
+        render_world_to_screen(ctx, node->x, node->y, &sx, &sy);
+        /* A tag on a stub, not a word floating in space. A terminal joined by name has no wire
+           drawn to it - that is what a net label MEANS - and a bare dot with text beside it
+           reads as a loose end instead. Drawn as a flag it reads as what it is: this pin is on
+           that net, and so is every other pin wearing the same flag.
+
+           Above the terminal rather than beside it. Beside puts it straight through the body of
+           anything lying horizontally, which is most things - the label for a resistor's left
+           end landed across its own zigzag. */
+        int px = render_text_px(ctx, 1);
+        int tw = (int)strlen(node->name) * px;
+        int h = px + 5;
+        int y1 = sy - 9, y0 = y1 - h;
+        int x0 = sx - tw / 2 - 4, x1 = sx + tw / 2 + 4;
+        Color c = { 0xc8, 0x9a, 0x50, 0xff };
+        render_set_color(ctx, c);
+        render_line_dev(ctx, (float)sx, (float)sy, (float)sx, (float)y1);
+        render_line_dev(ctx, (float)x0, (float)y0, (float)x1, (float)y0);
+        render_line_dev(ctx, (float)x0, (float)y1, (float)x1, (float)y1);
+        render_line_dev(ctx, (float)x0, (float)y0, (float)x0, (float)y1);
+        render_line_dev(ctx, (float)x1, (float)y0, (float)x1, (float)y1);
+        render_draw_text_small(ctx, node->name, sx - tw / 2, y0 + 3, c);
+    }
 }
 
 void render_probe(RenderContext *ctx, Circuit *circuit, Probe *probe, int index) {

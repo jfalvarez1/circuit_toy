@@ -66,6 +66,10 @@ bool file_save_circuit(Circuit *circuit, const char *filename) {
         fwrite(&node->x, sizeof(float), 1, f);
         fwrite(&node->y, sizeof(float), 1, f);
         fwrite(&node->is_ground, sizeof(bool), 1, f);
+        /* v3: the net name. In a circuit that came from a written-down one the names are the
+           only thing joining anything, so a file without them reloads as a pile of parts that
+           solves to nothing. */
+        fwrite(node->name, 1, NET_NAME_MAX, f);
     }
 
     // Write wire count
@@ -206,6 +210,16 @@ bool file_load_circuit(Circuit *circuit, const char *filename) {
         fread(&node->x, sizeof(float), 1, f);
         fread(&node->y, sizeof(float), 1, f);
         fread(&node->is_ground, sizeof(bool), 1, f);
+        node->name[0] = 0;
+        if (version >= 3) {
+            if (fread(node->name, 1, NET_NAME_MAX, f) != NET_NAME_MAX) {
+                set_error("Circuit file ends inside its node table");
+                circuit->num_nodes = 0;
+                fclose(f);
+                return false;
+            }
+            node->name[NET_NAME_MAX - 1] = 0;
+        }
 
         /* A node id is what node_map and the union-find in circuit_build_node_map are indexed
            by, and both hold MAX_NODES - the same check the JSON loader now makes. */
@@ -403,10 +417,20 @@ bool file_export_json(Circuit *circuit, const char *filename) {
     fprintf(f, "  \"nodes\": [\n");
     for (int i = 0; i < circuit->num_nodes; i++) {
         Node *node = &circuit->nodes[i];
-        fprintf(f, "    {\"id\": %d, \"x\": %.2f, \"y\": %.2f, \"ground\": %s}%s\n",
-                node->id, node->x, node->y,
-                node->is_ground ? "true" : "false",
-                i < circuit->num_nodes - 1 ? "," : "");
+        /* The net name goes out too. In a circuit that came from a written-down one the names
+           are the only thing joining anything, so a file without them reloads as a field of
+           parts that solves to nothing. Written only when there is one, so an ordinary
+           schematic's file is unchanged. */
+        if (node->name[0])
+            fprintf(f, "    {\"id\": %d, \"x\": %.2f, \"y\": %.2f, \"ground\": %s, \"net\": \"%s\"}%s\n",
+                    node->id, node->x, node->y,
+                    node->is_ground ? "true" : "false", node->name,
+                    i < circuit->num_nodes - 1 ? "," : "");
+        else
+            fprintf(f, "    {\"id\": %d, \"x\": %.2f, \"y\": %.2f, \"ground\": %s}%s\n",
+                    node->id, node->x, node->y,
+                    node->is_ground ? "true" : "false",
+                    i < circuit->num_nodes - 1 ? "," : "");
     }
     fprintf(f, "  ],\n");
 
@@ -746,6 +770,16 @@ bool file_import_json(Circuit *circuit, const char *filename) {
                         n->x = x;
                         n->y = y;
                         n->is_ground = is_ground;
+                        /* The net name, if this node has one. Bounded to the record: "net" is
+                           written after "ground", so a match past the end of this node's object
+                           would belong to the next one. */
+                        char *net_ptr = strstr(ptr, "\"net\":");
+                        char *rec_end = strchr(ptr, '}');
+                        if (net_ptr && (!rec_end || net_ptr < rec_end)) {
+                            char buf[NET_NAME_MAX] = "";
+                            if (sscanf(net_ptr, "\"net\": \"%15[^\"]\"", buf) == 1)
+                                snprintf(n->name, NET_NAME_MAX, "%s", buf);
+                        }
                         if (is_ground) circuit->ground_node_id = id;
                         if (id >= circuit->next_node_id) circuit->next_node_id = id + 1;
                     }

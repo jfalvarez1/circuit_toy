@@ -33,6 +33,7 @@
 #include "circuit.h"
 #include "circuits.h"
 #include "spice.h"
+#include "netlist.h"
 #include "simulation.h"
 #include "analysis.h"
 #include "file_io.h"
@@ -3731,6 +3732,179 @@ static BiasResult bias_stage(const char *part, double rb, double rc, double vcc,
     return r;
 }
 
+/* ===================================================================================
+ * --netlist-test: a written-down circuit becomes a working one.
+ *
+ * The companion course hands a reader a table of parts and the nets they connect to, and the
+ * whole value of reading it is that the answer comes out right afterwards. So these are not
+ * parser tests - each one is solved and checked against arithmetic done on paper.
+ *
+ * The first is the course's own acceptance case, gain = 1 + RF/R1 on an ideal op-amp written
+ * as a VCVS, which is the element it uses for every op-amp it has.
+ * =================================================================================== */
+static double nl_solve_net(const char *text, const char *net, int *ok) {
+    *ok = 0;
+    Circuit *c = circuit_create();
+    if (!c) return 0;
+    char err[160];
+    double v = 0;
+    if (netlist_build(c, text, err, sizeof err) > 0) {
+        Simulation *sim = simulation_create(c);
+        if (sim && simulation_dc_analysis(sim)) {
+            /* any node carrying the name, once the map has joined them all */
+            for (int i = 0; i < c->num_nodes; i++) {
+                if (_stricmp(c->nodes[i].name, net) != 0) continue;
+                v = c->nodes[i].voltage;
+                *ok = isfinite(v);
+                break;
+            }
+        }
+        if (sim) simulation_free(sim);
+    }
+    circuit_free(c);
+    return v;
+}
+
+static int netlist_test(void) {
+    int fails = 0, total = 0;
+    printf("netlist-test: circuits written as text, placed, solved and checked\n\n");
+
+    static const struct { const char *what; const char *text; const char *net;
+                          double expect; double tol; const char *why; } cases[] = {
+        { "non-inverting amp",
+          "VIN in 0 DC 1.0\n"
+          "E1 out 0 in vm 100k\n"
+          "R1 vm 0 1k\n"
+          "RF vm out 3k\n",
+          "out", 4.0, 0.02,
+          "gain 1 + RF/R1 = 4, and the op-amp is a VCVS - the element the course uses for all 48 of them" },
+
+        { "divider, named nets only",
+          "V1 in 0 DC 10\n"
+          "R1 in mid 1k\n"
+          "R2 mid 0 1k\n",
+          "mid", 5.0, 0.01,
+          "two equal resistors: no wire is drawn anywhere, the net names do the joining" },
+
+        { "the same net named twice over",
+          "V1 a 0 DC 6\n"
+          "R1 a b 2k\n"
+          "R2 b 0 1k\n"
+          "R3 B 0 1k\n",
+          "b", 1.2, 0.02,
+          "R3 says B and R2 says b, so they are one net: 2k into 1k||1k = 500 ohm, a fifth of 6 V" },
+
+        { "SPICE's M is milli, not mega",
+          "V1 p 0 DC 1\n"
+          "R1 p q 1M\n"
+          "R2 q 0 1\n",
+          "q", 0.999, 0.01,
+          "a MILLIohm against a whole ohm, so q sits just under the rail. Read as mega it would be a microvolt,"
+          " and two equal values would have hidden it" },
+
+        { "MEG is the one that means mega",
+          "V1 p 0 DC 1\n"
+          "R1 p q 1MEG\n"
+          "R2 q 0 1\n",
+          "q", 1e-6, 0.10,
+          "the same circuit with the other suffix: a megohm against an ohm divides the rail down to a microvolt" },
+
+        { "current source into a named net",
+          "I1 0 n 1m\n"
+          "R1 n 0 4k7\n",
+          "n", 4.7, 0.02,
+          "1 mA through 4.7k. The suffix has a digit inside it, which is how resistors are written" },
+    };
+
+    for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        int ok = 0;
+        double v = nl_solve_net(cases[i].text, cases[i].net, &ok);
+        total++;
+        int pass = ok && fabs(v - cases[i].expect) <= cases[i].tol * fabs(cases[i].expect);
+        if (!pass) fails++;
+        printf("%s netlist %-28s V(%s) = %8.4f   expect %7.4f  %s\n",
+               pass ? " OK " : "FAIL", cases[i].what, cases[i].net, v, cases[i].expect,
+               ok ? "" : "[did not solve]");
+        printf("        %s\n", cases[i].why);
+    }
+
+    /* A table pasted onto a sheet that already has something on it must not land on top of it,
+       and must not join to it by accident. */
+    {
+        Circuit *c = circuit_create();
+        char err[160];
+        int a = netlist_build(c, "V1 in 0 DC 5\nR1 in 0 1k\n", err, sizeof err);
+        int n1 = c->num_components;
+        int b = netlist_build(c, "V2 x 0 DC 9\nR2 x 0 1k\n", err, sizeof err);
+        Simulation *sim = simulation_create(c);
+        int solved = sim && simulation_dc_analysis(sim);
+        double vin = 0, vx = 0;
+        for (int i = 0; i < c->num_nodes; i++) {
+            if (!_stricmp(c->nodes[i].name, "in")) vin = c->nodes[i].voltage;
+            if (!_stricmp(c->nodes[i].name, "x"))  vx  = c->nodes[i].voltage;
+        }
+        if (sim) simulation_free(sim);
+        total++;
+        int pass = a > 0 && b > 0 && c->num_components > n1 && solved
+                   && fabs(vin - 5.0) < 0.05 && fabs(vx - 9.0) < 0.05;
+        if (!pass) fails++;
+        printf("%s netlist %-28s in = %6.3f, x = %6.3f   expect 5 and 9\n",
+               pass ? " OK " : "FAIL", "second paste onto the same sheet", vin, vx);
+        printf("        two tables, one ground, and nets that do not run into each other\n");
+        circuit_free(c);
+    }
+
+    /* Saved and opened again, the names have to still be there.
+
+       They are the only thing joining anything in a circuit that came from a table, so a file
+       format that drops them reloads a field of parts that solves to nothing - and every other
+       audit would pass it, because the parts and their values all came back. Both formats are
+       checked, because they are different code and only one of them is what Save writes. */
+    {
+        const char *text = "VIN in 0 DC 1.0\nE1 out 0 in vm 100k\nR1 vm 0 1k\nRF vm out 3k\n";
+        const char *tmp = getenv("TEMP"); if (!tmp) tmp = ".";
+        static const struct { const char *ext; bool (*save)(Circuit *, const char *);
+                              bool (*load)(Circuit *, const char *); } legs[] = {
+            { "json", file_export_json, file_import_json },
+            { "ckt",  file_save_circuit, file_load_circuit },
+        };
+        for (size_t i = 0; i < sizeof legs / sizeof legs[0]; i++) {
+            char path[600];
+            snprintf(path, sizeof path, "%s\\ct_netnames.%s", tmp, legs[i].ext);
+            Circuit *a = circuit_create();
+            char err[160];
+            netlist_build(a, text, err, sizeof err);
+            bool wrote = legs[i].save(a, path);
+            circuit_free(a);
+
+            Circuit *b = circuit_create();
+            bool read = wrote && legs[i].load(b, path);
+            double v = 0; int solved = 0, named = 0;
+            if (read) {
+                for (int k = 0; k < b->num_nodes; k++) if (b->nodes[k].name[0]) named++;
+                Simulation *sim = simulation_create(b);
+                solved = sim && simulation_dc_analysis(sim);
+                if (solved)
+                    for (int k = 0; k < b->num_nodes; k++)
+                        if (_stricmp(b->nodes[k].name, "out") == 0) { v = b->nodes[k].voltage; break; }
+                if (sim) simulation_free(sim);
+            }
+            circuit_free(b);
+            remove(path);
+            total++;
+            int pass = read && solved && named >= 6 && fabs(v - 4.0) < 0.1;
+            if (!pass) fails++;
+            printf("%s netlist %-28s %d named nets back, V(out) = %6.3f   expect 4.000\n",
+                   pass ? " OK " : "FAIL", legs[i].ext[0] == 'j' ? "saved as JSON and reopened"
+                                                                 : "saved as binary and reopened",
+                   named, v);
+        }
+    }
+
+    printf("\nnetlist-test: %d written circuits, %d that did not come out right\n", total, fails);
+    return fails ? 1 : 0;
+}
+
 static int bias_test(void) {
     int fails = 0, total = 0;
     printf("bias-test: the reported operating region against the arithmetic\n\n");
@@ -6733,6 +6907,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--op-test")) return op_test();
         else if (!strcmp(argv[i], "--sub-test")) return sub_test();
         else if (!strcmp(argv[i], "--bias-test")) return bias_test();
+        else if (!strcmp(argv[i], "--netlist-test")) return netlist_test();
         else if (!strcmp(argv[i], "--spice-test")) return spice_test();
         else if (!strcmp(argv[i], "--xtal-test")) return xtal_test();
         else if (!strcmp(argv[i], "--osc-dt") && i + 1 < argc) g_osc_dt_forced = atof(argv[++i]);

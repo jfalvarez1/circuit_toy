@@ -68,7 +68,8 @@ src_files = files(
   'src/updater.c',
   'src/settings.c',
   'src/crashlog.c',
-  'src/spice.c'
+  'src/spice.c',
+  'src/netlist.c'
 )
 
 # Windows resource file for application icon

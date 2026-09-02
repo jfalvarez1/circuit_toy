@@ -18,7 +18,7 @@
    came back unconnected, and 44 of the templates settled at different voltages after a save
    and a load. Version 1 files still load: their terminals are recovered by position, which is
    what they always were. */
-#define CIRCUIT_FILE_VERSION 2
+#define CIRCUIT_FILE_VERSION 3
 
 // Save circuit to file (binary format)
 bool file_save_circuit(Circuit *circuit, const char *filename);

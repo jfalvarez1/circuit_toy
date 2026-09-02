@@ -13,6 +13,7 @@
 #include "simulation.h"
 #include "circuits.h"
 #include "spice.h"
+#include "netlist.h"
 #include "version.h"
 #include "updater.h"
 #include "ui.h"
@@ -1298,6 +1299,7 @@ static void usage(void) {
            "  --exit               quit when the shot / recording is done\n"
            "  --no-update-check    do not query GitHub for a newer release (also CIRCUIT_TOY_NO_UPDATE=1)\n"
            "  --no-auto-update     check, but do not install by itself (also CIRCUIT_TOY_NO_AUTO_UPDATE=1)\n"
+           "  --netlist FILE       build a circuit from a written-down one (one part per line)\n"
            "  --inspect NAME       open a My Circuits block and show what is inside it\n"
            "  --ui-scale S         UI pixels to device pixels (default: from the display height)\n"
            "  --ss N               supersample the frame N times (1 = off, default 2, max 4)\n"
@@ -1380,7 +1382,7 @@ static int resolve_cli_template(const char *cli_template, CircuitTemplateType *o
 
 int main(int argc, char *argv[]) {
     if (argc > 1) attach_parent_console();
-    const char *cli_inspect = NULL;
+    const char *cli_inspect = NULL, *cli_netlist = NULL;
     const char *cli_template = NULL, *cli_shot = NULL, *cli_record = NULL, *cli_size = NULL;
     const char *cli_state = NULL;
     int cli_frame = 90, cli_rec_n = 0, cli_rec_every = 1, cli_scroll = -1, cli_tab = -1; bool cli_exit = false, no_update = false, no_auto_update = false;
@@ -1445,6 +1447,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--import-spice") && i + 1 < argc) cli_spice = argv[++i];
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
         else if (!strcmp(argv[i], "--inspect") && i + 1 < argc) cli_inspect = argv[++i];
+        else if (!strcmp(argv[i], "--netlist") && i + 1 < argc) cli_netlist = argv[++i];
         else if (!strcmp(argv[i], "--ui-scale") && i + 1 < argc) {
             g_ui_scale_override = (float)atof(argv[++i]);
             if (g_ui_scale_override < 0.5f) g_ui_scale_override = 0.5f;
@@ -1553,6 +1556,13 @@ int main(int argc, char *argv[]) {
     /* After any resize above, and before the first frame: the UI size and the scale both come
        from the window, so nothing is laid out until the window is the size it will be. */
     app_update_window_metrics(&app);
+
+    if (cli_netlist) {
+        char nerr[200] = "";
+        int n = netlist_build_file(app.circuit, cli_netlist, nerr, sizeof nerr);
+        printf("%s\n", nerr[0] ? nerr : (n > 0 ? "loaded" : "nothing placed"));
+        if (n > 0) { app_zoom_to_fit(&app); ui_set_status(&app.ui, nerr); }
+    }
 
     if (cli_inspect) {
         int id = 0;

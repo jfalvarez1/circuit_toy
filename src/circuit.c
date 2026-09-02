@@ -563,6 +563,20 @@ void circuit_build_node_map(Circuit *circuit) {
         uf_union(parent, wire->start_node_id, wire->end_node_id);
     }
 
+    /* And nodes that carry the same net name, wherever they are. This is the third way of
+       joining two terminals, after standing at the same point and having a wire drawn between
+       them, and it is the one a written-down circuit uses: a table lists a part as connected to
+       "vm1" and never says where vm1 is. Names are compared exactly and case-insensitively, so
+       VM1 and vm1 are the same net and vm10 is not. */
+    for (int i = 0; i < circuit->num_nodes; i++) {
+        if (!circuit->nodes[i].name[0]) continue;
+        for (int j = i + 1; j < circuit->num_nodes; j++) {
+            if (!circuit->nodes[j].name[0]) continue;
+            if (_stricmp(circuit->nodes[i].name, circuit->nodes[j].name) == 0)
+                uf_union(parent, circuit->nodes[i].id, circuit->nodes[j].id);
+        }
+    }
+
     // CRITICAL FIX: Union ALL ground component terminals together
     // In real circuits, all ground symbols are electrically connected.
     // This ensures that separate GND symbols (GND2, GND3, etc.) all map
