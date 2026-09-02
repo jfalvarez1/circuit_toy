@@ -1891,6 +1891,189 @@ bool circuit_has_active_sweep(Circuit *circuit) {
    terminals that share an internal node. That is a star per net rather than the routing someone
    would draw by hand, but it is the true topology, which is what the question "what is inside
    this block" is asking. */
+/* Rewrite every run of overlapping wires that lie along one line into a single chain.
+
+   The idiom that produces them is everywhere in the template builders and reads perfectly
+   sensibly: four parts that return to the same ground node each get a wire to it, and if they
+   are all on the same row those four wires lie on top of one another. What is drawn is one
+   line with three others hidden under it - a reader cannot see where anything joins, and
+   whether two of them meet is not on the drawing at all.
+
+   The fix is the bus that was meant: take every wire on a given row, collect the points where
+   something attaches, and lay one segment between each neighbouring pair. Same net, same
+   junctions, one line. Only whole runs that actually overlap are touched; two wires that merely
+   share an endpoint end-to-end are already a chain and are left alone.
+
+   Applied after a template is placed rather than inside circuit_add_wire, so that drawing a
+   wire by hand still does exactly what the hand said. */
+void circuit_tidy_collinear_wires(Circuit *circuit) {
+    if (!circuit || circuit->num_wires < 2) return;
+    /* Every rebuild restarts the scan, so a case this cannot settle would spin forever - and
+       one did, until the points below were deduped at the radius nodes actually merge at. The
+       cap is what stops a hang being the failure mode of a drawing tidy-up. */
+    /* An A/B switch, because the only way to see what this pass changed is to run the same
+       template with it off and diff the nets. */
+    if (getenv("CT_NO_TIDY")) return;
+    int budget = 400;
+    /* Nothing here is a user edit: it is the same net, drawn properly. Two consequences, and
+       both were bugs. The deletions must not reach the undo stack, or one Ctrl+Z after opening
+       a template starts pulling apart wires the user never drew. And orphan cleanup must be
+       held off while a run is torn down and relaid, because it sweeps up a node that is briefly
+       unused - and if that node is ground, remove_node_by_index clears ground_node_id and the
+       whole circuit floats. That is what made the CMOS inverter stop swinging. */
+    bool prev_preserving = circuit->undo_preserving;
+    circuit->undo_preserving = true;
+
+    for (int pass = 0; pass < 2; pass++) {          /* 0 = horizontal runs, 1 = vertical */
+        for (int i = 0; i < circuit->num_wires; i++) {
+            Node *a = circuit_get_node(circuit, circuit->wires[i].start_node_id);
+            Node *b = circuit_get_node(circuit, circuit->wires[i].end_node_id);
+            if (!a || !b) continue;
+            bool horiz = fabsf(a->y - b->y) <= 0.5f, vert = fabsf(a->x - b->x) <= 0.5f;
+            if (pass == 0 && (!horiz || vert)) continue;      /* skip verticals and points */
+            if (pass == 1 && (!vert || horiz)) continue;
+            float line = (pass == 0) ? a->y : a->x;
+
+            /* every wire on this same line, and the span they cover together */
+            int member[MAX_WIRES], nm = 0;
+            float lo = 1e9f, hi = -1e9f;
+            for (int j = 0; j < circuit->num_wires; j++) {
+                Node *c = circuit_get_node(circuit, circuit->wires[j].start_node_id);
+                Node *d = circuit_get_node(circuit, circuit->wires[j].end_node_id);
+                if (!c || !d) continue;
+                if (pass == 0) {
+                    if (fabsf(c->y - d->y) > 0.5f || fabsf(c->x - d->x) <= 0.5f) continue;
+                    if (fabsf(c->y - line) > 0.5f) continue;
+                } else {
+                    if (fabsf(c->x - d->x) > 0.5f || fabsf(c->y - d->y) <= 0.5f) continue;
+                    if (fabsf(c->x - line) > 0.5f) continue;
+                }
+                float p = (pass == 0) ? c->x : c->y, q = (pass == 0) ? d->x : d->y;
+                if (nm < MAX_WIRES) member[nm++] = j;
+                if (fminf(p, q) < lo) lo = fminf(p, q);
+                if (fmaxf(p, q) > hi) hi = fmaxf(p, q);
+            }
+            if (nm < 2) continue;
+            (void)lo; (void)hi;
+
+            /* Work one connected run at a time, never across a gap.
+
+               A row can carry two quite separate buses with clear space between them, and
+               chaining every point on the row would lay a wire across that space and join two
+               nets that have nothing to do with each other. So: find the group of wires that
+               actually touch or overlap each other, and rebuild only that. */
+            bool rebuilt = false;
+            for (int seed = 0; seed < nm; seed++) {
+                int grp[MAX_WIRES], ng = 0;
+                float glo, ghi;
+                {
+                    Node *c = circuit_get_node(circuit, circuit->wires[member[seed]].start_node_id);
+                    Node *d = circuit_get_node(circuit, circuit->wires[member[seed]].end_node_id);
+                    float p = (pass == 0) ? c->x : c->y, q = (pass == 0) ? d->x : d->y;
+                    glo = fminf(p, q); ghi = fmaxf(p, q);
+                }
+                grp[ng++] = member[seed];
+                bool grew = true;
+                while (grew) {                        /* absorb anything touching the run */
+                    grew = false;
+                    for (int k = 0; k < nm; k++) {
+                        bool have = false;
+                        for (int g = 0; g < ng; g++) if (grp[g] == member[k]) have = true;
+                        if (have) continue;
+                        Node *c = circuit_get_node(circuit, circuit->wires[member[k]].start_node_id);
+                        Node *d = circuit_get_node(circuit, circuit->wires[member[k]].end_node_id);
+                        float p = (pass == 0) ? c->x : c->y, q = (pass == 0) ? d->x : d->y;
+                        float klo = fminf(p, q), khi = fmaxf(p, q);
+                        if (khi < glo - 0.5f || klo > ghi + 0.5f) continue;   /* disjoint */
+                        /* ...and only when it is provably the same net already, which means
+                           sharing a node with a wire the run already holds. Lying on top of
+                           one another is not connection: wires join only through shared nodes,
+                           so two different nets can be drawn down the same line - and the CMOS
+                           inverter draws exactly that, the rail and the output overlapping on
+                           one vertical. Chaining those shorted the output to VDD and the gate
+                           stopped swinging. Redrawing a net must never change what is joined to
+                           what; an overlap between two nets is a layout fault to be moved apart,
+                           not a bus to be tidied. */
+                        bool shares = false;
+                        int ks = circuit->wires[member[k]].start_node_id;
+                        int ke = circuit->wires[member[k]].end_node_id;
+                        for (int g = 0; g < ng && !shares; g++) {
+                            int gs = circuit->wires[grp[g]].start_node_id;
+                            int ge = circuit->wires[grp[g]].end_node_id;
+                            if (ks == gs || ks == ge || ke == gs || ke == ge) shares = true;
+                        }
+                        if (!shares) continue;
+                        if (ng < MAX_WIRES) grp[ng++] = member[k];
+                        if (klo < glo) glo = klo;
+                        if (khi > ghi) ghi = khi;
+                        grew = true;
+                    }
+                }
+                if (ng < 2) continue;
+
+                /* Does this run actually double back on itself? Length laid against length
+                   covered - equal means the wires meet end to end and are already a chain. */
+                float laid = 0;
+                for (int g = 0; g < ng; g++) {
+                    Node *c = circuit_get_node(circuit, circuit->wires[grp[g]].start_node_id);
+                    Node *d = circuit_get_node(circuit, circuit->wires[grp[g]].end_node_id);
+                    float p = (pass == 0) ? c->x : c->y, q = (pass == 0) ? d->x : d->y;
+                    laid += fabsf(q - p);
+                }
+                if (laid <= (ghi - glo) + 0.5f) continue;
+
+                float pt[2 * MAX_WIRES]; int np = 0;
+                for (int g = 0; g < ng && np + 2 <= (int)(sizeof pt / sizeof pt[0]); g++) {
+                    Node *c = circuit_get_node(circuit, circuit->wires[grp[g]].start_node_id);
+                    Node *d = circuit_get_node(circuit, circuit->wires[grp[g]].end_node_id);
+                    pt[np++] = (pass == 0) ? c->x : c->y;
+                    pt[np++] = (pass == 0) ? d->x : d->y;
+                }
+                for (int p1 = 0; p1 < np; p1++)                  /* sort, then unique */
+                    for (int p2 = p1 + 1; p2 < np; p2++)
+                        if (pt[p2] < pt[p1]) { float t = pt[p1]; pt[p1] = pt[p2]; pt[p2] = t; }
+                /* Deduped at the radius circuit_find_or_create_node merges at, not at half a
+                   pixel. Two points 3 px apart are one node to it, so planning a segment
+                   between them lays nothing - and the run comes back unchanged on the next
+                   scan, which is a loop rather than a fixed point. */
+                int nu = 0;
+                for (int p1 = 0; p1 < np; p1++)
+                    if (nu == 0 || pt[p1] - pt[nu - 1] > 5.0f) pt[nu++] = pt[p1];
+                if (nu < 2) continue;
+
+                /* Sort the group so the highest wire index goes first: deleting shuffles the
+                   list down, and taking them in any other order removes the wrong ones. */
+                for (int a1 = 0; a1 < ng; a1++)
+                    for (int a2 = a1 + 1; a2 < ng; a2++)
+                        if (grp[a2] > grp[a1]) { int t = grp[a1]; grp[a1] = grp[a2]; grp[a2] = t; }
+                for (int g = 0; g < ng; g++)
+                    circuit_remove_wire(circuit, circuit->wires[grp[g]].id);
+
+                for (int k = 0; k + 1 < nu; k++) {
+                    int n1, n2;
+                    if (pass == 0) {
+                        n1 = circuit_find_or_create_node(circuit, pt[k],     line, 5.0f);
+                        n2 = circuit_find_or_create_node(circuit, pt[k + 1], line, 5.0f);
+                    } else {
+                        n1 = circuit_find_or_create_node(circuit, line, pt[k],     5.0f);
+                        n2 = circuit_find_or_create_node(circuit, line, pt[k + 1], 5.0f);
+                    }
+                    if (n1 > 0 && n2 > 0 && n1 != n2) circuit_add_wire(circuit, n1, n2);
+                }
+                rebuilt = true;
+                if (--budget <= 0) { circuit->undo_preserving = prev_preserving; return; }
+                break;                                /* the list moved; rescan from the top */
+            }
+            /* Only when something actually moved. Restarting the scan unconditionally is an
+               infinite loop and was one: every wire on the sheet sent it back to the beginning
+               whether or not anything had been rebuilt. */
+            if (rebuilt) i = -1;
+        }
+    }
+    circuit->undo_preserving = prev_preserving;
+    circuit->topology_dirty = true;
+}
+
 Circuit *circuit_from_subcircuit_def(int def_id, char *name_out, size_t name_size) {
     SubCircuitDef *def = subcircuit_find_def(def_id);
     if (!def || def->num_components <= 0 || !def->component_data) return NULL;

@@ -174,6 +174,9 @@ int circuit_add_component(Circuit *circuit, Component *comp);
    definition gave it, and a wire between every pair of terminals that share an internal node.
    This is how a block is opened up to be looked at. NULL if the definition is empty; caller
    frees the circuit. */
+/* Rewrite runs of overlapping collinear wires into one chain - the bus that was meant. */
+void circuit_tidy_collinear_wires(Circuit *circuit);
+
 Circuit *circuit_from_subcircuit_def(int def_id, char *name_out, size_t name_size);
 void circuit_remove_component(Circuit *circuit, int comp_id);
 Component *circuit_get_component(Circuit *circuit, int comp_id);

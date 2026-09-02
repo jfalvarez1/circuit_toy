@@ -2614,7 +2614,7 @@ static int place_summing_amp(Circuit *circuit, float x, float y) {
     // V1- to ground: DOWN to ground bus level, then LEFT to gnd
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, v1_neg_x, v1_neg_y, 5.0f),
                      circuit_find_or_create_node(circuit, v1_neg_x, gnd_y, 5.0f));
-    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, v1_neg_x, gnd_y, 5.0f), gnd_node);
+    circuit_add_wire(circuit, gnd_node, circuit_find_or_create_node(circuit, v1_neg_x, gnd_y, 5.0f));
     v1->node_ids[1] = gnd_node;
 
     // V2+ to R2: RIGHT to exit voltage source, DOWN to R2 top
@@ -2628,7 +2628,8 @@ static int place_summing_amp(Circuit *circuit, float x, float y) {
     // V2- to ground: DOWN to ground bus level, then LEFT to gnd
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, v2_neg_x, v2_neg_y, 5.0f),
                      circuit_find_or_create_node(circuit, v2_neg_x, gnd_y, 5.0f));
-    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, v2_neg_x, gnd_y, 5.0f), gnd_node);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, v1_neg_x, gnd_y, 5.0f),
+                     circuit_find_or_create_node(circuit, v2_neg_x, gnd_y, 5.0f));
     v2->node_ids[1] = gnd_node;
 
     // V3+ to R3: RIGHT to exit voltage source, DOWN to R3 top
@@ -2642,13 +2643,15 @@ static int place_summing_amp(Circuit *circuit, float x, float y) {
     // V3- to ground: DOWN to ground bus level, then LEFT to gnd
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, v3_neg_x, v3_neg_y, 5.0f),
                      circuit_find_or_create_node(circuit, v3_neg_x, gnd_y, 5.0f));
-    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, v3_neg_x, gnd_y, 5.0f), gnd_node);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, v2_neg_x, gnd_y, 5.0f),
+                     circuit_find_or_create_node(circuit, v3_neg_x, gnd_y, 5.0f));
     v3->node_ids[1] = gnd_node;
 
     // Op-amp + to ground
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, noninv_x, noninv_y, 5.0f),
                      circuit_find_or_create_node(circuit, noninv_x, gnd_y, 5.0f));
-    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, noninv_x, gnd_y, 5.0f), gnd_node);
+    circuit_add_wire(circuit, circuit_find_or_create_node(circuit, v3_neg_x, gnd_y, 5.0f),
+                     circuit_find_or_create_node(circuit, noninv_x, gnd_y, 5.0f));
     opamp->node_ids[1] = gnd_node;
 
     // All input resistors to - input via horizontal bus
@@ -15128,6 +15131,10 @@ int circuit_place_template(Circuit *circuit, CircuitTemplateType type, float x, 
     if (!circuit) return 0;
     int first = circuit->num_components;
     int count = place_template_body(circuit, type, x, y);
+    /* Lay any wires that ended up on top of each other out as the bus they were meant to be.
+       The star-to-one-node idiom is all over the builders and is invisible until something
+       counts it: --geom-test found 114 overlaps across 39 templates. */
+    circuit_tidy_collinear_wires(circuit);
     if (count <= 0 || type <= CIRCUIT_NONE || type >= CIRCUIT_TYPE_COUNT) return count;
     if (!template_notes[type][0]) return count;
 
