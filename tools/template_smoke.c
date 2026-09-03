@@ -1967,6 +1967,39 @@ static int mcu_test(void) {
         circuit_free(c);
     }
 
+    /* A session's worth of blocks through ONE Simulation, which is how the app runs it: created
+       once at start-up and reset for every circuit after that. The compiled-sketch cache is
+       keyed by component id, ids keep climbing all session, and the cache has a fixed number of
+       slots - so every block a session sees takes another one and none are ever given back. */
+    {
+        total++;
+        Circuit *c = mcu_rig("void setup() { pinMode(13, OUTPUT); digitalWrite(13, HIGH); }\n"
+                             "void loop() { }\n", 1000.0, 11);
+        Simulation *sim = c ? simulation_create(c) : NULL;
+        int ok = 0;
+        if (sim) {
+            Component *mcu = NULL;
+            for (int i = 0; i < c->num_components && !mcu; i++)
+                if (c->components[i] && c->components[i]->type == COMP_MCU) mcu = c->components[i];
+            for (int k = 0; k < MCU_MAX_BLOCKS + 4 && mcu; k++) {
+                mcu->id = 1000 + k;              /* a different block each time, as a new circuit is */
+                simulation_reset(sim);
+                simulation_dc_analysis(sim);
+            }
+            ok = mcu && mcu->props.mcu.compiled && mcu->props.mcu.pin_drive[11] == 1;
+            if (!ok)
+                printf("[FAIL] mcu   %-46s compiled=%d drive=%d - the sketch cache filled and the "
+                       "block stopped running its code\n", "a block still runs after a session of them",
+                       mcu ? mcu->props.mcu.compiled : -1, mcu ? mcu->props.mcu.pin_drive[11] : -1);
+            else
+                printf(" OK  mcu   %-46s still compiled and driving after %d blocks\n",
+                       "a block still runs after a session of them", MCU_MAX_BLOCKS + 4);
+        }
+        if (!ok) fails++;
+        simulation_free(sim);
+        circuit_free(c);
+    }
+
     printf("\nmcu-test: %d circuits with a programmable block, %d wrong\n", total, fails);
     return fails ? 1 : 0;
 }
@@ -2415,7 +2448,12 @@ static int gallery_test(void) {
     if (!c) { printf("[FAIL] gallery could not create a circuit\n"); return 1; }
     int fails = 0, placed = 0;
     int first_bad = -1;
+    /* What is global and bounded, sampled between the passes. The first pass may legitimately
+       register things - a subcircuit definition is created the first time a template that uses
+       one is placed - and the second must cost nothing at all. */
+    int defs_after_first = -1, ids_after_first = -1;
     for (int pass = 0; pass < 2; pass++) {
+        if (pass == 1) { defs_after_first = g_subcircuit_library.count; ids_after_first = c->next_node_id; }
         for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
             if (!ref_comps[t]) continue;
             /* exactly what app.c does when a circuit is clicked in the palette */
@@ -2437,6 +2475,26 @@ static int gallery_test(void) {
             }
         }
     }
+    /* The second pass over the whole gallery must have cost nothing. Anything that grows here
+       grows for as long as the program is open, and everything that grows here has a ceiling. */
+    if (defs_after_first >= 0 && g_subcircuit_library.count != defs_after_first) {
+        fails++;
+        printf("[FAIL] gallery the subcircuit library grew from %d to %d over a second pass through "
+               "the gallery - registering a definition twice is a leak with %d behind it\n",
+               defs_after_first, g_subcircuit_library.count, MAX_SUBCIRCUIT_DEFS);
+    } else if (defs_after_first >= 0) {
+        printf(" OK  gallery the subcircuit library holds at %d definitions over a second pass\n",
+               defs_after_first);
+    }
+    if (c->next_node_id >= MAX_NODES) {
+        fails++;
+        printf("[FAIL] gallery node ids reached %d over the session; node_map holds %d, and past it "
+               "no node can be made and no wire that needs one\n", c->next_node_id, MAX_NODES);
+    } else {
+        printf(" OK  gallery node ids top out at %d over %d placements, inside node_map's %d\n",
+               c->next_node_id, placed, MAX_NODES);
+    }
+
     circuit_free(c);
 
     /* And Ctrl+Z after a mis-click still brings the previous circuit back. That is the whole

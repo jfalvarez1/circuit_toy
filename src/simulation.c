@@ -157,6 +157,37 @@ static unsigned long mcu_hash(const char *s) {
     return h;
 }
 
+
+/* Throw away compiled sketches for blocks that are no longer on the sheet.
+
+   The cache has a fixed number of slots and is keyed by component id. Component ids climb for
+   the life of a session and the Simulation is created once and reset per circuit, so without
+   this every block a session ever saw held a slot for ever: twelve blocks filled eight slots and
+   the next one got no program at all - pins left as inputs, code never run, and its panel still
+   reporting that it had compiled, because that flag was set in a previous life.
+
+   Same shape as the node ids that stopped the gallery drawing wires. A bounded resource, growth
+   that never unwinds, and a failure that says nothing. */
+static void mcu_forget_absent(Simulation *sim) {
+    Circuit *circuit = sim->circuit;
+    int kept = 0;
+    for (int i = 0; i < sim->mcu_count; i++) {
+        bool still_here = false;
+        for (int k = 0; circuit && k < circuit->num_components && !still_here; k++) {
+            Component *c = circuit->components[k];
+            if (c && c->type == COMP_MCU && c->id == sim->mcu[i].comp_id) still_here = true;
+        }
+        if (still_here) {
+            if (kept != i) sim->mcu[kept] = sim->mcu[i];
+            kept++;
+        } else {
+            sketch_free((Sketch *)sim->mcu[i].sketch);
+            sim->mcu[i].sketch = NULL;
+        }
+    }
+    sim->mcu_count = kept;
+}
+
 static Sketch *mcu_program(Simulation *sim, Component *comp) {
     unsigned long h = mcu_hash(comp->props.mcu.source);
     for (int i = 0; i < sim->mcu_count; i++) {
@@ -173,7 +204,10 @@ static Sketch *mcu_program(Simulation *sim, Component *comp) {
         if (sk) sketch_set_vcc(sk, comp->props.mcu.vcc);
         return sk;
     }
-    if (sim->mcu_count >= MCU_MAX_BLOCKS) return NULL;
+    if (sim->mcu_count >= MCU_MAX_BLOCKS) {
+        mcu_forget_absent(sim);                    /* blocks that have gone give their slots back */
+        if (sim->mcu_count >= MCU_MAX_BLOCKS) return NULL;   /* genuinely that many on one sheet */
+    }
     char err[96] = "";
     Sketch *sk = sketch_compile(comp->props.mcu.source, err, sizeof err);
     sim->mcu[sim->mcu_count].comp_id = comp->id;
