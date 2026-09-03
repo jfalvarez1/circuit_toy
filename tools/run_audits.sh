@@ -29,7 +29,7 @@ SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test --dv
 --flow-test --pair-test --ic-test --sketch-test --mcu-test --direction-test --thermal-test --battery-test --gallery-test --switch-test --part-test --op-test --sub-test --spice-test --xtal-test --view-test
 --conn-test --file-test --parts-file-test --undo-test --bias-test --netlist-test --line-test --std-test --burn-test --knob-test --geom-test --param-test --sweep-check
 --tesla-test"
-APP_MODES="--layout-test --symbol-test --autoset-test --place-test --trig-test --prop-test --value-sweep"
+APP_MODES="--layout-test --symbol-test --autoset-test --place-test --trig-test --prop-test --value-sweep --style-test --shot-test"
 # ...and one app suite is long enough to shard as well: --bounce-test renders sixty frames of
 # every template through the real scope.
 APP_SHARDED="bounce-test:4"
@@ -180,6 +180,22 @@ if command -v python >/dev/null 2>&1; then
         printf '[FAIL] %-14s %s
 ' "click-wiring" "$(tail -n 1 "$out/clickwiring.log" | cut -c1-100)"
         grep -i fail "$out/clickwiring.log" | head -10
+        fails=$((fails + 1))
+    fi
+fi
+
+# Source-level: the schematic style is a mapping bolted in front of two SDL calls by macros, so
+# it only covers a file that includes style.h, only the calls below that include, and only while
+# the canvas flag is armed. A new drawing file draws in raw synthwave on white paper and nothing
+# reports it; leaving the flag armed turns the toolbar into empty white boxes, which it did.
+if command -v python >/dev/null 2>&1; then
+    if python tools/style_wiring.py > "$out/stylewiring.log" 2>&1; then
+        printf '[ OK ] %-14s %s
+' "style-wiring" "$(tail -n 1 "$out/stylewiring.log" | cut -c1-100)"
+    else
+        printf '[FAIL] %-14s %s
+' "style-wiring" "$(tail -n 1 "$out/stylewiring.log" | cut -c1-100)"
+        grep -i fail "$out/stylewiring.log" | head -10
         fails=$((fails + 1))
     fi
 fi

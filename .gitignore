@@ -52,3 +52,4 @@ build-test/
 release/
 .playwright-mcp/
 dist/
+__pycache__/

@@ -16,6 +16,8 @@ static PropertyField *ui_prop_slot(UIState *ui);
 #include "circuits.h"
 #include "analysis.h"
 #include "version.h"   /* the version shown under the title */
+/* Last, because it redefines the two SDL colour calls everything draws through. */
+#include "style.h"
 
 static void ui_volt_readout(char *out, size_t n, double v);   // defined with the scope layout helpers
 static void scope_button_list(UIState *ui, Button *out[SCOPE_BTN_N]);
@@ -215,6 +217,15 @@ void ui_init(UIState *ui) {
     ui->btn_import_spice = (Button){{btn_x, 10, 46, btn_h}, "SPICE", "Import a vendor .SUBCKT model", false, false, true, false};
     btn_x += 46 + 10;
     ui->btn_paste_netlist = (Button){{btn_x, 10, 46, btn_h}, "Paste", "Build a circuit from a parts list on the clipboard: one part per line, R1 in vm1 10k", false, false, true, false};
+    btn_x += 46 + 10;
+    /* The two things a screenshot needs deciding before you take it: what it looks like, and
+       what is in it. Next to Scr, because that is when you want them. */
+    ui->btn_style = (Button){{btn_x, 10, 34, btn_h}, "BW", "Draw the canvas as a printed schematic: black on white, for reports and photocopiers", false, false, true, false};
+    btn_x += 34 + 6;
+    ui->btn_shot_region = (Button){{btn_x, 10, 56, btn_h}, "Canvas", "What a screenshot contains: the canvas, the canvas with the scope under it, or the whole window", false, false, true, false};
+
+    /* A screenshot is of the circuit. See UI.shot_region. */
+    ui->shot_region = SHOT_CANVAS;
 
     // Speed slider. The x and w here are placeholders; ui_layout_toolbar_right sets them from
     // the window width, at start-up and again on every resize.
@@ -886,6 +897,15 @@ void ui_render_toolbar(UIState *ui, SDL_Renderer *renderer) {
     draw_button(renderer, &ui->btn_zoom_fit);
     draw_button(renderer, &ui->btn_import_spice);
     draw_button(renderer, &ui->btn_paste_netlist);
+    /* Both of these are settings, not commands, so they show what they are set to rather than
+       what pressing them would do - BW lights up while the canvas IS a schematic, and the region
+       button reads out the shape a screenshot would come out as. */
+    ui->btn_style.toggled = (g_draw_style == STYLE_SCHEMATIC);
+    ui->btn_shot_region.label = ui->shot_region == SHOT_CANVAS_SCOPE ? "Cnv+Sc"
+                              : ui->shot_region == SHOT_WINDOW       ? "Window"
+                                                                     : "Canvas";
+    draw_button(renderer, &ui->btn_style);
+    draw_button(renderer, &ui->btn_shot_region);
 
     // Speed slider label - dropped on a narrow window so the controls right of it still fit
     if (ui->speed_label_w > 0) {
@@ -3979,6 +3999,25 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     Rect *r = &ui->scope_rect;
     char buf[64];
 
+    /* The screen is part of the document; the knobs are not.
+     *
+     * A schematic with a neon-green scope glued underneath it is not a thing anybody would put
+     * in a report, so the graticule and its traces follow the canvas into black on white. The
+     * controls below it - V+, T-, Autoset - are the program, and stay the program: they were the
+     * whole reason this style is armed over regions rather than over the window. The arm ends
+     * exactly where the buttons start. */
+    int scope_was_in_canvas = g_style_in_canvas;
+    g_style_in_canvas = 1;
+    if (g_draw_style == STYLE_SCHEMATIC) {
+        /* The title line sits 18 px above the graticule, on the properties panel's own dark
+           background - which was painted before any of this was armed. Without paper under it
+           the time base comes out as black text on navy. Slightly larger than the rectangle
+           app_save_shot crops, so the crop lands inside the paper on every side. */
+        SDL_SetRenderDrawColor(renderer, COLOR_BG.r, COLOR_BG.g, COLOR_BG.b, 0xff);
+        SDL_Rect paper = { r->x - 6, r->y - 22, r->w + 12, r->h + 28 };
+        SDL_RenderFillRect(renderer, &paper);
+    }
+
     // Update button labels based on current settings
     static const char *trig_mode_labels[] = {"AUTO", "NORM", "SNGL"};
     static const char *trig_edge_labels[] = {"/\\", "\\/", "/\\\\/"};
@@ -4146,10 +4185,10 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 FFTResult *fft = &analysis->fft_results[ch];
                 if (fft->num_bins < 2) continue;
 
-                SDL_SetRenderDrawColor(renderer,
+                style_set_trace_color(renderer, ch,
                     ui->scope_channels[ch].color.r,
                     ui->scope_channels[ch].color.g,
-                    ui->scope_channels[ch].color.b, 0xff);
+                    ui->scope_channels[ch].color.b);
 
                 int prev_x = -1, prev_y = -1;
 
@@ -4532,10 +4571,10 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                             char vs[16]; format_volt_value(vs, sizeof vs, vd);
                             snprintf(tag, sizeof(tag), "%s %s/div", ui_channel_name(ui, ch), vs);
                         }
-                        SDL_SetRenderDrawColor(renderer,
+                        style_set_trace_color(renderer, ch,
                             ui->scope_channels[ch].color.r,
                             ui->scope_channels[ch].color.g,
-                            ui->scope_channels[ch].color.b, 0xff);
+                            ui->scope_channels[ch].color.b);
                         /* Right-aligned by what the tag actually measures, not by a fixed 34 or
                            110 px. Those two numbers were the width of "IN" and of "IN 50mV/div",
                            and any longer channel name ran off the graticule: the Termination
@@ -4547,10 +4586,10 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     }
                     band_index++;
 
-                    SDL_SetRenderDrawColor(renderer,
+                    style_set_trace_color(renderer, ch,
                         ui->scope_channels[ch].color.r,
                         ui->scope_channels[ch].color.g,
-                        ui->scope_channels[ch].color.b, 0xff);
+                        ui->scope_channels[ch].color.b);
 
                     double offset = ui->scope_channels[ch].offset;
 
@@ -4912,6 +4951,8 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     }
     SDL_Rect outer = {r->x - 1, r->y - 1, r->w + 2, r->h + 2};
     SDL_RenderDrawRect(renderer, &outer);
+
+    g_style_in_canvas = scope_was_in_canvas;   /* the screen ends here; the knobs are the program */
 
     // Draw control buttons (first row: V+, V-, T+, T-)
     draw_button(renderer, &ui->btn_scope_volt_up);
@@ -7325,6 +7366,8 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
         if (point_in_rect(x, y, &ui->btn_zoom_fit.bounds) && ui->btn_zoom_fit.enabled) return UI_ACTION_ZOOM_FIT;
         if (point_in_rect(x, y, &ui->btn_import_spice.bounds) && ui->btn_import_spice.enabled) return UI_ACTION_IMPORT_SPICE;
         if (point_in_rect(x, y, &ui->btn_paste_netlist.bounds) && ui->btn_paste_netlist.enabled) return UI_ACTION_PASTE_NETLIST;
+        if (point_in_rect(x, y, &ui->btn_style.bounds) && ui->btn_style.enabled) return UI_ACTION_STYLE_TOGGLE;
+        if (point_in_rect(x, y, &ui->btn_shot_region.bounds) && ui->btn_shot_region.enabled) return UI_ACTION_SHOT_REGION;
         if (point_in_rect(x, y, &ui->btn_screenshot.bounds) && ui->btn_screenshot.enabled) {
             return UI_ACTION_SCREENSHOT;
         }
@@ -7956,6 +7999,8 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         ui->btn_zoom_fit.hovered = point_in_rect(x, y, &ui->btn_zoom_fit.bounds);
         ui->btn_import_spice.hovered = point_in_rect(x, y, &ui->btn_import_spice.bounds);
         ui->btn_paste_netlist.hovered = point_in_rect(x, y, &ui->btn_paste_netlist.bounds);
+        ui->btn_style.hovered = point_in_rect(x, y, &ui->btn_style.bounds);
+        ui->btn_shot_region.hovered = point_in_rect(x, y, &ui->btn_shot_region.bounds);
         ui->btn_timestep_up.hovered = point_in_rect(x, y, &ui->btn_timestep_up.bounds);
         ui->btn_timestep_down.hovered = point_in_rect(x, y, &ui->btn_timestep_down.bounds);
         ui->btn_timestep_auto.hovered = point_in_rect(x, y, &ui->btn_timestep_auto.bounds);
@@ -7991,7 +8036,7 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
         const char *tip = NULL;
         char tipbuf[160];
         Button *tb[] = { &ui->btn_run, &ui->btn_pause, &ui->btn_step, &ui->btn_reset, &ui->btn_clear, &ui->btn_save, &ui->btn_load,
-                         &ui->btn_export_svg, &ui->btn_screenshot, &ui->btn_zoom_out, &ui->btn_zoom_in, &ui->btn_zoom_fit, &ui->btn_import_spice, &ui->btn_timestep_up, &ui->btn_timestep_down, &ui->btn_timestep_auto, &ui->btn_update };
+                         &ui->btn_export_svg, &ui->btn_screenshot, &ui->btn_style, &ui->btn_shot_region, &ui->btn_zoom_out, &ui->btn_zoom_in, &ui->btn_zoom_fit, &ui->btn_import_spice, &ui->btn_paste_netlist, &ui->btn_timestep_up, &ui->btn_timestep_down, &ui->btn_timestep_auto, &ui->btn_update };
         for (unsigned i = 0; i < sizeof tb / sizeof tb[0] && !tip; i++)
             if (!popup_mode && tb[i]->bounds.w > 0 && point_in_rect(x, y, &tb[i]->bounds)) tip = tb[i]->tooltip;
         Button *sb[SCOPE_BTN_N]; scope_button_list(ui, sb);
@@ -8260,6 +8305,10 @@ void ui_layout_toolbar_right(UIState *ui) {
     int last_btn = ui->btn_import_spice.bounds.x + ui->btn_import_spice.bounds.w;
     if (ui->btn_paste_netlist.bounds.x + ui->btn_paste_netlist.bounds.w > last_btn)
         last_btn = ui->btn_paste_netlist.bounds.x + ui->btn_paste_netlist.bounds.w;
+    if (ui->btn_style.bounds.x + ui->btn_style.bounds.w > last_btn)
+        last_btn = ui->btn_style.bounds.x + ui->btn_style.bounds.w;
+    if (ui->btn_shot_region.bounds.x + ui->btn_shot_region.bounds.w > last_btn)
+        last_btn = ui->btn_shot_region.bounds.x + ui->btn_shot_region.bounds.w;
     int left_limit = last_btn + 12;
     int avail = right - left_limit;
 

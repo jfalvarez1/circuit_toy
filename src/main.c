@@ -21,6 +21,8 @@
 #include "crashlog.h"
 #ifdef _WIN32
 #include <windows.h>
+/* Last, because it redefines the two SDL colour calls everything draws through. */
+#include "style.h"
 #endif
 
 static bool rects_overlap(const Rect *a, const Rect *b) {
@@ -1164,6 +1166,266 @@ static int symbol_test(void) {
     return missing ? 1 : 0;
 }
 
+/* --style-test: the schematic view, as laws rather than as a list of expected greys.
+ *
+ * Two things went wrong here that no screenshot comparison would have named, and both are laws
+ * about the mapping rather than facts about any one colour:
+ *
+ *   - the grid and the background are only eighteen luma apart, so a two-way paper/ink split put
+ *     the ruling on the same side as the wires and the drawing vanished into a lattice;
+ *   - the map is not idempotent - it sends dark to light - and ui_draw_text reads the current
+ *     colour back and sets it again on the way to the glyph atlas, so every label on the scope
+ *     was mapped to ink and then straight back to paper. An axis with no numbers on it.
+ *
+ * So this asserts the shape of the map (ordering, banding, contrast) over the whole palette and
+ * over a sweep of every possible luma, and asserts that the read-back-and-set-again round trip
+ * both paths use is an identity. A colour added to the palette later is checked the same way. */
+static int style_test(void) {
+    enum { PAPER, RULING, INK };
+    /* Not static: the COLOR_* macros are compound literals, and MSVC will not use one to
+       initialise anything with static storage. Written out by hand instead they would be a
+       second copy of the palette that a change to types.h would not reach. */
+    const struct { const char *name; Color c; int role; } palette[] = {
+        { "COLOR_BG",         COLOR_BG,                       PAPER  },
+        { "COLOR_BG_DARK",    COLOR_BG_DARK,                  PAPER  },
+        { "scope screen",     {0x00, 0x10, 0x00, 0xff},       PAPER  },
+        { "COLOR_GRID",       COLOR_GRID,                     RULING },
+        { "canvas origin",    {0x3a, 0x3a, 0x5e, 0xff},       RULING },
+        { "scope graticule",  {0x30, 0x50, 0x30, 0xff},       RULING },
+        { "scope subdivision",{0x20, 0x30, 0x20, 0xff},       RULING },
+        { "COLOR_ACCENT",     COLOR_ACCENT,                   INK    },
+        { "COLOR_ACCENT2",    COLOR_ACCENT2,                  INK    },
+        { "COLOR_TEXT",       COLOR_TEXT,                     INK    },
+        { "COLOR_TEXT_DIM",   COLOR_TEXT_DIM,                 INK    },
+        { "COLOR_WIRE",       COLOR_WIRE,                     INK    },
+        { "COLOR_SUCCESS",    COLOR_SUCCESS,                  INK    },
+        { "COLOR_WARNING",    COLOR_WARNING,                  INK    },
+        { "COLOR_DANGER",     COLOR_DANGER,                   INK    },
+        { "scope crosshair",  {0x50, 0x80, 0x50, 0xff},       INK    },
+        { "scope axis labels",{0x60, 0x80, 0x60, 0xff},       INK    },
+    };
+    const int N = (int)(sizeof palette / sizeof palette[0]);
+    int fails = 0;
+    int saved_style = g_draw_style, saved_in = g_style_in_canvas;
+
+    /* 1. Synthwave changes nothing at all, and neither does schematic outside the canvas. The
+          second is the whole point of the region: the toolbar keeps its own colours. */
+    for (int pass = 0; pass < 2; pass++) {
+        g_draw_style = pass ? STYLE_SCHEMATIC : STYLE_SYNTHWAVE;
+        g_style_in_canvas = 0;
+        for (int i = 0; i < N; i++) {
+            uint8_t r = palette[i].c.r, g = palette[i].c.g, b = palette[i].c.b;
+            style_map_rgb(&r, &g, &b);
+            if (r != palette[i].c.r || g != palette[i].c.g || b != palette[i].c.b) {
+                printf("[FAIL] style   %s changed outside the canvas in %s\n",
+                       palette[i].name, style_name(g_draw_style));
+                fails++;
+            }
+        }
+    }
+
+    g_draw_style = STYLE_SCHEMATIC;
+    g_style_in_canvas = 1;
+
+    /* 2. Every colour comes out a pure grey, and lands in the band its role says it should.
+          Paper is paper, ruling is visible but never competes, ink is ink. */
+    int ruling_lo = 255, ruling_hi = 0, ink_hi = 0, paper_lo = 255;
+    for (int i = 0; i < N; i++) {
+        uint8_t r = palette[i].c.r, g = palette[i].c.g, b = palette[i].c.b;
+        style_map_rgb(&r, &g, &b);
+        if (r != g || g != b) {
+            printf("[FAIL] style   %s maps to (%d,%d,%d), which is not a grey\n",
+                   palette[i].name, r, g, b);
+            fails++;
+            continue;
+        }
+        int v = r;
+        switch (palette[i].role) {
+            case PAPER:
+                if (v < 250) { printf("[FAIL] style   %s is a background but maps to %d, not paper\n", palette[i].name, v); fails++; }
+                if (v < paper_lo) paper_lo = v;
+                break;
+            case RULING:
+                if (v < 190 || v > 245) { printf("[FAIL] style   %s is ruling but maps to %d, outside 190..245\n", palette[i].name, v); fails++; }
+                if (v < ruling_lo) ruling_lo = v;
+                if (v > ruling_hi) ruling_hi = v;
+                break;
+            default:
+                if (v > 60) { printf("[FAIL] style   %s is ink but maps to %d, too light to read\n", palette[i].name, v); fails++; }
+                if (v > ink_hi) ink_hi = v;
+                break;
+        }
+    }
+    /* 3. And the bands have to stay apart, or the drawing sinks into the ruling - which is
+          exactly what the first version of this did. */
+    if (ruling_lo - ink_hi < 120) {
+        printf("[FAIL] style   ruling (%d) is only %d from the darkest ink (%d): the grid competes with the drawing\n",
+               ruling_lo, ruling_lo - ink_hi, ink_hi);
+        fails++;
+    }
+    if (paper_lo - ruling_hi < 5) {
+        printf("[FAIL] style   ruling (%d) is invisible against paper (%d)\n", ruling_hi, paper_lo);
+        fails++;
+    }
+
+    /* 4. Monotone over every luma there is: a brighter colour never maps lighter than a darker
+          one. Nothing else keeps the three bands in the right order as the thresholds move. */
+    int prev = 256;
+    for (int k = 0; k <= 255; k++) {
+        uint8_t r = (uint8_t)k, g = (uint8_t)k, b = (uint8_t)k;
+        style_map_rgb(&r, &g, &b);
+        if (r > prev) {
+            printf("[FAIL] style   luma %d maps to %d, lighter than luma %d -> %d\n", k, r, k - 1, prev);
+            fails++;
+            break;
+        }
+        prev = r;
+    }
+
+    /* 5. The round trip. Set a colour, read it back, set what came back: the renderer has to end
+          up where it started. This is what ui_draw_text does on the way to every label, on both
+          the draw-colour path and the texture-tint path, and it is what erased the scope's axis. */
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        printf("[FAIL] style   SDL_Init: %s\n", SDL_GetError());
+        fails++;
+    } else {
+        SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormat(0, 16, 16, 32, SDL_PIXELFORMAT_RGBA32);
+        SDL_Renderer *ren = surf ? SDL_CreateSoftwareRenderer(surf) : NULL;
+        SDL_Texture *tex = ren ? SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGBA32,
+                                                   SDL_TEXTUREACCESS_STATIC, 8, 8) : NULL;
+        if (!ren || !tex) {
+            printf("[FAIL] style   no software renderer: %s\n", SDL_GetError());
+            fails++;
+        } else {
+            for (int i = 0; i < N; i++) {
+                uint8_t r1, g1, b1, a1, r2, g2, b2, a2;
+                g_style_readback = 0;
+                SDL_SetRenderDrawColor(ren, palette[i].c.r, palette[i].c.g, palette[i].c.b, 0xff);
+                SDL_GetRenderDrawColor(ren, &r1, &g1, &b1, &a1);
+                SDL_SetRenderDrawColor(ren, r1, g1, b1, a1);
+                SDL_GetRenderDrawColor(ren, &r2, &g2, &b2, &a2);
+                if (r1 != r2 || g1 != g2 || b1 != b2) {
+                    printf("[FAIL] style   %s: read back (%d,%d,%d) and setting it again gave (%d,%d,%d)\n",
+                           palette[i].name, r1, g1, b1, r2, g2, b2);
+                    fails++;
+                }
+                /* ...and the same colour going to the glyph atlas instead. */
+                uint8_t tr, tg, tb;
+                g_style_readback = 0;
+                SDL_SetRenderDrawColor(ren, palette[i].c.r, palette[i].c.g, palette[i].c.b, 0xff);
+                SDL_GetRenderDrawColor(ren, &r1, &g1, &b1, &a1);
+                SDL_SetTextureColorMod(tex, r1, g1, b1);
+                SDL_GetTextureColorMod(tex, &tr, &tg, &tb);
+                if (tr != r1 || tg != g1 || tb != b1) {
+                    printf("[FAIL] style   %s: text tinted (%d,%d,%d) instead of (%d,%d,%d)\n",
+                           palette[i].name, tr, tg, tb, r1, g1, b1);
+                    fails++;
+                }
+            }
+            /* 6. The scope's channels have to stay apart from each other, because on paper the
+                  only thing left telling two traces apart is how dark they are. */
+            uint8_t ink[8];
+            for (int ch = 0; ch < 8; ch++) {
+                uint8_t r, g, b, a;
+                style_set_trace_color(ren, ch, 0x00, 0xff, 0xff);
+                g_style_readback = 0;
+                SDL_GetRenderDrawColor(ren, &r, &g, &b, &a);
+                ink[ch] = r;
+                if (r != g || g != b) {
+                    printf("[FAIL] style   channel %d draws (%d,%d,%d), which is not a grey\n", ch, r, g, b);
+                    fails++;
+                }
+            }
+            for (int i = 0; i < 8; i++)
+                for (int j = i + 1; j < 8; j++) {
+                    int gap = ink[i] > ink[j] ? ink[i] - ink[j] : ink[j] - ink[i];
+                    if (gap < 30) {
+                        printf("[FAIL] style   channels %d and %d are %d apart (%d vs %d): indistinguishable on paper\n",
+                               i, j, gap, ink[i], ink[j]);
+                        fails++;
+                    }
+                }
+            if ((ink[0] > ink[1] ? ink[0] - ink[1] : ink[1] - ink[0]) < 100) {
+                printf("[FAIL] style   the first two channels - the pair almost every measurement uses - are too close\n");
+                fails++;
+            }
+        }
+        if (tex) SDL_DestroyTexture(tex);
+        if (ren) SDL_DestroyRenderer(ren);
+        if (surf) SDL_FreeSurface(surf);
+        SDL_Quit();
+    }
+
+    g_draw_style = saved_style;
+    g_style_in_canvas = saved_in;
+    printf("style-test: %d palette colours, %d luma steps, %d failures\n", N, 256, fails);
+    return fails ? 1 : 0;
+}
+
+/* --shot-test: a screenshot has to be a picture of something.
+ *
+ * Every region names itself, the cycle the toolbar button walks comes back round, and the two
+ * crops app_save_shot takes are real rectangles inside the window that do not overlap each
+ * other - a canvas rect that had run off the edge, or a scope rect that had drifted into the
+ * canvas, would save a picture of the wrong thing without failing anywhere. */
+static int shot_test(void) {
+    int fails = 0;
+    UIState *ui = calloc(1, sizeof *ui);
+    if (!ui) return 1;
+    ui_init(ui);
+
+    if (ui->shot_region != SHOT_CANVAS) {
+        printf("[FAIL] shot    a screenshot should default to the canvas, not %s\n",
+               app_shot_region_name(ui->shot_region));
+        fails++;
+    }
+    /* The button cycles; every stop on the way has a name of its own, and it comes back. */
+    int r = ui->shot_region;
+    const char *seen[SHOT_REGION_COUNT];
+    for (int k = 0; k < SHOT_REGION_COUNT; k++) {
+        seen[k] = app_shot_region_name(r);
+        for (int j = 0; j < k; j++)
+            if (!strcmp(seen[j], seen[k])) {
+                printf("[FAIL] shot    regions %d and %d are both called '%s'\n", j, k, seen[k]);
+                fails++;
+            }
+        r = (r + 1) % SHOT_REGION_COUNT;
+    }
+    if (r != ui->shot_region) { printf("[FAIL] shot    cycling the region does not come back round\n"); fails++; }
+
+    /* The crops, at the sizes the window can actually be. */
+    static const int sizes[][2] = { {1024, 600}, {1280, 720}, {1600, 900}, {1920, 1080} };
+    for (unsigned s = 0; s < sizeof sizes / sizeof sizes[0]; s++) {
+        ui->window_width = sizes[s][0];
+        ui->window_height = sizes[s][1];
+        ui_update_layout(ui);
+        int cw = ui->window_width - PALETTE_WIDTH - ui->properties_width;
+        int ch = ui->window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT;
+        if (cw <= 0 || ch <= 0 || CANVAS_X + cw > ui->window_width || CANVAS_Y + ch > ui->window_height) {
+            printf("[FAIL] shot    %dx%d: canvas crop %d,%d %dx%d is not inside the window\n",
+                   sizes[s][0], sizes[s][1], CANVAS_X, CANVAS_Y, cw, ch);
+            fails++;
+        }
+        Rect *sr = &ui->scope_rect;
+        if (sr->w <= 0 || sr->h <= 0 ||
+            sr->x - 3 < 0 || sr->y - 20 < 0 ||
+            sr->x + sr->w + 3 > ui->window_width || sr->y + sr->h + 3 > ui->window_height) {
+            printf("[FAIL] shot    %dx%d: scope crop %d,%d %dx%d is not inside the window\n",
+                   sizes[s][0], sizes[s][1], sr->x, sr->y, sr->w, sr->h);
+            fails++;
+        }
+        if (sr->x < CANVAS_X + cw && sr->x + sr->w > CANVAS_X) {
+            printf("[FAIL] shot    %dx%d: the scope crop overlaps the canvas crop\n",
+                   sizes[s][0], sizes[s][1]);
+            fails++;
+        }
+    }
+    free(ui);
+    printf("shot-test: %d regions over %d window sizes, %d failures\n",
+           SHOT_REGION_COUNT, (int)(sizeof sizes / sizeof sizes[0]), fails);
+    return fails ? 1 : 0;
+}
+
 static int layout_test(void) {
     int fails = 0;
     UIState *ui = calloc(1, sizeof *ui);
@@ -1522,6 +1784,8 @@ static void usage(void) {
            "  --no-auto-update     check, but do not install by itself (also CIRCUIT_TOY_NO_AUTO_UPDATE=1)\n"
            "  --netlist FILE       build a circuit from a written-down one (one part per line)\n"
            "  --inspect NAME       open a My Circuits block and show what is inside it\n"
+           "  --style S            schematic (black on white, for printing) or synthwave (default)\n"
+           "  --shot-region R      what --shot saves: canvas, canvas+scope, or window (default)\n"
            "  --line-weight W      canvas stroke weight in pixels (default 1.7)\n"
            "  --ui-scale S         UI pixels to device pixels (default: from the display height)\n"
            "  --ss N               supersample the frame N times (1 = off, default 2, max 4)\n"
@@ -1612,6 +1876,7 @@ int main(int argc, char *argv[]) {
     struct { int x, y, x2, y2, frame; bool drag; } cli_mouse[12]; int cli_mouse_n = 0;
     const char *cli_xy = NULL;
     bool cli_popout = false;
+    int  cli_shot_region = SHOT_WINDOW;   /* --shot-region; see App.cli_shot_region */
     const char *cli_spice = NULL;
     /* --shard is read before anything else: a suite flag returns straight out of the loop below,
        so a shard written after it on the command line would never be seen. */
@@ -1671,6 +1936,26 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--inspect") && i + 1 < argc) cli_inspect = argv[++i];
         else if (!strcmp(argv[i], "--netlist") && i + 1 < argc) cli_netlist = argv[++i];
         else if (!strcmp(argv[i], "--sketch") && i + 1 < argc) cli_sketch = argv[++i];
+        /* Which look to draw in, so a screenshot can be taken in either without touching the
+           running program: --style schematic is what goes in a report. */
+        else if (!strcmp(argv[i], "--style") && i + 1 < argc) {
+            const char *want = argv[++i];
+            if (!_stricmp(want, "schematic") || !_stricmp(want, "print") || !_stricmp(want, "bw"))
+                g_draw_style = STYLE_SCHEMATIC;
+            else if (!_stricmp(want, "synthwave") || !_stricmp(want, "colour") || !_stricmp(want, "color"))
+                g_draw_style = STYLE_SYNTHWAVE;
+            else fprintf(stderr, "--style takes 'schematic' or 'synthwave', not '%s'\n", want);
+        }
+        /* What --shot and --record photograph. The window by default, because that is what the
+           GUI audits point them at; canvas and canvas+scope are the same two shapes the toolbar
+           offers, so a scripted shot and a pressed button can produce the same picture. */
+        else if (!strcmp(argv[i], "--shot-region") && i + 1 < argc) {
+            const char *want = argv[++i];
+            if (!_stricmp(want, "canvas"))                                     cli_shot_region = SHOT_CANVAS;
+            else if (!_stricmp(want, "canvas+scope") || !_stricmp(want, "scope")) cli_shot_region = SHOT_CANVAS_SCOPE;
+            else if (!_stricmp(want, "window") || !_stricmp(want, "full"))     cli_shot_region = SHOT_WINDOW;
+            else fprintf(stderr, "--shot-region takes 'canvas', 'canvas+scope' or 'window', not '%s'\n", want);
+        }
         else if (!strcmp(argv[i], "--line-weight") && i + 1 < argc) {
             g_render_line_weight = (float)atof(argv[++i]);
             if (g_render_line_weight < 0.5f) g_render_line_weight = 0.5f;
@@ -1687,6 +1972,8 @@ int main(int argc, char *argv[]) {
         }
         else if (!strcmp(argv[i], "--layout-test")) return layout_test();
         else if (!strcmp(argv[i], "--symbol-test")) return symbol_test();
+        else if (!strcmp(argv[i], "--style-test")) return style_test();
+        else if (!strcmp(argv[i], "--shot-test")) return shot_test();
         else if (!strcmp(argv[i], "--autoset-test")) return autoset_test();
         else if (!strcmp(argv[i], "--place-test")) return place_test();
         else if (!strcmp(argv[i], "--trig-test")) return trig_test();
@@ -1806,6 +2093,7 @@ int main(int argc, char *argv[]) {
     if (cli_state) { strncpy(app.cli_state_path, cli_state, sizeof app.cli_state_path - 1); }
     if (cli_record) { strncpy(app.cli_record_dir, cli_record, sizeof app.cli_record_dir - 1); app.cli_record_frames = cli_rec_n; app.cli_record_every = cli_rec_every; }
     app.cli_shot_frame = cli_frame;
+    app.cli_shot_region = cli_shot_region;
     if (cli_keys) { strncpy(app.cli_keys, cli_keys, sizeof app.cli_keys - 1); app.cli_keys_frame = cli_keys_frame; app.cli_keys_every = cli_keys_every; }
     for (int i = 0; i < cli_mouse_n; i++) {
         app.cli_mouse[i].x = cli_mouse[i].x; app.cli_mouse[i].y = cli_mouse[i].y;

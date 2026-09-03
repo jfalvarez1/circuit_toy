@@ -728,6 +728,7 @@
                     <a href="#templates">12. Circuit Templates</a>
                     <a href="#text-circuits">12b. Text, Code and Blocks</a>
                     <a href="#batteries">12c. Batteries</a>
+                    <a href="#schematic-view">12d. Schematic View</a>
                 </div>
                 <div>
                     <div class="toc-section">Analysis Tools</div>
@@ -2254,6 +2255,35 @@ LiFePO4         3.65 V per cell
 Lead-acid       2.40 V per cell absorption, 2.25 V float
 NiMH / NiCd     1.45 V per cell</pre>
             <p>Charge a LiFePO4 to 4.2 V a cell and it is damaged; charge a Li-ion to 3.65 and it is never full. <strong>Charging by Chemistry</strong> shows three of them side by side, and <strong>Lead-Acid: Bulk, Absorption, Float</strong> shows what each of the three stages does — 2.69 A into a flat pack, 1.78 A tapering, 0.76 A holding.</p>
+        </section>
+
+        <!-- 12d. Schematic view and screenshots -->
+        <section id="schematic-view" class="section">
+            <h2>12d. Schematic View and Screenshots</h2>
+            <p>The synthwave look is the program's own. A circuit you are putting in a report, a lab write-up or a printout is a <strong>document</strong>, and a document is black on white — it photocopies, it prints on a laser printer, it survives being pasted into a Word file, and nobody has to explain why the wires are cyan.</p>
+
+            <h3>BW: the schematic view</h3>
+            <p>The <strong>BW</strong> button on the toolbar redraws the canvas as a printed schematic. The grid becomes faint ruling you can align to and read straight through; wires, symbols, values and annotations become ink; and the probes stop being pictures of plastic probes and become what a schematic actually draws — a test point on the net, a leader, and the channel name on an open terminal.</p>
+            <p>The toolbar, the parts palette and the properties panel keep their own colours. They are the program, not the drawing.</p>
+            <p>The scope's screen follows the canvas, because a schematic with a neon-green plot glued underneath it is not something anyone would print. Its channels become separated greys rather than all going black, so you can still tell the input trace from the output one.</p>
+
+            <h3>Scr: what a screenshot is of</h3>
+            <p>The button next to <strong>BW</strong> cycles what <kbd>F12</kbd> and <strong>Scr</strong> capture:</p>
+            <table class="shortcut-table">
+                <thead><tr><th>Setting</th><th>What you get</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>Canvas</strong></td><td>the drawing on its own, margined — the default, and what you paste into a report</td></tr>
+                    <tr><td><strong>Cnv+Sc</strong></td><td>the drawing with the scope stacked under it: what the circuit is, and what it did</td></tr>
+                    <tr><td><strong>Window</strong></td><td>the whole program, for a bug report or a tutorial</td></tr>
+                </tbody>
+            </table>
+            <p>Whichever style is on screen is the style that lands in the file — the image is cropped out of the frame you are looking at, so the two cannot disagree.</p>
+
+            <h3>From the command line</h3>
+            <p>Both are scriptable, so a figure can be regenerated without touching the running window:</p>
+            <pre>circuit-playground --template "RC Low Pass" --style schematic \
+                   --shot-region canvas+scope --shot figure1.bmp --exit</pre>
+            <p><code>--style</code> takes <code>schematic</code> (or <code>print</code>, <code>bw</code>) and <code>synthwave</code> (or <code>colour</code>). <code>--shot-region</code> takes <code>canvas</code>, <code>canvas+scope</code> or <code>window</code>, and defaults to the whole window so that existing scripts keep working.</p>
         </section>
 
         <!-- 13. Oscilloscope -->

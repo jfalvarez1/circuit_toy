@@ -37,6 +37,11 @@ typedef struct {
     // Command-line automation (screenshots / GIF frames without touching the user's window)
     char cli_shot_path[260];     // --shot FILE.bmp  : save the window at frame cli_shot_frame
     int  cli_shot_frame;
+    /* --shot-region. The whole window unless asked otherwise, which is the opposite of the
+       toolbar's default and deliberately so: the GUI audits point --shot at the program and
+       measure its toolbar and palette, while a person pressing the button is photographing the
+       circuit. Each default is what its own caller wants; --shot-region overrides this one. */
+    int  cli_shot_region;
     char cli_record_dir[260];    // --record DIR N EVERY : save N frames, one every EVERY frames
     int  cli_record_frames, cli_record_every, cli_recorded;
     bool cli_exit;               // --exit : quit once the shot / recording is done
@@ -102,6 +107,13 @@ bool app_pick_file(char *out, size_t out_size, const char *title, const char *fi
 void app_update_check(App *app);
 // Save the current window contents as a BMP (used by --shot / --record)
 bool app_save_window_bmp(App *app, const char *path);
+
+/* ShotRegion lives in ui.h, because the toolbar button that cycles it is laid out there. */
+const char *app_shot_region_name(int region);
+
+/* Save a screenshot of `region`. Reads the window that has just been presented, so whatever
+   style the canvas was drawn in is the style that lands in the file. */
+bool app_save_shot(App *app, const char *path, int region);
 // Pop the oscilloscope into its own window (or dock it again). Used by the PopOut button and
 // by --popout, so a scripted screenshot gets the same window a user gets.
 void app_scope_popout(App *app, bool on);

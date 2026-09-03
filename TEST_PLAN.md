@@ -918,6 +918,59 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.43 v3.28.0 - the drawing is a document, and a screenshot is of the drawing (2026-09-03)
+
+There was one look and one screenshot. The look was synthwave, which is the right look for the
+program and the wrong one for a filter you are pasting into a report; the screenshot was the
+whole window, so what came out was a picture of the program with a circuit somewhere inside it.
+
+**Schematic view** is the same drawing in black on white - a printed document rather than a
+screenshot of software - and **screenshots now have a shape**: the canvas, the canvas with the
+scope under it, or the whole window.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.43.1 | `[ ]` Click **BW** on the toolbar | the canvas turns to black on white; the toolbar, palette and properties panel keep their own colours |
+| 3.43.2 | `[ ]` In schematic, read the grid | a faint ruling you can align to and see straight through, never as heavy as a wire |
+| 3.43.3 | `[ ]` In schematic, look at a probe | a test point, a leader and an open terminal - not a drawing of a plastic probe |
+| 3.43.4 | `[ ]` In schematic, read the scope | white screen, light graticule, black and grey traces, and every number on the voltage axis still there |
+| 3.43.5 | `[ ]` Two channels in schematic | the traces are different greys; you can still tell the input from the output |
+| 3.43.6 | `[ ]` Click **Canvas** | it cycles Canvas -> Cnv+Sc -> Window and back, and the status bar says which |
+| 3.43.7 | `[ ]` **Scr** with each of the three | canvas only; canvas with the scope stacked under it; the whole window. All three in whichever style is on screen |
+| 3.43.8 | `[ ]` Zoom in on a node dot | a smooth disc, not a staircase - `render_fill_circle` is an antialiased fan |
+| 3.43.9 | `[ ]` Look at a probe in synthwave | a slim barrel with a needle, and you can see the node it is pointing at |
+| 3.43.10 | `[ ]` `--style schematic --shot-region canvas+scope --shot out.bmp` | the same page without touching the running window |
+| 3.43.11 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 69 suites, 0 failed |
+
+**The style is a property of the document, not of the program.** The first version mapped every
+colour in the window and turned the toolbar into a row of empty white boxes: the button faces and
+their labels both landed on the same side of the ramp. The mapping is now armed over the canvas
+and over the scope's screen, and disarmed for everything else - which is the same region a
+canvas-only screenshot crops, so the two features agree by construction rather than by anyone
+remembering to keep them in step. `tools/style_wiring.py` fails the battery if an arm is ever
+left without its disarm.
+
+**Three faults, and all three were the shape of the map rather than any one colour.**
+
+- *Paper and ink is not enough.* `COLOR_BG` is luma 27 and `COLOR_GRID` is 45 - eighteen apart -
+  so a two-way split had to put the ruling on one side or the other, and either way it came out
+  as heavy as the wires. There are three roles on a page, not two: paper, ruling, ink.
+- *The window is cleared before the style is armed*, so the canvas kept its violet background
+  under a schematic grid: a white grid on deep violet, the one combination where the circuit is
+  invisible. The canvas is now repainted as paper inside the armed region.
+- *The map is not idempotent and cannot be* - it sends dark to light - and `ui_draw_text` reads
+  the current colour back and sets it again on the way to the glyph atlas. Every label on the
+  scope was mapped to ink and then straight back to paper: an axis with no numbers on it. Only
+  the immediate read-then-set round trip is now treated as a restore, because the wide fix -
+  always handing back the pre-map colour - breaks the antialiased quads in `render.c`, which read
+  the draw colour to fill their vertices and draw with it directly.
+
+**`--style-test` asserts the shape, not the answers.** Palette colours are declared as paper,
+ruling or ink and checked against their band; the bands are checked for separation; the map is
+checked to be monotone over all 256 luma values; and the read-back-and-set-again round trip is
+checked to be an identity on both the draw-colour and the texture-tint paths. It found the
+channel inks two apart from their neighbours before anyone looked at a plot.
+
 ### 3.42 v3.27.0 - a battery is a chemistry, an arrangement and a C rating (2026-09-02)
 
 A battery was a nominal voltage, a capacity and an internal resistance typed in by hand, and its

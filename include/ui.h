@@ -8,6 +8,15 @@
 #include <SDL.h>
 #include "types.h"
 
+/* What a screenshot is of. Set by the toolbar's region button, read by F12 and by app_save_shot,
+   and settable from the command line with --shot-region so the audits can look at each shape. */
+typedef enum {
+    SHOT_CANVAS = 0,     /* the drawing on its own - the default, and what you paste in a report */
+    SHOT_CANVAS_SCOPE,   /* the drawing with the scope under it: what it is, and what it did */
+    SHOT_WINDOW,         /* the whole program, for a bug report or a tutorial */
+    SHOT_REGION_COUNT
+} ShotRegion;
+
 #define PALETTE_TOP_H 54        // tab strip (30) + filter box (24) above the scrolling palette
 #define PAL_HEADER_H 21         // a palette section header row: drawn, laid out and hit-tested from here
 #include "circuit.h"
@@ -201,6 +210,18 @@ typedef struct {
     Button btn_zoom_fit;
     Button btn_import_spice;         // vendor models, from the toolbar rather than the command line
     Button btn_paste_netlist;        // a written-down circuit, straight off the clipboard
+    Button btn_style;                // synthwave <-> schematic, for the canvas
+    Button btn_shot_region;          // what F12 captures: canvas / canvas + scope / window
+
+    /* What a screenshot is OF. See ShotRegion in app.h.
+     *
+     * The default is the canvas, because that is what a screenshot of a circuit is for: the
+     * drawing, not the program that drew it. The toolbar, the palette and the properties panel
+     * are furniture, and nobody pasting a filter into a report wants a picture of them. The
+     * scope is the one part of the program that is genuinely part of the answer - what the
+     * circuit DID, next to what it is - so it gets its own setting rather than being bundled
+     * into "the whole window" or lost with it. */
+    int shot_region;
 
     // Speed slider
     Rect speed_slider;
@@ -624,6 +645,8 @@ int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode);
 #define UI_ACTION_ZOOM_FIT      49
 #define UI_ACTION_DEFER_UPDATE  50   // Esc during the auto-update countdown: leave it to the button
 #define UI_ACTION_PASTE_NETLIST 55   // Toolbar Paste: build a circuit from the clipboard
+#define UI_ACTION_STYLE_TOGGLE  56   // Toolbar BW/Neon: draw the canvas as a printed schematic
+#define UI_ACTION_SHOT_REGION   57   // Toolbar Shot: cycle canvas / canvas+scope / window
 #define UI_ACTION_IMPORT_SPICE  51   // Toolbar SPICE: pick a .cir / .lib and import its .SUBCKTs   // Toolbar Fit: frame everything that is placed
 #define UI_ACTION_SELECT_TOOL   100  // + tool index
 #define UI_ACTION_SELECT_COMP   200  // + component type (supports up to 300 component types)

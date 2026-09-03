@@ -50,6 +50,8 @@ static Component *app_find_mcu(App *app) {
 #include "file_io.h"
 #include "circuits.h"
 #include "analysis.h"
+/* Last, because it redefines the two SDL colour calls everything draws through. */
+#include "style.h"
 
 // Global wireless state for antenna TX/RX pairs
 WirelessState g_wireless = {0};
@@ -476,35 +478,36 @@ void app_handle_events(App *app) {
                         t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
                         t->tm_hour, t->tm_min, t->tm_sec);
 
-                    // Get window size
-                    int w, h;
-                    SDL_GetRendererOutputSize(app->renderer, &w, &h);
-
-                    // Create surface to hold screenshot
-                    SDL_Surface *surface = SDL_CreateRGBSurface(0, w, h, 32,
-                        0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
-
-                    if (surface) {
-                        // Read pixels from renderer
-                        if (SDL_RenderReadPixels(app->renderer, NULL, SDL_PIXELFORMAT_ARGB8888,
-                                                 surface->pixels, surface->pitch) == 0) {
-                            // Save to BMP
-                            if (SDL_SaveBMP(surface, filename) == 0) {
-                                printf("Screenshot saved: %s\n", filename);
-                                ui_set_status(&app->ui, "Screenshot saved!");
-                            } else {
-                                printf("Failed to save BMP: %s\n", SDL_GetError());
-                                ui_set_status(&app->ui, "Screenshot failed!");
-                            }
-                        } else {
-                            printf("Failed to read pixels: %s\n", SDL_GetError());
-                            ui_set_status(&app->ui, "Screenshot failed!");
-                        }
-                        SDL_FreeSurface(surface);
+                    /* What gets saved is what the Shot button says, drawn in whatever style the
+                       canvas is in - the file and the screen cannot disagree, because the file is
+                       cropped out of the frame that is on the screen. */
+                    if (app_save_shot(app, filename, app->ui.shot_region)) {
+                        char msg[128];
+                        snprintf(msg, sizeof msg, "Saved %s of %s",
+                                 app_shot_region_name(app->ui.shot_region),
+                                 style_name(g_draw_style));
+                        printf("Screenshot saved: %s (%s, %s)\n", filename,
+                               app_shot_region_name(app->ui.shot_region), style_name(g_draw_style));
+                        ui_set_status(&app->ui, msg);
                     } else {
-                        printf("Failed to create surface: %s\n", SDL_GetError());
+                        printf("Failed to save screenshot: %s\n", SDL_GetError());
                         ui_set_status(&app->ui, "Screenshot failed!");
                     }
+                }
+                break;
+            case UI_ACTION_STYLE_TOGGLE:
+                g_draw_style = (g_draw_style == STYLE_SCHEMATIC) ? STYLE_SYNTHWAVE : STYLE_SCHEMATIC;
+                ui_set_status(&app->ui, g_draw_style == STYLE_SCHEMATIC
+                              ? "Schematic view: black on white, for printing and sharing"
+                              : "Synthwave view");
+                break;
+            case UI_ACTION_SHOT_REGION:
+                app->ui.shot_region = (app->ui.shot_region + 1) % SHOT_REGION_COUNT;
+                {
+                    char msg[96];
+                    snprintf(msg, sizeof msg, "Screenshots capture: %s",
+                             app_shot_region_name(app->ui.shot_region));
+                    ui_set_status(&app->ui, msg);
                 }
                 break;
             case UI_ACTION_SCOPE_VOLT_UP:
@@ -2542,6 +2545,115 @@ bool app_save_window_bmp(App *app, const char *path) {
     return ok;
 }
 
+const char *app_shot_region_name(int region) {
+    switch (region) {
+        case SHOT_CANVAS_SCOPE: return "canvas+scope";
+        case SHOT_WINDOW:       return "window";
+        default:                return "canvas";
+    }
+}
+
+static SDL_Rect shot_clamp(SDL_Rect r, int w, int h) {
+    if (r.x < 0) { r.w += r.x; r.x = 0; }
+    if (r.y < 0) { r.h += r.y; r.y = 0; }
+    if (r.x + r.w > w) r.w = w - r.x;
+    if (r.y + r.h > h) r.h = h - r.y;
+    if (r.w < 1) r.w = 1;
+    if (r.h < 1) r.h = 1;
+    return r;
+}
+
+/* A screenshot of a circuit is a screenshot of the CIRCUIT.
+ *
+ * Saving the whole window was the only option, and it puts a toolbar, a parts palette and a
+ * properties panel around a drawing that nobody wanted them around - the program photographed
+ * along with its own output. So the default is the canvas, cropped to exactly the region the
+ * schematic style is armed over, which is why the two features cannot drift apart: the same
+ * rectangle decides what gets drawn as a document and what gets saved as one.
+ *
+ * The scope is the exception worth having, and it is a choice rather than a default. What the
+ * circuit DID belongs next to what the circuit IS when you are explaining a filter to somebody,
+ * and is noise when you are illustrating a schematic. So it stacks under the drawing when asked
+ * for, and is simply absent when not.
+ *
+ * The pixels come from the window that was just presented, so the file is in whatever style the
+ * canvas was drawn in - no second render, and no way for the saved image to disagree with what
+ * was on screen when the button was pressed. */
+bool app_save_shot(App *app, const char *path, int region) {
+    if (!app || !path) return false;
+    if (region < 0 || region >= SHOT_REGION_COUNT) region = SHOT_CANVAS;
+    if (region == SHOT_WINDOW) return app_save_window_bmp(app, path);
+
+    int out_w = 0, out_h = 0;
+    SDL_GetRendererOutputSize(app->renderer, &out_w, &out_h);
+    if (out_w <= 0 || out_h <= 0 || app->ui.window_width <= 0) return false;
+
+    /* The layout is written in logical pixels and the renderer may be handing back more device
+       pixels per logical one. Measure the factor off the window rather than assuming it: on a
+       HiDPI display an assumed 1.0 crops the top-left quarter of the canvas. */
+    float s = (float)out_w / (float)app->ui.window_width;
+
+    SDL_Rect canvas = { CANVAS_X, CANVAS_Y,
+                        app->ui.window_width - PALETTE_WIDTH - app->ui.properties_width,
+                        app->ui.window_height - TOOLBAR_HEIGHT - STATUSBAR_HEIGHT };
+    /* The graticule and the line above it, which carries the time base. A trace with no time
+       base under it is a squiggle.
+     *
+     * Deliberately a little smaller than the paper ui_render_oscilloscope lays down under it.
+     * The V+/T- row starts five pixels below the graticule and the panel's divider runs down the
+     * right of it, and both are drawn after the scope, in the program's own colours: crop out to
+     * the edge of the paper and a printed plot comes out with a cyan hairline down one side. */
+    SDL_Rect scope = { app->ui.scope_rect.x - 3, app->ui.scope_rect.y - 20,
+                       app->ui.scope_rect.w + 6, app->ui.scope_rect.h + 23 };
+
+    /* A popped-out scope is a different window and is not in these pixels at all; asking for it
+       here would crop whatever the properties panel happens to be showing instead. */
+    bool with_scope = (region == SHOT_CANVAS_SCOPE) && !app->ui.scope_popped_out;
+
+    SDL_Rect src_c = shot_clamp((SDL_Rect){(int)(canvas.x * s), (int)(canvas.y * s),
+                                           (int)(canvas.w * s), (int)(canvas.h * s)}, out_w, out_h);
+    SDL_Rect src_s = shot_clamp((SDL_Rect){(int)(scope.x * s), (int)(scope.y * s),
+                                           (int)(scope.w * s), (int)(scope.h * s)}, out_w, out_h);
+
+    int pad = (int)(12 * s);
+    if (pad < 4) pad = 4;
+    int w = src_c.w, h = src_c.h;
+    if (with_scope) {
+        if (src_s.w > w) w = src_s.w;
+        h += pad + src_s.h;
+    }
+    w += 2 * pad;
+    h += 2 * pad;
+
+    /* The margin is the paper the crop is mounted on, so it has to be the same paper. */
+    uint8_t br = COLOR_BG.r, bg = COLOR_BG.g, bb = COLOR_BG.b;
+    if (g_draw_style == STYLE_SCHEMATIC) br = bg = bb = 255;
+
+    SDL_Surface *full = SDL_CreateRGBSurfaceWithFormat(0, out_w, out_h, 32, SDL_PIXELFORMAT_ARGB8888);
+    if (!full) return false;
+    SDL_Surface *out = NULL;
+    bool ok = SDL_RenderReadPixels(app->renderer, NULL, SDL_PIXELFORMAT_ARGB8888,
+                                   full->pixels, full->pitch) == 0;
+    if (ok) {
+        SDL_SetSurfaceBlendMode(full, SDL_BLENDMODE_NONE);
+        out = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
+        ok = out != NULL;
+    }
+    if (ok) {
+        SDL_FillRect(out, NULL, SDL_MapRGBA(out->format, br, bg, bb, 255));
+        SDL_Rect dst = { pad, pad, src_c.w, src_c.h };
+        ok = SDL_BlitSurface(full, &src_c, out, &dst) == 0;
+        if (ok && with_scope) {
+            SDL_Rect dsc = { pad, pad + src_c.h + pad, src_s.w, src_s.h };
+            ok = SDL_BlitSurface(full, &src_s, out, &dsc) == 0;
+        }
+        if (ok) ok = SDL_SaveBMP(out, path) == 0;
+    }
+    if (out) SDL_FreeSurface(out);
+    SDL_FreeSurface(full);
+    return ok;
+}
+
 void app_scope_popout(App *app, bool on) {
     if (!app) return;
     if (!on) {
@@ -2671,7 +2783,7 @@ static void app_cli_capture(App *app) {
     if (app->cli_shot_path[0]) {
         if (app->cli_frame == app->cli_shot_frame) {
             if (app->cli_state_path[0]) app_write_state(app, app->cli_state_path);
-            if (app_save_window_bmp(app, app->cli_shot_path)) printf("Saved %s\n", app->cli_shot_path);
+            if (app_save_shot(app, app->cli_shot_path, app->cli_shot_region)) printf("Saved %s\n", app->cli_shot_path);
             else fprintf(stderr, "Screenshot failed: %s\n", SDL_GetError());
             if (app->ui.scope_popped_out && app->ui.scope_popup_renderer) {
                 char scope_path[352];
@@ -2687,7 +2799,7 @@ static void app_cli_capture(App *app) {
         if (app->cli_frame >= app->cli_shot_frame && (app->cli_frame - app->cli_shot_frame) % (app->cli_record_every > 0 ? app->cli_record_every : 1) == 0) {
             char path[320];
             snprintf(path, sizeof path, "%s/frame_%03d.bmp", app->cli_record_dir, app->cli_recorded);
-            if (app_save_window_bmp(app, path)) app->cli_recorded++;
+            if (app_save_shot(app, path, app->cli_shot_region)) app->cli_recorded++;
         }
         if (app->cli_recorded < app->cli_record_frames) done = false;
     }
@@ -2714,6 +2826,19 @@ void app_render(App *app) {
     // Render canvas area (circuit)
     SDL_Rect canvas_clip = {CANVAS_X, CANVAS_Y, canvas_w, canvas_h};
     SDL_RenderSetClipRect(r, &canvas_clip);
+    /* The schematic style covers the drawing and stops at the edge of it. */
+    g_style_in_canvas = 1;
+
+    /* Repaint the canvas as paper.
+     *
+     * The window is cleared above, before the style is armed - it has to be, because the program
+     * around the drawing keeps its own colours. So without this the canvas still carries the
+     * synthwave background, and a schematic grid gets drawn on top of it: a white grid on deep
+     * violet, which is the one combination where you cannot see the circuit at all. Painting the
+     * same background colour a second time, this time through the mapping, costs one filled rect
+     * and is invisible in synthwave. */
+    SDL_SetRenderDrawColor(r, COLOR_BG.r, COLOR_BG.g, COLOR_BG.b, 255);
+    SDL_RenderFillRect(r, &canvas_clip);
 
     // Set render offset to canvas position
     app->render->canvas_rect = (Rect){CANVAS_X, CANVAS_Y, canvas_w, canvas_h};
@@ -2796,6 +2921,7 @@ void app_render(App *app) {
                             app->input.box_end_x, app->input.box_end_y);
     }
 
+    g_style_in_canvas = 0;          /* ...and the program around it is drawn as itself */
     SDL_RenderSetClipRect(r, NULL);
 
     // Render UI elements

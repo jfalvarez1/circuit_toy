@@ -8,6 +8,8 @@
 #include <math.h>
 #include "render.h"
 #include "label.h"
+/* Last, because it redefines the two SDL colour calls everything draws through. */
+#include "style.h"
 
 // Forward declarations for new component symbols
 void render_fuse(RenderContext *ctx, float x, float y, int rotation, bool blown, double heat_level);
@@ -609,14 +611,69 @@ void render_draw_circle(RenderContext *ctx, float cx, float cy, float r) {
 }
 
 void render_fill_circle(RenderContext *ctx, float cx, float cy, float r) {
-    int sx, sy;
-    render_world_to_screen(ctx, cx, cy, &sx, &sy);
-    int sr = (int)(r * ctx->zoom);
+    if (!ctx || !ctx->renderer) return;
+    /* A fan with a faded rim, not a stack of scanlines.
 
-    for (int dy = -sr; dy <= sr; dy++) {
-        int dx = (int)sqrt(sr*sr - dy*dy);
-        render_line_dev(ctx, sx - dx, sy + dy, sx + dx, sy + dy);
+       The old one laid one horizontal span per integer row, from an integer centre, with an
+       integer radius, which is three faults in four lines: the rim is a staircase because a row
+       is either covered or not; the dot moves in whole pixels as the view is panned, because its
+       centre was rounded before it was drawn; and it pops between sizes because the radius was
+       truncated. Node dots, current-flow dots and smoke particles are all these, so they stayed
+       visibly blocky while the wires running through them were smooth.
+
+       The rim fades over one device pixel however the world is scaled - the same coverage ramp
+       render_line_dev uses, and the same reason: no amount of supersampling smooths a hard
+       edge as well as giving the rasteriser real partial coverage does. */
+    float sx, sy;
+    render_world_to_screen_f(ctx, cx, cy, &sx, &sy);
+    float sr = r * ctx->zoom;
+
+    float us = (ctx->ui_scale > 0.0f) ? ctx->ui_scale : 1.0f;
+    float S = us * (ctx->ss > 1 ? (float)ctx->ss : 1.0f);
+    if (S < 1.0f) S = 1.0f;
+    float f = 1.0f / S;                                   /* one device pixel, in logical units */
+    if (sr < f * 0.5f) sr = f * 0.5f;                     /* never smaller than the feather */
+
+    /* One segment per couple of device pixels of circumference, so a big disc has no corners
+       and a small one costs nothing. */
+    int seg = (int)(sr * S * 1.6f);
+    if (seg < 12) seg = 12;
+    if (seg > 128) seg = 128;
+
+    float r_in = sr - f * 0.5f;
+    if (r_in < 0.0f) r_in = 0.0f;
+    float r_out = sr + f * 0.5f;
+
+    Uint8 cr, cg, cb, ca;
+    SDL_GetRenderDrawColor(ctx->renderer, &cr, &cg, &cb, &ca);
+    SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
+    SDL_Color solid = { cr, cg, cb, ca };
+    SDL_Color clear = { cr, cg, cb, 0 };
+
+    enum { MAX_SEG = 128 };
+    SDL_Vertex v[1 + 2 * MAX_SEG];
+    int idx[MAX_SEG * 9];
+    int nv = 0, ni = 0;
+
+    v[nv].position.x = sx; v[nv].position.y = sy;
+    v[nv].color = solid; v[nv].tex_coord.x = v[nv].tex_coord.y = 0;
+    nv++;
+    for (int i = 0; i < seg; i++) {
+        float a = (float)i * 2.0f * (float)M_PI / (float)seg;
+        float ca_ = cosf(a), sa = sinf(a);
+        v[nv].position.x = sx + r_in * ca_; v[nv].position.y = sy + r_in * sa;
+        v[nv].color = solid; v[nv].tex_coord.x = v[nv].tex_coord.y = 0; nv++;
+        v[nv].position.x = sx + r_out * ca_; v[nv].position.y = sy + r_out * sa;
+        v[nv].color = clear; v[nv].tex_coord.x = v[nv].tex_coord.y = 0; nv++;
     }
+    for (int i = 0; i < seg; i++) {
+        int a0 = 1 + i * 2, b0 = a0 + 1;                  /* inner, outer at this angle */
+        int a1 = 1 + ((i + 1) % seg) * 2, b1 = a1 + 1;    /* ...and at the next */
+        idx[ni++] = 0;  idx[ni++] = a0; idx[ni++] = a1;   /* the solid core */
+        idx[ni++] = a0; idx[ni++] = b0; idx[ni++] = b1;   /* the faded rim */
+        idx[ni++] = a0; idx[ni++] = b1; idx[ni++] = a1;
+    }
+    SDL_RenderGeometry(ctx->renderer, NULL, v, nv, idx, ni);
 }
 
 void render_draw_line_screen(RenderContext *ctx, int x1, int y1, int x2, int y2) {
@@ -984,6 +1041,16 @@ static void render_package_pins(RenderContext *ctx, float wx, float wy,
 /* How many components have been drawn with no symbol of their own since the counter was last
    read. --symbol-test asserts this stays zero across every placeable type. */
 int g_render_missing_symbol = 0;
+
+/* Which of the two looks everything is drawn in. See include/style.h. */
+int g_draw_style = STYLE_SYNTHWAVE;
+int g_style_in_canvas = 0;
+uint8_t g_style_mapped_rgb[3] = { 255, 255, 255 };
+int g_style_readback = 0;
+
+const char *style_name(int style) {
+    return (style == STYLE_SCHEMATIC) ? "schematic" : "synthwave";
+}
 
 /* Supersample factor new contexts are built with. 2 unless --ss says otherwise. */
 int g_render_supersample = 2;
@@ -2029,50 +2096,72 @@ void render_probe(RenderContext *ctx, Circuit *circuit, Probe *probe, int index)
         }
     }
 
-    // Draw probe cable (wire going off to the side)
-    render_set_color(ctx, (Color){0x40, 0x40, 0x40, 0xff});
-    render_draw_line(ctx, tip_x + handle_dx - 5, tip_y + handle_dy - 5,
-                     tip_x + handle_dx - 25, tip_y + handle_dy - 15);
-    render_draw_line(ctx, tip_x + handle_dx - 25, tip_y + handle_dy - 15,
-                     tip_x + handle_dx - 35, tip_y + handle_dy - 10);
+    /* A schematic does not draw the instrument.
+     *
+     * The probe below is a picture of a piece of test gear: a moulded grip, a cable, a silver
+     * tip, a yellow contact bead. That is exactly right in colour, where the grip is the channel
+     * colour and reads at a glance. Drained to one ink it is four filled circles and five
+     * parallel lines stacked in the same place, which comes out as a black lump sitting on top of
+     * the very label it is meant to be naming.
+     *
+     * What a schematic draws instead is the measurement, not the thing measuring: a test point on
+     * the net, a leader out to clear space, and an open terminal on the end for the channel name
+     * to hang off. Same geometry, same anchor points, so the labels below - which are placed by
+     * label.c against everything else on the canvas - land in exactly the same place either way. */
+    if (g_draw_style == STYLE_SCHEMATIC && g_style_in_canvas) {
+        float end_x = tip_x + handle_dx;
+        float end_y = tip_y + handle_dy;
+        render_set_color(ctx, COLOR_TEXT);          /* ink, whatever the channel colour is */
+        render_fill_circle(ctx, tip_x, tip_y, 2.5f);
+        render_draw_line(ctx, tip_x, tip_y, end_x, end_y);
+        render_draw_circle(ctx, end_x, end_y, 4.0f);
+    } else {
+        /* A slim pen, not a lollipop.
+         *
+         * The old probe was three overlapping filled discs of radius 5 and 6 with a five-stroke
+         * handle drawn through them and a white ring around the lot - about fourteen units
+         * across, wider than the resistor it usually sits next to, and it read as a blob with a
+         * wire coming out of it. It also hid whatever it was pointing at, which is the one thing
+         * a probe must not do.
+         *
+         * This is the same probe drawn the way a real one looks: a thin barrel along the handle
+         * axis, a collar at each end of it, a needle tapering to the contact point, and a short
+         * cable tail. Everything is measured along the handle direction rather than in x and y,
+         * so the shape stays a probe instead of a diagonal smear. */
+        float ux = handle_dx, uy = handle_dy;
+        float ul = (float)sqrt(ux*ux + uy*uy);
+        if (ul < 1.0f) ul = 1.0f;
+        ux /= ul; uy /= ul;                 /* tip -> handle */
+        float px = -uy, py = ux;            /* across the barrel */
 
-    // Draw probe body/handle (elongated shape)
-    render_set_color(ctx, probe->color);
+        /* The barrel stops short of the tip; the gap is the needle. */
+        float b0x = tip_x + ux * 10.0f, b0y = tip_y + uy * 10.0f;
+        float b1x = tip_x + handle_dx,  b1y = tip_y + handle_dy;
 
-    // Main handle body - thick line from tip toward handle
-    for (int i = -2; i <= 2; i++) {
-        render_draw_line(ctx, tip_x + 4 + i*0.5f, tip_y + 4 + i*0.5f,
-                        tip_x + handle_dx + i, tip_y + handle_dy + i);
+        // Cable: a short tail leaving the cap and bending away
+        render_set_color(ctx, (Color){0x56, 0x56, 0x70, 0xff});
+        render_draw_line(ctx, b1x, b1y, b1x + ux * 7 - px * 7, b1y + uy * 7 - py * 7);
+        render_draw_line(ctx, b1x + ux * 7 - px * 7, b1y + uy * 7 - py * 7,
+                              b1x + ux * 8 - px * 18, b1y + uy * 8 - py * 18);
+
+        // Barrel: three thin strokes wide, in the channel's colour
+        render_set_color(ctx, probe->color);
+        for (float o = -1.5f; o <= 1.5f; o += 0.75f)
+            render_draw_line(ctx, b0x + px*o, b0y + py*o, b1x + px*o, b1y + py*o);
+
+        // Collar at the business end, cap at the other
+        render_fill_circle(ctx, b0x, b0y, 2.6f);
+        render_fill_circle(ctx, b1x, b1y, 2.4f);
+
+        // Needle: two lines tapering from the collar to the contact point
+        render_set_color(ctx, (Color){0xd8, 0xd8, 0xe4, 0xff});
+        render_draw_line(ctx, tip_x, tip_y, b0x + px * 1.5f, b0y + py * 1.5f);
+        render_draw_line(ctx, tip_x, tip_y, b0x - px * 1.5f, b0y - py * 1.5f);
+
+        // Contact point
+        render_set_color(ctx, (Color){0xff, 0xee, 0x70, 0xff});
+        render_fill_circle(ctx, tip_x, tip_y, 1.7f);
     }
-
-    // Handle grip area (wider section)
-    float grip_x = tip_x + handle_dx * 0.6f;
-    float grip_y = tip_y + handle_dy * 0.6f;
-    render_fill_circle(ctx, grip_x, grip_y, 6);
-    render_fill_circle(ctx, tip_x + handle_dx * 0.4f, tip_y + handle_dy * 0.4f, 5);
-    render_fill_circle(ctx, tip_x + handle_dx * 0.8f, tip_y + handle_dy * 0.8f, 5);
-
-    // Handle end cap
-    render_fill_circle(ctx, tip_x + handle_dx, tip_y + handle_dy, 4);
-
-    // Draw metallic probe tip (pointed)
-    render_set_color(ctx, (Color){0xcc, 0xcc, 0xcc, 0xff});  // Silver/metallic
-    // Tip triangle
-    render_draw_line(ctx, tip_x, tip_y, tip_x + 3, tip_y + 5);
-    render_draw_line(ctx, tip_x, tip_y, tip_x - 3, tip_y + 5);
-    render_draw_line(ctx, tip_x - 3, tip_y + 5, tip_x + 3, tip_y + 5);
-    // Tip shaft
-    render_draw_line(ctx, tip_x - 2, tip_y + 5, tip_x + 2, tip_y + 5);
-    render_draw_line(ctx, tip_x - 2, tip_y + 5, tip_x - 1, tip_y + 8);
-    render_draw_line(ctx, tip_x + 2, tip_y + 5, tip_x + 1, tip_y + 8);
-
-    // Contact point indicator (small bright dot at tip)
-    render_set_color(ctx, (Color){0xff, 0xff, 0x00, 0xff});  // Yellow contact point
-    render_fill_circle(ctx, tip_x, tip_y, 2);
-
-    // Draw outline around handle for visibility
-    render_set_color(ctx, COLOR_TEXT);
-    render_draw_circle(ctx, grip_x, grip_y, 7);
 
     /* Channel name and voltage, at whichever offsets around the probe are clear of the text
        already on the canvas. Both were pinned, which on 47 of 188 templates printed one of them
