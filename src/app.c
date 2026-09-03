@@ -2670,8 +2670,20 @@ void app_scope_popout(App *app, bool on) {
         1120, 700,                     /* screen plus the knob column, both usable at once */
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (!app->ui.scope_popup_window) { ui_set_status(&app->ui, "Failed to create popup window"); return; }
+    /* The same ladder the main window climbs, and for the same reason - see app_init. This had
+       one rung: accelerated with vsync, and if that failed the scope simply refused to pop out,
+       with a status message most people will not read. Anywhere the main window has to fall back
+       - a VM, remote desktop, a machine with no GPU driver - the second window would have needed
+       to as well, and did not. It shows up as a hard failure under SDL's dummy driver, which is
+       what CI runs on and is how this was found. */
     app->ui.scope_popup_renderer = SDL_CreateRenderer(app->ui.scope_popup_window, -1,
         SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if (!app->ui.scope_popup_renderer)
+        app->ui.scope_popup_renderer = SDL_CreateRenderer(app->ui.scope_popup_window, -1,
+            SDL_RENDERER_ACCELERATED);
+    if (!app->ui.scope_popup_renderer)
+        app->ui.scope_popup_renderer = SDL_CreateRenderer(app->ui.scope_popup_window, -1,
+            SDL_RENDERER_SOFTWARE);
     if (!app->ui.scope_popup_renderer) {
         SDL_DestroyWindow(app->ui.scope_popup_window);
         app->ui.scope_popup_window = NULL;

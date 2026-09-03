@@ -239,10 +239,14 @@ def c_state_out():
     return None
 
 
-def state_of(args, name):
-    """The app's own JSON summary after running with these arguments."""
+def state_of(args, name, frame=10):
+    """The app's own JSON summary after running with these arguments.
+
+    `frame` is when the snapshot is taken, and anything scripted has to happen BEFORE it - a
+    click at frame 20 read back from a state written at frame 10 reports the world as it was
+    before the click, which looks exactly like a click that did nothing."""
     sj = os.path.join(TMP, name)
-    app(args + ["--size", "800x600", "--frame", "10", "--state-out", sj,
+    app(args + ["--size", "800x600", "--frame", str(frame), "--state-out", sj,
                 "--exit", "--no-update-check"])
     if not os.path.exists(sj):
         return None
@@ -330,14 +334,53 @@ def c_keys():
 
 
 def c_click_drag():
-    a = shot(["--template", "RC Low Pass", "--ui-scale", "1", "--size", "900x700",
-              "--frame", "40"], "cd_base.bmp")
-    b = shot(["--template", "RC Low Pass", "--ui-scale", "1", "--size", "900x700",
-              "--drag", "400,300,520,360,20", "--frame", "40"], "cd_drag.bmp")
-    if not a or not b:
-        return "no screenshot"
-    if open(a, "rb").read() == open(b, "rb").read():
-        return "a drag across the canvas changed nothing"
+    """A click selects the part under it; a rubber band selects everything inside it.
+
+    This used to diff two screenshots, which is the weak form of the question and was flaky for a
+    good reason: a rubber band over empty canvas leaves nothing behind by the frame the shot is
+    taken, so the check was really asking "did anything at all differ" and got a different answer
+    depending on where the band happened to land. What a drag is FOR is selection, and the app
+    reports how many parts are selected."""
+    common = ["--template", "RC Low Pass", "--ui-scale", "1", "--size", "900x700"]
+    base = state_of(common, "cd_base.json", frame=60)
+    if base is None:
+        return "no state written"
+    parts = base.get("parts") or []
+    if not parts:
+        return "the template placed nothing to click on"
+
+    # --click, on a control whose effect is unambiguous: the app says where its buttons are.
+    pause = (base.get("buttons") or {}).get("pause")
+    if not pause:
+        return "the state does not say where the Pause button is"
+    px, py = pause[0], pause[1]          # the state gives a centre point, not a rectangle
+    clicked = state_of(common + ["--click", "%d,%d,20" % (px, py)], "cd_click.json", frame=60)
+    if clicked is None:
+        return "no state written for the click"
+    if clicked.get("sim_running") == base.get("sim_running"):
+        return "clicking Pause left the simulation %s" % (
+            "running" if base.get("sim_running") else "stopped")
+
+    # --drag: a rubber band selects everything inside it.
+    #
+    # Banded around the parts that are actually ON the canvas. The bounding box of all of them
+    # starts left of the palette edge, so a band drawn from there begins its drag on the palette
+    # and never rubber-bands anything - which reads as "drag does not work" and is really "the
+    # test started the drag in the wrong place".
+    CANVAS_L, CANVAS_T = 210, 80
+    inside = [p for p in parts if p["x"] >= CANVAS_L + 10 and p["y"] >= CANVAS_T + 10]
+    if len(inside) < 2:
+        return "only %d parts are clear of the panels; nothing to band" % len(inside)
+    xs = [p["x"] for p in inside]
+    ys = [p["y"] for p in inside]
+    dragged = state_of(common + ["--drag", "%d,%d,%d,%d,20" % (
+        max(min(xs) - 30, CANVAS_L), max(min(ys) - 30, CANVAS_T),
+        max(xs) + 30, max(ys) + 30)], "cd_drag.json", frame=60)
+    if dragged is None:
+        return "no state written for the drag"
+    if dragged.get("selected_count", 0) < 2:
+        return "a rubber band around %d parts selected %s of them" % (
+            len(inside), dragged.get("selected_count"))
     return None
 
 
@@ -481,6 +524,11 @@ def c_prop_gap():
         return "printed no summary"
     if int(m.group(1)) < 100:
         return "only %s types examined" % m.group(1)
+    # It reports a ratchet now, so its exit code means something. Reading only the summary line
+    # would repeat the mistake the ratchet exists to fix.
+    if p.returncode != 0:
+        tail = [l for l in (p.stdout or "").splitlines() if "FAIL" in l]
+        return tail[0].strip() if tail else "exit %d" % p.returncode
     return None
 
 

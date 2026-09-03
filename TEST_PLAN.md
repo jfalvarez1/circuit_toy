@@ -918,6 +918,48 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.46 v3.30.0 - the shortcuts the program promised and did not keep (2026-09-03)
+
+Three places tell a user which keys work - the F1 dialog, the guide's shortcut tables, and the
+buttons' own tooltips - and nothing tied any of them to the code. Seven shortcuts were advertised
+with **no handler anywhere**, and three more were advertised as doing something they do not.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.46.1 | `[ ]` Press **F5**, **F6**, **F10** | run, pause, single step - all three are on the buttons' tooltips and none of them existed |
+| 3.46.2 | `[ ]` Press **F12** | a screenshot, as the Scr button has always claimed |
+| 3.46.3 | `[ ]` Press **Ctrl+O** / **Ctrl+N** | load; clear. Both were in the guide and neither existed |
+| 3.46.4 | `[ ]` Press **.** | one step |
+| 3.46.5 | `[ ]` Press **R** | places a resistor. The F1 dialog said "rotate" - rotate is **Ctrl+R** |
+| 3.46.6 | `[ ]` Read the guide on **Ctrl+R** | rotate. It said "reset simulation" in two places |
+| 3.46.7 | `[ ]` Read the Reset button's tooltip | no key. It claimed **F4**, which is the screen-brightness key |
+| 3.46.8 | `[ ]` Pop the scope out on a VM or over remote desktop | it opens. It used to refuse |
+| 3.46.9 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 70 suites plus the source and GUI gates, 0 failed |
+
+**`tools/key_wiring.py` checks documented -> handled**, over all three places a promise is made.
+Only that direction: the reverse has legitimate exceptions, because Backspace in a text field and
+the arrows in a list are not shortcuts and listing them would be noise. Mutation-checked - remove
+the F5 or the Ctrl+O handler and it fails.
+
+**CI found what the local run could not.** `--popout` passed here and failed on all four CI jobs,
+because CI runs under SDL's dummy video driver: the popped-out scope asked for an accelerated
+renderer with vsync and, unlike the main window, had **no fallback at all**. The main window
+climbs accelerated+vsync -> accelerated -> software under a comment saying that refusing to start
+on a VM or a remote desktop is the worse answer; the second window never got that ladder, so
+anywhere the first one has to fall back, popping the scope out would simply decline with a status
+message nobody reads. It climbs the same ladder now.
+
+**Three faults in the new gate itself, each of which would have given a false verdict.** A
+screenshot diff for `--drag` - a rubber band leaves nothing behind by the capture frame, so it was
+really asking "did anything differ". A state snapshot taken at frame 10 while the click was
+scripted for frame 20, so the world was read before the click happened. And a drag whose bounding
+box started left of the canvas edge, on the palette, which reads as "drag is broken" and is really
+"the test began in the wrong place". A gate that asserts the wrong thing is worth no more than the
+gate that never ran.
+
+**`--prop-gap` is a ratchet now**, pinned at 72. It returned 0 unconditionally, so the count it
+printed could only ever grow. Closing gaps is free; adding one fails the battery.
+
 ### 3.45 v3.30.0 - every option the app accepts, exercised once (2026-09-03)
 
 The suites were guarded: `run_audits.sh` refuses to start if a `--*-test` is in no list. The

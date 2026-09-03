@@ -190,7 +190,9 @@ void ui_init(UIState *ui) {
     ui->btn_run = (Button){{0}, "Run", "Start simulation (F5)", false, false, true, false};
     ui->btn_pause = (Button){{0}, "Pause", "Pause simulation (F6)", false, false, false, false};
     ui->btn_step = (Button){{0}, "Step", "Single step (F10)", false, false, true, false};
-    ui->btn_reset = (Button){{0}, "Reset", "Reset simulation (F4)", false, false, true, false};
+    /* No key named here. F4 is the screen-brightness key and always has been; this tooltip
+       promised it for Reset, which is a promise the program never kept. */
+    ui->btn_reset = (Button){{0}, "Reset", "Reset simulation", false, false, true, false};
     ui->btn_clear = (Button){{0}, "Clear", "Clear circuit", false, false, true, false};
     ui->btn_save = (Button){{0}, "Save", "Save circuit (Ctrl+S)", false, false, true, false};
     ui->btn_load = (Button){{0}, "Load", "Load circuit (Ctrl+O)", false, false, true, false};
@@ -6131,7 +6133,10 @@ void ui_render_shortcuts_dialog(UIState *ui, SDL_Renderer *renderer) {
 
     ui_draw_text(renderer, "Escape    - Cancel/Deselect", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Delete    - Delete selected", dx + 20, line_y); line_y += line_h;
-    ui_draw_text(renderer, "R         - Rotate component", dx + 20, line_y); line_y += line_h;
+    /* R has never rotated anything: it places a resistor, and rotate is Ctrl+R. This line said
+       otherwise for as long as the dialog has existed. */
+    ui_draw_text(renderer, "Ctrl+R    - Rotate component", dx + 20, line_y); line_y += line_h;
+    ui_draw_text(renderer, "R         - Place resistor", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Ctrl+Z    - Undo", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Ctrl+C    - Copy", dx + 20, line_y); line_y += line_h;
     ui_draw_text(renderer, "Ctrl+X    - Cut", dx + 20, line_y); line_y += line_h;

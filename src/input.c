@@ -1610,6 +1610,45 @@ void input_handle_key(InputState *input, SDL_Keycode key,
             }
             break;
 
+        /* Four shortcuts the program has been promising and not keeping.
+         *
+         * Ctrl+O and Ctrl+N are in the guide's shortcut table; F12 is on the Scr button's own
+         * tooltip; "." is the guide's single-step. None of them had a handler anywhere - the key
+         * was pressed, nothing happened, and there was no way for a user to tell a broken feature
+         * from a mistyped key. tools/key_wiring.py now fails the battery if a documented shortcut
+         * has no handler, which is how these four were found. */
+        case SDLK_o:
+            if (ctrl) input->pending_ui_action = UI_ACTION_LOAD;      // Ctrl+O: open a circuit
+            break;
+
+        case SDLK_n:
+            if (ctrl) input->pending_ui_action = UI_ACTION_CLEAR;     // Ctrl+N: new, i.e. clear
+            break;
+
+        case SDLK_F12:
+            input->pending_ui_action = UI_ACTION_SCREENSHOT;
+            break;
+
+        /* ...and three more that the toolbar's own tooltips have been promising: Run is labelled
+           (F5), Pause (F6) and Step (F10), and not one of them had a handler. F4 is the fourth of
+           that set and is NOT added here: it is already the screen-brightness key, which is
+           implemented and in the guide, so it is the Reset button's tooltip that was wrong. */
+        case SDLK_F5:
+            input->pending_ui_action = UI_ACTION_RUN;
+            break;
+
+        case SDLK_F6:
+            input->pending_ui_action = UI_ACTION_PAUSE;
+            break;
+
+        case SDLK_F10:
+            input->pending_ui_action = UI_ACTION_STEP;
+            break;
+
+        case SDLK_PERIOD:
+            if (!ctrl) input->pending_ui_action = UI_ACTION_STEP;     // '.': one step
+            break;
+
         case SDLK_c:
             if (ctrl) {
                 input_copy(input, circuit);

@@ -362,6 +362,28 @@ static int prop_gap(void) {
     printf("\nprop-gap: %d creatable types - %d offer rows, %d offer none "
            "(%d of those correctly, being structural)\n",
            total, with_rows, empty, expected_empty);
+
+    /* A ratchet, not a target.
+     *
+     * This printed its list and returned 0, every time, for as long as it existed - and since its
+     * name does not end in "-test" the orphan guard never noticed it was in no list either, so
+     * for most of that time nothing even ran it. A number that is reported and not enforced is a
+     * number nobody reads; that lesson cost three other faults this week.
+     *
+     * Seventy parts without an editable property is a real gap and not one that gets closed in an
+     * afternoon: it is design work, part by part, deciding what a TRIAC or a shift register ought
+     * to expose. So the number is pinned here instead. Closing gaps is free - lower the baseline
+     * with the change that closed them - and ADDING one fails the battery, which is the half that
+     * matters: a part landing tomorrow with no way to configure it is caught on the day it lands
+     * rather than in a sweep months later. */
+    const int BASELINE = 72;
+    if (empty > BASELINE) {
+        printf("[FAIL] prop-gap %d parts now offer the panel nothing, up from %d.\n", empty, BASELINE);
+        printf("       A new part needs its property rows, or this baseline needs a reason to move.\n");
+        return 1;
+    }
+    if (empty < BASELINE)
+        printf("prop-gap: down from %d - lower the baseline in prop_gap() to hold the ground.\n", BASELINE);
     return 0;
 }
 

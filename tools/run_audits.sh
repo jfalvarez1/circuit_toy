@@ -203,6 +203,22 @@ if command -v python >/dev/null 2>&1; then
     fi
 fi
 
+# Source-level: a keyboard shortcut the program promises has to be one it handles. The F1 dialog,
+# the guide's tables and the buttons' own tooltips all name keys, and nothing tied any of them to
+# the code: F5, F6, F10, F12, Ctrl+O, Ctrl+N and "." were advertised with no handler at all, and
+# two more were advertised as doing something they do not.
+if command -v python >/dev/null 2>&1; then
+    if python tools/key_wiring.py > "$out/keywiring.log" 2>&1; then
+        printf '[ OK ] %-14s %s
+' "key-wiring" "$(tail -n 1 "$out/keywiring.log" | cut -c1-100)"
+    else
+        printf '[FAIL] %-14s %s
+' "key-wiring" "$(tail -n 1 "$out/keywiring.log" | cut -c1-100)"
+        grep -m8 FAIL "$out/keywiring.log"
+        fails=$((fails + 1))
+    fi
+fi
+
 # Source-level: the schematic style is a mapping bolted in front of two SDL calls by macros, so
 # it only covers a file that includes style.h, only the calls below that include, and only while
 # the canvas flag is armed. A new drawing file draws in raw synthwave on white paper and nothing
