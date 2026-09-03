@@ -141,6 +141,14 @@ jobs:
           else
             gh release upload "$tag" "dist/circuit-playground-windows-$tag.zip"
           fi
+          # ...and the same zip under a name that does not move, so one URL always points at the
+          # newest build: /releases/latest/download/circuit-playground-windows.zip. The README's
+          # download link uses it, and a link with a version in it goes stale the day after it is
+          # written. The versioned copy above stays exactly as it is: the updater asks for
+          # 'circuit-playground-windows-' + tag + '.zip' by name (see updater.c) and must keep
+          # finding it.
+          cp "dist/circuit-playground-windows-$tag.zip" dist/circuit-playground-windows.zip
+          gh release upload "$tag" dist/circuit-playground-windows.zip --clobber
           # Publish only now. A release is what the updater calls "latest": while it exists
           # without its zip, every app that checks for updates quits itself to download a file
           # that is not there. The draft is invisible to the API until this line runs.
