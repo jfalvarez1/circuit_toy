@@ -2384,6 +2384,98 @@ static int battery_test(void) {
     return fails ? 1 : 0;
 }
 
+/* Clicking through the gallery, which is the one thing every other suite here cannot see.
+
+   Every other suite makes a fresh Circuit per template. A user does not: they click circuit
+   after circuit into the SAME canvas, and the app's palette handler records a snapshot and
+   clears - the path that keeps the undo stack so a mis-clicked circuit is one Ctrl+Z away.
+   Anything that accumulates across placements accumulates only on that path.
+
+   The oracle is the template on its own: the same circuit picked two hundredth must come out
+   identical to the same circuit picked first. */
+static int gallery_test(void) {
+    printf("gallery-test: the same circuit picked late must match the same circuit picked first\n\n");
+
+    /* what each template looks like on a canvas of its own */
+    static int ref_comps[CIRCUIT_TYPE_COUNT], ref_wires[CIRCUIT_TYPE_COUNT], ref_nodes[CIRCUIT_TYPE_COUNT];
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        Circuit *c = circuit_create();
+        if (!c) continue;
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) > 0) {
+            ref_comps[t] = c->num_components;
+            ref_wires[t] = c->num_wires;
+            ref_nodes[t] = c->num_nodes;
+        }
+        circuit_free(c);
+    }
+
+    /* ...and now the same templates, one after another, into one canvas the way the palette
+       does it. Two passes over the whole gallery: a user browsing gets there easily. */
+    Circuit *c = circuit_create();
+    if (!c) { printf("[FAIL] gallery could not create a circuit\n"); return 1; }
+    int fails = 0, placed = 0;
+    int first_bad = -1;
+    for (int pass = 0; pass < 2; pass++) {
+        for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+            if (!ref_comps[t]) continue;
+            /* exactly what app.c does when a circuit is clicked in the palette */
+            circuit_push_snapshot_undo(c);
+            circuit_clear_after_snapshot(c);
+            if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) continue;
+            placed++;
+            if (c->num_components != ref_comps[t] || c->num_wires != ref_wires[t] ||
+                c->num_nodes != ref_nodes[t]) {
+                fails++;
+                if (first_bad < 0) {
+                    first_bad = placed;
+                    const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+                    printf("[FAIL] gallery %s as circuit %d of the session: %d parts / %d wires / %d nodes, "
+                           "but %d / %d / %d on a canvas of its own\n",
+                           ti ? ti->name : "?", placed, c->num_components, c->num_wires, c->num_nodes,
+                           ref_comps[t], ref_wires[t], ref_nodes[t]);
+                }
+            }
+        }
+    }
+    circuit_free(c);
+
+    /* And Ctrl+Z after a mis-click still brings the previous circuit back. That is the whole
+       reason this path keeps its undo stack, and restarting the node ids is only safe because
+       restoring the snapshot puts the saved ids back with it - so it is checked rather than
+       reasoned about. Done deep into a session, where the ids have just been restarted. */
+    {
+        Circuit *u = circuit_create();
+        int a = CIRCUIT_NONE + 1, b = CIRCUIT_NONE + 2;
+        for (int k = 0; k < 120; k++) {          /* well past where the ids used to run out */
+            circuit_push_snapshot_undo(u);
+            circuit_clear_after_snapshot(u);
+            circuit_place_template(u, (CircuitTemplateType)a, 0, 0);
+        }
+        int want_c = u->num_components, want_w = u->num_wires;
+        circuit_push_snapshot_undo(u);
+        circuit_clear_after_snapshot(u);
+        circuit_place_template(u, (CircuitTemplateType)b, 0, 0);
+        int ok = circuit_undo(u);
+        if (!ok || u->num_components != want_c || u->num_wires != want_w) {
+            fails++;
+            printf("[FAIL] gallery Ctrl+Z after picking a circuit gave %d parts / %d wires, "
+                   "expected the %d / %d that were there before\n",
+                   u->num_components, u->num_wires, want_c, want_w);
+        } else {
+            printf(" OK  gallery Ctrl+Z after a mis-clicked circuit restores the previous one "
+                   "(%d parts, %d wires) 121 placements deep\n", want_c, want_w);
+        }
+        circuit_free(u);
+    }
+
+    if (fails && first_bad > 0)
+        printf("       the first %d placements were right and everything after was not, which is what\n"
+               "       running out of something looks like\n", first_bad - 1);
+    printf("\ngallery-test: %d circuits placed one after another into one canvas, %d that did not "
+           "match the same circuit placed alone\n", placed, fails);
+    return fails ? 1 : 0;
+}
+
 static int flow_test(void) {
     int fails = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -8002,6 +8094,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--direction-test")) return direction_test();
         else if (!strcmp(argv[i], "--thermal-test")) return thermal_test();
         else if (!strcmp(argv[i], "--battery-test")) return battery_test();
+        else if (!strcmp(argv[i], "--gallery-test")) return gallery_test();
         else if (!strcmp(argv[i], "--restamp-test")) return restamp_test();
         else if (!strcmp(argv[i], "--class-test"))
             return class_test((i + 1 < argc && atof(argv[i + 1]) > 0) ? atof(argv[i + 1]) : 0.25);

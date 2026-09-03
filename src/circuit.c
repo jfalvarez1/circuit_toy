@@ -1254,6 +1254,25 @@ void circuit_clear_after_snapshot(Circuit *circuit) {
     circuit->undo_preserving = true;
     circuit_clear(circuit);
     circuit->undo_preserving = false;
+
+    /* The node ids restart here too, and they have to.
+
+       circuit_clear only restarts them when it is also throwing the undo stack away, because a
+       record naming a node by number could otherwise match the wrong canvas's node. This is the
+       path where the stack is KEPT - picking a circuit from the palette, so a mis-click is one
+       Ctrl+Z away - so it was skipping the reset, and the ids climbed for ever across a session.
+
+       node_map and the union-find parent[] in circuit_build_node_map are indexed BY node id and
+       hold MAX_NODES, so circuit_create_node refuses past 2048. Nothing crashed: it returned -1,
+       the wires that needed those nodes were never made, and the circuit came up as a heap of
+       parts with no connections between them. Clicking through the gallery reached it on the
+       97th circuit.
+
+       Safe because of the order the stack unwinds in. The only record reachable now is the
+       snapshot just pushed, and restoring it reinstates the node ids from the file
+       (file_io.c bumps next_node_id past the highest it reads). Any older record naming a node
+       id can only be reached AFTER that restore has put its canvas - and its ids - back. */
+    circuit->next_node_id = 1;
 }
 
 void circuit_push_probe_undo(Circuit *circuit, int probe_id) {

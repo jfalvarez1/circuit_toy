@@ -13,7 +13,7 @@
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
 digital solver, a real-time bench oscilloscope with FFT and THD, 205 guided circuits from RC
-filters to power grids, SPICE import, and a 66-suite self-audit battery. Build, simulate and
+filters to power grids, SPICE import, and a 67-suite self-audit battery. Build, simulate and
 analyse circuits with a drag-and-drop schematic.
 
 The look is deliberately **synthwave** - magenta and cyan on deep violet, a CRT-style graticule
@@ -1044,6 +1044,7 @@ build/tools/template_smoke.exe --mcu-test        # the programmable block drivin
 build/tools/template_smoke.exe --direction-test  # a passive part cannot generate power: current direction as a law
 build/tools/template_smoke.exe --thermal-test    # over its rating a part burns, inside it a part does not
 build/tools/template_smoke.exe --battery-test    # pack arrangements, C ratings and the sag that separates them
+build/tools/template_smoke.exe --gallery-test    # circuits clicked one after another into one canvas, as a user does
 build/circuit-playground.exe --value-sweep       # every panel row of every part, swept across the decades and simulated
 build/tools/template_smoke.exe --burn-test       # no resistor/LED over its rating (HV templates use R_HP loads)
 build/tools/template_smoke.exe --std-test        # bus voltages vs ERCOT / NERC / ANSI C84.1 / NEC limits
