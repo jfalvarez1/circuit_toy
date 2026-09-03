@@ -74,6 +74,8 @@ typedef struct Simulation {
        Kept per simulation rather than in a file static so a sweep on its own thread cannot
        share it. */
     int dc_relay_pass;
+    /* the same for a programmable block: setup() turning a pin into an output changes the bias */
+    int dc_mcu_pass;
 
     // Convergence tracking
     int iteration_count;
@@ -127,6 +129,17 @@ typedef struct Simulation {
     int freq_sweep_progress;        // Current point being processed (0 to num_points-1)
     int freq_sweep_total;           // Total number of points
     bool freq_sweep_cancel;         // Request to cancel sweep
+
+    /* Compiled programs for the programmable blocks on the sheet. They live here rather than in
+       the Component because a Component is cloned with a flat memcpy for undo and paste, and a
+       pointer in there would be shared between copies and freed twice. Keyed by component id;
+       recompiled when the source text changes. */
+    struct {
+        int comp_id;
+        void *sketch;               /* Sketch *, opaque here so sketch.h stays out of this header */
+        unsigned long src_hash;
+    } mcu[MCU_MAX_BLOCKS];
+    int mcu_count;
 } Simulation;
 
 // Create/destroy simulation

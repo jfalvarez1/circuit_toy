@@ -14,7 +14,8 @@ template_smoke = executable(
     ['template_smoke.c',
      '../src/matrix.c', '../src/component.c', '../src/circuit.c', '../src/circuits.c',
      '../src/simulation.c', '../src/logic.c', '../src/analysis.c', '../src/threadpool.c',
-     '../src/file_io.c', '../src/spice.c', '../src/label.c', '../src/netlist.c'],
+     '../src/file_io.c', '../src/spice.c', '../src/label.c', '../src/netlist.c',
+     '../src/sketch.c'],
     include_directories: include_directories('..', '../include'),
     install: false
 )

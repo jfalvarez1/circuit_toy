@@ -34,6 +34,7 @@
 #include "circuits.h"
 #include "spice.h"
 #include "netlist.h"
+#include "sketch.h"
 #include "simulation.h"
 #include "analysis.h"
 #include "file_io.h"
@@ -1538,6 +1539,407 @@ static int ic_test(void) {
     }
     printf("\nic-test: %d templates build a capacitor pre-charged (%d of them), %d that do not "
            "hold it at the operating point\n", total, caps, fails);
+    return fails ? 1 : 0;
+}
+
+/* The sketch interpreter, driven by hand. No circuit here: a fake clock is advanced and the
+   pins are read back, so what is under test is the language and the timing rather than the
+   solver. The circuit half is --sketch-circuit-test.
+
+   Every case is arithmetic. Blink has a period that can be counted; a threshold sketch has a
+   switching point that follows from the numbers in it; a for loop that ramps analogWrite has a
+   duty with a slope. If the interpreter drifts, these move. */
+typedef struct {
+    const char *name;
+    const char *src;
+    /* run to this many seconds, stepping at dt */
+    double t_end, dt;
+    int pin;                    /* the pin whose behaviour is checked */
+    double expect;              /* expected duty averaged over the run, or a level at t_end */
+    double tol;
+    int mode;                   /* 0 = mean duty over the run, 1 = level at the end, 2 = edges counted */
+    double input_v;             /* held on every input pin for the whole run */
+    const char *why;
+} SketchCase;
+
+static int sketch_test(void) {
+    printf("sketch-test: Arduino-shaped code run against a simulated clock\n\n");
+
+    static const SketchCase cases[] = {
+        { "blink at 500 ms",
+          "void setup() { pinMode(13, OUTPUT); }\n"
+          "void loop() {\n"
+          "  digitalWrite(13, HIGH); delay(500);\n"
+          "  digitalWrite(13, LOW);  delay(500);\n"
+          "}\n",
+          4.0, 0.001, 13, 0.5, 0.02, 0, 0.0,
+          "half a second on and half a second off is a duty of exactly a half, and four seconds"
+          " covers four whole cycles so the ends do not bias it" },
+
+        { "blink at 100 ms on, 300 off",
+          "void setup() { pinMode(9, OUTPUT); }\n"
+          "void loop() { digitalWrite(9, HIGH); delay(100); digitalWrite(9, LOW); delay(300); }\n",
+          4.0, 0.001, 9, 0.25, 0.02, 0, 0.0,
+          "the duty follows the two delays and nothing else: 100/(100+300)" },
+
+        { "delay counts simulated time, not steps",
+          "void setup() { pinMode(3, OUTPUT); }\n"
+          "void loop() { digitalWrite(3, HIGH); delay(20); digitalWrite(3, LOW); delay(20); }\n",
+          2.0, 0.0001, 3, 0.5, 0.02, 0, 0.0,
+          "the same sketch at a tenth of the step size gives the same duty - which is the whole"
+          " point of running against sim time rather than counting calls" },
+
+        { "edges counted: 4 Hz square is 8 transitions a second",
+          "void setup() { pinMode(5, OUTPUT); }\n"
+          "void loop() { digitalWrite(5, HIGH); delay(125); digitalWrite(5, LOW); delay(125); }\n",
+          2.0, 0.0005, 5, 16.0, 1.0, 2, 0.0,
+          "125 ms each way is 4 Hz, and two seconds of it is 8 full cycles - 16 edges" },
+
+        { "analogWrite sets the duty",
+          "void setup() { pinMode(6, OUTPUT); }\n"
+          "void loop() { analogWrite(6, 64); delay(10); }\n",
+          0.5, 0.001, 6, 64.0 / 255.0, 0.01, 0, 0.0,
+          "64 of 255 is 0.251, and the pin holds it - analogWrite is a level here, the block"
+          " turns it into a switching waveform" },
+
+        { "a for loop ramps the duty",
+          "int d = 0;\n"
+          "void setup() { pinMode(6, OUTPUT); }\n"
+          "void loop() {\n"
+          "  for (int i = 0; i < 256; i = i + 1) { analogWrite(6, i); delay(1); }\n"
+          "}\n",
+          0.256, 0.0005, 6, 127.5 / 255.0, 0.02, 0, 0.0,
+          "a full ramp from 0 to 255 over 256 ms averages the middle of the range. A for loop"
+          " that spans a delay is the case a tree-walking interpreter cannot do at all" },
+
+        { "digitalRead sees the pin",
+          "void setup() { pinMode(2, INPUT); pinMode(8, OUTPUT); }\n"
+          "void loop() { if (digitalRead(2) == HIGH) digitalWrite(8, HIGH); else digitalWrite(8, LOW); }\n",
+          0.05, 0.001, 8, 1.0, 0.001, 1, 5.0,
+          "5 V on the input is above half the supply, so the output follows it high" },
+
+        { "digitalRead sees a low pin",
+          "void setup() { pinMode(2, INPUT); pinMode(8, OUTPUT); }\n"
+          "void loop() { if (digitalRead(2) == HIGH) digitalWrite(8, HIGH); else digitalWrite(8, LOW); }\n",
+          0.05, 0.001, 8, 0.0, 0.001, 1, 0.4,
+          "0.4 V is below the threshold, so the output stays low - the same sketch, the other way" },
+
+        { "analogRead and a threshold",
+          "void setup() { pinMode(7, OUTPUT); }\n"
+          "void loop() {\n"
+          "  int v = analogRead(A0);\n"
+          "  if (v > 511) digitalWrite(7, HIGH); else digitalWrite(7, LOW);\n"
+          "}\n",
+          0.05, 0.001, 7, 1.0, 0.001, 1, 3.0,
+          "3 V of 5 is 614 counts, over half scale, so it switches on. The count is the"
+          " arithmetic: 3/5 * 1023" },
+
+        { "analogRead below the threshold",
+          "void setup() { pinMode(7, OUTPUT); }\n"
+          "void loop() {\n"
+          "  int v = analogRead(A0);\n"
+          "  if (v > 511) digitalWrite(7, HIGH); else digitalWrite(7, LOW);\n"
+          "}\n",
+          0.05, 0.001, 7, 0.0, 0.001, 1, 2.0,
+          "2 V is 409 counts, under half scale" },
+
+        { "a function with a parameter",
+          "int twice(int x) { return x * 2; }\n"
+          "void setup() { pinMode(4, OUTPUT); }\n"
+          "void loop() { analogWrite(4, twice(50)); delay(10); }\n",
+          0.2, 0.001, 4, 100.0 / 255.0, 0.01, 0, 0.0,
+          "twice(50) is 100, and the call has to return through a frame to get there" },
+
+        { "a function defined after it is called",
+          "void setup() { pinMode(4, OUTPUT); }\n"
+          "void loop() { analogWrite(4, half(200)); delay(10); }\n"
+          "int half(int x) { return x / 2; }\n",
+          0.2, 0.001, 4, 100.0 / 255.0, 0.01, 0, 0.0,
+          "sketches are written in this order all the time; the compiler finds every function"
+          " before it compiles any of them" },
+
+        { "a global keeps its value across loops",
+          "int n = 0;\n"
+          "void setup() { pinMode(4, OUTPUT); }\n"
+          "void loop() { n = n + 1; if (n >= 4) analogWrite(4, 255); delay(10); }\n",
+          0.5, 0.001, 4, 1.0, 0.001, 1, 0.0,
+          "the counter has to survive loop() returning, which is what makes it a global" },
+
+        { "while and a compound assignment",
+          "void setup() { pinMode(4, OUTPUT); }\n"
+          "void loop() {\n"
+          "  int s = 0; int i = 0;\n"
+          "  while (i < 10) { s += i; i++; }\n"
+          "  analogWrite(4, s);\n"
+          "  delay(10);\n"
+          "}\n",
+          0.2, 0.001, 4, 45.0 / 255.0, 0.01, 0, 0.0,
+          "0 through 9 sums to 45, with ++ and += doing the work" },
+
+        { "millis drives the blink instead of delay",
+          "unsigned long last = 0;\n"
+          "int state = 0;\n"
+          "void setup() { pinMode(11, OUTPUT); }\n"
+          "void loop() {\n"
+          "  if (millis() - last >= 250) { last = millis(); state = !state;\n"
+          "    digitalWrite(11, state); }\n"
+          "}\n",
+          4.0, 0.001, 11, 0.5, 0.03, 0, 0.0,
+          "the non-blocking blink every tutorial moves on to. millis() has to come from"
+          " simulated time or this free-runs" },
+    };
+
+    int fails = 0;
+    const int ncases = (int)(sizeof cases / sizeof cases[0]);
+    for (int i = 0; i < ncases; i++) {
+        const SketchCase *tc = &cases[i];
+        char err[160] = "";
+        Sketch *sk = sketch_compile(tc->src, err, sizeof err);
+        if (!sk) {
+            printf("[FAIL] sketch %-38s did not compile: %s\n", tc->name, err);
+            fails++;
+            continue;
+        }
+        double sum = 0; long n = 0; int edges = 0; double prev = -1;
+        for (double t = 0; t <= tc->t_end + 1e-12; t += tc->dt) {
+            for (int p = 0; p < SKETCH_MAX_PINS; p++)
+                if (sketch_pin_mode(sk, p) != SKETCH_PIN_OUTPUT)
+                    sketch_set_pin_voltage(sk, p, tc->input_v);
+            sketch_advance(sk, t);
+            double d = sketch_pin_duty(sk, tc->pin);
+            if (prev >= 0 && ((prev < 0.5) != (d < 0.5))) edges++;
+            prev = d;
+            sum += d; n++;
+        }
+        const char *rt = sketch_error(sk);
+        double got = (tc->mode == 0) ? (n ? sum / (double)n : 0)
+                   : (tc->mode == 1) ? sketch_pin_duty(sk, tc->pin)
+                                     : (double)edges;
+        int ok = !rt && fabs(got - tc->expect) <= tc->tol;
+        if (!ok) {
+            fails++;
+            printf("[FAIL] sketch %-38s pin %-2d = %8.4f  expect %8.4f (+/-%.3g)%s%s\n",
+                   tc->name, tc->pin, got, tc->expect, tc->tol, rt ? "  runtime: " : "", rt ? rt : "");
+            printf("            %s\n", tc->why);
+        } else {
+            printf(" OK  sketch %-38s pin %-2d = %8.4f  expect %8.4f\n",
+                   tc->name, tc->pin, got, tc->expect);
+        }
+        sketch_free(sk);
+    }
+
+    /* A sketch that will not compile has to say so, with the line. Silence here would mean the
+       parser accepting nonsense and the block sitting there doing nothing. */
+    static const struct { const char *src; const char *what; } bad[] = {
+        { "void loop() { digitalWrite(13 HIGH); }", "a missing comma" },
+        { "void loop() { undefinedThing(1); }", "a call to something that does not exist" },
+        { "void loop() { int x = ; }", "a missing value" },
+        { "void loop() { x = 1; }", "assigning to something never declared" },
+        { "int f(int a) { return a; }\nvoid loop() { f(1, 2); }", "the wrong number of arguments" },
+        { "void loop() { String s = \"hi\"; }", "a type this does not support" },
+        { "void loop() { break; }", "break outside a loop" },
+    };
+    for (int i = 0; i < (int)(sizeof bad / sizeof bad[0]); i++) {
+        char err[160] = "";
+        Sketch *sk = sketch_compile(bad[i].src, err, sizeof err);
+        if (sk) {
+            printf("[FAIL] sketch rejects: %-40s was accepted\n", bad[i].what);
+            fails++;
+            sketch_free(sk);
+        } else if (!strstr(err, "line")) {
+            printf("[FAIL] sketch rejects: %-40s no line number: %s\n", bad[i].what, err);
+            fails++;
+        } else {
+            printf(" OK  sketch rejects: %-40s %s\n", bad[i].what, err);
+        }
+    }
+
+    printf("\nsketch-test: %d sketches run and %d rejected, %d wrong\n",
+           ncases, (int)(sizeof bad / sizeof bad[0]), fails);
+    return fails ? 1 : 0;
+}
+
+/* The programmable block on a real sheet, solved by MNA and measured at the node.
+
+   The oracle is arithmetic and sits outside both the solver and the interpreter: a pin driving
+   1 k through 25 ohm of port resistance settles at 5 * 1000/1025 = 4.878 V, and a sketch that
+   is high for half its period puts that on the node half the time. Nothing here is compared
+   against what the block "should" produce - only against what the resistors say. */
+static Circuit *mcu_rig(const char *src, double rload, int pin_terminal) {
+    Circuit *c = circuit_create();
+    if (!c) return NULL;
+    Component *mcu = component_create(COMP_MCU, 0, 0);
+    if (!mcu) { circuit_free(c); return NULL; }
+    snprintf(mcu->props.mcu.source, MCU_SRC_MAX, "%s", src);
+    circuit_add_component(c, mcu);
+
+    /* the load, from the pin down to ground */
+    const ComponentTypeInfo *ci = component_get_info(COMP_MCU);
+    float px = mcu->x + ci->terminals[pin_terminal].dx;
+    float py = mcu->y + ci->terminals[pin_terminal].dy;
+
+    Component *r = component_create(COMP_RESISTOR, px + 140, py);
+    r->props.resistor.resistance = rload;
+    r->rotation = 90;
+    circuit_add_component(c, r);
+
+    Component *g = component_create(COMP_GROUND, px + 140, py + 160);
+    circuit_add_component(c, g);
+    Component *g2 = component_create(COMP_GROUND, mcu->x + ci->terminals[MCU_GND_PIN].dx,
+                                     mcu->y + ci->terminals[MCU_GND_PIN].dy + 40);
+    circuit_add_component(c, g2);
+
+    /* Wired through the components' own node ids rather than through positions worked out here.
+       Guessing a part's terminal offsets is how the first version of this rig silently built a
+       circuit with the resistor hanging off nothing: find_or_create at a position the terminal
+       was not at makes a NEW node, the wire lands on that, and the load reads as absent - which
+       showed up as a pin that gave the same voltage into 1 k and into 100 ohm. */
+    circuit_add_wire(c, mcu->node_ids[pin_terminal], r->node_ids[0]);
+    circuit_add_wire(c, r->node_ids[1], g->node_ids[0]);
+    circuit_add_wire(c, mcu->node_ids[MCU_GND_PIN], g2->node_ids[0]);
+    (void)px; (void)py;
+    return c;
+}
+
+static int mcu_test(void) {
+    printf("mcu-test: the programmable block driving a load, read off the node\n\n");
+    int fails = 0, total = 0;
+
+    struct {
+        const char *name;
+        const char *src;
+        int terminal;          /* which block terminal the load hangs on */
+        double rload;
+        double t_end, dt;
+        double expect_mean;    /* mean node voltage over the run */
+        double tol;
+        const char *why;
+    } cases[] = {
+        { "a pin held high sits at the divider",
+          "void setup() { pinMode(13, OUTPUT); digitalWrite(13, HIGH); }\n"
+          "void loop() { }\n",
+          11, 1000.0, 0.05, 0.001, 5.0 * 1000.0 / 1025.0, 0.02,
+          "1 k against 25 ohm of port resistance: 4.878 V, and it is the port resistance being"
+          " real that makes this a circuit and not a switch" },
+
+        { "a pin held low sits at zero",
+          "void setup() { pinMode(13, OUTPUT); digitalWrite(13, LOW); }\n"
+          "void loop() { }\n",
+          11, 1000.0, 0.05, 0.001, 0.0, 0.02,
+          "driven low is not the same as not driven: the pin holds the node down" },
+
+        { "blink puts the divider on the node half the time",
+          "void setup() { pinMode(13, OUTPUT); }\n"
+          "void loop() { digitalWrite(13, HIGH); delay(500); digitalWrite(13, LOW); delay(500); }\n",
+          11, 1000.0, 4.0, 0.002, 0.5 * 5.0 * 1000.0 / 1025.0, 0.06,
+          "four seconds is four whole cycles of a 1 Hz blink, so the mean is half the high level" },
+
+        { "a heavier load pulls the pin down",
+          "void setup() { pinMode(13, OUTPUT); digitalWrite(13, HIGH); }\n"
+          "void loop() { }\n",
+          11, 100.0, 0.05, 0.001, 5.0 * 100.0 / 125.0, 0.02,
+          "100 ohm against 25 is 4.0 V. A pin that ignored its own resistance would read 5" },
+
+        { "analogWrite switches, and the mean is the duty",
+          "void setup() { pinMode(11, OUTPUT); }\n"
+          "void loop() { analogWrite(11, 64); delay(10); }\n",
+          9, 1000.0, 1.0, 0.00005, (64.0 / 255.0) * 5.0 * 1000.0 / 1025.0, 0.08,
+          "PWM is a real square wave at 490 Hz here, not a level - so the mean over a second is"
+          " the duty times the high level, which is what an RC on this pin would average to" },
+
+        { "an input pin does not drive",
+          "void setup() { pinMode(13, INPUT); }\n"
+          "void loop() { }\n",
+          11, 1000.0, 0.05, 0.001, 0.0, 0.01,
+          "high impedance: the 1 k holds the node at ground and the block does not fight it" },
+
+        { "a pin reads its own node and switches another",
+          "void setup() { pinMode(2, INPUT); pinMode(13, OUTPUT); }\n"
+          "void loop() { if (digitalRead(2)) digitalWrite(13, LOW); else digitalWrite(13, HIGH); }\n",
+          11, 1000.0, 0.05, 0.001, 5.0 * 1000.0 / 1025.0, 0.02,
+          "D2 is wired to nothing and sits at ground through its own leakage, so it reads low"
+          " and the output goes high - a decision taken from a node voltage" },
+    };
+
+    for (int i = 0; i < (int)(sizeof cases / sizeof cases[0]); i++) {
+        total++;
+        Circuit *c = mcu_rig(cases[i].src, cases[i].rload, cases[i].terminal);
+        if (!c) { printf("[FAIL] mcu   %-46s could not be built\n", cases[i].name); fails++; continue; }
+        Simulation *sim = simulation_create(c);
+        int ok = 1;
+        char why[160] = "";
+        if (!sim || !simulation_dc_analysis(sim)) { ok = 0; snprintf(why, sizeof why, "DC failed"); }
+        double sum = 0; long n = 0;
+        if (ok) {
+            sim->adaptive_enabled = false;
+            sim->time_step = cases[i].dt;
+            simulation_start(sim);
+            while (sim->time < cases[i].t_end) {
+                if (!simulation_step(sim)) { ok = 0; snprintf(why, sizeof why, "step failed at t=%.4f", sim->time); break; }
+                /* the node the load hangs on */
+                const ComponentTypeInfo *ci = component_get_info(COMP_MCU);
+                Component *mcu = c->components[0];
+                Node *nd = circuit_find_node_at(c, mcu->x + ci->terminals[cases[i].terminal].dx,
+                                                  mcu->y + ci->terminals[cases[i].terminal].dy, 5.0f);
+                sum += nd ? nd->voltage : 0;
+                n++;
+            }
+        }
+        Component *mcu = c->components[0];
+        if (getenv("CT_MCU_DEBUG")) {
+            const ComponentTypeInfo *ci = component_get_info(COMP_MCU);
+            Node *pn = circuit_find_node_at(c, mcu->x + ci->terminals[cases[i].terminal].dx,
+                                               mcu->y + ci->terminals[cases[i].terminal].dy, 5.0f);
+            printf("       debug: R=%g nodes=%d wires=%d pinnode=%d net=%d drive=%d level=%.2f\n",
+                   c->components[1]->props.resistor.resistance, c->num_nodes, c->num_wires,
+                   pn ? pn->id : -1, pn ? circuit_node_net(c, pn->id) : -1,
+                   mcu->props.mcu.pin_drive[cases[i].terminal],
+                   mcu->props.mcu.pin_level[cases[i].terminal]);
+        }
+        if (ok && !mcu->props.mcu.compiled) {
+            ok = 0;
+            snprintf(why, sizeof why, "the sketch did not compile: %s", mcu->props.mcu.status);
+        }
+        double got = n ? sum / (double)n : 0;
+        if (ok && fabs(got - cases[i].expect_mean) > cases[i].tol) {
+            ok = 0;
+            snprintf(why, sizeof why, "node mean %.4f V, expected %.4f (+/-%.3g)",
+                     got, cases[i].expect_mean, cases[i].tol);
+        }
+        if (!ok) {
+            fails++;
+            printf("[FAIL] mcu   %-46s %s\n", cases[i].name, why);
+            printf("            %s\n", cases[i].why);
+        } else {
+            printf(" OK  mcu   %-46s node = %6.3f V  expect %6.3f\n",
+                   cases[i].name, got, cases[i].expect_mean);
+        }
+        simulation_free(sim);
+        circuit_free(c);
+    }
+
+    /* A block whose code does not compile must be inert and must say why, not drive the node
+       with whatever was left in its pin state. */
+    {
+        total++;
+        Circuit *c = mcu_rig("void loop() { this is not code }\n", 1000.0, 11);
+        Simulation *sim = c ? simulation_create(c) : NULL;
+        int ok = 0;
+        if (sim && simulation_dc_analysis(sim)) {
+            Component *mcu = c->components[0];
+            ok = !mcu->props.mcu.compiled && mcu->props.mcu.status[0] && mcu->props.mcu.pin_drive[11] == 0;
+            if (!ok) printf("[FAIL] mcu   %-46s compiled=%d status='%s' drive=%d\n",
+                            "code that does not compile leaves the pins alone",
+                            mcu->props.mcu.compiled, mcu->props.mcu.status, mcu->props.mcu.pin_drive[11]);
+            else printf(" OK  mcu   %-46s %s\n", "code that does not compile leaves the pins alone",
+                        mcu->props.mcu.status);
+        }
+        if (!ok) fails++;
+        simulation_free(sim);
+        circuit_free(c);
+    }
+
+    printf("\nmcu-test: %d circuits with a programmable block, %d wrong\n", total, fails);
     return fails ? 1 : 0;
 }
 
@@ -7136,6 +7538,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--flow-test")) return flow_test();
         else if (!strcmp(argv[i], "--pair-test")) return pair_test();
         else if (!strcmp(argv[i], "--ic-test")) return ic_test();
+        else if (!strcmp(argv[i], "--sketch-test")) return sketch_test();
+        else if (!strcmp(argv[i], "--mcu-test")) return mcu_test();
         else if (!strcmp(argv[i], "--restamp-test")) return restamp_test();
         else if (!strcmp(argv[i], "--class-test"))
             return class_test((i + 1 < argc && atof(argv[i + 1]) > 0) ? atof(argv[i + 1]) : 0.25);

@@ -1117,6 +1117,38 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         }}
     },
 
+    /* Fourteen I/O down the two sides and ground at the bottom, laid out the way the board is:
+       the digital pins on one side, the analog ones with them, ground where a wire can reach it
+       without crossing anything. The terminal names are the pin names the code uses, so a build
+       table can wire to D13 by name. */
+    [COMP_MCU] = {
+        "Programmable Block", "MCU", MCU_PINS,
+        {{ -70, -120, "D2" }, { -70, -80, "D3" }, { -70, -40, "D4" }, { -70, 0, "D5" },
+         { -70, 40, "D6" },   { -70, 80, "D7" },  { -70, 120, "D8" },
+         { 70, -120, "D9" },  { 70, -80, "D10" }, { 70, -40, "D11" }, { 70, 0, "D12" },
+         { 70, 40, "D13" },   { 70, 80, "A0" },   { 70, 120, "A1" },
+         { 0, 160, "GND" }},
+        140, 280,
+        { .mcu = {
+            .source = "void setup() {\n"
+                      "  pinMode(13, OUTPUT);\n"
+                      "}\n"
+                      "\n"
+                      "void loop() {\n"
+                      "  digitalWrite(13, HIGH);\n"
+                      "  delay(500);\n"
+                      "  digitalWrite(13, LOW);\n"
+                      "  delay(500);\n"
+                      "}\n",
+            .vcc = 5.0,
+            .r_out = 25.0,          /* what an AVR port pin actually is, near enough */
+            .r_in = 1e8,            /* high impedance, but a node still needs somewhere to go */
+            .r_pullup = 30000.0,    /* the internal pull-up, 20-50k on the real part */
+            .pwm_hz = 490.0,
+            .compiled = false
+        }}
+    },
+
     [COMP_ANALOG_SWITCH] = {
         "Analog Switch", "ASW", 3,
         {{ -40, 0, "IN" }, { 40, 0, "OUT" }, { 0, 20, "CTL" }},
@@ -1959,6 +1991,7 @@ const char *component_search_keywords(ComponentType type) {
         case COMP_TOROID:          return "toroid tesla top load";
         case COMP_SPST_SWITCH: case COMP_SPDT_SWITCH: case COMP_DPDT_SWITCH: return "switch";
         case COMP_ANALOG_SWITCH:   return "switch analog";
+        case COMP_MCU:             return "mcu arduino microcontroller code sketch program gpio";
         case COMP_CRYSTAL:         return "crystal xtal quartz";
         case COMP_FUSE:            return "fuse";
         case COMP_THERMISTOR:      return "thermistor temperature ntc";
@@ -5254,6 +5287,35 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         }
 
         // === LOGIC GATES ===
+
+        case COMP_MCU: {
+            /* Every pin is a Thevenin source to the block's own ground pin: a level and a series
+               resistance. What differs between a driven output, a pull-up and a floating input
+               is only which two numbers those are, so there is one stamp and three sets of
+               values rather than three cases.
+
+               pin_level is set once per accepted step by the simulation, from the sketch. The
+               stamp does not run any code - it could not, because Newton stamps the same step
+               many times over and a sketch must see a step once. */
+            int g = n[MCU_GND_PIN];
+            double vcc = comp->props.mcu.vcc;
+            for (int k = 0; k < MCU_GND_PIN; k++) {
+                int p = n[k];
+                if (p <= 0 && g <= 0) continue;
+                double R, V;
+                switch (comp->props.mcu.pin_drive[k]) {
+                    case 1:  R = comp->props.mcu.r_out;    V = comp->props.mcu.pin_level[k] * vcc; break;
+                    case 2:  R = comp->props.mcu.r_pullup; V = vcc; break;
+                    default: R = comp->props.mcu.r_in;     V = 0;   break;
+                }
+                if (!(R > 0)) R = 1.0;
+                double G = 1.0 / R;
+                STAMP_CONDUCTANCE(p, g, G);
+                if (p > 0) vector_add(b, p - 1, G * V);
+                if (g > 0) vector_add(b, g - 1, -G * V);
+            }
+            break;
+        }
 
         case COMP_LOGIC_INPUT: {
             // Logic input: voltage source

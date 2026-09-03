@@ -1553,6 +1553,64 @@ void render_component(RenderContext *ctx, Component *comp) {
                             comp->props.subcircuit.def_id, comp->props.subcircuit.name);
             break;
 
+        /* The programmable block: a package with its pin names on it, and a mark against each
+           pin the code is currently driving. A board is the one part where a user needs to see
+           at a glance which pins are outputs, because that is a decision the CODE made and is
+           not written anywhere on the schematic. */
+        case COMP_MCU: {
+            const float hw = 70.0f, hh = 140.0f;
+            Color body = {44, 52, 72, 255}, edge = {130, 130, 160, 255};
+            render_set_color(ctx, body);
+            render_fill_rect(ctx, comp->x - hw, comp->y - hh, hw * 2, hh * 2);
+            render_set_color(ctx, edge);
+            render_draw_line(ctx, comp->x - hw, comp->y - hh, comp->x + hw, comp->y - hh);
+            render_draw_line(ctx, comp->x + hw, comp->y - hh, comp->x + hw, comp->y + hh);
+            render_draw_line(ctx, comp->x + hw, comp->y + hh, comp->x - hw, comp->y + hh);
+            render_draw_line(ctx, comp->x - hw, comp->y + hh, comp->x - hw, comp->y - hh);
+
+            const ComponentTypeInfo *ci = component_get_info(COMP_MCU);
+            for (int k = 0; k < MCU_PINS && ci && k < ci->num_terminals; k++) {
+                float px = comp->x + ci->terminals[k].dx, py = comp->y + ci->terminals[k].dy;
+                float inner = (ci->terminals[k].dx < 0) ? px + 16 : (ci->terminals[k].dx > 0) ? px - 16 : px;
+                if (ci->terminals[k].dy > hh - 1) {
+                    render_set_color(ctx, edge);
+                    render_draw_line(ctx, px, py, px, comp->y + hh);
+                } else {
+                    /* A driven pin gets a lit lead. Low is drawn too, just dimmer - a pin held
+                       low by the code is doing something, and looks nothing like a pin the
+                       sketch never touched. */
+                    Color lead = edge;
+                    if (k < MCU_GND_PIN && comp->props.mcu.pin_drive[k] == 1) {
+                        lead = comp->props.mcu.pin_level[k] > 0.5
+                             ? (Color){120, 255, 160, 255} : (Color){70, 120, 90, 255};
+                    } else if (k < MCU_GND_PIN && comp->props.mcu.pin_drive[k] == 2) {
+                        lead = (Color){200, 170, 90, 255};
+                    }
+                    render_set_color(ctx, lead);
+                    render_draw_line(ctx, px, py, inner, py);
+                }
+            }
+
+            int sx, sy;
+            render_world_to_screen(ctx, comp->x, comp->y, &sx, &sy);
+            if (ctx->zoom >= 0.3f) {
+                const char *title = comp->props.mcu.compiled ? "CODE" : "NO CODE";
+                render_draw_text_small(ctx, title, sx - (int)strlen(title) * 4, sy - 8, COLOR_TEXT);
+                for (int k = 0; k < MCU_PINS && ci && k < ci->num_terminals; k++) {
+                    const char *nm = ci->terminals[k].name;
+                    if (!nm || !nm[0]) continue;
+                    int tx, ty;
+                    render_world_to_screen(ctx, comp->x + ci->terminals[k].dx,
+                                           comp->y + ci->terminals[k].dy, &tx, &ty);
+                    if (ci->terminals[k].dx < 0)      tx += 6;
+                    else if (ci->terminals[k].dx > 0) tx -= (int)strlen(nm) * 8 + 6;
+                    else                              tx -= (int)strlen(nm) * 4;
+                    render_draw_text_small(ctx, nm, tx, ty - 4, COLOR_ACCENT);
+                }
+            }
+            break;
+        }
+
         // Tristate and Schmitt - use buffer with indicator
         case COMP_TRISTATE_BUF:
             render_buffer(ctx, comp->x, comp->y, comp->rotation);

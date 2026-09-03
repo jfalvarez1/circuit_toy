@@ -225,6 +225,9 @@ typedef enum {
     COMP_LOAD_HP,           // High-power load: a resistor with no thermal limit (becomes COMP_RESISTOR with high_power set)
     COMP_ARB_SOURCE,        // Arbitrary waveform source: replays a table of samples (X-Y plotting, uploaded data)
 
+    // === PROGRAMMABLE ===
+    COMP_MCU,               // Runs Arduino-shaped code and drives its pins from it (see sketch.h)
+
     COMP_TYPE_COUNT
 } ComponentType;
 

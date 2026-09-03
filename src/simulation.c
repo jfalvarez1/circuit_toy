@@ -7,6 +7,7 @@
 #include <math.h>
 #include <stdio.h>
 #include "simulation.h"
+#include "sketch.h"
 #include "logic.h"
 #include "component.h"
 
@@ -145,6 +146,115 @@ Simulation *simulation_create(Circuit *circuit) {
     return sim;
 }
 
+
+/* ---- the programmable block ------------------------------------------------------------ */
+
+/* Compiled sketches are cached against the source text, so editing the code recompiles and
+   nothing else does. A hash rather than a full compare only because it runs every step. */
+static unsigned long mcu_hash(const char *s) {
+    unsigned long h = 5381;
+    while (*s) h = h * 33u + (unsigned char)*s++;
+    return h;
+}
+
+static Sketch *mcu_program(Simulation *sim, Component *comp) {
+    unsigned long h = mcu_hash(comp->props.mcu.source);
+    for (int i = 0; i < sim->mcu_count; i++) {
+        if (sim->mcu[i].comp_id != comp->id) continue;
+        if (sim->mcu[i].src_hash == h) return (Sketch *)sim->mcu[i].sketch;
+        sketch_free((Sketch *)sim->mcu[i].sketch);          /* the code was edited */
+        sim->mcu[i].sketch = NULL;
+        char err[96] = "";
+        Sketch *sk = sketch_compile(comp->props.mcu.source, err, sizeof err);
+        sim->mcu[i].sketch = sk;
+        sim->mcu[i].src_hash = h;
+        comp->props.mcu.compiled = (sk != NULL);
+        snprintf(comp->props.mcu.status, sizeof comp->props.mcu.status, "%s", sk ? "" : err);
+        if (sk) sketch_set_vcc(sk, comp->props.mcu.vcc);
+        return sk;
+    }
+    if (sim->mcu_count >= MCU_MAX_BLOCKS) return NULL;
+    char err[96] = "";
+    Sketch *sk = sketch_compile(comp->props.mcu.source, err, sizeof err);
+    sim->mcu[sim->mcu_count].comp_id = comp->id;
+    sim->mcu[sim->mcu_count].sketch = sk;
+    sim->mcu[sim->mcu_count].src_hash = h;
+    sim->mcu_count++;
+    comp->props.mcu.compiled = (sk != NULL);
+    snprintf(comp->props.mcu.status, sizeof comp->props.mcu.status, "%s", sk ? "" : err);
+    if (sk) sketch_set_vcc(sk, comp->props.mcu.vcc);
+    return sk;
+}
+
+/* Terminal k of the block is Arduino pin number this. D2..D13 then A0, A1 - which are 14 and 15
+   to the language, exactly as they are on the board. */
+static int mcu_pin_number(int terminal) {
+    if (terminal < 0 || terminal >= MCU_GND_PIN) return -1;
+    return (terminal < 12) ? terminal + 2 : SKETCH_A0 + (terminal - 12);
+}
+
+/* Run every block forward to the time just reached, and leave each pin at the level it is
+   driving. Called once per ACCEPTED step and never from inside Newton: a sketch must see a step
+   once, and Newton stamps the same step many times over. */
+static void mcu_advance(Simulation *sim, double t) {
+    Circuit *circuit = sim->circuit;
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *comp = circuit->components[i];
+        if (!comp || comp->type != COMP_MCU) continue;
+        Sketch *sk = mcu_program(sim, comp);
+        if (!sk) {
+            for (int k = 0; k < MCU_GND_PIN; k++) {
+                comp->props.mcu.pin_drive[k] = 0;
+                comp->props.mcu.pin_level[k] = 0;
+            }
+            continue;
+        }
+        /* What the pins are sitting at, measured against the block's own ground pin - a block
+           wired to a rail that is not zero still reads its inputs correctly. */
+        int gnd = circuit->node_map[comp->node_ids[MCU_GND_PIN]];
+        double vg = (gnd > 0 && sim->solution) ? vector_get(sim->solution, gnd - 1) : 0.0;
+        for (int k = 0; k < MCU_GND_PIN; k++) {
+            int pn = mcu_pin_number(k);
+            int m = circuit->node_map[comp->node_ids[k]];
+            double v = (m > 0 && sim->solution) ? vector_get(sim->solution, m - 1) : 0.0;
+            sketch_set_pin_voltage(sk, pn, v - vg);
+        }
+        sketch_set_vcc(sk, comp->props.mcu.vcc);
+        sketch_advance(sk, t);
+
+        const char *rt = sketch_error(sk);
+        if (rt) snprintf(comp->props.mcu.status, sizeof comp->props.mcu.status, "%s", rt);
+        else {
+            const char *pr = sketch_last_print(sk);
+            if (pr) snprintf(comp->props.mcu.status, sizeof comp->props.mcu.status, "%s", pr);
+        }
+
+        for (int k = 0; k < MCU_GND_PIN; k++) {
+            int pn = mcu_pin_number(k);
+            SketchPinMode mode = sketch_pin_mode(sk, pn);
+            if (rt) { comp->props.mcu.pin_drive[k] = 0; comp->props.mcu.pin_level[k] = 0; continue; }
+            if (mode == SKETCH_PIN_OUTPUT) {
+                double duty = sketch_pin_duty(sk, pn);
+                comp->props.mcu.pin_drive[k] = 1;
+                if (sketch_pin_is_pwm(sk, pn) && comp->props.mcu.pwm_hz > 0) {
+                    /* analogWrite is a square wave, not a level. Showing the average would draw
+                       a straight line where the scope should show the switching that an RC or a
+                       motor winding is actually averaging - and it is the switching that makes
+                       a PWM circuit behave the way it does. */
+                    double period = 1.0 / comp->props.mcu.pwm_hz;
+                    double phase = (t / period) - floor(t / period);
+                    comp->props.mcu.pin_level[k] = (phase < duty) ? 1.0 : 0.0;
+                } else {
+                    comp->props.mcu.pin_level[k] = duty;
+                }
+            } else {
+                comp->props.mcu.pin_drive[k] = (mode == SKETCH_PIN_INPUT_PULLUP) ? 2 : 0;
+                comp->props.mcu.pin_level[k] = 0;
+            }
+        }
+    }
+}
+
 void simulation_free(Simulation *sim) {
     if (!sim) return;
 
@@ -157,6 +267,7 @@ void simulation_free(Simulation *sim) {
     if (sim->saved_solution) {
         vector_free(sim->saved_solution);
     }
+    for (int i = 0; i < sim->mcu_count; i++) sketch_free((Sketch *)sim->mcu[i].sketch);
 
     free(sim);
 }
@@ -709,6 +820,40 @@ bool simulation_dc_analysis(Simulation *sim) {
     }
 
     // Update circuit voltages, meter readings and the current-flow display
+    /* Let the programmable blocks run their setup() at the operating point, so the pins start
+       where the code puts them rather than all floating. The block is a source once setup() has
+       set a pin to OUTPUT, so this changes the bias - and it is solved again below for exactly
+       the reason the relay is: an operating point that contradicts the state it just produced
+       is the fault this program has already had once. */
+    {
+        bool any_mcu = false;
+        for (int i = 0; i < circuit->num_components; i++)
+            if (circuit->components[i] && circuit->components[i]->type == COMP_MCU) any_mcu = true;
+        if (any_mcu) {
+            unsigned char before[MCU_MAX_BLOCKS][MCU_PINS];
+            int nb = 0;
+            for (int i = 0; i < circuit->num_components && nb < MCU_MAX_BLOCKS; i++) {
+                Component *c2 = circuit->components[i];
+                if (!c2 || c2->type != COMP_MCU) continue;
+                memcpy(before[nb++], c2->props.mcu.pin_drive, MCU_PINS);
+            }
+            mcu_advance(sim, 0.0);
+            bool moved = false;
+            int nb2 = 0;
+            for (int i = 0; i < circuit->num_components && nb2 < nb; i++) {
+                Component *c2 = circuit->components[i];
+                if (!c2 || c2->type != COMP_MCU) continue;
+                if (memcmp(before[nb2++], c2->props.mcu.pin_drive, MCU_PINS) != 0) moved = true;
+            }
+            if (moved && sim->dc_mcu_pass < 3) {
+                sim->dc_mcu_pass++;
+                bool again = simulation_dc_analysis(sim);
+                sim->dc_mcu_pass--;
+                return again;
+            }
+        }
+    }
+
     circuit_update_voltages(circuit, solution);
     circuit_update_meter_readings(circuit);
     simulation_update_flow_display(sim);
@@ -1470,6 +1615,12 @@ bool simulation_step(Simulation *sim) {
                 if (comp->sweep_phase > 1e6) comp->sweep_phase = fmod(comp->sweep_phase, 2.0 * M_PI);
             }
         }
+
+        /* The programmable blocks, for exactly the same reason as the spark gap below: from the
+           accepted solution, never inside Newton. A sketch must see each step once - it counts
+           milliseconds and toggles pins, and running it per Newton iterate would make delay(500)
+           mean whatever the solver's convergence happened to cost that step. */
+        mcu_advance(sim, sim->time);
 
         // Spark gaps: switch state from the accepted solution (never inside Newton)
         for (int i = 0; i < circuit->num_components; i++) {

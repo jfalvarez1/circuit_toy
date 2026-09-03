@@ -427,6 +427,7 @@ void ui_init(UIState *ui) {
     NEW_SECTION(PCAT_SUBPARTS);
     ADD_COMP(COMP_PIN, "Pin");
     ADD_COMP(COMP_SUBCIRCUIT, "IC");
+    ADD_COMP(COMP_MCU, "Code");
     ADD_COMP(COMP_BUS, "Bus");
     ADD_COMP(COMP_BUS_TAP, "Tap");
     ADD_COMP(COMP_LAMP, "Lamp");

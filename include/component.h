@@ -11,6 +11,15 @@
 // Maximum terminals per component
 #define MAX_TERMINALS 16
 
+/* The programmable block: fourteen I/O pins and a ground, which is fifteen terminals and fits
+   MAX_TERMINALS. D2..D13 and A0..A1 - D0 and D1 are left off because on the board they are the
+   serial port, and every sketch that uses Serial would fight whatever was wired to them. */
+#define MCU_PINS     15
+#define MCU_GND_PIN  14
+#define MCU_SRC_MAX  1024
+/* Programmable blocks on one sheet. More than a handful is a different program than this. */
+#define MCU_MAX_BLOCKS 8
+
 // Terminal definition
 typedef struct {
     float dx;      // Offset from component center
@@ -720,6 +729,32 @@ typedef union {
         int pin_number;         // Pin number (1-16)
         char pin_name[16];      // Pin name (e.g., "VCC", "IN1", "OUT")
     } pin;
+
+    /* A block that runs Arduino-shaped code and drives its pins from it. The code lives here as
+       text and nothing else: Component is cloned with a flat memcpy for undo, copy and paste,
+       so a pointer to a compiled program in here would be shared between copies and freed
+       twice. The compiled program lives in the Simulation, keyed by component id, and this
+       struct carries only what the stamp needs - what each pin is being driven to right now.
+
+       1 KB of source, which is a deliberate limit rather than an arbitrary one. Blink is 120
+       characters and a sketch that reads a divider and switches an output is under 400. This
+       block drives pins in response to pin states and time; a sketch that does not fit is one
+       that has grown into being about the language rather than about the circuit. */
+    struct {
+        char source[MCU_SRC_MAX];
+        double vcc;             // supply the outputs drive to, and what analogRead measures against
+        double r_out;           // series resistance of a driven pin (a real port pin is ~25 ohm)
+        double r_in;            // a pin left as an input: high impedance, not infinite
+        double r_pullup;        // INPUT_PULLUP, or a digitalWrite HIGH to a pin still in INPUT
+        double pwm_hz;          // analogWrite carrier (490 Hz on most Arduino pins)
+        /* Runtime, written once per accepted step by the simulation. pin_level is 0..1 of vcc
+           and is the INSTANTANEOUS level, so a PWM pin is a real square wave on the scope
+           rather than its average. */
+        double pin_level[MCU_PINS];
+        unsigned char pin_drive[MCU_PINS];   // 0 input, 1 output, 2 input with pull-up
+        bool compiled;          // the source compiled cleanly
+        char status[64];        // the compile error, or the last Serial.print
+    } mcu;
 
     // Sub-circuit instance (user-defined IC block)
     struct {
