@@ -33,8 +33,12 @@ jobs:
         with:
           python-version: '3.12'
 
+      # pillow and numpy are not optional extras here: three gates in the battery read the pixels
+      # the app drew, and without them they skip. They skipped in CI from the day they were
+      # written - trace-stability, undo-gui and edge-gui all printed "needs pillow; skipped" and
+      # reported OK, so a green run said nothing about any of them.
       - name: Install meson and ninja
-        run: python -m pip install --upgrade meson ninja
+        run: python -m pip install --upgrade meson ninja pillow numpy
 
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1

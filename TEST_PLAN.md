@@ -951,6 +951,13 @@ flags, so a gate written in python was outside it entirely: `gui_smoke.py`, `edg
 `svg_audit.py` had been written, committed, and never once executed by the battery. The guard now
 covers `tools/*.py` as well, with two named exclusions that are plainly not gates.
 
+**And three more ran in CI without covering anything.** `trace-stability`, `undo-gui` and
+`edge-gui` read the pixels the app drew, so they need pillow; without it they print
+"needs pillow; skipped" and return 0. CI never installed it, so from the day each was written a
+green run said nothing about any of them - and the line saying so scrolled past among sixty
+others. CI installs pillow and numpy now, and the battery counts skips and says so at the end,
+next to the failure count where it will be read. A gate that skipped is not a gate that passed.
+
 **And when `gui_smoke.py` was finally run, three of its four interaction checks failed.** Not
 because the app was broken - because the coordinates were typed into the script, under a comment
 saying they should be read from the layout rather than guessed. Two clicks landed in the gap

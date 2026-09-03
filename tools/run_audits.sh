@@ -320,4 +320,28 @@ fi
 
 echo
 echo "audits: $fails of $(echo $SHARD_MODES $SMOKE_MODES $APP_MODES | wc -w) suites failed, ${JOBS} at a time, $(( $(date +%s) - start ))s"
+
+# A gate that skipped is not a gate that passed.
+#
+# Three of them - trace-stability, undo-gui and edge-gui - need pillow to read the pixels the app
+# drew, and without it they print "needs pillow; skipped" and return 0. They did that in CI from
+# the day they were written, so a green run said nothing whatever about any of them, and the line
+# saying so scrolled past among sixty others. It is now counted and said out loud at the end,
+# where the failure count is read.
+# "needs X; skipped" is a gate declining to run. Plain "skipped" is not: --trig-test skips
+# one-shots and bounce-test counts skipped templates, both of which are ordinary results. Match
+# the declining form only, and say nothing at all when nothing declined.
+skips=""
+for f in "$out"/*.log; do
+    [ -f "$f" ] || continue
+    line=$(grep -i "needs .*; *skipped" "$f" 2>/dev/null | head -n 1)
+    [ -n "$line" ] && skips="$skips
+         $(basename "$f" .log): $line"
+done
+if [ -n "$skips" ]; then
+    echo
+    echo "audits: NOTE - these gates skipped rather than ran; they cover nothing here:$skips"
+    echo "audits: install what they ask for (pip install pillow numpy) to actually run them."
+fi
+
 [ "$fails" -eq 0 ]
