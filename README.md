@@ -1,10 +1,10 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.25.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.25.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.26.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.26.0)** (auto-updating from v3.4.0 on)
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
 digital solver, a real-time bench oscilloscope with FFT and THD, 200 guided circuits from RC
-filters to power grids, SPICE import, and a 61-suite self-audit battery. Build, simulate and
+filters to power grids, SPICE import, and a 65-suite self-audit battery. Build, simulate and
 analyse circuits with a drag-and-drop schematic.
 
 The look is deliberately **synthwave** - magenta and cyan on deep violet, a CRT-style graticule
@@ -1032,6 +1032,9 @@ build/tools/template_smoke.exe --pair-test       # two circuits on one sheet: a 
 build/tools/template_smoke.exe --ic-test         # a capacitor built pre-charged holds that voltage at the operating point
 build/tools/template_smoke.exe --sketch-test     # the Arduino interpreter: blink duty, timing, and sketches that must be rejected
 build/tools/template_smoke.exe --mcu-test        # the programmable block driving a load, measured at the node
+build/tools/template_smoke.exe --direction-test  # a passive part cannot generate power: current direction as a law
+build/tools/template_smoke.exe --thermal-test    # over its rating a part burns, inside it a part does not
+build/circuit-playground.exe --value-sweep       # every panel row of every part, swept across the decades and simulated
 build/tools/template_smoke.exe --burn-test       # no resistor/LED over its rating (HV templates use R_HP loads)
 build/tools/template_smoke.exe --std-test        # bus voltages vs ERCOT / NERC / ANSI C84.1 / NEC limits
 build/tools/template_smoke.exe --switch-test     # every switch in both states, measured at the probed output

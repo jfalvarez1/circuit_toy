@@ -26,10 +26,10 @@ if [ "$JOBS" -le 0 ]; then
 fi
 
 SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test --dvdt-test --state-test --meas-test --fft-test --dcm-test --iv-test --conv-test --stress-test --mc-test --bode-test --sign-test --load-test --scope-test --class-test --restamp-test
---flow-test --pair-test --ic-test --sketch-test --mcu-test --switch-test --part-test --op-test --sub-test --spice-test --xtal-test --view-test
---conn-test --file-test --parts-file-test --undo-test --bias-test --netlist-test --line-test --std-test --burn-test --knob-test --geom-test --param-test
+--flow-test --pair-test --ic-test --sketch-test --mcu-test --direction-test --thermal-test --switch-test --part-test --op-test --sub-test --spice-test --xtal-test --view-test
+--conn-test --file-test --parts-file-test --undo-test --bias-test --netlist-test --line-test --std-test --burn-test --knob-test --geom-test --param-test --sweep-check
 --tesla-test"
-APP_MODES="--layout-test --symbol-test --autoset-test --place-test --trig-test --prop-test"
+APP_MODES="--layout-test --symbol-test --autoset-test --place-test --trig-test --prop-test --value-sweep"
 # ...and one app suite is long enough to shard as well: --bounce-test renders sixty frames of
 # every template through the real scope.
 APP_SHARDED="bounce-test:4"
@@ -45,8 +45,15 @@ SHARDED="demo-test:4 default:2"
 orphans=""
 for src in tools/template_smoke.c src/main.c; do
     [ -f "$src" ] || continue
-    for flag in $(grep -oE 'strcmp\(argv\[i\], "--[a-z-]+-test"' "$src" | grep -oE '\-\-[a-z-]+-test' | sort -u); do
+    # Any suite, however it is named. This matched only names ending in -test, so --probe-audit,
+    # --sweep-check and --value-sweep were never guarded at all: the check that exists to stop a
+    # suite going unrun had three of them outside it. A suite is anything whose flag ends in
+    # -test, -audit, -check or -sweep.
+    for flag in $(grep -oE 'strcmp\(argv\[i\], "--[a-z-]+-(test|audit|check|sweep)"' "$src" | grep -oE '\-\-[a-z-]+-(test|audit|check|sweep)' | sort -u); do
         bare="${flag#--}"
+        # ...except the two that are options rather than suites: the updater is asked whether to
+        # look for a new release, which is a switch and not a check of anything.
+        case "$flag" in --update-check|--no-update-check) continue ;; esac
         # $(echo ...) collapses the embedded newlines: SMOKE_MODES spans four lines, and a
         # newline is not a space, so a flag at the start of a line looked absent.
         case " $(echo $SMOKE_MODES $APP_MODES $SHARDED $APP_SHARDED) " in
@@ -158,6 +165,21 @@ if command -v python >/dev/null 2>&1; then
         printf '[FAIL] %-14s %s
 ' "prop-wiring" "$(tail -n 1 "$out/propwiring.log" | cut -c1-100)"
         grep -i fail "$out/propwiring.log" | head -10
+        fails=$((fails + 1))
+    fi
+fi
+
+# Also source-level: a part that claims a temperature limit has to have a power expression the
+# damage model can actually read. Every one of them was reading a field the loop wrote back to
+# itself, so nothing had ever burned; the electrolytic had no case at all.
+if command -v python >/dev/null 2>&1; then
+    if python tools/thermal_wiring.py > "$out/thermalwiring.log" 2>&1; then
+        printf '[ OK ] %-14s %s
+' "thermal-wiring" "$(tail -n 1 "$out/thermalwiring.log" | cut -c1-100)"
+    else
+        printf '[FAIL] %-14s %s
+' "thermal-wiring" "$(tail -n 1 "$out/thermalwiring.log" | cut -c1-100)"
+        grep -i fail "$out/thermalwiring.log" | head -10
         fails=$((fails + 1))
     fi
 fi

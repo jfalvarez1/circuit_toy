@@ -918,6 +918,77 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.41 v3.26.0 - sweep every knob, and the audit plan that keeps it swept (2026-09-02)
+
+Asked to sweep every value and knob and find what breaks, to check current direction and
+thermal overload, and to make the coverage hold for circuits and components that do not exist
+yet. Nine faults, all in shipped code.
+
+**The audit plan, and why it is shaped this way.** Three of the suites here take a *law* or an
+*enumeration* rather than a table of expected answers, because a table only ever covers what
+was written down the day it was written:
+
+| Suite | Covers | How it stays covered |
+|-------|--------|----------------------|
+| `--value-sweep` | every part type, every row the properties panel offers, thirteen values from 0 to 1e9 and negative, simulated | walks `COMP_TYPE_COUNT` and asks the panel for its rows, so a new part with a new property is swept the day it is added. A part no template uses gets a bench: supply on terminal 0, every other terminal to ground through a kilohm |
+| `--direction-test` | current direction on every template | a law - a passive part cannot generate power, so `I*(V0-V1) >= 0` - which needs no expected value and covers templates not yet drawn. `--sign-test` checks four sources against hand arithmetic and is worth keeping; it does not scale and was never meant to |
+| `--thermal-test` | a part over its rating burns, a part inside it does not | both directions, and the rating used is the part's own |
+| `tools/thermal_wiring.py` | every part that claims a temperature limit has a power expression the damage model can read | source-level, so a part added with a rating and no handling fails the battery instead of quietly never getting warm |
+| `--pair-test` | two circuits on one sheet do not disturb each other | every template, against itself measured alone |
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.41.1 | `[ ]` **Automated:** `--value-sweep` | 125 part types, 132 panel rows, 1215 values applied and simulated, 0 that break the circuit |
+| 3.41.2 | `[ ]` **Automated:** `--direction-test` | 200 templates, 702 passive parts, 0 generating power |
+| 3.41.3 | `[ ]` **Automated:** `--thermal-test` | 6 overload cases, 0 wrong |
+| 3.41.4 | `[ ]` Put a 10 ohm resistor across 10 V | 10 W into a quarter-watt part: it heats, takes damage and releases smoke. Set its rating to 100 W and it survives |
+| 3.41.5 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 65 suites, 0 failed |
+
+**A DC motor's back-EMF was adding to its current instead of opposing it.** The stamp wrote its
+equivalent source with the opposite sign to every other companion in the file - the capacitor
+two hundred lines up does `b[n0] += +Ieq` for the same `I = G*dV - Ieq` branch, the motor did
+`-I_eq`. Back-EMF opposing is the whole of what makes a DC motor regulate its own speed, and
+with the sign inverted it is a positive feedback loop: on a bench the current and speed grew by
+a factor of 1.889 every step until the node reached 1e15 V. simulation.c recovered the current
+with the correct sign all along, so the operating point looked right and only the transient ran
+away. No motor template caught it, because every one of them has a periodic source that forces a
+short step.
+
+**The motor's rotor was integrated with forward Euler off the previous step's current** while
+the armature took its back-EMF from the previous step's speed - a two-step lag in a feedback
+loop, which rings. Now semi-implicit: torque from the current this step produced, friction at
+the new speed.
+
+**Nothing constrained the time step for a motor.** With no periodic source the step went to the
+10 ms ceiling. `J*R/(kt*kv)` is the electromechanical time constant and a tenth of it is the
+bound now.
+
+**A JFET with a pinch-off voltage of zero put a NaN through the solve.** Every region of the
+square law divides by Vp squared, and the panel took a zero. A device with no channel conducts
+nothing, which is finite.
+
+**Nothing in this program had ever burned.** `thermal_update_components` read
+`c->thermal.power_dissipated` to decide damage and then wrote that same field at the bottom of
+the loop, so the value it judged parts on was computed from itself: zero, for ever. The overload
+*warning* worked the whole time because render.c reads `props.resistor.power_dissipated`, which
+is computed properly every step - the two were different fields and only one was ever filled in.
+
+**The damage model ignored the part's rating**, using a flat 0.25 W for every resistor. A 5 W
+resistor at 1 W drew no warning and accumulated damage anyway.
+
+**Thermal resistance was a fixed 100 C/W** for everything, so a part explicitly rated 100 W
+still cooked at 10 W. It now follows the rating, which is what a rating means: `(T_max - T_amb)
+/ P_rated` puts a quarter-watt through-hole part at 520 C/W and a 100 W part at 1.3 C/W, and a
+part at exactly its rating sits at exactly its limit.
+
+**The electrolytic capacitor claimed a 105 C limit and had no case in the damage model** - the
+one part in the library that genuinely dies of heat. Found by the wiring guard above.
+
+**The guard that stops a suite going unrun only matched names ending in `-test`.** So
+`--probe-audit`, `--sweep-check` and `--value-sweep` were outside the check that exists to
+catch exactly this, and `--sweep-check` was in no list: nobody had run it. It now matches
+`-test`, `-audit`, `-check` and `-sweep`.
+
 ### 3.40 v3.25.0 - a canvas that scales, a circuit written as text, and the instrument entire (2026-09-02)
 
 The schematic is drawn at the display's own resolution instead of at 900p and stretched, a

@@ -363,6 +363,226 @@ static int prop_gap(void) {
     return 0;
 }
 
+
+/* Every property the panel offers, swept across the decades, and then the circuit is RUN.
+   --prop-test checks that a row applies; this checks that what it applied leaves a circuit that
+   still solves. They are different questions and only one of them had a suite.
+
+   The part is swept inside a real template rather than on its own, because a resistor with
+   nothing around it cannot break anything: what breaks is a 1e-12 ohm in series with a source,
+   or a gain of 1e9 inside a feedback loop. For each type this takes the first template that
+   contains one. */
+typedef struct {
+    int fails, points, rows, types, benched;
+    char worst[200];
+} SweepStats;
+
+/* Run the circuit far enough to see it misbehave, and say how if it does. A clean refusal to
+   converge is NOT counted as a break: some values genuinely have no operating point, and a
+   solver that says so is doing its job. NaN, runaway, a hang, or a two-terminal part that stops
+   conserving its own current are breaks. */
+static int value_sweep_run(Circuit *c, char *why, size_t nwhy) {
+    Simulation *sim = simulation_create(c);
+    if (!sim) { snprintf(why, nwhy, "no simulation"); return 0; }
+    int ok = 1;
+    if (!simulation_dc_analysis(sim)) { simulation_free(sim); return 1; }   /* a clean no */
+    for (int i = 0; i < c->num_nodes && ok; i++) {
+        if (!isfinite(c->nodes[i].voltage)) { snprintf(why, nwhy, "DC put a NaN on a node"); ok = 0; }
+    }
+    if (ok) {
+        simulation_auto_time_step(sim);
+        double dt = sim->time_step;
+        if (!(dt > 0) || !isfinite(dt)) { snprintf(why, nwhy, "auto time step came back %g", dt); ok = 0; }
+        else {
+            simulation_start(sim);
+            for (int s = 0; s < 60 && ok; s++) {
+                if (!simulation_step(sim)) break;             /* a clean stop is allowed */
+                for (int i = 0; i < c->num_nodes && ok; i++) {
+                    double v = c->nodes[i].voltage;
+                    if (!isfinite(v)) { snprintf(why, nwhy, "NaN on a node at step %d", s); ok = 0; }
+                    else if (fabs(v) > 1e15) { snprintf(why, nwhy, "%.3g V on a node at step %d", v, s); ok = 0; }
+                }
+            }
+        }
+    }
+    if (ok) {
+        simulation_update_flow_display(sim);
+        for (int i = 0; i < c->num_components && ok; i++) {
+            Component *comp = c->components[i];
+            if (!comp || comp->num_terminals != 2) continue;
+            /* A transmission line legitimately does not conserve instantaneous current between
+               its ends - that is what makes it one. */
+            if (comp->type == COMP_TLINE || comp->type == COMP_DELAY_LINE) continue;
+            double a = comp->terminal_current[0], b = comp->terminal_current[1];
+            if (!isfinite(a) || !isfinite(b)) { snprintf(why, nwhy, "%s has a NaN terminal current", comp->label); ok = 0; break; }
+            double amax = fabs(a) > fabs(b) ? fabs(a) : fabs(b);
+            if (fabs(a + b) > 1e-6 * amax + 1e-9) {
+                snprintf(why, nwhy, "%s stopped conserving: %.4g + %.4g = %.3g",
+                         comp->label, a, b, a + b);
+                ok = 0;
+            }
+        }
+        for (int w = 0; w < c->num_wires && ok; w++)
+            if (!isfinite(c->wires[w].current)) { snprintf(why, nwhy, "a wire current went NaN"); ok = 0; }
+    }
+    simulation_free(sim);
+    return ok;
+}
+
+
+/* A bench for a part that no template uses: a supply on its first terminal, every other
+   terminal to ground through a kilohm, ground on the supply's return. Wired through the
+   components' own node ids rather than through positions, because guessing a part's terminal
+   offsets silently builds a circuit with nothing connected. */
+static Circuit *value_sweep_bench(ComponentType ct, Component **out) {
+    Circuit *c = circuit_create();
+    if (!c) return NULL;
+    Component *part = component_create(ct, 0, 0);
+    if (!part) { circuit_free(c); return NULL; }
+    circuit_add_component(c, part);
+    if (part->num_terminals < 1) { *out = part; return c; }
+
+    Component *src = component_create(COMP_DC_VOLTAGE, -300, 0);
+    src->props.dc_voltage.voltage = 5.0;
+    circuit_add_component(c, src);
+    Component *g0 = component_create(COMP_GROUND, -300, 200);
+    circuit_add_component(c, g0);
+    circuit_add_wire(c, src->node_ids[1], g0->node_ids[0]);
+    circuit_add_wire(c, src->node_ids[0], part->node_ids[0]);
+
+    for (int k = 1; k < part->num_terminals; k++) {
+        Component *r = component_create(COMP_RESISTOR, 300, (float)(k * 120));
+        r->props.resistor.resistance = 1000.0;
+        circuit_add_component(c, r);
+        Component *g = component_create(COMP_GROUND, 500, (float)(k * 120));
+        circuit_add_component(c, g);
+        circuit_add_wire(c, part->node_ids[k], r->node_ids[0]);
+        circuit_add_wire(c, r->node_ids[1], g->node_ids[0]);
+    }
+    *out = part;
+    return c;
+}
+
+static int value_sweep_test(void) {
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        printf("value-sweep: no video (%s) - skipped\n", SDL_GetError());
+        return 0;
+    }
+    SDL_Window *win = SDL_CreateWindow("value-sweep", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                                       1600, 1000, SDL_WINDOW_HIDDEN);
+    SDL_Renderer *ren = win ? SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE) : NULL;
+    if (!ren) {
+        printf("value-sweep: no renderer (%s) - skipped\n", SDL_GetError());
+        if (win) SDL_DestroyWindow(win);
+        SDL_Quit();
+        return 0;
+    }
+    UIState *ui = calloc(1, sizeof *ui);
+    InputState *in = calloc(1, sizeof *in);
+    ui_init(ui);
+    ui->window_width = 1600; ui->window_height = 1000;
+    ui_update_layout(ui);
+
+    /* Which template to sweep each part inside: the first one that contains it. */
+    static CircuitTemplateType home[COMP_TYPE_COUNT];
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        Circuit *c = circuit_create();
+        if (!c) continue;
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) > 0) {
+            for (int i = 0; i < c->num_components; i++) {
+                Component *comp = c->components[i];
+                if (comp && !home[comp->type]) home[comp->type] = (CircuitTemplateType)t;
+            }
+        }
+        circuit_free(c);
+    }
+
+    /* Across the decades a user could type, plus the two ends the panel is supposed to refuse.
+       Whatever the panel takes, the circuit has to survive. */
+    static const char *values[] = { "0", "1p", "1n", "1u", "1m", "0.5", "1", "10", "1k", "1M",
+                                    "1e9", "-1", "-1k" };
+
+    SweepStats st; memset(&st, 0, sizeof st);
+    for (int ct = COMP_NONE + 1; ct < COMP_TYPE_COUNT; ct++) {
+        const ComponentTypeInfo *info = component_get_info((ComponentType)ct);
+        if (!info || !info->name || !info->name[0]) continue;
+        if (!home[ct]) st.benched++;                   /* no template uses one: use the bench */
+        st.types++;
+
+        Component *probe = component_create((ComponentType)ct, 200, 200);
+        if (!probe) continue;
+        memset(in, 0, sizeof *in);
+        in->selected_component = probe;
+        ui->num_properties = 0;
+        ui_render_properties(ui, ren, probe, in);
+        int rows = ui->num_properties < UI_MAX_PROPERTY_ROWS ? ui->num_properties : UI_MAX_PROPERTY_ROWS;
+        int prop_types[UI_MAX_PROPERTY_ROWS];
+        int nprops = 0;
+        for (int r = 0; r < rows; r++) {
+            int pr = ui->properties[r].prop_type;
+            if (pr == PROP_PROBE_NAME) continue;
+            if (property_is_toggle(pr)) continue;       /* toggles are covered below */
+            prop_types[nprops++] = pr;
+        }
+        component_free(probe);
+
+        for (int p = 0; p < nprops; p++) {
+            st.rows++;
+            for (unsigned vi = 0; vi < sizeof values / sizeof values[0]; vi++) {
+                Component *target = NULL;
+                Circuit *c;
+                if (home[ct]) {
+                    c = circuit_create();
+                    if (!c) continue;
+                    if (circuit_place_template(c, home[ct], 0, 0) <= 0) { circuit_free(c); continue; }
+                    for (int i = 0; i < c->num_components && !target; i++)
+                        if (c->components[i] && c->components[i]->type == ct) target = c->components[i];
+                } else {
+                    c = value_sweep_bench((ComponentType)ct, &target);
+                }
+                if (!c) continue;
+                if (!target) { circuit_free(c); continue; }
+
+                memset(in, 0, sizeof *in);
+                in->selected_component = target;
+                in->editing_property = true;
+                in->editing_prop_type = (PropertyType)prop_types[p];
+                snprintf(in->input_buffer, sizeof in->input_buffer, "%s", values[vi]);
+                bool applied = input_apply_property_edit(in, target);
+                if (applied) {
+                    st.points++;
+                    char why[160] = "";
+                    if (!value_sweep_run(c, why, sizeof why)) {
+                        st.fails++;
+                        printf("[FAIL] sweep %-22s property %-3d = %-4s in %-24s : %s\n",
+                               info->name, prop_types[p], values[vi],
+                               home[ct] && circuit_template_get_info(home[ct])
+                                   ? circuit_template_get_info(home[ct])->name : "the bench",
+                               why);
+                        if (!st.worst[0]) snprintf(st.worst, sizeof st.worst, "%s %s = %s: %s",
+                                                   info->name, "property", values[vi], why);
+                    }
+                }
+                circuit_free(c);
+            }
+        }
+
+        /* Toggles are deliberately not here. There is no apply function for one - the app flips
+           them inline in the click handler - and what they select is a whole model rather than a
+           number, which --iv-test and --class-test already run both ways. */
+    }
+
+    printf("\nvalue-sweep: %d part types, %d panel rows, %d values applied and simulated, "
+           "%d that broke the circuit (%d types swept on the bench, no template uses them)\n",
+           st.types, st.rows, st.points, st.fails, st.benched);
+
+    free(ui); free(in);
+    SDL_DestroyRenderer(ren);
+    SDL_DestroyWindow(win);
+    SDL_Quit();
+    return st.fails ? 1 : 0;
+}
+
 static int prop_test(void) {
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         printf("prop-test: no video (%s) - skipped\n", SDL_GetError());
@@ -1473,6 +1693,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--bounce-test"))
             return bounce_test((i + 1 < argc) ? atof(argv[i + 1]) : 0.0);
         else if (!strcmp(argv[i], "--prop-test")) return prop_test();
+        else if (!strcmp(argv[i], "--value-sweep")) { int rc = value_sweep_test(); return rc; }
         else if (!strcmp(argv[i], "--prop-gap")) return prop_gap();
         else if (!strcmp(argv[i], "--crashlog")) { crashlog_dump_last(); return 0; }
         else { fprintf(stderr, "Unknown option: %s\n", argv[i]); usage(); return 2; }

@@ -4971,6 +4971,14 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
 
             double sign = (comp->type == COMP_PJFET) ? -1.0 : 1.0;
             double Vp_abs = fabs(Vp);
+            /* Every region below divides by Vp squared. A pinch-off of zero is not a device -
+               there is no channel to modulate - and the properties panel took it, which put a
+               NaN through the whole solve and out into the wire currents. A part with no channel
+               conducts nothing; that is finite, and it is what the cutoff branch would say. */
+            if (!(Vp_abs > 1e-9)) {
+                STAMP_CONDUCTANCE(n[1], n[2], 1e-12);
+                break;
+            }
 
             double Vgs = 0, Vds = 0;
             if (prev_solution) {
@@ -6053,8 +6061,21 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             double I_L_prev = (L_a / dt) * I_prev / Req;
             double I_eq = I_bemf - I_L_prev;
 
-            if (n[0] > 0) vector_add(b, n[0]-1, -I_eq);
-            if (n[1] > 0) vector_add(b, n[1]-1, I_eq);
+            /* The sign of every other companion in this file: the branch is I = G*(v0-v1) - I_eq
+               with I entering terminal 0, so the device SOURCES I_eq into n0 - which is what the
+               capacitor a few hundred lines up does with its own Ieq.
+
+               This was the other way round, and the consequence was not a small error: back-EMF
+               ADDED to the armature current instead of opposing it. A motor whose back-EMF
+               assists is a positive feedback loop, and on a bench with a DC supply the current
+               and the speed grew by a factor of 1.889 every step until the node hit 1e15 V.
+               Opposing back-EMF is the whole of what makes a DC motor regulate its own speed:
+               it is why one settles at a speed instead of accelerating for ever, and why loading
+               it draws more current. simulation.c recovers the current with the correct sign
+               already, so the stamp and the recompute disagreed - which is why the operating
+               point looked right and only the transient ran away. */
+            if (n[0] > 0) vector_add(b, n[0]-1, I_eq);
+            if (n[1] > 0) vector_add(b, n[1]-1, -I_eq);
 
             break;
         }

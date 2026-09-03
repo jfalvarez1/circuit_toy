@@ -1004,33 +1004,71 @@ static void thermal_update_components(Circuit *circuit, double dt, double sim_ti
         // Skip components without thermal modeling
         if (c->thermal.max_temperature <= 0) continue;
 
-        // Get power dissipation based on component type
+        /* What the part is actually dissipating, right now.
+
+           Every branch of this switch used to read c->thermal.power_dissipated and the bottom of
+           the loop then wrote the same field back - so the value it damaged parts on was the one
+           it had computed from itself, which is zero and stays zero. Nothing has ever burned.
+           The overload WARNING worked the whole time, because render.c reads
+           props.resistor.power_dissipated, which circuit_update_voltages computes properly every
+           step; the two were simply different fields and only one of them was ever filled in.
+
+           These read what circuit_update_voltages has just left fresh, which is why they do not
+           use terminal currents: those are recovered by re-stamping every device and are only
+           computed when the flow display asks, so at this point in a step they can be a frame
+           old. Voltage across a part and its own resistance are current. */
         double power = 0.0;
         switch (c->type) {
             case COMP_RESISTOR:
-                // P = V * I (already tracked in component)
-                power = c->thermal.power_dissipated;
+                power = c->props.resistor.power_dissipated;
                 break;
+            case COMP_LAMP: {
+                Node *a = circuit_get_node(circuit, c->node_ids[0]);
+                Node *b = circuit_get_node(circuit, c->node_ids[1]);
+                double R = c->props.lamp.r_hot > 0 ? c->props.lamp.r_hot : c->props.lamp.r_cold;
+                if (a && b && R > 0) { double v = a->voltage - b->voltage; power = v * v / R; }
+                break;
+            }
+            /* Sum of V*I over every terminal: the power a device absorbs, whatever its
+               terminal count, and the only expression that works for a three-terminal part.
+               These need the terminal currents, which are recovered by re-stamping each device -
+               so the caller refreshes them when a part like this is on the sheet. */
             case COMP_NPN_BJT:
             case COMP_PNP_BJT:
-                power = c->thermal.power_dissipated;
-                break;
             case COMP_NMOS:
             case COMP_PMOS:
-                power = c->thermal.power_dissipated;
-                break;
             case COMP_CAPACITOR:
-                // Capacitors dissipate power through ESR
-                power = c->thermal.power_dissipated;
+            /* The electrolytic claims a 105 C limit in component_create and had no case here at
+               all, so the one part in the library that genuinely dies of heat - ESR heating is
+               how an electrolytic fails - could not get warm. Found by tools/thermal_wiring.py,
+               which exists for exactly this. */
+            case COMP_CAPACITOR_ELEC:
+                power = 0;
+                for (int k = 0; k < c->num_terminals; k++) {
+                    Node *nk = circuit_get_node(circuit, c->node_ids[k]);
+                    if (nk) power += nk->voltage * c->terminal_current[k];
+                }
+                if (power < 0) power = 0;      /* a storage element returning energy is not heat */
                 break;
-            case COMP_LED:
-                power = c->thermal.power_dissipated;
+            case COMP_LED: {
+                /* Its own current, recomputed from the converged solution one function earlier,
+                   times the drop across it. */
+                Node *a = circuit_get_node(circuit, c->node_ids[0]);
+                Node *b = circuit_get_node(circuit, c->node_ids[1]);
+                if (a && b) power = fabs((a->voltage - b->voltage) * c->props.led.current);
                 break;
+            }
             case COMP_DIODE:
             case COMP_ZENER:
-            case COMP_SCHOTTKY:
-                power = c->thermal.power_dissipated;
+            case COMP_SCHOTTKY: {
+                Node *a = circuit_get_node(circuit, c->node_ids[0]);
+                Node *b = circuit_get_node(circuit, c->node_ids[1]);
+                if (a && b) {
+                    power = (a->voltage - b->voltage) * c->terminal_current[0];
+                    if (power < 0) power = 0;  /* displacement current into a reverse junction */
+                }
                 break;
+            }
             default:
                 continue;  // No thermal model for this component
         }
@@ -1089,11 +1127,25 @@ static void thermal_update_components(Circuit *circuit, double dt, double sim_ti
             }
         }
 
-        // Calculate power rating based on component type
-        double power_rating = 0.25;  // Default 1/4W for resistors
+        /* The part's OWN rating wherever it has one, and only a per-type default where it does
+           not. This was a flat 0.25 W for every resistor no matter what its rating said, which
+           put the damage model and the overload warning on different numbers: render.c has
+           always divided by props.resistor.power_rating, so a 5 W resistor at 1 W drew no
+           warning and accumulated damage anyway, and a part explicitly rated for the job burned
+           because the model never looked. A rating is the number the user set; the default is
+           what to assume when they have not. */
+        double power_rating = 0.25;  // Default 1/4W for parts with no rating of their own
         switch (c->type) {
             case COMP_RESISTOR:
-                power_rating = 0.25;  // 1/4W typical through-hole
+                power_rating = (c->props.resistor.power_rating > 0)
+                             ? c->props.resistor.power_rating : 0.25;
+                /* An HP load is a power-system model, not a part on a bench: it carries
+                   kiloamps by construction and render.c already exempts it from the warning. */
+                if (c->props.resistor.high_power) power_rating = 1e12;
+                break;
+            case COMP_LAMP:
+                power_rating = (c->props.lamp.power_rating > 0)
+                             ? c->props.lamp.power_rating : 0.5;
                 break;
             case COMP_NPN_BJT:
             case COMP_PNP_BJT:
@@ -1109,6 +1161,21 @@ static void thermal_update_components(Circuit *circuit, double dt, double sim_ti
 
         // Accumulate damage if over temperature or power limit
         double damage_rate = 0.0;
+
+        /* Thermal resistance follows the rating, because that is what a rating MEANS: the power
+           at which the part reaches its maximum temperature in still air. R_th = (T_max - T_amb)
+           / P_rated gives 520 C/W for a quarter-watt through-hole resistor and 1.3 C/W for a
+           100 W part, which are the right orders for a bare part and a heatsinked one.
+
+           A fixed 100 C/W for everything meant the rating and the temperature limit disagreed:
+           a part explicitly rated 100 W still cooked at 10 W, because it was being cooled like a
+           quarter-watt part. Now a part at exactly its rating sits at exactly its limit, and the
+           two ways of being overloaded agree with each other by construction. */
+        if (power_rating > 0 && power_rating < 1e11 &&
+            c->thermal.max_temperature > c->thermal.ambient_temperature) {
+            double r_th = (c->thermal.max_temperature - c->thermal.ambient_temperature) / power_rating;
+            if (r_th > 0 && isfinite(r_th)) c->thermal.thermal_resistance = r_th;
+        }
 
         // Temperature-based damage
         if (c->thermal.temperature > c->thermal.max_temperature) {
@@ -1563,8 +1630,17 @@ bool simulation_step(Simulation *sim) {
             double v2 = (b2 > 0) ? vector_get(sim->solution, b2 - 1) : 0;
             double I_new = (Req > 0) ? (v1 - v2 - V_bemf) / Req + I_prev * L_a / (Req * dt) : 0;
 
-            double d_omega = (kt * I_prev - b_f * omega_prev - T_load) / J;
-            double omega_new = omega_prev + d_omega * dt;
+            /* Semi-implicit. The torque is taken from the current this step has just
+                produced, and the friction from the new speed rather than the old.
+
+                Explicitly - torque from I_prev, back-EMF from omega_prev - the current and the
+                speed each lag the other by a whole step, and a two-step lag inside a feedback
+                loop does not damp, it rings: on a bench with no periodic source to shorten the
+                step, the armature current alternated sign and doubled every step until it
+                overflowed. Using I_new closes half the loop inside the step, and backward Euler
+                on the friction term removes the dt < 2J/b limit outright. Both reduce to the
+                same equations as dt goes to zero, so nothing that was already converged moves. */
+            double omega_new = (J * omega_prev + dt * (kt * I_new - T_load)) / (J + dt * b_f);
             if (omega_new < 0) omega_new = 0;
             comp->props.dc_motor.omega = omega_new;
             comp->props.dc_motor.current = I_new;
@@ -1778,6 +1854,18 @@ bool simulation_step(Simulation *sim) {
     // Update circuit voltages and meter readings (wire flow display is refreshed per frame)
     circuit_update_voltages(circuit, sim->solution);
     circuit_update_meter_readings(circuit);
+
+    /* The parts whose dissipation can only come from a terminal current - transistors,
+       MOSFETs, electrolytics, diodes - need those currents to be current. They are otherwise
+       only recovered when the flow display asks, which in a headless run is never and in the app
+       is once a frame rather than once a step. Only paid for when such a part is on the sheet. */
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *tc = circuit->components[i];
+        if (!tc || tc->thermal.max_temperature <= 0) continue;
+        if (tc->type == COMP_RESISTOR || tc->type == COMP_LAMP || tc->type == COMP_LED) continue;
+        simulation_compute_terminal_currents(sim);
+        break;
+    }
 
     // Update thermal state for all components (magic smoke simulation)
     thermal_update_components(circuit, dt, sim->time);
@@ -2135,6 +2223,27 @@ double simulation_accuracy_time_step(Simulation *sim) {
         if (dt_pulse < dt) dt = dt_pulse;
     }
 
+
+    /* A motor's electromechanical loop. Current makes torque, torque makes speed, speed makes
+       back-EMF - and that loop is advanced between steps rather than solved as one, so a step
+       longer than the loop's own time constant does not merely lose accuracy, it oscillates.
+       J*R/(kt*kv) is the standard electromechanical time constant and a tenth of it resolves the
+       loop with margin.
+
+       Nothing bounded the step for a motor before this. Every motor template has a periodic
+       source in it, which sets a short step for its own reasons and hid the problem completely;
+       put a motor on a DC supply with nothing else and the step went to the 10 ms ceiling. */
+    for (int i = 0; sim && sim->circuit && i < sim->circuit->num_components; i++) {
+        Component *m = sim->circuit->components[i];
+        if (!m || m->type != COMP_DC_MOTOR) continue;
+        double Jm = m->props.dc_motor.j_rotor;
+        double Rm = m->props.dc_motor.r_armature;
+        double ktm = m->props.dc_motor.kt, kvm = m->props.dc_motor.kv;
+        if (!(Jm > 0) || !(ktm > 0) || !(kvm > 0)) continue;
+        if (!(Rm > 0)) Rm = 1e-3;
+        double tau_em = Jm * Rm / (ktm * kvm);
+        if (tau_em > 0 && tau_em / 10.0 < dt) dt = tau_em / 10.0;
+    }
 
     // Clamp to valid range
     return CLAMP(dt, MIN_TIME_STEP, MAX_TIME_STEP);
