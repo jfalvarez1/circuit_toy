@@ -2131,7 +2131,23 @@ static int thermal_test(void) {
             Component *r = c->components[1];
             double p = r->thermal.power_dissipated;
             double dmg = r->thermal.damage;
+            /* All the way to what is drawn, not just to the damage number. render.c only draws
+               smoke when smoke_active is set and there are particles, so a part that "burns"
+               without those is a part that fails silently. */
             int burned = (dmg > 0.01) || r->thermal.failed;
+            /* And a failed part must actually be dead: open circuit, and drawn as failed for
+               as long as it stays failed rather than only while the smoke puff lasts. */
+            if (cases[i].expect_burn && r->thermal.failed) {
+                Node *na = circuit_get_node(c, r->node_ids[0]);
+                Node *nb = circuit_get_node(c, r->node_ids[1]);
+                double vr = (na && nb) ? fabs(na->voltage - nb->voltage) : 0;
+                double i_after = fabs(r->terminal_current[0]);
+                if (i_after > 1e-6) {
+                    ok = 0;
+                    snprintf(why, sizeof why, "burned and still carrying %.4g A across %.4g V",
+                             i_after, vr);
+                }
+            }
             double expect_p = cases[i].v * cases[i].v / cases[i].r;
             if (fabs(p - expect_p) > 0.05 * expect_p + 1e-6) {
                 ok = 0;
@@ -3566,6 +3582,17 @@ static Component *pt_add(Circuit *c, ComponentType t, float x, float y, int rot)
     Component *k = component_create(t, x, y);
     if (!k) return NULL;
     k->rotation = rot;
+    /* A measurement rig is not a thermal bench. These build a source, a device and a load chosen
+       to make one number readable - a 10 ohm load across a transformer secondary carrying
+       kiloamps, a line terminated for a 245 kV phasor - and the parts in them are idealised
+       stand-ins, not quarter-watt resistors somebody has to buy.
+
+       This became load-bearing when a burned part started going open circuit, as one does: the
+       transformer and transmission-line rigs promptly burned their own loads open and measured
+       nothing. Real templates do not have the problem, because circuits.c already marks the
+       loads in the power-system groups high_power and those carry no thermal limit - which is
+       why all 200 of them pass and only the two synthetic rigs did not. */
+    k->thermal.max_temperature = 0.0;
     circuit_add_component(c, k);
     return k;
 }

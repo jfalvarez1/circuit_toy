@@ -3274,6 +3274,25 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         n[i] = (comp->node_ids[i] > 0) ? node_map[comp->node_ids[i]] : 0;
     }
 
+    /* A part that has released its magic smoke is not a part any more.
+
+       thermal.failed was set by the damage model and then read by nothing at all: a resistor
+       that had visibly burned went on conducting its rated current for ever, and the only sign
+       it had failed was a puff of smoke that expired in about a second. These fail OPEN, which
+       is how a resistor, a lamp, a fuse, an LED or a small-signal diode goes - the element
+       vaporises. Parts that fail short, like a punched-through junction, are not in this list:
+       guessing which way a transistor died is worse than leaving it alone. */
+    if (comp->thermal.failed && comp->num_terminals >= 2) {
+        switch (comp->type) {
+            case COMP_RESISTOR: case COMP_LAMP: case COMP_FUSE:
+            case COMP_LED: case COMP_DIODE: case COMP_ZENER: case COMP_SCHOTTKY: {
+                STAMP_CONDUCTANCE(n[0], n[1], 1e-12);   /* open, but not a singular matrix */
+                return;
+            }
+            default: break;
+        }
+    }
+
     switch (comp->type) {
         case COMP_GROUND: {
             // Ground forces node to 0V

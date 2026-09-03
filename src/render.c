@@ -2108,7 +2108,24 @@ void render_probe(RenderContext *ctx, Circuit *circuit, Probe *probe, int index)
 
 // Draw smoke particles from failed components (magic smoke effect)
 static void render_component_smoke(RenderContext *ctx, Component *comp) {
-    if (!comp || !comp->thermal.smoke_active || comp->thermal.num_smoke == 0) return;
+    if (!comp) return;
+
+    /* A part that has failed stays visibly failed. The smoke is a puff and expires in about a
+       second, and before this that was the only sign: after it cleared, a burned part looked
+       exactly like a working one on a canvas where it was now an open circuit. A cross through
+       it says so for as long as it is dead. */
+    if (comp->thermal.failed) {
+        int fx, fy;
+        render_world_to_screen(ctx, comp->x, comp->y, &fx, &fy);
+        int r = (int)(14 * ctx->zoom);
+        if (r < 5) r = 5;
+        Color charred = { 235, 90, 60, 255 };
+        render_set_color(ctx, charred);
+        render_draw_line_screen(ctx, fx - r, fy - r, fx + r, fy + r);
+        render_draw_line_screen(ctx, fx - r, fy + r, fx + r, fy - r);
+    }
+
+    if (!comp->thermal.smoke_active || comp->thermal.num_smoke == 0) return;
 
     int cx, cy;
     render_world_to_screen(ctx, comp->x, comp->y, &cx, &cy);
