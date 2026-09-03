@@ -9,17 +9,24 @@
      alongside the versioned one, so the link never needs editing and never goes stale. The
      versioned copy stays because the updater asks for it by name. -->
 
-**Latest Release: [v3.27.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.27.0)** (auto-updating from v3.4.0 on) · [all releases](https://github.com/jfalvarez1/circuit_toy/releases)
+**Latest Release: [v3.28.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.28.0)** (auto-updating from v3.4.0 on) · [all releases](https://github.com/jfalvarez1/circuit_toy/releases)
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
 digital solver, a real-time bench oscilloscope with FFT and THD, 205 guided circuits from RC
-filters to power grids, SPICE import, and a 67-suite self-audit battery. Build, simulate and
+filters to power grids, SPICE import, and a 69-suite self-audit battery. Build, simulate and
 analyse circuits with a drag-and-drop schematic.
 
 The look is deliberately **synthwave** - magenta and cyan on deep violet, a CRT-style graticule
 in a recessed bezel, and knobs that look like the front of an instrument from about 1984. It is
 an aesthetic choice, and it is also a legible one: every channel has its own colour, and the
 scope reads the way a scope reads.
+
+...and when the circuit is going into a report rather than onto a screen, **BW** on the toolbar
+redraws the canvas as a printed schematic: black on white, the grid demoted to faint ruling, the
+probes drawn as test points. The button beside it decides what a screenshot contains - the
+canvas, the canvas with the scope stacked under it, or the whole window - so what you paste into
+a document is the drawing rather than a picture of the program. Both are scriptable:
+`--style schematic --shot-region canvas+scope --shot figure1.bmp`.
 
 In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/).
 
