@@ -353,6 +353,12 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_BMI_INSTRUMENT] = {"BMI: Full Instrument", "BMI", "the window comparator, the enable and the pass device", TG_BMI},
     [CIRCUIT_BMI_CC_OUTPUT] = {"BMI: CC Output (LM317 current source)", "CCout", "one resistor round an LM317 makes a current source", TG_BMI},
     [CIRCUIT_BMI_OCP] = {"BMI: Over-current Trip", "OCP", "sense, threshold, relay - and the load goes away", TG_BMI},
+    [CIRCUIT_BATT_PACKS] = {"Battery Packs: 1S to 4S", "Packs",
+        "the same LiPo cell wired one, two, three and four deep", TG_BMI},
+    [CIRCUIT_BATT_CRATE] = {"Battery: 25C vs 100C", "C-rate",
+        "two packs a catalogue calls identical, into the same load", TG_BMI},
+    [CIRCUIT_BATT_CHARGING] = {"Charging by Chemistry", "Charge",
+        "the voltage each chemistry has to be charged to, and the taper", TG_BMI},
     [CIRCUIT_MCU_BLINK] = {"Blink (programmable block)", "Blink",
         "Arduino-shaped code driving an LED, solved with the circuit", TG_DIGITAL},
     [CIRCUIT_BMI_RAIL] = {"BMI: Switching Rail (MC34063)", "Rail", "a divider sets the output, not a duty cycle", TG_BMI},
@@ -6435,6 +6441,9 @@ static int place_bmi_cc_output(Circuit *circuit, float x, float y);
 static int place_bmi_ocp(Circuit *circuit, float x, float y);
 static int place_bmi_rail(Circuit *circuit, float x, float y);
 static int place_mcu_blink(Circuit *circuit, float x, float y);
+static int place_batt_packs(Circuit *circuit, float x, float y);
+static int place_batt_crate(Circuit *circuit, float x, float y);
+static int place_batt_charging(Circuit *circuit, float x, float y);
 static int place_tline_real(Circuit *circuit, float x, float y);
 static int place_sevenseg_test(Circuit *circuit, float x, float y);
 static int place_wireless_link(Circuit *circuit, float x, float y);
@@ -6787,6 +6796,9 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_BMI_CC_OUTPUT:      return place_bmi_cc_output(circuit, x, y);
         case CIRCUIT_BMI_OCP:            return place_bmi_ocp(circuit, x, y);
         case CIRCUIT_MCU_BLINK:          return place_mcu_blink(circuit, x, y);
+        case CIRCUIT_BATT_PACKS:         return place_batt_packs(circuit, x, y);
+        case CIRCUIT_BATT_CRATE:         return place_batt_crate(circuit, x, y);
+        case CIRCUIT_BATT_CHARGING:      return place_batt_charging(circuit, x, y);
         case CIRCUIT_BMI_RAIL:           return place_bmi_rail(circuit, x, y);
         case CIRCUIT_TLINE_REAL:         return place_tline_real(circuit, x, y);
         case CIRCUIT_SEVENSEG_TEST:      return place_sevenseg_test(circuit, x, y);
@@ -7189,6 +7201,24 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "coil whose contact shorts the pass MOSFET's gate to its own source - which turns it off. 0.65 of the",
         "sense voltage reaching 0.65 V means the trip is at about 1 A. LOWER THE LOAD from 10 ohm to 2 and it",
         "trips; it does not latch, so it retries - which is what a protection without a reset button does."},
+    [CIRCUIT_BATT_CHARGING] = {"CHARGING: three chemistries, three charge voltages, and the same circuit each time.",
+                               "A constant-voltage rail and a resistor to set the current is what a charger IS; the",
+                               "number the rail is set to is the whole of the chemistry's requirement. 4.20 V a cell for",
+                               "Li-ion and LiPo, 3.65 for LiFePO4, 2.40 for lead-acid in absorption and 2.25 to float.",
+                               "Charge a LiFePO4 to 4.2 and it is damaged; charge a Li-ion to 3.65 and it is never full.",
+                               "PROBE: each pack's terminal. They start half charged, so each is taking current now."},
+    [CIRCUIT_BATT_PACKS] = {"BATTERY PACKS: the same 2200 mAh LiPo cell wired one, two, three and four deep. Series",
+                            "multiplies VOLTAGE and nothing else - every column here is still 2200 mAh, and the 4S is",
+                            "14.8 V because four times 3.7 is 14.8. Cells in parallel would do the opposite: same",
+                            "voltage, more capacity and more current. Internal resistance follows the same arithmetic,",
+                            "S times the cell and divided by P, which is why a big series pack is not a stiff one.",
+                            "PROBE: one on each column. Select a pack and step its Chemistry to see the voltage move."},
+    [CIRCUIT_BATT_CRATE] = {"C RATING: two packs a catalogue would describe almost identically - 3S, 11.1 V, 2200 mAh -",
+                            "into the same 0.3 ohm load. The only difference is the C rating, and it is the number that",
+                            "decides whether the thing they power works: 25C is 55 A and 30 mohm, 100C is 220 A and",
+                            "7.5 mohm. Under this load the 25C pack sags to 11.46 V and the 100C holds 12.29 V.",
+                            "R_cell = k / (C * Ah), so the C rating and the internal resistance are one number twice.",
+                            "PROBE: both packs' terminals. The gap between them IS the C rating."},
     [CIRCUIT_MCU_BLINK] = {"BLINK: the code is part of the circuit. The block runs its sketch against SIMULATED time, so",
                            "delay(5) is five milliseconds of the circuit's own clock however fast the simulation is running.",
                            "D13 drives 220 ohm and an LED through 25 ohm of port resistance, which is why the pin sits at",
@@ -13649,6 +13679,114 @@ static int place_bmi_ocp(Circuit *circuit, float x, float y) {
 }
 
 
+
+/* One pack, its load and its return, in a column starting at (x, y). Returns the number of parts
+   placed. The four columns of the arrangement template are this four times over, which is the
+   point being made: the same cell, wired differently. */
+static int place_batt_column(Circuit *circuit, float x, float y, const char *preset, double rload) {
+    Component *b = add_comp(circuit, COMP_BATTERY, x, y + 60, 0);      /* +(x,y+20) -(x,y+100) */
+    if (!b) return 0;
+    component_apply_part(b, preset);
+    b->node_ids[0] = TN(x, y + 20);
+    b->node_ids[1] = TN(x, y + 100);
+
+    Component *r = vres(circuit, x + 120, y + 80, rload);              /* (x+120,y+40)-(x+120,y+120) */
+    (void)r;
+    TW(TN(x, y + 20), TN(x + 120, y + 20));
+    TW(TN(x + 120, y + 20), TN(x + 120, y + 40));
+
+    int bot = TN(x + 120, y + 200);
+    TW(TN(x + 120, y + 120), bot);
+    Component *g = add_comp(circuit, COMP_GROUND, x + 120, y + 220, 0);
+    g->node_ids[0] = bot;
+
+    TW(TN(x, y + 100), TN(x, y + 200));
+    TW(TN(x, y + 200), bot);
+    return 4;
+}
+
+
+/* One chemistry being charged: a rail held at the voltage that chemistry needs, a series
+   resistor setting the current, and a half-charged pack at the bottom. */
+static int place_batt_charge_column(Circuit *circuit, float x, float y,
+                                    double v_charge, const char *preset, int chem,
+                                    double r_series, const char *label) {
+    Component *rail = dc_rail(circuit, x, y, v_charge);          /* +(x,y) -(x,y+80) gnd(x,y+120) */
+    if (!rail) return 0;
+
+    Component *r = vres(circuit, x + 140, y + 60, r_series);     /* (x+140,y+20)-(x+140,y+100) */
+    (void)r;
+    TW(TN(x, y), TN(x + 140, y));
+    TW(TN(x + 140, y), TN(x + 140, y + 20));
+
+    Component *b = add_comp(circuit, COMP_BATTERY, x + 140, y + 180, 0);  /* +(.,y+140) -(.,y+220) */
+    component_apply_part(b, preset);
+    b->props.battery.chemistry = chem;
+    /* Half charged, so it is actually taking current: a full pack sits at the charge voltage and
+       the whole circuit reads zero, which teaches nothing. */
+    b->props.battery.charge_state = 0.5;
+    b->props.battery.charge_coulombs = b->props.battery.capacity_mah * 3.6 * 0.5;
+    b->props.battery.discharged = false;
+    b->node_ids[0] = TN(x + 140, y + 140);
+    b->node_ids[1] = TN(x + 140, y + 220);
+    TW(TN(x + 140, y + 100), TN(x + 140, y + 140));
+
+    int bot = TN(x + 140, y + 280);
+    TW(TN(x + 140, y + 220), bot);
+    Component *g = add_comp(circuit, COMP_GROUND, x + 140, y + 300, 0);
+    g->node_ids[0] = bot;
+
+    add_label(circuit, x - 10, y - 40, label);
+    return 5;
+}
+
+static int place_batt_charging(Circuit *circuit, float x, float y) {
+    /* Three chemistries, three charge voltages, one circuit each. What a charger has to DO
+       differs less than what it has to do it TO: the topology is the same constant-voltage rail
+       every time, and the number it is set to is the whole of the chemistry's requirement.
+       Charge a LiFePO4 to 4.2 V a cell and it is damaged; charge a Li-ion to 3.65 and it is
+       never full. */
+    int n = 0;
+    n += place_batt_charge_column(circuit, x, y, 4.20, "LiPo 1S", BATT_LIION, 4.7,
+                                  "Li-ion / LiPo: 4.20 V per cell");
+    n += place_batt_charge_column(circuit, x + 360, y, 3.65, "LiFePO4 1S", BATT_LIFEPO4, 4.7,
+                                  "LiFePO4: 3.65 V per cell");
+    n += place_batt_charge_column(circuit, x + 720, y, 14.40, "SLA 12V 7Ah", BATT_LEAD_ACID, 4.7,
+                                  "Lead-acid: 2.40 V per cell absorption");
+    return n;
+}
+
+static int place_batt_packs(Circuit *circuit, float x, float y) {
+    /* The same LiPo cell wired one, two, three and four deep. Series multiplies voltage and
+       nothing else: every one of these is 2200 mAh, and the fourth is 14.8 V because four times
+       3.7 is 14.8. It is the arithmetic on the label of every pack anybody has ever bought. */
+    static const struct { const char *preset; const char *label; double r; } col[4] = {
+        { "LiPo 1S",       "1S  3.7 V",  10.0 },
+        { "LiPo 2S 7.4V",  "2S  7.4 V",  20.0 },
+        { "LiPo 3S 11.1V", "3S 11.1 V",  30.0 },
+        { "LiPo 4S 14.8V", "4S 14.8 V",  40.0 },
+    };
+    int n = 0;
+    for (int i = 0; i < 4; i++) {
+        float cx = x + i * 260.0f;
+        n += place_batt_column(circuit, cx, y, col[i].preset, col[i].r);
+        add_label(circuit, cx - 10, y - 30, col[i].label);
+    }
+    return n;
+}
+
+static int place_batt_crate(Circuit *circuit, float x, float y) {
+    /* Two packs a catalogue would describe almost identically - 3S, 2200 mAh, 11.1 V - into the
+       same load. Everything about them is the same except the C rating, and that is the number
+       that decides whether the thing they are powering works. */
+    int n = 0;
+    n += place_batt_column(circuit, x, y, "LiPo 3S 11.1V", 0.3);
+    add_label(circuit, x - 10, y - 30, "25C: 55 A rating, 30 mohm");
+    n += place_batt_column(circuit, x + 360, y, "LiPo 3S 100C", 0.3);
+    add_label(circuit, x + 350, y - 30, "100C: 220 A rating, 7.5 mohm");
+    return n;
+}
+
 static int place_mcu_blink(Circuit *circuit, float x, float y) {
     /* The first sketch anybody writes, wired to something that shows it. The point of the
        template is not the LED - it is that the code is a part of the circuit: the block is
@@ -14527,6 +14665,9 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_INSTRUMENT]   = { COMP_RESISTOR, 3, 0 },     /* across the load: on when the cell is in range */
     [CIRCUIT_BMI_CC_OUTPUT]    = { COMP_RESISTOR, 2, 0 },     /* the load the current source is driving */
     [CIRCUIT_BMI_OCP]          = { COMP_RESISTOR, 1, 0 },     /* the load: live until the trip takes it away */
+    [CIRCUIT_BATT_PACKS]       = { COMP_RESISTOR, 0, 0 },    /* the 1S column: 3.7 V */
+    [CIRCUIT_BATT_CRATE]       = { COMP_RESISTOR, 0, 0 },    /* the 25C pack under load: the one that sags */
+    [CIRCUIT_BATT_CHARGING]    = { COMP_RESISTOR, 0, 1 },    /* below the Li-ion series resistor: the pack terminal */
     [CIRCUIT_MCU_BLINK]        = { COMP_RESISTOR, 0, 0 },    /* the driven pin: a square wave the code made */
     [CIRCUIT_BMI_RAIL]         = { COMP_RESISTOR, 0, 0 },     /* the rail the divider is holding up */
     [CIRCUIT_IV_BUCK_NODES]    = { COMP_RESISTOR, 2, 0 },     /* the output, after L and C */
@@ -14564,6 +14705,10 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     /* The LED anode as well as the pin. The block is its own stimulus - there is no source
        component to put CH1 on - and the two traces together are the useful pair: the pin
        squaring between 0 and 4.69 V, and what is left of it after the 220 ohm. */
+    [CIRCUIT_BATT_PACKS]       = { { COMP_RESISTOR, 1, 0, "2S" }, { COMP_RESISTOR, 2, 0, "3S" },
+                                   { COMP_RESISTOR, 3, 0, "4S" } },
+    [CIRCUIT_BATT_CRATE]       = { { COMP_RESISTOR, 1, 0, "100C" } },
+    [CIRCUIT_BATT_CHARGING]    = { { COMP_RESISTOR, 1, 1, "LFP" }, { COMP_RESISTOR, 2, 1, "SLA" } },
     [CIRCUIT_MCU_BLINK]        = { { COMP_LED, 0, 0, "LED" } },
     [CIRCUIT_DIFFERENTIAL_PAIR] = { { COMP_NPN_BJT, 1, 1, "VC2" } },                                // Q2 collector: the mirror image
     [CIRCUIT_3PH_UNBALANCED]   = { { COMP_RESISTOR, 3, 0, "PH B" }, { COMP_RESISTOR, 5, 0, "PH C" } },
@@ -14981,6 +15126,9 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_INSTRUMENT]   = { DEMO_DC, 0 },
     [CIRCUIT_BMI_CC_OUTPUT]    = { DEMO_DC, 0 },
     [CIRCUIT_BMI_OCP]          = { DEMO_DC, 0 },
+    [CIRCUIT_BATT_PACKS]       = { DEMO_DC, 0 },
+    [CIRCUIT_BATT_CRATE]       = { DEMO_DC, 0 },
+    [CIRCUIT_BATT_CHARGING]    = { DEMO_DC, 0 },
     [CIRCUIT_MCU_BLINK]        = { DEMO_WAVEFORM, 0 },
     [CIRCUIT_BMI_RAIL]         = { DEMO_DC, 0 },
     [CIRCUIT_IV_BUCK_NODES]    = { DEMO_DC, 0 },
@@ -15089,6 +15237,9 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
        that shows the rail, that ripple is a fraction of a pixel - which is the case --probe-audit
        flags, and it is right to. Each channel gets its own band so the ripple is legible beside
        the 12 V input rather than a flat line under it. */
+    [CIRCUIT_BATT_PACKS] = SCOPE_FLAG_FIT,
+    [CIRCUIT_BATT_CRATE] = SCOPE_FLAG_FIT,
+    [CIRCUIT_BATT_CHARGING] = SCOPE_FLAG_FIT,
     [CIRCUIT_MCU_BLINK] = SCOPE_FLAG_FIT,
     [CIRCUIT_BMI_RAIL] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,

@@ -3,8 +3,8 @@
 **Latest Release: [v3.26.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.26.0)** (auto-updating from v3.4.0 on)
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
-digital solver, a real-time bench oscilloscope with FFT and THD, 200 guided circuits from RC
-filters to power grids, SPICE import, and a 65-suite self-audit battery. Build, simulate and
+digital solver, a real-time bench oscilloscope with FFT and THD, 203 guided circuits from RC
+filters to power grids, SPICE import, and a 66-suite self-audit battery. Build, simulate and
 analyse circuits with a drag-and-drop schematic.
 
 The look is deliberately **synthwave** - magenta and cyan on deep violet, a CRT-style graticule
@@ -132,7 +132,7 @@ In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/).
 Schematic text is antialiased and drawn in the notation a schematic uses - `10k`, `100nF`,
 `170V 60Hz` - and an audit checks that no label lands on a symbol or on another label.
 
-200 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+203 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -1017,7 +1017,7 @@ two longest are split into shards (`--shard 0/4`) because a battery can never fi
 its slowest single suite.
 
 ```bash
-build/tools/template_smoke.exe             # 200/200 templates passed
+build/tools/template_smoke.exe             # 203/203 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (204 oracles)
@@ -1034,6 +1034,7 @@ build/tools/template_smoke.exe --sketch-test     # the Arduino interpreter: blin
 build/tools/template_smoke.exe --mcu-test        # the programmable block driving a load, measured at the node
 build/tools/template_smoke.exe --direction-test  # a passive part cannot generate power: current direction as a law
 build/tools/template_smoke.exe --thermal-test    # over its rating a part burns, inside it a part does not
+build/tools/template_smoke.exe --battery-test    # pack arrangements, C ratings and the sag that separates them
 build/circuit-playground.exe --value-sweep       # every panel row of every part, swept across the decades and simulated
 build/tools/template_smoke.exe --burn-test       # no resistor/LED over its rating (HV templates use R_HP loads)
 build/tools/template_smoke.exe --std-test        # bus voltages vs ERCOT / NERC / ANSI C84.1 / NEC limits
