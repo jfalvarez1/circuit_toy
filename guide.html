@@ -727,6 +727,7 @@
                     <a href="#simulation">11. Running Simulations</a>
                     <a href="#templates">12. Circuit Templates</a>
                     <a href="#text-circuits">12b. Text, Code and Blocks</a>
+                    <a href="#batteries">12c. Batteries</a>
                 </div>
                 <div>
                     <div class="toc-section">Analysis Tools</div>
@@ -2220,6 +2221,39 @@ void loop()  { digitalWrite(13, HIGH); delay(500);
 
             <h3>Looking inside a block</h3>
             <p><strong>Double-click a block</strong> - a subcircuit, or one of the battery-instrument blocks - and its internals open as an ordinary schematic, with every discrete part where the definition puts it. <kbd>Esc</kbd> returns to the circuit you came from.</p>
+        </section>
+
+        <!-- 12c. Batteries -->
+        <section id="batteries" class="section">
+            <h2>12c. Batteries: Chemistry, Arrangement and C Rating</h2>
+            <p>A battery here is not a voltage with a label on it. It is a <strong>chemistry</strong> — which decides the shape of its discharge curve — wired into an <strong>arrangement</strong>, and rated for how hard it can be pushed.</p>
+
+            <h3>Chemistry</h3>
+            <p>Seven of them: <strong>Alkaline, NiMH, NiCd, Li-ion, LiPo, LiFePO4</strong> and <strong>Lead-acid</strong>. Click the <strong>Chemistry</strong> row in the properties panel to step through them; the voltage, capacity, cutoff and internal resistance all move with it.</p>
+            <p>The curve is where they differ, and it is the reason chemistry is a property rather than a note. A LiFePO4 moves <strong>120 mV</strong> between 20 % and 80 % charge; an alkaline moves <strong>330 mV</strong>. Open <strong>Battery Chemistries Compared</strong> to see four of them into the same load.</p>
+            <p>A full cell sits <em>above</em> its nominal and a flat one below — a fresh alkaline AA is 1.6 V, not 1.5, and a 3S LiPo is 12.6 V full and 11.1 V nominal.</p>
+
+            <h3>Arrangement</h3>
+            <p>Cells in <strong>series (S)</strong> multiply voltage and resistance. Cells in <strong>parallel (P)</strong> multiply capacity and current capability, and divide resistance. Set <strong>Cells (S)</strong> from 2 to 3 on a LiPo and 7.4 V becomes 11.1 V on the click, with the capacity unchanged — series multiplies voltage and nothing else.</p>
+            <pre>1S  3.7 V     2S  7.4 V     3S 11.1 V     4S 14.8 V     (LiPo / Li-ion)
+4S 12.8 V     (LiFePO4, and it drops into a lead-acid hole)
+6 cells 12 V  (lead-acid: the brick in every alarm panel, and the one in a car)</pre>
+            <p>Open <strong>Battery Packs: 1S to 4S</strong> to see the arithmetic on the canvas.</p>
+
+            <h3>C rating: high discharge against low</h3>
+            <p>The <strong>Discharge</strong> row is the continuous rating in multiples of capacity per hour — a 2200 mAh pack at 25C will give 55 A. Internal resistance is <em>derived</em> from it (<code>R_cell = k / (C × Ah)</code>), because the two are the same fact: a pack built for current has a low resistance and that is what lets it deliver current.</p>
+            <div class="note">
+                <div class="note-title">Why the C number matters</div>
+                <p>Open <strong>Battery: 25C vs 100C</strong>. Two packs a catalogue would describe identically — 3S, 11.1 V, 2200 mAh — into the same 0.3 ohm load. The 25C sags to 11.46 V; the 100C holds 12.29 V. Everything else about them is the same.</p>
+            </div>
+
+            <h3>Charging</h3>
+            <p>A charger is a constant-voltage rail and something to limit the current; the number the rail is set to is the whole of the chemistry's requirement.</p>
+            <pre>Li-ion / LiPo   4.20 V per cell
+LiFePO4         3.65 V per cell
+Lead-acid       2.40 V per cell absorption, 2.25 V float
+NiMH / NiCd     1.45 V per cell</pre>
+            <p>Charge a LiFePO4 to 4.2 V a cell and it is damaged; charge a Li-ion to 3.65 and it is never full. <strong>Charging by Chemistry</strong> shows three of them side by side, and <strong>Lead-Acid: Bulk, Absorption, Float</strong> shows what each of the three stages does — 2.69 A into a flat pack, 1.78 A tapering, 0.76 A holding.</p>
         </section>
 
         <!-- 13. Oscilloscope -->
