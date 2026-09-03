@@ -918,6 +918,50 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.42 v3.27.0 - a battery is a chemistry, an arrangement and a C rating (2026-09-02)
+
+A battery was a nominal voltage, a capacity and an internal resistance typed in by hand, and its
+discharge curve was `V_nom * (0.85 + 0.15 * SoC)` - the same straight line whatever it was made
+of, which is precisely the thing that distinguishes one chemistry from another.
+
+Seven chemistries with their own curves, charge voltages and resistance constants; packs that
+derive their voltage, capacity, cutoff and resistance from the arrangement; and a C rating that
+is the internal resistance written a second way.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.42.1 | `[ ]` Place a battery, click **Chemistry** | steps through Alkaline, NiMH, NiCd, Li-ion, LiPo, LiFePO4, Lead-acid; the voltage, capacity, cutoff and resistance all move with it |
+| 3.42.2 | `[ ]` Set **Cells (S)** from 2 to 3 on a LiPo | 7.4 V becomes 11.1 V. Capacity does not change - series multiplies voltage and nothing else |
+| 3.42.3 | `[ ]` Set **Cells (P)** from 1 to 3 | capacity triples and internal resistance divides by three; voltage does not move |
+| 3.42.4 | `[ ]` **Battery Packs: 1S to 4S** | 3.7 / 7.4 / 11.1 / 14.8 V nominal, every column 2200 mAh, and 16.8 V on the 4S at full charge because four times 4.2 is 16.8 |
+| 3.42.5 | `[ ]` **Battery: 25C vs 100C** | the same 3S 2200 mAh pack twice into 0.3 ohm: the 25C sags to 11.46 V, the 100C holds 12.29 |
+| 3.42.6 | `[ ]` **Charging by Chemistry** | 4.20 V a cell for Li-ion, 3.65 for LiFePO4, 2.40 for lead-acid absorption. Each pack half charged and taking current: 100.6 mA, 81 mA |
+| 3.42.7 | `[ ]` **Lead-Acid: Bulk, Absorption, Float** | 2.69 A bulk into a flat pack, 1.78 A tapering in absorption, 0.76 A holding at float. (14.4 - 11.64) / 1.0257 = 2.69 |
+| 3.42.8 | `[ ]` **Battery Chemistries Compared** | four cells into the same load; the LiFePO4 flat and the alkaline sloping |
+| 3.42.9 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 66 suites, 0 failed |
+
+**`--battery-test` enumerates rather than lists.** The preset table covers the eleven packs
+people build with and missed NiCd entirely - it had no preset, so it had no check. The suite now
+walks `BATT_CHEMISTRY_COUNT` and asserts what makes a discharge curve a discharge curve: it only
+falls as the cell empties (a battery that rises as charge leaves it is a perpetual motion
+machine), full is above nominal and empty below, and a rechargeable chemistry charges to at
+least its own full voltage. Mutation-checked: bend the NiMH curve and it is caught at the step
+where it turns.
+
+**Two suites had to change, and both were reading the same simplification.** A pack under load
+is measured against its OPEN-CIRCUIT voltage, and that is no longer its nominal: a full cell
+sits above its nominal and a flat one below, which is why a fresh alkaline AA reads 1.6 V.
+`--sign-test` set the nominal and computed its expected divider from it, so every battery case
+read 6.7 % high and tripped the suite's own "above open circuit" alarm; `--bias-test` set a cell
+to "3.00 V", got 3.20, and fell outside the 400 mV protection window it was probing. There is
+now one function that says what a pack's terminal voltage is and one that sets a pack to one,
+and the stamp and both suites read the same definition.
+
+**The lead-acid charger is three columns, not a handover.** A stage controller switching on a
+current threshold is a latch, and the CC-CV handover attempted for v3.24.0 turned out bistable
+in the constant-current region and had to be cut. What each stage does is the part worth
+learning and three columns cannot sit in a wrong root.
+
 ### 3.41 v3.26.0 - sweep every knob, and the audit plan that keeps it swept (2026-09-02)
 
 Asked to sweep every value and knob and find what breaks, to check current direction and
