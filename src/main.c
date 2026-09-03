@@ -2071,6 +2071,13 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--tab") && i + 1 < argc) cli_tab = !strcmp(argv[++i], "circuits") ? 1 : 0;
         else if (!strcmp(argv[i], "--popout")) cli_popout = true;
         else if (!strcmp(argv[i], "--dump-layout")) cli_dump_layout = true;
+        /* Read by the pre-pass above; skipped here so it is not mistaken for an unknown option.
+           template_smoke.c has always had this line and this file never did, so `--shard 0/2
+           --bounce-test` died with "Unknown option: --shard" while `--bounce-test --shard 0/2`
+           worked. run_audits.sh happens to write it in the second order - a suite flag returns
+           out of this loop before reaching the shard - so the battery never touched the broken
+           half, and the comment on the pre-pass says the FIRST order is the one it exists for. */
+        else if (!strcmp(argv[i], "--shard") && i + 1 < argc) i++;
         else if (!strcmp(argv[i], "--import-spice") && i + 1 < argc) cli_spice = argv[++i];
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
         else if (!strcmp(argv[i], "--inspect") && i + 1 < argc) cli_inspect = argv[++i];

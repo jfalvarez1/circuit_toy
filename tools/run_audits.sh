@@ -261,6 +261,22 @@ if command -v python >/dev/null 2>&1; then
     fi
 fi
 
+# Every command-line OPTION, exercised once with a real assertion. The suites are guarded by the
+# orphan check above; the options were guarded by nothing, and fourteen of them were passed by no
+# tool, gate or workflow at all. One of them, --prop-gap, turned out to be a whole diagnostic
+# suite that nothing ran because its name does not end in "-test".
+if command -v python >/dev/null 2>&1; then
+    if python tools/cli_smoke.py --exe "$APP" > "$out/clismoke.log" 2>&1; then
+        printf '[ OK ] %-14s %s
+' "cli-smoke" "$(tail -n 1 "$out/clismoke.log" | cut -c1-100)"
+    else
+        printf '[FAIL] %-14s %s
+' "cli-smoke" "$(tail -n 1 "$out/clismoke.log" | cut -c1-100)"
+        grep -m8 FAIL "$out/clismoke.log"
+        fails=$((fails + 1))
+    fi
+fi
+
 # The app driven the way a user drives it: place a template, press the toolbar, pick up a tool,
 # drag the canvas, and look at the pixels that came out. This existed and was in no list either -
 # and when it was finally run, three of its four interaction checks were failing on coordinates

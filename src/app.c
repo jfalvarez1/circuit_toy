@@ -2779,10 +2779,20 @@ static void app_cli_capture(App *app) {
         ev.button.x = x2; ev.button.y = y2; ev.button.clicks = 1; SDL_PushEvent(&ev);
     }
 
-    bool done = true;
-    if (app->cli_shot_path[0]) {
-        if (app->cli_frame == app->cli_shot_frame) {
-            if (app->cli_state_path[0]) app_write_state(app, app->cli_state_path);
+    /* Nothing scripted has happened before the frame that was asked for; after it, whatever was
+       asked for has been done unless a recording is still running.
+
+       This used to be nested inside "did they ask for a screenshot", and two things followed from
+       that which nobody had ever tried. --state-out wrote nothing at all unless a --shot was
+       requested alongside it, so the obvious headless use - dump the circuit as JSON, no picture -
+       silently produced no file. And --exit only exited if there was a shot or a recording
+       pending, so `--template X --state-out s.json --exit` ran until it was killed. Neither had a
+       gate that used --state-out without --shot; edge_gui.py passes both, which is why it worked
+       everywhere it was tried. */
+    bool done = app->cli_frame >= app->cli_shot_frame;
+    if (app->cli_frame == app->cli_shot_frame) {
+        if (app->cli_state_path[0]) app_write_state(app, app->cli_state_path);
+        if (app->cli_shot_path[0]) {
             if (app_save_shot(app, app->cli_shot_path, app->cli_shot_region)) printf("Saved %s\n", app->cli_shot_path);
             else fprintf(stderr, "Screenshot failed: %s\n", SDL_GetError());
             if (app->ui.scope_popped_out && app->ui.scope_popup_renderer) {
@@ -2793,7 +2803,6 @@ static void app_cli_capture(App *app) {
                 if (app_save_renderer_bmp(app->ui.scope_popup_renderer, scope_path)) printf("Saved %s\n", scope_path);
             }
         }
-        if (app->cli_frame < app->cli_shot_frame) done = false;
     }
     if (app->cli_record_dir[0] && app->cli_recorded < app->cli_record_frames) {
         if (app->cli_frame >= app->cli_shot_frame && (app->cli_frame - app->cli_shot_frame) % (app->cli_record_every > 0 ? app->cli_record_every : 1) == 0) {
@@ -2803,7 +2812,9 @@ static void app_cli_capture(App *app) {
         }
         if (app->cli_recorded < app->cli_record_frames) done = false;
     }
-    if (done && app->cli_exit && (app->cli_shot_path[0] || app->cli_record_dir[0])) app->running = false;
+    /* --exit means exit when the scripted work is done, whatever that work was - including none
+       of it, which is what makes the flag testable at all. */
+    if (done && app->cli_exit) app->running = false;
 }
 
 void app_render(App *app) {

@@ -918,6 +918,46 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.45 v3.30.0 - every option the app accepts, exercised once (2026-09-03)
+
+The suites were guarded: `run_audits.sh` refuses to start if a `--*-test` is in no list. The
+**options** were guarded by nothing, and fourteen of the thirty-one were passed by no tool, no
+gate and no workflow: `--xy`, `--import-spice`, `--inspect`, `--scroll`, `--ss`, `--ui-scale`,
+`--line-weight`, `--shot-region`, `--crashlog`, `--help`, `--version`, `--no-auto-update`,
+`--update-now` and `--prop-gap`. They parse argv, allocate, open files, and had never been run.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.45.1 | `[ ]` `--template X --state-out s.json --exit` | writes the JSON and quits. It used to write nothing and run until killed |
+| 3.45.2 | `[ ]` `--shard 0/2 --bounce-test` | runs. It used to die with "Unknown option: --shard" |
+| 3.45.3 | `[ ]` `--shard 0/2` and `--shard 1/2` | the two counts add up to the unsharded one, and neither is empty |
+| 3.45.4 | `[ ]` `--ss 1` vs `--ss 3` | same window size, different drawing |
+| 3.45.5 | `[ ]` `--line-weight 0.6` vs `3.5` | two different pictures |
+| 3.45.6 | `[ ]` `--scroll 120` | the palette moves |
+| 3.45.7 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 70 suites plus the source and GUI gates, 0 failed |
+
+**Three faults, all in the scripted surface, all invisible for the same reason.**
+
+- `--state-out` was nested inside "did they ask for a screenshot", so a headless state dump - the
+  obvious use - silently produced no file. Every gate that uses it passes `--shot` too.
+- `--exit` only exited when a shot or a recording was pending, so `--state-out --exit` hung.
+- `--shard` was rejected as an unknown option when written **before** the suite flag.
+  `template_smoke.c` has the line that skips it in the argument loop and `src/main.c` never did.
+  `run_audits.sh` writes it *after* the suite, where the suite returns out of the loop first, so
+  the battery only ever exercised the accidental order - while the comment on the pre-pass says
+  the before-order is the case it exists for.
+
+**`tools/cli_smoke.py` asserts behaviour, not absence of a crash.** `--ss` must not change the
+window size; `--line-weight` at 0.6 and 3.5 must draw different frames; `--style schematic` must
+produce a monochrome canvas and `synthwave` must not; `--shot-region canvas` must be smaller than
+the window and `canvas+scope` taller than canvas; `--scroll` must move the palette; the shards
+must partition the work. It reads the flag list out of `main.c`, so a new option fails the gate
+until it is covered - the same bargain the suites already had.
+
+**`--prop-gap` reports that 72 of 125 creatable part types offer the properties panel no rows at
+all**, only 2 of them legitimately structural. That is a product gap rather than a test gap, and
+it is recorded here rather than acted on.
+
 ### 3.44 v3.29.0 - the gates that were never run, and what they found (2026-09-03)
 
 A sweep of the knobs, the limits and the GUI. Most of what it found was not a circuit being
