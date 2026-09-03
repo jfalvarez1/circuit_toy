@@ -3,7 +3,7 @@
 **Latest Release: [v3.26.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.26.0)** (auto-updating from v3.4.0 on)
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
-digital solver, a real-time bench oscilloscope with FFT and THD, 203 guided circuits from RC
+digital solver, a real-time bench oscilloscope with FFT and THD, 205 guided circuits from RC
 filters to power grids, SPICE import, and a 66-suite self-audit battery. Build, simulate and
 analyse circuits with a drag-and-drop schematic.
 
@@ -132,7 +132,7 @@ In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/).
 Schematic text is antialiased and drawn in the notation a schematic uses - `10k`, `100nF`,
 `170V 60Hz` - and an audit checks that no label lands on a symbol or on another label.
 
-203 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+205 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -1017,7 +1017,7 @@ two longest are split into shards (`--shard 0/4`) because a battery can never fi
 its slowest single suite.
 
 ```bash
-build/tools/template_smoke.exe             # 203/203 templates passed
+build/tools/template_smoke.exe             # 205/205 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (204 oracles)

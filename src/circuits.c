@@ -357,6 +357,10 @@ static const CircuitTemplateInfo template_info[] = {
         "the same LiPo cell wired one, two, three and four deep", TG_BMI},
     [CIRCUIT_BATT_CRATE] = {"Battery: 25C vs 100C", "C-rate",
         "two packs a catalogue calls identical, into the same load", TG_BMI},
+    [CIRCUIT_BATT_LEAD_STAGES] = {"Lead-Acid: Bulk, Absorption, Float", "3Stage",
+        "the three stages of a lead-acid charger, and what each one does", TG_BMI},
+    [CIRCUIT_BATT_CHEMISTRIES] = {"Battery Chemistries Compared", "Chem",
+        "alkaline, NiMH, LiFePO4 and Li-ion into the same load", TG_BMI},
     [CIRCUIT_BATT_CHARGING] = {"Charging by Chemistry", "Charge",
         "the voltage each chemistry has to be charged to, and the taper", TG_BMI},
     [CIRCUIT_MCU_BLINK] = {"Blink (programmable block)", "Blink",
@@ -6444,6 +6448,8 @@ static int place_mcu_blink(Circuit *circuit, float x, float y);
 static int place_batt_packs(Circuit *circuit, float x, float y);
 static int place_batt_crate(Circuit *circuit, float x, float y);
 static int place_batt_charging(Circuit *circuit, float x, float y);
+static int place_batt_lead_stages(Circuit *circuit, float x, float y);
+static int place_batt_chemistries(Circuit *circuit, float x, float y);
 static int place_tline_real(Circuit *circuit, float x, float y);
 static int place_sevenseg_test(Circuit *circuit, float x, float y);
 static int place_wireless_link(Circuit *circuit, float x, float y);
@@ -6799,6 +6805,8 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_BATT_PACKS:         return place_batt_packs(circuit, x, y);
         case CIRCUIT_BATT_CRATE:         return place_batt_crate(circuit, x, y);
         case CIRCUIT_BATT_CHARGING:      return place_batt_charging(circuit, x, y);
+        case CIRCUIT_BATT_LEAD_STAGES:   return place_batt_lead_stages(circuit, x, y);
+        case CIRCUIT_BATT_CHEMISTRIES:   return place_batt_chemistries(circuit, x, y);
         case CIRCUIT_BMI_RAIL:           return place_bmi_rail(circuit, x, y);
         case CIRCUIT_TLINE_REAL:         return place_tline_real(circuit, x, y);
         case CIRCUIT_SEVENSEG_TEST:      return place_sevenseg_test(circuit, x, y);
@@ -7201,6 +7209,18 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "coil whose contact shorts the pass MOSFET's gate to its own source - which turns it off. 0.65 of the",
         "sense voltage reaching 0.65 V means the trip is at about 1 A. LOWER THE LOAD from 10 ohm to 2 and it",
         "trips; it does not latch, so it retries - which is what a protection without a reset button does."},
+    [CIRCUIT_BATT_LEAD_STAGES] = {"LEAD-ACID, THREE STAGES: one rail at three setpoints, each against a pack where that",
+                                  "stage finds it. BULK is current limited into a flat pack and does most of the work.",
+                                  "ABSORPTION holds 2.40 V a cell - 14.4 V here - while the current tapers off. FLOAT drops",
+                                  "to 2.25 V a cell, 13.5 V, and holds there for ever without cooking the plates.",
+                                  "A real charger is ONE rail moving between these on current and voltage thresholds. It is",
+                                  "shown as three because a stage controller is a latch, and this shows what each stage does."},
+    [CIRCUIT_BATT_CHEMISTRIES] = {"CHEMISTRIES: four cells at the same state of charge into the same 10 ohm load. The",
+                                  "voltages differ - 1.5, 1.2, 3.2, 3.7 nominal - and so does what happens as they empty:",
+                                  "the LiFePO4 holds its voltage across most of its range and then falls off a cliff, while",
+                                  "the alkaline slopes from the moment it is connected. A circuit designed against a flat",
+                                  "pack and run on a sloping one is the lesson, and it is why chemistry is a property here.",
+                                  "PROBE: all four terminals. Select any cell and step its Chemistry row to compare."},
     [CIRCUIT_BATT_CHARGING] = {"CHARGING: three chemistries, three charge voltages, and the same circuit each time.",
                                "A constant-voltage rail and a resistor to set the current is what a charger IS; the",
                                "number the rail is set to is the whole of the chemistry's requirement. 4.20 V a cell for",
@@ -13740,6 +13760,64 @@ static int place_batt_charge_column(Circuit *circuit, float x, float y,
     return 5;
 }
 
+
+/* One charging stage: a rail at this setpoint into a pack at this state of charge. */
+static int place_batt_stage(Circuit *circuit, float x, float y, double v_rail,
+                            const char *preset, double soc, double r_series, const char *label) {
+    Component *rail = dc_rail(circuit, x, y, v_rail);
+    if (!rail) return 0;
+    Component *r = vres(circuit, x + 140, y + 60, r_series);
+    (void)r;
+    TW(TN(x, y), TN(x + 140, y));
+    TW(TN(x + 140, y), TN(x + 140, y + 20));
+
+    Component *b = add_comp(circuit, COMP_BATTERY, x + 140, y + 180, 0);
+    component_apply_part(b, preset);
+    b->props.battery.charge_state = soc;
+    b->props.battery.charge_coulombs = b->props.battery.capacity_mah * 3.6 * soc;
+    b->props.battery.discharged = false;
+    b->node_ids[0] = TN(x + 140, y + 140);
+    b->node_ids[1] = TN(x + 140, y + 220);
+    TW(TN(x + 140, y + 100), TN(x + 140, y + 140));
+
+    int bot = TN(x + 140, y + 280);
+    TW(TN(x + 140, y + 220), bot);
+    Component *g = add_comp(circuit, COMP_GROUND, x + 140, y + 300, 0);
+    g->node_ids[0] = bot;
+    add_label(circuit, x - 10, y - 40, label);
+    return 5;
+}
+
+static int place_batt_lead_stages(Circuit *circuit, float x, float y) {
+    /* The three stages of a lead-acid charger, side by side, each with the pack where that stage
+       finds it. A real charger is one rail that moves between these on current and voltage
+       thresholds; what it DOES at each is what these show. */
+    int n = 0;
+    n += place_batt_stage(circuit, x,       y, 14.40, "SLA 12V 7Ah", 0.20, 1.0,
+                          "BULK: flat pack");
+    n += place_batt_stage(circuit, x + 360, y, 14.40, "SLA 12V 7Ah", 0.90, 1.0,
+                          "ABSORPTION: 14.4 V");
+    n += place_batt_stage(circuit, x + 720, y, 13.50, "SLA 12V 7Ah", 1.00, 1.0,
+                          "FLOAT: 13.5 V");
+    return n;
+}
+
+static int place_batt_chemistries(Circuit *circuit, float x, float y) {
+    /* Four chemistries at the same state of charge into the same load. The voltages differ, and
+       so does what happens as they empty - which is the reason chemistry is a property and not a
+       label. Step the Chemistry row on any of them and watch the terminal move. */
+    int n = 0;
+    n += place_batt_column(circuit, x,       y, "AA Alkaline", 10.0);
+    add_label(circuit, x - 10, y - 30, "Alkaline 1.5 V");
+    n += place_batt_column(circuit, x + 260, y, "AA NiMH", 10.0);
+    add_label(circuit, x + 250, y - 30, "NiMH 1.2 V");
+    n += place_batt_column(circuit, x + 520, y, "LiFePO4 1S", 10.0);
+    add_label(circuit, x + 510, y - 30, "LiFePO4 3.2 V");
+    n += place_batt_column(circuit, x + 780, y, "18650", 10.0);
+    add_label(circuit, x + 770, y - 30, "Li-ion 3.7 V");
+    return n;
+}
+
 static int place_batt_charging(Circuit *circuit, float x, float y) {
     /* Three chemistries, three charge voltages, one circuit each. What a charger has to DO
        differs less than what it has to do it TO: the topology is the same constant-voltage rail
@@ -14668,6 +14746,8 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BATT_PACKS]       = { COMP_RESISTOR, 0, 0 },    /* the 1S column: 3.7 V */
     [CIRCUIT_BATT_CRATE]       = { COMP_RESISTOR, 0, 0 },    /* the 25C pack under load: the one that sags */
     [CIRCUIT_BATT_CHARGING]    = { COMP_RESISTOR, 0, 1 },    /* below the Li-ion series resistor: the pack terminal */
+    [CIRCUIT_BATT_LEAD_STAGES] = { COMP_RESISTOR, 0, 1 },    /* the bulk pack's terminal */
+    [CIRCUIT_BATT_CHEMISTRIES] = { COMP_RESISTOR, 0, 0 },    /* the alkaline column */
     [CIRCUIT_MCU_BLINK]        = { COMP_RESISTOR, 0, 0 },    /* the driven pin: a square wave the code made */
     [CIRCUIT_BMI_RAIL]         = { COMP_RESISTOR, 0, 0 },     /* the rail the divider is holding up */
     [CIRCUIT_IV_BUCK_NODES]    = { COMP_RESISTOR, 2, 0 },     /* the output, after L and C */
@@ -14709,6 +14789,9 @@ static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
                                    { COMP_RESISTOR, 3, 0, "4S" } },
     [CIRCUIT_BATT_CRATE]       = { { COMP_RESISTOR, 1, 0, "100C" } },
     [CIRCUIT_BATT_CHARGING]    = { { COMP_RESISTOR, 1, 1, "LFP" }, { COMP_RESISTOR, 2, 1, "SLA" } },
+    [CIRCUIT_BATT_LEAD_STAGES] = { { COMP_RESISTOR, 1, 1, "ABS" }, { COMP_RESISTOR, 2, 1, "FLOAT" } },
+    [CIRCUIT_BATT_CHEMISTRIES] = { { COMP_RESISTOR, 1, 0, "NiMH" }, { COMP_RESISTOR, 2, 0, "LFP" },
+                                   { COMP_RESISTOR, 3, 0, "Li-ion" } },
     [CIRCUIT_MCU_BLINK]        = { { COMP_LED, 0, 0, "LED" } },
     [CIRCUIT_DIFFERENTIAL_PAIR] = { { COMP_NPN_BJT, 1, 1, "VC2" } },                                // Q2 collector: the mirror image
     [CIRCUIT_3PH_UNBALANCED]   = { { COMP_RESISTOR, 3, 0, "PH B" }, { COMP_RESISTOR, 5, 0, "PH C" } },
@@ -15129,6 +15212,8 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BATT_PACKS]       = { DEMO_DC, 0 },
     [CIRCUIT_BATT_CRATE]       = { DEMO_DC, 0 },
     [CIRCUIT_BATT_CHARGING]    = { DEMO_DC, 0 },
+    [CIRCUIT_BATT_LEAD_STAGES] = { DEMO_DC, 0 },
+    [CIRCUIT_BATT_CHEMISTRIES] = { DEMO_DC, 0 },
     [CIRCUIT_MCU_BLINK]        = { DEMO_WAVEFORM, 0 },
     [CIRCUIT_BMI_RAIL]         = { DEMO_DC, 0 },
     [CIRCUIT_IV_BUCK_NODES]    = { DEMO_DC, 0 },
@@ -15240,6 +15325,8 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BATT_PACKS] = SCOPE_FLAG_FIT,
     [CIRCUIT_BATT_CRATE] = SCOPE_FLAG_FIT,
     [CIRCUIT_BATT_CHARGING] = SCOPE_FLAG_FIT,
+    [CIRCUIT_BATT_LEAD_STAGES] = SCOPE_FLAG_FIT,
+    [CIRCUIT_BATT_CHEMISTRIES] = SCOPE_FLAG_FIT,
     [CIRCUIT_MCU_BLINK] = SCOPE_FLAG_FIT,
     [CIRCUIT_BMI_RAIL] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,

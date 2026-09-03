@@ -2307,6 +2307,78 @@ static int battery_test(void) {
         }
     }
 
+
+    /* Every chemistry, enumerated rather than listed. The presets above cover the packs people
+       build with and missed NiCd entirely, which is the same hole as a suite in no list:
+       coverage that looks complete because nothing counts what it is supposed to cover.
+
+       What is asserted here is what makes a discharge curve a discharge curve, and it holds for
+       any chemistry anyone adds later:
+         - it only ever falls as the cell empties, because a battery that rises as you take
+           charge out of it is a perpetual motion machine;
+         - full is above nominal and empty is below, which is why a fresh AA reads 1.6;
+         - a rechargeable chemistry charges to at least its own full voltage, or a charger built
+           to that number would never fill it. */
+    for (int chem = 0; chem < BATT_CHEMISTRY_COUNT; chem++) {
+        total++;
+        const char *name = component_battery_chemistry_name(chem);
+        int ok = 1;
+        char why[200] = "";
+
+        double prev = component_battery_cell_ocv(chem, 0.0);
+        for (int k = 1; k <= 20 && ok; k++) {
+            double soc = k / 20.0;
+            double v = component_battery_cell_ocv(chem, soc);
+            if (v < prev - 1e-9) {
+                ok = 0;
+                snprintf(why, sizeof why, "curve falls as it charges: %.3f V at %.0f%% then %.3f at %.0f%%",
+                         prev, (k - 1) * 5.0, v, k * 5.0);
+            }
+            prev = v;
+        }
+        double v_full = component_battery_cell_ocv(chem, 1.0);
+        double v_empty = component_battery_cell_ocv(chem, 0.0);
+        double v_nom = component_battery_nominal_cell(chem);
+        if (ok && !(v_full > v_nom)) {
+            ok = 0;
+            snprintf(why, sizeof why, "full is %.3f V and nominal is %.3f - a fresh cell sits ABOVE its nominal",
+                     v_full, v_nom);
+        }
+        if (ok && !(v_empty < v_nom)) {
+            ok = 0;
+            snprintf(why, sizeof why, "empty is %.3f V and nominal is %.3f - a flat cell sits BELOW its nominal",
+                     v_empty, v_nom);
+        }
+        double v_chg = component_battery_charge_voltage(chem);
+        if (ok && v_chg > 0 && v_chg < v_full - 1e-9) {
+            ok = 0;
+            snprintf(why, sizeof why, "charges to %.3f V but is full at %.3f - a charger set to that never fills it",
+                     v_chg, v_full);
+        }
+
+        /* and it has to work as a part: one cell, into a load, solving. */
+        if (ok) {
+            Component *b = component_create(COMP_BATTERY, 0, 0);
+            b->props.battery.chemistry = chem;
+            b->props.battery.c_rating = 0;
+            b->props.battery.cell_capacity_mah = 0;
+            component_battery_refresh(b);
+            if (!(b->props.battery.internal_r > 0) || !isfinite(b->props.battery.internal_r)) {
+                ok = 0;
+                snprintf(why, sizeof why, "internal resistance came out %.4g", b->props.battery.internal_r);
+            } else if (!(b->props.battery.nominal_voltage > 0)) {
+                ok = 0;
+                snprintf(why, sizeof why, "nominal came out %.4g V", b->props.battery.nominal_voltage);
+            }
+            component_free(b);
+        }
+
+        if (!ok) { fails++; printf("[FAIL] batt  %-18s %s\n", name, why); }
+        else printf(" OK  batt  %-18s %.2f V nominal, %.2f full, %.2f empty%s\n",
+                    name, v_nom, v_full, v_empty,
+                    v_chg > 0 ? "" : ", not rechargeable");
+    }
+
     printf("\nbattery-test: %d checks over %d chemistries, %d wrong\n",
            total, (int)BATT_CHEMISTRY_COUNT, fails);
     return fails ? 1 : 0;
