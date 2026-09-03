@@ -220,7 +220,7 @@ void ui_init(UIState *ui) {
     btn_x += 46 + 10;
     /* The two things a screenshot needs deciding before you take it: what it looks like, and
        what is in it. Next to Scr, because that is when you want them. */
-    ui->btn_style = (Button){{btn_x, 10, 34, btn_h}, "BW", "Draw the canvas as a printed schematic: black on white, for reports and photocopiers", false, false, true, false};
+    ui->btn_style = (Button){{btn_x, 10, 34, btn_h}, "BW", "Draw the canvas as a printed schematic: black on white, for reports and photocopiers (Ctrl+B)", false, false, true, false};
     btn_x += 34 + 6;
     ui->btn_shot_region = (Button){{btn_x, 10, 56, btn_h}, "Canvas", "What a screenshot contains: the canvas, the canvas with the scope under it, or the whole window", false, false, true, false};
 

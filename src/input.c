@@ -8,6 +8,7 @@
 #include "input.h"
 #include "app.h"
 #include "circuits.h"
+#include "style.h"   /* Ctrl+B flips the canvas between the two looks. Last, as everywhere. */
 
 void input_init(InputState *input) {
     memset(input, 0, sizeof(InputState));
@@ -1397,6 +1398,17 @@ bool input_handle_event(InputState *input, SDL_Event *event,
             }
             if (((event->key.keysym.sym == SDLK_k) || (event->key.keysym.sym == SDLK_SPACE)) && (SDL_GetModState() & KMOD_CTRL) && ui) {
                 ui_spotlight_open(ui);
+                return true;
+            }
+
+            /* Ctrl+B: the schematic view, which is a thing you flip back and forth while deciding
+               what a figure should look like. On the modifier rather than a bare B because the
+               bare letters are the tool keys, and a view is not a tool. */
+            if (event->key.keysym.sym == SDLK_b && (SDL_GetModState() & KMOD_CTRL) && ui) {
+                g_draw_style = (g_draw_style == STYLE_SCHEMATIC) ? STYLE_SYNTHWAVE : STYLE_SCHEMATIC;
+                ui_set_status(ui, g_draw_style == STYLE_SCHEMATIC
+                              ? "Schematic view: black on white, for printing and sharing"
+                              : "Synthwave view");
                 return true;
             }
 
