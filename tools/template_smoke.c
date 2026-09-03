@@ -2172,6 +2172,146 @@ static int thermal_test(void) {
     return fails ? 1 : 0;
 }
 
+/* ---- battery packs -------------------------------------------------------------------- */
+
+/* Every pack preset, against arithmetic that needs no simulator: cells in series multiply the
+   voltage, cells in parallel multiply the capacity, and the C rating times the capacity is the
+   current it will give. Then the part is put in a circuit and made to deliver that current, and
+   the sag is compared against I*R with R derived from the C rating.
+
+   The sag is the point. A 3S 2200 mAh pack at 25C and the same pack at 100C have the same
+   voltage, the same capacity and the same everything a catalogue prints except the one number
+   that decides whether a motor starts: at 40 A one of them holds up and the other falls over. */
+static int battery_test(void) {
+    printf("battery-test: pack arrangements, C ratings and the sag that separates them\n\n");
+    int fails = 0, total = 0;
+
+    static const struct {
+        const char *part;
+        double v_nom;        /* what the catalogue calls it */
+        double cap_mah;      /* pack capacity */
+        double i_max;        /* C * Ah */
+        double r_lo, r_hi;   /* internal resistance has to land in here */
+        const char *why;
+    } packs[] = {
+        { "AA Alkaline",   1.5,  2500,     0.5,   0.30, 0.70,
+          "one cell, and a resistance a hundred times a LiPo's - which is why an alkaline cannot start a motor" },
+        { "AA NiMH",       1.2,  2000,     2.0,   0.10, 0.25, "1.2 V and a far stiffer cell than an alkaline" },
+        { "18650",         3.7,  3400,     6.8,   0.05, 0.12, "a single Li-ion cell: 3.7 V, 3.4 Ah, about 80 mohm" },
+        { "LiPo 2S 7.4V",  7.4,  2200,    55.0,   0.01, 0.05,
+          "two cells in series: the voltage doubles, the capacity does not, and 25C of 2.2 Ah is 55 A" },
+        { "LiPo 3S 11.1V", 11.1, 2200,    55.0,   0.02, 0.07, "three of the same cell: 11.1 V, still 2200 mAh" },
+        { "LiPo 3S 100C",  11.1, 2200,   220.0,   0.004, 0.02,
+          "the same three cells built for current: four times the C rating and a quarter the resistance" },
+        { "LiPo 4S 14.8V", 14.8, 5000,   150.0,   0.005, 0.03, "four cells, 5 Ah, 30C" },
+        { "Li-ion 3S3P",   11.1, 10200,   20.4,   0.01, 0.10,
+          "three deep and three wide: three times the voltage AND three times the capacity, and P divides the resistance" },
+        { "LiFePO4 4S",    12.8,  3000,    9.0,   0.02, 0.30, "12.8 V from four cells, and it fits a lead-acid hole" },
+        { "SLA 12V 7Ah",   12.0,  7000,   35.0,   0.018, 0.040, "six 2 V cells: the 12 V brick, and a real one measures about 25 mohm" },
+        { "Car 12V 60Ah",  12.0, 60000,  600.0,   0.001, 0.006,
+          "the same six cells at 60 Ah and 10C - 600 A, which is what cranking an engine takes" },
+    };
+
+    for (int i = 0; i < (int)(sizeof packs / sizeof packs[0]); i++) {
+        total++;
+        Component *b = component_create(COMP_BATTERY, 0, 0);
+        if (!b) continue;
+        int ok = 1;
+        char why[220] = "";
+        if (!component_apply_part(b, packs[i].part)) {
+            ok = 0;
+            snprintf(why, sizeof why, "no such preset");
+        } else {
+            double vn = b->props.battery.nominal_voltage;
+            double cap = b->props.battery.capacity_mah;
+            double imax = component_battery_max_current(b);
+            double r = b->props.battery.internal_r;
+            if (fabs(vn - packs[i].v_nom) > 0.05)
+                { ok = 0; snprintf(why, sizeof why, "nominal %.3f V, catalogue says %.3f", vn, packs[i].v_nom); }
+            else if (fabs(cap - packs[i].cap_mah) > 1.0)
+                { ok = 0; snprintf(why, sizeof why, "capacity %.0f mAh, expected %.0f", cap, packs[i].cap_mah); }
+            else if (fabs(imax - packs[i].i_max) > 0.02 * packs[i].i_max + 0.01)
+                { ok = 0; snprintf(why, sizeof why, "C rating gives %.2f A, expected %.2f", imax, packs[i].i_max); }
+            else if (r < packs[i].r_lo || r > packs[i].r_hi)
+                { ok = 0; snprintf(why, sizeof why, "internal resistance %.4f ohm, expected %.4f..%.4f",
+                                   r, packs[i].r_lo, packs[i].r_hi); }
+        }
+        if (!ok) { fails++; printf("[FAIL] batt  %-18s %s\n", packs[i].part, why); printf("             %s\n", packs[i].why); }
+        else printf(" OK  batt  %-18s %5.2f V  %6.0f mAh  %6.1f A max  %.4f ohm\n",
+                    packs[i].part, b->props.battery.nominal_voltage, b->props.battery.capacity_mah,
+                    component_battery_max_current(b), b->props.battery.internal_r);
+        component_free(b);
+    }
+
+    /* Sag, measured in a circuit: the same pack at two C ratings into the same load. This is the
+       difference the user can see on a scope and the reason the C number is on the label. */
+    {
+        total++;
+        double v[2] = {0, 0};
+        const char *names[2] = { "LiPo 3S 11.1V", "LiPo 3S 100C" };
+        int ok = 1;
+        char why[220] = "";
+        for (int k = 0; k < 2 && ok; k++) {
+            Circuit *c = circuit_create();
+            Component *b = component_create(COMP_BATTERY, 0, 0);
+            component_apply_part(b, names[k]);
+            circuit_add_component(c, b);
+            Component *r = component_create(COMP_RESISTOR, 200, 0);
+            r->props.resistor.resistance = 0.3;          /* about 37 A from 11.1 V */
+            r->props.resistor.high_power = true;         /* a load, not a quarter-watt part */
+            r->thermal.max_temperature = 0;
+            circuit_add_component(c, r);
+            Component *g = component_create(COMP_GROUND, 0, 200);
+            circuit_add_component(c, g);
+            circuit_add_wire(c, b->node_ids[0], r->node_ids[0]);
+            circuit_add_wire(c, r->node_ids[1], g->node_ids[0]);
+            circuit_add_wire(c, b->node_ids[1], g->node_ids[0]);
+            Simulation *sim = simulation_create(c);
+            if (!sim || !simulation_dc_analysis(sim)) { ok = 0; snprintf(why, sizeof why, "%s: DC failed", names[k]); }
+            else {
+                Node *nd = circuit_get_node(c, b->node_ids[0]);
+                v[k] = nd ? nd->voltage : 0;
+            }
+            simulation_free(sim);
+            circuit_free(c);
+        }
+        if (ok) {
+            /* Both hold the same open-circuit voltage, so whichever sags less is the stiffer
+               pack - and it has to be the 100C one, by a clear margin rather than a rounding. */
+            if (!(v[1] > v[0] + 0.2)) {
+                ok = 0;
+                snprintf(why, sizeof why, "25C pack sits at %.3f V under load and the 100C pack at "
+                         "%.3f - the high-discharge pack has to hold up better", v[0], v[1]);
+            }
+        }
+        if (!ok) { fails++; printf("[FAIL] batt  %-18s %s\n", "sag: 25C vs 100C", why); }
+        else printf(" OK  batt  %-18s 25C sags to %.3f V, 100C holds %.3f V into the same load\n",
+                    "sag: 25C vs 100C", v[0], v[1]);
+    }
+
+    /* And the curves really are different shapes, which is the whole reason chemistry is a
+       property. A LiFePO4 is nearly flat across the middle; an alkaline is not. */
+    {
+        total++;
+        double flat_lfp = fabs(component_battery_cell_ocv(BATT_LIFEPO4, 0.8) -
+                               component_battery_cell_ocv(BATT_LIFEPO4, 0.2));
+        double flat_alk = fabs(component_battery_cell_ocv(BATT_ALKALINE, 0.8) -
+                               component_battery_cell_ocv(BATT_ALKALINE, 0.2));
+        if (!(flat_lfp < 0.2 && flat_alk > 0.25)) {
+            fails++;
+            printf("[FAIL] batt  %-18s LiFePO4 moves %.3f V between 20%% and 80%% and alkaline %.3f - "
+                   "the first has to be flat and the second must not be\n", "curve shape", flat_lfp, flat_alk);
+        } else {
+            printf(" OK  batt  %-18s LiFePO4 moves %.3f V from 20%% to 80%%, alkaline moves %.3f\n",
+                   "curve shape", flat_lfp, flat_alk);
+        }
+    }
+
+    printf("\nbattery-test: %d checks over %d chemistries, %d wrong\n",
+           total, (int)BATT_CHEMISTRY_COUNT, fails);
+    return fails ? 1 : 0;
+}
+
 static int flow_test(void) {
     int fails = 0, total = 0;
     for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
@@ -4800,7 +4940,9 @@ static int bias_test(void) {
                     if (c->components[k]->type == COMP_BATTERY) bat = c->components[k];
                     if (c->components[k]->type == COMP_RESISTOR && nres++ == 3) load = c->components[k];
                 }
-                if (bat) bat->props.battery.nominal_voltage = wcases[i].cell;
+                /* AT this terminal voltage, not "nominal of" it: a full cell sits above
+                   its nominal, and the window this is probing is 400 mV wide. */
+                if (bat) component_battery_set_open_circuit(bat, wcases[i].cell);
                 Simulation *sim = simulation_create(c);
                 ok = sim && simulation_dc_analysis(sim) && bat && load;
                 if (ok) {
@@ -6206,7 +6348,12 @@ static double sign_measure(const SignCase *sc, int *ok) {
     Component *src = pt_add(c, sc->src, 0, 60, 0);
     if (!src) { circuit_free(c); return 0; }
     if (sc->src == COMP_BATTERY) {
-        src->props.battery.nominal_voltage = sc->v_oc;
+        /* v_oc is the OPEN-CIRCUIT voltage this case is built around, which is what the
+           expected divider is computed from - so set the pack to it rather than to a nominal.
+           They are not the same number: a full cell sits above its nominal, and setting the
+           nominal instead made every battery case here read 6.7 % high and trip the suite's own
+           "above open circuit" alarm. */
+        component_battery_set_open_circuit(src, sc->v_oc);
         src->props.battery.internal_r = sc->r_int;
         src->props.battery.ideal = false;
         src->props.battery.discharged = false;
@@ -7782,6 +7929,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--mcu-test")) return mcu_test();
         else if (!strcmp(argv[i], "--direction-test")) return direction_test();
         else if (!strcmp(argv[i], "--thermal-test")) return thermal_test();
+        else if (!strcmp(argv[i], "--battery-test")) return battery_test();
         else if (!strcmp(argv[i], "--restamp-test")) return restamp_test();
         else if (!strcmp(argv[i], "--class-test"))
             return class_test((i + 1 < argc && atof(argv[i + 1]) > 0) ? atof(argv[i + 1]) : 0.25);

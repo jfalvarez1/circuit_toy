@@ -768,7 +768,15 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
             .current_draw = 0.0,
             .v_cutoff = 0.9,              // Cutoff voltage
             .discharged = false,
-            .ideal = false                // Non-ideal by default for discharge
+            .ideal = false,               // Non-ideal by default for discharge
+            /* A single alkaline AA, which is what a battery symbol has always meant here.
+               Everything above is derived from these four by component_battery_refresh, so the
+               numbers are only defaults until the part is created. */
+            .chemistry = BATT_ALKALINE,
+            .cells_series = 1,
+            .cells_parallel = 1,
+            .c_rating = 0.2,
+            .cell_capacity_mah = 2500.0
         }}
     },
 
@@ -2190,6 +2198,50 @@ static void part_tl431(Component *c) {
     c->props.zener.rz = 0.2;
 }
 
+
+/* ---- battery packs ----------------------------------------------------------------------- */
+
+/* The arrangements people actually build with. Each sets only what it is - chemistry, how many
+   cells which way, the cell's size and how hard it can be pushed - and
+   component_battery_refresh works out the voltage, the capacity, the cutoff and the internal
+   resistance from those. That is the point of the presets: 2S and 3S of the same cell are the
+   same part wired differently, and the panel shows the arithmetic. */
+static void batt_set(Component *c, int chem, int S, int P, double mah, double crate) {
+    c->props.battery.chemistry = chem;
+    c->props.battery.cells_series = S;
+    c->props.battery.cells_parallel = P;
+    c->props.battery.cell_capacity_mah = mah;
+    c->props.battery.c_rating = crate;
+    c->props.battery.charge_state = 1.0;
+    c->props.battery.discharged = false;
+    c->props.battery.ideal = false;
+    component_battery_refresh(c);
+    c->props.battery.charge_coulombs = c->props.battery.capacity_mah * 3.6;
+}
+
+static void part_aa_alkaline(Component *c)  { batt_set(c, BATT_ALKALINE, 1, 1, 2500, 0.2); }
+static void part_aa_nimh(Component *c)      { batt_set(c, BATT_NIMH,     1, 1, 2000, 1.0); }
+static void part_18650(Component *c)        { batt_set(c, BATT_LIION,    1, 1, 3400, 2.0); }
+static void part_lipo_1s(Component *c)      { batt_set(c, BATT_LIPO,     1, 1, 1000, 25.0); }
+/* 7.4 V - two LiPo cells, the one everybody means by "7.4 V" */
+static void part_lipo_2s(Component *c)      { batt_set(c, BATT_LIPO,     2, 1, 2200, 25.0); }
+/* 11.1 V, the standard hobby three-cell */
+static void part_lipo_3s(Component *c)      { batt_set(c, BATT_LIPO,     3, 1, 2200, 25.0); }
+/* the same three cells built for current instead: 100C, and a tenth of the resistance */
+static void part_lipo_3s_hd(Component *c)   { batt_set(c, BATT_LIPO,     3, 1, 2200, 100.0); }
+static void part_lipo_4s(Component *c)      { batt_set(c, BATT_LIPO,     4, 1, 5000, 30.0); }
+/* 11.1 V of 18650s three deep and three wide: 10.2 Ah, and a laptop pack */
+static void part_liion_3s3p(Component *c)   { batt_set(c, BATT_LIION,    3, 3, 3400, 2.0); }
+/* 12.8 V, and it drops into a lead-acid hole */
+static void part_lifepo4_4s(Component *c)   { batt_set(c, BATT_LIFEPO4,  4, 1, 3000, 3.0); }
+static void part_lifepo4_1s(Component *c)   { batt_set(c, BATT_LIFEPO4,  1, 1, 3000, 3.0); }
+/* the 12 V 7 Ah brick in every alarm panel and UPS: six cells of 2 V */
+static void part_sla_12v(Component *c)      { batt_set(c, BATT_LEAD_ACID, 6, 1, 7000, 5.0); }
+/* and a car battery: the same six cells, sixty amp-hours, and it starts an engine */
+static void part_car_12v(Component *c)      { batt_set(c, BATT_LEAD_ACID, 6, 1, 60000, 10.0); }
+static void part_nimh_9v(Component *c)      { batt_set(c, BATT_NIMH,      7, 1, 200, 1.0); }
+
+
 static const PartModel g_parts[] = {
     { "2N7000",  COMP_NMOS,    "logic-level NMOS, V_th 2.1 V, R_DS(on) 1.2 ohm at V_GS 10 V", part_2n7000 },
     { "2N7002",  COMP_NMOS,    "SOT-23 NMOS, V_th 1.6 V, R_DS(on) 2 ohm at V_GS 10 V",        part_2n7002 },
@@ -2197,6 +2249,20 @@ static const PartModel g_parts[] = {
     { "IRLZ44N", COMP_NMOS,    "logic-level NMOS, V_th 1.5 V, R_DS(on) 22 mohm at V_GS 5 V",  part_irlz44n },
     { "BS250",   COMP_PMOS,    "P-channel, V_th -3 V, R_DS(on) 14 ohm at V_GS -10 V",         part_bs250 },
     { "IRF9540N",COMP_PMOS,    "power P-channel, V_th -3 V, R_DS(on) 0.2 ohm at V_GS -10 V",  part_irf9540n },
+    { "AA Alkaline",  COMP_BATTERY, "1.5 V primary, 2500 mAh: sloping curve, 200 mohm",           part_aa_alkaline },
+    { "AA NiMH",      COMP_BATTERY, "1.2 V rechargeable, 2000 mAh, flat middle",                   part_aa_nimh },
+    { "9V NiMH",      COMP_BATTERY, "7S of 200 mAh: 8.4 V nominal, and it sags",                   part_nimh_9v },
+    { "18650",        COMP_BATTERY, "Li-ion 3.7 V 3400 mAh 2C: ~80 mohm, 4.2 V full",              part_18650 },
+    { "LiPo 1S",      COMP_BATTERY, "3.7 V 1000 mAh 25C pouch",                                    part_lipo_1s },
+    { "LiPo 2S 7.4V", COMP_BATTERY, "two cells: 7.4 V nominal, 2200 mAh, 25C = 55 A",              part_lipo_2s },
+    { "LiPo 3S 11.1V", COMP_BATTERY, "three cells: 11.1 V, 2200 mAh, 25C",                         part_lipo_3s },
+    { "LiPo 3S 100C", COMP_BATTERY, "the same 3S built for current: 220 A, a tenth the resistance", part_lipo_3s_hd },
+    { "LiPo 4S 14.8V", COMP_BATTERY, "four cells: 14.8 V, 5000 mAh, 30C",                          part_lipo_4s },
+    { "Li-ion 3S3P",  COMP_BATTERY, "11.1 V, 10.2 Ah: three deep and three wide, a laptop pack",   part_liion_3s3p },
+    { "LiFePO4 1S",   COMP_BATTERY, "3.2 V 3000 mAh: flat to 80 % and then a cliff",               part_lifepo4_1s },
+    { "LiFePO4 4S",   COMP_BATTERY, "12.8 V: drops into a lead-acid hole and outlives it",         part_lifepo4_4s },
+    { "SLA 12V 7Ah",  COMP_BATTERY, "six 2 V cells: the brick in every alarm panel",               part_sla_12v },
+    { "Car 12V 60Ah", COMP_BATTERY, "the same six cells at 60 Ah, 10C: 600 A of cranking",         part_car_12v },
     { "2N3904",  COMP_NPN_BJT, "general-purpose NPN, h_FE 200 at 10 mA, V_AF 74 V",           part_2n3904 },
     { "BC547B",  COMP_NPN_BJT, "small-signal NPN, h_FE 290 (B grade), V_AF 63 V",             part_bc547b },
     { "2N3906",  COMP_PNP_BJT, "general-purpose PNP, h_FE 180 at 10 mA",                      part_2n3906 },
@@ -2231,6 +2297,165 @@ int component_parts_for(ComponentType type, int *idx, int n) {
     }
     return found;
 }
+
+
+/* ---- battery chemistry ------------------------------------------------------------------ */
+
+/* What a cell is made of, in the four numbers a circuit can see, plus the shape of the curve
+   between them. The curve is where the chemistries actually differ: every one of these sits at
+   a plausible nominal voltage, but a LiFePO4 holds 3.2 V across four fifths of its range and
+   then falls off a cliff, while an alkaline slopes from the moment you connect it. A circuit
+   designed against a flat curve and run on a sloping one is the lesson.
+
+   v_cell[] is open-circuit volts at state of charge 0, 0.2, 0.4, 0.6, 0.8, 1.0. Figures are the
+   usual datasheet ones for a cell at room temperature and a modest load.
+
+   r_k sets internal resistance: R_cell = r_k / (C_rating * capacity_Ah). A cell's DC resistance
+   is what limits how hard it can be pushed, so deriving it from the C rating rather than typing
+   it in separately keeps the two consistent - a 25C LiPo comes out near 10 mohm and a 2C 18650
+   near 80, which are the right numbers. */
+typedef struct {
+    const char *name;
+    double v_cell[6];       /* OCV at SoC 0, .2, .4, .6, .8, 1 */
+    /* The number the chemistry is SOLD by, which is a convention rather than a point on the
+       curve: a LiPo cell is "3.7 V" and two of them are "7.4 V", though the curve at half
+       charge is nearer 3.78. Deriving the label from the curve would print 7.55 V on a pack
+       every catalogue calls 7.4, so the label is stated and the curve is measured. */
+    double v_nominal;
+    double v_charge;        /* per cell, the voltage a charger takes it to (0 = not rechargeable) */
+    double v_float;         /* per cell, where a charger holds it afterwards (0 = no float stage) */
+    double c_default;       /* a typical continuous discharge rating for the chemistry */
+    double r_k;             /* R_cell = r_k / (C * Ah) */
+    double mah_default;     /* a typical single cell */
+} BatteryChem;
+
+static const BatteryChem g_batt_chem[BATT_CHEMISTRY_COUNT] = {
+    [BATT_ALKALINE]  = { "Alkaline",
+                         { 0.90, 1.15, 1.28, 1.38, 1.48, 1.60 },
+                         1.5, 0.0, 0.0, 0.2, 0.25, 2500 },
+    [BATT_NIMH]      = { "NiMH",
+                         { 1.00, 1.18, 1.22, 1.25, 1.30, 1.40 },
+                         1.2, 1.45, 0.0, 1.0, 0.30, 2000 },
+    [BATT_NICD]      = { "NiCd",
+                         { 1.00, 1.17, 1.21, 1.24, 1.28, 1.35 },
+                         1.2, 1.45, 0.0, 5.0, 0.25, 1000 },
+    [BATT_LIION]     = { "Li-ion",
+                         { 3.00, 3.50, 3.65, 3.80, 3.98, 4.20 },
+                         3.7, 4.20, 0.0, 2.0, 0.55, 3400 },
+    [BATT_LIPO]      = { "LiPo",
+                         { 3.20, 3.55, 3.70, 3.85, 4.00, 4.20 },
+                         3.7, 4.20, 0.0, 25.0, 0.55, 2200 },
+    [BATT_LIFEPO4]   = { "LiFePO4",
+                         /* the flat one, and the reason people put up with 3.2 V a cell */
+                         { 2.50, 3.20, 3.25, 3.28, 3.32, 3.65 },
+                         3.2, 3.65, 0.0, 3.0, 0.40, 3000 },
+    [BATT_LEAD_ACID] = { "Lead-acid",
+                         { 1.75, 1.94, 1.99, 2.03, 2.07, 2.12 },
+                         /* 0.15 puts a 12 V 7 Ah brick at 26 mohm, which is what one measures.
+                            The same constant makes a 60 Ah car battery 1.5 mohm against a real
+                            4 - resistance does not fall quite in proportion to size - so the
+                            model is stiffer than life at the very large end and says so. */
+                         2.0, 2.40, 2.25, 5.0, 0.15, 7000 },
+};
+
+const char *component_battery_chemistry_name(int chem) {
+    if (chem < 0 || chem >= BATT_CHEMISTRY_COUNT) return "?";
+    return g_batt_chem[chem].name;
+}
+
+/* Open-circuit volts for ONE cell at this state of charge, interpolated along the curve. */
+double component_battery_cell_ocv(int chem, double soc) {
+    if (chem < 0 || chem >= BATT_CHEMISTRY_COUNT) chem = BATT_LIION;
+    const double *v = g_batt_chem[chem].v_cell;
+    if (soc <= 0) return v[0];
+    if (soc >= 1) return v[5];
+    double x = soc * 5.0;
+    int i = (int)x;
+    if (i > 4) i = 4;
+    double f = x - i;
+    return v[i] + (v[i + 1] - v[i]) * f;
+}
+
+/* Per cell: what a charger takes it to, and where it holds it. 0 means the chemistry does not
+   do that - an alkaline is not rechargeable and only lead-acid floats. */
+/* The number the chemistry is sold by, per cell. */
+double component_battery_nominal_cell(int chem) {
+    if (chem < 0 || chem >= BATT_CHEMISTRY_COUNT) return 0;
+    return g_batt_chem[chem].v_nominal;
+}
+
+
+/* What the pack is sitting at with nothing drawn from it: the chemistry's curve at this state
+   of charge, scaled to the pack's stated nominal. The stamp uses exactly this. */
+double component_battery_open_circuit(const Component *c) {
+    if (!c || c->type != COMP_BATTERY) return 0;
+    int chem = c->props.battery.chemistry;
+    int S = c->props.battery.cells_series > 0 ? c->props.battery.cells_series : 1;
+    double v_nom_cell = component_battery_nominal_cell(chem);
+    if (!(v_nom_cell > 0)) return c->props.battery.nominal_voltage;
+    double scale = c->props.battery.nominal_voltage / (v_nom_cell * S);
+    return component_battery_cell_ocv(chem, c->props.battery.charge_state) * S * scale;
+}
+
+/* Put the pack AT a terminal voltage, whatever its chemistry and state of charge. For a bench
+   stand-in that has to sit at a stated voltage - a test sweeping a protection window, a template
+   showing a cell at 3.0 V - since setting the nominal is not the same thing: a full alkaline
+   sits above its nominal and a flat one below. */
+void component_battery_set_open_circuit(Component *c, double v_target) {
+    if (!c || c->type != COMP_BATTERY || !(v_target > 0)) return;
+    int chem = c->props.battery.chemistry;
+    int S = c->props.battery.cells_series > 0 ? c->props.battery.cells_series : 1;
+    double curve = component_battery_cell_ocv(chem, c->props.battery.charge_state) * S;
+    double v_nom_cell = component_battery_nominal_cell(chem);
+    if (!(curve > 0) || !(v_nom_cell > 0)) { c->props.battery.nominal_voltage = v_target; return; }
+    c->props.battery.nominal_voltage = v_target * (v_nom_cell * S) / curve;
+}
+
+double component_battery_charge_voltage(int chem) {
+    if (chem < 0 || chem >= BATT_CHEMISTRY_COUNT) return 0;
+    return g_batt_chem[chem].v_charge;
+}
+double component_battery_float_voltage(int chem) {
+    if (chem < 0 || chem >= BATT_CHEMISTRY_COUNT) return 0;
+    return g_batt_chem[chem].v_float;
+}
+
+/* Recompute everything a pack derives from its chemistry and its arrangement. Called whenever
+   any of chemistry, S, P, C or the per-cell capacity changes, so the panel cannot show a 3S
+   LiPo sitting at 1.5 V.
+
+   Series multiplies voltage and resistance; parallel multiplies capacity and current capability
+   and divides resistance. That is the whole of pack arithmetic and it is worth being able to see
+   it happen: change S from 2 to 3 and the nominal goes 7.4 -> 11.1. */
+void component_battery_refresh(Component *c) {
+    if (!c || c->type != COMP_BATTERY) return;
+    int chem = c->props.battery.chemistry;
+    if (chem < 0 || chem >= BATT_CHEMISTRY_COUNT) chem = c->props.battery.chemistry = BATT_LIION;
+    int S = c->props.battery.cells_series;
+    int P = c->props.battery.cells_parallel;
+    if (S < 1) S = c->props.battery.cells_series = 1;
+    if (P < 1) P = c->props.battery.cells_parallel = 1;
+    if (!(c->props.battery.c_rating > 0)) c->props.battery.c_rating = g_batt_chem[chem].c_default;
+    if (!(c->props.battery.cell_capacity_mah > 0))
+        c->props.battery.cell_capacity_mah = g_batt_chem[chem].mah_default;
+
+    double cell_ah = c->props.battery.cell_capacity_mah / 1000.0;
+    c->props.battery.capacity_mah = c->props.battery.cell_capacity_mah * P;
+    c->props.battery.nominal_voltage = g_batt_chem[chem].v_nominal * S;
+    c->props.battery.v_cutoff = g_batt_chem[chem].v_cell[0] * S;
+
+    double r_cell = g_batt_chem[chem].r_k / (c->props.battery.c_rating * cell_ah);
+    if (!(r_cell > 0) || !isfinite(r_cell)) r_cell = 0.05;
+    c->props.battery.internal_r = r_cell * (double)S / (double)P;
+}
+
+/* What the pack will give continuously before it is being abused: C times the pack's capacity.
+   A 2200 mAh 25C LiPo is 55 A; three of them in parallel is 165 A. */
+double component_battery_max_current(const Component *c) {
+    if (!c || c->type != COMP_BATTERY) return 0;
+    return c->props.battery.c_rating * (c->props.battery.capacity_mah / 1000.0);
+}
+
 
 bool component_apply_part_idx(Component *c, int idx) {
     const PartModel *m = component_part_at(idx);
@@ -2587,6 +2812,11 @@ Component *component_create(ComponentType type, float x, float y) {
             comp->thermal.thermal_resistance = 100.0;
             break;
     }
+
+    /* A pack's nominal voltage, capacity, cutoff and internal resistance all follow from what it
+       is made of and how it is wired, so they are derived here rather than trusted from the
+       defaults table - which keeps them consistent the moment anything changes them. */
+    if (type == COMP_BATTERY) component_battery_refresh(comp);
 
     return comp;
 }
@@ -4681,14 +4911,28 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             bool discharged = comp->props.battery.discharged;
             bool ideal = comp->props.battery.ideal;
 
-            // Voltage curve: V = V_nom * (0.9 + 0.1 * SoC) with cutoff
-            // This gives roughly 90% voltage at empty, 100% at full
+            /* The chemistry's own curve, times the number of cells in series.
+
+               This was V_nom * (0.85 + 0.15 * SoC) for every battery in the library - the same
+               straight line whatever it was made of, which is precisely the thing that
+               distinguishes one chemistry from another. A LiFePO4 holds 3.2 V a cell across four
+               fifths of its range and then drops; an alkaline slopes from the moment it is
+               connected; lead-acid sits between. A circuit designed against a flat pack and run
+               on a sloping one is the whole lesson, and the old model could not show it. */
+            int chem = comp->props.battery.chemistry;
+            int S = comp->props.battery.cells_series > 0 ? comp->props.battery.cells_series : 1;
             double V_oc;  // Open-circuit voltage
             if (discharged) {
                 V_oc = V_cutoff * 0.8;  // Dead battery
             } else {
-                // Simple linear discharge curve
-                V_oc = V_nom * (0.85 + 0.15 * SoC);
+                /* The chemistry supplies the SHAPE; the pack's stated voltage sets the scale.
+                   Without the scale factor, typing 12 V into the Voltage row did nothing at all -
+                   the curve came from the chemistry alone and a "12 V" battery sat at 1.6.
+                   With it, a pack keeps whatever nominal it is set to and still rises above it
+                   when full and sags through the chemistry's own curve as it empties, which is
+                   what a real cell does: a fresh alkaline AA is 1.6 V, not 1.5. */
+                V_oc = component_battery_open_circuit(comp);
+                (void)chem; (void)S; (void)V_nom;
                 if (V_oc < V_cutoff) {
                     comp->props.battery.discharged = true;
                     V_oc = V_cutoff * 0.8;

@@ -154,6 +154,12 @@ typedef enum {
     // Battery
     PROP_BATT_CAPACITY,           // mAh
     PROP_BATT_R,                  // internal resistance
+    /* A pack is a chemistry and an arrangement. These four decide the voltage, the capacity, the
+       cutoff and the internal resistance between them, so they are the rows worth having. */
+    PROP_BATT_CHEMISTRY,          // toggle: steps through the seven chemistries
+    PROP_BATT_SERIES,             // S: cells stacked for voltage
+    PROP_BATT_PARALLEL,           // P: cells alongside for capacity and current
+    PROP_BATT_CRATE,              // continuous discharge, in C
 
     // JFET
     PROP_JFET_LAMBDA,             // channel-length modulation

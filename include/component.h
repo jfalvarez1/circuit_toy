@@ -654,6 +654,20 @@ typedef union {
         double v_cutoff;         // Cutoff voltage (V), default: 0.9
         bool discharged;         // Battery is depleted
         bool ideal;              // Ideal mode (no internal resistance, no discharge)
+        /* What it is made of and how it is wired up. A pack is cells in series for voltage and
+           in parallel for capacity and current: 2S is 7.4 V of LiPo, 6 lead-acid cells is a car
+           battery, 4S LiFePO4 is 12.8 V and drops into the same hole. The three numbers below
+           DERIVE nominal_voltage, capacity_mah, internal_r and v_cutoff - see
+           component_battery_refresh - so setting the chemistry sets the physics with it. */
+        int chemistry;           // BatteryChemistry
+        int cells_series;        // S: cells stacked for voltage, default 1
+        int cells_parallel;      // P: cells alongside for capacity and current, default 1
+        /* Continuous discharge rating, in multiples of capacity per hour. A 2200 mAh pack at
+           25C will give 55 A; the same cell at 1C will give 2.2 A and sag badly trying. It is
+           what separates a pack built for a drone from one built for a torch, and it is why
+           internal resistance is derived from it rather than typed in separately. */
+        double c_rating;
+        double cell_capacity_mah; // per cell; capacity_mah is this times P
     } battery;
 
     // Speaker/Buzzer (audio output)
@@ -962,6 +976,21 @@ const PartModel *component_part_at(int i);
 int  component_parts_for(ComponentType type, int *idx, int n);
 // Apply by name (case-insensitive) or by table index. Returns false if it does not fit.
 bool component_apply_part(Component *c, const char *part);
+
+/* Battery chemistry. A pack derives its nominal voltage, capacity, cutoff and internal
+   resistance from what it is made of and how it is wired - call component_battery_refresh after
+   changing chemistry, S, P, the C rating or the per-cell capacity. */
+const char *component_battery_chemistry_name(int chem);
+double component_battery_cell_ocv(int chem, double soc);
+double component_battery_nominal_cell(int chem);
+/* The terminal voltage with nothing drawn, and how to set a pack to one. Setting the nominal is
+   NOT the same thing: a full cell sits above its nominal and a flat one below. */
+double component_battery_open_circuit(const Component *c);
+void   component_battery_set_open_circuit(Component *c, double v_target);
+double component_battery_charge_voltage(int chem);
+double component_battery_float_voltage(int chem);
+void   component_battery_refresh(Component *c);
+double component_battery_max_current(const Component *c);
 bool component_apply_part_idx(Component *c, int idx);
 // Next part for this component's type, wrapping through "" (generic) - drives the panel row.
 void component_cycle_part(Component *c);

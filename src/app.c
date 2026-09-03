@@ -1332,6 +1332,31 @@ void app_handle_events(App *app) {
                             app->circuit->modified = true;
                             app->input.pending_ui_action = UI_ACTION_NONE;
                             break;
+                        } else if (prop_type == PROP_BATT_CHEMISTRY) {
+                            /* Step to the next chemistry and let everything follow. The cell
+                               capacity is reset to that chemistry's typical size too, since a
+                               3400 mAh alkaline AA is not a thing. */
+                            if (c->type == COMP_BATTERY) {
+                                int next = (c->props.battery.chemistry + 1) % BATT_CHEMISTRY_COUNT;
+                                c->props.battery.chemistry = next;
+                                c->props.battery.c_rating = 0;          /* take the chemistry's own */
+                                c->props.battery.cell_capacity_mah = 0;
+                                component_battery_refresh(c);
+                                c->props.battery.charge_coulombs =
+                                    c->props.battery.capacity_mah * 3.6 * c->props.battery.charge_state;
+                                c->props.battery.discharged = false;
+                                char msg[140];
+                                snprintf(msg, sizeof msg,
+                                         "%s %dS%dP: %.2f V nominal, %.0f mAh, %.4g ohm, %.1f A at %.4gC",
+                                         component_battery_chemistry_name(next),
+                                         c->props.battery.cells_series, c->props.battery.cells_parallel,
+                                         c->props.battery.nominal_voltage, c->props.battery.capacity_mah,
+                                         c->props.battery.internal_r, component_battery_max_current(c),
+                                         c->props.battery.c_rating);
+                                ui_set_status(&app->ui, msg);
+                            }
+                            app->input.pending_ui_action = UI_ACTION_NONE;
+                            break;
                         } else if (prop_type == PROP_MOS_TYPE) {
                             // Enhancement <-> depletion: flip the sign of the threshold
                             if (c->type == COMP_NMOS || c->type == COMP_PMOS) {

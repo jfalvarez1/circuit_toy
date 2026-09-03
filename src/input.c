@@ -2082,6 +2082,7 @@ void input_cancel_property_edit(InputState *input) {
    --prop-test says so out loud rather than quietly passing. */
 bool property_is_toggle(int prop_type) {
     switch (prop_type) {
+        case PROP_BATT_CHEMISTRY:
         case PROP_IDEAL: case PROP_PART:
         case PROP_BJT_IDEAL: case PROP_MOS_IDEAL: case PROP_MOS_TYPE:
         case PROP_OPAMP_IDEAL: case PROP_OPAMP_R2R:
@@ -2661,6 +2662,34 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
         case PROP_JFET_LAMBDA:
             if ((comp->type == COMP_NJFET || comp->type == COMP_PJFET) && value >= 0 && value <= 1.0) {
                 comp->props.jfet.lambda = value; applied = true;
+            }
+            break;
+        /* S, P and the C rating. Each one goes through component_battery_refresh, so changing
+           the arrangement moves the voltage, the capacity and the resistance with it - which is
+           the arithmetic a pack IS. Setting S from 2 to 3 takes a LiPo from 7.4 V to 11.1. */
+        case PROP_BATT_SERIES:
+            if (comp->type == COMP_BATTERY && value >= 1 && value <= 64) {
+                comp->props.battery.cells_series = (int)(value + 0.5);
+                component_battery_refresh(comp);
+                comp->props.battery.charge_coulombs =
+                    comp->props.battery.capacity_mah * 3.6 * comp->props.battery.charge_state;
+                applied = true;
+            }
+            break;
+        case PROP_BATT_PARALLEL:
+            if (comp->type == COMP_BATTERY && value >= 1 && value <= 64) {
+                comp->props.battery.cells_parallel = (int)(value + 0.5);
+                component_battery_refresh(comp);
+                comp->props.battery.charge_coulombs =
+                    comp->props.battery.capacity_mah * 3.6 * comp->props.battery.charge_state;
+                applied = true;
+            }
+            break;
+        case PROP_BATT_CRATE:
+            if (comp->type == COMP_BATTERY && value > 0 && value <= 1000) {
+                comp->props.battery.c_rating = value;
+                component_battery_refresh(comp);   /* the resistance follows the C rating */
+                applied = true;
             }
             break;
         case PROP_BATT_CAPACITY:

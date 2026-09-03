@@ -463,6 +463,21 @@ typedef struct {
     uint8_t alpha;        // Current alpha
 } SmokeParticle;
 
+/* Battery chemistry. What a cell is made of decides four things a circuit can see: the voltage
+   it sits at, the SHAPE of the curve from full to empty, how hard it can be pushed, and what a
+   charger has to do to fill it. A LiFePO4 pack holds 3.2 V across most of its range and then
+   falls off a cliff; an alkaline slopes the whole way and a circuit has to tolerate that. */
+typedef enum {
+    BATT_ALKALINE = 0,   // primary, not rechargeable
+    BATT_NIMH,
+    BATT_NICD,
+    BATT_LIION,          // 18650 and friends: 3.6-3.7 V nominal, 4.2 V full
+    BATT_LIPO,           // the same chemistry in a pouch, built for current
+    BATT_LIFEPO4,        // 3.2 V nominal, flat, and it does not burn
+    BATT_LEAD_ACID,      // 2 V per cell: six of them is a car battery
+    BATT_CHEMISTRY_COUNT
+} BatteryChemistry;
+
 // Thermal state for a component (tracks temperature and failure)
 typedef struct {
     double temperature;           // Current temperature (°C)

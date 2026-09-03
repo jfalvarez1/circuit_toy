@@ -2063,6 +2063,46 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     prop_y += 18;
                 }
                 {
+                    /* One click steps to the next chemistry: seven of them, and setting it by
+                       typing a name is a spelling test. Everything else about the pack follows
+                       from it - see component_battery_refresh. */
+                    snprintf(buf, sizeof(buf), "%s",
+                             component_battery_chemistry_name(selected->props.battery.chemistry));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Chemistry:", buf, false, edit_buf, cursor);
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_BATT_CHEMISTRY;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_BATT_SERIES;
+                    snprintf(buf, sizeof(buf), "%dS", selected->props.battery.cells_series);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Cells (S):", buf, ed, edit_buf, cursor);
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_BATT_SERIES;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_BATT_PARALLEL;
+                    snprintf(buf, sizeof(buf), "%dP", selected->props.battery.cells_parallel);
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Cells (P):", buf, ed, edit_buf, cursor);
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_BATT_PARALLEL;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
+                    bool ed = input && input->editing_property && input->editing_prop_type == PROP_BATT_CRATE;
+                    snprintf(buf, sizeof(buf), "%.4gC  (%.1f A)", selected->props.battery.c_rating,
+                             component_battery_max_current(selected));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "Discharge:", buf, ed, edit_buf, cursor);
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_BATT_CRATE;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                {
                     bool ed = input && input->editing_property && input->editing_prop_type == PROP_BATT_CAPACITY;
                     snprintf(buf, sizeof(buf), "%.0f", selected->props.battery.capacity_mah);
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "Capacity mAh:", buf, ed, edit_buf, cursor);
