@@ -131,6 +131,7 @@ struct Sketch {
     double wake;                     /* not before this */
     bool waiting;
     long loops;
+    double shortest_delay;           /* the finest the sketch has asked for; 0 = none yet */
 
     int pin_mode[SKETCH_MAX_PINS];
     double pin_duty[SKETCH_MAX_PINS];
@@ -993,7 +994,7 @@ void sketch_reset(Sketch *s) {
     s->sp = 0; s->fp = 0; s->pc = 0;
     s->state = SK_INIT;
     s->t = 0; s->wake = 0; s->waiting = false; s->loops = 0;
-    s->faulted = false; s->err[0] = 0; s->last_print[0] = 0;
+    s->faulted = false; s->err[0] = 0; s->last_print[0] = 0; s->shortest_delay = 0;
     for (int i = 0; i < SKETCH_MAX_PINS; i++) {
         s->pin_mode[i] = SKETCH_PIN_INPUT;
         s->pin_duty[i] = 0;
@@ -1025,6 +1026,7 @@ const char *sketch_last_print(const Sketch *s) {
 }
 const char *sketch_error(const Sketch *s) { return (s && s->faulted) ? s->err : NULL; }
 double sketch_millis(const Sketch *s) { return s ? s->t * 1000.0 : 0.0; }
+double sketch_shortest_delay(const Sketch *s) { return s ? s->shortest_delay : 0.0; }
 long sketch_loop_count(const Sketch *s) { return s ? s->loops : 0; }
 bool sketch_is_waiting(const Sketch *s) { return s && s->waiting; }
 
@@ -1136,13 +1138,21 @@ static void do_builtin(Sketch *s, int b) {
         }
         case B_DELAY: {
             double ms = pop(s);
-            if (ms > 0) { s->wake = s->t + ms / 1000.0; s->waiting = true; }
+            if (ms > 0) {
+                s->wake = s->t + ms / 1000.0; s->waiting = true;
+                double d = ms / 1000.0;
+                if (s->shortest_delay <= 0 || d < s->shortest_delay) s->shortest_delay = d;
+            }
             push(s, 0);
             break;
         }
         case B_DELAYUS: {
             double us = pop(s);
-            if (us > 0) { s->wake = s->t + us / 1e6; s->waiting = true; }
+            if (us > 0) {
+                s->wake = s->t + us / 1e6; s->waiting = true;
+                double d = us / 1e6;
+                if (s->shortest_delay <= 0 || d < s->shortest_delay) s->shortest_delay = d;
+            }
             push(s, 0);
             break;
         }

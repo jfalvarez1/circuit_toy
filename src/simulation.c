@@ -225,8 +225,20 @@ static void mcu_advance(Simulation *sim, double t) {
         const char *rt = sketch_error(sk);
         if (rt) snprintf(comp->props.mcu.status, sizeof comp->props.mcu.status, "%s", rt);
         else {
-            const char *pr = sketch_last_print(sk);
-            if (pr) snprintf(comp->props.mcu.status, sizeof comp->props.mcu.status, "%s", pr);
+            /* A delay finer than one solver step cannot mean what it says: it expires inside a
+               step and the pin toggles once per step instead. Say so rather than round it away
+               in silence, which is the same principle as the time-step warnings elsewhere - a
+               number that is quietly wrong is worse than one that is loudly approximate. */
+            double fine = sketch_shortest_delay(sk);
+            double dt = sim->time_step > 0 ? sim->time_step : 0;
+            if (fine > 0 && dt > 0 && fine < dt) {
+                snprintf(comp->props.mcu.status, sizeof comp->props.mcu.status,
+                         "delay of %.3g s is finer than the %.3g s step - it lasts one step",
+                         fine, dt);
+            } else {
+                const char *pr = sketch_last_print(sk);
+                if (pr) snprintf(comp->props.mcu.status, sizeof comp->props.mcu.status, "%s", pr);
+            }
         }
 
         for (int k = 0; k < MCU_GND_PIN; k++) {

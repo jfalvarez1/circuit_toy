@@ -20,9 +20,16 @@ what shipped matches it, with these notes:
 - `analogWrite` is a real 490 Hz square wave, not its average - the switching is what an RC or
   a motor winding is actually averaging.
 
-**Still to do:** somewhere better to type the code than the properties panel (the clipboard
-button and the command-line path described below), and the timing-granularity warning - a
-`delayMicroseconds(1)` against a 10 us step still rounds silently.
+- The clipboard and command-line paths are both in: the existing **Paste** button takes a
+  sketch as readily as a parts list (they cannot be confused - only one has `setup()` in it),
+  and `--sketch FILE` composes with `--template` and `--shot`.
+
+- The timing-granularity warning is in too. The block tracks the finest delay its sketch has
+  asked for and says so when that is shorter than the solver step - "delay of 1e-06 s is finer
+  than the 0.0001 s step - it lasts one step" - rather than rounding it away in silence.
+
+**Nothing outstanding.** The two suites are `--sketch-test` (the interpreter, fake clock) and
+`--mcu-test` (the block on a sheet, measured at the node).
 
 **The goal is not an Arduino emulator.** Nobody needs AVR instruction timing here, and building
 it would be months of work for a result whose value to a circuit is nil. What is wanted is much

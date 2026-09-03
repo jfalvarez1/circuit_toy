@@ -1918,6 +1918,34 @@ static int mcu_test(void) {
         circuit_free(c);
     }
 
+    /* A delay finer than the step cannot mean what it says, and the block has to say so. The
+       roadmap called this one out: delayMicroseconds(1) against a 10 us step rounds silently
+       unless something notices, and a number that is quietly wrong is the worst kind. */
+    {
+        total++;
+        Circuit *c = mcu_rig("void setup() { pinMode(13, OUTPUT); }\n"
+                             "void loop() { digitalWrite(13, HIGH); delayMicroseconds(1);\n"
+                             "              digitalWrite(13, LOW); delayMicroseconds(1); }\n",
+                             1000.0, 11);
+        Simulation *sim = c ? simulation_create(c) : NULL;
+        int ok = 0;
+        if (sim && simulation_dc_analysis(sim)) {
+            sim->adaptive_enabled = false;
+            sim->time_step = 1e-4;              /* a hundred times coarser than the delay */
+            simulation_start(sim);
+            for (int k = 0; k < 20; k++) if (!simulation_step(sim)) break;
+            Component *mcu = c->components[0];
+            ok = strstr(mcu->props.mcu.status, "finer than") != NULL;
+            if (!ok) printf("[FAIL] mcu   %-46s status was '%s'\n",
+                            "a delay finer than the step is called out", mcu->props.mcu.status);
+            else printf(" OK  mcu   %-46s %s\n", "a delay finer than the step is called out",
+                        mcu->props.mcu.status);
+        }
+        if (!ok) fails++;
+        simulation_free(sim);
+        circuit_free(c);
+    }
+
     /* A block whose code does not compile must be inert and must say why, not drive the node
        with whatever was left in its pin state. */
     {

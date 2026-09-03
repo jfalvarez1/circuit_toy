@@ -76,6 +76,10 @@ const char *sketch_error(const Sketch *s);
 
 /* Diagnostics for the suite and the properties panel. */
 double sketch_millis(const Sketch *s);
+/* The shortest delay the sketch has actually asked for, in seconds, or 0 if it has asked for
+   none. The caller compares it against the time step: a delay finer than one step cannot mean
+   what it says, and the block should say so rather than round it away in silence. */
+double sketch_shortest_delay(const Sketch *s);
 long sketch_loop_count(const Sketch *s);
 /* True when the sketch is sitting in a delay() that has not expired yet. */
 bool sketch_is_waiting(const Sketch *s);
