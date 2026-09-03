@@ -9,11 +9,11 @@
      alongside the versioned one, so the link never needs editing and never goes stale. The
      versioned copy stays because the updater asks for it by name. -->
 
-**Latest Release: [v3.28.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.28.0)** (auto-updating from v3.4.0 on) · [all releases](https://github.com/jfalvarez1/circuit_toy/releases)
+**Latest Release: [v3.29.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.29.0)** (auto-updating from v3.4.0 on) · [all releases](https://github.com/jfalvarez1/circuit_toy/releases)
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
 digital solver, a real-time bench oscilloscope with FFT and THD, 205 guided circuits from RC
-filters to power grids, SPICE import, and a 69-suite self-audit battery. Build, simulate and
+filters to power grids, SPICE import, and a 70-suite self-audit battery. Build, simulate and
 analyse circuits with a drag-and-drop schematic.
 
 The look is deliberately **synthwave** - magenta and cyan on deep violet, a CRT-style graticule

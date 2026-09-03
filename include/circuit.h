@@ -22,6 +22,7 @@ typedef struct {
        is, so two parts naming it are joined with no wire drawn between them. Empty for the
        ordinary case, where position and wires do the joining. */
     char name[NET_NAME_MAX];
+    FlowState flow;      /* running statistics of this node's voltage; display only */
 } Node;
 
 // Wire segment
@@ -33,6 +34,7 @@ typedef struct {
     int num_points;
     bool selected;
     double current;
+    FlowState flow;      /* where its flow dots are; display only, never saved */
 } Wire;
 
 // Voltage probe
@@ -217,6 +219,9 @@ void circuit_update_voltages(Circuit *circuit, Vector *solution);
 
 // Update wire currents based on connected components
 void circuit_update_wire_currents(Circuit *circuit);
+/* Per-step statistics for the flow display: tells a current that goes somewhere from one that
+   alternates, at the step rate, where nothing aliases. Called from simulation_step. */
+void circuit_observe_flow(Circuit *circuit, double dt);
 
 // Update voltmeter and ammeter readings from current node voltages
 void circuit_update_meter_readings(Circuit *circuit);

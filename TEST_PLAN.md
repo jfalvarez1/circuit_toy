@@ -918,6 +918,69 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.44 v3.29.0 - the gates that were never run, and what they found (2026-09-03)
+
+A sweep of the knobs, the limits and the GUI. Most of what it found was not a circuit being
+wrong; it was **a check that existed and was never run**, or **a number that was reported and
+never enforced**.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.44.1 | `[ ]` Open every battery template and look for smoke | nothing burns. Thirteen resistors were above their rating; every one was a load bank wearing a quarter-watt label |
+| 3.44.2 | `[ ]` **Battery: 25C vs 100C** | the 0.3 ohm load is a 1 kW part, because 529 W is what it takes |
+| 3.44.3 | `[ ]` Run an AC template and watch the flow dots | they go back and forth. Charge in an AC circuit does not go anywhere |
+| 3.44.4 | `[ ]` Run a DC template and watch the flow dots | they march, in the direction the current flows |
+| 3.44.5 | `[ ]` A rectifier's output | marches, with a wobble - it alternates in origin but it goes somewhere |
+| 3.44.6 | `[ ]` Resize the window down to 1024x600 | every toolbar button is visible, legible and clear of the speed slider |
+| 3.44.7 | `[ ]` Click `+`, `-`, `Fit` and pick up the Pan tool | all four do what they say |
+| 3.44.8 | `[ ]` **Battery Packs: 1S to 4S**, press **Autoset** | the trigger lands on a channel at a level that channel actually reaches |
+| 3.44.9 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 70 suites, 0 failed |
+
+**One fault was hiding behind another.** Stopping the battery templates burning made their traces
+flat - a pack into a load is a straight line - and `--autoset-test` immediately failed on two of
+them: Autoset put the trigger at 10.49 V, the midpoint of four channels sitting at 4, 8, 11 and 15
+volts, on a CH1 that never leaves 4.19. A trigger that cannot fire, shown on the panel as if it
+could. The per-channel rule had been written once and applied only to the path for circuits where
+something moves; the path for circuits where nothing does still averaged every channel together
+and returned before reaching it. Both paths now call `scope_autoset_trigger`, so there is one rule.
+The burning loads had been concealing it, which is what a template that burns on the frame it
+appears does to everything downstream of it.
+
+**Four gates existed and nothing ran them.** The orphan guard reads C source for command-line
+flags, so a gate written in python was outside it entirely: `gui_smoke.py`, `edge_gui.py`,
+`svg_audit.py` had been written, committed, and never once executed by the battery. The guard now
+covers `tools/*.py` as well, with two named exclusions that are plainly not gates.
+
+**And when `gui_smoke.py` was finally run, three of its four interaction checks failed.** Not
+because the app was broken - because the coordinates were typed into the script, under a comment
+saying they should be read from the layout rather than guessed. Two clicks landed in the gap
+between buttons; the "Pan tool" check was clicking **Delete**, one row up, and then reporting the
+Pan tool broken. The app now answers `--dump-layout` with every toolbar button and palette item in
+device pixels, and the gate asks. Nothing in it is a typed-in coordinate any more, which also means
+the toolbar can be rearranged without silently invalidating it - as it just was.
+
+**`burn-test` printed thirteen overloaded parts every run and returned 0.** It failed only for
+high-voltage templates, so everything else was counted and waved through. It now fails on any
+overloaded part, with no exemption list: all thirteen turned out to be a part whose *rating* was
+wrong rather than a circuit that was wrong, and that fix is available to anything that trips it.
+The ratings are now derived from the dissipation rather than typed in, so they stay right when a
+preset changes underneath them.
+
+**The toolbar was laid out once, at start-up, from fixed offsets.** It ran to wherever it ran to;
+adding two buttons in v3.28.0 pushed the last three off a 1024 px window - drawn, hovered,
+hit-tested and unreachable. It is now fitted to the window: gaps close first, then buttons narrow,
+never below their own labels. `--layout-test` asserts every button is inside the window, none
+overlaps another, and none is covered by the speed and time-step group - at every size, not just
+from 1280 up as before.
+
+**Alternating current went in one direction.** The flow dots picked their direction from the sign
+of the current in the frame being drawn and then marched forward regardless, which says the same
+thing about a battery and about the mains. Direction now comes from statistics taken *at the step
+rate*, in `circuit_observe_flow` - because sampling once a frame aliases 60 Hz to a constant, and
+the mains templates would have read as direct current. `--flowdir-test` asserts it over seven
+waveforms including the one that aliases exactly onto the frame rate; forcing the old behaviour
+back fails five of the seven.
+
 ### 3.43 v3.28.0 - the drawing is a document, and a screenshot is of the drawing (2026-09-03)
 
 There was one look and one screenshot. The look was synthwave, which is the right look for the

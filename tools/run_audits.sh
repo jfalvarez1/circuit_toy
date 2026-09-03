@@ -29,7 +29,7 @@ SMOKE_MODES="--probe-test --probe-audit --label-test --span-test --osc-test --dv
 --flow-test --pair-test --ic-test --sketch-test --mcu-test --direction-test --thermal-test --battery-test --gallery-test --switch-test --part-test --op-test --sub-test --spice-test --xtal-test --view-test
 --conn-test --file-test --parts-file-test --undo-test --bias-test --netlist-test --line-test --std-test --burn-test --knob-test --geom-test --param-test --sweep-check
 --tesla-test"
-APP_MODES="--layout-test --symbol-test --autoset-test --place-test --trig-test --prop-test --value-sweep --style-test --shot-test"
+APP_MODES="--layout-test --symbol-test --autoset-test --place-test --trig-test --prop-test --value-sweep --style-test --shot-test --flowdir-test"
 # ...and one app suite is long enough to shard as well: --bounce-test renders sixty frames of
 # every template through the real scope.
 APP_SHARDED="bounce-test:4"
@@ -65,6 +65,25 @@ done
 if [ -n "$orphans" ]; then
     echo "run_audits: these suites exist but are in no list, so nothing runs them:$orphans" >&2
     echo "run_audits: add them to SMOKE_MODES or APP_MODES, or delete them." >&2
+    exit 2
+fi
+
+# The same guard for the gates written in python, which the one above cannot see because it reads
+# C source for command-line flags. Two of them - edge_gui.py and svg_audit.py - had been written,
+# committed and then never run by anything: the check that exists to stop a suite going unrun had
+# a whole language outside it. A gate is any tools/*.py that is not on the short list of things
+# that are plainly not gates.
+py_orphans=""
+for f in tools/*.py; do
+    [ -f "$f" ] || continue
+    case "$f" in
+        tools/copy_file.py|tools/make_media.py) continue ;;   # a file copier and the media script
+    esac
+    grep -q "$f" "$0" || py_orphans="$py_orphans $f"
+done
+if [ -n "$py_orphans" ]; then
+    echo "run_audits: these python gates exist but nothing in this script runs them:$py_orphans" >&2
+    echo "run_audits: add a block for each, or delete them." >&2
     exit 2
 fi
 
@@ -238,6 +257,50 @@ if command -v python >/dev/null 2>&1; then
     else
         printf '[FAIL] %-14s %s
 ' "undo-gui" "$(grep -m1 FAIL "$out/undogui.log" | cut -c1-100)"
+        fails=$((fails + 1))
+    fi
+fi
+
+# The app driven the way a user drives it: place a template, press the toolbar, pick up a tool,
+# drag the canvas, and look at the pixels that came out. This existed and was in no list either -
+# and when it was finally run, three of its four interaction checks were failing on coordinates
+# that had been typed into the script instead of read from the app. --quick, because a launch per
+# template over 205 templates is three quarters of an hour.
+if command -v python >/dev/null 2>&1; then
+    if python tools/gui_smoke.py --quick --exe "$APP" --smoke "$SMOKE" > "$out/guismoke.log" 2>&1; then
+        printf '[ OK ] %-14s %s
+' "gui-smoke" "$(tail -n 1 "$out/guismoke.log" | cut -c1-100)"
+    else
+        printf '[FAIL] %-14s %s
+' "gui-smoke" "$(tail -n 1 "$out/guismoke.log" | cut -c1-100)"
+        grep -m8 FAIL "$out/guismoke.log"
+        fails=$((fails + 1))
+    fi
+fi
+
+# Nothing a template draws may run off the edge of the canvas. This existed and was in no list,
+# so from the day it was written until now nothing ran it.
+if command -v python >/dev/null 2>&1; then
+    if python tools/edge_gui.py "$APP" > "$out/edgegui.log" 2>&1; then
+        printf '[ OK ] %-14s %s
+' "edge-gui" "$(tail -n 1 "$out/edgegui.log" | cut -c1-100)"
+    else
+        printf '[FAIL] %-14s %s
+' "edge-gui" "$(tail -n 1 "$out/edgegui.log" | cut -c1-100)"
+        grep -m5 FAIL "$out/edgegui.log"
+        fails=$((fails + 1))
+    fi
+fi
+
+# Every template's SVG export, through a real XML parser. Also written, also in no list.
+if command -v python >/dev/null 2>&1; then
+    if python tools/svg_audit.py "$SMOKE" > "$out/svgaudit.log" 2>&1; then
+        printf '[ OK ] %-14s %s
+' "svg-audit" "$(tail -n 1 "$out/svgaudit.log" | cut -c1-100)"
+    else
+        printf '[FAIL] %-14s %s
+' "svg-audit" "$(tail -n 1 "$out/svgaudit.log" | cut -c1-100)"
+        grep -m5 -i fail "$out/svgaudit.log"
         fails=$((fails + 1))
     fi
 fi

@@ -131,6 +131,28 @@ def run_app(args, out, timeout=90):
     return Shot(out), None
 
 
+def button_layout(extra=None, kind="button"):
+    """Where the controls actually are, in the device pixels a click is delivered in.
+
+    Asked of the app with --dump-layout, at the same window size this gate drives it at, so the
+    numbers are whatever the layout actually produced - including the scaling the app applies on
+    a tall display, which is the part that is easiest to get wrong by hand. `kind` selects the
+    toolbar buttons or the palette items."""
+    cmd = [APP, "--size", "%dx%d" % (WIN_W, WIN_H), "--dump-layout", "--no-update-check"]
+    cmd += extra or []
+    env = dict(os.environ, CIRCUIT_TOY_NO_UPDATE="1")
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=90, env=env)
+    except subprocess.TimeoutExpired:
+        return {}
+    out = {}
+    for line in (p.stdout or "").splitlines():
+        m = re.match(kind + r"\s+(\S+)\s+(-?\d+)\s+(-?\d+)\s+(\d+)\s+(\d+)", line)
+        if m:
+            out[m.group(1)] = tuple(int(v) for v in m.groups()[1:])
+    return out
+
+
 def template_names():
     p = subprocess.run([SMOKE], capture_output=True, text=True, timeout=1800)
     names = []
@@ -177,13 +199,27 @@ def interaction_checks(outdir, keep):
         s, e = run_app(["--template", "RC Low Pass"] + args, o)
         return s, e, o
 
-    # Zoom in: the toolbar '+' is the second of the three zoom buttons after 'Scr'.
-    # Their coordinates come from ui_update_layout, so read them rather than guess: the
-    # buttons sit at y=10..34, and the layout test has already checked they are there.
+    # Where the toolbar buttons actually are, asked of the app rather than typed in here.
+    #
+    # These were three numbers in this source with a comment above them saying the coordinates
+    # come from ui_update_layout and should be read rather than guessed. They were guessed. Two
+    # of the three landed in the gap between buttons or on the neighbour, so the checks had been
+    # failing since the day they were written - and nothing ran this gate, so nobody saw. The
+    # toolbar has since been made to lay itself out against the window width, which would have
+    # invalidated hardcoded numbers all over again.
+    layout = button_layout()
+    palette = button_layout(["--tab", "parts"], "palette")
+    if not layout:
+        return 1, ["interaction                        FAIL  --dump-layout returned nothing"]
+
+    def centre(name):
+        x, y, w, h = layout[name]
+        return "%d,%d,40" % (x + w // 2, y + h // 2)
+
     checks = [
-        ("zoom-in",  ["--click", "%d,%d,40" % (867, 22)],  "clicking + changes the canvas"),
-        ("zoom-out", ["--click", "%d,%d,40" % (835, 22)],  "clicking - changes the canvas"),
-        ("fit",      ["--click", "%d,%d,40" % (899, 22)],  "clicking Fit changes the canvas"),
+        ("zoom-in",  ["--click", centre("zoom_in")],  "clicking + changes the canvas"),
+        ("zoom-out", ["--click", centre("zoom_out")], "clicking - changes the canvas"),
+        ("fit",      ["--click", centre("zoom_fit")], "clicking Fit changes the canvas"),
     ]
     for tag, args, what in checks:
         s, e, path = shot_with(args, tag)
@@ -199,7 +235,17 @@ def interaction_checks(outdir, keep):
             except OSError: pass
 
     # The Pan tool: select it in the palette, then drag the canvas and check it moved.
-    s, e, path = shot_with(["--click", "40,205,30", "--drag", "600,500,900,560,50"], "pan")
+    #
+    # The coordinate here used to be 40,205, which is the DELETE tool - one row up. So this check
+    # picked up the wrong tool, dragged across empty canvas with it, saw nothing move and
+    # reported the Pan tool broken. It is not, and never was. Ask where the tool is.
+    pan = palette.get("Pan")
+    if not pan:
+        return fails + 1, lines + ["pan-tool                           FAIL  no Pan tool in the palette dump"]
+    px, py, pw, ph = pan
+    s, e, path = shot_with(["--tab", "parts",
+                            "--click", "%d,%d,30" % (px + pw // 2, py + ph // 2),
+                            "--drag", "600,500,900,560,50"], "pan")
     if e:
         fails += 1; lines.append("%-34s FAIL  %s" % ("pan-tool", e))
     else:
@@ -234,11 +280,24 @@ def interaction_checks(outdir, keep):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--exe", default=None,
+                    help="the app to drive (default build/circuit-playground.exe). The battery "
+                         "runs against whichever build tree it was given, so it has to be able "
+                         "to say which one.")
+    ap.add_argument("--smoke", default=None, help="template_smoke, for the template list")
     ap.add_argument("--quick", action="store_true", help="a spread of 12 templates")
     ap.add_argument("--only", default=None, help="substring match on the template name")
     ap.add_argument("--keep", action="store_true", help="keep the screenshots")
     ap.add_argument("--outdir", default=None)
     a = ap.parse_args()
+
+    global APP, SMOKE
+    if a.exe:
+        APP = os.path.abspath(a.exe)
+        if not a.smoke:
+            SMOKE = os.path.join(os.path.dirname(APP), "tools", "template_smoke.exe")
+    if a.smoke:
+        SMOKE = os.path.abspath(a.smoke)
 
     if not os.path.exists(APP):
         print("build the app first: meson compile -C build"); return 2

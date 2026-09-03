@@ -2855,6 +2855,7 @@ void app_render(App *app) {
        command draw different canvases; a recorded GIF should be the same GIF every time */
     if (app->cli_shot_path[0] || app->cli_record_dir[0]) delta_time = 1.0 / 60.0;
     // Only advance animation when simulation is running
+    app->render->flow_dt = app->render->sim_running ? delta_time : 0.0;
     if (app->render->sim_running) {
         app->render->animation_time += delta_time;
     }

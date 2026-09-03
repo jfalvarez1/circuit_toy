@@ -184,45 +184,30 @@ void ui_init(UIState *ui) {
     /* 160, not 200. "Circuit Playground" ends at about x = 145 and the version sits under it, so
        the old start left 55 px of nothing at the very moment the right-hand end of the toolbar had
        run out of window. */
-    // Initialize toolbar buttons
-    int btn_x = 160;
-    int btn_w = 60, btn_h = 30;
-
-    ui->btn_run = (Button){{btn_x, 10, btn_w, btn_h}, "Run", "Start simulation (F5)", false, false, true, false};
-    btn_x += btn_w + 10;
-    ui->btn_pause = (Button){{btn_x, 10, btn_w, btn_h}, "Pause", "Pause simulation (F6)", false, false, false, false};
-    btn_x += btn_w + 10;
-    ui->btn_step = (Button){{btn_x, 10, btn_w, btn_h}, "Step", "Single step (F10)", false, false, true, false};
-    btn_x += btn_w + 10;
-    ui->btn_reset = (Button){{btn_x, 10, btn_w, btn_h}, "Reset", "Reset simulation (F4)", false, false, true, false};
-    btn_x += btn_w + 30;
-    ui->btn_clear = (Button){{btn_x, 10, btn_w, btn_h}, "Clear", "Clear circuit", false, false, true, false};
-    btn_x += btn_w + 10;
-    ui->btn_save = (Button){{btn_x, 10, btn_w, btn_h}, "Save", "Save circuit (Ctrl+S)", false, false, true, false};
-    btn_x += btn_w + 10;
-    ui->btn_load = (Button){{btn_x, 10, btn_w, btn_h}, "Load", "Load circuit (Ctrl+O)", false, false, true, false};
-    btn_x += btn_w + 10;
-    ui->btn_export_svg = (Button){{btn_x, 10, btn_w, btn_h}, "SVG", "Export as SVG", false, false, true, false};
-    btn_x += btn_w + 10;
-    ui->btn_screenshot = (Button){{btn_x, 10, 35, btn_h}, "Scr", "Screenshot (F12)", false, false, true, false};
-    btn_x += 35 + 10;
+    /* Initialize toolbar buttons. The bounds here are placeholders: ui_layout_toolbar_left sets
+       them from the window width, at start-up and again on every resize, the same way the speed
+       slider on the other end has always been positioned. */
+    ui->btn_run = (Button){{0}, "Run", "Start simulation (F5)", false, false, true, false};
+    ui->btn_pause = (Button){{0}, "Pause", "Pause simulation (F6)", false, false, false, false};
+    ui->btn_step = (Button){{0}, "Step", "Single step (F10)", false, false, true, false};
+    ui->btn_reset = (Button){{0}, "Reset", "Reset simulation (F4)", false, false, true, false};
+    ui->btn_clear = (Button){{0}, "Clear", "Clear circuit", false, false, true, false};
+    ui->btn_save = (Button){{0}, "Save", "Save circuit (Ctrl+S)", false, false, true, false};
+    ui->btn_load = (Button){{0}, "Load", "Load circuit (Ctrl+O)", false, false, true, false};
+    ui->btn_export_svg = (Button){{0}, "SVG", "Export as SVG", false, false, true, false};
+    ui->btn_screenshot = (Button){{0}, "Scr", "Screenshot (F12)", false, false, true, false};
     /* Canvas zoom on the toolbar. The wheel and +/- already do this; a trackpad that
        reports no wheel, or a hand already on the mouse, has nothing to reach for. */
-    ui->btn_zoom_out = (Button){{btn_x, 10, 24, btn_h}, "-", "Zoom out (-)", false, false, true, false};
-    btn_x += 24 + 4;
-    ui->btn_zoom_in  = (Button){{btn_x, 10, 24, btn_h}, "+", "Zoom in (+)", false, false, true, false};
-    btn_x += 24 + 4;
-    ui->btn_zoom_fit = (Button){{btn_x, 10, 32, btn_h}, "Fit", "Zoom to fit the whole circuit", false, false, true, false};
-    btn_x += 32 + 10;
-    ui->btn_import_spice = (Button){{btn_x, 10, 46, btn_h}, "SPICE", "Import a vendor .SUBCKT model", false, false, true, false};
-    btn_x += 46 + 10;
-    ui->btn_paste_netlist = (Button){{btn_x, 10, 46, btn_h}, "Paste", "Build a circuit from a parts list on the clipboard: one part per line, R1 in vm1 10k", false, false, true, false};
-    btn_x += 46 + 10;
+    ui->btn_zoom_out = (Button){{0}, "-", "Zoom out (-)", false, false, true, false};
+    ui->btn_zoom_in  = (Button){{0}, "+", "Zoom in (+)", false, false, true, false};
+    ui->btn_zoom_fit = (Button){{0}, "Fit", "Zoom to fit the whole circuit", false, false, true, false};
+    ui->btn_import_spice = (Button){{0}, "SPICE", "Import a vendor .SUBCKT model", false, false, true, false};
+    ui->btn_paste_netlist = (Button){{0}, "Paste", "Build a circuit from a parts list on the clipboard: one part per line, R1 in vm1 10k", false, false, true, false};
     /* The two things a screenshot needs deciding before you take it: what it looks like, and
        what is in it. Next to Scr, because that is when you want them. */
-    ui->btn_style = (Button){{btn_x, 10, 34, btn_h}, "BW", "Draw the canvas as a printed schematic: black on white, for reports and photocopiers (Ctrl+B)", false, false, true, false};
-    btn_x += 34 + 6;
-    ui->btn_shot_region = (Button){{btn_x, 10, 56, btn_h}, "Canvas", "What a screenshot contains: the canvas, the canvas with the scope under it, or the whole window", false, false, true, false};
+    ui->btn_style = (Button){{0}, "BW", "Draw the canvas as a printed schematic: black on white, for reports and photocopiers (Ctrl+B)", false, false, true, false};
+    ui->btn_shot_region = (Button){{0}, "Canvas", "What a screenshot contains: the canvas, the canvas with the scope under it, or the whole window", false, false, true, false};
+    ui_layout_toolbar_left(ui);
 
     /* A screenshot is of the circuit. See UI.shot_region. */
     ui->shot_region = SHOT_CANVAS;
@@ -8291,6 +8276,80 @@ void ui_sync_subcircuit_items(UIState *ui) {
    There is not room for everything at 1280, so the group gives ground in a fixed order - the
    slider narrows to 56 px first, and only if that is still not enough does the "Speed:" label go
    (the slider keeps its tooltip). Nothing is ever dropped or clipped. */
+/* Lay the toolbar's button strip out against the window it actually has.
+ *
+ * It used to be laid out once, at start-up, from fixed offsets - so it ran to wherever it ran
+ * to, and on a small window the right-hand end simply went past the edge. Adding two buttons for
+ * the schematic view put the last three of them entirely off a 1024 px screen: drawn, hit-tested,
+ * hovered, and impossible to reach with a mouse.
+ *
+ * Now it is fitted. The gaps go first, because they are air; only when the gaps are gone do the
+ * buttons narrow, and never below what their own labels need - a button narrower than its label
+ * is not a control, it is a smudge. Below about 1280 px there is genuinely not room for the strip
+ * AND the speed and time-step group at the other end, and the older decision there stands: they
+ * are allowed to overlap, because being on the screen at all matters more. What this guarantees
+ * is that every button is inside the window at every size. --layout-test measures both. */
+void ui_layout_toolbar_left(UIState *ui) {
+    if (!ui) return;
+    struct Item { Button *b; int w; int gap; };
+    struct Item it[] = {
+        { &ui->btn_run,           60, 10 },
+        { &ui->btn_pause,         60, 10 },
+        { &ui->btn_step,          60, 10 },
+        { &ui->btn_reset,         60, 30 },   /* the gap that separates running from editing */
+        { &ui->btn_clear,         60, 10 },
+        { &ui->btn_save,          60, 10 },
+        { &ui->btn_load,          60, 10 },
+        { &ui->btn_export_svg,    60, 10 },
+        { &ui->btn_screenshot,    35, 10 },
+        { &ui->btn_zoom_out,      24,  4 },
+        { &ui->btn_zoom_in,       24,  4 },
+        { &ui->btn_zoom_fit,      32, 10 },
+        { &ui->btn_import_spice,  46, 10 },
+        { &ui->btn_paste_netlist, 46, 10 },
+        { &ui->btn_style,         34,  6 },
+        { &ui->btn_shot_region,   56,  0 },
+    };
+    const int N = (int)(sizeof it / sizeof it[0]);
+    const int START = 160, TOP = 10, H = 30;
+    /* The narrowest the group on the right can be made: see ui_layout_toolbar_right. */
+    const int RIGHT_MIN = 56 + 213 + 10 + 12;
+
+    int base = 0, slack_gap = 0, slack_w = 0;
+    int need[32], gmin[32];
+    for (int i = 0; i < N; i++) {
+        const char *lab = it[i].b->label ? it[i].b->label : "";
+        /* The label plus two pixels either side. Four, not the eight a comfortable button gets:
+           these are the dimensions of last resort, and the difference across sixteen buttons is
+           sixty-four pixels - which is most of what it takes to keep the strip clear of the
+           speed slider on a 1024 px screen instead of hiding two buttons under it. */
+        int n = (int)strlen(lab) * 8 + 4;
+        if (n > it[i].w) n = it[i].w;
+        need[i] = n;
+        gmin[i] = it[i].gap > 2 ? 2 : it[i].gap;
+        base += need[i] + gmin[i];
+        slack_w += it[i].w - need[i];
+        slack_gap += it[i].gap - gmin[i];
+    }
+
+    int budget = ui->window_width - START - RIGHT_MIN;
+    int room = budget - base;
+    double gs = 1.0, ws = 1.0;
+    if (room < slack_gap + slack_w) {
+        if (room >= slack_w) { ws = 1.0; gs = slack_gap ? (double)(room - slack_w) / slack_gap : 0.0; }
+        else                 { gs = 0.0; ws = slack_w   ? (double)room / slack_w : 0.0; }
+    }
+    if (gs < 0) gs = 0; if (gs > 1) gs = 1;
+    if (ws < 0) ws = 0; if (ws > 1) ws = 1;
+
+    int x = START;
+    for (int i = 0; i < N; i++) {
+        int w = need[i] + (int)(ws * (it[i].w - need[i]) + 0.5);
+        it[i].b->bounds = (Rect){ x, TOP, w, H };
+        x += w + gmin[i] + (int)(gs * (it[i].gap - gmin[i]) + 0.5);
+    }
+}
+
 void ui_layout_toolbar_right(UIState *ui) {
     if (!ui) return;
     const int SLIDER_MAX = 100, SLIDER_MIN = 56, LABEL_W = 52;
@@ -8347,6 +8406,8 @@ void ui_update_layout(UIState *ui) {
     ui_sync_subcircuit_items(ui);
     if (!ui) return;
 
+    /* The strip first: the right-hand group is placed relative to where it ends. */
+    ui_layout_toolbar_left(ui);
     ui_layout_toolbar_right(ui);
 
     // Update palette visible height
@@ -8585,6 +8646,35 @@ void ui_scope_apply_template_preset(UIState *ui, CircuitTemplateType type) {
     ui->scope_auto_vdiv_pending = true;   /* refine V/div from real data once it flows */
 }
 
+/* Put the trigger on a channel, at a level that channel actually reaches.
+ *
+ * The level used to be the midpoint of every channel taken together while the trigger stayed on
+ * CH1, so an amplifier - a 100 mV input and a 9 V output - got a level of about 4.5 V on a
+ * channel that never leaves +/-0.1 V. It cannot fire, the trace free-runs and slides, and twenty
+ * templates were doing it. That was fixed for circuits where something moves, and left in place
+ * for circuits where nothing does: a battery into a load is four flat lines at 4, 8, 11 and 15
+ * volts, and their common midpoint of 10.49 V sits on a CH1 that never leaves 4.19.
+ *
+ * Both paths ask this now, so there is one rule instead of two: the channel with the most swing,
+ * and the level from the middle of that channel. When nothing swings at all, that is still a
+ * channel and still its own midpoint - TRIG_AUTO is what draws the trace either way, but the
+ * level a user reads off the panel has to be one that belongs to the channel it is set on. */
+static void scope_autoset_trigger(UIState *ui, Simulation *sim) {
+    int best = -1;
+    double best_swing = -1.0, best_mid = 0;
+    for (int ch = 0; ch < ui->scope_num_channels; ch++) {
+        if (!ui->scope_channels[ch].enabled) continue;
+        double times[MAX_HISTORY], values[MAX_HISTORY];
+        int n = simulation_get_history(sim, ui->scope_channels[ch].probe_idx, times, values, MAX_HISTORY);
+        if (n < 1) continue;
+        double lo = values[0], hi = values[0];
+        for (int i = 1; i < n; i++) { if (values[i] < lo) lo = values[i]; if (values[i] > hi) hi = values[i]; }
+        if (hi - lo > best_swing) { best_swing = hi - lo; best = ch; best_mid = (lo + hi) / 2.0; }
+    }
+    if (best >= 0) { ui->trigger_channel = best; ui->trigger_level = best_mid; }
+    else            ui->trigger_level = 0;
+}
+
 void ui_scope_autoset(UIState *ui, Simulation *sim) {
     if (!ui || !sim || ui->scope_num_channels == 0) return;
 
@@ -8682,13 +8772,19 @@ void ui_scope_autoset(UIState *ui, Simulation *sim) {
                 ui->scope_volt_div = 1.0;
             }
             ui->scope_time_div = 0.001;  // 1ms/div
-            ui->trigger_level = (global_min + global_max) / 2.0;
+            scope_autoset_trigger(ui, sim);
+            /* Rising edge and free-running, the same as the path below: there is no edge on a
+               flat trace, and AUTO is what keeps it drawn. */
+            ui->trigger_edge = TRIG_EDGE_RISING;
+            ui->trigger_mode = TRIG_AUTO;
             return;
         }
         // No data at all - use defaults
         ui->scope_volt_div = 1.0;
         ui->scope_time_div = 0.001;  // 1ms/div
         ui->trigger_level = 0;
+        ui->trigger_edge = TRIG_EDGE_RISING;
+        ui->trigger_mode = TRIG_AUTO;
         return;
     }
 
@@ -8735,31 +8831,7 @@ void ui_scope_autoset(UIState *ui, Simulation *sim) {
         ui->scope_time_div = 0.01;  // 10ms/div
     }
 
-    /* Trigger on a channel from that channel's own numbers.
-       The level used to be the midpoint of every channel taken together while the trigger stayed
-       on CH1, so an amplifier - a 100 mV input and a 9 V output - got a level of about 4.5 V on
-       a channel that never leaves +/-0.1 V. It cannot fire, and the trace free-runs and slides.
-       Twenty templates were doing this. Pick the channel with the most swing, and take the level
-       from the middle of that channel. */
-    {
-        int best = -1;
-        double best_swing = 0, best_mid = 0;
-        for (int ch = 0; ch < ui->scope_num_channels; ch++) {
-            if (!ui->scope_channels[ch].enabled) continue;
-            double times[MAX_HISTORY], values[MAX_HISTORY];
-            int n = simulation_get_history(sim, ui->scope_channels[ch].probe_idx, times, values, MAX_HISTORY);
-            if (n < 10) continue;
-            double lo = values[0], hi = values[0];
-            for (int i = 1; i < n; i++) { if (values[i] < lo) lo = values[i]; if (values[i] > hi) hi = values[i]; }
-            if (hi - lo > best_swing) { best_swing = hi - lo; best = ch; best_mid = (lo + hi) / 2.0; }
-        }
-        if (best >= 0 && best_swing > 1e-9) {
-            ui->trigger_channel = best;
-            ui->trigger_level = best_mid;
-        } else {
-            ui->trigger_level = (global_min + global_max) / 2.0;   /* nothing moves: harmless */
-        }
-    }
+    scope_autoset_trigger(ui, sim);
 
     /* Where each trace sits.
        This used to push every channel down by the midpoint of all of them together. In the

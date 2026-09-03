@@ -708,6 +708,7 @@ void ui_scope_apply_template_preset(UIState *ui, CircuitTemplateType type);
 // Update UI layout after window resize
 void ui_sync_subcircuit_items(UIState *ui);   // rebuild the subcircuit palette list from the library
 void ui_update_layout(UIState *ui);
+void ui_layout_toolbar_left(UIState *ui);
 void ui_layout_toolbar_right(UIState *ui);
 
 // Handle palette scroll (mouse wheel)

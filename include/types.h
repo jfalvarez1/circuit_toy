@@ -410,6 +410,42 @@ typedef struct {
     uint8_t r, g, b, a;
 } Color;
 
+/* Where an element's current-flow dots have got to, and what kind of current it is carrying.
+ *
+ * Display state only - never saved, never read by the solver. `march` is how far along the dots
+ * have travelled; `mean` and `ms` are a running mean and mean-square of the signed current,
+ * which is what separates a current that goes somewhere from one that goes back and forth. See
+ * render_flow_offset. */
+typedef struct {
+    float march;
+    float mean;
+    float ms;
+} FlowState;
+
+/* Fold one sample into the running statistics. About a third of a second of memory: long enough
+   to average fifteen cycles of mains, short enough that switching a supply on reads as motion
+   rather than a slow fade. */
+static inline void flow_observe(FlowState *fs, double x, double dt) {
+    if (!fs || !(dt > 0)) return;
+    if (dt > 0.05) dt = 0.05;
+    double k = dt / (0.30 + dt);
+    fs->mean = (float)(fs->mean + k * (x - fs->mean));
+    fs->ms   = (float)(fs->ms   + k * (x * x - fs->ms));
+}
+
+/* How much of what this has been watching goes somewhere, as opposed to merely swinging.
+   1 is a steady value, 0 is a symmetric alternating one, and a rectifier's ripple is near 1
+   because the mean-square carries the DC term too. Negative means it goes the other way. */
+static inline double flow_drift(const FlowState *fs) {
+    if (!fs) return 1.0;
+    double rms = fs->ms > 0 ? sqrt((double)fs->ms) : 0.0;
+    if (rms < 1e-12) return 1.0;          /* nothing has happened here; treat it as steady */
+    double d = (double)fs->mean / rms;
+    if (d > 1.0) d = 1.0;
+    if (d < -1.0) d = -1.0;
+    return d;
+}
+
 // Predefined colors
 #define COLOR_BG         (Color){0x1a, 0x1a, 0x2e, 0xff}
 #define COLOR_BG_DARK    (Color){0x16, 0x21, 0x3e, 0xff}

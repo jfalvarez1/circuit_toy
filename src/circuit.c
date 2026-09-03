@@ -939,6 +939,32 @@ static double calculate_component_current(Component *comp, double v1, double v2)
 
 // BFS-based current flow tracing from sources to ground
 // This properly traces current direction through all wires in the path
+/* Watch, every step, whether this circuit's voltages go somewhere or merely swing.
+ *
+ * The flow dots need to know direct current from alternating, and the obvious place to ask is
+ * the current itself - but terminal currents are recovered once a FRAME, not once a step,
+ * because recovering them means re-stamping every device on its own. Sampling at the frame rate
+ * is no good for this: a 60 Hz current sampled sixty times a second aliases to a constant, and
+ * the mains templates would have read as direct current and marched.
+ *
+ * Node voltages are updated every step and cost nothing to look at, and they answer the same
+ * question - a part across an alternating net has an alternating current through it. So the
+ * statistics are taken here, at the real step rate, where nothing can alias. */
+void circuit_observe_flow(Circuit *circuit, double dt) {
+    if (!circuit || !(dt > 0)) return;
+    for (int i = 0; i < circuit->num_nodes; i++)
+        flow_observe(&circuit->nodes[i].flow, circuit->nodes[i].voltage, dt);
+    for (int i = 0; i < circuit->num_components; i++) {
+        Component *c = circuit->components[i];
+        if (!c || c->num_terminals < 2) continue;
+        /* The voltage across it, which is what its current follows. */
+        Node *na = circuit_get_node(circuit, c->node_ids[0]);
+        Node *nb = circuit_get_node(circuit, c->node_ids[1]);
+        if (!na || !nb) continue;
+        flow_observe(&c->flow, na->voltage - nb->voltage, dt);
+    }
+}
+
 void circuit_update_wire_currents(Circuit *circuit) {
     // Physical wire currents. Each electrical net (matrix node) is a small graph of circuit
     // nodes joined by zero-resistance wires. The component terminal currents (see

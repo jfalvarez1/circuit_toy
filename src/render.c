@@ -972,6 +972,64 @@ void render_neon_chaser_line(RenderContext *ctx, float x1, float y1, float x2, f
     SDL_SetRenderDrawBlendMode(ctx->renderer, SDL_BLENDMODE_BLEND);
 }
 
+/* How fast the flow dots should travel for a current of this size: log-compressed, because the
+   templates span nine decades of current and a linear speed makes a microamp look stopped and an
+   amp look like a strobe. Magnitude only - the sign is decided elsewhere. */
+static double flow_speed(double amps) {
+    double lg = log10(fabs(amps) + 1e-9);
+    double s = 0.3 + (lg + 9.0) * 0.15;
+    if (s < 0.2) s = 0.2;
+    if (s > 3.0) s = 3.0;
+    return s;
+}
+
+/* Where along an element its flow dots sit this frame, as a fraction of its length.
+ *
+ * Dots that only ever march forward say "there is a current here" and nothing else, and on an AC
+ * element that is not merely incomplete, it is wrong: the charge in an AC circuit does not go
+ * anywhere. It goes back and forth. Swapping the two endpoints on the sign of the current -
+ * which is all this used to do - cannot show that either, because a 1 kHz source reverses about
+ * thirty times between one frame and the next, so what came out was a jitter that read as
+ * forward motion.
+ *
+ * The two cases are told apart by measurement rather than by asking the source what it is: a
+ * running mean and mean-square of the SIGNED current say how much of it goes somewhere and how
+ * much of it merely swings. |mean| ~ rms is direct current and marches; |mean| << rms is
+ * alternating and oscillates; a rectifier's ripple sits between the two and does a little of
+ * both, which is exactly what a rectifier does.
+ *
+ * The oscillation is drawn at a fixed readable rate, not at the true frequency. Sixty frames a
+ * second cannot show a thousand reversals in one of them, and nothing is gained by trying: what
+ * is true and worth showing at 1 kHz is THAT the current alternates, and the amplitude of the
+ * swing carries how completely. */
+/* Wrap into [0,1). fmod does not: the swing carries the offset negative for half its cycle and
+   fmod(-0.2, 1) is -0.2, which puts a dot off the end of the wire it belongs to. */
+static float flow_wrap(float t) {
+    t -= (float)floor((double)t);
+    if (t < 0.0f) t += 1.0f;                /* -0.0 and rounding at the boundary */
+    if (t >= 1.0f) t = 0.0f;
+    return t;
+}
+
+float render_flow_offset(FlowState *fs, double drift, double current, double dt, double clock) {
+    if (!fs) return 0.0f;
+    if (dt < 0) dt = 0;
+    if (dt > 0.25) dt = 0.25;               /* a stalled frame must not jump the dots a lap */
+
+    double steady = fabs(drift);
+    if (steady > 1.0) steady = 1.0;
+
+    /* The part that goes somewhere marches, in the direction the current is actually flowing. */
+    double dir = current < 0 ? -1.0 : 1.0;
+    double m = fs->march + steady * flow_speed(current) * dir * dt;
+    m -= floor(m);
+    fs->march = (float)m;
+
+    /* ...and the part that merely swings, swings. */
+    double swing = (1.0 - steady) * 0.30 * sin(6.28318530718 * 0.6 * clock);
+    return (float)(m + swing);
+}
+
 void render_grid(RenderContext *ctx) {
     render_set_color(ctx, COLOR_GRID);
 
@@ -1955,17 +2013,12 @@ void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
 
         // Show particles if any measurable current
         if (abs_current > 1e-9) {
-            // Direction based on sign of current (already calculated with KCL)
-            float from_x, from_y, to_x, to_y;
-            if (signed_current > 0) {
-                // Current flows from start to end (positive)
-                from_x = start->x; from_y = start->y;
-                to_x = end->x; to_y = end->y;
-            } else {
-                // Current flows from end to start (negative)
-                from_x = end->x; from_y = end->y;
-                to_x = start->x; to_y = start->y;
-            }
+            /* Always start -> end. Which way the dots actually travel is decided by
+               render_flow_offset from the sign of the current over time, because swapping the
+               ends on the instantaneous sign is what made an AC wire jitter rather than
+               alternate. */
+            float from_x = start->x, from_y = start->y;
+            float to_x = end->x, to_y = end->y;
 
             float dx = to_x - from_x;
             float dy = to_y - from_y;
@@ -1976,15 +2029,14 @@ void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
                 dx /= len;
                 dy /= len;
 
-                // Animation speed based on current magnitude (logarithmic scale for better visibility)
-                // Base speed is comfortable viewing speed, scaled by current
-                double log_current = log10(abs_current + 1e-9);  // Range: roughly -9 to 1 for µA to A
-                double speed_factor = 0.3 + (log_current + 9.0) * 0.15;  // Map to 0.3 - 1.8 range
-                if (speed_factor < 0.2) speed_factor = 0.2;
-                if (speed_factor > 3.0) speed_factor = 3.0;
-
-                // Use real-time animation_time for smooth, consistent motion
-                double anim_phase = fmod(ctx->animation_time * speed_factor, 1.0);
+                double log_current = log10(abs_current + 1e-9);  // for the dot brightness below
+                /* A wire takes its answer from the net it is on, watched at the step rate. A
+                   ground return sits at 0 V and has no answer of its own, so it borrows the
+                   other end's - and if both ends are held, it is on a rail and marches. */
+                double wdrift = flow_drift(&start->flow);
+                if (start->flow.ms <= 1e-24) wdrift = flow_drift(&end->flow);
+                double anim_phase = render_flow_offset(&wire->flow, wdrift, signed_current,
+                                                       ctx->flow_dt, ctx->animation_time);
 
                 // Particle spacing based on wire length - about 20 pixels apart
                 int num_particles = (int)(len / 20) + 1;
@@ -1998,7 +2050,7 @@ void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit) {
 
                 for (int i = 0; i < num_particles; i++) {
                     // Position along wire (0 to 1), continuously animated
-                    float t = fmod(anim_phase + (i + 1) * particle_spacing, 1.0f);
+                    float t = flow_wrap(anim_phase + (i + 1) * particle_spacing);
 
                     float particle_x = from_x + dx * len * t;
                     float particle_y = from_y + dy * len * t;
@@ -2270,14 +2322,11 @@ static void render_component_current_flow(RenderContext *ctx, Component *comp, C
     double abs_current = fabs(current);
     if (abs_current < 1e-9) return;
 
-    float from_x, from_y, to_x, to_y;
-    if (current > 0) {
-        from_x = t0_x; from_y = t0_y;
-        to_x = t1_x; to_y = t1_y;
-    } else {
-        from_x = t1_x; from_y = t1_y;
-        to_x = t0_x; to_y = t0_y;
-    }
+    /* Always terminal 0 -> terminal 1. render_flow_offset decides which way the dots go, from
+       the sign of the current over time rather than at this instant - which is what lets an AC
+       part show the charge going back and forth instead of jittering. */
+    float from_x = t0_x, from_y = t0_y;
+    float to_x = t1_x, to_y = t1_y;
 
     float dx = to_x - from_x;
     float dy = to_y - from_y;
@@ -2289,14 +2338,10 @@ static void render_component_current_flow(RenderContext *ctx, Component *comp, C
     dx /= len;
     dy /= len;
 
-    // Animation speed based on current magnitude
-    double log_current = log10(abs_current + 1e-9);
-    double speed_factor = 0.3 + (log_current + 9.0) * 0.15;
-    if (speed_factor < 0.2) speed_factor = 0.2;
-    if (speed_factor > 3.0) speed_factor = 3.0;
-
-    // Use real-time animation_time for smooth motion
-    double anim_phase = fmod(ctx->animation_time * speed_factor, 1.0);
+    double log_current = log10(abs_current + 1e-9);   // for the dot brightness below
+    /* Measured across the part itself, every step, so a 60 Hz part cannot alias to a steady one. */
+    double anim_phase = render_flow_offset(&comp->flow, flow_drift(&comp->flow), current,
+                                           ctx->flow_dt, ctx->animation_time);
 
     // Particle spacing - about 20 pixels apart, same as wires
     int num_particles = (int)(len / 20) + 1;
@@ -2309,7 +2354,7 @@ static void render_component_current_flow(RenderContext *ctx, Component *comp, C
     uint8_t intensity = (uint8_t)(base_intensity + fmin(log_current + 6.0, 3.0) * 25);
 
     for (int i = 0; i < num_particles; i++) {
-        float t = fmod(anim_phase + (i + 1) * particle_spacing, 1.0f);
+        float t = flow_wrap(anim_phase + (i + 1) * particle_spacing);
 
         float particle_x = from_x + dx * len * t;
         float particle_y = from_y + dy * len * t;

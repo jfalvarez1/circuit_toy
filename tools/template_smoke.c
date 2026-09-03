@@ -4535,7 +4535,19 @@ static int burn_test(void) {
         free(pmax); simulation_free(sim); circuit_free(c);
     }
     printf("burn-test: %d templates, %d overloaded parts (%d in HV/power/Tesla templates)\n", total, flagged, hv_flagged);
-    return hv_flagged ? 1 : 0;
+    /* Any overloaded part fails, not just the ones in high-voltage templates.
+     *
+     * This used to return on hv_flagged alone, and thirteen resistors in the battery templates
+     * sat above their rating for a release: printed every run, counted every run, and passing
+     * every run. A number that is reported and not enforced is a number nobody reads.
+     *
+     * There is no exemption list on purpose. Every one of the thirteen turned out to be a part
+     * whose RATING was wrong rather than a circuit that was wrong - a load bank taking 529 W
+     * through a symbol that claimed a quarter watt - so the fix was to say what the part is, and
+     * that fix is available to any template that trips this. If a template ever genuinely wants
+     * to show something failing, it should say so here in one line with its reason, rather than
+     * a whole category being waved through for containing one. */
+    return flagged ? 1 : 0;
 }
 
 

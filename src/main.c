@@ -1362,6 +1362,98 @@ static int style_test(void) {
     return fails ? 1 : 0;
 }
 
+/* --flowdir-test: current that goes somewhere marches; current that alternates goes back and
+ * forth.
+ *
+ * The flow dots used to pick their direction from the sign of the current at the instant the
+ * frame was drawn and then march forward regardless, which says the same thing about a battery
+ * and about the mains. It is not a small difference: the whole point of alternating current is
+ * that the charge does not go anywhere, and a display that shows it marching steadily off in one
+ * direction is teaching the opposite of the thing being demonstrated.
+ *
+ * Asserted as behaviour over time rather than as a frame of pixels: feed a waveform in at the
+ * rate the solver would, and ask where the dots ended up. */
+static int flowdir_test(void) {
+    int fails = 0;
+    const double dt_step = 1e-4;      /* the solver's rate */
+    const double dt_frame = 1.0 / 60.0;
+    const double SECONDS = 2.0;
+
+    /* name, amplitude, offset, frequency; a drift the display should end up with */
+    const struct { const char *name; double amp, off, hz; double lo, hi; } cases[] = {
+        { "battery (DC)",            0.0,  1.0,    0.0, 0.95, 1.00 },
+        { "battery reversed",        0.0, -1.0,    0.0, 0.95, 1.00 },
+        { "mains 60 Hz",             1.0,  0.0,   60.0, 0.00, 0.15 },
+        { "mains 50 Hz",             1.0,  0.0,   50.0, 0.00, 0.15 },
+        /* the frequency that aliases exactly onto the frame rate, which is what a per-frame
+           sample would have read as a steady current */
+        { "60 Hz at 60 fps",         1.0,  0.0,   60.0, 0.00, 0.15 },
+        { "1 kHz",                   1.0,  0.0, 1000.0, 0.00, 0.15 },
+        /* a rectifier's output: alternating in origin, but it goes somewhere */
+        { "rectified ripple",        0.2,  1.0,  120.0, 0.90, 1.00 },
+    };
+    const int N = (int)(sizeof cases / sizeof cases[0]);
+
+    for (int c = 0; c < N; c++) {
+        FlowState fs; memset(&fs, 0, sizeof fs);
+        double t = 0, clock = 0, next_frame = 0;
+        double first = -1, lo = 1e9, hi = -1e9, net = 0, prev = 0;
+        int frames = 0;
+        while (t < SECONDS) {
+            double i = cases[c].off + cases[c].amp * sin(6.28318530718 * cases[c].hz * t);
+            flow_observe(&fs, i, dt_step);
+            t += dt_step;
+            if (t >= next_frame) {
+                next_frame += dt_frame;
+                clock += dt_frame;
+                float before = fs.march;
+                float off = render_flow_offset(&fs, flow_drift(&fs), i, dt_frame, clock);
+                if (frames > 20) {            /* let the statistics settle first */
+                    if (first < 0) first = off;
+                    if (off < lo) lo = off;
+                    if (off > hi) hi = off;
+                    double d = fs.march - before;
+                    if (d > 0.5) d -= 1.0; else if (d < -0.5) d += 1.0;   /* it wraps */
+                    net += d;
+                    prev = off;
+                }
+                frames++;
+            }
+        }
+        (void)prev;
+        double drift = fabs(flow_drift(&fs));
+        if (drift < cases[c].lo || drift > cases[c].hi) {
+            printf("[FAIL] flowdir %-20s drift %.3f, expected %.2f..%.2f\n",
+                   cases[c].name, drift, cases[c].lo, cases[c].hi);
+            fails++;
+        }
+        if (cases[c].lo >= 0.9) {
+            /* it has to actually go somewhere, and the right way */
+            double want = cases[c].off < 0 ? -1.0 : 1.0;
+            if (net * want <= 0.2) {
+                printf("[FAIL] flowdir %-20s net travel %.3f laps, expected to move %s\n",
+                       cases[c].name, net, want > 0 ? "forward" : "backward");
+                fails++;
+            }
+        } else {
+            /* it has to go back AND forth, and end up roughly where it started */
+            if (hi - lo < 0.25) {
+                printf("[FAIL] flowdir %-20s only swings %.3f of its length; that is not back and forth\n",
+                       cases[c].name, hi - lo);
+                fails++;
+            }
+            if (fabs(net) > 0.35) {
+                printf("[FAIL] flowdir %-20s drifted %.3f laps; alternating charge goes nowhere\n",
+                       cases[c].name, net);
+                fails++;
+            }
+        }
+    }
+    printf("flowdir-test: %d waveforms over %.0f s at %g s steps, %d failures\n",
+           N, SECONDS, dt_step, fails);
+    return fails ? 1 : 0;
+}
+
 /* --shot-test: a screenshot has to be a picture of something.
  *
  * Every region names itself, the cycle the toolbar button walks comes back round, and the two
@@ -1485,6 +1577,46 @@ static int layout_test(void) {
            them. What is asserted is reachability - every control fully inside the window - at every
            size. Not overlapping the button strip is asserted only from 1280 up, because below that
            there is genuinely no room for both and staying on screen is the more important half. */
+        /* ---- the toolbar's button strip -------------------------------------------------------
+           It was laid out once at start-up from fixed offsets and never looked at the window
+           again, so it ran to wherever it ran to. Adding the schematic-view and screenshot-region
+           buttons put the last three of them past the right edge of a 1024 px window: drawn,
+           hovered, hit-tested and unreachable. Every one of them has to be inside the window at
+           every size, and none may cover another - a button under another button is a button
+           whose clicks go somewhere else. */
+        {
+            Button *strip[] = { &ui->btn_run, &ui->btn_pause, &ui->btn_step, &ui->btn_reset,
+                                &ui->btn_clear, &ui->btn_save, &ui->btn_load, &ui->btn_export_svg,
+                                &ui->btn_screenshot, &ui->btn_zoom_out, &ui->btn_zoom_in,
+                                &ui->btn_zoom_fit, &ui->btn_import_spice, &ui->btn_paste_netlist,
+                                &ui->btn_style, &ui->btn_shot_region };
+            int sn = (int)(sizeof strip / sizeof strip[0]);
+            for (int i = 0; i < sn; i++) {
+                Rect *r = &strip[i]->bounds;
+                if (r->x < 0 || r->x + r->w > ui->window_width) {
+                    printf("[FAIL] layout %dx%d: toolbar button '%s' at x %d..%d is outside a %d px window\n",
+                           sizes[k][0], sizes[k][1], strip[i]->label, r->x, r->x + r->w, ui->window_width);
+                    fails++;
+                }
+                /* and it must still be able to show its own name */
+                int need = (int)strlen(strip[i]->label ? strip[i]->label : "") * 8;
+                if (r->w < need) {
+                    printf("[FAIL] layout %dx%d: toolbar button '%s' is %d px wide, narrower than its label (%d px)\n",
+                           sizes[k][0], sizes[k][1], strip[i]->label, r->w, need);
+                    fails++;
+                }
+                for (int j = i + 1; j < sn; j++)
+                    if (rects_overlap(r, &strip[j]->bounds)) {
+                        printf("[FAIL] layout %dx%d: toolbar button '%s' overlaps '%s'\n",
+                               sizes[k][0], sizes[k][1], strip[i]->label, strip[j]->label);
+                        fails++;
+                    }
+            }
+            printf("[ OK ] layout %dx%d: %d toolbar buttons inside the window, none overlapping, strip ends at %d\n",
+                   sizes[k][0], sizes[k][1], sn,
+                   strip[sn - 1]->bounds.x + strip[sn - 1]->bounds.w);
+        }
+
         {
             struct { const char *name; Rect b; } tb[] = {
                 { "speed slider", (Rect){ui->speed_slider.x, ui->speed_slider.y,
@@ -1508,12 +1640,17 @@ static int layout_test(void) {
                                sizes[k][0], sizes[k][1], tb[i].name, tb[j].name); fails++;
                     }
             }
-            if (ui->window_width >= 1280) {
-                Rect *spice = &ui->btn_import_spice.bounds;
+            /* At every size the battery covers, not just from 1280 up. The strip is fitted to
+               the room it has now (ui_layout_toolbar_left), so there is no longer a width at
+               which a control has to be hidden under another one - and the last button in the
+               strip is the one that would go first, so that is the one to ask about. */
+            {
+                Rect *last = &ui->btn_shot_region.bounds;
                 for (int i = 0; i < n; i++)
-                    if (rects_overlap(spice, &tb[i].b)) {
-                        printf("[FAIL] layout %dx%d: toolbar '%s' overlaps the SPICE button\n",
-                               sizes[k][0], sizes[k][1], tb[i].name); fails++;
+                    if (rects_overlap(last, &tb[i].b)) {
+                        printf("[FAIL] layout %dx%d: toolbar '%s' covers the '%s' button\n",
+                               sizes[k][0], sizes[k][1], tb[i].name, ui->btn_shot_region.label);
+                        fails++;
                     }
             }
             printf("[ OK ] layout %dx%d: %d toolbar controls right-aligned inside the window (label %s)\n",
@@ -1791,6 +1928,7 @@ static void usage(void) {
            "  --ss N               supersample the frame N times (1 = off, default 2, max 4)\n"
            "  --version            print the version and exit\n"
            "  --update-check       query the latest GitHub release and exit; --update-now also installs it\n"
+           "  --dump-layout        print every toolbar button and palette item, in device pixels\n"
            "  --layout-test        headless UI layout self-check (no window)\n"
            "  --crashlog           print the start-up / crash log and exit\n");
 }
@@ -1876,6 +2014,7 @@ int main(int argc, char *argv[]) {
     struct { int x, y, x2, y2, frame; bool drag; } cli_mouse[12]; int cli_mouse_n = 0;
     const char *cli_xy = NULL;
     bool cli_popout = false;
+    bool cli_dump_layout = false;         /* --dump-layout; see below */
     int  cli_shot_region = SHOT_WINDOW;   /* --shot-region; see App.cli_shot_region */
     const char *cli_spice = NULL;
     /* --shard is read before anything else: a suite flag returns straight out of the loop below,
@@ -1931,6 +2070,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--xy") && i + 1 < argc) cli_xy = argv[++i];
         else if (!strcmp(argv[i], "--tab") && i + 1 < argc) cli_tab = !strcmp(argv[++i], "circuits") ? 1 : 0;
         else if (!strcmp(argv[i], "--popout")) cli_popout = true;
+        else if (!strcmp(argv[i], "--dump-layout")) cli_dump_layout = true;
         else if (!strcmp(argv[i], "--import-spice") && i + 1 < argc) cli_spice = argv[++i];
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
         else if (!strcmp(argv[i], "--inspect") && i + 1 < argc) cli_inspect = argv[++i];
@@ -1973,6 +2113,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--layout-test")) return layout_test();
         else if (!strcmp(argv[i], "--symbol-test")) return symbol_test();
         else if (!strcmp(argv[i], "--style-test")) return style_test();
+        else if (!strcmp(argv[i], "--flowdir-test")) return flowdir_test();
         else if (!strcmp(argv[i], "--shot-test")) return shot_test();
         else if (!strcmp(argv[i], "--autoset-test")) return autoset_test();
         else if (!strcmp(argv[i], "--place-test")) return place_test();
@@ -2107,6 +2248,47 @@ int main(int argc, char *argv[]) {
     if (cli_scroll >= 0) app.ui.palette_scroll_offset = cli_scroll;
     if (cli_tab >= 0) app.ui.left_tab = cli_tab;
     app.cli_exit = cli_exit;
+
+    /* --dump-layout: where every toolbar control actually is, in the device pixels a click is
+       delivered in. tools/gui_smoke.py used to carry these as three numbers typed into the
+       source, with a comment above them saying they should be read rather than guessed; they
+       were guessed, they were wrong, and the three checks that used them had been failing for as
+       long as nothing ran that gate. Now it asks. */
+    if (cli_dump_layout) {
+        for (int k = 0; k < 4; k++) { app_handle_events(&app); app_update(&app); app_render(&app); SDL_Delay(16); }
+        float s = app.render ? app.render->ui_scale : 1.0f;
+        struct { const char *name; Button *b; } dump[] = {
+            { "run", &app.ui.btn_run }, { "pause", &app.ui.btn_pause },
+            { "step", &app.ui.btn_step }, { "reset", &app.ui.btn_reset },
+            { "clear", &app.ui.btn_clear }, { "save", &app.ui.btn_save },
+            { "load", &app.ui.btn_load }, { "svg", &app.ui.btn_export_svg },
+            { "screenshot", &app.ui.btn_screenshot }, { "zoom_out", &app.ui.btn_zoom_out },
+            { "zoom_in", &app.ui.btn_zoom_in }, { "zoom_fit", &app.ui.btn_zoom_fit },
+            { "spice", &app.ui.btn_import_spice }, { "paste", &app.ui.btn_paste_netlist },
+            { "style", &app.ui.btn_style }, { "shot_region", &app.ui.btn_shot_region },
+        };
+        printf("ui_scale %.4f\n", s);
+        for (unsigned i = 0; i < sizeof dump / sizeof dump[0]; i++) {
+            Rect *r = &dump[i].b->bounds;
+            printf("button %-12s %d %d %d %d\n", dump[i].name,
+                   (int)(r->x * s), (int)(r->y * s), (int)(r->w * s), (int)(r->h * s));
+        }
+        /* ...and the palette, which is where the tools are. Same reason: a gate that wants to
+           pick up the Pan tool should ask where it is rather than carry a number. Positions are
+           given as drawn, so the scroll offset is already in them. */
+        for (int i = 0; i < app.ui.num_palette_items; i++) {
+            PaletteItem *it = &app.ui.palette_items[i];
+            if (!it->label || !it->label[0]) continue;
+            int py = it->bounds.y - app.ui.palette_scroll_offset;
+            printf("palette %-12s %d %d %d %d\n", it->label,
+                   (int)(it->bounds.x * s), (int)(py * s),
+                   (int)(it->bounds.w * s), (int)(it->bounds.h * s));
+        }
+        fflush(stdout);
+        app_shutdown(&app);
+        return 0;
+    }
+
     if (cli_popout) app_scope_popout(&app, true);   /* --shot then also writes <name>_scope.bmp */
     if (cli_template) {
         // a few frames first so the resize event lands and the canvas rect is laid out

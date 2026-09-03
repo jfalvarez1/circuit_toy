@@ -869,6 +869,7 @@ typedef struct Component {
     int voltage_var_idx;
     bool needs_voltage_var;
     double terminal_current[MAX_TERMINALS];  // Current entering each terminal (A), from the last solve
+    FlowState flow;                          // where its flow dots are; display only, never saved
     double trap_i_prev;
     /* What the companion state was when the current step's solve stamped it. Terminal currents
        are recovered after the step by re-stamping each device alone, and by then trap_i_prev and

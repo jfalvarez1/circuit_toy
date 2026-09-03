@@ -46,6 +46,7 @@ typedef struct {
     // Real-time animation (independent of simulation speed)
     double animation_time;      // Real-time accumulator for smooth animation
     double last_frame_time;     // Last frame timestamp for delta calculation
+    double flow_dt;             // seconds the flow dots should advance this frame
 
     /* Antialiased glyph atlas for schematic text: the 8x8 bitmap font resampled to a coverage
        map, built once on the first draw. The UI panels keep their own hard-edged font in ui.c;
@@ -113,6 +114,13 @@ extern float g_ui_scale_override;
 /* Canvas stroke weight in logical pixels; --line-weight sets it. */
 extern float g_render_line_weight;
 float render_ui_scale(int device_h);
+
+/* Where an element's flow dots sit this frame, as a fraction of its length from its first
+   terminal to its second. `drift` is flow_drift() of whatever was watched at the step rate: 1
+   marches, 0 swings, between the two does both. Advances `fs` by `dt` seconds; `clock` drives
+   the swing. Exposed so --flowdir-test can assert it over a direct current and an alternating
+   one without a window. */
+float render_flow_offset(FlowState *fs, double drift, double current, double dt, double clock);
 void render_wire(RenderContext *ctx, Wire *wire, Circuit *circuit);
 void render_node(RenderContext *ctx, Node *node, bool show_voltage);
 void render_probe(RenderContext *ctx, Circuit *circuit, Probe *probe, int index);

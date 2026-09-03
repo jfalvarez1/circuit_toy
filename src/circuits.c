@@ -6438,6 +6438,26 @@ static int place_bmi_eload_cr(Circuit *circuit, float x, float y);
 static int place_bmi_eload_cv(Circuit *circuit, float x, float y);
 static int place_bmi_thermal_cutout(Circuit *circuit, float x, float y);
 static int place_bmi_supercap(Circuit *circuit, float x, float y);
+
+/* The next resistor off the shelf at or above what this one is being asked to dissipate.
+ *
+ * Every part in this program carries a power rating and burns when it is exceeded, and a
+ * resistor gets 0.25 W unless the template says otherwise - which is right, because a quarter
+ * watt is what an unmarked resistor is. It is wrong for a load bank: the battery templates put
+ * 529 W through a 0.3 ohm load to show a 100C pack holding its voltage under it, and the load
+ * came out on fire at 211,679 % of rating. Nothing about the electricity was wrong; the part
+ * was mislabelled - and a demonstration circuit that is burning on the frame it appears teaches
+ * the reader that burning is normal.
+ *
+ * Derived from the dissipation rather than typed in, so it stays right when a preset or a load
+ * changes underneath it. 50 % headroom, which is how anyone specifies a resistor. */
+static double std_power_rating(double watts) {
+    static const double shelf[] = { 0.125, 0.25, 0.5, 1, 2, 3, 5, 10, 25, 50, 100, 200, 300, 500, 1000 };
+    if (!(watts > 0)) return 0.25;
+    for (unsigned i = 0; i < sizeof shelf / sizeof shelf[0]; i++)
+        if (shelf[i] >= watts * 1.5) return shelf[i];
+    return watts * 2.0;
+}
 static int place_bmi_charger_cc(Circuit *circuit, float x, float y);
 static int place_bmi_charger_cv(Circuit *circuit, float x, float y);
 static int place_bmi_instrument(Circuit *circuit, float x, float y);
@@ -13183,7 +13203,11 @@ static int place_bmi_supercap(Circuit *circuit, float x, float y) {
     int rail = TN(x, y);
 
     Component *rchg = hres(circuit, x + 160, y, 2.0);                     // (120,0)-(200,0)
-    rchg->props.resistor.power_rating = 10.0;
+    /* An empty cap is a short, so at the instant the supply steps this resistor has the whole
+       5 V across it: 25/2 = 12.5 W, and a 10 W part was on fire for the first few milliseconds
+       of every cycle. The inrush IS the circuit here - it is what charges the cap - so the part
+       is rated for it rather than the steady state being pretended at. */
+    rchg->props.resistor.power_rating = std_power_rating(5.0 * 5.0 / 2.0);
     int rcl = TN(x + 120, y), rcr = TN(x + 200, y);
     rchg->node_ids[0] = rcl; rchg->node_ids[1] = rcr;
     TW(rail, rcl);
@@ -13711,7 +13735,11 @@ static int place_batt_column(Circuit *circuit, float x, float y, const char *pre
     b->node_ids[1] = TN(x, y + 100);
 
     Component *r = vres(circuit, x + 120, y + 80, rload);              /* (x+120,y+40)-(x+120,y+120) */
-    (void)r;
+    /* A load bank, sized for the pack it is loading. See std_power_rating. */
+    if (r && rload > 0) {
+        double v = component_battery_open_circuit(b);
+        r->props.resistor.power_rating = std_power_rating(v * v / rload);
+    }
     TW(TN(x, y + 20), TN(x + 120, y + 20));
     TW(TN(x + 120, y + 20), TN(x + 120, y + 40));
 
@@ -13751,6 +13779,13 @@ static int place_batt_charge_column(Circuit *circuit, float x, float y,
     b->node_ids[1] = TN(x + 140, y + 220);
     TW(TN(x + 140, y + 100), TN(x + 140, y + 140));
 
+    /* The series resistor sets the charge current, so it takes the whole difference between the
+       rail and the pack - which is what it has to be rated for. */
+    if (r && r_series > 0) {
+        double dv = v_charge - component_battery_open_circuit(b);
+        r->props.resistor.power_rating = std_power_rating(dv * dv / r_series);
+    }
+
     int bot = TN(x + 140, y + 280);
     TW(TN(x + 140, y + 220), bot);
     Component *g = add_comp(circuit, COMP_GROUND, x + 140, y + 300, 0);
@@ -13779,6 +13814,13 @@ static int place_batt_stage(Circuit *circuit, float x, float y, double v_rail,
     b->node_ids[0] = TN(x + 140, y + 140);
     b->node_ids[1] = TN(x + 140, y + 220);
     TW(TN(x + 140, y + 100), TN(x + 140, y + 140));
+
+    /* Same as the charging columns: the resistor carries the rail-to-pack difference, and in
+       bulk - a flat pack under a 14.4 V rail - that is the largest it ever gets. */
+    if (r && r_series > 0) {
+        double dv = v_rail - component_battery_open_circuit(b);
+        r->props.resistor.power_rating = std_power_rating(dv * dv / r_series);
+    }
 
     int bot = TN(x + 140, y + 280);
     TW(TN(x + 140, y + 220), bot);

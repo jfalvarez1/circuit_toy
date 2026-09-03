@@ -1901,6 +1901,10 @@ bool simulation_step(Simulation *sim) {
         break;
     }
 
+    /* Every step, so the flow display can tell alternating current from direct without sampling
+       at the frame rate and aliasing mains to a constant. Node voltages only - cheap. */
+    circuit_observe_flow(circuit, dt);
+
     // Update thermal state for all components (magic smoke simulation)
     thermal_update_components(circuit, dt, sim->time);
 
