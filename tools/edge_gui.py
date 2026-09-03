@@ -13,6 +13,7 @@ clipping is the floor's documented trade, not a layout fault.
     python tools/edge_gui.py build/circuit-playground.exe
 """
 import subprocess, sys, os, tempfile, json
+from concurrent.futures import ThreadPoolExecutor
 
 try:
     from PIL import Image
@@ -45,47 +46,71 @@ if not names:
     print("edge-gui: could not list templates")
     sys.exit(1)
 
+def check(args):
+    """One template: launch, screenshot, read the canvas border. Returns (kind, message).
+
+    A whole app launch per template, and there are 205 of them - which is forty minutes done one
+    after another, and was, the first time anything ran this gate. They do not depend on each
+    other in any way, so they do not have to be serial: each gets its own temporary directory and
+    they go through a pool. The work is a subprocess and some pixel reading, both of which spend
+    almost all of their time outside the interpreter."""
+    name, tmp, idx = args
+    # Named per task, not per worker: the pool hands a task to whichever thread is free, so two
+    # of them can be working out of the same place at the same time.
+    bmp = os.path.join(tmp, "t%d.bmp" % idx)
+    sj = os.path.join(tmp, "t%d.json" % idx)
+    subprocess.run([exe, "--template", name, "--size", "%dx%d" % (W, H), "--frame", "40",
+                    "--shot", bmp, "--state-out", sj, "--exit", "--no-update-check"],
+                   capture_output=True, text=True)
+    if not os.path.exists(bmp):
+        return "FAIL", "[FAIL] edge  %-32s no screenshot" % name
+    im = Image.open(bmp).convert("L").crop(CANVAS)
+    w, h = im.size
+    px = im.load()
+    sides = {"left": 0, "right": 0, "top": 0, "bottom": 0}
+    for y in range(h):
+        if px[0, y] > LIT or px[1, y] > LIT: sides["left"] += 1
+        if px[w - 1, y] > LIT or px[w - 2, y] > LIT: sides["right"] += 1
+    for x in range(w):
+        if px[x, 0] > LIT or px[x, 1] > LIT: sides["top"] += 1
+        if px[x, h - 1] > LIT or px[x, h - 2] > LIT: sides["bottom"] += 1
+    hit = {k: v for k, v in sides.items() if v > 2}   # a couple of stray pixels is noise
+    im.close()
+    try:
+        os.remove(bmp)
+    except OSError:
+        pass
+    if not hit:
+        return "OK", None
+    # If the template is so large that the fit hit its zoom floor, clipping is the floor's
+    # documented trade. The floor is 0.3; detect it from the drawn grid pitch instead of
+    # trusting state (which does not carry zoom): a floored template is one whose content
+    # still touches BOTH horizontal edges - it cannot fit by construction.
+    if sides["left"] > 2 and sides["right"] > 2:
+        return "NOTE", ("[NOTE] edge  %-32s wider than the canvas at the zoom floor (%s)" %
+                        (name, ", ".join("%s:%d" % kv for kv in hit.items())))
+    return "FAIL", ("[FAIL] edge  %-32s content cut off at the canvas edge (%s)" %
+                    (name, ", ".join("%s:%d" % kv for kv in hit.items())))
+
+
 fails = 0
 notes = 0
-with tempfile.TemporaryDirectory() as tmp:
-    for name in names:
-        bmp = os.path.join(tmp, "t.bmp")
-        sj = os.path.join(tmp, "t.json")
-        subprocess.run([exe, "--template", name, "--size", "%dx%d" % (W, H), "--frame", "40",
-                        "--shot", bmp, "--state-out", sj, "--exit", "--no-update-check"],
-                       capture_output=True, text=True)
-        if not os.path.exists(bmp):
-            print("[FAIL] edge  %-32s no screenshot" % name)
-            fails += 1
-            continue
-        im = Image.open(bmp).convert("L").crop(CANVAS)
-        w, h = im.size
-        px = im.load()
-        sides = {"left": 0, "right": 0, "top": 0, "bottom": 0}
-        for y in range(h):
-            if px[0, y] > LIT or px[1, y] > LIT: sides["left"] += 1
-            if px[w - 1, y] > LIT or px[w - 2, y] > LIT: sides["right"] += 1
-        for x in range(w):
-            if px[x, 0] > LIT or px[x, 1] > LIT: sides["top"] += 1
-            if px[x, h - 1] > LIT or px[x, h - 2] > LIT: sides["bottom"] += 1
-        hit = {k: v for k, v in sides.items() if v > 2}   # a couple of stray pixels is noise
-        os.remove(bmp)
-        if not hit:
-            continue
-        # If the template is so large that the fit hit its zoom floor, clipping is the floor's
-        # documented trade. The floor is 0.3; detect it from the drawn grid pitch instead of
-        # trusting state (which does not carry zoom): a floored template is one whose content
-        # still touches BOTH horizontal edges - it cannot fit by construction.
-        floored = sides["left"] > 2 and sides["right"] > 2
-        if floored:
-            notes += 1
-            print("[NOTE] edge  %-32s wider than the canvas at the zoom floor (%s)" %
-                  (name, ", ".join("%s:%d" % kv for kv in hit.items())))
-        else:
-            fails += 1
-            print("[FAIL] edge  %-32s content cut off at the canvas edge (%s)" %
-                  (name, ", ".join("%s:%d" % kv for kv in hit.items())))
+# Twice the cores, capped at eight. Each task is an app launch that spends its life waiting on
+# the GPU-less renderer and the disk, so the cores are not the limit; on the four-core CI runner
+# this is the difference between forty minutes and ten. EDGE_JOBS overrides it.
+workers = int(os.environ.get("EDGE_JOBS") or 0) or min(8, max(2, (os.cpu_count() or 2) * 2))
+with tempfile.TemporaryDirectory() as root:
+    work = [(n, root, i) for i, n in enumerate(names)]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        # in template order, so two runs print the same thing in the same order
+        for kind, msg in pool.map(check, work):
+            if msg:
+                print(msg)
+            if kind == "FAIL":
+                fails += 1
+            elif kind == "NOTE":
+                notes += 1
 
-print("edge-gui: %d templates, %d clipped at an edge, %d too large to fit at the zoom floor"
-      % (len(names), fails, notes))
+print("edge-gui: %d templates, %d clipped at an edge, %d too large to fit at the zoom floor (%d at a time)"
+      % (len(names), fails, notes, workers))
 sys.exit(1 if fails else 0)
