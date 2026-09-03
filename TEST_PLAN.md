@@ -935,6 +935,7 @@ was written down the day it was written:
 | `--thermal-test` | a part over its rating burns, a part inside it does not | both directions, and the rating used is the part's own |
 | `tools/thermal_wiring.py` | every part that claims a temperature limit has a power expression the damage model can read | source-level, so a part added with a rating and no handling fails the battery instead of quietly never getting warm |
 | `--pair-test` | two circuits on one sheet do not disturb each other | every template, against itself measured alone |
+| `tools/click_wiring.py` | every button that is drawn is hit-tested by something | source-level, so a control added and never wired to a click fails the battery. A dead button looks exactly like a working one - it is painted, hovered and labelled. `--layout-test` covers the other way a button becomes unreachable, by being overlapped, at four window sizes |
 
 | # | Check | Expected |
 |---|-------|----------|

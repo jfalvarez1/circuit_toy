@@ -169,6 +169,21 @@ if command -v python >/dev/null 2>&1; then
     fi
 fi
 
+# And source-level again: a button that is drawn has to be hit-tested by something, or it is a
+# control that is painted, hovered, labelled and dead - which looks exactly like a working one.
+# --layout-test covers the other way a button becomes unreachable, by being overlapped.
+if command -v python >/dev/null 2>&1; then
+    if python tools/click_wiring.py > "$out/clickwiring.log" 2>&1; then
+        printf '[ OK ] %-14s %s
+' "click-wiring" "$(tail -n 1 "$out/clickwiring.log" | cut -c1-100)"
+    else
+        printf '[FAIL] %-14s %s
+' "click-wiring" "$(tail -n 1 "$out/clickwiring.log" | cut -c1-100)"
+        grep -i fail "$out/clickwiring.log" | head -10
+        fails=$((fails + 1))
+    fi
+fi
+
 # Also source-level: a part that claims a temperature limit has to have a power expression the
 # damage model can actually read. Every one of them was reading a field the loop wrote back to
 # itself, so nothing had ever burned; the electrolytic had no case at all.
