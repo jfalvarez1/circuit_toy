@@ -1705,6 +1705,133 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 break;
             }
 
+            /* One panel for the seven gates that share props.logic_gate.
+             *
+             * They had none at all: a gate was whatever logic family component_create happened to
+             * pick, and a 5 V gate could not be made a 3.3 V one. What defines a family is three
+             * numbers - what a 1 is, what a 0 is, and where the input decides between them - and
+             * they were all sitting in the struct already. */
+            case COMP_NOT_GATE:
+            case COMP_AND_GATE:
+            case COMP_OR_GATE:
+            case COMP_NAND_GATE:
+            case COMP_NOR_GATE:
+            case COMP_XOR_GATE:
+            case COMP_XNOR_GATE: {
+                bool ed_vh = input && input->editing_property && input->editing_prop_type == PROP_V_HIGH;
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.logic_gate.v_high);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "V high:", buf, ed_vh, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_V_HIGH;
+                ui->num_properties++;
+                prop_y += 18;
+
+                bool ed_vl = input && input->editing_property && input->editing_prop_type == PROP_V_LOW;
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.logic_gate.v_low);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "V low:", buf, ed_vl, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_V_LOW;
+                ui->num_properties++;
+                prop_y += 18;
+
+                bool ed_vt = input && input->editing_property && input->editing_prop_type == PROP_V_THRESHOLD;
+                snprintf(buf, sizeof(buf), "%.3g V", selected->props.logic_gate.v_threshold);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Threshold:", buf, ed_vt, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_V_THRESHOLD;
+                ui->num_properties++;
+                prop_y += 18;
+
+                bool ed_td = input && input->editing_property && input->editing_prop_type == PROP_DELAY;
+                format_engineering(selected->props.logic_gate.prop_delay, "s", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Prop delay:", buf, ed_td, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_DELAY;
+                ui->num_properties++;
+                prop_y += 18;
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.logic_gate.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                if (!selected->props.logic_gate.ideal) {
+                    bool ed_ro = input && input->editing_property && input->editing_prop_type == PROP_R_SERIES;
+                    format_engineering(selected->props.logic_gate.r_out, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R_out:", buf, ed_ro, edit_buf, cursor);
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_R_SERIES;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
+            /* The AC current source: the same five numbers as its voltage twin below, which it
+               has always carried in its props and never once offered. It could be placed and not
+               configured - amplitude, frequency and phase frozen at whatever component_create
+               chose - because the panel had no case for it at either end. --prop-gap had been
+               counting it among seventy-odd such parts and returning 0 every run. */
+            case COMP_AC_CURRENT: {
+                snprintf(buf, sizeof(buf), "%.3g A", selected->props.ac_current.amplitude);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,
+                                   editing_value, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VALUE;
+                ui->num_properties++;
+
+                prop_y += 18;
+                snprintf(buf, sizeof(buf), "%.3g Hz", selected->props.ac_current.frequency);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Frequency:", buf,
+                                   editing_freq, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_FREQUENCY;
+                ui->num_properties++;
+
+                prop_y += 18;
+                snprintf(buf, sizeof(buf), "%.1f deg", selected->props.ac_current.phase);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Phase:", buf,
+                                   editing_phase, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_PHASE;
+                ui->num_properties++;
+
+                prop_y += 18;
+                snprintf(buf, sizeof(buf), "%.3g A", selected->props.ac_current.offset);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Offset:", buf,
+                                   editing_offset, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_OFFSET;
+                ui->num_properties++;
+                prop_y += 18;
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.ac_current.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                /* A real current source is a finite parallel resistance, the dual of the voltage
+                   source's series one. */
+                if (!selected->props.ac_current.ideal) {
+                    bool edit_rp = input && input->editing_property && input->editing_prop_type == PROP_R_PARALLEL;
+                    format_engineering(selected->props.ac_current.r_parallel, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R_parallel:", buf, edit_rp, edit_buf, cursor);
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_R_PARALLEL;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
             case COMP_AC_VOLTAGE: {
                 snprintf(buf, sizeof(buf), "%.3g V", selected->props.ac_voltage.amplitude);
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Amplitude:", buf,

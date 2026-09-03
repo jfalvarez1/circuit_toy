@@ -987,6 +987,15 @@ double component_battery_nominal_cell(int chem);
 /* The terminal voltage with nothing drawn, and how to set a pack to one. Setting the nominal is
    NOT the same thing: a full cell sits above its nominal and a flat one below. */
 double component_battery_open_circuit(const Component *c);
+
+/* The seven parts that share props.logic_gate. Written once here rather than as the same
+   seven-way || at each of the places that has to ask - the properties panel offers them one set
+   of rows, and every row's apply case has to agree about who it applies to. */
+static inline bool component_is_logic_gate(ComponentType t) {
+    return t == COMP_NOT_GATE || t == COMP_AND_GATE || t == COMP_OR_GATE ||
+           t == COMP_NAND_GATE || t == COMP_NOR_GATE || t == COMP_XOR_GATE ||
+           t == COMP_XNOR_GATE;
+}
 void   component_battery_set_open_circuit(Component *c, double v_target);
 double component_battery_charge_voltage(int chem);
 double component_battery_float_voltage(int chem);

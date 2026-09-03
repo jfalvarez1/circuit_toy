@@ -376,7 +376,8 @@ static int prop_gap(void) {
      * with the change that closed them - and ADDING one fails the battery, which is the half that
      * matters: a part landing tomorrow with no way to configure it is caught on the day it lands
      * rather than in a sweep months later. */
-    const int BASELINE = 72;
+    /* 72 before the AC current source got its panel, 71 before the seven logic gates got theirs. */
+    const int BASELINE = 64;
     if (empty > BASELINE) {
         printf("[FAIL] prop-gap %d parts now offer the panel nothing, up from %d.\n", empty, BASELINE);
         printf("       A new part needs its property rows, or this baseline needs a reason to move.\n");
@@ -437,6 +438,14 @@ static int value_sweep_run(Circuit *c, char *why, size_t nwhy) {
             /* A transmission line legitimately does not conserve instantaneous current between
                its ends - that is what makes it one. */
             if (comp->type == COMP_TLINE || comp->type == COMP_DELAY_LINE) continue;
+            /* Nor does a logic gate, for a different reason: it is powered from a rail that is
+               not drawn. Read the stamp - the input is a 1e-12 conductance to ground and the
+               output is a Thevenin source to ground - so the current leaving the output came
+               from the supply, not from the input, and the two pins cannot balance. The gates
+               only started reaching this check when they were given a properties panel, which
+               is what put them in the sweep at all; nothing about them changed. */
+            if (comp->type == COMP_NOT_GATE || comp->type == COMP_BUFFER ||
+                comp->type == COMP_SCHMITT_INV || comp->type == COMP_SCHMITT_BUF) continue;
             double a = comp->terminal_current[0], b = comp->terminal_current[1];
             if (!isfinite(a) || !isfinite(b)) { snprintf(why, nwhy, "%s has a NaN terminal current", comp->label); ok = 0; break; }
             double amax = fabs(a) > fabs(b) ? fabs(a) : fabs(b);

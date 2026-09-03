@@ -2179,6 +2179,13 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                     comp->props.dc_current.current = value;
                     applied = true;
                     break;
+                /* The AC current source carries the same five numbers as the AC voltage source
+                   and offered none of them: it was placeable and completely unconfigurable, stuck
+                   at whatever component_create had set. Nothing was missing from the model - the
+                   panel simply had no case for it, at either end. */
+                case COMP_AC_CURRENT:
+                    if (value > 0) { comp->props.ac_current.amplitude = value; applied = true; }
+                    break;
                 case COMP_RESISTOR:
                     if (value > 0) { comp->props.resistor.resistance = value; applied = true; }
                     break;
@@ -2285,6 +2292,10 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                         comp->props.ac_voltage.frequency = value;
                         applied = true;
                         break;
+                    case COMP_AC_CURRENT:
+                        comp->props.ac_current.frequency = value;
+                        applied = true;
+                        break;
                     case COMP_SQUARE_WAVE:
                         comp->props.square_wave.frequency = value;
                         applied = true;
@@ -2317,6 +2328,10 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                     comp->props.ac_voltage.phase = value;
                     applied = true;
                     break;
+                case COMP_AC_CURRENT:
+                    comp->props.ac_current.phase = value;
+                    applied = true;
+                    break;
                 case COMP_SQUARE_WAVE:
                     comp->props.square_wave.phase = value;
                     applied = true;
@@ -2338,6 +2353,10 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             switch (comp->type) {
                 case COMP_AC_VOLTAGE:
                     comp->props.ac_voltage.offset = value;
+                    applied = true;
+                    break;
+                case COMP_AC_CURRENT:
+                    comp->props.ac_current.offset = value;
                     applied = true;
                     break;
                 case COMP_SQUARE_WAVE:
@@ -2383,6 +2402,9 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             } else if (comp->type == COMP_PULSE_SOURCE) {
                 comp->props.pulse_source.v_high = value;
                 applied = true;
+            } else if (component_is_logic_gate(comp->type)) {
+                comp->props.logic_gate.v_high = value;
+                applied = true;
             }
             break;
 
@@ -2392,6 +2414,19 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                 applied = true;
             } else if (comp->type == COMP_PULSE_SOURCE) {
                 comp->props.pulse_source.v_low = value;
+                applied = true;
+            } else if (component_is_logic_gate(comp->type)) {
+                comp->props.logic_gate.v_low = value;
+                applied = true;
+            }
+            break;
+
+        /* The logic family, in the only three numbers that define it: what a 1 is, what a 0 is,
+           and where the input decides between them. Seven gate types share props.logic_gate and
+           not one of them offered a single row - a 5 V gate could not be made a 3.3 V gate. */
+        case PROP_V_THRESHOLD:
+            if (component_is_logic_gate(comp->type)) {
+                comp->props.logic_gate.v_threshold = value;
                 applied = true;
             }
             break;
@@ -2413,6 +2448,9 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
         case PROP_DELAY:
             if (comp->type == COMP_PULSE_SOURCE && value >= 0) {
                 comp->props.pulse_source.delay = value;
+                applied = true;
+            } else if (component_is_logic_gate(comp->type) && value >= 0 && value <= 1.0) {
+                comp->props.logic_gate.prop_delay = value;   /* the gate's own propagation delay */
                 applied = true;
             }
             break;
@@ -2622,6 +2660,9 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                 } else if (comp->type == COMP_AC_VOLTAGE) {
                     comp->props.ac_voltage.r_series = value;
                     applied = true;
+                } else if (component_is_logic_gate(comp->type)) {
+                    comp->props.logic_gate.r_out = value;   /* the gate's output impedance */
+                    applied = true;
                 }
             }
             break;
@@ -2629,6 +2670,9 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
         case PROP_R_PARALLEL:
             if (comp->type == COMP_DC_CURRENT && value > 0 && value <= 1e12) {
                 comp->props.dc_current.r_parallel = value;
+                applied = true;
+            } else if (comp->type == COMP_AC_CURRENT && value > 0 && value <= 1e12) {
+                comp->props.ac_current.r_parallel = value;
                 applied = true;
             }
             break;

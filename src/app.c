@@ -1216,6 +1216,7 @@ void app_handle_events(App *app) {
                             switch (c->type) {
                                 case COMP_DC_VOLTAGE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_voltage.voltage); break;
                                 case COMP_AC_VOLTAGE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.ac_voltage.amplitude); break;
+                                case COMP_AC_CURRENT: snprintf(current_value, sizeof(current_value), "%.6g", c->props.ac_current.amplitude); break;
                                 case COMP_DC_CURRENT: snprintf(current_value, sizeof(current_value), "%.6g", c->props.dc_current.current); break;
                                 case COMP_RESISTOR: snprintf(current_value, sizeof(current_value), "%.6g", c->props.resistor.resistance); break;
                                 case COMP_CAPACITOR: snprintf(current_value, sizeof(current_value), "%.6g", c->props.capacitor.capacitance); break;
@@ -1238,6 +1239,7 @@ void app_handle_events(App *app) {
                         } else if (prop_type == PROP_FREQUENCY) {
                             switch (c->type) {
                                 case COMP_AC_VOLTAGE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.ac_voltage.frequency); break;
+                                case COMP_AC_CURRENT: snprintf(current_value, sizeof(current_value), "%.6g", c->props.ac_current.frequency); break;
                                 case COMP_SQUARE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.square_wave.frequency); break;
                                 case COMP_TRIANGLE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.triangle_wave.frequency); break;
                                 case COMP_SAWTOOTH_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.sawtooth_wave.frequency); break;
@@ -1246,6 +1248,7 @@ void app_handle_events(App *app) {
                         } else if (prop_type == PROP_PHASE) {
                             switch (c->type) {
                                 case COMP_AC_VOLTAGE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.ac_voltage.phase); break;
+                                case COMP_AC_CURRENT: snprintf(current_value, sizeof(current_value), "%.6g", c->props.ac_current.phase); break;
                                 case COMP_SQUARE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.square_wave.phase); break;
                                 case COMP_TRIANGLE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.triangle_wave.phase); break;
                                 case COMP_SAWTOOTH_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.sawtooth_wave.phase); break;
@@ -1254,6 +1257,7 @@ void app_handle_events(App *app) {
                         } else if (prop_type == PROP_OFFSET) {
                             switch (c->type) {
                                 case COMP_AC_VOLTAGE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.ac_voltage.offset); break;
+                                case COMP_AC_CURRENT: snprintf(current_value, sizeof(current_value), "%.6g", c->props.ac_current.offset); break;
                                 case COMP_SQUARE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.square_wave.offset); break;
                                 case COMP_TRIANGLE_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.triangle_wave.offset); break;
                                 case COMP_SAWTOOTH_WAVE: snprintf(current_value, sizeof(current_value), "%.6g", c->props.sawtooth_wave.offset); break;
@@ -1444,6 +1448,16 @@ void app_handle_events(App *app) {
                                 case COMP_DC_CURRENT:
                                     c->props.dc_current.ideal = !c->props.dc_current.ideal;
                                     model_name = c->props.dc_current.ideal ? "Ideal" : "Real (parallel R)";
+                                    break;
+                                case COMP_AC_CURRENT:
+                                    c->props.ac_current.ideal = !c->props.ac_current.ideal;
+                                    model_name = c->props.ac_current.ideal ? "Ideal" : "Real (parallel R)";
+                                    break;
+                                case COMP_NOT_GATE:  case COMP_AND_GATE: case COMP_OR_GATE:
+                                case COMP_NAND_GATE: case COMP_NOR_GATE: case COMP_XOR_GATE:
+                                case COMP_XNOR_GATE:
+                                    c->props.logic_gate.ideal = !c->props.logic_gate.ideal;
+                                    model_name = c->props.logic_gate.ideal ? "Ideal" : "Real (R_out, delay)";
                                     break;
                                 case COMP_RESISTOR:
                                     c->props.resistor.ideal = !c->props.resistor.ideal;
