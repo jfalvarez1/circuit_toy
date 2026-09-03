@@ -1486,7 +1486,13 @@ void app_handle_events(App *app) {
                                     model_name = c->props.transformer.ideal ? "Ideal (k=1, no winding R)"
                                                                             : "Real (leakage, winding R)";
                                     break;
+                                case COMP_LAMP:
+                                    c->props.lamp.ideal = !c->props.lamp.ideal;
+                                    model_name = c->props.lamp.ideal ? "Ideal (fixed R)" : "Real (cold/hot filament)";
+                                    break;
                                 case COMP_DIODE:
+                                case COMP_TUNNEL_DIODE:
+                                case COMP_PHOTODIODE:
                                     c->props.diode.ideal = !c->props.diode.ideal;
                                     model_name = c->props.diode.ideal ? "Ideal (0.7V drop)" : "Real (Shockley)";
                                     break;

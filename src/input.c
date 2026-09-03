@@ -2663,6 +2663,9 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                 } else if (component_is_logic_gate(comp->type)) {
                     comp->props.logic_gate.r_out = value;   /* the gate's output impedance */
                     applied = true;
+                } else if (comp->type == COMP_LAMP && value > 0) {
+                    comp->props.lamp.r_cold = value;        /* the filament, cold */
+                    applied = true;
                 }
             }
             break;
@@ -2842,8 +2845,28 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                props.schottky.ideal - silently switching the model - while the cjo the stamp reads
                keeps its old value. Each type writes its own member. */
             if (value >= 0 && value <= 1e-3) {
-                if (comp->type == COMP_DIODE)        { comp->props.diode.cjo = value;    applied = true; }
+                /* The tunnel diode and the photodiode are stamped from props.diode by the same
+                   code the plain diode uses, so they write the same member - unlike the Schottky
+                   above, whose struct has a different layout. */
+                if (comp->type == COMP_DIODE || comp->type == COMP_TUNNEL_DIODE ||
+                    comp->type == COMP_PHOTODIODE)    { comp->props.diode.cjo = value;    applied = true; }
                 else if (comp->type == COMP_SCHOTTKY) { comp->props.schottky.cjo = value; applied = true; }
+            }
+            break;
+
+        /* The lamp's ratings. Both PROP types existed in the enum and were used by nothing at
+           either end - two of the twenty-odd that prop_wiring counts as "not built yet". */
+        case PROP_POWER_RATING:
+            if (comp->type == COMP_LAMP && value > 0 && value <= 1e6) {
+                comp->props.lamp.power_rating = value;
+                applied = true;
+            }
+            break;
+
+        case PROP_VOLTAGE_RATING:
+            if (comp->type == COMP_LAMP && value > 0 && value <= 1e6) {
+                comp->props.lamp.voltage_rating = value;
+                applied = true;
             }
             break;
 
@@ -2971,7 +2994,8 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
 
         // Diode breakdown voltage
         case PROP_BV:
-            if (comp->type == COMP_DIODE && value > 0 && value <= 10000) {
+            if ((comp->type == COMP_DIODE || comp->type == COMP_TUNNEL_DIODE ||
+                 comp->type == COMP_PHOTODIODE) && value > 0 && value <= 10000) {
                 comp->props.diode.bv = value;
                 applied = true;
             }

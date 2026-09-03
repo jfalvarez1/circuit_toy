@@ -1771,6 +1771,49 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 break;
             }
 
+            /* The lamp: what it is rated for, and how it behaves when it is not ideal. Its
+               ratings are what the thermal model measures against, so a lamp that could not be
+               rated could not be overloaded on purpose either. */
+            case COMP_LAMP: {
+                bool ed_pw = input && input->editing_property && input->editing_prop_type == PROP_POWER_RATING;
+                format_engineering(selected->props.lamp.power_rating, "W", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Power:", buf, ed_pw, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_POWER_RATING;
+                ui->num_properties++;
+                prop_y += 18;
+
+                bool ed_vr = input && input->editing_property && input->editing_prop_type == PROP_VOLTAGE_RATING;
+                format_engineering(selected->props.lamp.voltage_rating, "V", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Voltage:", buf, ed_vr, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VOLTAGE_RATING;
+                ui->num_properties++;
+                prop_y += 18;
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.lamp.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                /* A real filament is a few times its cold resistance once it is hot, which is
+                   why a lamp draws an inrush. Ideal mode holds it at one value. */
+                if (!selected->props.lamp.ideal) {
+                    bool ed_rc = input && input->editing_property && input->editing_prop_type == PROP_R_SERIES;
+                    format_engineering(selected->props.lamp.r_cold, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R_cold:", buf, ed_rc, edit_buf, cursor);
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_R_SERIES;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
             /* The AC current source: the same five numbers as its voltage twin below, which it
                has always carried in its props and never once offered. It could be placed and not
                configured - amplitude, frequency and phase frozen at whatever component_create
@@ -2866,6 +2909,12 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 break;
             }
 
+            /* Both of these are stamped from props.diode by the same code the plain diode uses -
+               see the shared case in component_stamp - so they get the same rows. They had none,
+               which meant a tunnel diode's saturation current and emission coefficient were
+               whatever it was born with. */
+            case COMP_TUNNEL_DIODE:
+            case COMP_PHOTODIODE:
             case COMP_DIODE: {
                 // Model mode toggle
                 SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
@@ -3206,6 +3255,10 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 break;
             }
 
+            /* The flipped op-amp is the same model with its two inputs drawn the other way up -
+               component_stamp says so in as many words - and carries the same props.opamp. It
+               offered nothing while the one beside it offered thirteen fields. */
+            case COMP_OPAMP_FLIPPED:
             case COMP_OPAMP: {
                 // Open-loop gain (editable)
                 bool edit_gain = input && input->editing_property && input->editing_prop_type == PROP_OPAMP_GAIN;
