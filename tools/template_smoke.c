@@ -4006,6 +4006,13 @@ static int netlist_test(void) {
           "R1 n 0 4k7\n",
           "n", 4.7, 0.02,
           "1 mA through 4.7k. The suffix has a digit inside it, which is how resistors are written" },
+
+        { "R is the decimal point below a kilohm",
+          "I1 0 n 1\n"
+          "R1 n 0 1R5\n",
+          "n", 1.5, 0.01,
+          "1 A through 1R5. R multiplies by one and only stands where the point would - read as a"
+          " bare suffix it was 1 ohm, which is the same 33 % error as reading 4k7 for 4k" },
     };
 
     for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {

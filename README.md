@@ -1,10 +1,10 @@
 # Circuit Playground Simulator
 
-**Latest Release: [v3.24.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.24.0)** (auto-updating from v3.4.0 on)
+**Latest Release: [v3.25.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.25.0)** (auto-updating from v3.4.0 on)
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
-digital solver, a real-time bench oscilloscope with FFT and THD, 187 guided circuits from RC
-filters to power grids, SPICE import, and a 47-suite self-audit battery. Build, simulate and
+digital solver, a real-time bench oscilloscope with FFT and THD, 199 guided circuits from RC
+filters to power grids, SPICE import, and a 59-suite self-audit battery. Build, simulate and
 analyse circuits with a drag-and-drop schematic.
 
 The look is deliberately **synthwave** - magenta and cyan on deep violet, a CRT-style graticule
@@ -132,7 +132,7 @@ In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/).
 Schematic text is antialiased and drawn in the notation a schematic uses - `10k`, `100nF`,
 `170V 60Hz` - and an audit checks that no label lands on a symbol or on another label.
 
-187 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+199 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -1017,7 +1017,7 @@ two longest are split into shards (`--shard 0/4`) because a battery can never fi
 its slowest single suite.
 
 ```bash
-build/tools/template_smoke.exe             # 195/195 templates passed
+build/tools/template_smoke.exe             # 199/199 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (204 oracles)
@@ -1028,6 +1028,8 @@ build/tools/template_smoke.exe --osc-test        # oscillators really oscillate 
 build/tools/template_smoke.exe --tesla-test      # spark-gap firings, ring frequency, toroid peak, streamer, tuned vs detuned
 build/tools/template_smoke.exe --param-test      # spark gap / toroid / line / transformer limits vs phasor oracles; scope presets
 build/tools/template_smoke.exe --flow-test       # current-flow display: KCL, conservation, series uniformity
+build/tools/template_smoke.exe --pair-test       # two circuits on one sheet: a neighbour must not move your currents
+build/tools/template_smoke.exe --ic-test         # a capacitor built pre-charged holds that voltage at the operating point
 build/tools/template_smoke.exe --burn-test       # no resistor/LED over its rating (HV templates use R_HP loads)
 build/tools/template_smoke.exe --std-test        # bus voltages vs ERCOT / NERC / ANSI C84.1 / NEC limits
 build/tools/template_smoke.exe --switch-test     # every switch in both states, measured at the probed output

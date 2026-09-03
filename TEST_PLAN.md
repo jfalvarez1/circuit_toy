@@ -918,6 +918,68 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.40 v3.25.0 - a canvas that scales, a circuit written as text, and the instrument entire (2026-09-02)
+
+The schematic is drawn at the display's own resolution instead of at 900p and stretched, a
+circuit can arrive as a parts list rather than as clicks, and the battery instrument from the
+KiCad sheet is on the palette whole as well as block by block.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.40.1 | `[ ]` Open any template on a 4K display | Lines and text are sharp, not stretched from 900p. The frame renders supersampled and the UI scales with the display height (`--ss`, `--ui-scale` to override) |
+| 3.40.2 | `[ ]` Zoom right in on a wire, then right out | No jagged edges at either end. Wires are feathered quads through `SDL_RenderGeometry`, not stacks of one-pixel lines, so a hairline stays smooth at any zoom |
+| 3.40.3 | `[ ]` Read the word "Circuits" in the left panel | "Circuits", not "Circui ts". 46 of the font's glyphs sat off to one side of their cell; every one is centred now |
+| 3.40.4 | `[ ]` Open a saved circuit larger than the window | It fits the window. Loading a file zooms to fit instead of leaving the circuit half off-screen |
+| 3.40.5 | `[ ]` Name two nodes `vm1` and wire nothing between them | One net. A build table says a part goes to `vm1` and never says where `vm1` is, which is how a written circuit connects up |
+| 3.40.6 | `[ ]` Copy a parts list to the clipboard, press **Paste** | The circuit is drawn. Values parse SPICE-style including R-notation, so `4k7` is 4700 and not 4000 |
+| 3.40.7 | `[ ]` Double-click a block | Its internals open as a schematic. `Esc` returns |
+| 3.40.8 | `[ ]` Place **BMI: Battery Monitoring Instrument** | The whole sheet: sense, protection window, current source, OCP and the switching rail, the same blocks that ship separately |
+| 3.40.9 | `[ ]` Select a BJT and read the panel | Its region - cutoff, active, saturation - with Vbe, Vce, Ic, Ib and gm, and a warning when the bias is not where the circuit needs it |
+| 3.40.10 | `[ ]` Place a battery | It is visible. Four component types had no renderer at all and drew as nothing |
+| 3.40.11 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 59 suites, 0 failed |
+
+Four faults found this round, all in code that was already shipped.
+
+**A wire lying invisibly on top of another.** Reported as "an invisible wire in the LiPo
+charger". Four returns running back along the same row draw as one line with three others
+underneath it - 114 of them across 39 templates. `circuit_tidy_collinear_wires` now lays each
+run out as the chain it was meant to be, 114 down to 25.
+
+Getting that right took three goes, and the ways it was wrong are worth keeping. It chained
+across gaps, which bridges two separate nets. It restarted its scan unconditionally after every
+wire rather than only after a rebuild, which is an infinite loop and hung for ten minutes. It
+deduped points at half a pixel while nodes merge at five, so a rebuilt run came back unchanged
+for ever. And tearing a run down orphans its nodes, which the cleanup sweeps - clearing
+`ground_node_id` if one of them is ground and floating the whole circuit.
+
+**Two nets drawn down the same line, chained into one.** The pass above, before it was told
+that lying on top of another wire is not connection. Wires join only through shared nodes, and
+the CMOS inverter draws its rail and its output overlapping on one vertical; chaining them
+shorted the output to VDD and the gate stopped swinging. A run now only absorbs a wire that
+already shares a node with it. The five templates still flagged are all cross-net overlaps: a
+layout fault to be moved apart, not a bus to be tidied.
+
+**A capacitor built pre-charged solved its operating point at 0 V.** The stamp zeroed companion
+current whenever there was no previous solution - but an initial condition is not companion
+memory, it is a source of a value the circuit was built with, returned through the same field.
+Zeroing it turns a capacitor built at 10 V into a plain 1 mohm resistor across its own
+terminals. The Two-Capacitor Problem drew **10 kA** on the wire, since at 1 mohm a volt of node
+error is a thousand amps. It survived or not depending on whether Newton had a previous
+solution yet, which is why an unrelated second circuit on the sheet changed the answer.
+
+**The DC operating point could contradict the relay it had just moved.** The armature settles
+from the solve, and the solve was not redone with the armature where it ended up, so the panel
+showed a bias for a contact position the circuit was no longer in.
+
+Two suites were added because the case they cover had never been simulated. Every other suite
+places one template on an empty canvas; `--pair-test` places each one beside a second circuit
+and requires its own wire currents not to move - at the operating point and again after 125 us
+of stepping, both runs pinned to the same time step. Its oracle is outside the solver: the
+currents the circuit has alone. It reports how many wires it compared and how many carried
+current, because a comparison suite that matched nothing would report a clean zero while
+checking nothing at all. 198 templates, 3386 wires, 2590 of them carrying, worst drift zero.
+`--ic-test` is the standing check for the fault it found.
+
 ### 3.39 v3.24.0 - the circuits of a battery instrument (2026-08-31)
 
 Seven templates in a new **Battery monitoring & electronic load** group, built from a

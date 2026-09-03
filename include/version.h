@@ -2,6 +2,6 @@
 #define VERSION_H
 
 /* Single source of truth for the app version. tools/make_release.ps1 reads this line. */
-#define APP_VERSION "3.24.0"
+#define APP_VERSION "3.25.0"
 
 #endif

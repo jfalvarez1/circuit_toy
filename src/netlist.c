@@ -40,6 +40,10 @@ static bool nl_value(const char *s, double *out) {
     else if (*end == 'N' || *end == 'n') mult = 1e-9, end++;
     else if (*end == 'P' || *end == 'p') mult = 1e-12, end++;
     else if (*end == 'F' || *end == 'f') mult = 1e-15, end++;
+    /* R is the notation's own decimal point, for values below a kilohm: 1R5 is 1.5 ohm and 4R7
+       is 4.7. It multiplies by one, so it does nothing but stand where the point would - which
+       is the whole reason it is written that way. Without it here 1R5 read as 1. */
+    else if (*end == 'R' || *end == 'r') end++;
     v *= mult;
     /* R-notation: 4k7 is 4.7k, with the multiplier standing where the decimal point would be.
        It exists because a printed decimal point is the first thing to disappear off a

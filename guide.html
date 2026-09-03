@@ -726,6 +726,7 @@
                     <a href="#properties">10. Editing Properties</a>
                     <a href="#simulation">11. Running Simulations</a>
                     <a href="#templates">12. Circuit Templates</a>
+                    <a href="#text-circuits">12b. Writing a Circuit as Text</a>
                 </div>
                 <div>
                     <div class="toc-section">Analysis Tools</div>
@@ -2187,6 +2188,26 @@ Probe readouts, the scope channel labels and the measurements switch to kV autom
                 <div class="note-title">Learning Path</div>
                 <p>Start with simple circuits (voltage divider, LED) to understand Ohm's law. Move to filters to learn about frequency response. Then explore op-amp circuits before tackling transistor amplifiers. Each builds on concepts from the previous.</p>
             </div>
+        </section>
+
+        <!-- 12b. Circuits as text -->
+        <section id="text-circuits" class="section">
+            <h2>12b. Writing a Circuit as Text</h2>
+            <p>A circuit does not have to be drawn. Copy a parts list to the clipboard and press <strong>Paste</strong> in the left panel, and the schematic is built from it - which is how a build table out of a book or a lab sheet becomes something you can run.</p>
+            <p>The format is SPICE-like: one part per line, its name, the two nets it sits between, then its value.</p>
+            <pre>V1 in 0 DC 5
+R1 in mid 4k7
+R2 mid 0 10k
+C1 mid 0 100n</pre>
+            <p>Values take the usual suffixes - <code>MEG</code>, <code>K</code>, <code>M</code> for milli, <code>U</code>, <code>N</code>, <code>P</code>, <code>F</code> - and R-notation, so <code>4k7</code> is 4700 ohms and <code>1R5</code> is 1.5.</p>
+
+            <div class="note">
+                <div class="note-title">Named nets</div>
+                <p>Anything sharing a net name is one wire, wherever it sits on the sheet. The table above never says where <code>mid</code> is; both resistors name it and that is enough to join them. You can name a node on a drawn schematic the same way, and two nodes with the same name are connected with no wire between them - useful for a supply rail you would rather not drag across the page. Press <strong>F2</strong> to show net names on the canvas.</p>
+            </div>
+
+            <h3>Looking inside a block</h3>
+            <p><strong>Double-click a block</strong> - a subcircuit, or one of the battery-instrument blocks - and its internals open as an ordinary schematic, with every discrete part where the definition puts it. <kbd>Esc</kbd> returns to the circuit you came from.</p>
         </section>
 
         <!-- 13. Oscilloscope -->
