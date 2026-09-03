@@ -14,6 +14,7 @@
 #include "circuits.h"
 #include "spice.h"
 #include "netlist.h"
+#include "sketch.h"
 #include "version.h"
 #include "updater.h"
 #include "ui.h"
@@ -1383,7 +1384,7 @@ static int resolve_cli_template(const char *cli_template, CircuitTemplateType *o
 
 int main(int argc, char *argv[]) {
     if (argc > 1) attach_parent_console();
-    const char *cli_inspect = NULL, *cli_netlist = NULL;
+    const char *cli_inspect = NULL, *cli_netlist = NULL, *cli_sketch = NULL;
     const char *cli_template = NULL, *cli_shot = NULL, *cli_record = NULL, *cli_size = NULL;
     const char *cli_state = NULL;
     int cli_frame = 90, cli_rec_n = 0, cli_rec_every = 1, cli_scroll = -1, cli_tab = -1; bool cli_exit = false, no_update = false, no_auto_update = false;
@@ -1449,6 +1450,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) { usage(); return 0; }
         else if (!strcmp(argv[i], "--inspect") && i + 1 < argc) cli_inspect = argv[++i];
         else if (!strcmp(argv[i], "--netlist") && i + 1 < argc) cli_netlist = argv[++i];
+        else if (!strcmp(argv[i], "--sketch") && i + 1 < argc) cli_sketch = argv[++i];
         else if (!strcmp(argv[i], "--line-weight") && i + 1 < argc) {
             g_render_line_weight = (float)atof(argv[++i]);
             if (g_render_line_weight < 0.5f) g_render_line_weight = 0.5f;
@@ -1601,6 +1603,40 @@ int main(int argc, char *argv[]) {
         // a few frames first so the resize event lands and the canvas rect is laid out
         for (int k = 0; k < 4; k++) { app_handle_events(&app); app_update(&app); app_render(&app); SDL_Delay(16); }
         app_place_template_centered(&app, cli_template_type);
+    }
+
+    /* A sketch from a file, into the first programmable block on the sheet - which means it
+       composes with --template: open Blink, load your own code, take a screenshot. */
+    if (cli_sketch) {
+        FILE *f = fopen(cli_sketch, "rb");
+        if (!f) fprintf(stderr, "Cannot open %s\n", cli_sketch);
+        else {
+            char src[MCU_SRC_MAX];
+            size_t got = fread(src, 1, sizeof src - 1, f);
+            int too_big = !feof(f);
+            fclose(f);
+            src[got] = 0;
+            Component *blk = NULL;
+            for (int i = 0; i < app.circuit->num_components && !blk; i++)
+                if (app.circuit->components[i] && app.circuit->components[i]->type == COMP_MCU)
+                    blk = app.circuit->components[i];
+            char serr[128] = "";
+            Sketch *probe = too_big ? NULL : sketch_compile(src, serr, sizeof serr);
+            if (too_big)
+                fprintf(stderr, "%s is larger than the %d characters a block holds\n", cli_sketch, MCU_SRC_MAX - 1);
+            else if (!probe)
+                fprintf(stderr, "%s: %s\n", cli_sketch, serr);
+            else if (!blk)
+                fprintf(stderr, "No programmable block on the sheet to load %s into\n", cli_sketch);
+            else {
+                snprintf(blk->props.mcu.source, MCU_SRC_MAX, "%s", src);
+                blk->props.mcu.compiled = true;
+                blk->props.mcu.status[0] = 0;
+                simulation_reset(app.simulation);
+                printf("loaded %s into %s\n", cli_sketch, blk->label);
+            }
+            sketch_free(probe);
+        }
     }
 
     // Main loop

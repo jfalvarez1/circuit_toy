@@ -726,7 +726,7 @@
                     <a href="#properties">10. Editing Properties</a>
                     <a href="#simulation">11. Running Simulations</a>
                     <a href="#templates">12. Circuit Templates</a>
-                    <a href="#text-circuits">12b. Writing a Circuit as Text</a>
+                    <a href="#text-circuits">12b. Text, Code and Blocks</a>
                 </div>
                 <div>
                     <div class="toc-section">Analysis Tools</div>
@@ -2192,7 +2192,7 @@ Probe readouts, the scope channel labels and the measurements switch to kV autom
 
         <!-- 12b. Circuits as text -->
         <section id="text-circuits" class="section">
-            <h2>12b. Writing a Circuit as Text</h2>
+            <h2>12b. Text, Code and Blocks</h2>
             <p>A circuit does not have to be drawn. Copy a parts list to the clipboard and press <strong>Paste</strong> in the left panel, and the schematic is built from it - which is how a build table out of a book or a lab sheet becomes something you can run.</p>
             <p>The format is SPICE-like: one part per line, its name, the two nets it sits between, then its value.</p>
             <pre>V1 in 0 DC 5
@@ -2205,6 +2205,18 @@ C1 mid 0 100n</pre>
                 <div class="note-title">Named nets</div>
                 <p>Anything sharing a net name is one wire, wherever it sits on the sheet. The table above never says where <code>mid</code> is; both resistors name it and that is enough to join them. You can name a node on a drawn schematic the same way, and two nodes with the same name are connected with no wire between them - useful for a supply rail you would rather not drag across the page. Press <strong>F2</strong> to show net names on the canvas.</p>
             </div>
+
+            <h3>Code as a part of the circuit</h3>
+            <p>The <strong>Code</strong> block (Parts panel, sub-circuits section) runs Arduino-shaped code and drives its pins from it. Open <strong>Blink (programmable block)</strong> from the Circuits tab to see one wired to an LED.</p>
+            <p>Copy a sketch and press the same <strong>Paste</strong> button - a sketch and a parts list are not mistakable for one another, so one button serves both. On the command line, <code>--sketch FILE</code> loads one into the block, which composes with <code>--template</code> and <code>--shot</code>.</p>
+            <pre>void setup() { pinMode(13, OUTPUT); }
+void loop()  { digitalWrite(13, HIGH); delay(500);
+               digitalWrite(13, LOW);  delay(500); }</pre>
+            <div class="note">
+                <div class="note-title">delay() is simulated time</div>
+                <p>The sketch runs against the circuit's own clock, not the wall clock, so <code>delay(500)</code> is half a second of simulated time however fast or slow the simulation is running. The pins are real circuit nodes: an output has 25 ohm of series resistance like a real port pin, so it gives 4.878 V into 1 k and 4.000 V into 100. <code>analogWrite</code> produces an actual 490 Hz square wave rather than its average, because the switching is what an RC or a motor winding averages.</p>
+            </div>
+            <p>It understands <code>setup</code>/<code>loop</code>, <code>pinMode</code>, <code>digitalWrite</code>, <code>digitalRead</code>, <code>analogWrite</code>, <code>analogRead</code>, <code>delay</code>, <code>delayMicroseconds</code>, <code>millis</code>, <code>micros</code>, variables, <code>if</code>/<code>else</code>, <code>for</code>, <code>while</code>, functions, and <code>Serial.print</code> to the status line. It does not do pointers, <code>String</code>, classes, libraries or interrupts - this drives pins in response to pin states and time. Pins are D2..D13 and A0..A1; a sketch that will not compile says so with the line number and the block stays inert.</p>
 
             <h3>Looking inside a block</h3>
             <p><strong>Double-click a block</strong> - a subcircuit, or one of the battery-instrument blocks - and its internals open as an ordinary schematic, with every discrete part where the definition puts it. <kbd>Esc</kbd> returns to the circuit you came from.</p>

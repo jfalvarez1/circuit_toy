@@ -19,6 +19,30 @@
 #include "app.h"
 #include "spice.h"
 #include "netlist.h"
+#include "sketch.h"
+
+/* Does this clipboard hold a sketch rather than a parts list? Two shapes that cannot be
+   confused: only one of them declares setup() or loop(). Checked before the netlist parser
+   gets it, so one Paste button serves both. */
+static bool app_clipboard_is_sketch(const char *t) {
+    if (!t) return false;
+    return strstr(t, "void setup") || strstr(t, "void loop") ||
+           strstr(t, "digitalWrite") || strstr(t, "pinMode");
+}
+
+/* The block a pasted sketch goes into: the selected one if a block is selected, otherwise the
+   only one on the sheet. With several and none selected it takes the first, which is the same
+   rule the rest of the program uses for an unqualified action. */
+static Component *app_find_mcu(App *app) {
+    Component *first = NULL;
+    for (int i = 0; i < app->circuit->num_components; i++) {
+        Component *c = app->circuit->components[i];
+        if (!c || c->type != COMP_MCU) continue;
+        if (c->selected) return c;
+        if (!first) first = c;
+    }
+    return first;
+}
 #include "crashlog.h"
 #include "version.h"
 #include "label.h"   /* label_wrap: framing has to measure text the way it is drawn */
@@ -321,6 +345,48 @@ void app_handle_events(App *app) {
                 if (!clip || !clip[0]) {
                     if (clip) SDL_free(clip);
                     ui_set_status(&app->ui, "Nothing on the clipboard. Copy a parts list first: one per line, like  R1 in vm1 10k");
+                    break;
+                }
+                /* One button, two kinds of clipboard. A parts list and a sketch are not
+                   mistakable for one another - only one of them has setup() and loop() in it -
+                   and asking the user to pick the right button for text they have already
+                   copied is a question the program can answer itself. */
+                if (app_clipboard_is_sketch(clip)) {
+                    Component *target = app_find_mcu(app);
+                    if (!target) {
+                        SDL_free(clip);
+                        ui_set_status(&app->ui, "That looks like a sketch, but there is no programmable block on the sheet. Add one from Parts (Code), or open the Blink circuit.");
+                        break;
+                    }
+                    if (strlen(clip) >= MCU_SRC_MAX) {
+                        char over[160];
+                        snprintf(over, sizeof over, "That sketch is %d characters and the block holds %d",
+                                 (int)strlen(clip), MCU_SRC_MAX - 1);
+                        SDL_free(clip);
+                        ui_set_status(&app->ui, over);
+                        break;
+                    }
+                    /* Compiled here and not left for the next step, so the error - with its line
+                       number - reaches the user while they are still looking at the paste. */
+                    char err[128] = "";
+                    Sketch *probe = sketch_compile(clip, err, sizeof err);
+                    if (!probe) {
+                        char why[224];
+                        snprintf(why, sizeof why, "That sketch will not compile: %s", err);
+                        SDL_free(clip);
+                        ui_set_status(&app->ui, why);
+                        break;
+                    }
+                    sketch_free(probe);
+                    circuit_push_edit_undo(app->circuit, target);
+                    snprintf(target->props.mcu.source, MCU_SRC_MAX, "%s", clip);
+                    target->props.mcu.compiled = true;
+                    target->props.mcu.status[0] = 0;
+                    SDL_free(clip);
+                    simulation_reset(app->simulation);
+                    char done[160];
+                    snprintf(done, sizeof done, "Sketch loaded into %s. Press Run.", target->label);
+                    ui_set_status(&app->ui, done);
                     break;
                 }
                 char msg[192] = "";
