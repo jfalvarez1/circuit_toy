@@ -1,6 +1,28 @@
 # Roadmap
 
-## A programmable block that runs pasted Arduino code (2026-09-02, proposed)
+## A programmable block that runs pasted Arduino code (2026-09-02, BUILT)
+
+**Built the same day it was proposed.** `COMP_MCU` is on the palette as **Code**, with the
+**Blink (programmable block)** template to open it on. What follows is the proposal as written;
+what shipped matches it, with these notes:
+
+- The clock warning below was the right one and it drove the whole design. The interpreter is
+  bytecode with a program counter, not a tree walk, because a tree walker cannot pause inside a
+  `for` loop and resume three thousand solver steps later - and `--sketch-test` has that exact
+  case, plus the same sketch at a tenth of the step size giving the same duty.
+- The sketch runs once per **accepted** step and never inside Newton, for the reason the relay
+  and the spark gap already had.
+- Pins are fourteen rather than configurable: D2..D13 and A0..A1, which is MAX_TERMINALS with
+  ground. D0 and D1 are left off because on the board they are the serial port.
+- The source lives in the Component as 1 KB of text. The compiled program lives in the
+  Simulation, keyed by component id, because a Component is cloned with a flat memcpy and a
+  pointer in there would be freed twice.
+- `analogWrite` is a real 490 Hz square wave, not its average - the switching is what an RC or
+  a motor winding is actually averaging.
+
+**Still to do:** somewhere better to type the code than the properties panel (the clipboard
+button and the command-line path described below), and the timing-granularity warning - a
+`delayMicroseconds(1)` against a 10 us step still rounds silently.
 
 **The goal is not an Arduino emulator.** Nobody needs AVR instruction timing here, and building
 it would be months of work for a result whose value to a circuit is nil. What is wanted is much

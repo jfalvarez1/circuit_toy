@@ -229,6 +229,7 @@ typedef enum {
     CIRCUIT_BMI_CC_OUTPUT,
     CIRCUIT_BMI_OCP,
     CIRCUIT_BMI_RAIL,
+    CIRCUIT_MCU_BLINK,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 

@@ -353,6 +353,8 @@ static const CircuitTemplateInfo template_info[] = {
     [CIRCUIT_BMI_INSTRUMENT] = {"BMI: Full Instrument", "BMI", "the window comparator, the enable and the pass device", TG_BMI},
     [CIRCUIT_BMI_CC_OUTPUT] = {"BMI: CC Output (LM317 current source)", "CCout", "one resistor round an LM317 makes a current source", TG_BMI},
     [CIRCUIT_BMI_OCP] = {"BMI: Over-current Trip", "OCP", "sense, threshold, relay - and the load goes away", TG_BMI},
+    [CIRCUIT_MCU_BLINK] = {"Blink (programmable block)", "Blink",
+        "Arduino-shaped code driving an LED, solved with the circuit", TG_DIGITAL},
     [CIRCUIT_BMI_RAIL] = {"BMI: Switching Rail (MC34063)", "Rail", "a divider sets the output, not a duty cycle", TG_BMI},
 
 
@@ -6432,6 +6434,7 @@ static int place_bmi_instrument(Circuit *circuit, float x, float y);
 static int place_bmi_cc_output(Circuit *circuit, float x, float y);
 static int place_bmi_ocp(Circuit *circuit, float x, float y);
 static int place_bmi_rail(Circuit *circuit, float x, float y);
+static int place_mcu_blink(Circuit *circuit, float x, float y);
 static int place_tline_real(Circuit *circuit, float x, float y);
 static int place_sevenseg_test(Circuit *circuit, float x, float y);
 static int place_wireless_link(Circuit *circuit, float x, float y);
@@ -6783,6 +6786,7 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_BMI_INSTRUMENT:     return place_bmi_instrument(circuit, x, y);
         case CIRCUIT_BMI_CC_OUTPUT:      return place_bmi_cc_output(circuit, x, y);
         case CIRCUIT_BMI_OCP:            return place_bmi_ocp(circuit, x, y);
+        case CIRCUIT_MCU_BLINK:          return place_mcu_blink(circuit, x, y);
         case CIRCUIT_BMI_RAIL:           return place_bmi_rail(circuit, x, y);
         case CIRCUIT_TLINE_REAL:         return place_tline_real(circuit, x, y);
         case CIRCUIT_SEVENSEG_TEST:      return place_sevenseg_test(circuit, x, y);
@@ -7185,6 +7189,12 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
         "coil whose contact shorts the pass MOSFET's gate to its own source - which turns it off. 0.65 of the",
         "sense voltage reaching 0.65 V means the trip is at about 1 A. LOWER THE LOAD from 10 ohm to 2 and it",
         "trips; it does not latch, so it retries - which is what a protection without a reset button does."},
+    [CIRCUIT_MCU_BLINK] = {"BLINK: the code is part of the circuit. The block runs its sketch against SIMULATED time, so",
+                           "delay(5) is five milliseconds of the circuit's own clock however fast the simulation is running.",
+                           "D13 drives 220 ohm and an LED through 25 ohm of port resistance, which is why the pin sits at",
+                           "4.69 V and not 5. Double the delays and the trace halves in frequency; put 500 there for the",
+                           "blink you would watch on a real LED, and wind the time base out to see it.",
+                           "PROBE: auto-placed on the driven pin. Select the block and paste your own sketch into it."},
     [CIRCUIT_BMI_RAIL] = {"THE SWITCHING RAIL: the instrument's 3.3 V comes from an MC34063, and the thing",
         "worth taking from it is that NOTHING here sets a duty cycle. A comparator watches a divider against",
         "an internal 1.25 V and closes the switch whenever the output has sagged below it, so the output is",
@@ -13638,6 +13648,57 @@ static int place_bmi_ocp(Circuit *circuit, float x, float y) {
     return 19;
 }
 
+
+static int place_mcu_blink(Circuit *circuit, float x, float y) {
+    /* The first sketch anybody writes, wired to something that shows it. The point of the
+       template is not the LED - it is that the code is a part of the circuit: the block is
+       solved with everything else, its pin has a real 25 ohm of output resistance, and the
+       scope trace is the node, not an animation of what the code intended.
+
+       Two hundred and fifty milliseconds rather than the traditional five hundred, so a couple
+       of seconds of scope holds four whole cycles. Edit the delays and the trace follows. */
+    Component *mcu = add_comp(circuit, COMP_MCU, x + 140, y + 180, 0);
+    if (!mcu) return 0;
+    snprintf(mcu->props.mcu.source, MCU_SRC_MAX,
+             "void setup() {\n"
+             "  pinMode(13, OUTPUT);\n"
+             "}\n"
+             "\n"
+             "void loop() {\n"
+             "  digitalWrite(13, HIGH);\n"
+             "  delay(5);\n"
+             "  digitalWrite(13, LOW);\n"
+             "  delay(5);\n"
+             "}\n");
+    const ComponentTypeInfo *ci = component_get_info(COMP_MCU);
+    for (int k = 0; k < MCU_PINS; k++)
+        mcu->node_ids[k] = TN(mcu->x + ci->terminals[k].dx, mcu->y + ci->terminals[k].dy);
+
+    /* D13 out through the series resistor and the LED to ground */
+    int d13 = mcu->node_ids[11];
+    Component *r1 = hres(circuit, x + 320, y + 220, 220.0);   /* (280,220)-(360,220) */
+    TW(d13, TN(x + 280, y + 220));
+
+    Component *led = add_comp(circuit, COMP_LED, x + 440, y + 220, 0);   /* A(400) K(480) */
+    led->node_ids[0] = TN(x + 400, y + 220);
+    led->node_ids[1] = TN(x + 480, y + 220);
+    TW(TN(x + 360, y + 220), led->node_ids[0]);
+    (void)r1;
+
+    int kdown = TN(x + 480, y + 320);
+    TW(led->node_ids[1], kdown);
+    Component *g1 = add_comp(circuit, COMP_GROUND, x + 480, y + 340, 0);
+    g1->node_ids[0] = kdown;
+
+    /* the block's own ground pin - an output drives against it, so it has to be wired */
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 140, y + 380, 0);
+    g2->node_ids[0] = TN(x + 140, y + 360);
+    TW(mcu->node_ids[MCU_GND_PIN], g2->node_ids[0]);
+
+    add_label(circuit, x + 60, y - 40, "PASTE YOUR OWN SKETCH: select the block and paste code into it");
+    return 6;
+}
+
 static int place_bmi_rail(Circuit *circuit, float x, float y) {
     /* The power stage is an ordinary buck - switch, catch diode, inductor, output capacitor.
        What makes it the instrument's rail is the loop around it: a comparator holding a divider
@@ -14466,6 +14527,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_INSTRUMENT]   = { COMP_RESISTOR, 3, 0 },     /* across the load: on when the cell is in range */
     [CIRCUIT_BMI_CC_OUTPUT]    = { COMP_RESISTOR, 2, 0 },     /* the load the current source is driving */
     [CIRCUIT_BMI_OCP]          = { COMP_RESISTOR, 1, 0 },     /* the load: live until the trip takes it away */
+    [CIRCUIT_MCU_BLINK]        = { COMP_RESISTOR, 0, 0 },    /* the driven pin: a square wave the code made */
     [CIRCUIT_BMI_RAIL]         = { COMP_RESISTOR, 0, 0 },     /* the rail the divider is holding up */
     [CIRCUIT_IV_BUCK_NODES]    = { COMP_RESISTOR, 2, 0 },     /* the output, after L and C */
     /* Resistor 0 is the linear regulator's load, resistor 1 the switcher's. The output probe was
@@ -14499,6 +14561,10 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
    right-aligns them against the graticule, so a short name is worth more than a precise one. */
 static const TemplateProbeSpec template_extra_probes[CIRCUIT_TYPE_COUNT][3] = {
     [CIRCUIT_3PH_Y_BALANCED]   = { { COMP_RESISTOR, 5, 0, "PH C" }, { COMP_RESISTOR, 6, 0, "NEUT" } },      // phase C load, neutral (A = source probe)
+    /* The LED anode as well as the pin. The block is its own stimulus - there is no source
+       component to put CH1 on - and the two traces together are the useful pair: the pin
+       squaring between 0 and 4.69 V, and what is left of it after the 220 ohm. */
+    [CIRCUIT_MCU_BLINK]        = { { COMP_LED, 0, 0, "LED" } },
     [CIRCUIT_DIFFERENTIAL_PAIR] = { { COMP_NPN_BJT, 1, 1, "VC2" } },                                // Q2 collector: the mirror image
     [CIRCUIT_3PH_UNBALANCED]   = { { COMP_RESISTOR, 3, 0, "PH B" }, { COMP_RESISTOR, 5, 0, "PH C" } },
     [CIRCUIT_3PH_345_LINE]     = { { COMP_RESISTOR, 0, 0, "PH A" }, { COMP_RESISTOR, 2, 0, "PH C" } },      // phase A, C loads
@@ -14660,6 +14726,7 @@ static const double template_time_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_ELOAD_CC] = 1e-3, [CIRCUIT_BMI_ELOAD_CR] = 1e-3, [CIRCUIT_BMI_ELOAD_CV] = 1e-3,
     [CIRCUIT_BMI_THERMAL_CUTOUT] = 1e-3, [CIRCUIT_BMI_SUPERCAP] = 0.5,
     [CIRCUIT_BMI_CHARGER_CC] = 1e-3, [CIRCUIT_BMI_CHARGER_CV] = 1e-3, [CIRCUIT_BMI_INSTRUMENT] = 1e-3,
+    [CIRCUIT_MCU_BLINK] = 2e-3,     /* ten divisions is 20 ms: two cycles of the 100 Hz default */
     [CIRCUIT_BMI_CC_OUTPUT] = 1e-3, [CIRCUIT_BMI_OCP] = 1e-3, [CIRCUIT_BMI_RAIL] = 2e-5,
     [CIRCUIT_IV_BUCK_NODES] = 2e-6,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2e-6, [CIRCUIT_IV_BOOTSTRAP] = 2e-6,
@@ -14720,6 +14787,7 @@ static const double template_volt_div[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_ELOAD_CC] = 2.0, [CIRCUIT_BMI_ELOAD_CR] = 0.5, [CIRCUIT_BMI_ELOAD_CV] = 1.0,
     [CIRCUIT_BMI_THERMAL_CUTOUT] = 5.0, [CIRCUIT_BMI_SUPERCAP] = 2.0,
     [CIRCUIT_BMI_CHARGER_CC] = 5.0, [CIRCUIT_BMI_CHARGER_CV] = 5.0, [CIRCUIT_BMI_INSTRUMENT] = 1.0,
+    [CIRCUIT_MCU_BLINK] = 2.0,       /* 0 to 4.9 V: the pin, full scale */
     [CIRCUIT_BMI_CC_OUTPUT] = 0.5, [CIRCUIT_BMI_OCP] = 2.0, [CIRCUIT_BMI_RAIL] = 2.0,
     [CIRCUIT_IV_BUCK_NODES] = 2.0,
     [CIRCUIT_IV_LDO_VS_BUCK] = 2.0, [CIRCUIT_IV_BOOTSTRAP] = 10,
@@ -14913,6 +14981,7 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BMI_INSTRUMENT]   = { DEMO_DC, 0 },
     [CIRCUIT_BMI_CC_OUTPUT]    = { DEMO_DC, 0 },
     [CIRCUIT_BMI_OCP]          = { DEMO_DC, 0 },
+    [CIRCUIT_MCU_BLINK]        = { DEMO_WAVEFORM, 0 },
     [CIRCUIT_BMI_RAIL]         = { DEMO_DC, 0 },
     [CIRCUIT_IV_BUCK_NODES]    = { DEMO_DC, 0 },
     [CIRCUIT_IV_LDO_VS_BUCK]   = { DEMO_DC, 0 },
@@ -15020,6 +15089,7 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
        that shows the rail, that ripple is a fraction of a pixel - which is the case --probe-audit
        flags, and it is right to. Each channel gets its own band so the ripple is legible beside
        the 12 V input rather than a flat line under it. */
+    [CIRCUIT_MCU_BLINK] = SCOPE_FLAG_FIT,
     [CIRCUIT_BMI_RAIL] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_SINGLE_TUNED_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_SUMMING_AMP] = SCOPE_FLAG_STACK, [CIRCUIT_DIFFERENCE_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_INSTR_AMP] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT, [CIRCUIT_SUPERPOSITION] = SCOPE_FLAG_STACK,
