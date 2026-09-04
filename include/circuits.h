@@ -240,6 +240,12 @@ typedef enum {
        them to a solver on every commit, so a value changed here silently breaks that agreement.
        --ee-test checks this circuit against the course's own expected values. */
     CIRCUIT_EE_STRAIN_BRIDGE,
+    /* Module 17: converters. Same rule as the strain bridge - the values are the course's and
+       --ee-test holds both against the numbers the course publishes. The string DAC's R3 is
+       deliberately 1.5k where the other three are 1k; that is the lesson, not a typo, and it is
+       what produces the 1.33 LSB step the table is about. */
+    CIRCUIT_EE_DAC_R2R,
+    CIRCUIT_EE_DAC_STRING,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 
@@ -266,6 +272,7 @@ typedef enum {
     TG_IV_SI,           // Interview prep: I/O, termination and signal integrity
     TG_BMI,             // Battery monitoring and electronic load: sink, charger, cutout, simulator
     TG_SENSORS,         // Bridges, RTDs, thermocouples, strain: turning a physical quantity into volts
+    TG_DATACONV,        // Data conversion: ladders, resistor strings, DNL/INL, the codes in between
     TG_COUNT
 } TemplateGroup;
 

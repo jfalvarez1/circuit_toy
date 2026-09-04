@@ -938,8 +938,34 @@ static int ee_test(void) {
         const struct Expect *expect;
         int n;
     };
+    /* EE_Review m17l01, "DAC Fundamentals". Probe order is n0, n1, n2, n3, vout.
+       These five were checked a second way before being written down: converted to a netlist and
+       solved at open-loop gains of 1e5 and 1e4, where the four ladder nodes came back BIT-
+       IDENTICAL across the tenfold change. A number that does not move when the amplifier's gain
+       moves by 10x is a statement about the ladder, not about the model of the buffer. */
+    static const struct Expect dac_r2r[] = {
+        { "V(n0), the LSB rung",                  0, -1, 1.171875, 0.01, "V", 1.0 },
+        { "V(n1)",                                1, -1, 2.34375,  0.01, "V", 1.0 },
+        { "V(n2)",                                2, -1, 2.1875,   0.01, "V", 1.0 },
+        { "V(n3), the MSB ladder node",           3, -1, 3.125,    0.01, "V", 1.0 },
+        { "V(vout), the buffered output",         4, -1, 3.125,    0.01, "V", 1.0 },
+    };
+    /* EE_Review m17l16, "DNL, INL and Missing Codes". Probe order is t3, t2, t1, buf.
+       The taps are unequal on purpose - R3 is 1.5k where the rest are 1k - so t2 sits 138.9 mV
+       above its ideal 1.250 V and the t1->t2 step is 1.33 LSB. If someone "fixes" R3 to 1k these
+       three numbers all move and this fails, which is the intent. */
+    static const struct Expect dac_string[] = {
+        { "V(t3), code 3",                        0, -1, 1.94444,  0.01, "V",  1.0    },
+        { "V(t2), code 2 - 138.9 mV of INL",      1, -1, 1.38889,  0.01, "V",  1.0    },
+        { "V(t1), code 1",                        2, -1, 555.56,   5.0,  "mV", 1000.0 },
+        /* Not one of the course's four: the buffer must reproduce its own input. A follower that
+           does anything else here would be a fault in this program, not a disagreement. */
+        { "V(buf), the follower on t2",           3, -1, 1.38889,  0.01, "V",  1.0    },
+    };
     static const struct Case cases[] = {
         { CIRCUIT_EE_STRAIN_BRIDGE, "m18l07", strain, (int)(sizeof strain / sizeof strain[0]) },
+        { CIRCUIT_EE_DAC_R2R,       "m17l01", dac_r2r, (int)(sizeof dac_r2r / sizeof dac_r2r[0]) },
+        { CIRCUIT_EE_DAC_STRING,    "m17l16", dac_string, (int)(sizeof dac_string / sizeof dac_string[0]) },
     };
     const int NCASES = (int)(sizeof cases / sizeof cases[0]);
 

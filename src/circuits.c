@@ -361,6 +361,10 @@ static const CircuitTemplateInfo template_info[] = {
         "the three stages of a lead-acid charger, and what each one does", TG_BMI},
     [CIRCUIT_EE_STRAIN_BRIDGE] = {"Strain Gauge Bridge", "Strain",
         "350 ohm bridge, one active gauge, and 12.4 mV out of 5 V", TG_SENSORS},
+    [CIRCUIT_EE_DAC_R2R] = {"R-2R Ladder DAC", "R2R",
+        "code 1010 into 10k/20k rungs: every node halves, and out is 3.125 V", TG_DATACONV},
+    [CIRCUIT_EE_DAC_STRING] = {"String DAC: DNL and INL", "StrDAC",
+        "one tap resistor 1.5k instead of 1k - a 1.33 LSB step and 138.9 mV of INL", TG_DATACONV},
     [CIRCUIT_BATT_CHEMISTRIES] = {"Battery Chemistries Compared", "Chem",
         "alkaline, NiMH, LiFePO4 and Li-ion into the same load", TG_BMI},
     [CIRCUIT_BATT_CHARGING] = {"Charging by Chemistry", "Charge",
@@ -6473,6 +6477,8 @@ static int place_batt_charging(Circuit *circuit, float x, float y);
 static int place_batt_lead_stages(Circuit *circuit, float x, float y);
 static int place_batt_chemistries(Circuit *circuit, float x, float y);
 static int place_ee_strain_bridge(Circuit *circuit, float x, float y);
+static int place_ee_dac_r2r(Circuit *circuit, float x, float y);
+static int place_ee_dac_string(Circuit *circuit, float x, float y);
 static int place_tline_real(Circuit *circuit, float x, float y);
 static int place_sevenseg_test(Circuit *circuit, float x, float y);
 static int place_wireless_link(Circuit *circuit, float x, float y);
@@ -6831,6 +6837,8 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_BATT_LEAD_STAGES:   return place_batt_lead_stages(circuit, x, y);
         case CIRCUIT_BATT_CHEMISTRIES:   return place_batt_chemistries(circuit, x, y);
         case CIRCUIT_EE_STRAIN_BRIDGE:   return place_ee_strain_bridge(circuit, x, y);
+        case CIRCUIT_EE_DAC_R2R:         return place_ee_dac_r2r(circuit, x, y);
+        case CIRCUIT_EE_DAC_STRING:      return place_ee_dac_string(circuit, x, y);
         case CIRCUIT_BMI_RAIL:           return place_bmi_rail(circuit, x, y);
         case CIRCUIT_TLINE_REAL:         return place_tline_real(circuit, x, y);
         case CIRCUIT_SEVENSEG_TEST:      return place_sevenseg_test(circuit, x, y);
@@ -7245,6 +7253,18 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
                                   "quarter of a percent of the excitation, which is why the x100 amplifier is not optional.",
                                   "Both halves drift together with temperature, which is the reason for the bridge at all.",
                                   "PROBE: vplus, vminus and out. Set R3 back to 350 for zero strain. (EE_Review m18l07)"},
+    [CIRCUIT_EE_DAC_R2R] = {"R-2R LADDER DAC: four bits set to 1010 - b3 and b1 at 5 V, b2 and b0 at 0 - which is",
+                            "10 of 16, so the output is 10/16 x 5 = 3.125 V. Every rung sees 20k to its own bit and",
+                            "10k along the chain, and that is the whole trick: looking back from any node the ladder",
+                            "always presents the same resistance, so each bit contributes exactly half the one above.",
+                            "The four ladder nodes are the lesson - 1.171875, 2.34375, 2.1875 and 3.125 V.",
+                            "RTERM carries no current: the buffer draws none, so out sits at V(n3). (EE_Review m17l01)"},
+    [CIRCUIT_EE_DAC_STRING] = {"STRING DAC, DNL AND INL: four taps off 2.5 V that should each be a quarter, except R3",
+                               "is 1.5k where the others are 1k. That one resistor is the whole lesson. The taps land at",
+                               "0.556, 1.389 and 1.944 V instead of 0.625, 1.250 and 1.875, so the step from t1 to t2 is",
+                               "1.33 LSB rather than 1 - that is the DNL - and t2 sits 138.9 mV above where its code says",
+                               "- that is the INL. A step over 2 LSB would skip a code entirely and the DAC would be",
+                               "non-monotonic. Set R3 to 1k to see all three errors go to zero. (EE_Review m17l16)"},
     [CIRCUIT_BATT_CHEMISTRIES] = {"CHEMISTRIES: four cells at the same state of charge into the same 10 ohm load. The",
                                   "voltages differ - 1.5, 1.2, 3.2, 3.7 nominal - and so does what happens as they empty:",
                                   "the LiFePO4 holds its voltage across most of its range and then falls off a cliff, while",
@@ -13960,6 +13980,173 @@ static int place_ee_strain_bridge(Circuit *circuit, float x, float y) {
     return 6;
 }
 
+/* EE_Review module 17 lesson 01: the R-2R ladder.
+ *
+ * Four bits driven as 1010 - b3 and b1 at 5 V, b2 and b0 at 0 - which is 10 of 16, so the output
+ * is 3.125 V. The ladder is the point of the lesson rather than the output: every rung sees 20k
+ * to its bit and 10k along the chain, so each node is the running half-sum of everything above
+ * it, and the course tabulates all four. Those four values are what --ee-test holds.
+ *
+ * RTERM carries no current, because the buffer's input draws none - so `out` sits at V(n3) and
+ * the termination resistor is there to define the impedance, not to divide anything. The buffer
+ * is an ideal unity VCVS: the lesson's op-amp is a follower, and a follower with its loop closed
+ * is a gain of one to within 1/A. */
+static int place_ee_dac_r2r(Circuit *circuit, float x, float y) {
+    /* The chain: n0 .. n3 left to right along one rail, 10k between neighbours. */
+    Component *ra = hres(circuit, x - 200, y, 10e3);
+    Component *rb = hres(circuit, x,       y, 10e3);
+    Component *rc = hres(circuit, x + 200, y, 10e3);
+    Component *rt = hres(circuit, x + 400, y, 10e3);      /* RTERM */
+    if (!ra || !rb || !rc || !rt) return 0;
+
+    TW(TN(x - 300, y), TN(x - 240, y));  TW(TN(x - 160, y), TN(x - 100, y));
+    TW(TN(x - 100, y), TN(x -  40, y));  TW(TN(x +  40, y), TN(x + 100, y));
+    TW(TN(x + 100, y), TN(x + 160, y));  TW(TN(x + 240, y), TN(x + 300, y));
+    TW(TN(x + 300, y), TN(x + 360, y));
+
+    /* The 2R rungs, one per bit, hanging below their node. */
+    Component *r0 = vres(circuit, x - 300, y + 100, 20e3);
+    Component *r1 = vres(circuit, x - 100, y + 100, 20e3);
+    Component *r2 = vres(circuit, x + 100, y + 100, 20e3);
+    Component *r3 = vres(circuit, x + 300, y + 100, 20e3);
+    if (!r0 || !r1 || !r2 || !r3) return 0;
+    TW(TN(x - 300, y), TN(x - 300, y + 60));  TW(TN(x - 100, y), TN(x - 100, y + 60));
+    TW(TN(x + 100, y), TN(x + 100, y + 60));  TW(TN(x + 300, y), TN(x + 300, y + 60));
+
+    /* The terminating 2R at the bottom of the ladder, out to the left so it does not sit under
+       a rung and get read as one. */
+    Component *r0a = vres(circuit, x - 460, y + 100, 20e3);
+    if (!r0a) return 0;
+    TW(TN(x - 300, y), TN(x - 460, y));
+    TW(TN(x - 460, y), TN(x - 460, y + 60));
+    TW(TN(x - 460, y + 140), TN(x - 460, y + 300));
+    TW(TN(x - 460, y + 300), TN(x - 300, y + 300));
+
+    /* The four bit sources. 1010: b3 and b1 high. */
+    static const double bit[4] = { 0.0, 5.0, 0.0, 5.0 };     /* b0, b1, b2, b3 */
+    for (int i = 0; i < 4; i++) {
+        float bx = x - 300 + 200.0f * i;
+        Component *v = add_comp(circuit, COMP_DC_VOLTAGE, bx, y + 220, 90);
+        if (!v) return 0;
+        v->props.dc_voltage.voltage = bit[i];
+        v->node_ids[0] = TN(bx, y + 180);
+        v->node_ids[1] = TN(bx, y + 260);
+        TW(TN(bx, y + 140), TN(bx, y + 180));
+        TW(TN(bx, y + 260), TN(bx, y + 300));
+    }
+    /* The return rail, drawn as one segment BETWEEN each junction rather than one long wire
+       across all of them. A wire joins its two endpoints and nothing else, so a node that merely
+       lies along a longer wire is not connected to it - the four bit sources came back floating
+       in series and the ladder solved as a plain chain with equal steps. It looks identical on
+       the canvas either way, which is what makes it worth a comment. */
+    TW(TN(x - 300, y + 300), TN(x - 100, y + 300));
+    TW(TN(x - 100, y + 300), TN(x,       y + 300));
+    TW(TN(x,       y + 300), TN(x + 100, y + 300));
+    TW(TN(x + 100, y + 300), TN(x + 300, y + 300));
+
+    Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 360, 0);
+    if (gnd) { gnd->node_ids[0] = TN(x, y + 360); TW(TN(x, y + 300), TN(x, y + 360)); }
+
+    /* The follower. Its + input is the ladder's output; the loop is closed by the unity gain
+       itself, which is what makes 1/A the whole error. */
+    Component *e = add_comp(circuit, COMP_VCVS, x + 560, y - 60, 0);
+    if (!e) return 0;
+    e->props.controlled_source.gain = 1.0;
+    TW(TN(x + 440, y), TN(x + 440, y - 80));
+    TW(TN(x + 440, y - 80), TN(x + 520, y - 80));
+    e->node_ids[0] = TN(x + 520, y - 80);
+    e->node_ids[1] = TN(x + 520, y - 40);
+    e->node_ids[2] = TN(x + 600, y - 80);
+    e->node_ids[3] = TN(x + 600, y - 40);
+    TW(TN(x + 600, y - 80), TN(x + 700, y - 80));
+
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 560, y + 140, 0);
+    if (g2) {
+        g2->node_ids[0] = TN(x + 560, y + 140);
+        TW(TN(x + 520, y - 40), TN(x + 520, y + 80));
+        TW(TN(x + 520, y + 80), TN(x + 560, y + 80));
+        TW(TN(x + 600, y - 40), TN(x + 600, y + 80));
+        TW(TN(x + 600, y + 80), TN(x + 560, y + 80));
+        TW(TN(x + 560, y + 80), TN(x + 560, y + 140));
+    }
+
+    add_label(circuit, x - 560, y - 140, "code 1010 = 10/16 of 5 V = 3.125 V");
+    add_label(circuit, x - 560, y + 340, "b0=0  b1=5  b2=0  b3=5");
+    add_label(circuit, x + 300, y - 180, "unity buffer");
+
+    probe_named(circuit, r0, 0, "n0");
+    probe_named(circuit, r1, 0, "n1");
+    probe_named(circuit, r2, 0, "n2");
+    probe_named(circuit, r3, 0, "n3");
+    probe_named(circuit, e,  2, "vout");
+    return 13;
+}
+
+/* EE_Review module 17 lesson 16: DNL, INL and missing codes, on a resistor-string DAC.
+ *
+ * Four taps that should each be a quarter of 2.5 V, except R3 is 1.5k where the others are 1k.
+ * That single wrong resistor is the whole lesson: the step from t1 to t2 becomes 1.33 LSB
+ * instead of 1, and t2 lands 138.9 mV above where the code says it should. The three tap
+ * voltages are the course's verified numbers and --ee-test holds them.
+ *
+ * Worth keeping straight when reading this: R3 being 1.5k is not a mistake to fix. */
+static int place_ee_dac_string(Circuit *circuit, float x, float y) {
+    Component *r1 = vres(circuit, x, y - 180, 1000.0);
+    Component *r2 = vres(circuit, x, y -  60, 1000.0);
+    Component *r3 = vres(circuit, x, y +  60, 1500.0);    /* the wide one - the lesson */
+    Component *r4 = vres(circuit, x, y + 180, 1000.0);
+    if (!r1 || !r2 || !r3 || !r4) return 0;
+
+    TW(TN(x, y - 140), TN(x, y - 100));      /* t3 */
+    TW(TN(x, y -  20), TN(x, y +  20));      /* t2 */
+    TW(TN(x, y + 100), TN(x, y + 140));      /* t1 */
+
+    /* 2.5 V reference, out to the left so its return does not run back down the string. */
+    Component *vref = add_comp(circuit, COMP_DC_VOLTAGE, x - 240, y - 180, 90);
+    if (!vref) return 0;
+    vref->props.dc_voltage.voltage = 2.5;
+    vref->node_ids[0] = TN(x - 240, y - 220);
+    vref->node_ids[1] = TN(x - 240, y - 140);
+    TW(TN(x - 240, y - 220), TN(x, y - 220));
+    TW(TN(x - 240, y - 140), TN(x - 240, y + 300));
+    TW(TN(x - 240, y + 300), TN(x, y + 300));
+    TW(TN(x, y + 220), TN(x, y + 300));
+
+    Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 360, 0);
+    if (gnd) { gnd->node_ids[0] = TN(x, y + 360); TW(TN(x, y + 300), TN(x, y + 360)); }
+
+    /* The buffer sits on t2, the tap the lesson measures the error at. */
+    Component *e = add_comp(circuit, COMP_VCVS, x + 300, y, 0);
+    if (!e) return 0;
+    e->props.controlled_source.gain = 1.0;
+    TW(TN(x, y - 20), TN(x + 260, y - 20));
+    e->node_ids[0] = TN(x + 260, y - 20);
+    e->node_ids[1] = TN(x + 260, y + 20);
+    e->node_ids[2] = TN(x + 340, y - 20);
+    e->node_ids[3] = TN(x + 340, y + 20);
+    TW(TN(x + 340, y - 20), TN(x + 440, y - 20));
+
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 300, y + 220, 0);
+    if (g2) {
+        g2->node_ids[0] = TN(x + 300, y + 220);
+        TW(TN(x + 260, y + 20), TN(x + 260, y + 160));
+        TW(TN(x + 260, y + 160), TN(x + 300, y + 160));
+        TW(TN(x + 340, y + 20), TN(x + 340, y + 160));
+        TW(TN(x + 340, y + 160), TN(x + 300, y + 160));
+        TW(TN(x + 300, y + 160), TN(x + 300, y + 220));
+    }
+
+    add_label(circuit, x - 460, y - 280, "2.5 V reference");
+    add_label(circuit, x - 460, y + 60,  "R3 1.5k, not 1k");
+    add_label(circuit, x + 240, y - 140, "unity buffer");
+
+    probe_named(circuit, r1, 1, "t3");
+    probe_named(circuit, r2, 1, "t2");
+    probe_named(circuit, r3, 1, "t1");
+    probe_named(circuit, e,  2, "buf");
+    return 8;
+}
+
 static int place_batt_chemistries(Circuit *circuit, float x, float y) {
     /* Four chemistries at the same state of charge into the same load. The voltages differ, and
        so does what happens as they empty - which is the reason chemistry is a property and not a
@@ -14907,6 +15094,8 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BATT_LEAD_STAGES] = { COMP_RESISTOR, 0, 1 },    /* the bulk pack's terminal */
     [CIRCUIT_BATT_CHEMISTRIES] = { COMP_RESISTOR, 0, 0 },    /* the alkaline column */
     [CIRCUIT_EE_STRAIN_BRIDGE] = { COMP_RESISTOR, 1, 0 },    /* R3, the active gauge */
+    [CIRCUIT_EE_DAC_R2R]       = { COMP_VCVS, 0, 2 },        /* the follower's output */
+    [CIRCUIT_EE_DAC_STRING]    = { COMP_VCVS, 0, 2 },        /* the follower on t2 */
     [CIRCUIT_MCU_BLINK]        = { COMP_RESISTOR, 0, 0 },    /* the driven pin: a square wave the code made */
     [CIRCUIT_BMI_RAIL]         = { COMP_RESISTOR, 0, 0 },     /* the rail the divider is holding up */
     [CIRCUIT_IV_BUCK_NODES]    = { COMP_RESISTOR, 2, 0 },     /* the output, after L and C */
@@ -15374,6 +15563,9 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BATT_LEAD_STAGES] = { DEMO_DC, 0 },
     [CIRCUIT_BATT_CHEMISTRIES] = { DEMO_DC, 0 },
     [CIRCUIT_EE_STRAIN_BRIDGE] = { DEMO_DC, 0 },
+    /* Both converters are bias networks with fixed codes: nothing moves, so DC is the contract. */
+    [CIRCUIT_EE_DAC_R2R]       = { DEMO_DC, 0 },
+    [CIRCUIT_EE_DAC_STRING]    = { DEMO_DC, 0 },
     [CIRCUIT_MCU_BLINK]        = { DEMO_WAVEFORM, 0 },
     [CIRCUIT_BMI_RAIL]         = { DEMO_DC, 0 },
     [CIRCUIT_IV_BUCK_NODES]    = { DEMO_DC, 0 },
@@ -15708,7 +15900,8 @@ const char *circuit_template_group_name(TemplateGroup g) {
         "Interview: instrumentation & scope", "Interview: fundamentals",
         "Interview: power & converters", "Interview: I/O & signal integrity",
         "Battery monitoring & e-load",
-        "Sensors & bridges"
+        "Sensors & bridges",
+        "Data conversion"
     };
     return (g >= 0 && g < TG_COUNT) ? names[g] : "?";
 }

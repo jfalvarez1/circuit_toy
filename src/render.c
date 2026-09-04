@@ -2200,14 +2200,48 @@ void render_probe(RenderContext *ctx, Circuit *circuit, Probe *probe, int index)
         render_draw_line(ctx, b1x + ux * 7 - px * 7, b1y + uy * 7 - py * 7,
                               b1x + ux * 8 - px * 18, b1y + uy * 8 - py * 18);
 
-        // Barrel: three thin strokes wide, in the channel's colour
+        /* Barrel: a grip rather than a hairline. Three strokes 0.75 apart came to about three
+           units across, which at the usual zoom is the same weight as a wire - so the probe read
+           as flat, and as one more line on the canvas. This is wider, tapered slightly toward the
+           cap the way a moulded handle is, and shaded down one side with a highlight along the
+           other so it reads as round instead of as a ribbon. */
         render_set_color(ctx, probe->color);
-        for (float o = -1.5f; o <= 1.5f; o += 0.75f)
-            render_draw_line(ctx, b0x + px*o, b0y + py*o, b1x + px*o, b1y + py*o);
+        for (float o = -2.6f; o <= 2.6f; o += 0.5f)
+            render_draw_line(ctx, b0x + px*o, b0y + py*o, b1x + px*o*0.78f, b1y + py*o*0.78f);
 
-        // Collar at the business end, cap at the other
-        render_fill_circle(ctx, b0x, b0y, 2.6f);
-        render_fill_circle(ctx, b1x, b1y, 2.4f);
+        Color shade = { (uint8_t)(probe->color.r * 0.45f), (uint8_t)(probe->color.g * 0.45f),
+                        (uint8_t)(probe->color.b * 0.45f), 0xff };
+        Color lite  = { (uint8_t)(probe->color.r + (255 - probe->color.r) * 0.60f),
+                        (uint8_t)(probe->color.g + (255 - probe->color.g) * 0.60f),
+                        (uint8_t)(probe->color.b + (255 - probe->color.b) * 0.60f), 0xff };
+        render_set_color(ctx, shade);
+        render_draw_line(ctx, b0x + px*2.6f, b0y + py*2.6f, b1x + px*2.05f, b1y + py*2.05f);
+        render_set_color(ctx, lite);
+        render_draw_line(ctx, b0x - px*1.3f, b0y - py*1.3f, b1x - px*1.00f, b1y - py*1.00f);
+
+        /* The finger guard - the flange a real probe carries just behind the needle, the thing
+           that stops a hand sliding onto the point. It is also what gives the silhouette its
+           shape: an upside-down T, crossbar at the business end and the shaft running back to
+           the cable. It sits ten units back from the contact point, so it still does not cover
+           whatever the probe is pointing at. */
+        render_set_color(ctx, probe->color);
+        for (float t = -1.0f; t <= 3.0f; t += 0.5f) {
+            /* Rounded ends: pull the bar in slightly on its outermost rows so the crossbar reads
+               as a moulded flange and not as a rectangle stuck through the handle. */
+            float w = (t < -0.5f || t > 2.5f) ? 6.4f : 7.4f;
+            render_draw_line(ctx, b0x + ux*t - px*w, b0y + uy*t - py*w,
+                                  b0x + ux*t + px*w, b0y + uy*t + py*w);
+        }
+        render_set_color(ctx, shade);
+        render_draw_line(ctx, b0x + ux*3.0f - px*6.4f, b0y + uy*3.0f - py*6.4f,
+                              b0x + ux*3.0f + px*6.4f, b0y + uy*3.0f + py*6.4f);
+        render_set_color(ctx, lite);
+        render_draw_line(ctx, b0x - ux*1.0f - px*6.4f, b0y - uy*1.0f - py*6.4f,
+                              b0x - ux*1.0f + px*6.4f, b0y - uy*1.0f + py*6.4f);
+
+        // Cap at the cable end
+        render_set_color(ctx, probe->color);
+        render_fill_circle(ctx, b1x, b1y, 2.8f);
 
         // Needle: two lines tapering from the collar to the contact point
         render_set_color(ctx, (Color){0xd8, 0xd8, 0xe4, 0xff});
