@@ -13,7 +13,7 @@
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
 digital solver, a real-time bench oscilloscope with FFT and THD, 208 guided circuits from RC
-filters to power grids, SPICE import, and a 74-suite self-audit battery. Build, simulate and
+filters to power grids, SPICE import, and a 75-suite self-audit battery. Build, simulate and
 analyse circuits with a drag-and-drop schematic.
 
 The look is deliberately **synthwave** - magenta and cyan on deep violet, a CRT-style graticule

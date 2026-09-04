@@ -688,6 +688,94 @@ static int netlist_solve(const char *path) {
  * gets chosen has to be read off this, not guessed - a gate that rejects a tenth of the gallery
  * is not a fix, and one that accepts 354 A is not either.
  */
+/* --pin-test: is every terminal DRAWN where its net is?
+ *
+ * The 555 template shipped with its block wired only in the data. Each of the six pins had its
+ * node_id assigned straight to a net living elsewhere on the sheet, so the circuit solved,
+ * probed and oscillated correctly - and the block sat in the middle of its own schematic with
+ * six stubs going nowhere, because no wire was ever drawn between it and anything else. Every
+ * one of the 74 suites passed it. Not one of them asked whether a pin had a wire on it.
+ *
+ * The check: something must be DRAWN where the terminal is. A terminal joined by a wire has a
+ * node at its own position, because that is what the wire ends on - it does not matter that
+ * node_ids[] may point at a different id further along the same net, and an earlier version of
+ * this check that compared those two positions flagged 316 perfectly good terminals for it.
+ * What the 555 had was emptier than that: its pin coordinates held no node and no wire end at
+ * all, so there was nothing on the canvas to read as a connection.
+ *
+ * A ratchet rather than a pass/fail, pinned at the number standing when it was written. Closing
+ * one of these is free; adding one fails the battery.
+ */
+/* Pinned at what was standing when the check was written. It is a ceiling, not a defect count:
+   a good number of the 68 are pins that are MEANT to be unconnected - a programmable block's
+   unused GPIO is 13 of them by itself, and a MOSFET's bulk is another handful. Sorting the
+   deliberate from the forgotten one template at a time is worth doing and is not what this is
+   for. What it does is stop the number growing, which is all that was needed to catch the 555. */
+#define PIN_GAP_BASELINE 68
+static int pin_test(void) {
+    int total = 0, gaps = 0, worst_seen = 0;
+    char worst_name[128] = "";
+    for (int t = 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        Circuit *c = circuit_create();
+        if (!c) return 1;
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        total++;
+        int here = 0;
+        for (int k = 0; k < c->num_components; k++) {
+            Component *p = c->components[k];
+            if (!p || p->type == COMP_LABEL) continue;
+            for (int i = 0; i < p->num_terminals && i < MAX_TERMINALS; i++) {
+                Node *n = circuit_get_node(c, p->node_ids[i]);
+                if (!n) continue;              /* an unassigned terminal is a different fault */
+                float tx = 0, ty = 0;
+                component_get_terminal_pos(p, i, &tx, &ty);
+                /* A node at the terminal is not enough on its own: creating one is a single call
+                   and it draws as a lone dot. It has to be joined to something - the end of a
+                   wire, or another part's terminal sitting on the same point. */
+                bool drawn = false;
+                for (int q = 0; q < c->num_nodes && !drawn; q++) {
+                    float dx = tx - c->nodes[q].x, dy = ty - c->nodes[q].y;
+                    if (dx*dx + dy*dy > 25.0f) continue;        /* 5 px merge radius, squared */
+                    int id = c->nodes[q].id;
+                    for (int w = 0; w < c->num_wires && !drawn; w++)
+                        if (c->wires[w].start_node_id == id || c->wires[w].end_node_id == id) drawn = true;
+                }
+                for (int m = 0; m < c->num_components && !drawn; m++) {
+                    Component *o = c->components[m];
+                    if (!o || o == p || o->type == COMP_LABEL) continue;
+                    for (int j = 0; j < o->num_terminals && j < MAX_TERMINALS && !drawn; j++) {
+                        float ox = 0, oy = 0;
+                        component_get_terminal_pos(o, j, &ox, &oy);
+                        float dx = tx - ox, dy = ty - oy;
+                        if (dx*dx + dy*dy <= 25.0f) drawn = true;
+                    }
+                }
+                if (!drawn) {
+                    here++;
+                    if (here == 1 && gaps < 12)
+                        printf("[NOTE] pin   %-34s %s pin %d has nothing drawn at it\n",
+                               ti ? ti->name : "?", p->label[0] ? p->label : "?", i);
+                }
+            }
+        }
+        if (here > worst_seen) { worst_seen = here; snprintf(worst_name, sizeof worst_name, "%s", ti ? ti->name : "?"); }
+        gaps += here;
+        circuit_free(c);
+    }
+    printf("pin-test: %d templates, %d terminals with nothing drawn at them", total, gaps);
+    if (worst_seen) printf(" (worst %s, %d)", worst_name, worst_seen);
+    printf("\n");
+    if (gaps > PIN_GAP_BASELINE) {
+        printf("[FAIL] pin-test: %d, up from the pinned %d. A terminal with no wire on it and no\n",
+               gaps, PIN_GAP_BASELINE);
+        printf("       other terminal against it is joined by nothing the reader can see - that is\n");
+        printf("       how the 555 block shipped connected only in the netlist.\n");
+        return 1;
+    }
+    return 0;
+}
+
 static int residual_test(void) {
     double worst_abs = 0.0, worst_rel = 0.0, solver_worst = 0.0;
     char solver_worst_at[96] = "";
@@ -9072,6 +9160,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--ee-test")) return ee_test();
         else if (!strcmp(argv[i], "--dpdt-test")) return dpdt_test();
         else if (!strcmp(argv[i], "--residual-test")) return residual_test();
+        else if (!strcmp(argv[i], "--pin-test")) return pin_test();
         else if (!strcmp(argv[i], "--netlist-solve") && i + 1 < argc) return netlist_solve(argv[i + 1]);
         else if (!strcmp(argv[i], "--span-test")) return span_test();
         else if (!strcmp(argv[i], "--geom-test")) return geom_test();

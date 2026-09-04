@@ -936,7 +936,27 @@ fault in v3.30.0: a quantity the solver needed and never had.
 | 3.47.7 | `[ ]` Place **R-2R Ladder DAC**, read the four ladder nodes | 1.171875, 2.34375, 2.1875, 3.125 V |
 | 3.47.8 | `[ ]` Place **String DAC**, read the taps | 0.556, 1.389, 1.944 V. Set R3 1.5k -> 1k and all three errors go to zero |
 | 3.47.9 | `[ ]` Look at a probe on the canvas | a barrel with a finger guard, not a hairline |
-| 3.47.10 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 74 suites, 0 failed |
+| 3.47.10 | `[ ]` Open **555 Astable** | every pin of the block has a wire on it. It had none |
+| 3.47.11 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 75 suites, 0 failed |
+
+**A subcircuit connected only in the netlist.** The 555 block's `node_ids` were assigned straight
+to nets living elsewhere on the sheet, so it solved, probed and oscillated correctly while
+sitting in the middle of its own schematic with six stubs going nowhere. All 74 suites passed it.
+None of them asked whether a pin had a wire on it.
+
+It could not have been wired as it stood: pins were assigned to sides by index - first three
+left, last three right - which put THRES and DISCH on the far side of the block from the RC
+network they connect to, where no orthogonal route reaches them without crossing. It now has the
+pinout a 555 is drawn with, and the three left pins are ordered by the HEIGHT of what they
+connect to so their wires do not cross each other.
+
+**`--pin-test` is the new gate**, a ratchet pinned at 68. A terminal must have a wire on it or
+another terminal against it; a node at the terminal is not enough on its own, because creating
+one is a single call and it draws as a lone dot. Mutation-checked: removing one of the six wires
+takes it to 69 and fails. The pinned number is a ceiling and not a defect count - a programmable
+block's unused GPIO is 13 of it, and a MOSFET's bulk is more. Note that `--conn-test` does not
+cover this: it asks whether a pin is electrically isolated, and these pins were on the right
+nets. Wrong drawing, right netlist.
 
 **The LM317 computed `Vout = Vadj + 1.25` from the previous iterate and stamped all of it into
 `b`.** With no Jacobian entry for the ADJ dependence, Newton has no derivative for the feedback
