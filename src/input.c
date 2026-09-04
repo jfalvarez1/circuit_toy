@@ -2666,6 +2666,12 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                 } else if (comp->type == COMP_LAMP && value > 0) {
                     comp->props.lamp.r_cold = value;        /* the filament, cold */
                     applied = true;
+                } else if ((comp->type == COMP_ANTENNA_TX || comp->type == COMP_ANTENNA_RX) &&
+                           value > 0) {
+                    /* Strictly positive, unlike the sources above: the antenna stamps 1/R rather
+                       than R, so zero is an infinite conductance and a NaN on the node. */
+                    comp->props.antenna.r_series = value;
+                    applied = true;
                 }
             }
             break;
@@ -2854,6 +2860,37 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             }
             break;
 
+        /* The thyristors. Each type writes its own struct's member: the SCR's and the TRIAC's
+           carry the same four numbers but are two different structs, and assuming a shared
+           layout is the mistake documented at PROP_CJO above. */
+        case PROP_VGT:
+            if (value >= 0 && value <= 100) {
+                if (comp->type == COMP_SCR)        { comp->props.scr.vgt = value;   applied = true; }
+                else if (comp->type == COMP_TRIAC) { comp->props.triac.vgt = value; applied = true; }
+            }
+            break;
+
+        case PROP_IGT:
+            if (value >= 0 && value <= 10) {
+                if (comp->type == COMP_SCR)        { comp->props.scr.igt = value;   applied = true; }
+                else if (comp->type == COMP_TRIAC) { comp->props.triac.igt = value; applied = true; }
+            }
+            break;
+
+        case PROP_IH:
+            if (value >= 0 && value <= 10) {
+                if (comp->type == COMP_SCR)        { comp->props.scr.ih = value;   applied = true; }
+                else if (comp->type == COMP_TRIAC) { comp->props.triac.ih = value; applied = true; }
+            }
+            break;
+
+        case PROP_VBO:
+            if (comp->type == COMP_DIAC && value > 0 && value <= 10000) {
+                comp->props.diac.vbo = value;
+                applied = true;
+            }
+            break;
+
         /* The lamp's ratings. Both PROP types existed in the enum and were used by nothing at
            either end - two of the twenty-odd that prop_wiring counts as "not built yet". */
         case PROP_POWER_RATING:
@@ -2967,6 +3004,19 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                  comp->type == COMP_CCVS || comp->type == COMP_CCCS) &&
                 fabs(value) <= 1e9) {
                 comp->props.controlled_source.gain = value; applied = true;
+            } else if ((comp->type == COMP_ANTENNA_TX || comp->type == COMP_ANTENNA_RX) &&
+                       value >= 0 && value <= 1e6) {
+                comp->props.antenna.gain = value; applied = true;
+            }
+            break;
+
+        /* The channel is what pairs a transmitter with a receiver, and it could not be set, so
+           every antenna in a circuit sat on channel 0 and every pair was joined to every other. */
+        case PROP_CHANNEL:
+            if ((comp->type == COMP_ANTENNA_TX || comp->type == COMP_ANTENNA_RX) &&
+                value >= 0 && value <= 15) {
+                comp->props.antenna.channel = (int)value;
+                applied = true;
             }
             break;
         case PROP_CS_RIN:

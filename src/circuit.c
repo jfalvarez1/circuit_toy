@@ -1343,6 +1343,15 @@ static int probe_like(Circuit *circuit, const Probe *p) {
 /* Put a recorded probe back on the circuit, name and channel and all. */
 static void circuit_restore_probe(Circuit *circuit, const Probe *p) {
     if (!circuit || !p || circuit->num_probes >= MAX_PROBES) return;
+    /* Only if the node it was watching is still there.
+     *
+     * This put the probe back on its recorded node id whatever had happened to that node since,
+     * so undoing a probe deletion after the node had gone left a probe attached to nothing - a
+     * scope channel reading a net that does not exist. A node carrying a probe cannot be removed
+     * while the probe is on it (see the in-use check above), so the only way to get here is
+     * exactly this one: the probe went first, the node went after it, and then the probe came
+     * back. --session-test found it while unwinding three hundred operations. */
+    if (!circuit_get_node(circuit, p->node_id)) return;
     int id = circuit_add_probe(circuit, p->node_id, p->x, p->y);
     if (id <= 0) return;
     Probe *back = &circuit->probes[circuit->num_probes - 1];

@@ -486,6 +486,289 @@ static void roundtrip_leg(Circuit *a, const char *path,
     circuit_free(b);
 }
 
+/* --session-test: a person using the program for a while, and the invariants that must hold
+ * after every single thing they do.
+ *
+ * --undo-test does one edit to a fresh template and checks that undo puts it back. That is the
+ * right shape for undo and the wrong shape for everything else: it never lets state accumulate,
+ * so it cannot find an id that gets reused after the third delete, a wire left pointing at a node
+ * that went with the part it belonged to, or an undo stack that comes apart forty operations in.
+ *
+ * This does long runs instead - hundreds of operations against one canvas, drawn from what a
+ * person actually does: place a part, drag it, rotate it, wire two nodes, delete something,
+ * probe a node, type a new value, duplicate, select all and delete, clear, undo, redo. After
+ * EVERY operation it checks the things that must never stop being true:
+ *
+ *   - no two components share an id, and no two wires or nodes do
+ *   - every component's terminals name a node that exists, or nothing at all
+ *   - every wire's two ends name nodes that exist
+ *   - every probe names a node that exists
+ *   - nothing has run past its array bound
+ *   - the counts are not negative
+ *
+ * and periodically that the circuit still solves without a NaN, because a structure can be
+ * self-consistent and still not be a circuit.
+ *
+ * The sequence is a seeded pseudo-random walk, so a failure names the seed and the step and can
+ * be replayed exactly: SESSION_SEED=n reruns one.
+ */
+static unsigned session_rng = 1;
+static unsigned session_next(void) {          /* xorshift; same series everywhere, unlike rand() */
+    session_rng ^= session_rng << 13;
+    session_rng ^= session_rng >> 17;
+    session_rng ^= session_rng << 5;
+    return session_rng;
+}
+static int session_pick(int n) { return n > 0 ? (int)(session_next() % (unsigned)n) : 0; }
+
+/* Everything that must still be true about a circuit, whatever has been done to it. */
+static bool session_check(Circuit *c, char *why, size_t nwhy) {
+    if (c->num_components < 0 || c->num_components > MAX_COMPONENTS ||
+        c->num_wires < 0 || c->num_wires > MAX_WIRES ||
+        c->num_nodes < 0 || c->num_nodes > MAX_NODES ||
+        c->num_probes < 0 || c->num_probes > MAX_PROBES) {
+        snprintf(why, nwhy, "counts out of range: %d parts, %d wires, %d nodes, %d probes",
+                 c->num_components, c->num_wires, c->num_nodes, c->num_probes);
+        return false;
+    }
+    for (int i = 0; i < c->num_components; i++) {
+        Component *a = c->components[i];
+        if (!a) { snprintf(why, nwhy, "a null component at slot %d", i); return false; }
+        for (int j = i + 1; j < c->num_components; j++)
+            if (c->components[j] && c->components[j]->id == a->id) {
+                snprintf(why, nwhy, "two components share id %d", a->id); return false;
+            }
+        for (int t = 0; t < a->num_terminals && t < MAX_TERMINALS; t++) {
+            int nid = a->node_ids[t];
+            if (nid == 0) continue;                       /* not connected is allowed */
+            if (nid < 0 || nid >= MAX_NODES) {
+                snprintf(why, nwhy, "%s terminal %d names node %d, out of range", a->label, t, nid);
+                return false;
+            }
+            if (!circuit_get_node(c, nid)) {
+                snprintf(why, nwhy, "%s terminal %d names node %d, which does not exist",
+                         a->label, t, nid);
+                return false;
+            }
+        }
+    }
+    for (int i = 0; i < c->num_wires; i++) {
+        Wire *w = &c->wires[i];
+        for (int j = i + 1; j < c->num_wires; j++)
+            if (c->wires[j].id == w->id) {
+                snprintf(why, nwhy, "two wires share id %d", w->id); return false;
+            }
+        if (!circuit_get_node(c, w->start_node_id) || !circuit_get_node(c, w->end_node_id)) {
+            snprintf(why, nwhy, "wire %d joins %d to %d and one of them does not exist",
+                     w->id, w->start_node_id, w->end_node_id);
+            return false;
+        }
+    }
+    for (int i = 0; i < c->num_nodes; i++)
+        for (int j = i + 1; j < c->num_nodes; j++)
+            if (c->nodes[i].id == c->nodes[j].id) {
+                snprintf(why, nwhy, "two nodes share id %d", c->nodes[i].id); return false;
+            }
+    for (int i = 0; i < c->num_probes; i++)
+        if (!circuit_get_node(c, c->probes[i].node_id)) {
+            snprintf(why, nwhy, "probe %d watches node %d, which does not exist",
+                     c->probes[i].id, c->probes[i].node_id);
+            return false;
+        }
+    return true;
+}
+
+static bool session_solves(Circuit *c, char *why, size_t nwhy) {
+    if (c->num_components == 0) return true;
+    Simulation *sim = simulation_create(c);
+    if (!sim) return true;
+    bool ok = true;
+    if (simulation_dc_analysis(sim)) {
+        for (int i = 0; i < c->num_nodes; i++)
+            if (!isfinite(c->nodes[i].voltage)) {
+                snprintf(why, nwhy, "node %d went to %g after a DC solve",
+                         c->nodes[i].id, c->nodes[i].voltage);
+                ok = false;
+                break;
+            }
+    }
+    simulation_free(sim);
+    return ok;
+}
+
+static int session_test(void) {
+    static const char *op_name[] = {
+        "place a part", "delete a part", "drag a part", "rotate a part", "wire two nodes",
+        "delete a wire", "probe a node", "delete a probe", "retype a value", "duplicate a part",
+        "select all and delete", "clear the canvas", "undo", "redo",
+    };
+    const int NOPS = (int)(sizeof op_name / sizeof op_name[0]);
+    /* Parts a person reaches for, and that can go anywhere without needing a model set up. */
+    static const ComponentType placeable[] = {
+        COMP_RESISTOR, COMP_CAPACITOR, COMP_INDUCTOR, COMP_DIODE, COMP_LED,
+        COMP_DC_VOLTAGE, COMP_AC_VOLTAGE, COMP_GROUND, COMP_SPST_SWITCH, COMP_NPN_BJT,
+        COMP_NOT_GATE, COMP_LAMP, COMP_SCR, COMP_ANTENNA_TX,
+    };
+    const int NPLACE = (int)(sizeof placeable / sizeof placeable[0]);
+
+    const char *seed_env = getenv("SESSION_SEED");
+    int only_seed = seed_env ? atoi(seed_env) : 0;
+    int sessions = only_seed ? 1 : 12;
+    int steps = 300;
+    int fails = 0, ops_done = 0;
+
+    for (int s = 0; s < sessions; s++) {
+        unsigned seed = only_seed ? (unsigned)only_seed : (unsigned)(s * 7919 + 12345);
+        session_rng = seed ? seed : 1;
+        Circuit *c = circuit_create();
+        if (!c) return 1;
+        /* Half the sessions start on a template, half on an empty sheet: the first exercises
+           editing something that already exists, the second building from nothing.
+           Derived from the SEED and not from the loop index, so SESSION_SEED=n replays the same
+           session - with the index it replayed a different one, which is worse than useless in
+           the thing you reach for after a failure. */
+        if ((seed % 2) == 0)
+            circuit_place_template(c, (CircuitTemplateType)(CIRCUIT_NONE + 1 + (seed % 40)), 0, 0);
+
+        char why[240] = "";
+        for (int step = 0; step < steps; step++) {
+            int op = session_pick(NOPS);
+            switch (op) {
+                case 0: {
+                    if (c->num_components < MAX_COMPONENTS - 2) {
+                        ComponentType ty = placeable[session_pick(NPLACE)];
+                        float x = (float)(session_pick(20) * 20 - 200);
+                        float y = (float)(session_pick(20) * 20 - 200);
+                        Component *n = component_create(ty, x, y);
+                        if (n) {
+                            if (circuit_add_component(c, n) >= 0)
+                                circuit_push_undo(c, UNDO_ADD_COMPONENT, n->id, NULL, 0, 0);
+                            else component_free(n);
+                        }
+                    }
+                    break;
+                }
+                case 1:
+                    if (c->num_components > 0)
+                        circuit_delete_component(c, c->components[session_pick(c->num_components)]->id);
+                    break;
+                case 2:
+                    if (c->num_components > 0) {
+                        Component *m = c->components[session_pick(c->num_components)];
+                        circuit_push_undo(c, UNDO_MOVE_COMPONENT, m->id, NULL, m->x, m->y);
+                        m->x += (float)(session_pick(9) * 20 - 80);
+                        m->y += (float)(session_pick(9) * 20 - 80);
+                        circuit_update_component_nodes(c, m);
+                    }
+                    break;
+                case 3:
+                    if (c->num_components > 0) {
+                        Component *r = c->components[session_pick(c->num_components)];
+                        circuit_push_edit_undo(c, r);
+                        component_rotate(r);
+                        circuit_update_component_nodes(c, r);
+                    }
+                    break;
+                case 4:
+                    if (c->num_nodes >= 2 && c->num_wires < MAX_WIRES - 2) {
+                        int a = session_pick(c->num_nodes), b = session_pick(c->num_nodes);
+                        if (a != b) {
+                            int wid = circuit_add_wire(c, c->nodes[a].id, c->nodes[b].id);
+                            if (wid >= 0) circuit_push_undo(c, UNDO_ADD_WIRE, wid, NULL, 0, 0);
+                        }
+                    }
+                    break;
+                case 5:
+                    if (c->num_wires > 0)
+                        circuit_delete_wire(c, c->wires[session_pick(c->num_wires)].id);
+                    break;
+                case 6:
+                    if (c->num_nodes > 0 && c->num_probes < MAX_PROBES) {
+                        Node *n = &c->nodes[session_pick(c->num_nodes)];
+                        circuit_add_probe(c, n->id, n->x, n->y);
+                    }
+                    break;
+                case 7:
+                    if (c->num_probes > 0)
+                        circuit_delete_probe(c, c->probes[session_pick(c->num_probes)].id);
+                    break;
+                case 8:
+                    for (int i = 0; i < c->num_components; i++) {
+                        Component *r = c->components[i];
+                        if (r->type != COMP_RESISTOR) continue;
+                        circuit_push_edit_undo(c, r);
+                        r->props.resistor.resistance = 10.0 * (1 + session_pick(1000));
+                        break;
+                    }
+                    break;
+                case 9:
+                    if (c->num_components > 0 && c->num_components < MAX_COMPONENTS - 2) {
+                        Component *src = c->components[session_pick(c->num_components)];
+                        Component *n = component_create(src->type, src->x + 40, src->y + 40);
+                        if (n) {
+                            if (circuit_add_component(c, n) >= 0)
+                                circuit_push_undo(c, UNDO_ADD_COMPONENT, n->id, NULL, 0, 0);
+                            else component_free(n);
+                        }
+                    }
+                    break;
+                case 10:
+                    if (c->num_components > 0 && circuit_push_snapshot_undo(c)) {
+                        /* select-all then Delete: the app records the sheet and empties it */
+                        circuit_clear_after_snapshot(c);
+                    }
+                    break;
+                case 11:
+                    if (c->num_components > 0 && circuit_push_snapshot_undo(c))
+                        circuit_clear_after_snapshot(c);
+                    break;
+                case 12: circuit_undo(c); break;
+                case 13: circuit_redo(c); break;
+                default: break;
+            }
+            ops_done++;
+            if (getenv("SESSION_VERBOSE"))
+                printf("  seed %u step %3d %-22s parts=%d wires=%d nodes=%d probes=%d next_node=%d\n",
+                       seed, step, op_name[op], c->num_components, c->num_wires,
+                       c->num_nodes, c->num_probes, c->next_node_id);
+
+            if (!session_check(c, why, sizeof why)) {
+                printf("[FAIL] session seed %u step %d after '%s': %s\n",
+                       seed, step, op_name[op], why);
+                fails++;
+                break;
+            }
+            /* Solving is the expensive half, so not every step - but often enough that a
+               structure which is consistent and still not a circuit is caught near the cause. */
+            if ((step % 25) == 0 && !session_solves(c, why, sizeof why)) {
+                printf("[FAIL] session seed %u step %d after '%s': %s\n",
+                       seed, step, op_name[op], why);
+                fails++;
+                break;
+            }
+        }
+
+        /* And the whole way back: undo until it stops undoing, and the sheet has to be empty or
+           whatever the template put there - never a wreck. */
+        if (!fails) {
+            int guard = steps * 4;
+            while (guard-- > 0 && circuit_undo(c)) {
+                if (!session_check(c, why, sizeof why)) {
+                    printf("[FAIL] session seed %u unwinding: %s\n", seed, why);
+                    fails++;
+                    break;
+                }
+            }
+        }
+        circuit_free(c);
+    }
+
+    printf("session-test: %d sessions of %d operations (%d done), %d that broke an invariant\n",
+           sessions, steps, ops_done, fails);
+    return fails ? 1 : 0;
+}
+
+
 /* --undo-test: Ctrl+Z has to put the circuit back exactly as it was, and Ctrl+Y has to put the
    edit back. Every kind of edit the undo stack records is exercised on every template: add a
    part, delete a part, move a part, add a wire, delete a wire. The circuit is written to a file
@@ -8214,6 +8497,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--label-test")) return label_test();
         else if (!strcmp(argv[i], "--parts-file-test")) return parts_file_test();
         else if (!strcmp(argv[i], "--undo-test")) return undo_test();
+        else if (!strcmp(argv[i], "--session-test")) return session_test();
         else if (!strcmp(argv[i], "--span-test")) return span_test();
         else if (!strcmp(argv[i], "--geom-test")) return geom_test();
         else if (!strcmp(argv[i], "--sweep-check")) return sweep_check();

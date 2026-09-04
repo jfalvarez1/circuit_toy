@@ -277,6 +277,26 @@ bool file_load_circuit(Circuit *circuit, const char *filename) {
     }
 
     fclose(f);
+
+    /* The node counter has to end up past every node that is actually here.
+     *
+     * Nodes arrive during a load by more than one route - read from the file, and recreated from
+     * the terminals of the parts that were read - and only one of those routes was bumping the
+     * counter. So a circuit could come back with four nodes and a counter of 3, and the next part
+     * placed would be handed an id already in use.
+     *
+     * Two nodes with one id is not cosmetic: node_map and the union-find parent[] in
+     * circuit_build_node_map are indexed BY id, so the two collapse into one net and parts that
+     * were never joined start conducting.
+     *
+     * A few clicks reach it - clear the canvas, which restarts the ids at 1, then Ctrl+Z to bring
+     * it back, then place anything. Counting from what is present rather than from what one
+     * reader happened to see makes it true however the nodes got here. Found by --session-test;
+     * no single-edit check could see it, because it takes a clear and an undo and a place. */
+    for (int i = 0; i < circuit->num_nodes; i++)
+        if (circuit->nodes[i].id >= circuit->next_node_id)
+            circuit->next_node_id = circuit->nodes[i].id + 1;
+
     circuit->modified = false;
     return true;
 }
@@ -870,6 +890,24 @@ bool file_import_json(Circuit *circuit, const char *filename) {
     }
 
     free(buffer);
+
+    /* The node counter has to end up past every node that is actually here.
+     *
+     * It was bumped only while parsing the "nodes" array, which is not the only way a node
+     * reaches the circuit during a load - so a file could come back with four nodes and a
+     * counter of 3, and the next part placed would be handed an id that was already in use.
+     * Two nodes with one id is not a cosmetic fault: node_map and the union-find parent[] in
+     * circuit_build_node_map are indexed BY id, so the two become one net and parts that were
+     * never joined start conducting.
+     *
+     * Reachable in a few clicks, and found by --session-test rather than by any single-edit
+     * check: clear the canvas - which restarts the ids at 1 - then Ctrl+Z to bring it back, then
+     * place anything. Counting from what is present, rather than from what one parser happened
+     * to see, makes it true however the nodes got here. */
+    for (int i = 0; i < circuit->num_nodes; i++)
+        if (circuit->nodes[i].id >= circuit->next_node_id)
+            circuit->next_node_id = circuit->nodes[i].id + 1;
+
     circuit->modified = false;
     return true;
 }

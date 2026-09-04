@@ -1771,6 +1771,121 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 break;
             }
 
+            /* The antenna pair share one struct and one panel. The channel is the whole point of
+               them - a TX and an RX on the same channel are connected and on different ones are
+               not - and it could not be set, so every antenna in a circuit was on channel 0 and
+               every pair was wired to every other. */
+            case COMP_ANTENNA_TX:
+            case COMP_ANTENNA_RX: {
+                bool ed_ch = input && input->editing_property && input->editing_prop_type == PROP_CHANNEL;
+                snprintf(buf, sizeof(buf), "%d", selected->props.antenna.channel);
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Channel:", buf, ed_ch, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_CHANNEL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                bool ed_g = input && input->editing_property && input->editing_prop_type == PROP_GAIN;
+                format_engineering(selected->props.antenna.gain, "", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Gain:", buf, ed_g, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_GAIN;
+                ui->num_properties++;
+                prop_y += 18;
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.antenna.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                if (!selected->props.antenna.ideal) {
+                    bool ed_rs = input && input->editing_property && input->editing_prop_type == PROP_R_SERIES;
+                    format_engineering(selected->props.antenna.r_series, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R_series:", buf, ed_rs, edit_buf, cursor);
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_R_SERIES;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
+            /* The thyristors. What defines one is the gate it takes to fire and the current it
+               takes to keep it latched, and none of the three could be told either.
+               PROP_VGT, PROP_IGT, PROP_IH and PROP_VBO have been in the enum for their sake all
+               along and were wired to nothing at either end.
+               The SCR and the TRIAC carry identical field sets in two separate structs, so the
+               members are reached through explicit per-type pointers rather than by assuming the
+               two lay out the same - see the PROP_CJO case in input.c for what that assumption
+               costs when it is wrong. */
+            case COMP_SCR:
+            case COMP_TRIAC: {
+                bool is_scr = (selected->type == COMP_SCR);
+                double *vgt = is_scr ? &selected->props.scr.vgt : &selected->props.triac.vgt;
+                double *igt = is_scr ? &selected->props.scr.igt : &selected->props.triac.igt;
+                double *ih  = is_scr ? &selected->props.scr.ih  : &selected->props.triac.ih;
+                bool *ideal = is_scr ? &selected->props.scr.ideal : &selected->props.triac.ideal;
+
+                bool ed_vgt = input && input->editing_property && input->editing_prop_type == PROP_VGT;
+                format_engineering(*vgt, "V", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "V gate:", buf, ed_vgt, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VGT;
+                ui->num_properties++;
+                prop_y += 18;
+
+                bool ed_igt = input && input->editing_property && input->editing_prop_type == PROP_IGT;
+                format_engineering(*igt, "A", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "I gate:", buf, ed_igt, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IGT;
+                ui->num_properties++;
+                prop_y += 18;
+
+                bool ed_ih = input && input->editing_property && input->editing_prop_type == PROP_IH;
+                format_engineering(*ih, "A", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "I hold:", buf, ed_ih, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IH;
+                ui->num_properties++;
+                prop_y += 18;
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, *ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+                break;
+            }
+
+            /* A DIAC has no gate: it fires at its breakover voltage and that is the whole part. */
+            case COMP_DIAC: {
+                bool ed_vbo = input && input->editing_property && input->editing_prop_type == PROP_VBO;
+                format_engineering(selected->props.diac.vbo, "V", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "V breakover:", buf, ed_vbo, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_VBO;
+                ui->num_properties++;
+                prop_y += 18;
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.diac.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+                break;
+            }
+
             /* The lamp: what it is rated for, and how it behaves when it is not ideal. Its
                ratings are what the thermal model measures against, so a lamp that could not be
                rated could not be overloaded on purpose either. */

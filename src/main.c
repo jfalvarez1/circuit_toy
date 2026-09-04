@@ -378,8 +378,9 @@ static int prop_gap(void) {
      * rather than in a sweep months later. */
     /* 72 before the AC current source, 71 before the seven logic gates, 64 before the three
        variants that share a struct with a part that already had a panel - the flipped op-amp,
-       the tunnel diode and the photodiode - and 61 before the lamp. */
-    const int BASELINE = 60;
+       the tunnel diode and the photodiode - 61 before the lamp, 60 before the three thyristors,
+       and 57 before the antenna pair. */
+    const int BASELINE = 55;
     if (empty > BASELINE) {
         printf("[FAIL] prop-gap %d parts now offer the panel nothing, up from %d.\n", empty, BASELINE);
         printf("       A new part needs its property rows, or this baseline needs a reason to move.\n");

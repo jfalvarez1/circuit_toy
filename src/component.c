@@ -6348,7 +6348,11 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         case COMP_ANTENNA_TX: {
             // TX Antenna: Measures voltage across terminals and broadcasts on channel
             // Acts as a high-impedance voltmeter that stores voltage to wireless channel
+            /* Floored, because what is stamped is 1/R: a zero here is an infinite conductance and
+               a NaN across the whole solve. The panel refuses zero, but a saved file or a
+               template can carry one and the stamp has to survive it either way. */
             double R_series = comp->props.antenna.ideal ? 1e-6 : comp->props.antenna.r_series;
+            if (!(R_series > 1e-9)) R_series = 1e-9;
             double G = 1.0 / R_series;
 
             // Stamp as high-impedance load
@@ -6374,7 +6378,11 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
         case COMP_ANTENNA_RX: {
             // RX Antenna: Receives voltage from wireless channel and outputs it
             // Acts as a voltage source with the received signal
+            /* Floored, because what is stamped is 1/R: a zero here is an infinite conductance and
+               a NaN across the whole solve. The panel refuses zero, but a saved file or a
+               template can carry one and the stamp has to survive it either way. */
             double R_series = comp->props.antenna.ideal ? 1e-6 : comp->props.antenna.r_series;
+            if (!(R_series > 1e-9)) R_series = 1e-9;
             double G = 1.0 / R_series;
 
             // Get voltage from wireless channel

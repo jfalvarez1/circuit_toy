@@ -1486,6 +1486,23 @@ void app_handle_events(App *app) {
                                     model_name = c->props.transformer.ideal ? "Ideal (k=1, no winding R)"
                                                                             : "Real (leakage, winding R)";
                                     break;
+                                case COMP_ANTENNA_TX:
+                                case COMP_ANTENNA_RX:
+                                    c->props.antenna.ideal = !c->props.antenna.ideal;
+                                    model_name = c->props.antenna.ideal ? "Ideal (lossless)" : "Real (series R)";
+                                    break;
+                                case COMP_SCR:
+                                    c->props.scr.ideal = !c->props.scr.ideal;
+                                    model_name = c->props.scr.ideal ? "Ideal (latch)" : "Real (Vf, holding current)";
+                                    break;
+                                case COMP_TRIAC:
+                                    c->props.triac.ideal = !c->props.triac.ideal;
+                                    model_name = c->props.triac.ideal ? "Ideal (latch)" : "Real (Vf, holding current)";
+                                    break;
+                                case COMP_DIAC:
+                                    c->props.diac.ideal = !c->props.diac.ideal;
+                                    model_name = c->props.diac.ideal ? "Ideal (breakover)" : "Real (Vf after breakover)";
+                                    break;
                                 case COMP_LAMP:
                                     c->props.lamp.ideal = !c->props.lamp.ideal;
                                     model_name = c->props.lamp.ideal ? "Ideal (fixed R)" : "Real (cold/hot filament)";

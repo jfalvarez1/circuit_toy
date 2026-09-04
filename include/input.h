@@ -209,6 +209,9 @@ typedef enum {
     // Controlled sources
     PROP_GAIN,                    // Gain factor
 
+    // Antenna
+    PROP_CHANNEL,                 // Wireless channel: a TX and an RX sharing one are connected
+
     // Thyristors
     PROP_VGT,                     // Gate trigger voltage
     PROP_IGT,                     // Gate trigger current
