@@ -9,11 +9,11 @@
      alongside the versioned one, so the link never needs editing and never goes stale. The
      versioned copy stays because the updater asks for it by name. -->
 
-**Latest Release: [v3.30.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.30.0)** (auto-updating from v3.4.0 on) · [all releases](https://github.com/jfalvarez1/circuit_toy/releases)
+**Latest Release: [v3.31.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.31.0)** (auto-updating from v3.4.0 on) · [all releases](https://github.com/jfalvarez1/circuit_toy/releases)
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
-digital solver, a real-time bench oscilloscope with FFT and THD, 205 guided circuits from RC
-filters to power grids, SPICE import, and a 70-suite self-audit battery. Build, simulate and
+digital solver, a real-time bench oscilloscope with FFT and THD, 208 guided circuits from RC
+filters to power grids, SPICE import, and a 74-suite self-audit battery. Build, simulate and
 analyse circuits with a drag-and-drop schematic.
 
 The look is deliberately **synthwave** - magenta and cyan on deep violet, a CRT-style graticule
@@ -148,7 +148,7 @@ In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/).
 Schematic text is antialiased and drawn in the notation a schematic uses - `10k`, `100nF`,
 `170V 60Hz` - and an audit checks that no label lands on a symbol or on another label.
 
-205 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+208 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -938,6 +938,29 @@ senior-design schematic *without* correction - a P-channel low side with the ref
 the sense on -, which is positive feedback and latches. It is there on purpose next to the
 corrected one: the parts and their models are identical and only the sign of the loop differs.
 
+### Sensors & bridges, and data conversion
+
+Three circuits taken from the [EE_Review](https://github.com/jfalvarez1/EE_Review) course,
+which ends each lesson with a "Build it in Circuit Toy" table of numbers computed from its own
+netlists. Bringing one in here creates a second copy of the same claim, and two copies of a
+number drift - so the course's values are checked against these templates on every commit by
+`--ee-test`, and if either side changes a component value it fails. Thirteen values, none of
+them transcribed twice.
+
+- **Strain Gauge Bridge** (`Strain`) - four 350 ohm arms across 5 V with R3 strained to 353.5,
+  which is 5 milli-strain on a gauge factor of 2. The reference half sits at exactly 2.5 V and
+  the strained half at 2.51244, so the output is 12.44 mV - a quarter of a percent of the
+  excitation, which is why the x100 amplifier is not optional. Both halves drift together with
+  temperature, which is the reason for the bridge at all
+- **R-2R Ladder DAC** (`R2R`) - four bits set to 1010, so 10 of 16 and the output is 3.125 V.
+  Looking back from any node the ladder presents the same resistance, which is the whole trick:
+  each bit contributes exactly half the one above it. The four ladder nodes are the lesson.
+  RTERM carries no current, because the buffer draws none, so `out` sits at V(n3)
+- **String DAC: DNL and INL** (`StrDAC`) - four taps off 2.5 V that should each be a quarter,
+  except R3 is 1.5k where the others are 1k. That one resistor is the whole lesson: the step
+  from t1 to t2 becomes 1.33 LSB instead of 1, and t2 lands 138.9 mV above where its code says.
+  A step over 2 LSB would skip a code entirely. Set R3 to 1k and all three errors go to zero
+
 ### Ideal vs real models
 
 | | |
@@ -1033,7 +1056,7 @@ two longest are split into shards (`--shard 0/4`) because a battery can never fi
 its slowest single suite.
 
 ```bash
-build/tools/template_smoke.exe             # 205/205 templates passed
+build/tools/template_smoke.exe             # 208/208 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (204 oracles)

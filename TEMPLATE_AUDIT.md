@@ -1,4 +1,4 @@
-# Prebuilt Circuit Template Audit (195 templates, 20 palette groups)
+# Prebuilt Circuit Template Audit (208 templates, 22 palette groups)
 
 ## Added since the blocks below were written
 
@@ -19,6 +19,12 @@ where every one ends with a TRY or an INTERVIEW line.
 | Interview: I/O & signal integrity | Termination none/series/parallel, Pull-up Sizing, Ground Bounce, Crosstalk, ESD Clamp Diodes |
 | Battery monitoring & e-load | E-Load: Constant Current Sink, E-Load: Constant Resistance, E-Load: Constant Voltage, LiPo Charger: CC Stage, LiPo Charger: CV Stage, BMI: NTC Thermal Cutout, BMI: Supercap Cell Simulator |
 | Interview: fundamentals | The Two-Capacitor Problem, The Miller Effect, BJT or MOSFET as a Switch, Hot-Plug Inrush |
+| Sensors & bridges | Strain Gauge Bridge |
+| Data conversion | R-2R Ladder DAC, String DAC: DNL and INL |
+
+The three EE_Review templates are audited a second way as well, by `--ee-test`: their node
+voltages are held to the numbers the course publishes for the same netlists, so a value changed
+on either side fails. That is an agreement between two programs rather than a block here.
 
 One is deliberately absent and written up in `docs/ROADMAP.md`: a **delay-line transmission line**
 (the L-C ladder stands in for it). **CCM vs DCM** was in that list until 2026-08-30, when the

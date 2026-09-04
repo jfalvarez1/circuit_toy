@@ -918,6 +918,70 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.47 v3.31.0 - a regulator whose feedback never reached the matrix (2026-09-04)
+
+Measuring the DC residual across every template - `max |A*x - b|` over the node rows, from the
+solver's own stamps at its own final iterate - left five circuits that could not hold their own
+equations. Three were expected. Two were a real bug, and it is the same shape as the convergence
+fault in v3.30.0: a quantity the solver needed and never had.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.47.1 | `[ ]` Place **LM317 Adj Reg**, read V_out | 4.978014 V. It was 4.978010 - a truncated iteration, not a solved one |
+| 3.47.2 | `[ ]` Raise R2 720 -> 3.9k (about 25 V) | tracks 1.25 x (1 + R2/R1). Before this it was off by 8 % |
+| 3.47.3 | `[ ]` Place **LiPo Charger: CV Stage** | 4.20 V out, and the residual on U1's output node is gone (was 3.1 mA against a node carrying 5.2) |
+| 3.47.4 | `[ ]` `--residual-test` | 3 templates over 1 uA, not 5, and the three are the 555 astable, the ring oscillator and the SR latch |
+| 3.47.5 | `[ ]` Lift a **7805**'s GND pin onto a divider | the output tracks it. The same fault was there, hidden by GND being grounded everywhere |
+| 3.47.6 | `[ ]` `--netlist-solve` on an op-amp with capacitive feedback only | **OFF THE RAILS**, naming the node and the largest supply |
+| 3.47.7 | `[ ]` Place **R-2R Ladder DAC**, read the four ladder nodes | 1.171875, 2.34375, 2.1875, 3.125 V |
+| 3.47.8 | `[ ]` Place **String DAC**, read the taps | 0.556, 1.389, 1.944 V. Set R3 1.5k -> 1k and all three errors go to zero |
+| 3.47.9 | `[ ]` Look at a probe on the canvas | a barrel with a finger guard, not a hairline |
+| 3.47.10 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 74 suites, 0 failed |
+
+**The LM317 computed `Vout = Vadj + 1.25` from the previous iterate and stamped all of it into
+`b`.** With no Jacobian entry for the ADJ dependence, Newton has no derivative for the feedback
+and degrades to a first-order fixed-point iteration whose contraction ratio is exactly the
+divider ratio R2/(R1+R2). At 0.844 that needs about 134 iterations and is given 50, so it stopped
+short and reported the stopping point as an operating point. The error grows with the set
+voltage - 0.7 ppm at 5 V, 1.4 % at 15 V, 8 % at 25 V - and the template's own help text invites
+raising R2. The relation is exactly linear, so one matrix entry makes it the true Newton step.
+
+**The controlled experiment**, which is what made this a diagnosis rather than a guess: the same
+model as a current source with a ratio of 0.331 converges at iteration 20 and never appeared in
+the residual list. Same model, same solver, same tolerances - only the ratio differs, and the
+ratio predicts which templates fail. A truncated geometric tail with that ratio reproduces the
+observed residual to five significant figures.
+
+**The general test, for any model that reads `prev_solution` and writes only `b`:** sweep the
+feedback ratio and watch the ITERATION COUNT, not the answer. First-order goes as
+log(tol)/log(beta) and blows up as beta approaches 1; a true Newton step is indifferent to it.
+Flat means the Jacobian is complete.
+
+**A wrong answer arrived as a voltage.** `--netlist-solve` already refused more than a kiloamp,
+checked KCL, and printed the residual first - and an op-amp table still came back with V(out) at
+10 kV, a 3e-20 A residual, no complaint and exit 0. Its compensation capacitors are opens at DC,
+so the feedback path is gone and the amplifier is open-loop; the number was the macromodel's own
+gain read back. A finite-gain macromodel makes the matrix perfectly well conditioned, so what
+should present as "singular, no operating point" presents as a clean converged wrong answer.
+Nothing in a DC operating point can lift a node decades above every independent supply, so that
+is now said out loud. It warns rather than refuses, because a controlled source is entitled to
+gain, and it fires on that one table while staying silent on twelve other converted netlists.
+
+**The polarity gate that was not built.** A swapped op-amp input is invisible to any DC solve -
+flipping the inputs is A -> -A, and the closed-loop answer is symmetric in 1/A to first order, so
+it moves by twice the gain error and stays plausible. That argued for a static wiring check. It
+was mutation-tested first: swapping one template's op-amp for the flipped part failed three
+suites (`--probe-test` 207/208, `--probe-audit` 1/206 flagged, `demo-test` 51/52). The blindness
+is a property of a RAIL-LESS macromodel, not of DC solving - this program's op-amp clips at its
+rails, so positive feedback drives the output to a rail and the probe oracles catch it. The gate
+would have been coverage claimed twice, so it was not added.
+
+**The ladder was wrong on its first build, and the way it was wrong is worth keeping.** Every
+node came back with an equal step to the next - a plain series chain, not a ladder - and all four
+were negative. The return rail had been drawn as ONE wire end to end, and a wire joins its two
+endpoints and nothing else, so the four bit sources sitting along its middle were never
+connected. It looks identical on the canvas either way.
+
 ### 3.46 v3.30.0 - the shortcuts the program promised and did not keep (2026-09-03)
 
 Three places tell a user which keys work - the F1 dialog, the guide's shortcut tables, and the
