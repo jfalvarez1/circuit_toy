@@ -11609,19 +11609,40 @@ static int ne555_def_id(void) {
     def->component_data_size = (size_t)NPARTS * sizeof(Component);
     def->num_components = NPARTS;
 
-    static const struct { const char *name; int node; } pins[6] = {
-        { "V+", 1 }, { "GND", 6 }, { "TRIG", 2 }, { "THRES", 3 }, { "OUT", 11 }, { "DISCH", 5 }
+    /* Laid out the way a 555 is actually drawn: TRIG, THRES and DISCH down the left, OUT on the
+       right, V+ on top and GND underneath. It used to be the first three pins left and the last
+       three right, purely by index, which put THRES and DISCH on the opposite side of the block
+       from the RC network they connect to - so the wires to them could not be drawn without
+       crossing the block or each other, and the template simply did not draw them at all.
+       The three left pins are ordered by the HEIGHT of what they connect to - DISCH to the
+       R_A/R_B junction at the top, then TRIG and THRES to the capacitor below - so the wires
+       run to their nets without crossing one another. */
+    static const struct { const char *name; int node; int side; int pos; } pins[6] = {
+        /* Both supply pins sit right of centre. Centred, the top label landed on the same row as
+           DISCH and printed through it, and the bottom pin's wire ran straight down through the
+           block's own name. */
+        { "V+",    1, 2, 5 },   /* top    */
+        { "GND",   6, 3, 5 },   /* bottom */
+        { "TRIG",  2, 0, 1 },
+        { "THRES", 3, 0, 2 },
+        { "OUT",  11, 1, 1 },   /* right  */
+        { "DISCH", 5, 0, 0 },
     };
     def->num_pins = 6;
     for (int i = 0; i < 6; i++) {
         snprintf(def->pins[i].name, sizeof def->pins[i].name, "%s", pins[i].name);
         def->pins[i].internal_node_id = pins[i].node;
-        def->pins[i].side = (i < 3) ? 0 : 1;
-        def->pins[i].position = i % 3;
+        def->pins[i].side = pins[i].side;
+        def->pins[i].position = pins[i].pos;
     }
     def->num_internal_nodes = 6;          /* 7, 8, 9, 10, 11, 12 */
     def->internal_width = 760; def->internal_height = 400;
-    def->block_width = 120; def->block_height = 120;
+    /* Wide enough for its own pin names. THRES and DISCH are five characters each and the label
+       text is a fixed size on SCREEN, so it does not shrink with the block: at the zoom this
+       template opens at, a 120-wide block left TRIG and DISCH meeting in the middle and reading
+       as one word. Nothing is drawn to these pins - the template assigns the block's node_ids
+       directly - so the width is free to follow the labels. */
+    def->block_width = 168; def->block_height = 120;
     g_subcircuit_library.count++;
     return def->id;
 }
@@ -11743,24 +11764,63 @@ static int place_ne555_astable(Circuit *circuit, float x, float y) {
     ic->props.subcircuit.def_id = def_id;
     ic->num_terminals = 6;
     snprintf(ic->props.subcircuit.name, sizeof ic->props.subcircuit.name, "NE555");
-    int gnd_ic = TN(x + 400, y + 420), out_n = TN(x + 620, y + 200);
-    Component *gi = add_comp(circuit, COMP_GROUND, x + 400, y + 440, 0);
+    /* Every pin is now wired on the canvas instead of only in the netlist.
+     *
+     * The block's nets used to be assigned straight to nets that live elsewhere on the sheet -
+     * electrically correct, and it solved and probed correctly - but nothing was ever DRAWN
+     * between the block and the circuit, so the 555 sat in the middle of its own schematic with
+     * six stubs going nowhere. A part connected only in the data is not a schematic.
+     *
+     * The pin coordinates come from the same rule component.c uses: a side pin is half the block
+     * plus a ten-unit stub, and rows are 20 apart starting 20 in from the top edge. */
+    const float bw = 168.0f / 2.0f, bh = 120.0f / 2.0f;   /* must match ne555_def_id() */
+    const float bx = x + 400, by = y + 200;
+    int pin_vp    = TN(bx - bw + 20 + 5*20, by - bh - 10);   /* top,    position 5 */
+    int pin_gnd   = TN(bx - bw + 20 + 5*20, by + bh + 10);   /* bottom, position 5 */
+    int pin_disch = TN(bx - bw - 10,        by - bh + 20 + 0*20);
+    int pin_trig  = TN(bx - bw - 10,        by - bh + 20 + 1*20);
+    int pin_thres = TN(bx - bw - 10,        by - bh + 20 + 2*20);
+    int pin_out   = TN(bx + bw + 10,        by - bh + 20 + 1*20);
+
+    ic->node_ids[0] = pin_vp;
+    ic->node_ids[1] = pin_gnd;
+    ic->node_ids[2] = pin_trig;
+    ic->node_ids[3] = pin_thres;
+    ic->node_ids[4] = pin_out;
+    ic->node_ids[5] = pin_disch;
+
+    /* V+ up to the supply rail, which now runs the width of the sheet above everything. */
+    TW(rt, TN(bx - bw + 120, y + 20));
+    TW(TN(bx - bw + 120, y + 20), pin_vp);
+
+    /* GND straight down to its own symbol, clear of the block. */
+    int gnd_ic = TN(bx - bw + 120, y + 420);
+    TW(pin_gnd, gnd_ic);
+    Component *gi = add_comp(circuit, COMP_GROUND, bx - bw + 120, y + 440, 0);
     gi->node_ids[0] = gnd_ic;
-    /* V+ from the rail, TRIG and THRES both on the capacitor, DISCH between R_A and R_B */
-    int vp = TN(x + 320, y + 20); TW(rt, vp);
-    int trig_n = ctt;
-    ic->node_ids[0] = vp;        /* V+   */
-    ic->node_ids[1] = gnd_ic;    /* GND  */
-    ic->node_ids[2] = trig_n;    /* TRIG */
-    ic->node_ids[3] = trig_n;    /* THRES tied to TRIG, which is what makes it astable */
-    ic->node_ids[4] = out_n;     /* OUT  */
-    ic->node_ids[5] = rab;       /* DISCH, between R_A and R_B */
+
+    /* DISCH back to the R_A / R_B junction, above the two wires below it. */
+    TW(pin_disch, TN(x + 240, y + 160));
+    TW(TN(x + 240, y + 160), TN(x + 240, y + 120));
+    TW(TN(x + 240, y + 120), rab);
+
+    /* TRIG and THRES strapped at the pins - which is the thing that makes it astable - and one
+       wire from there down to the top of the capacitor. */
+    TW(pin_trig, pin_thres);
+    TW(pin_thres, TN(x + 200, y + 200));
+    TW(TN(x + 200, y + 200), TN(x + 200, y + 280));
+    TW(TN(x + 200, y + 280), ctt);
+
+    /* OUT to the load, stepping down one row so nothing runs diagonally. */
+    int out_n = TN(x + 620, y + 180);
+    TW(pin_out, out_n);
+    TW(out_n, TN(x + 620, y + 200));
 
     Component *rl = add_comp(circuit, COMP_RESISTOR, x + 700, y + 260, 90);   // (700,y+220)-(700,y+300)
     rl->props.resistor.resistance = 10e3;
     int lt = TN(x + 700, y + 220), lb = TN(x + 700, y + 300);
     rl->node_ids[0] = lt; rl->node_ids[1] = lb;
-    TW(out_n, TN(x + 700, y + 200)); TW(TN(x + 700, y + 200), lt);
+    TW(TN(x + 620, y + 200), TN(x + 700, y + 200)); TW(TN(x + 700, y + 200), lt);
     Component *gl = add_comp(circuit, COMP_GROUND, x + 700, y + 340, 0);
     gl->node_ids[0] = lb;
 

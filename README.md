@@ -28,7 +28,9 @@ canvas, the canvas with the scope stacked under it, or the whole window - so wha
 a document is the drawing rather than a picture of the program. Both are scriptable:
 `--style schematic --shot-region canvas+scope --shot figure1.bmp`.
 
-In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/).
+In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/), with the sandbox
+feel of [The Powder Toy](https://github.com/The-Powder-Toy/The-Powder-Toy) - a shelf of parts, a
+blank sheet, and no wrong way to start.
 
 ![Circuit Playground Screenshot](screenshot.png)
 
@@ -38,9 +40,268 @@ In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/).
 
 ![Spotlight Search](gifs/spotlight_search.gif)
 
+## Gallery
+
+| | |
+|---|---|
+| ![RC low-pass sweep](screenshots/auto/rc_lowpass_sweep.png) RC low-pass with a 100 Hz-20 kHz sweep and tracking scope | ![Wien oscillator](screenshots/auto/wien_oscillator.png) Wien bridge oscillator |
+| ![Grid chain](screenshots/auto/grid_chain.png) 18 kV generator to a 240 V house | ![Ferranti](screenshots/auto/ferranti.png) Ferranti rise on an open 200-mile line |
+| ![Line model ladder](screenshots/auto/line_model_ladder.png) The same line as R, R-L and pi | ![Relaxation oscillator](screenshots/auto/relaxation_osc.png) Op-amp relaxation oscillator |
+| ![50/51 overcurrent](screenshots/auto/relay_overcurrent.png) CT + 50/51 overcurrent relay | ![21 distance](screenshots/auto/relay_distance.png) 21 distance zone 1 reach |
+| ![50BF](screenshots/auto/breaker_failure.png) 50BF breaker-failure timer | ![765 kV](screenshots/auto/line_765kv.png) AEP 765 kV line at SIL |
+| ![Three-phase](screenshots/auto/three_phase_balanced.png) Balanced three-phase Y (A, B, C, neutral) | ![6-pulse](screenshots/auto/six_pulse_rectifier.png) Three-phase six-pulse rectifier |
+| ![Triangle/square](screenshots/auto/triangle_square_gen.png) Bistable + integrator triangle/square generator | ![Function generator](screenshots/auto/function_generator.png) Triangle-to-sine diode shaper (function generator) |
+| ![Colpitts](screenshots/auto/colpitts.png) MOSFET Colpitts at 712 kHz | ![Ring](screenshots/auto/ring_oscillator.png) Five-inverter ring oscillator |
+| ![Hartley](screenshots/auto/hartley.png) Hartley (tapped inductor) | ![RLC ringing](screenshots/auto/rlc_ringing.png) Series RLC step: 90 % overshoot, 199 us ring |
+| ![Damping ladder](screenshots/auto/damping_ladder.png) Under / critical / over-damped on one screen | ![Op-amp saturation](screenshots/auto/opamp_saturation.png) Clipping at the rails and the lost virtual ground |
+| ![Power plant](screenshots/auto/power_plant.png) Three-phase power plant: generator, GSU bank, breakers, lines | ![Substation](screenshots/auto/substation.png) Transmission substation: 345/138 kV autos, feeders, cap banks |
+
+### Reliability Standards & Simulation Methods
+
+![Governor droop](screenshots/auto/governor.png)
+
+Nine templates built directly from utility technical reports, with the citations and numbers in
+`docs/RESEARCH_GRID_STANDARDS.md`:
+
+- **N-1 Contingency** - NERC TPL-001-5.1: two 345 kV circuits at 0.970 pu; open one breaker and the
+  bus goes to 0.925 pu, below the P0 floor but inside the 0.92-1.05 post-contingency envelope.
+- **IBR Ride-Through** - PRC-029-1 / ERCOT NOGRR-245 / IEEE 2800: a 150 ms fault holds the point of
+  interconnection near 0.29 pu while the inverter keeps injecting. Open its breaker for the legacy trip.
+- **AEP BOLD vs Conventional** - the same 150 mi corridor at 600 MW built twice. Compact phasing takes
+  Zc from 262 to 162 ohm, SIL from 454 to 735 MW (+62 %), and the bus from 0.921 to 0.989 pu - and with
+  no series capacitors there is no sub-synchronous resonance to worry about.
+- **Extreme Temperature Derating** - TPL-008-1 / PUCT 25.55: a real 4030 ppm/degC aluminium conductor
+  driven by the status-bar **Tmp slider**, plus a switchable summer air-conditioning block.
+- **Facility Rating** - FAC-008-5: four elements in one path; at 500 A only the CT crosses 100 %, so it
+  sets the rating no matter how strong the conductor is.
+- **Kron Reduction** - a Y network and its delta equivalent driven identically; the boundary voltages
+  match to the last digit (91.38 V and 81.59 V on both halves).
+- **R/X Ratio and Decoupling** - a transmission branch at R/X = 0.09 beside a feeder at R/X = 1.5:
+  the cross-coupling that makes fast decoupled power flow diverge below 100 kV.
+- **Governor Droop & Swing Equation** - BAL-001-TRE-2 patched as an op-amp analog computer (1 V = 1 Hz).
+  A 0.05 pu load step gives a -0.168 Hz nadir and settles at -0.143 Hz, the analytic -0.05/(1/R + D).
+- **Supervised Alarm Loop** - CIP-014-2: one twisted pair into the substation RTU carrying four
+  distinguishable states, so a cut or a short cannot look like "all clear".
+
+| | |
+|---|---|
+| ![N-1 contingency](screenshots/auto/n1_contingency.png) Open a breaker and watch the bus leave the P0 envelope | ![AEP BOLD](screenshots/auto/bold_line.png) BOLD against a conventional 345 kV line, same corridor and load |
+| ![Kron reduction](screenshots/auto/kron.png) Y and delta halves overlay exactly | ![Supervised loop](screenshots/auto/pids_loop.png) Four states on one pair into the RTU |
+
+### Texas Voltages, Residential & Commercial
+
+![Texas voltage ladder](screenshots/auto/tx_ladder.png)
+
+Every voltage a Texas electron passes through has a template, and every number is sized against a
+published criterion rather than picked to look good - the full table of standards, conductor data and
+documented exceptions is in `docs/RESEARCH_ERCOT_STANDARDS.md`:
+
+- **765 kV** (AEP backbone, outside ERCOT) - **345 kV** (ERCOT's highest transmission voltage, the CREZ
+  build-out) - **138 kV** - **69 kV** subtransmission - **34.5 kV** wind collector - **13.8 kV**
+  industrial primary - **12.47Y/7.2 kV** distribution - **4.16 kV** plant motor bus - **480Y/277 V** and
+  **208Y/120 V** commercial - **240/120 V** residential.
+- The **Texas Voltage Ladder** puts 345 / 138 / 69 / 12.47 kV and the 240 V service on one canvas with a
+  tap load at each level, and the scope shows all five at once in Stack + Fit (each band with its own
+  V/div in the tag). Its 69/12.47 kV transformer runs its LTC 8 steps up (+5 %); set it back to neutral
+  and the house drops to 112 V, below ANSI C84.1 Range A - which is exactly why LTCs exist.
+- **Residential & commercial**: the centre-tapped 240/120 V service (and the open-neutral failure), the
+  NEC 3 % branch-circuit rule on #14 vs #10, AC compressor start flicker, rooftop solar raising the point
+  of common coupling, 480Y/277 V and 208Y/120 V panels, power factor correction with a switched capacitor
+  bank, and an NEC 700 open-transition generator transfer.
+
+| | |
+|---|---|
+| ![240/120 V service](screenshots/auto/res_service.png) The centre-tapped pole transformer: L1 and L2 180 degrees apart | ![AC compressor start](screenshots/auto/ac_start.png) Locked-rotor current sags the panel 7 % - motor-start flicker |
+| ![CREZ wind collector](screenshots/auto/wind_collector.png) 34.5 kV strings into a 345 kV POI, and the collector voltage rise | ![Power factor correction](screenshots/auto/pfc.png) A shunt in the supply return: 123 A falls to 95 A when the bank closes |
+
+`template_smoke --std-test` measures 19 steady-state buses and reports each against its band (ERCOT
+Planning Guide 4 / NERC TPL-001-5.1 P0 at 0.95-1.05 pu, ANSI C84.1 Range A at 114-126 V, NEC 210.19(A)
+at 3 % on a branch), and pins the measured value so nothing drifts off its design point unnoticed.
+
+### IC I/O & drivers
+
+What a GPIO pin is made of and how it talks to the outside world - twelve templates in the **IC I/O & drivers** group:
+push-pull (CMOS) output, open-drain + pull-up, open-collector level shift, the I2C wired-AND bus and the NXP one-MOSFET
+level shifter, a debounced pull-up input, low-side (flyback) and high-side (PMOS) load switches, SPI series termination,
+UART between 5 V and 3.3 V parts, an RS-485 differential link with common-mode noise, and the 1.8 V SPMI bus. Each one
+probes every signal that matters (Stack view) and its text says what to change to break it.
+
+| | |
+|---|---|
+| ![I2C bus](screenshots/auto/i2c_bus.png) I2C SDA: master and slave open-drain, the line is LOW when either pulls | ![RS-485](screenshots/auto/rs485.png) RS-485: A/B carry the data plus 1 V of common-mode noise, the receiver sees only A-B |
+| ![High-side switch](screenshots/auto/high_side.png) High-side PMOS switch driven from 3.3 V through an NPN | ![GPIO input](screenshots/auto/gpio_input.png) Pull-up input, button, RC debounce, inverter |
+| ![Two-stage amp](screenshots/auto/two_stage_fit.png) Scope **Fit**: 10 mV input and 130 mV output on 6 V DC, each band on its own scale | ![SPI](screenshots/auto/spi.png) SPI at 10 MHz through 33 ohm into 200 pF of cable |
+| ![Single-tuned amplifier](screenshots/auto/single_tuned_amp.png) Single-tuned (LC collector load) amplifier | ![SR latch](screenshots/auto/sr_latch.png) SR latch from cross-coupled NOR gates |
+
+
+### Interview Prep
+
+<details>
+<summary><b>The interview circuits, with the answer to check against</b> - click to expand</summary>
+
+Four groups of templates aimed at the questions a hardware interview actually asks - the kind
+Apple, Texas Instruments, Cirrus Logic and National Instruments put to board-level and analog
+candidates. Nothing in these groups repeats a circuit that already exists elsewhere in the
+library: where the ground is already covered, the notes name the template that covers it, so
+"how does a buck converter work" sends you to **Buck Converter** and the interview group adds
+the discrete version, the gate drive and the efficiency argument instead.
+
+**Interview: instrumentation & scope** - the measurement questions, where the circuit is fine
+and the answer on the screen is wrong because of how it was measured.
+
+- **Probe Compensation** (`PrbCmp`) - under, correct and over on one 1 kHz CAL square. The
+  trimmer sets 9M x Cp = 1M x 15 pF; get it wrong and you report ringing that is not there
+- **Probe Loading (1x vs 10x)** (`PrbLd`) - a 1 MHz square out of 10 k: 3.3 Vpp bare, 0.77 Vpp
+  once a 1x probe's 100 pF is on the node. The probe is part of the circuit
+- **Ground Lead Ringing** (`GndLd`) - a 6 inch clip is 150 nH and rings at 119 MHz against the
+  probe tip; a half-inch spring tip is 15 nH and does not
+- **Scope Input: 1 M vs 50 ohm** (`InpZ`) - a generator marked 1 V is 1 V *into 50 ohms*. Leave
+  the scope on 1 M and the cable end is open: you read 2.2 V and blame the generator
+- **AC Coupling: 200 mV on 12 V** (`ACcpl`) - the ripple you cannot see at 5 V/div, and the
+  0.1 uF into 1 M that lets you turn the gain up
+- **Current Sense: High vs Low Side** (`Isense`) - burden voltage, ground lift, common mode,
+  and why a short to ground is invisible to a low-side shunt
+- **4-Wire (Kelvin) Sensing** (`Kelvin`) - a 10 mohm shunt with 50 mohm leads reads 110 mohm
+  two-wire and 10 mohm four-wire, because the sense leads carry no current
+
+**Interview: power & converters**
+
+- **Discrete Buck, Node by Node** (`BuckN`) - an IRF9540N, an NPN driving its gate and a
+  Schottky catching the current, so the gate, switch node, inductor and output each have their
+  own answer to "draw me the waveform there"
+- **LDO vs Switcher** (`LDOsw`) - 12 V to 5 V at 1 A both ways, with an ammeter in each input:
+  1 A in and 7 W of heat, against about 440 mA
+- **Bootstrap High-Side Drive** (`Boot`) - C_boot rides the switch node to 23 V so an N-channel
+  gate can sit above the rail, and the second copy holds the node high until the cap drains and
+  the high side turns itself off. This is why a bootstrapped buck has a maximum duty cycle
+
+**Interview: I/O & signal integrity**
+
+- **Termination: none / series / parallel** (`Term`) - one driver, one 50 ohm line, three
+  endings. Unterminated the far end doubles to 4.75 V; series 33 ohm gives a clean 3.36 V and
+  absorbs what comes back; parallel 50 ohm is cleanest and costs the receiver a third of its
+  amplitude forever
+- **Pull-up Sizing** (`PullUp`) - 10k / 4.7k / 1k against 400 pF: 8.8 us at 330 uA, 4.1 us at
+  700 uA, 880 ns at 3.3 mA. Both ends of the I2C specification, and why the bus is capped at
+  400 pF
+- **Ground Bounce** (`Bounce`) - 330 mA in a nanosecond through 5 nH of shared return swings
+  the chip's ground 2.2 V pk-pk, and the pin that is holding LOW moves with it
+- **Crosstalk** (`Xtalk`) - the same 6.6 pC of coupled charge into a 10 k victim (0.94 V for
+  70 ns) and a 10 ohm one (76 mV, gone). Coupling is only a fault when the victim lets it be
+- **ESD Clamp Diodes** (`ESD`) - 6 V into a 3.3 V pin: through 1 k it sits at 3.85 V and pushes
+  current into the rail, which is how a live signal back-powers a board that is switched off
+
+**Interview: fundamentals**
+
+- **The Two-Capacitor Problem** (`CapE`) - 100 uF at 10 V switched onto an equal empty one.
+  Both end at 5 V and half the energy is gone, and it is the same half through 1 ohm as
+  through 100
+- **The Miller Effect** (`Miller`) - two identical common-source stages at 1 MHz; the one with
+  10 pF of C_gd sees 130 pF at its input and is down to a seventh of the other
+- **BJT or MOSFET as a Switch** (`SwSel`) - V_CE(sat) against I x R_DS(on), and what each
+  costs: continuous base current, or gate charge per edge. R_DS(on) is 3.4 ohm at V_GS = 5 V,
+  not the data sheet's 1.2 at 10 V, which is the whole "logic level" point
+- **Hot-Plug Inrush** (`Inrush`) - 1000 uF meeting 12 V through a closing connector: 240 A for
+  50 us, or 2.5 A through a 4.7 ohm limiter
+
+</details>
+
+### Battery monitoring & electronic load
+
+<details>
+<summary><b>The battery instrument, circuit by circuit</b> - click to expand</summary>
+
+The circuits of a battery instrument: the load that discharges a cell at a set rate, the two
+stages that charge it back up, the sensor that stops the charge if it gets hot, and a bench
+stand-in for the cell itself. Every one of them has an answer you can check on paper, and the
+notes give it.
+
+- **E-Load: Constant Current Sink** (`ELoad`) - the circuit an electronic load is built round.
+  An op-amp holds the sense resistor at a reference, so the current is V_ref / R_sense and the
+  cell's voltage does not enter into it: 3.2 V across 3.2 ohm is 1 A
+- **E-Load: Constant Resistance** (`ELoadCR`) - the same sink with the reference taken from a
+  90k/10k divider off the cell instead of a fixed source. The current now tracks the cell, so
+  V/I stays at R_sense/k = 10 ohm however far it sags. A constant-resistance mode with no
+  multiplier in it
+- **E-Load: Constant Voltage** (`ELoadCV`) - holds its own terminal at a setpoint and takes
+  whatever that needs. The inputs go the opposite way round from the current sink, because a
+  terminal that is too high needs MORE current to pull it down. 7.4 V behind 4.4 ohm held at
+  3.0 V is exactly 1 A
+- **LiPo Charger: CC Stage** (`ChgCC`) - a high-side IRF9540 passing 1.1 A, with the sense
+  resistor in the RETURN leg where one op-amp can read it against ground. A high-side sense
+  would need a difference amp and its CMRR
+- **LiPo Charger: CV Stage** (`ChgCV`) - 4.20 V from two LM317s in cascade, the first dropping
+  15 V to about 8 so the heat is split between two packages. 200 mA into 21 ohm
+- **BMI: NTC Thermal Cutout** (`ThermCut`) - a 10k NTC against a 10k resistor on 6 V, compared
+  with 2.4 V. Drag the **Tmp** slider at the bottom of the window past 35 C and the comparator
+  flips; that edge is what stops the charge
+- **BMI: Supercap Cell Simulator** (`SupCap`) - 0.1 F charging through 2 ohm with 10 ohm across
+  it, settling at 4.167 V. The supply is stepped rather than held, because a solver starts a
+  capacitor at its operating point and a DC rail would show the answer with no curve
+
+**My Circuits** also carries **BMI**, the same discharge stage transcribed from the original
+senior-design schematic *without* correction - a P-channel low side with the reference on + and
+the sense on -, which is positive feedback and latches. It is there on purpose next to the
+corrected one: the parts and their models are identical and only the sign of the loop differs.
+
+</details>
+
+### Sensors & bridges, and data conversion
+
+<details>
+<summary><b>The three EE_Review circuits and their published numbers</b> - click to expand</summary>
+
+Three circuits taken from the [EE_Review](https://github.com/jfalvarez1/EE_Review) course,
+which ends each lesson with a "Build it in Circuit Toy" table of numbers computed from its own
+netlists. Bringing one in here creates a second copy of the same claim, and two copies of a
+number drift - so the course's values are checked against these templates on every commit by
+`--ee-test`, and if either side changes a component value it fails. Thirteen values, none of
+them transcribed twice.
+
+- **Strain Gauge Bridge** (`Strain`) - four 350 ohm arms across 5 V with R3 strained to 353.5,
+  which is 5 milli-strain on a gauge factor of 2. The reference half sits at exactly 2.5 V and
+  the strained half at 2.51244, so the output is 12.44 mV - a quarter of a percent of the
+  excitation, which is why the x100 amplifier is not optional. Both halves drift together with
+  temperature, which is the reason for the bridge at all
+- **R-2R Ladder DAC** (`R2R`) - four bits set to 1010, so 10 of 16 and the output is 3.125 V.
+  Looking back from any node the ladder presents the same resistance, which is the whole trick:
+  each bit contributes exactly half the one above it. The four ladder nodes are the lesson.
+  RTERM carries no current, because the buffer draws none, so `out` sits at V(n3)
+- **String DAC: DNL and INL** (`StrDAC`) - four taps off 2.5 V that should each be a quarter,
+  except R3 is 1.5k where the others are 1k. That one resistor is the whole lesson: the step
+  from t1 to t2 becomes 1.33 LSB instead of 1, and t2 lands 138.9 mV above where its code says.
+  A step over 2 LSB would skip a code entirely. Set R3 to 1k and all three errors go to zero
+
+</details>
+
+### Ideal vs real models
+
+| | |
+|---|---|
+| ![Ideal vs real capacitor](screenshots/auto/id_cap.png) ESR turns the ripple triangle into a square step | ![Ideal vs real op-amp](screenshots/auto/id_opamp.png) Gain-bandwidth, then slew rate: the sine leaves as a triangle |
+| ![Ideal vs real inductor](screenshots/auto/id_ind.png) Winding resistance takes the ring from zeta 0.05 to 0.30 | ![Ideal vs real diode](screenshots/auto/id_diode.png) The 0.7 V brick wall against the Shockley knee |
+
+
+![Function generator](gifs/auto_function_generator.gif)
+
+![Three-phase](gifs/auto_three_phase_balanced.gif)
+
+![RC sweep](gifs/auto_rc_lowpass_sweep.gif)
+
+![Tesla coil](gifs/auto_tesla_coil.gif)
+
+![Spotlight: type "mosfet", Enter places the NMOS](gifs/auto_spotlight_search.gif)
+
+![87 line differential](gifs/auto_relay_differential.gif)
+
+![50BF breaker failure](gifs/auto_breaker_failure.gif)
+
 ## Features
 
 ### Extensive Component Library
+
+<details>
+<summary><b>Every part, by category</b> - click to expand</summary>
 
 **Sources**
 - Ground reference
@@ -141,9 +402,14 @@ In the spirit of [Paul Falstad's circuit.js](https://www.falstad.com/circuit/).
 - Text Annotation (with font size, bold, italic, underline options)
 - Voltage Probe (connect to oscilloscope)
 
+</details>
+
 ### Pre-Built Circuit Templates
 
 ![Example Circuits](gifs/example_circuits.gif)
+
+<details>
+<summary><b>The full template catalogue, group by group</b> - click to expand</summary>
 
 Schematic text is antialiased and drawn in the notation a schematic uses - `10k`, `100nF`,
 `170V 60Hz` - and an audit checks that no label lands on a symbol or on another label.
@@ -354,6 +620,8 @@ smoke tests enforce, so the example really shows the behaviour it is named after
 - **Op-Amp Error Sources** (`OAerr`) - Offset and bias current at DC, and how to cancel them
 - **Named Parts: MOSFET Switches** (`Parts`) - 2N7000 / 2N7002 / IRF540N doing the same job
 - **Ceramic DC Bias** (`Cbias`) - The same 10 uF X5R at 0, 2 and 5 V of bias
+
+</details>
 
 ### Power Systems & High Voltage
 
@@ -741,247 +1009,6 @@ the guide as `circuit-playground-windows-vX.Y.Z.zip`. A release with a red build
 - **Save/Load circuits** - Binary format (.ckt) and JSON; **Load** opens the system file dialog
 - **Auto-save** - Periodic backup during work
 - **Circuit templates** - Pre-built example circuits
-
-## Gallery
-
-| | |
-|---|---|
-| ![RC low-pass sweep](screenshots/auto/rc_lowpass_sweep.png) RC low-pass with a 100 Hz-20 kHz sweep and tracking scope | ![Wien oscillator](screenshots/auto/wien_oscillator.png) Wien bridge oscillator |
-| ![Grid chain](screenshots/auto/grid_chain.png) 18 kV generator to a 240 V house | ![Ferranti](screenshots/auto/ferranti.png) Ferranti rise on an open 200-mile line |
-| ![Line model ladder](screenshots/auto/line_model_ladder.png) The same line as R, R-L and pi | ![Relaxation oscillator](screenshots/auto/relaxation_osc.png) Op-amp relaxation oscillator |
-| ![50/51 overcurrent](screenshots/auto/relay_overcurrent.png) CT + 50/51 overcurrent relay | ![21 distance](screenshots/auto/relay_distance.png) 21 distance zone 1 reach |
-| ![50BF](screenshots/auto/breaker_failure.png) 50BF breaker-failure timer | ![765 kV](screenshots/auto/line_765kv.png) AEP 765 kV line at SIL |
-| ![Three-phase](screenshots/auto/three_phase_balanced.png) Balanced three-phase Y (A, B, C, neutral) | ![6-pulse](screenshots/auto/six_pulse_rectifier.png) Three-phase six-pulse rectifier |
-| ![Triangle/square](screenshots/auto/triangle_square_gen.png) Bistable + integrator triangle/square generator | ![Function generator](screenshots/auto/function_generator.png) Triangle-to-sine diode shaper (function generator) |
-| ![Colpitts](screenshots/auto/colpitts.png) MOSFET Colpitts at 712 kHz | ![Ring](screenshots/auto/ring_oscillator.png) Five-inverter ring oscillator |
-| ![Hartley](screenshots/auto/hartley.png) Hartley (tapped inductor) | ![RLC ringing](screenshots/auto/rlc_ringing.png) Series RLC step: 90 % overshoot, 199 us ring |
-| ![Damping ladder](screenshots/auto/damping_ladder.png) Under / critical / over-damped on one screen | ![Op-amp saturation](screenshots/auto/opamp_saturation.png) Clipping at the rails and the lost virtual ground |
-| ![Power plant](screenshots/auto/power_plant.png) Three-phase power plant: generator, GSU bank, breakers, lines | ![Substation](screenshots/auto/substation.png) Transmission substation: 345/138 kV autos, feeders, cap banks |
-
-### Reliability Standards & Simulation Methods
-
-![Governor droop](screenshots/auto/governor.png)
-
-Nine templates built directly from utility technical reports, with the citations and numbers in
-`docs/RESEARCH_GRID_STANDARDS.md`:
-
-- **N-1 Contingency** - NERC TPL-001-5.1: two 345 kV circuits at 0.970 pu; open one breaker and the
-  bus goes to 0.925 pu, below the P0 floor but inside the 0.92-1.05 post-contingency envelope.
-- **IBR Ride-Through** - PRC-029-1 / ERCOT NOGRR-245 / IEEE 2800: a 150 ms fault holds the point of
-  interconnection near 0.29 pu while the inverter keeps injecting. Open its breaker for the legacy trip.
-- **AEP BOLD vs Conventional** - the same 150 mi corridor at 600 MW built twice. Compact phasing takes
-  Zc from 262 to 162 ohm, SIL from 454 to 735 MW (+62 %), and the bus from 0.921 to 0.989 pu - and with
-  no series capacitors there is no sub-synchronous resonance to worry about.
-- **Extreme Temperature Derating** - TPL-008-1 / PUCT 25.55: a real 4030 ppm/degC aluminium conductor
-  driven by the status-bar **Tmp slider**, plus a switchable summer air-conditioning block.
-- **Facility Rating** - FAC-008-5: four elements in one path; at 500 A only the CT crosses 100 %, so it
-  sets the rating no matter how strong the conductor is.
-- **Kron Reduction** - a Y network and its delta equivalent driven identically; the boundary voltages
-  match to the last digit (91.38 V and 81.59 V on both halves).
-- **R/X Ratio and Decoupling** - a transmission branch at R/X = 0.09 beside a feeder at R/X = 1.5:
-  the cross-coupling that makes fast decoupled power flow diverge below 100 kV.
-- **Governor Droop & Swing Equation** - BAL-001-TRE-2 patched as an op-amp analog computer (1 V = 1 Hz).
-  A 0.05 pu load step gives a -0.168 Hz nadir and settles at -0.143 Hz, the analytic -0.05/(1/R + D).
-- **Supervised Alarm Loop** - CIP-014-2: one twisted pair into the substation RTU carrying four
-  distinguishable states, so a cut or a short cannot look like "all clear".
-
-| | |
-|---|---|
-| ![N-1 contingency](screenshots/auto/n1_contingency.png) Open a breaker and watch the bus leave the P0 envelope | ![AEP BOLD](screenshots/auto/bold_line.png) BOLD against a conventional 345 kV line, same corridor and load |
-| ![Kron reduction](screenshots/auto/kron.png) Y and delta halves overlay exactly | ![Supervised loop](screenshots/auto/pids_loop.png) Four states on one pair into the RTU |
-
-### Texas Voltages, Residential & Commercial
-
-![Texas voltage ladder](screenshots/auto/tx_ladder.png)
-
-Every voltage a Texas electron passes through has a template, and every number is sized against a
-published criterion rather than picked to look good - the full table of standards, conductor data and
-documented exceptions is in `docs/RESEARCH_ERCOT_STANDARDS.md`:
-
-- **765 kV** (AEP backbone, outside ERCOT) - **345 kV** (ERCOT's highest transmission voltage, the CREZ
-  build-out) - **138 kV** - **69 kV** subtransmission - **34.5 kV** wind collector - **13.8 kV**
-  industrial primary - **12.47Y/7.2 kV** distribution - **4.16 kV** plant motor bus - **480Y/277 V** and
-  **208Y/120 V** commercial - **240/120 V** residential.
-- The **Texas Voltage Ladder** puts 345 / 138 / 69 / 12.47 kV and the 240 V service on one canvas with a
-  tap load at each level, and the scope shows all five at once in Stack + Fit (each band with its own
-  V/div in the tag). Its 69/12.47 kV transformer runs its LTC 8 steps up (+5 %); set it back to neutral
-  and the house drops to 112 V, below ANSI C84.1 Range A - which is exactly why LTCs exist.
-- **Residential & commercial**: the centre-tapped 240/120 V service (and the open-neutral failure), the
-  NEC 3 % branch-circuit rule on #14 vs #10, AC compressor start flicker, rooftop solar raising the point
-  of common coupling, 480Y/277 V and 208Y/120 V panels, power factor correction with a switched capacitor
-  bank, and an NEC 700 open-transition generator transfer.
-
-| | |
-|---|---|
-| ![240/120 V service](screenshots/auto/res_service.png) The centre-tapped pole transformer: L1 and L2 180 degrees apart | ![AC compressor start](screenshots/auto/ac_start.png) Locked-rotor current sags the panel 7 % - motor-start flicker |
-| ![CREZ wind collector](screenshots/auto/wind_collector.png) 34.5 kV strings into a 345 kV POI, and the collector voltage rise | ![Power factor correction](screenshots/auto/pfc.png) A shunt in the supply return: 123 A falls to 95 A when the bank closes |
-
-`template_smoke --std-test` measures 19 steady-state buses and reports each against its band (ERCOT
-Planning Guide 4 / NERC TPL-001-5.1 P0 at 0.95-1.05 pu, ANSI C84.1 Range A at 114-126 V, NEC 210.19(A)
-at 3 % on a branch), and pins the measured value so nothing drifts off its design point unnoticed.
-
-### IC I/O & drivers
-
-What a GPIO pin is made of and how it talks to the outside world - twelve templates in the **IC I/O & drivers** group:
-push-pull (CMOS) output, open-drain + pull-up, open-collector level shift, the I2C wired-AND bus and the NXP one-MOSFET
-level shifter, a debounced pull-up input, low-side (flyback) and high-side (PMOS) load switches, SPI series termination,
-UART between 5 V and 3.3 V parts, an RS-485 differential link with common-mode noise, and the 1.8 V SPMI bus. Each one
-probes every signal that matters (Stack view) and its text says what to change to break it.
-
-| | |
-|---|---|
-| ![I2C bus](screenshots/auto/i2c_bus.png) I2C SDA: master and slave open-drain, the line is LOW when either pulls | ![RS-485](screenshots/auto/rs485.png) RS-485: A/B carry the data plus 1 V of common-mode noise, the receiver sees only A-B |
-| ![High-side switch](screenshots/auto/high_side.png) High-side PMOS switch driven from 3.3 V through an NPN | ![GPIO input](screenshots/auto/gpio_input.png) Pull-up input, button, RC debounce, inverter |
-| ![Two-stage amp](screenshots/auto/two_stage_fit.png) Scope **Fit**: 10 mV input and 130 mV output on 6 V DC, each band on its own scale | ![SPI](screenshots/auto/spi.png) SPI at 10 MHz through 33 ohm into 200 pF of cable |
-| ![Single-tuned amplifier](screenshots/auto/single_tuned_amp.png) Single-tuned (LC collector load) amplifier | ![SR latch](screenshots/auto/sr_latch.png) SR latch from cross-coupled NOR gates |
-
-
-### Interview Prep
-
-Four groups of templates aimed at the questions a hardware interview actually asks - the kind
-Apple, Texas Instruments, Cirrus Logic and National Instruments put to board-level and analog
-candidates. Nothing in these groups repeats a circuit that already exists elsewhere in the
-library: where the ground is already covered, the notes name the template that covers it, so
-"how does a buck converter work" sends you to **Buck Converter** and the interview group adds
-the discrete version, the gate drive and the efficiency argument instead.
-
-**Interview: instrumentation & scope** - the measurement questions, where the circuit is fine
-and the answer on the screen is wrong because of how it was measured.
-
-- **Probe Compensation** (`PrbCmp`) - under, correct and over on one 1 kHz CAL square. The
-  trimmer sets 9M x Cp = 1M x 15 pF; get it wrong and you report ringing that is not there
-- **Probe Loading (1x vs 10x)** (`PrbLd`) - a 1 MHz square out of 10 k: 3.3 Vpp bare, 0.77 Vpp
-  once a 1x probe's 100 pF is on the node. The probe is part of the circuit
-- **Ground Lead Ringing** (`GndLd`) - a 6 inch clip is 150 nH and rings at 119 MHz against the
-  probe tip; a half-inch spring tip is 15 nH and does not
-- **Scope Input: 1 M vs 50 ohm** (`InpZ`) - a generator marked 1 V is 1 V *into 50 ohms*. Leave
-  the scope on 1 M and the cable end is open: you read 2.2 V and blame the generator
-- **AC Coupling: 200 mV on 12 V** (`ACcpl`) - the ripple you cannot see at 5 V/div, and the
-  0.1 uF into 1 M that lets you turn the gain up
-- **Current Sense: High vs Low Side** (`Isense`) - burden voltage, ground lift, common mode,
-  and why a short to ground is invisible to a low-side shunt
-- **4-Wire (Kelvin) Sensing** (`Kelvin`) - a 10 mohm shunt with 50 mohm leads reads 110 mohm
-  two-wire and 10 mohm four-wire, because the sense leads carry no current
-
-**Interview: power & converters**
-
-- **Discrete Buck, Node by Node** (`BuckN`) - an IRF9540N, an NPN driving its gate and a
-  Schottky catching the current, so the gate, switch node, inductor and output each have their
-  own answer to "draw me the waveform there"
-- **LDO vs Switcher** (`LDOsw`) - 12 V to 5 V at 1 A both ways, with an ammeter in each input:
-  1 A in and 7 W of heat, against about 440 mA
-- **Bootstrap High-Side Drive** (`Boot`) - C_boot rides the switch node to 23 V so an N-channel
-  gate can sit above the rail, and the second copy holds the node high until the cap drains and
-  the high side turns itself off. This is why a bootstrapped buck has a maximum duty cycle
-
-**Interview: I/O & signal integrity**
-
-- **Termination: none / series / parallel** (`Term`) - one driver, one 50 ohm line, three
-  endings. Unterminated the far end doubles to 4.75 V; series 33 ohm gives a clean 3.36 V and
-  absorbs what comes back; parallel 50 ohm is cleanest and costs the receiver a third of its
-  amplitude forever
-- **Pull-up Sizing** (`PullUp`) - 10k / 4.7k / 1k against 400 pF: 8.8 us at 330 uA, 4.1 us at
-  700 uA, 880 ns at 3.3 mA. Both ends of the I2C specification, and why the bus is capped at
-  400 pF
-- **Ground Bounce** (`Bounce`) - 330 mA in a nanosecond through 5 nH of shared return swings
-  the chip's ground 2.2 V pk-pk, and the pin that is holding LOW moves with it
-- **Crosstalk** (`Xtalk`) - the same 6.6 pC of coupled charge into a 10 k victim (0.94 V for
-  70 ns) and a 10 ohm one (76 mV, gone). Coupling is only a fault when the victim lets it be
-- **ESD Clamp Diodes** (`ESD`) - 6 V into a 3.3 V pin: through 1 k it sits at 3.85 V and pushes
-  current into the rail, which is how a live signal back-powers a board that is switched off
-
-**Interview: fundamentals**
-
-- **The Two-Capacitor Problem** (`CapE`) - 100 uF at 10 V switched onto an equal empty one.
-  Both end at 5 V and half the energy is gone, and it is the same half through 1 ohm as
-  through 100
-- **The Miller Effect** (`Miller`) - two identical common-source stages at 1 MHz; the one with
-  10 pF of C_gd sees 130 pF at its input and is down to a seventh of the other
-- **BJT or MOSFET as a Switch** (`SwSel`) - V_CE(sat) against I x R_DS(on), and what each
-  costs: continuous base current, or gate charge per edge. R_DS(on) is 3.4 ohm at V_GS = 5 V,
-  not the data sheet's 1.2 at 10 V, which is the whole "logic level" point
-- **Hot-Plug Inrush** (`Inrush`) - 1000 uF meeting 12 V through a closing connector: 240 A for
-  50 us, or 2.5 A through a 4.7 ohm limiter
-
-### Battery monitoring & electronic load
-
-The circuits of a battery instrument: the load that discharges a cell at a set rate, the two
-stages that charge it back up, the sensor that stops the charge if it gets hot, and a bench
-stand-in for the cell itself. Every one of them has an answer you can check on paper, and the
-notes give it.
-
-- **E-Load: Constant Current Sink** (`ELoad`) - the circuit an electronic load is built round.
-  An op-amp holds the sense resistor at a reference, so the current is V_ref / R_sense and the
-  cell's voltage does not enter into it: 3.2 V across 3.2 ohm is 1 A
-- **E-Load: Constant Resistance** (`ELoadCR`) - the same sink with the reference taken from a
-  90k/10k divider off the cell instead of a fixed source. The current now tracks the cell, so
-  V/I stays at R_sense/k = 10 ohm however far it sags. A constant-resistance mode with no
-  multiplier in it
-- **E-Load: Constant Voltage** (`ELoadCV`) - holds its own terminal at a setpoint and takes
-  whatever that needs. The inputs go the opposite way round from the current sink, because a
-  terminal that is too high needs MORE current to pull it down. 7.4 V behind 4.4 ohm held at
-  3.0 V is exactly 1 A
-- **LiPo Charger: CC Stage** (`ChgCC`) - a high-side IRF9540 passing 1.1 A, with the sense
-  resistor in the RETURN leg where one op-amp can read it against ground. A high-side sense
-  would need a difference amp and its CMRR
-- **LiPo Charger: CV Stage** (`ChgCV`) - 4.20 V from two LM317s in cascade, the first dropping
-  15 V to about 8 so the heat is split between two packages. 200 mA into 21 ohm
-- **BMI: NTC Thermal Cutout** (`ThermCut`) - a 10k NTC against a 10k resistor on 6 V, compared
-  with 2.4 V. Drag the **Tmp** slider at the bottom of the window past 35 C and the comparator
-  flips; that edge is what stops the charge
-- **BMI: Supercap Cell Simulator** (`SupCap`) - 0.1 F charging through 2 ohm with 10 ohm across
-  it, settling at 4.167 V. The supply is stepped rather than held, because a solver starts a
-  capacitor at its operating point and a DC rail would show the answer with no curve
-
-**My Circuits** also carries **BMI**, the same discharge stage transcribed from the original
-senior-design schematic *without* correction - a P-channel low side with the reference on + and
-the sense on -, which is positive feedback and latches. It is there on purpose next to the
-corrected one: the parts and their models are identical and only the sign of the loop differs.
-
-### Sensors & bridges, and data conversion
-
-Three circuits taken from the [EE_Review](https://github.com/jfalvarez1/EE_Review) course,
-which ends each lesson with a "Build it in Circuit Toy" table of numbers computed from its own
-netlists. Bringing one in here creates a second copy of the same claim, and two copies of a
-number drift - so the course's values are checked against these templates on every commit by
-`--ee-test`, and if either side changes a component value it fails. Thirteen values, none of
-them transcribed twice.
-
-- **Strain Gauge Bridge** (`Strain`) - four 350 ohm arms across 5 V with R3 strained to 353.5,
-  which is 5 milli-strain on a gauge factor of 2. The reference half sits at exactly 2.5 V and
-  the strained half at 2.51244, so the output is 12.44 mV - a quarter of a percent of the
-  excitation, which is why the x100 amplifier is not optional. Both halves drift together with
-  temperature, which is the reason for the bridge at all
-- **R-2R Ladder DAC** (`R2R`) - four bits set to 1010, so 10 of 16 and the output is 3.125 V.
-  Looking back from any node the ladder presents the same resistance, which is the whole trick:
-  each bit contributes exactly half the one above it. The four ladder nodes are the lesson.
-  RTERM carries no current, because the buffer draws none, so `out` sits at V(n3)
-- **String DAC: DNL and INL** (`StrDAC`) - four taps off 2.5 V that should each be a quarter,
-  except R3 is 1.5k where the others are 1k. That one resistor is the whole lesson: the step
-  from t1 to t2 becomes 1.33 LSB instead of 1, and t2 lands 138.9 mV above where its code says.
-  A step over 2 LSB would skip a code entirely. Set R3 to 1k and all three errors go to zero
-
-### Ideal vs real models
-
-| | |
-|---|---|
-| ![Ideal vs real capacitor](screenshots/auto/id_cap.png) ESR turns the ripple triangle into a square step | ![Ideal vs real op-amp](screenshots/auto/id_opamp.png) Gain-bandwidth, then slew rate: the sine leaves as a triangle |
-| ![Ideal vs real inductor](screenshots/auto/id_ind.png) Winding resistance takes the ring from zeta 0.05 to 0.30 | ![Ideal vs real diode](screenshots/auto/id_diode.png) The 0.7 V brick wall against the Shockley knee |
-
-
-![Function generator](gifs/auto_function_generator.gif)
-
-![Three-phase](gifs/auto_three_phase_balanced.gif)
-
-![RC sweep](gifs/auto_rc_lowpass_sweep.gif)
-
-![Tesla coil](gifs/auto_tesla_coil.gif)
-
-![Spotlight: type "mosfet", Enter places the NMOS](gifs/auto_spotlight_search.gif)
-
-![87 line differential](gifs/auto_relay_differential.gif)
-
-![50BF breaker failure](gifs/auto_breaker_failure.gif)
 
 ## Building
 
@@ -1417,7 +1444,10 @@ MIT License - See LICENSE file for details.
 ## Acknowledgments
 
 - Inspired by **[Paul Falstad's circuit.js](https://www.falstad.com/circuit/)** ([source](https://github.com/pfalstad/circuitjs1)) - the example-first library, the current dots, the click-anything feel
-- Inspired by [The Powder Toy](https://github.com/The-Powder-Toy/The-Powder-Toy) particle simulation game
+- Inspired by **[The Powder Toy](https://github.com/The-Powder-Toy/The-Powder-Toy)** - the sandbox feel: a
+  shelf of parts, a blank sheet, and no wrong way to start. Drop things down, wire them up, break
+  them on purpose and watch what happens. Nothing here asks you to declare what you are building
+  before you build it
 - Architecture follows the same C/SDL2 pattern
 - Synthwave color theme inspired by 1980s aesthetics
 - Component models based on SPICE simulation principles

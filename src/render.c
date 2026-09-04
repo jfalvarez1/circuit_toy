@@ -5067,25 +5067,33 @@ void render_subcircuit(RenderContext *ctx, float x, float y, int rotation, int d
     float half_w = width / 2.0f;
     float half_h = height / 2.0f;
 
-    Color body_color = {60, 60, 80, 255};      // Dark blue-gray IC body
-    Color outline_color = {120, 120, 140, 255}; // Lighter outline
+    /* The same body the programmable block uses. This was a flat mid-grey that matched nothing
+       else on the canvas and read as a placeholder rather than a part. */
+    Color body_color = {44, 52, 72, 255};       // IC body, as COMP_MCU
+    Color outline_color = {130, 130, 160, 255}; // Lighter outline
     Color pin_color = {180, 180, 180, 255};     // Silver pins
     Color label_color = {200, 200, 220, 255};   // Light label
 
+    /* The body is inset from the terminal line so the pin stubs have somewhere to run. It used to
+       be inset 5 a side, which cost 4 units of interior that the pin names need - the terminals
+       cannot move, because component.c derives them from block_width and the templates wire to
+       those coordinates, so the only room available is here. */
+    const float inset = 3.0f;
+
     // Draw IC body (filled rectangle)
     render_set_color(ctx, body_color);
-    render_fill_rect(ctx, x - half_w + 5, y - half_h + 5, width - 10, height - 10);
+    render_fill_rect(ctx, x - half_w + inset, y - half_h + inset, width - 2*inset, height - 2*inset);
 
     // Draw outline
     render_set_color(ctx, outline_color);
-    render_draw_line(ctx, x - half_w + 5, y - half_h + 5, x + half_w - 5, y - half_h + 5);  // Top
-    render_draw_line(ctx, x + half_w - 5, y - half_h + 5, x + half_w - 5, y + half_h - 5);  // Right
-    render_draw_line(ctx, x + half_w - 5, y + half_h - 5, x - half_w + 5, y + half_h - 5);  // Bottom
-    render_draw_line(ctx, x - half_w + 5, y + half_h - 5, x - half_w + 5, y - half_h + 5);  // Left
+    render_draw_line(ctx, x - half_w + inset, y - half_h + inset, x + half_w - inset, y - half_h + inset);  // Top
+    render_draw_line(ctx, x + half_w - inset, y - half_h + inset, x + half_w - inset, y + half_h - inset);  // Right
+    render_draw_line(ctx, x + half_w - inset, y + half_h - inset, x - half_w + inset, y + half_h - inset);  // Bottom
+    render_draw_line(ctx, x - half_w + inset, y + half_h - inset, x - half_w + inset, y - half_h + inset);  // Left
 
     // Draw notch at top (IC orientation marker - semi-circular indent)
     // Draw a small half-circle indent at the top edge
-    float notch_y = y - half_h + 5;
+    float notch_y = y - half_h + inset;
     float notch_r = 6.0f;
     // Draw arc segments to make a semi-circle indent pointing down
     for (int i = 0; i < 8; i++) {
@@ -5112,33 +5120,44 @@ void render_subcircuit(RenderContext *ctx, float x, float y, int rotation, int d
                     px = x - half_w;
                     py = y - half_h + 20 + pin->position * 20;
                     render_draw_line(ctx, px - 10, py, px + 5, py);
-                    // Draw label inside the body (right of pin)
-                    render_world_to_screen(ctx, px + 10, py, &sx, &sy);
-                    render_draw_text_small(ctx, pin->name, sx, sy - 4, label_color);
+                    /* Padded in SCREEN pixels off the body edge, not in world units.
+                       The text is a fixed size on screen whatever the zoom, but a world-unit
+                       padding shrinks with the box - so at the 0.76 zoom this template opens at,
+                       TRIG and DISCH met in the middle and read as one word. Anything sized
+                       against fixed-size text has to be measured in the same space as the text. */
+                    render_world_to_screen(ctx, px, py, &sx, &sy);
+                    render_draw_text_small(ctx, pin->name, sx + 7, sy - 4, label_color);
                     break;
                 case 1:  // Right
                     px = x + half_w;
                     py = y - half_h + 20 + pin->position * 20;
                     render_draw_line(ctx, px - 5, py, px + 10, py);
-                    // Draw label inside the body (left of pin)
-                    render_world_to_screen(ctx, px - 10, py, &sx, &sy);
-                    render_draw_text_small(ctx, pin->name, sx - 16, sy - 4, label_color);
+                    /* Right-hand labels are RIGHT-ALIGNED against the inside of the body. The
+                       offset used to be a flat -16 whatever the text was, so anything past two
+                       characters ran out through the edge of the block - THRES and DISCH on the
+                       555 both did. */
+                    render_world_to_screen(ctx, px, py, &sx, &sy);
+                    render_draw_text_small(ctx, pin->name,
+                                           sx - (int)strlen(pin->name) * 8 - 7, sy - 4, label_color);
                     break;
                 case 2:  // Top
                     px = x - half_w + 20 + pin->position * 20;
                     py = y - half_h;
                     render_draw_line(ctx, px, py - 10, px, py + 5);
-                    // Draw label inside the body (below pin)
-                    render_world_to_screen(ctx, px, py + 12, &sx, &sy);
-                    render_draw_text_small(ctx, pin->name, sx - 5, sy - 4, label_color);
+                    /* Text is drawn 4 px above its anchor, so a 12-unit drop left the top row
+                       straddling the border - V+ sat half in and half out of the block. */
+                    render_world_to_screen(ctx, px, py + 20, &sx, &sy);
+                    render_draw_text_small(ctx, pin->name,
+                                           sx - (int)strlen(pin->name) * 4, sy - 4, label_color);
                     break;
                 case 3:  // Bottom
                     px = x - half_w + 20 + pin->position * 20;
                     py = y + half_h;
                     render_draw_line(ctx, px, py - 5, px, py + 10);
-                    // Draw label inside the body (above pin)
+                    // Draw label inside the body (above pin), centred on the pin
                     render_world_to_screen(ctx, px, py - 12, &sx, &sy);
-                    render_draw_text_small(ctx, pin->name, sx - 5, sy - 4, label_color);
+                    render_draw_text_small(ctx, pin->name,
+                                           sx - (int)strlen(pin->name) * 4, sy - 4, label_color);
                     break;
             }
         }
@@ -5166,16 +5185,19 @@ void render_subcircuit(RenderContext *ctx, float x, float y, int rotation, int d
         render_draw_text_small(ctx, "4", sx - 8, sy - 4, label_color);
     }
 
-    // Draw subcircuit name in center (use definition name, or instance name if no def)
+    /* The block's name, centred BELOW the body rather than through the middle of it.
+       A left pin sits on the centre row whenever the pin count is odd, and the name was drawn at
+       the centre with a fixed -15 offset, so the two printed straight through each other: the 555
+       block read "TRIGNE555 DISCH" across its middle. Underneath is where a part's designator
+       goes anyway, and it leaves the whole interior to the pin names. */
     int sx, sy;
-    render_world_to_screen(ctx, x, y, &sx, &sy);
-    if (def && def->name[0]) {
-        render_draw_text_small(ctx, def->name, sx - 15, sy - 4, label_color);
-    } else if (name && name[0]) {
-        render_draw_text_small(ctx, name, sx - 8, sy - 4, label_color);
-    } else {
-        render_draw_text_small(ctx, "IC", sx - 5, sy - 4, (Color){150, 150, 170, 255});
-    }
+    const char *title = (def && def->name[0]) ? def->name
+                      : (name && name[0])     ? name
+                                              : "IC";
+    Color title_color = (def && def->name[0]) || (name && name[0])
+                      ? label_color : (Color){150, 150, 170, 255};
+    render_world_to_screen(ctx, x, y + half_h - 5, &sx, &sy);
+    render_draw_text_small(ctx, title, sx - (int)strlen(title) * 4, sy + 6, title_color);
 }
 
 // Convert temperature to heatmap color (blue -> cyan -> green -> yellow -> red)
