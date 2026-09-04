@@ -1486,6 +1486,11 @@ void app_handle_events(App *app) {
                                     model_name = c->props.transformer.ideal ? "Ideal (k=1, no winding R)"
                                                                             : "Real (leakage, winding R)";
                                     break;
+                                case COMP_DPDT_DRIVEN:
+                                    c->props.dpdt_driven.ideal = !c->props.dpdt_driven.ideal;
+                                    model_name = c->props.dpdt_driven.ideal ? "Ideal (no contact R)"
+                                                                            : "Real (R_on, R_off)";
+                                    break;
                                 case COMP_ANTENNA_TX:
                                 case COMP_ANTENNA_RX:
                                     c->props.antenna.ideal = !c->props.antenna.ideal;

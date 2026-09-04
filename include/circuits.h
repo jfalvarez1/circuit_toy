@@ -235,6 +235,11 @@ typedef enum {
     CIRCUIT_BATT_CHARGING,
     CIRCUIT_BATT_LEAD_STAGES,
     CIRCUIT_BATT_CHEMISTRIES,
+    /* From the EE_Review course, module 18 lesson 07. Its component values are the document's
+       and must stay that way: the course states numbers computed from this netlist and holds
+       them to a solver on every commit, so a value changed here silently breaks that agreement.
+       --ee-test checks this circuit against the course's own expected values. */
+    CIRCUIT_EE_STRAIN_BRIDGE,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 
@@ -260,6 +265,7 @@ typedef enum {
     TG_IV_POWER,        // Interview prep: converters and power delivery
     TG_IV_SI,           // Interview prep: I/O, termination and signal integrity
     TG_BMI,             // Battery monitoring and electronic load: sink, charger, cutout, simulator
+    TG_SENSORS,         // Bridges, RTDs, thermocouples, strain: turning a physical quantity into volts
     TG_COUNT
 } TemplateGroup;
 

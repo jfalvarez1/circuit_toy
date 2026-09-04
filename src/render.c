@@ -57,6 +57,7 @@ void render_cccs(RenderContext *ctx, float x, float y, int rotation);
 void render_dpdt_switch(RenderContext *ctx, float x, float y, int rotation, int position);
 void render_relay(RenderContext *ctx, float x, float y, int rotation, bool energized);
 void render_analog_switch(RenderContext *ctx, float x, float y, int rotation, bool closed);
+void render_dpdt_driven(RenderContext *ctx, float x, float y, int rotation, bool thrown);
 void render_delay_line(RenderContext *ctx, Component *comp);
 void render_lamp(RenderContext *ctx, float x, float y, int rotation);
 void render_speaker(RenderContext *ctx, float x, float y, int rotation);
@@ -1523,6 +1524,9 @@ void render_component(RenderContext *ctx, Component *comp) {
                that was conducting - manually or from its control pin - looked identical to one
                that was not, and clicking it appeared to do nothing at all. */
             render_analog_switch(ctx, comp->x, comp->y, comp->rotation, comp->props.analog_switch.state);
+            break;
+        case COMP_DPDT_DRIVEN:
+            render_dpdt_driven(ctx, comp->x, comp->y, comp->rotation, comp->props.dpdt_driven.thrown);
             break;
         case COMP_LAMP:
             render_lamp(ctx, comp->x, comp->y, comp->rotation);
@@ -4092,6 +4096,34 @@ void render_analog_switch(RenderContext *ctx, float x, float y, int rotation, bo
     render_draw_line_rotated(ctx, x, y, 0, -20, 0, -8, rotation);
     render_draw_line_rotated(ctx, x, y, -3, -12, 0, -8, rotation);
     render_draw_line_rotated(ctx, x, y, 3, -12, 0, -8, rotation);
+}
+
+/* Logic-driven DPDT: two changeovers drawn one above the other, both blades moving together,
+   with a dashed tie between them to say they are ganged and a control arrow underneath.
+   Terminals: 1C(-50,-40) 1NC(50,-60) 1NO(50,-20)  2C(-50,40) 2NC(50,20) 2NO(50,60)  CTL(0,80) */
+void render_dpdt_driven(RenderContext *ctx, float x, float y, int rotation, bool thrown) {
+    const float pole[2] = { -40.0f, 40.0f };      /* the two commons */
+    for (int p = 0; p < 2; p++) {
+        float cy = pole[p];
+        float nc = cy - 20.0f, no = cy + 20.0f;   /* its two throws */
+        /* leads in and out */
+        render_draw_line_rotated(ctx, x, y, -50, cy, -20, cy, rotation);
+        render_draw_line_rotated(ctx, x, y, 20, nc, 50, nc, rotation);
+        render_draw_line_rotated(ctx, x, y, 20, no, 50, no, rotation);
+        /* contacts */
+        render_draw_circle_rotated(ctx, x, y, -20, cy, 3, rotation);
+        render_draw_circle_rotated(ctx, x, y, 20, nc, 3, rotation);
+        render_draw_circle_rotated(ctx, x, y, 20, no, 3, rotation);
+        /* the blade, on whichever throw the control has selected */
+        render_draw_line_rotated(ctx, x, y, -20, cy, 20, thrown ? no : nc, rotation);
+    }
+    /* ganged: the two blades move together */
+    for (float ty = -14.0f; ty < 14.0f; ty += 8.0f)
+        render_draw_line_rotated(ctx, x, y, 0, ty, 0, ty + 4.0f, rotation);
+    /* control input */
+    render_draw_line_rotated(ctx, x, y, 0, 80, 0, 62, rotation);
+    render_draw_line_rotated(ctx, x, y, -4, 68, 0, 62, rotation);
+    render_draw_line_rotated(ctx, x, y, 4, 68, 0, 62, rotation);
 }
 
 // Lamp - circle with X inside

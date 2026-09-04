@@ -486,6 +486,474 @@ static void roundtrip_leg(Circuit *a, const char *path,
     circuit_free(b);
 }
 
+/* --netlist-solve FILE: build a written-down circuit, find its operating point, print the nodes.
+ *
+ * Written for the EE_Review course, which emits one netlist per lesson table from the same
+ * parser its own solvers use. Running the identical netlist through a different solver is worth
+ * something the course cannot get from itself: where its Newton-Raphson walks away and mine
+ * settles, the difference is in one of the two stamps rather than in the circuit.
+ *
+ * Prints every named net and its voltage, so the answer can be compared line by line against
+ * whatever the other tool produced. Says plainly when there is no operating point rather than
+ * printing a number from a solve that did not converge - a confident wrong answer is worse than
+ * none, and worst of all when someone else is going to trust it.
+ */
+static int netlist_solve(const char *path) {
+    if (!path || !path[0]) { printf("netlist-solve: no file given\n"); return 2; }
+    Circuit *c = circuit_create();
+    if (!c) return 1;
+    char err[256] = "";
+    int placed = netlist_build_file(c, path, err, sizeof err);
+    if (placed <= 0) {
+        printf("netlist-solve: %s: placed nothing (%s)\n", path, err[0] ? err : "no reason given");
+        circuit_free(c);
+        return 1;
+    }
+    if (err[0]) printf("netlist-solve: %s: %s\n", path, err);
+    printf("netlist-solve: %s: %d parts, %d nodes\n", path, placed, c->num_nodes);
+
+    Simulation *sim = simulation_create(c);
+    if (!sim) { circuit_free(c); return 1; }
+    bool ok = simulation_dc_analysis(sim);
+    if (!ok) {
+        printf("  NO OPERATING POINT - the DC solve did not converge\n");
+        simulation_free(sim);
+        circuit_free(c);
+        return 1;
+    }
+    /* What the solve itself says about how far it is from solving. Printed first and always,
+       because every number below is worth exactly what this is: the convergence test measures
+       the last step, not the residual, so "converged" on its own means very little. */
+    printf("  residual (A*x - b at the solver's own final iterate): %.4g A\n", sim->dc_residual);
+    if (sim->dc_residual > 1e-6)
+        printf("  NOT A SOLUTION - the equations are not satisfied at this point. Nothing below\n"
+               "  is an operating point; treat it as where Newton stopped, not where the circuit sits.\n");
+
+    /* A converged solve can still be nonsense; say so rather than printing it. */
+    int bad = 0;
+    for (int i = 0; i < c->num_nodes; i++)
+        if (!isfinite(c->nodes[i].voltage)) bad++;
+    if (bad) {
+        printf("  CONVERGED BUT NOT FINITE - %d node(s) came back NaN or infinite\n", bad);
+        simulation_free(sim);
+        circuit_free(c);
+        return 1;
+    }
+    for (int i = 0; i < c->num_nodes; i++) {
+        Node *n = &c->nodes[i];
+        if (!n->name[0]) continue;              /* unnamed joins carry no meaning to compare */
+        printf("  %-16s %12.6f V\n", n->name, n->voltage);
+    }
+    /* and what each part is carrying, which is where a class-AB answer actually lives */
+    simulation_update_flow_display(sim);
+    double worst = 0.0;
+    const char *worst_at = "";
+    for (int i = 0; i < c->num_components; i++) {
+        Component *p = c->components[i];
+        if (!p || p->num_terminals < 2) continue;
+        if (p->type == COMP_GROUND || p->type == COMP_TEXT || p->type == COMP_LABEL) continue;
+        double amps = p->terminal_current[0];
+        if (fabs(amps) > worst) { worst = fabs(amps); worst_at = p->label; }
+        printf("  %-16s %12.6g A through it\n", p->label, amps);
+    }
+    /* Converging is not the same as being right.
+     *
+     * The first circuit this was pointed at settled happily on an operating point carrying 1.19
+     * MEGAAMPS through a pair of output transistors - a self-consistent solution to the
+     * equations and a physical impossibility. It printed it and returned success, which is the
+     * precise failure worth avoiding here: another tool is going to read this number and trust
+     * it, and a confident wrong answer is worse than no answer.
+     *
+     * A kiloamp is far above anything any of these lessons builds, so anything past it means the
+     * models have been driven somewhere they do not describe rather than that the circuit draws
+     * a lot of current. */
+    /* Does the answer obey Kirchhoff?
+     *
+     * "Converged" is a statement about how little the last Newton step moved, not about whether
+     * the equations are satisfied. Those come apart: the first circuit this ran reported one
+     * diode carrying 1.08e6 A into a node fed by a 1 k resistor carrying 13.9 mA, which cannot
+     * both be true of any solution. Summing the terminal currents at every node says which it
+     * is - a genuinely bad solve, or a good solve being reported wrongly - and that distinction
+     * is the whole difference between a bug in the solver and a bug in the display. */
+    /* Grouped by net NAME, not by node id.
+     *
+     * A written-down circuit is joined by its net names - every part keeps its own node and the
+     * name pass in circuit_build_node_map merges them - so two terminals on the same net hold
+     * DIFFERENT node ids. Summing by id caught one terminal of each net and declared Kirchhoff
+     * broken on a ten-volt divider, which is how this check got caught being wrong before it
+     * was believed about anything harder. */
+    double kcl_worst = 0.0, kcl_scale = 0.0;
+    char kcl_where[NET_NAME_MAX] = "";
+    for (int i = 0; i < c->num_nodes; i++) {
+        const char *net = c->nodes[i].name;
+        if (!net[0]) continue;
+        if (!_stricmp(net, "0") || !_stricmp(net, "gnd") || !_stricmp(net, "ground")) continue;
+        bool seen = false;                      /* one pass per distinct name */
+        for (int j = 0; j < i && !seen; j++)
+            if (c->nodes[j].name[0] && !strcmp(c->nodes[j].name, net)) seen = true;
+        if (seen) continue;
+
+        double sum = 0.0, mag = 0.0;
+        for (int k = 0; k < c->num_components; k++) {
+            Component *p = c->components[k];
+            if (!p) continue;
+            for (int t = 0; t < p->num_terminals && t < MAX_TERMINALS; t++) {
+                Node *tn = circuit_get_node(c, p->node_ids[t]);
+                if (!tn || !tn->name[0] || strcmp(tn->name, net) != 0) continue;
+                sum += p->terminal_current[t];
+                if (fabs(p->terminal_current[t]) > mag) mag = fabs(p->terminal_current[t]);
+            }
+        }
+        if (fabs(sum) > kcl_worst) {
+            kcl_worst = fabs(sum); kcl_scale = mag;
+            snprintf(kcl_where, sizeof kcl_where, "%s", net);
+        }
+    }
+    if (kcl_where[0] && kcl_worst > 1e-6 * (kcl_scale > 1.0 ? kcl_scale : 1.0) + 1e-9) {
+        printf("  KCL VIOLATED at %s: terminal currents sum to %.4g A against a largest branch\n",
+               kcl_where, kcl_worst);
+        printf("  of %.4g A. The solve reported success without satisfying its own equations.\n", kcl_scale);
+    }
+
+    if (worst > 1e3) {
+        printf("  IMPLAUSIBLE - %s carries %.4g A. The solve converged, but not to anything\n",
+               worst_at, worst);
+        printf("  physical; do not quote these numbers. Usually a model driven outside its range.\n");
+        simulation_free(sim);
+        circuit_free(c);
+        return 1;
+    }
+    simulation_free(sim);
+    circuit_free(c);
+    return 0;
+}
+
+
+/* --residual-test: how close is every template's operating point to actually solving?
+ *
+ * The DC solve declares victory on step size alone - "the last Newton step moved less than the
+ * tolerance" - and never evaluates whether A*x = b. Those are different questions, and against a
+ * near-singular Jacobian Newton stalls with tiny steps a long way from any root. A netlist from
+ * the EE_Review course came back "converged" with a 354 A Kirchhoff residual.
+ *
+ * The fix is to gate convergence on the residual as well. Before changing that, this measures
+ * what such a gate would DO: the residual is already computable at any solution, because
+ * simulation_compute_terminal_currents re-stamps each part and reads exactly r = A_k x - b_k.
+ * Summing those per node is Kirchhoff.
+ *
+ * So this prints the distribution across every template and names the worst. Whatever threshold
+ * gets chosen has to be read off this, not guessed - a gate that rejects a tenth of the gallery
+ * is not a fix, and one that accepts 354 A is not either.
+ */
+static int residual_test(void) {
+    double worst_abs = 0.0, worst_rel = 0.0, solver_worst = 0.0;
+    char solver_worst_at[96] = "";
+    int solver_over = 0;
+    char worst_abs_at[96] = "", worst_rel_at[96] = "";
+    int total = 0, over_1uA = 0, over_1mA = 0, over_1A = 0, unsolved = 0;
+
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        Circuit *c = circuit_create();
+        if (!c) return 1;
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        total++;
+        Simulation *sim = simulation_create(c);
+        if (!sim || !simulation_dc_analysis(sim)) {
+            unsolved++;
+            printf("[NOTE] resid %-34s no DC operating point\n", ti ? ti->name : "?");
+            if (sim) simulation_free(sim);
+            circuit_free(c);
+            continue;
+        }
+        simulation_update_flow_display(sim);
+
+        /* Kirchhoff at every node: the terminal currents of everything attached must sum to
+           zero. Ground is excluded - it is the return path for everything and its row is not
+           part of the system. */
+        /* Grouped by NET, not by node id.
+         *
+         * A template's node ids are merged into electrical nets by node_map - wires join them,
+         * and terminals within 5 px of each other join too - so two terminals on one net hold
+         * different ids. Summing by id splits every net that has more than one and reports
+         * Kirchhoff broken everywhere: it put 14 mA on the strain bridge, whose node voltages
+         * match another program's to five digits. That is the second time this exact mistake has
+         * been made in this file today, which is why the check is validated against a circuit
+         * with a known answer before its output is believed. */
+        double tmax = 0.0, tmax_rel = 0.0;
+        int gnet = circuit_node_net(c, c->ground_node_id);
+        for (int i = 0; i < c->num_nodes; i++) {
+            int net = circuit_node_net(c, c->nodes[i].id);
+            if (net < 0 || net == gnet) continue;
+            bool seen = false;                      /* one pass per net */
+            for (int j = 0; j < i && !seen; j++)
+                if (circuit_node_net(c, c->nodes[j].id) == net) seen = true;
+            if (seen) continue;
+
+            double sum = 0.0, mag = 0.0;
+            bool grounded = false;
+            for (int k = 0; k < c->num_components && !grounded; k++) {
+                Component *p = c->components[k];
+                if (!p) continue;
+                if (p->type == COMP_GROUND && circuit_node_net(c, p->node_ids[0]) == net) { grounded = true; break; }
+                for (int q = 0; q < p->num_terminals && q < MAX_TERMINALS; q++) {
+                    if (circuit_node_net(c, p->node_ids[q]) != net) continue;
+                    sum += p->terminal_current[q];
+                    if (fabs(p->terminal_current[q]) > mag) mag = fabs(p->terminal_current[q]);
+                }
+            }
+            if (grounded) continue;
+            if (!isfinite(sum)) { sum = 1e30; }
+            if (fabs(sum) > tmax) tmax = fabs(sum);
+            double rel = mag > 1e-15 ? fabs(sum) / mag : 0.0;
+            if (rel > tmax_rel) tmax_rel = rel;
+        }
+        if (tmax > 1e-6) over_1uA++;
+        if (tmax > 1e-3) over_1mA++;
+        if (tmax > 1.0)  over_1A++;
+        if (tmax > worst_abs) { worst_abs = tmax; snprintf(worst_abs_at, sizeof worst_abs_at, "%s", ti ? ti->name : "?"); }
+        if (tmax_rel > worst_rel) { worst_rel = tmax_rel; snprintf(worst_rel_at, sizeof worst_rel_at, "%s", ti ? ti->name : "?"); }
+        /* Both instruments, side by side. sim->dc_residual is the solve's own arithmetic at its
+           own answer; tmax is the same question asked of the re-stamped terminal currents. Where
+           they disagree the fault is in the second instrument - a part whose internal branch the
+           re-stamp does not reproduce - and not in the operating point. */
+        if (tmax > 1e-3 || sim->dc_residual > 1e-6)
+            printf("[NOTE] resid %-34s re-stamp %.4g A, solver's own %.4g A\n",
+                   ti ? ti->name : "?", tmax, sim->dc_residual);
+        if (sim->dc_residual > solver_worst) {
+            solver_worst = sim->dc_residual;
+            snprintf(solver_worst_at, sizeof solver_worst_at, "%s", ti ? ti->name : "?");
+        }
+        if (sim->dc_residual > 1e-6) solver_over++;
+        simulation_free(sim);
+        circuit_free(c);
+    }
+    printf("residual-test: %d templates, %d with no operating point; "
+           "%d over 1 uA, %d over 1 mA, %d over 1 A\n",
+           total, unsolved, over_1uA, over_1mA, over_1A);
+    printf("residual-test: the solver's own residual - %d over 1 uA, worst %.4g A in %s\n",
+           solver_over, solver_worst, solver_worst_at[0] ? solver_worst_at : "-");
+    printf("residual-test: worst absolute %.4g A in %s; worst relative %.3g in %s\n",
+           worst_abs, worst_abs_at[0] ? worst_abs_at : "-",
+           worst_rel, worst_rel_at[0] ? worst_rel_at : "-");
+    /* Measuring, not gating: this reports and does not fail, because the threshold a gate should
+       use is exactly what these numbers are for. It becomes a gate once they are known. */
+    return 0;
+}
+
+
+/* --dpdt-test: the logic-driven changeover does what a changeover does.
+ *
+ * The part exists because the EE_Review course's chopper wires a DPDT's poles to a clock and
+ * expects them to switch. The mechanical DPDT in this program is thrown by clicking it, so that
+ * circuit would have placed, wired correctly, and then never switched - the worst kind of wrong,
+ * because everything looks right.
+ *
+ * Three things have to hold, and the third is the one that is easy to get wrong:
+ *   - the control decides the throw, and the two poles move together (they are ganged),
+ *   - the throw that is not selected is open, not merely stiffer,
+ *   - no common is ever joined to both of its throws. Break-before-make is not modelled with a
+ *     timer here: each pole stamps exactly one throw closed, so a state with both connected has
+ *     no representation. This asserts that consequence rather than assuming it.
+ *
+ * Wired through the parts' own node ids, never through positions worked out here - see mcu_rig
+ * for what guessing a terminal offset costs.
+ */
+static int dpdt_test(void) {
+    struct Case { double v_ctl; const char *what; bool expect_thrown; };
+    static const struct Case cases[] = {
+        { 0.0, "control low",                     false },
+        { 5.0, "control high",                    true  },
+        { 2.4, "just under the 2.5 V threshold",  false },
+        { 2.5, "exactly at the threshold",        true  },
+    };
+    const int N = (int)(sizeof cases / sizeof cases[0]);
+    int fails = 0, checks = 0;
+
+    for (int i = 0; i < N; i++) {
+        Circuit *c = circuit_create();
+        if (!c) return 1;
+
+        Component *vs  = component_create(COMP_DC_VOLTAGE, -300, 0);
+        Component *sw  = component_create(COMP_DPDT_DRIVEN, 0, 0);
+        Component *ra  = component_create(COMP_RESISTOR, 250, -120);
+        Component *rb  = component_create(COMP_RESISTOR, 350, -120);
+        Component *ra2 = component_create(COMP_RESISTOR, 450, -120);
+        Component *rb2 = component_create(COMP_RESISTOR, 550, -120);
+        Component *vc  = component_create(COMP_DC_VOLTAGE, -300, 300);
+        Component *g   = component_create(COMP_GROUND, 0, 400);
+        if (!vs || !sw || !ra || !rb || !ra2 || !rb2 || !vc || !g) { circuit_free(c); return 1; }
+        vs->rotation = ra->rotation = rb->rotation = ra2->rotation = rb2->rotation = vc->rotation = 90;
+        vs->props.dc_voltage.voltage = 10.0;
+        vc->props.dc_voltage.voltage = cases[i].v_ctl;
+        ra->props.resistor.resistance  = 1000.0;
+        rb->props.resistor.resistance  = 2000.0;
+        ra2->props.resistor.resistance = 1000.0;
+        rb2->props.resistor.resistance = 2000.0;
+        circuit_add_component(c, vs);  circuit_add_component(c, sw);
+        circuit_add_component(c, ra);  circuit_add_component(c, rb);
+        circuit_add_component(c, ra2); circuit_add_component(c, rb2);
+        circuit_add_component(c, vc);  circuit_add_component(c, g);
+
+        /* 0=1C 1=1NC 2=1NO 3=2C 4=2NC 5=2NO 6=CTL. Both commons on the same 10 V so the two
+           poles can be compared against each other directly. */
+        circuit_add_wire(c, vs->node_ids[0], sw->node_ids[0]);
+        circuit_add_wire(c, vs->node_ids[0], sw->node_ids[3]);
+        circuit_add_wire(c, sw->node_ids[1], ra->node_ids[0]);
+        circuit_add_wire(c, sw->node_ids[2], rb->node_ids[0]);
+        circuit_add_wire(c, sw->node_ids[4], ra2->node_ids[0]);
+        circuit_add_wire(c, sw->node_ids[5], rb2->node_ids[0]);
+        circuit_add_wire(c, sw->node_ids[6], vc->node_ids[0]);
+        circuit_add_wire(c, ra->node_ids[1],  g->node_ids[0]);
+        circuit_add_wire(c, rb->node_ids[1],  g->node_ids[0]);
+        circuit_add_wire(c, ra2->node_ids[1], g->node_ids[0]);
+        circuit_add_wire(c, rb2->node_ids[1], g->node_ids[0]);
+        circuit_add_wire(c, vs->node_ids[1],  g->node_ids[0]);
+        circuit_add_wire(c, vc->node_ids[1],  g->node_ids[0]);
+
+        Simulation *sim = simulation_create(c);
+        if (!sim || !simulation_dc_analysis(sim)) {
+            printf("[FAIL] dpdt  %s: no operating point\n", cases[i].what);
+            fails++;
+            if (sim) simulation_free(sim);
+            circuit_free(c);
+            continue;
+        }
+        Node *A  = circuit_get_node(c, ra->node_ids[0]),  *B  = circuit_get_node(c, rb->node_ids[0]);
+        Node *A2 = circuit_get_node(c, ra2->node_ids[0]), *B2 = circuit_get_node(c, rb2->node_ids[0]);
+        if (!A || !B || !A2 || !B2) {
+            printf("[FAIL] dpdt  %s: a throw node is missing\n", cases[i].what);
+            fails++; simulation_free(sim); circuit_free(c); continue;
+        }
+        double closed  = cases[i].expect_thrown ? B->voltage  : A->voltage;
+        double open    = cases[i].expect_thrown ? A->voltage  : B->voltage;
+        double closed2 = cases[i].expect_thrown ? B2->voltage : A2->voltage;
+        double open2   = cases[i].expect_thrown ? A2->voltage : B2->voltage;
+        checks += 3;
+
+        if (fabs(closed - 10.0) > 0.01 || fabs(closed2 - 10.0) > 0.01) {
+            printf("[FAIL] dpdt  %-32s the closed throw is at %.4g / %.4g V, not 10\n",
+                   cases[i].what, closed, closed2);
+            fails++;
+        }
+        if (fabs(open) > 1e-3 || fabs(open2) > 1e-3) {
+            printf("[FAIL] dpdt  %-32s the open throw sits at %.4g / %.4g V - still connected\n",
+                   cases[i].what, open, open2);
+            fails++;
+        }
+        if (fabs(closed - closed2) > 0.01 || fabs(open - open2) > 1e-3) {
+            printf("[FAIL] dpdt  %-32s the poles disagree: pole 1 %.4g/%.4g, pole 2 %.4g/%.4g\n",
+                   cases[i].what, closed, open, closed2, open2);
+            fails++;
+        }
+        simulation_free(sim);
+        circuit_free(c);
+    }
+    printf("dpdt-test: %d checks over %d control levels, %d wrong\n", checks, N, fails);
+    return fails ? 1 : 0;
+}
+
+
+/* --ee-test: the templates taken from the EE_Review course have to produce the numbers the
+ * course prints.
+ *
+ * The course (jfalvarez1/EE_Review) ends each lesson with a "Build it in Circuit Toy" table, and
+ * the numbers in its text are not prose - they are computed from those netlists by its own
+ * solvers and held to them by a gating check on every commit. Bringing one of those circuits in
+ * here as a template creates a second copy of the same claim, and two copies of a number drift.
+ *
+ * So the expected values below are the course's own, transcribed from its manifest
+ * (_audit/review/build-tables.json, entry m18l07), with its tolerances. If either side changes a
+ * component value, this fails - which is the point. It is an agreement between two programs, and
+ * the only way to keep one is to check it.
+ *
+ * A probe index rather than a node name: the template places its probes on exactly the nodes the
+ * lesson's `watch` field names, in that order.
+ */
+static int ee_test(void) {
+    struct Expect {
+        const char *what;
+        int probe_a;            /* the node to read */
+        int probe_b;            /* -1, or a second node to subtract for a differential */
+        double expect;          /* in `unit` */
+        double tol;
+        const char *unit;
+        double scale;           /* volts -> unit */
+    };
+    /* EE_Review m18l07, "Strain Gauge Bridges". */
+    static const struct Expect strain[] = {
+        { "V(vminus), the reference half",        1, -1, 2.5000,  0.002,  "V",  1.0    },
+        { "V(vplus) with R3 at 353.5 ohm",        0, -1, 2.51244, 0.0005, "V",  1.0    },
+        { "V(vplus,vminus), the bridge output",   0,  1, 12.438,  0.05,   "mV", 1000.0 },
+        { "V(out) after the amplifier",           2, -1, 1.2438,  0.005,  "V",  1.0    },
+    };
+
+    struct Case {
+        CircuitTemplateType type;
+        const char *lesson;
+        const struct Expect *expect;
+        int n;
+    };
+    static const struct Case cases[] = {
+        { CIRCUIT_EE_STRAIN_BRIDGE, "m18l07", strain, (int)(sizeof strain / sizeof strain[0]) },
+    };
+    const int NCASES = (int)(sizeof cases / sizeof cases[0]);
+
+    int fails = 0, checked = 0;
+    for (int i = 0; i < NCASES; i++) {
+        const struct Case *cs = &cases[i];
+        const CircuitTemplateInfo *ti = circuit_template_get_info(cs->type);
+        Circuit *c = circuit_create();
+        if (!c) return 1;
+        if (circuit_place_template(c, cs->type, 0, 0) <= 0) {
+            printf("[FAIL] ee    %s (%s) did not place\n", ti ? ti->name : "?", cs->lesson);
+            fails++; circuit_free(c); continue;
+        }
+        Simulation *sim = simulation_create(c);
+        if (!sim || !simulation_dc_analysis(sim)) {
+            printf("[FAIL] ee    %s (%s) has no DC operating point\n", ti ? ti->name : "?", cs->lesson);
+            fails++;
+            if (sim) simulation_free(sim);
+            circuit_free(c);
+            continue;
+        }
+        for (int k = 0; k < cs->n; k++) {
+            const struct Expect *e = &cs->expect[k];
+            if (e->probe_a >= c->num_probes || (e->probe_b >= 0 && e->probe_b >= c->num_probes)) {
+                printf("[FAIL] ee    %s (%s): %s - the template has %d probes, not enough\n",
+                       ti ? ti->name : "?", cs->lesson, e->what, c->num_probes);
+                fails++;
+                continue;
+            }
+            Node *na = circuit_get_node(c, c->probes[e->probe_a].node_id);
+            Node *nb = e->probe_b >= 0 ? circuit_get_node(c, c->probes[e->probe_b].node_id) : NULL;
+            if (!na || (e->probe_b >= 0 && !nb)) {
+                printf("[FAIL] ee    %s (%s): %s - the probed node is gone\n",
+                       ti ? ti->name : "?", cs->lesson, e->what);
+                fails++;
+                continue;
+            }
+            double got = (na->voltage - (nb ? nb->voltage : 0.0)) * e->scale;
+            checked++;
+            if (!(fabs(got - e->expect) <= e->tol)) {
+                printf("[FAIL] ee    %s (%s): %s is %.5g %s, the course says %.5g +/- %.5g\n",
+                       ti ? ti->name : "?", cs->lesson, e->what, got, e->unit, e->expect, e->tol);
+                fails++;
+            } else {
+                printf("[ OK ] ee    %-10s %-38s %9.5g %-2s (course %.5g)\n",
+                       cs->lesson, e->what, got, e->unit, e->expect);
+            }
+        }
+        simulation_free(sim);
+        circuit_free(c);
+    }
+    printf("ee-test: %d values from the EE_Review course checked against its templates, %d off\n",
+           checked, fails);
+    return fails ? 1 : 0;
+}
+
+
 /* --session-test: a person using the program for a while, and the invariants that must hold
  * after every single thing they do.
  *
@@ -601,6 +1069,7 @@ static int session_test(void) {
         "place a part", "delete a part", "drag a part", "rotate a part", "wire two nodes",
         "delete a wire", "probe a node", "delete a probe", "retype a value", "duplicate a part",
         "select all and delete", "clear the canvas", "undo", "redo",
+        "save and reload", "swap in another circuit",
     };
     const int NOPS = (int)(sizeof op_name / sizeof op_name[0]);
     /* Parts a person reaches for, and that can go anywhere without needing a model set up. */
@@ -724,6 +1193,39 @@ static int session_test(void) {
                     break;
                 case 12: circuit_undo(c); break;
                 case 13: circuit_redo(c); break;
+                case 14: {
+                    /* Save and load it back, mid-session. --file-test does this for the 205
+                       templates, which are all tidy; this does it to whatever three hundred
+                       random edits have left behind. */
+                    char path[264];
+                    snprintf(path, sizeof path, "session_rt_%u.cpg", seed);
+                    int nc = c->num_components, nw = c->num_wires, np = c->num_probes;
+                    if (file_save_circuit(c, path)) {
+                        c->undo_preserving = true;
+                        bool loaded = file_load_circuit(c, path);
+                        c->undo_preserving = false;
+                        remove(path);
+                        if (loaded && (c->num_components != nc || c->num_wires != nw ||
+                                       c->num_probes != np)) {
+                            snprintf(why, sizeof why,
+                                     "a save and reload changed the sheet: %d/%d/%d parts/wires/probes became %d/%d/%d",
+                                     nc, nw, np, c->num_components, c->num_wires, c->num_probes);
+                            printf("[FAIL] session seed %u step %d: %s\n", seed, step, why);
+                            fails++;
+                            step = steps;      /* stop this session */
+                        }
+                    }
+                    break;
+                }
+                case 15:
+                    /* Picking another circuit from the gallery: the sheet is recorded, cleared
+                       and replaced. This is the path the node-id exhaustion lived on. */
+                    if (circuit_push_snapshot_undo(c)) {
+                        circuit_clear_after_snapshot(c);
+                        circuit_place_template(c, (CircuitTemplateType)
+                                               (CIRCUIT_NONE + 1 + session_pick(40)), 0, 0);
+                    }
+                    break;
                 default: break;
             }
             ops_done++;
@@ -8498,6 +9000,10 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--parts-file-test")) return parts_file_test();
         else if (!strcmp(argv[i], "--undo-test")) return undo_test();
         else if (!strcmp(argv[i], "--session-test")) return session_test();
+        else if (!strcmp(argv[i], "--ee-test")) return ee_test();
+        else if (!strcmp(argv[i], "--dpdt-test")) return dpdt_test();
+        else if (!strcmp(argv[i], "--residual-test")) return residual_test();
+        else if (!strcmp(argv[i], "--netlist-solve") && i + 1 < argc) return netlist_solve(argv[i + 1]);
         else if (!strcmp(argv[i], "--span-test")) return span_test();
         else if (!strcmp(argv[i], "--geom-test")) return geom_test();
         else if (!strcmp(argv[i], "--sweep-check")) return sweep_check();

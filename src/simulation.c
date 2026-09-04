@@ -796,6 +796,48 @@ bool simulation_dc_analysis(Simulation *sim) {
         simulation_set_error(sim, "Warning: solution may not have converged");
     }
 
+    /* How far this answer is from actually solving.
+     *
+     * The test above asks how far the last Newton STEP moved. That is not the same question as
+     * whether the equations hold, and the two come apart precisely where it matters: against a
+     * near-singular Jacobian Newton stalls, takes tiny steps, and is declared converged a long
+     * way from any root. A netlist came back "converged" with a 354 A Kirchhoff error.
+     *
+     * Measured from the solver's own stamps at its own final answer - one more pass, the same
+     * component_stamp calls, r = A*x - b - rather than by re-stamping each part separately
+     * afterwards. That distinction matters: a separate re-stamp is a second instrument and will
+     * disagree for any part whose internal branch it does not reproduce, which is a fault in the
+     * instrument and not in the solve. This cannot disagree; it is the solve's own arithmetic.
+     *
+     * Recorded only. Nothing yet refuses an answer on it - that decision needs the number first,
+     * across every template, which is what --residual-test now reads. */
+    sim->dc_residual = 0.0;
+    if (solution && solution->size == matrix_size) {
+        Matrix *A = matrix_create(matrix_size, matrix_size);
+        Vector *b = vector_create(matrix_size);
+        if (A && b) {
+            memset(&g_wireless, 0, sizeof(g_wireless));
+            g_subcircuit_internal_node_offset = num_nodes + num_volt_vars + 1;
+            double dc_dt = 1e9;
+            for (int i = 0; i < circuit->num_components; i++)
+                component_stamp(circuit->components[i], A, b, circuit->node_map, num_nodes,
+                                0, solution, dc_dt);
+            for (int i = 0; i < num_nodes; i++) matrix_add(A, i, i, GMIN);
+            for (int r = 0; r < num_nodes; r++) {          /* node rows: these are Kirchhoff */
+                double acc = 0.0;
+                for (int cc = 0; cc < matrix_size; cc++) {
+                    double a = matrix_get(A, r, cc);
+                    if (a != 0.0) acc += a * vector_get(solution, cc);
+                }
+                double resid = fabs(acc - vector_get(b, r));
+                if (isfinite(resid) && resid > sim->dc_residual) sim->dc_residual = resid;
+                else if (!isfinite(resid)) sim->dc_residual = 1e30;
+            }
+        }
+        matrix_free(A);
+        vector_free(b);
+    }
+
     // Store solution
     if (sim->solution) vector_free(sim->solution);
     if (sim->prev_solution) vector_free(sim->prev_solution);

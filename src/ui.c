@@ -360,6 +360,7 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_PUSH_BUTTON, "PushB");
     ADD_COMP(COMP_RELAY, "Relay");
     ADD_COMP(COMP_ANALOG_SWITCH, "AnaSw");
+    ADD_COMP(COMP_DPDT_DRIVEN, "DPDTd");
 
     // === TRANSFORMERS SECTION (index 57) ===
     NEW_SECTION(PCAT_TRANSFORMERS);
@@ -1765,6 +1766,52 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                     draw_property_field(renderer, x + 10, prop_y, prop_w, "R_out:", buf, ed_ro, edit_buf, cursor);
                     (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
                     (*ui_prop_slot(ui)).prop_type = PROP_R_SERIES;
+                    ui->num_properties++;
+                    prop_y += 18;
+                }
+                break;
+            }
+
+            /* The logic-driven changeover: where it throws, and what the contacts are worth. */
+            case COMP_DPDT_DRIVEN: {
+                bool ed_th = input && input->editing_property && input->editing_prop_type == PROP_V_THRESHOLD;
+                format_engineering(selected->props.dpdt_driven.v_on, "V", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "Throw at:", buf, ed_th, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_V_THRESHOLD;
+                ui->num_properties++;
+                prop_y += 18;
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Poles:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.dpdt_driven.thrown ? "on NO" : "on NC",
+                             x + 100, prop_y + 2);
+                prop_y += 18;
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "Model:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.dpdt_driven.ideal ? "[Ideal]" : "[Real]", x + 100, prop_y + 2);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_IDEAL;
+                ui->num_properties++;
+                prop_y += 18;
+
+                if (!selected->props.dpdt_driven.ideal) {
+                    bool ed_on = input && input->editing_property && input->editing_prop_type == PROP_R_ON;
+                    format_engineering(selected->props.dpdt_driven.r_on, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R_on:", buf, ed_on, edit_buf, cursor);
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_R_ON;
+                    ui->num_properties++;
+                    prop_y += 18;
+
+                    bool ed_off = input && input->editing_property && input->editing_prop_type == PROP_R_OFF;
+                    format_engineering(selected->props.dpdt_driven.r_off, "Ohm", buf, sizeof(buf));
+                    draw_property_field(renderer, x + 10, prop_y, prop_w, "R_off:", buf, ed_off, edit_buf, cursor);
+                    (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                    (*ui_prop_slot(ui)).prop_type = PROP_R_OFF;
                     ui->num_properties++;
                     prop_y += 18;
                 }

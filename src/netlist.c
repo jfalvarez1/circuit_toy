@@ -160,9 +160,25 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
            is the whole job of a reader: an amplifier entered in the form every book prints it
            in would otherwise come out driving its own input. */
         static const int ctl_order[4] = { 2, 3, 0, 1 };
+        /* And the same job for the three-terminal devices, which was left half done.
+         *
+         * Every netlist in the world writes a BJT collector-base-emitter and a MOSFET
+         * drain-gate-source. This program's parts carry them base-first and gate-first, and the
+         * reader was handing the tokens straight across in that internal order - so a line
+         * copied from any book or any other tool built a transistor with its base where its
+         * collector should be. It solved, too, which is what makes it worth a comment: a
+         * diode-connected device has its drain and gate on one net, so the mirror and the
+         * reference that check this kind of thing came out exactly right and the error only
+         * showed on the first device whose gate went somewhere else. */
+        static const int bjt_order[3] = { 1, 0, 2 };    /* C B E written -> B C E stored */
+        static const int fet_order[3] = { 1, 0, 2 };    /* D G S written -> G D S stored */
         bool ctl = (kind == 'E' || kind == 'G');
+        bool three = (kind == 'Q' || kind == 'M');
         for (int t = 0; t < nnodes && t < p->num_terminals; t++) {
-            nl_set_net(circuit, p, ctl ? ctl_order[t] : t, tok[1 + t]);
+            int slot = ctl ? ctl_order[t]
+                     : three ? (kind == 'Q' ? bjt_order[t] : fet_order[t])
+                     : t;
+            nl_set_net(circuit, p, slot, tok[1 + t]);
             if (nl_is_ground(tok[1 + t])) needs_ground = 1;
         }
 

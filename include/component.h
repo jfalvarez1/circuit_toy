@@ -504,6 +504,18 @@ typedef union {
         bool ideal;             // Ideal mode
     } analog_switch;
 
+    /* Logic-driven DPDT changeover. Both poles throw together on the control input: with it
+       low each common sits on its NC throw, with it high on its NO throw. Break-before-make is
+       inherent rather than modelled - exactly one throw per pole is ever stamped at r_on and the
+       other at r_off, so there is no instant at which both are connected. */
+    struct {
+        double v_on;            // Control threshold: at or above this, the poles are thrown (V)
+        double r_on;            // Resistance of the closed throw (Ohm)
+        double r_off;           // Resistance of the open throw (Ohm)
+        bool thrown;            // Where the poles are now, for the symbol to draw
+        bool ideal;             // Ideal: zero on-resistance, infinite off
+    } dpdt_driven;
+
     // Arbitrary waveform source: replays one of the global sample tables
     struct {
         int table;              // which global table (0..ARB_TABLES-1)

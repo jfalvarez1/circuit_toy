@@ -1157,6 +1157,23 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
         }}
     },
 
+    /* Terminals: two poles, each a common with an NC and an NO throw, plus the control input.
+       A common sits between its two throws so the changeover reads as one, and the control
+       enters from below like every other driven part here. */
+    [COMP_DPDT_DRIVEN] = {
+        "DPDT (driven)", "DPDTd", 7,
+        {{ -50, -40, "1C" }, { 50, -60, "1NC" }, { 50, -20, "1NO" },
+         { -50,  40, "2C" }, { 50,  20, "2NC" }, { 50,  60, "2NO" },
+         { 0, 80, "CTL" }},
+        100, 140,
+        { .dpdt_driven = {
+            .v_on = 2.5,
+            .r_on = 1.0,
+            .r_off = 1e9,
+            .thrown = false,
+            .ideal = true
+        }}
+    },
     [COMP_ANALOG_SWITCH] = {
         "Analog Switch", "ASW", 3,
         {{ -40, 0, "IN" }, { 40, 0, "OUT" }, { 0, 20, "CTL" }},
@@ -5539,6 +5556,36 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                               comp->props.relay.r_contact_on :
                               comp->props.relay.r_contact_off;
             STAMP_CONDUCTANCE(n[2], n[3], conductance_of(R_contact));
+            break;
+        }
+
+        case COMP_DPDT_DRIVEN: {
+            /* Both poles throw together on the control input. Terminals are
+               0=1C 1=1NC 2=1NO 3=2C 4=2NC 5=2NO 6=CTL.
+
+               Break-before-make comes out of the stamp rather than being imposed on it: each
+               pole stamps exactly one throw at r_on and the other at r_off, so there is no
+               solution in which a common is connected to both of its throws. A mechanical
+               changeover has a real overlap-free interval; this has no interval at all, which is
+               the same thing as far as the circuit is concerned. */
+            double v_ctl = 0;
+            if (prev_solution && n[6] > 0) v_ctl = vector_get(prev_solution, n[6] - 1);
+            bool thrown = v_ctl >= comp->props.dpdt_driven.v_on;
+            comp->props.dpdt_driven.thrown = thrown;      /* so the symbol draws where it is */
+
+            double r_on  = comp->props.dpdt_driven.ideal ? 1e-6 : comp->props.dpdt_driven.r_on;
+            double r_off = comp->props.dpdt_driven.ideal ? 1e12 : comp->props.dpdt_driven.r_off;
+            if (!(r_on > 1e-12)) r_on = 1e-12;            /* stamped as 1/R; never divide by zero */
+            if (!(r_off > 1e-12)) r_off = 1e-12;
+            double g_closed = conductance_of(r_on), g_open = conductance_of(r_off);
+
+            /* pole 1: common n[0] to NC n[1] / NO n[2]; pole 2: common n[3] to n[4] / n[5] */
+            STAMP_CONDUCTANCE(n[0], n[1], thrown ? g_open   : g_closed);
+            STAMP_CONDUCTANCE(n[0], n[2], thrown ? g_closed : g_open);
+            STAMP_CONDUCTANCE(n[3], n[4], thrown ? g_open   : g_closed);
+            STAMP_CONDUCTANCE(n[3], n[5], thrown ? g_closed : g_open);
+            /* The control input takes no current, like every other logic input here. */
+            if (n[6] > 0) matrix_add(A, n[6] - 1, n[6] - 1, 1e-12);
             break;
         }
 

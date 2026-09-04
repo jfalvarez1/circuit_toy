@@ -359,6 +359,8 @@ static const CircuitTemplateInfo template_info[] = {
         "two packs a catalogue calls identical, into the same load", TG_BMI},
     [CIRCUIT_BATT_LEAD_STAGES] = {"Lead-Acid: Bulk, Absorption, Float", "3Stage",
         "the three stages of a lead-acid charger, and what each one does", TG_BMI},
+    [CIRCUIT_EE_STRAIN_BRIDGE] = {"Strain Gauge Bridge", "Strain",
+        "350 ohm bridge, one active gauge, and 12.4 mV out of 5 V", TG_SENSORS},
     [CIRCUIT_BATT_CHEMISTRIES] = {"Battery Chemistries Compared", "Chem",
         "alkaline, NiMH, LiFePO4 and Li-ion into the same load", TG_BMI},
     [CIRCUIT_BATT_CHARGING] = {"Charging by Chemistry", "Charge",
@@ -6470,6 +6472,7 @@ static int place_batt_crate(Circuit *circuit, float x, float y);
 static int place_batt_charging(Circuit *circuit, float x, float y);
 static int place_batt_lead_stages(Circuit *circuit, float x, float y);
 static int place_batt_chemistries(Circuit *circuit, float x, float y);
+static int place_ee_strain_bridge(Circuit *circuit, float x, float y);
 static int place_tline_real(Circuit *circuit, float x, float y);
 static int place_sevenseg_test(Circuit *circuit, float x, float y);
 static int place_wireless_link(Circuit *circuit, float x, float y);
@@ -6827,6 +6830,7 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_BATT_CHARGING:      return place_batt_charging(circuit, x, y);
         case CIRCUIT_BATT_LEAD_STAGES:   return place_batt_lead_stages(circuit, x, y);
         case CIRCUIT_BATT_CHEMISTRIES:   return place_batt_chemistries(circuit, x, y);
+        case CIRCUIT_EE_STRAIN_BRIDGE:   return place_ee_strain_bridge(circuit, x, y);
         case CIRCUIT_BMI_RAIL:           return place_bmi_rail(circuit, x, y);
         case CIRCUIT_TLINE_REAL:         return place_tline_real(circuit, x, y);
         case CIRCUIT_SEVENSEG_TEST:      return place_sevenseg_test(circuit, x, y);
@@ -7235,6 +7239,12 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][6] = {
                                   "to 2.25 V a cell, 13.5 V, and holds there for ever without cooking the plates.",
                                   "A real charger is ONE rail moving between these on current and voltage thresholds. It is",
                                   "shown as three because a stage controller is a latch, and this shows what each stage does."},
+    [CIRCUIT_EE_STRAIN_BRIDGE] = {"STRAIN GAUGE BRIDGE: four 350 ohm arms across 5 V, with R3 strained to 353.5 ohm -",
+                                  "5 milli-strain on a gauge factor of 2, which is +1 % of 350. The reference half sits at",
+                                  "exactly 2.5 V and the strained half at 2.51244 V, so the bridge output is 12.44 mV: a",
+                                  "quarter of a percent of the excitation, which is why the x100 amplifier is not optional.",
+                                  "Both halves drift together with temperature, which is the reason for the bridge at all.",
+                                  "PROBE: vplus, vminus and out. Set R3 back to 350 for zero strain. (EE_Review m18l07)"},
     [CIRCUIT_BATT_CHEMISTRIES] = {"CHEMISTRIES: four cells at the same state of charge into the same 10 ohm load. The",
                                   "voltages differ - 1.5, 1.2, 3.2, 3.7 nominal - and so does what happens as they empty:",
                                   "the LiFePO4 holds its voltage across most of its range and then falls off a cliff, while",
@@ -13844,6 +13854,112 @@ static int place_batt_lead_stages(Circuit *circuit, float x, float y) {
     return n;
 }
 
+/* EE_Review module 18, lesson 07: "Strain Gauge Bridges".
+ *
+ * A Wheatstone bridge of 350 ohm gauges across 5 V, with one arm strained. The course states
+ * the numbers this produces and holds them to its own solver on every commit, so the values
+ * here are the document's and are not free to be tidied: R3 is 353.5 ohm because 5 milli-strain
+ * on a gauge factor of 2 is +1 % of 350, and the whole point of the lesson is how small the
+ * result is.
+ *
+ *   vminus = 5 * 350/700       = 2.5 V exactly, the reference half
+ *   vplus  = 5 * 353.5/703.5   = 2.512438 V
+ *   out    = 100 * (vplus - vminus) = 1.2438 V
+ *
+ * Twelve millivolts out of a five volt excitation, which is why the amplifier is not optional
+ * and why the bridge is arranged so both halves drift together with temperature.
+ */
+static int place_ee_strain_bridge(Circuit *circuit, float x, float y) {
+    /* The two legs. Left is the strained one, right is the reference. */
+    Component *r1 = vres(circuit, x - 120, y - 60, 350.0);      /* top left  */
+    Component *r3 = vres(circuit, x - 120, y + 60, 353.5);      /* the active gauge */
+    Component *r2 = vres(circuit, x + 120, y - 60, 350.0);      /* top right */
+    Component *r4 = vres(circuit, x + 120, y + 60, 350.0);      /* bottom right */
+    if (!r1 || !r2 || !r3 || !r4) return 0;
+
+    int top   = TN(x, y - 160);
+    int botm  = TN(x, y + 160);
+    int vplus  = TN(x - 120, y);
+    int vminus = TN(x + 120, y);
+
+    /* left leg */
+    TW(TN(x - 120, y - 100), TN(x - 120, y - 160));
+    TW(TN(x - 120, y - 160), top);
+    TW(TN(x - 120, y - 20), vplus);
+    TW(vplus, TN(x - 120, y + 20));
+    TW(TN(x - 120, y + 100), TN(x - 120, y + 160));
+    TW(TN(x - 120, y + 160), botm);
+    /* right leg */
+    TW(TN(x + 120, y - 100), TN(x + 120, y - 160));
+    TW(TN(x + 120, y - 160), top);
+    TW(TN(x + 120, y - 20), vminus);
+    TW(vminus, TN(x + 120, y + 20));
+    TW(TN(x + 120, y + 100), TN(x + 120, y + 160));
+    TW(TN(x + 120, y + 160), botm);
+
+    /* 5 V excitation, out to the left. Its two rails join the bridge's rails end-on, so nothing
+       doubles back along a segment that is already there. */
+    Component *vex = add_comp(circuit, COMP_DC_VOLTAGE, x - 340, y - 60, 90);
+    if (!vex) return 0;
+    vex->props.dc_voltage.voltage = 5.0;
+    vex->node_ids[0] = TN(x - 340, y - 100);
+    vex->node_ids[1] = TN(x - 340, y - 20);
+    TW(TN(x - 340, y - 100), TN(x - 340, y - 160));
+    TW(TN(x - 340, y - 160), TN(x - 120, y - 160));
+    TW(TN(x - 340, y - 20), TN(x - 340, y + 160));
+    TW(TN(x - 340, y + 160), TN(x - 120, y + 160));
+
+    Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 220, 0);
+    if (gnd) { gnd->node_ids[0] = TN(x, y + 220); TW(botm, TN(x, y + 220)); }
+
+    /* The instrumentation amplifier the lesson uses, as an ideal difference amplifier of gain
+       100: control terminals sense vplus against vminus, output drives `out` against ground.
+       Terminals are (-40,-20) +in, (-40,+20) -in, (+40,-20) +out, (+40,+20) -out. */
+    Component *e = add_comp(circuit, COMP_VCVS, x + 400, y, 0);
+    if (!e) return 0;
+    e->props.controlled_source.gain = 100.0;
+    e->node_ids[0] = vplus;
+    e->node_ids[1] = vminus;
+    int out = TN(x + 440, y - 20);
+    e->node_ids[2] = out;
+
+    /* The sense pair leaves each mid-point sideways before turning, so neither runs back along
+       the leg it came from - two wires on one line read as one wire and hide a connection. */
+    TW(vplus, TN(x - 180, y));
+    TW(TN(x - 180, y), TN(x - 180, y - 240));
+    TW(TN(x - 180, y - 240), TN(x + 360, y - 240));
+    TW(TN(x + 360, y - 240), TN(x + 360, y - 20));
+    TW(vminus, TN(x + 180, y));
+    TW(TN(x + 180, y), TN(x + 180, y + 240));
+    TW(TN(x + 180, y + 240), TN(x + 360, y + 240));
+    TW(TN(x + 360, y + 240), TN(x + 360, y + 20));
+
+    /* The amplifier's own return, to its own ground symbol rather than a long diagonal back to
+       the bridge's bottom rail. */
+    Component *g2 = add_comp(circuit, COMP_GROUND, x + 440, y + 80, 0);
+    if (g2) {
+        int aret = TN(x + 440, y + 20);
+        e->node_ids[3] = aret;
+        g2->node_ids[0] = TN(x + 440, y + 80);
+        TW(aret, TN(x + 440, y + 80));
+    } else {
+        e->node_ids[3] = botm;
+    }
+
+    /* Clear of every symbol and every wire: the geometry audit fails a template whose text sits
+       on top of either, because a label over a part is a label about nothing. */
+    add_label(circuit, x - 460, y - 200, "5 V excitation");
+    add_label(circuit, x - 460, y + 220, "R3 353.5: strained");
+    add_label(circuit, x + 300, y - 120, "x100");
+
+    /* The three nodes the lesson's `watch` field names, named after the nodes rather than left
+       as CH1..CH3 - the scope legend is what the reader matches against the lesson's text. */
+    probe_named(circuit, r1, 1, "vplus");
+    probe_named(circuit, r2, 1, "vminus");
+    probe_named(circuit, e, 2, "out");
+    return 6;
+}
+
 static int place_batt_chemistries(Circuit *circuit, float x, float y) {
     /* Four chemistries at the same state of charge into the same load. The voltages differ, and
        so does what happens as they empty - which is the reason chemistry is a property and not a
@@ -14790,6 +14906,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BATT_CHARGING]    = { COMP_RESISTOR, 0, 1 },    /* below the Li-ion series resistor: the pack terminal */
     [CIRCUIT_BATT_LEAD_STAGES] = { COMP_RESISTOR, 0, 1 },    /* the bulk pack's terminal */
     [CIRCUIT_BATT_CHEMISTRIES] = { COMP_RESISTOR, 0, 0 },    /* the alkaline column */
+    [CIRCUIT_EE_STRAIN_BRIDGE] = { COMP_RESISTOR, 1, 0 },    /* R3, the active gauge */
     [CIRCUIT_MCU_BLINK]        = { COMP_RESISTOR, 0, 0 },    /* the driven pin: a square wave the code made */
     [CIRCUIT_BMI_RAIL]         = { COMP_RESISTOR, 0, 0 },     /* the rail the divider is holding up */
     [CIRCUIT_IV_BUCK_NODES]    = { COMP_RESISTOR, 2, 0 },     /* the output, after L and C */
@@ -15256,6 +15373,7 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BATT_CHARGING]    = { DEMO_DC, 0 },
     [CIRCUIT_BATT_LEAD_STAGES] = { DEMO_DC, 0 },
     [CIRCUIT_BATT_CHEMISTRIES] = { DEMO_DC, 0 },
+    [CIRCUIT_EE_STRAIN_BRIDGE] = { DEMO_DC, 0 },
     [CIRCUIT_MCU_BLINK]        = { DEMO_WAVEFORM, 0 },
     [CIRCUIT_BMI_RAIL]         = { DEMO_DC, 0 },
     [CIRCUIT_IV_BUCK_NODES]    = { DEMO_DC, 0 },
@@ -15589,7 +15707,8 @@ const char *circuit_template_group_name(TemplateGroup g) {
         "Basics", "Filters", "Op-amps", "Transistors", "Oscillators", "Power supplies", "Digital", "Power systems", "High voltage", "Transients", "IC I/O & drivers", "Residential & commercial", "Grid standards & methods", "Hardware engineering", "Ideal vs real models",
         "Interview: instrumentation & scope", "Interview: fundamentals",
         "Interview: power & converters", "Interview: I/O & signal integrity",
-        "Battery monitoring & e-load"
+        "Battery monitoring & e-load",
+        "Sensors & bridges"
     };
     return (g >= 0 && g < TG_COUNT) ? names[g] : "?";
 }

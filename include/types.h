@@ -140,6 +140,12 @@ typedef enum {
     COMP_PUSH_BUTTON,       // Momentary push button (normally open)
     COMP_RELAY,             // Electromechanical relay
     COMP_ANALOG_SWITCH,     // Voltage-controlled analog switch
+    /* A DPDT changeover thrown by a logic level rather than by a finger. The mechanical
+       DPDT above is toggled by clicking it, which is right for a panel switch and useless for
+       a chopper, a demodulator, a commutating mixer or a switched-capacitor front end - all of
+       which need the poles driven by a signal. Building one out of four analog switches and an
+       inverter works and buries the idea in wiring, so it is a part. */
+    COMP_DPDT_DRIVEN,       // Logic-driven DPDT changeover, break-before-make
 
     // === TRANSFORMERS ===
     COMP_TRANSFORMER,       // Two-winding transformer

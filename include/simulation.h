@@ -140,6 +140,13 @@ typedef struct Simulation {
         unsigned long src_hash;
     } mcu[MCU_MAX_BLOCKS];
     int mcu_count;
+    /* How far the last DC operating point was from actually solving: max |A*x - b| over the node
+       rows, computed from the solver's OWN stamps at its final iterate.
+       The convergence test measures how far the last Newton step moved, which is a different
+       question - against a near-singular Jacobian Newton stalls with tiny steps a long way from
+       any root. Recording this does not change any verdict yet; it is the measurement that says
+       what a residual gate should reject. Read it with simulation_dc_residual(). */
+    double dc_residual;
 } Simulation;
 
 // Create/destroy simulation
