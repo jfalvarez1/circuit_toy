@@ -6084,10 +6084,16 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // Calculate desired output voltage (ADJ + 1.25V)
             double v_out_desired = v_adj + v_ref;
 
-            // Check dropout condition: if Vin < Vout + dropout, regulator can't maintain output
+            /* Which node the output TRACKS, and by how much. In regulation the output follows ADJ
+               (V_out = v_adj + 1.25); in dropout it follows IN (V_out = v_in - 2.5). Both are
+               exactly linear, so the dependence belongs in A - see the note below. */
             double v_out_max = v_in - v_dropout;
+            int track;                  /* node whose voltage the output follows, -1 for none */
+            double offset;              /* V_out = v(track) + offset */
+            if (v_out_desired < v_out_max) { track = n[2]; offset = v_ref; }
+            else                           { track = n[0]; offset = -v_dropout; }
             double V_out = (v_out_desired < v_out_max) ? v_out_desired : v_out_max;
-            if (V_out < 0) V_out = 0;  // Can't output negative
+            if (V_out < 0) { V_out = 0; track = -1; offset = 0.0; }  // Can't output negative
 
             // Input connection - small conductance for bias current
             if (n[0] > 0) matrix_add(A, n[0]-1, n[0]-1, G_in);
@@ -6095,10 +6101,26 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // ADJ pin - very high impedance (draws ~50uA typically)
             if (n[2] > 0) matrix_add(A, n[2]-1, n[2]-1, 1e-12);
 
-            // Output - voltage source behavior
+            /* Output: a source of V_out behind r_out. The tracked term MUST be stamped into A and
+               not folded into b. Putting the whole of V_out in b freezes the ADJ dependence at the
+               previous iterate, which turns Newton into a first-order fixed-point iteration whose
+               contraction ratio is exactly the feedback divider ratio R2/(R1+R2). At R1=240,R2=1300
+               that is 0.844, needing ~134 iterations to reach CONVERGENCE_TOL against the 50 it
+               gets - so it stopped short and reported the stopping point as an operating point.
+               The error grows with the set voltage: 0.7 ppm at 5 V, 1.4% at 15 V, 8% at 25 V, and
+               the template's own help text invites raising R2. V_out is linear in v(track), so one
+               matrix entry makes this the exact Newton step and it converges in ~3 iterations. */
             if (n[1] > 0) {
                 matrix_add(A, n[1]-1, n[1]-1, G_out);
-                vector_add(b, n[1]-1, G_out * V_out);
+                if (track > 0 && track != n[1]) {
+                    matrix_add(A, n[1]-1, track-1, -G_out);
+                    vector_add(b, n[1]-1, G_out * offset);
+                } else {
+                    /* tracked node is ground (v = 0, nothing to stamp), the output itself (a
+                       degenerate wiring with no solution - leave it to the residual to expose),
+                       or the hard zero clamp, which is not linear in anything. */
+                    vector_add(b, n[1]-1, G_out * (track == 0 ? offset : V_out));
+                }
             }
             break;
         }
@@ -6123,18 +6145,27 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // Calculate voltage relative to GND pin
             double v_in_rel = v_in - v_gnd;
 
-            // Check dropout condition: need at least 7V (5V + 2V dropout)
+            /* Check dropout condition: need at least 7V (5V + 2V dropout). As with the LM317, the
+               output tracks a node - GND in regulation, IN in dropout - and that dependence has to
+               go into A. It has been harmless only because the GND pin is grounded in every
+               template that uses this part, so the tracked term is zero; lift GND onto a divider
+               (a common way to bias a 7805 above 5 V) and it fails exactly as the LM317 did. */
             double V_out;
+            int track;                  /* node whose voltage the output follows, -1 for none */
+            double offset;              /* V_out = v(track) + offset */
             if (v_in_rel >= v_reg + v_dropout) {
                 // Normal regulation - output 5V above GND
                 V_out = v_gnd + v_reg;
+                track = n[2]; offset = v_reg;
             } else if (v_in_rel > 0) {
                 // Dropout - output follows input minus dropout
                 V_out = v_in - v_dropout;
-                if (V_out < v_gnd) V_out = v_gnd;  // Can't go below GND
+                track = n[0]; offset = -v_dropout;
+                if (V_out < v_gnd) { V_out = v_gnd; track = n[2]; offset = 0.0; }  // Can't go below GND
             } else {
                 // No input voltage
                 V_out = v_gnd;
+                track = n[2]; offset = 0.0;
             }
 
             // Input connection - small conductance for bias current
@@ -6143,10 +6174,15 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             // GND pin - connection point
             if (n[2] > 0) matrix_add(A, n[2]-1, n[2]-1, 1e-12);
 
-            // Output - voltage source behavior
+            // Output - voltage source behavior, tracked term in A (see the LM317 note above)
             if (n[1] > 0) {
                 matrix_add(A, n[1]-1, n[1]-1, G_out);
-                vector_add(b, n[1]-1, G_out * V_out);
+                if (track > 0 && track != n[1]) {
+                    matrix_add(A, n[1]-1, track-1, -G_out);
+                    vector_add(b, n[1]-1, G_out * offset);
+                } else {
+                    vector_add(b, n[1]-1, G_out * (track == 0 ? offset : V_out));
+                }
             }
             break;
         }

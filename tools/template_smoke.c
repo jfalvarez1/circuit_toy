@@ -615,6 +615,49 @@ static int netlist_solve(const char *path) {
         printf("  of %.4g A. The solve reported success without satisfying its own equations.\n", kcl_scale);
     }
 
+    /* A node far outside every supply in the circuit.
+     *
+     * The current guard below and the KCL and residual checks above all missed a real case: an
+     * op-amp table whose compensation capacitors are opens at DC, so the feedback path is gone
+     * and the amplifier runs open-loop. V(out) came back as 10 kV - the macromodel's gain times
+     * the input, read off directly - with a 3e-20 A residual, no KCL complaint and exit 0. The
+     * course's own tool called that circuit singular and refused it; this one reported it as an
+     * operating point, because a finite-gain macromodel makes the matrix perfectly well
+     * conditioned. The equations were satisfied. They were the wrong equations.
+     *
+     * Nothing in a DC operating point can lift a node far above the largest independent source:
+     * inductors are shorts, capacitors are opens, and there is no switching to boost with. So a
+     * node decades above the supply span means an open-loop amplifier or a floating section, not
+     * a circuit. Warned rather than refused - a controlled source is entitled to gain, and the
+     * threshold is deliberately loose - but never left silent. */
+    double vsupply = 0.0;
+    for (int k = 0; k < c->num_components; k++) {
+        Component *p = c->components[k];
+        if (!p) continue;
+        double v = 0.0;
+        if (p->type == COMP_DC_VOLTAGE) v = fabs(p->props.dc_voltage.voltage);
+        else if (p->type == COMP_AC_VOLTAGE)
+            v = fabs(p->props.ac_voltage.offset) + fabs(p->props.ac_voltage.amplitude);
+        else continue;
+        if (v > vsupply) vsupply = v;
+    }
+    double vlimit = 20.0 * (vsupply > 1.0 ? vsupply : 1.0) + 10.0;
+    double vworst = 0.0;
+    char vworst_at[NET_NAME_MAX] = "";
+    for (int i = 0; i < c->num_nodes; i++) {
+        if (!c->nodes[i].name[0]) continue;
+        double v = fabs(c->nodes[i].voltage);
+        if (v > vworst) { vworst = v; snprintf(vworst_at, sizeof vworst_at, "%s", c->nodes[i].name); }
+    }
+    if (vworst > vlimit) {
+        printf("  OFF THE RAILS - %s sits at %.4g V against a largest supply of %.4g V. A DC\n",
+               vworst_at, vworst, vsupply);
+        printf("  operating point cannot do that: at DC the capacitors are open and the inductors\n");
+        printf("  are shorts, so there is nothing to boost with. Usually an amplifier whose\n");
+        printf("  feedback is a capacitor - open at DC, so the loop is not closed and the number\n");
+        printf("  below is the macromodel's open-loop gain, not the circuit. Do not quote it.\n");
+    }
+
     if (worst > 1e3) {
         printf("  IMPLAUSIBLE - %s carries %.4g A. The solve converged, but not to anything\n",
                worst_at, worst);
