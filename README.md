@@ -360,7 +360,10 @@ them transcribed twice.
 - Real Op-Amp model (input/output impedance, rail voltages)
 - Rail-to-rail option
 
-**Controlled Sources**
+**Controlled Sources** - four pins each, named on the canvas: `C+`/`C-` for a voltage-controlled
+input, `I+`/`I-` for a current-controlled one, `+`/`-` for the output. The control port is drawn
+open where it draws no current and closed where the current passes through a sense element, so
+you can tell the two families apart without reading the label.
 - VCVS (Voltage Controlled Voltage Source)
 - VCCS (Voltage Controlled Current Source)
 - CCVS (Current Controlled Voltage Source)

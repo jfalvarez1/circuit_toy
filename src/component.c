@@ -1051,8 +1051,11 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
     // === CONTROLLED SOURCES ===
 
     [COMP_VCVS] = {
+        /* All four pins used to be called "+" and "-", which named the polarity and left the far
+           more important half unsaid: which pair is the control port and which is the source.
+           The renderer draws these names now, so they have to say it. */
         "VCVS", "E", 4,
-        {{ -40, -20, "+" }, { -40, 20, "-" }, { 40, -20, "+" }, { 40, 20, "-" }},
+        {{ -40, -20, "C+" }, { -40, 20, "C-" }, { 40, -20, "+" }, { 40, 20, "-" }},
         80, 60,
         { .controlled_source = {
             .gain = 1.0,                // V/V
@@ -1062,7 +1065,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
 
     [COMP_VCCS] = {
         "VCCS", "G", 4,
-        {{ -40, -20, "+" }, { -40, 20, "-" }, { 40, -20, "+" }, { 40, 20, "-" }},
+        {{ -40, -20, "C+" }, { -40, 20, "C-" }, { 40, -20, "+" }, { 40, 20, "-" }},
         80, 60,
         { .controlled_source = {
             .gain = 0.001,              // A/V (1 mS)
@@ -1071,8 +1074,11 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
     },
 
     [COMP_CCVS] = {
+        /* I+ / I- rather than C+ / C-: this control port is a current sense, so it is a near
+           short (r_in below) and the current goes THROUGH it. The symbol draws it closed for
+           the same reason the voltage-controlled pair is drawn open. */
         "CCVS", "H", 4,
-        {{ -40, -20, "+" }, { -40, 20, "-" }, { 40, -20, "+" }, { 40, 20, "-" }},
+        {{ -40, -20, "I+" }, { -40, 20, "I-" }, { 40, -20, "+" }, { 40, 20, "-" }},
         80, 60,
         { .controlled_source = {
             .gain = 1000.0,             // V/A (1k transresistance)
@@ -1083,7 +1089,7 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
 
     [COMP_CCCS] = {
         "CCCS", "F", 4,
-        {{ -40, -20, "+" }, { -40, 20, "-" }, { 40, -20, "+" }, { 40, 20, "-" }},
+        {{ -40, -20, "I+" }, { -40, 20, "I-" }, { 40, -20, "+" }, { 40, 20, "-" }},
         80, 60,
         { .controlled_source = {
             .gain = 1.0,                // A/A

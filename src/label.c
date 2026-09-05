@@ -110,6 +110,52 @@ int label_wrap(const char *s, int max_chars, int *starts, int *lens, int max_lin
     return n;
 }
 
+/* Which parts draw their pin names, and where.
+ *
+ * The four controlled sources have two pins that sense and two that drive, they look identical,
+ * and the names in the type table used to be "+" and "-" on all four - the polarity, and not a
+ * word about which pair was which. The OTA's bias pin had no name drawn and no lead either.
+ *
+ * PIN_NAME_PX is the small font's cell, and the box is measured at zoom 1 the same way the value
+ * labels above are: the text is a fixed size on screen while the part scales, so there is no one
+ * world size for it, and the audit picks the zoom where they agree.
+ */
+#define PIN_NAME_PX 8
+
+bool label_part_shows_pin_names(ComponentType type) {
+    switch (type) {
+        case COMP_VCVS: case COMP_VCCS: case COMP_CCVS: case COMP_CCCS:
+        case COMP_OTA:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool label_pin_name_box(Component *comp, int terminal, const char **name,
+                        float *x0, float *y0, float *x1, float *y1) {
+    if (!comp || !label_part_shows_pin_names(comp->type)) return false;
+    const ComponentTypeInfo *ci = component_get_info(comp->type);
+    if (!ci || terminal < 0 || terminal >= comp->num_terminals || terminal >= ci->num_terminals)
+        return false;
+    const char *nm = ci->terminals[terminal].name;
+    if (!nm || !nm[0]) return false;
+
+    float tx = 0, ty = 0;
+    component_get_terminal_pos(comp, terminal, &tx, &ty);
+    float w = (float)strlen(nm) * PIN_NAME_PX;
+    float dx = tx - comp->x;
+    /* Outboard of the pin and one line below it - the same rule render_pin_labels draws by. */
+    float lx = dx < 0 ? tx - w - 4 : (dx > 0 ? tx + 4 : tx - w / 2);
+    float ly = ty + 4;
+    if (name) *name = nm;
+    if (x0) *x0 = lx;
+    if (y0) *y0 = ly;
+    if (x1) *x1 = lx + w;
+    if (y1) *y1 = ly + PIN_NAME_PX;
+    return true;
+}
+
 /* The probe's voltage readout. Here rather than in render.c because --geom-test measures the box
    this text occupies and template_smoke does not link the renderer - the same reason
    render_component_value_label lives here. What is checked is then what is drawn. */
@@ -145,6 +191,19 @@ static int canvas_static_boxes(const Circuit *c, CanvasTextBox *out, int max, in
     for (int i = 0; i < c->num_components && n < max; i++) {
         Component *t = c->components[i];
         if (!t) continue;
+        /* Pin names are part of the symbol, drawn whether or not values are shown. */
+        if (label_part_shows_pin_names(t->type)) {
+            for (int k = 0; k < t->num_terminals && n < max; k++) {
+                const char *nm = NULL;
+                float a0, b0, a1, b1;
+                if (!label_pin_name_box(t, k, &nm, &a0, &b0, &a1, &b1)) continue;
+                out[n].x0 = a0; out[n].y0 = b0; out[n].x1 = a1; out[n].y1 = b1;
+                snprintf(out[n].s, sizeof out[n].s, "%.20s", nm);
+                out[n].is_value = 1;   /* a readout may be moved out of its way, not vice versa */
+                out[n].owner = t;
+                n++;
+            }
+        }
         if (t->type != COMP_TEXT && !with_values) continue;
         if (t->type == COMP_TEXT) {
             const char *str = t->props.text.text;

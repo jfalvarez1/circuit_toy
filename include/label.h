@@ -23,6 +23,14 @@
 
 int label_wrap(const char *s, int max_chars, int *starts, int *lens, int max_lines);
 
+/* The parts that draw their pin names on the canvas, and where each name goes.
+   One copy, because the renderer draws these and --geom-test measures them: a second copy of
+   either the list or the offsets would drift, and the audit would then be checking text that is
+   not where it says it is. Returns false for a terminal that draws no name. */
+bool label_part_shows_pin_names(ComponentType type);
+bool label_pin_name_box(Component *comp, int terminal, const char **name,
+                        float *x0, float *y0, float *x1, float *y1);
+
 /* The probe's voltage readout, exactly as the renderer draws it */
 void render_volt_str(char *out, size_t n, double v);
 

@@ -918,6 +918,43 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.50 four pins that looked identical, on a symbol pointing somewhere else (2026-09-05)
+
+Every controlled source declared four terminals at `(-+40,-+20)` - the corners - and drew its
+leads straight up and down to `(0,-40)` and `(0,+40)`. Those are the leads of a TWO-terminal
+source, and this part has four, so not one lead ended at a terminal: the pins sat off the symbol
+with nothing drawn to them, and the wires the user attached stopped short of a diamond they
+never touched. All four pins were also named `"+"` or `"-"` in the type table, which gives the
+polarity and says nothing about the half that matters - which pair senses and which pair drives.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.50.1 | `[ ]` Place a **VCVS** or **VCCS** | leads reach all four pins; the control port is drawn OPEN, because it draws no current |
+| 3.50.2 | `[ ]` Place a **CCVS** or **CCCS** | the control port is drawn CLOSED - it is a milliohm sense element and the current goes through it |
+| 3.50.3 | `[ ]` Read the pin names | `C+ C-` on a voltage-controlled input, `I+ I-` on a current-controlled one, `+ -` on the output |
+| 3.50.4 | `[ ]` Place an **OTA** | `Iabc` has a lead to the body and a name. It had neither |
+| 3.50.5 | `[ ]` Import a netlist that names its nets | the net flag and the pin name do not print through each other |
+| 3.50.6 | `[ ]` Zoom out past 0.45 | the names drop out rather than pile up |
+| 3.50.7 | `[ ]` **Mutation:** place a pin name on the body | `--geom-test` reports `textpair` on four templates, naming `C+`, `C-`, `+`, `-` |
+| 3.50.8 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 76 suites, 0 failed |
+
+**The placement rule is two constraints, and both were found by looking.** *Below* the pin,
+because a net label is a flag drawn directly above its node - the first version put the name
+there and printed `C+` through the `in` of every net the netlist reader had named. *Outboard*
+of the pin, because there is no room the other way: the body is 80 wide with a 40-wide diamond
+in the middle, and a current-controlled part draws its sense element across what is left, so an
+inboard `I+` landed straight on it. A wire arriving at a pin runs level with the pin, and a name
+one line below clears it.
+
+**The box lives in `label.c`, not in the renderer.** `--geom-test` measures the text the canvas
+draws, and the probe readout steps aside for it; text drawn only in `render.c` would be invisible
+to both, so the name would be audited as if it were not there. The list of parts and the offsets
+are one copy that the renderer draws from and the audit measures - a second copy would drift, and
+the audit would then be checking text that is not where it says it is. Mutation-checked by moving
+the box onto the body: 0 hard violations becomes 4, each naming the pins.
+
+---
+
 ### 3.49 a thermocouple measures a difference (2026-09-05)
 
 EE_Review module 18 lesson 06 is RTDs *and* thermocouples. The RTD half of it is already here:

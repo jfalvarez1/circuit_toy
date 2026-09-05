@@ -50,6 +50,7 @@ void render_darlington_pnp(RenderContext *ctx, float x, float y, int rotation);
 void render_opamp_real(RenderContext *ctx, float x, float y, int rotation);
 void render_ota(RenderContext *ctx, float x, float y, int rotation);
 void render_ccii(RenderContext *ctx, float x, float y, int rotation, bool is_plus);
+static void render_pin_labels(RenderContext *ctx, Component *comp);
 void render_vcvs(RenderContext *ctx, float x, float y, int rotation);
 void render_vccs(RenderContext *ctx, float x, float y, int rotation);
 void render_ccvs(RenderContext *ctx, float x, float y, int rotation);
@@ -1494,6 +1495,7 @@ void render_component(RenderContext *ctx, Component *comp) {
             break;
         case COMP_OTA:
             render_ota(ctx, comp->x, comp->y, comp->rotation);
+            render_pin_labels(ctx, comp);
             break;
         case COMP_CCII_PLUS:
             render_ccii(ctx, comp->x, comp->y, comp->rotation, true);
@@ -1503,15 +1505,19 @@ void render_component(RenderContext *ctx, Component *comp) {
             break;
         case COMP_VCVS:
             render_vcvs(ctx, comp->x, comp->y, comp->rotation);
+            render_pin_labels(ctx, comp);
             break;
         case COMP_VCCS:
             render_vccs(ctx, comp->x, comp->y, comp->rotation);
+            render_pin_labels(ctx, comp);
             break;
         case COMP_CCVS:
             render_ccvs(ctx, comp->x, comp->y, comp->rotation);
+            render_pin_labels(ctx, comp);
             break;
         case COMP_CCCS:
             render_cccs(ctx, comp->x, comp->y, comp->rotation);
+            render_pin_labels(ctx, comp);
             break;
         case COMP_DPDT_SWITCH:
             render_dpdt_switch(ctx, comp->x, comp->y, comp->rotation, 0);
@@ -3920,6 +3926,10 @@ void render_ota(RenderContext *ctx, float x, float y, int rotation) {
     render_draw_line_rotated(ctx, x, y, -40, -20, -25, -20, rotation);
     render_draw_line_rotated(ctx, x, y, -40, 20, -25, 20, rotation);
     render_draw_line_rotated(ctx, x, y, 30, 0, 40, 0, rotation);
+    /* The bias pin. Its terminal is at (0,30) and nothing was ever drawn to it, so the one
+       input that makes an OTA an OTA - the current that sets gm - hung in space below the
+       body. The triangle's lower edge is at y = 16.4 where x = 0. */
+    render_draw_line_rotated(ctx, x, y, 0, 30, 0, 17, rotation);
     render_draw_line_rotated(ctx, x, y, -20, -20, -12, -20, rotation);
     render_draw_line_rotated(ctx, x, y, -20, 20, -12, 20, rotation);
     render_draw_line_rotated(ctx, x, y, -16, 16, -16, 24, rotation);
@@ -3954,16 +3964,65 @@ void render_ccii(RenderContext *ctx, float x, float y, int rotation, bool is_plu
     render_draw_line_rotated(ctx, x, y, 12, 0, 18, 0, rotation);
 }
 
-// VCVS (Voltage-Controlled Voltage Source) - diamond
-void render_vcvs(RenderContext *ctx, float x, float y, int rotation) {
-    // Diamond shape with + - inside
+/* Pin names, drawn from the type table so what is written is what the part declares.
+ *
+ * A four-terminal source is unreadable without them: two pins sense and two drive, they look
+ * identical, and getting the pair the wrong way round is a mistake the DC answer does not
+ * always show. The names live in ComponentTypeInfo, so this stays right for any part it is
+ * pointed at rather than repeating a list of strings here.
+ *
+ * Placement runs OUTBOARD of the pin and offset ACROSS the lead, not along it - a label sitting
+ * on the lead's own line is a label on top of the wire the user attached to it. Screen space
+ * throughout, because the text is a fixed size while the symbol scales, and it is dropped below
+ * a zoom where the names would be wider than the part they belong to.
+ */
+static void render_pin_labels(RenderContext *ctx, Component *comp) {
+    if (!label_part_shows_pin_names(comp->type) || ctx->zoom < 0.45f) return;
+    const Color pin = {150, 162, 196, 255};
+    for (int k = 0; k < comp->num_terminals; k++) {
+        const char *nm = NULL;
+        float bx0, by0, bx1, by1;
+        /* The box comes from label.c so the audit measures exactly what is drawn here. It is in
+           world units at zoom 1; the text itself is a fixed size, so only its corner is mapped. */
+        if (!label_pin_name_box(comp, k, &nm, &bx0, &by0, &bx1, &by1)) continue;
+        int lx, ly;
+        render_world_to_screen(ctx, bx0, by0, &lx, &ly);
+        render_draw_text_small(ctx, nm, lx, ly, pin);
+    }
+}
+
+/* The body all four controlled sources share.
+ *
+ * The leads used to run straight up and down, from the diamond's vertices out to (0,-40) and
+ * (0,+40) - a two-terminal source. This part has FOUR terminals and none of them is there:
+ * they sit at (-+40,-+20), the corners of the box, so every pin floated a lead's length away
+ * from a symbol that pointed somewhere else entirely. The output pair now runs in along
+ * y = -+20 to the diamond's top and bottom vertices, which is where the current actually
+ * enters and leaves it.
+ *
+ * The control port says which kind of source this is. A voltage-controlled input draws no
+ * current, so it is drawn open - two leads that stop. A current-controlled input is a sense
+ * element of about a milliohm, so it is drawn closed, and the current goes through it.
+ */
+static void render_ctrl_source_body(RenderContext *ctx, float x, float y, int rotation,
+                                    bool control_is_current) {
     render_draw_line_rotated(ctx, x, y, 0, -20, 20, 0, rotation);
     render_draw_line_rotated(ctx, x, y, 20, 0, 0, 20, rotation);
     render_draw_line_rotated(ctx, x, y, 0, 20, -20, 0, rotation);
     render_draw_line_rotated(ctx, x, y, -20, 0, 0, -20, rotation);
-    // Terminals at corners
-    render_draw_line_rotated(ctx, x, y, 0, -20, 0, -40, rotation);
-    render_draw_line_rotated(ctx, x, y, 0, 20, 0, 40, rotation);
+    /* output pair, in to the vertices the current enters and leaves by */
+    render_draw_line_rotated(ctx, x, y, 40, -20, 0, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 40,  20, 0,  20, rotation);
+    /* control port, clear of the diamond's left tip at (-20,0) */
+    render_draw_line_rotated(ctx, x, y, -40, -20, -26, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, -40,  20, -26,  20, rotation);
+    if (control_is_current)
+        render_draw_line_rotated(ctx, x, y, -26, -20, -26, 20, rotation);
+}
+
+// VCVS (Voltage-Controlled Voltage Source) - diamond
+void render_vcvs(RenderContext *ctx, float x, float y, int rotation) {
+    render_ctrl_source_body(ctx, x, y, rotation, false);
     // + and - inside
     render_draw_line_rotated(ctx, x, y, -3, -8, 3, -8, rotation);
     render_draw_line_rotated(ctx, x, y, 0, -11, 0, -5, rotation);
@@ -3972,14 +4031,7 @@ void render_vcvs(RenderContext *ctx, float x, float y, int rotation) {
 
 // VCCS (Voltage-Controlled Current Source) - diamond with arrow
 void render_vccs(RenderContext *ctx, float x, float y, int rotation) {
-    // Diamond shape
-    render_draw_line_rotated(ctx, x, y, 0, -20, 20, 0, rotation);
-    render_draw_line_rotated(ctx, x, y, 20, 0, 0, 20, rotation);
-    render_draw_line_rotated(ctx, x, y, 0, 20, -20, 0, rotation);
-    render_draw_line_rotated(ctx, x, y, -20, 0, 0, -20, rotation);
-    // Terminals
-    render_draw_line_rotated(ctx, x, y, 0, -20, 0, -40, rotation);
-    render_draw_line_rotated(ctx, x, y, 0, 20, 0, 40, rotation);
+    render_ctrl_source_body(ctx, x, y, rotation, false);
     // Current arrow inside
     render_draw_line_rotated(ctx, x, y, 0, 10, 0, -10, rotation);
     render_draw_line_rotated(ctx, x, y, -4, -5, 0, -10, rotation);
@@ -3988,13 +4040,7 @@ void render_vccs(RenderContext *ctx, float x, float y, int rotation) {
 
 // CCVS (Current-Controlled Voltage Source) - diamond
 void render_ccvs(RenderContext *ctx, float x, float y, int rotation) {
-    // Diamond with + - and "r" indicator
-    render_draw_line_rotated(ctx, x, y, 0, -20, 20, 0, rotation);
-    render_draw_line_rotated(ctx, x, y, 20, 0, 0, 20, rotation);
-    render_draw_line_rotated(ctx, x, y, 0, 20, -20, 0, rotation);
-    render_draw_line_rotated(ctx, x, y, -20, 0, 0, -20, rotation);
-    render_draw_line_rotated(ctx, x, y, 0, -20, 0, -40, rotation);
-    render_draw_line_rotated(ctx, x, y, 0, 20, 0, 40, rotation);
+    render_ctrl_source_body(ctx, x, y, rotation, true);
     // + and -
     render_draw_line_rotated(ctx, x, y, -3, -8, 3, -8, rotation);
     render_draw_line_rotated(ctx, x, y, 0, -11, 0, -5, rotation);
@@ -4006,13 +4052,7 @@ void render_ccvs(RenderContext *ctx, float x, float y, int rotation) {
 
 // CCCS (Current-Controlled Current Source) - diamond with arrow
 void render_cccs(RenderContext *ctx, float x, float y, int rotation) {
-    // Diamond shape
-    render_draw_line_rotated(ctx, x, y, 0, -20, 20, 0, rotation);
-    render_draw_line_rotated(ctx, x, y, 20, 0, 0, 20, rotation);
-    render_draw_line_rotated(ctx, x, y, 0, 20, -20, 0, rotation);
-    render_draw_line_rotated(ctx, x, y, -20, 0, 0, -20, rotation);
-    render_draw_line_rotated(ctx, x, y, 0, -20, 0, -40, rotation);
-    render_draw_line_rotated(ctx, x, y, 0, 20, 0, 40, rotation);
+    render_ctrl_source_body(ctx, x, y, rotation, true);
     // Arrow
     render_draw_line_rotated(ctx, x, y, 0, 10, 0, -10, rotation);
     render_draw_line_rotated(ctx, x, y, -4, -5, 0, -10, rotation);
