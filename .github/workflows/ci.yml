@@ -26,6 +26,15 @@ jobs:
       matrix:
         os: [windows-2022, windows-latest]
         link: [shared, static]
+        # Which quarter of the battery this leg runs. Measured on 5ce3a62: the audit step was
+        # 3050 s of a 3203 s leg, and every leg ran the whole thing - four identical batteries
+        # side by side, so the wait was one battery and the bill was four. A quarter each keeps
+        # every suite running on every push while taking both to about a quarter.
+        include:
+          - {os: windows-2022,  link: shared, shard: '0/4'}
+          - {os: windows-2022,  link: static, shard: '1/4'}
+          - {os: windows-latest, link: shared, shard: '2/4'}
+          - {os: windows-latest, link: static, shard: '3/4'}
     steps:
       - uses: actions/checkout@v4
 
@@ -52,11 +61,15 @@ jobs:
       # Every suite is its own process over its own copy of the templates, so they run several
       # at a time. Sequentially this step was seventeen minutes of a twenty-minute job whose
       # compile takes thirty-five seconds. The same script runs locally: bash tools/run_audits.sh
+      # A quarter of the battery per leg on a push; the whole thing on a tag, where the release
+      # is built and the cross-product is worth paying for. AUDIT_SHARD unset is the full run,
+      # which is also how it behaves locally.
       - name: Template audit
         shell: bash
         env:
           SDL_VIDEODRIVER: dummy
           CIRCUIT_TOY_NO_UPDATE: '1'
+          AUDIT_SHARD: ${{ startsWith(github.ref, 'refs/tags/') && '' || matrix.shard }}
         run: bash tools/run_audits.sh build
 
       # Start the binary this job is about to ship: window, renderer, a template placed, frames

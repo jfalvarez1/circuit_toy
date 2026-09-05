@@ -114,6 +114,90 @@ if [ -n "$bad_assert" ]; then
     exit 2
 fi
 
+# Sharding the battery across CI legs.
+#
+# Measured on 5ce3a62: the audit step was 3050 s of a 3203 s leg - 95 % of it, against 79 s of
+# compile - and all four matrix legs ran ALL of it. Four identical batteries in parallel, so the
+# wall clock was one whole battery and the compute was four. AUDIT_SHARD=i/n gives this leg every
+# nth unit of work instead: the cross-product then costs ONE battery spread four ways, which
+# takes both the wait and the compute to about a quarter.
+#
+# Round-robin rather than blocks, because the units are wildly uneven - demo-test is two thirds
+# of the battery on its own and is already split into quarters, so interleaving spreads the long
+# ones instead of piling them onto one leg.
+#
+# What it costs, stated plainly: a suite now runs on ONE leg rather than on all four, so a fault
+# that appears only on windows-2022, or only in a shared build, is caught only if that suite
+# happened to land there. Every suite still runs on every push. Unset - which is how it runs
+# locally and on a tag - is the whole battery, unchanged.
+shard_i=-1; shard_n=1
+if [ -n "${AUDIT_SHARD:-}" ]; then
+    shard_i="${AUDIT_SHARD%%/*}"; shard_n="${AUDIT_SHARD##*/}"
+    case "$shard_i$shard_n" in ''|*[!0-9]*) echo "run_audits: AUDIT_SHARD must be i/n" >&2; exit 2 ;; esac
+    if [ "$shard_n" -lt 1 ] || [ "$shard_i" -ge "$shard_n" ]; then
+        echo "run_audits: AUDIT_SHARD=$AUDIT_SHARD is out of range" >&2; exit 2
+    fi
+fi
+unit=0
+mine() {
+    [ "$shard_i" -lt 0 ] && return 0
+    r=$(( unit % shard_n )); unit=$((unit + 1)); [ "$r" -eq "$shard_i" ]
+}
+
+SEL_SHARDS=""; SEL_SMOKE=""; SEL_APP=""
+for entry in $SHARDED; do
+    mode="${entry%%:*}"; parts="${entry##*:}"; i=0
+    while [ "$i" -lt "$parts" ]; do
+        mine && SEL_SHARDS="$SEL_SHARDS SMOKE:$mode:$i:$parts"
+        i=$((i + 1))
+    done
+done
+for entry in $APP_SHARDED; do
+    mode="${entry%%:*}"; parts="${entry##*:}"; i=0
+    while [ "$i" -lt "$parts" ]; do
+        mine && SEL_SHARDS="$SEL_SHARDS APP:$mode:$i:$parts"
+        i=$((i + 1))
+    done
+done
+for m in $SMOKE_MODES; do mine && SEL_SMOKE="$SEL_SMOKE $m"; done
+for m in $APP_MODES;   do mine && SEL_APP="$SEL_APP $m"; done
+
+# The python gates are units of work too, and leaving them out was the first version's mistake:
+# sharding only the C suites took a local quarter-run from 400 s to 376 s, because these were
+# still running in full on every leg. They are named here in a fixed order so every leg walks
+# the same sequence and the partition is the same one shard_check verifies.
+PY_GATES="prop-wiring click-wiring key-wiring style-wiring thermal-wiring stability undo-gui cli-smoke gui-smoke edge-gui svg-audit keys-gui"
+SEL_PY=""
+for g in $PY_GATES; do mine && SEL_PY="$SEL_PY $g"; done
+py_sel() { case " $SEL_PY " in *" $1 "*) return 0 ;; esac; return 1; }
+
+# AUDIT_LIST=1 prints what this leg would run and exits. The point is that the partition is
+# checkable without running anything: a shard that silently drops a suite is the same failure as
+# a suite in no list, and that one went unnoticed for months. Compare the union of the shards
+# against the unsharded list and they must match exactly - tools/shard_check.sh does that.
+if [ -n "${AUDIT_LIST:-}" ]; then
+    for u in $SEL_SHARDS; do
+        rest="${u#*:}"; mode="${rest%%:*}"; rest="${rest#*:}"; si="${rest%%:*}"
+        echo "$mode.$si"
+    done
+    for m in $SEL_SMOKE $SEL_APP; do echo "$m"; done
+    for g in $SEL_PY; do echo "py:$g"; done
+    exit 0
+fi
+
+# And the partition itself is a thing that can break silently, so it is checked rather than
+# trusted. A shard that drops a suite prints a shorter list of passes and a green summary - the
+# same shape as a suite in no list, which is the failure the guard above exists for. Runs after
+# the AUDIT_LIST exit above, which is what stops this recursing: shard_check calls back into this
+# script with AUDIT_LIST set, and that returns before reaching here.
+if [ -f tools/shard_check.sh ]; then
+    if ! bash tools/shard_check.sh 4 >/dev/null 2>&1; then
+        echo "run_audits: the AUDIT_SHARD partition is not a partition - some suite would run on" >&2
+        echo "run_audits: no leg, or on two. Run: bash tools/shard_check.sh 4" >&2
+        exit 2
+    fi
+fi
+
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
 pids=""
@@ -139,45 +223,38 @@ run_shard() {   # binary, mode-without-dashes, shard index, shard count
 }
 
 start=$(date +%s)
-for entry in $SHARDED; do
-    mode="${entry%%:*}"; parts="${entry##*:}"
-    i=0
-    while [ "$i" -lt "$parts" ]; do
-        while [ "$(jobs -pr | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || break; done
-        run_shard "$SMOKE" "$mode" "$i" "$parts" &
-        i=$((i + 1))
-    done
+for u in $SEL_SHARDS; do
+    binv="${u%%:*}"; rest="${u#*:}"
+    mode="${rest%%:*}"; rest="${rest#*:}"
+    si="${rest%%:*}"; sn="${rest##*:}"
+    while [ "$(jobs -pr | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || break; done
+    if [ "$binv" = "SMOKE" ]; then run_shard "$SMOKE" "$mode" "$si" "$sn" &
+    else                           run_shard "$APP"   "$mode" "$si" "$sn" &
+    fi
 done
-for entry in $APP_SHARDED; do
-    mode="${entry%%:*}"; parts="${entry##*:}"
-    i=0
-    while [ "$i" -lt "$parts" ]; do
-        while [ "$(jobs -pr | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || break; done
-        run_shard "$APP" "$mode" "$i" "$parts" &
-        i=$((i + 1))
-    done
-done
-for m in $SMOKE_MODES; do
+for m in $SEL_SMOKE; do
     while [ "$(jobs -pr | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || break; done
     run_one "$SMOKE" "$m" &
     pids="$pids $!"
 done
-for m in $APP_MODES; do
+for m in $SEL_APP; do
     while [ "$(jobs -pr | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || break; done
     run_one "$APP" "$m" &
     pids="$pids $!"
 done
 wait
 
-# the shards report as one line each, so a failing quarter names itself
+# the shards report as one line each, so a failing quarter names itself. Only the ones this leg
+# actually ran: a missing .rc counts as a failure, which is deliberate, so reporting a unit that
+# was never dispatched here would turn every other leg's work into a red line.
 SHARD_MODES=""
-for entry in $SHARDED $APP_SHARDED; do
-    mode="${entry%%:*}"; parts="${entry##*:}"; i=0
-    while [ "$i" -lt "$parts" ]; do SHARD_MODES="$SHARD_MODES $mode.$i"; i=$((i + 1)); done
+for u in $SEL_SHARDS; do
+    rest="${u#*:}"; mode="${rest%%:*}"; rest="${rest#*:}"; si="${rest%%:*}"
+    SHARD_MODES="$SHARD_MODES $mode.$si"
 done
 
 fails=0
-for m in $SHARD_MODES $SMOKE_MODES $APP_MODES; do
+for m in $SHARD_MODES $SEL_SMOKE $SEL_APP; do
     name="${m#--}"
     rc=$(cat "$out/$name.rc" 2>/dev/null || echo fail)
     last=$(tail -n 1 "$out/$name.log" 2>/dev/null | cut -c1-100)
@@ -191,7 +268,7 @@ done
 
 # A failure is worth its whole log, not just its last line.
 if [ "$fails" -gt 0 ]; then
-    for m in $SHARD_MODES $SMOKE_MODES $APP_MODES; do
+    for m in $SHARD_MODES $SEL_SMOKE $SEL_APP; do
         name="${m#--}"
         [ "$(cat "$out/$name.rc" 2>/dev/null)" = "fail" ] || continue
         echo
@@ -203,7 +280,7 @@ fi
 # Source-level, so it needs no binary: every property type has to be wired at both ends. A
 # handler with no row is a part that looks unconfigurable while the plumbing sits there; a row
 # with no handler looks configurable, takes a value and drops it. Both existed.
-if command -v python >/dev/null 2>&1; then
+if py_sel prop-wiring && command -v python >/dev/null 2>&1; then
     if python tools/prop_wiring.py > "$out/propwiring.log" 2>&1; then
         printf '[ OK ] %-14s %s
 ' "prop-wiring" "$(tail -n 1 "$out/propwiring.log" | cut -c1-100)"
@@ -218,7 +295,7 @@ fi
 # And source-level again: a button that is drawn has to be hit-tested by something, or it is a
 # control that is painted, hovered, labelled and dead - which looks exactly like a working one.
 # --layout-test covers the other way a button becomes unreachable, by being overlapped.
-if command -v python >/dev/null 2>&1; then
+if py_sel click-wiring && command -v python >/dev/null 2>&1; then
     if python tools/click_wiring.py > "$out/clickwiring.log" 2>&1; then
         printf '[ OK ] %-14s %s
 ' "click-wiring" "$(tail -n 1 "$out/clickwiring.log" | cut -c1-100)"
@@ -234,7 +311,7 @@ fi
 # the guide's tables and the buttons' own tooltips all name keys, and nothing tied any of them to
 # the code: F5, F6, F10, F12, Ctrl+O, Ctrl+N and "." were advertised with no handler at all, and
 # two more were advertised as doing something they do not.
-if command -v python >/dev/null 2>&1; then
+if py_sel key-wiring && command -v python >/dev/null 2>&1; then
     if python tools/key_wiring.py > "$out/keywiring.log" 2>&1; then
         printf '[ OK ] %-14s %s
 ' "key-wiring" "$(tail -n 1 "$out/keywiring.log" | cut -c1-100)"
@@ -250,7 +327,7 @@ fi
 # it only covers a file that includes style.h, only the calls below that include, and only while
 # the canvas flag is armed. A new drawing file draws in raw synthwave on white paper and nothing
 # reports it; leaving the flag armed turns the toolbar into empty white boxes, which it did.
-if command -v python >/dev/null 2>&1; then
+if py_sel style-wiring && command -v python >/dev/null 2>&1; then
     if python tools/style_wiring.py > "$out/stylewiring.log" 2>&1; then
         printf '[ OK ] %-14s %s
 ' "style-wiring" "$(tail -n 1 "$out/stylewiring.log" | cut -c1-100)"
@@ -265,7 +342,7 @@ fi
 # Also source-level: a part that claims a temperature limit has to have a power expression the
 # damage model can actually read. Every one of them was reading a field the loop wrote back to
 # itself, so nothing had ever burned; the electrolytic had no case at all.
-if command -v python >/dev/null 2>&1; then
+if py_sel thermal-wiring && command -v python >/dev/null 2>&1; then
     if python tools/thermal_wiring.py > "$out/thermalwiring.log" 2>&1; then
         printf '[ OK ] %-14s %s
 ' "thermal-wiring" "$(tail -n 1 "$out/thermalwiring.log" | cut -c1-100)"
@@ -279,7 +356,7 @@ fi
 
 # The one check that has to draw: a triggered trace has to stand still between frames, which is
 # a property of the picture and not of any number. Skipped where pillow is not installed.
-if command -v python >/dev/null 2>&1; then
+if py_sel stability && command -v python >/dev/null 2>&1; then
     if python tools/trace_stability.py "$APP" > "$out/stability.log" 2>&1; then
         printf '[ OK ] %-14s %s
 ' "stability" "$(tail -n 1 "$out/stability.log" | cut -c1-100)"
@@ -293,7 +370,7 @@ fi
 
 # and one that drives the app itself: delete a part with the tool, press Ctrl+Z, look at the
 # canvas. Everything else about undo is checked by calling the circuit functions directly.
-if command -v python >/dev/null 2>&1; then
+if py_sel undo-gui && command -v python >/dev/null 2>&1; then
     if python tools/undo_gui.py "$APP" > "$out/undogui.log" 2>&1; then
         printf '[ OK ] %-14s %s
 ' "undo-gui" "$(grep -m1 'OK\|skipped' "$out/undogui.log" | cut -c1-100)"
@@ -308,7 +385,7 @@ fi
 # orphan check above; the options were guarded by nothing, and fourteen of them were passed by no
 # tool, gate or workflow at all. One of them, --prop-gap, turned out to be a whole diagnostic
 # suite that nothing ran because its name does not end in "-test".
-if command -v python >/dev/null 2>&1; then
+if py_sel cli-smoke && command -v python >/dev/null 2>&1; then
     if python tools/cli_smoke.py --exe "$APP" > "$out/clismoke.log" 2>&1; then
         printf '[ OK ] %-14s %s
 ' "cli-smoke" "$(tail -n 1 "$out/clismoke.log" | cut -c1-100)"
@@ -325,7 +402,7 @@ fi
 # and when it was finally run, three of its four interaction checks were failing on coordinates
 # that had been typed into the script instead of read from the app. --quick, because a launch per
 # template over 205 templates is three quarters of an hour.
-if command -v python >/dev/null 2>&1; then
+if py_sel gui-smoke && command -v python >/dev/null 2>&1; then
     if python tools/gui_smoke.py --quick --exe "$APP" --smoke "$SMOKE" > "$out/guismoke.log" 2>&1; then
         printf '[ OK ] %-14s %s
 ' "gui-smoke" "$(tail -n 1 "$out/guismoke.log" | cut -c1-100)"
@@ -339,7 +416,7 @@ fi
 
 # Nothing a template draws may run off the edge of the canvas. This existed and was in no list,
 # so from the day it was written until now nothing ran it.
-if command -v python >/dev/null 2>&1; then
+if py_sel edge-gui && command -v python >/dev/null 2>&1; then
     if python tools/edge_gui.py "$APP" > "$out/edgegui.log" 2>&1; then
         printf '[ OK ] %-14s %s
 ' "edge-gui" "$(tail -n 1 "$out/edgegui.log" | cut -c1-100)"
@@ -352,7 +429,7 @@ if command -v python >/dev/null 2>&1; then
 fi
 
 # Every template's SVG export, through a real XML parser. Also written, also in no list.
-if command -v python >/dev/null 2>&1; then
+if py_sel svg-audit && command -v python >/dev/null 2>&1; then
     if python tools/svg_audit.py "$SMOKE" > "$out/svgaudit.log" 2>&1; then
         printf '[ OK ] %-14s %s
 ' "svg-audit" "$(tail -n 1 "$out/svgaudit.log" | cut -c1-100)"
@@ -365,7 +442,7 @@ if command -v python >/dev/null 2>&1; then
 fi
 
 # and the shortcuts, asked of the app itself rather than of a picture
-if command -v python >/dev/null 2>&1; then
+if py_sel keys-gui && command -v python >/dev/null 2>&1; then
     if python tools/keys_gui.py "$APP" > "$out/keysgui.log" 2>&1; then
         printf '[ OK ] %-14s %s
 ' "keys-gui" "$(tail -n 1 "$out/keysgui.log" | cut -c1-100)"
@@ -378,7 +455,7 @@ if command -v python >/dev/null 2>&1; then
 fi
 
 echo
-echo "audits: $fails of $(echo $SHARD_MODES $SMOKE_MODES $APP_MODES | wc -w) suites failed, ${JOBS} at a time, $(( $(date +%s) - start ))s"
+echo "audits: $fails of $(echo $SHARD_MODES $SEL_SMOKE $SEL_APP | wc -w) suites failed, ${JOBS} at a time, $(( $(date +%s) - start ))s"
 
 # A gate that skipped is not a gate that passed.
 #

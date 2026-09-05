@@ -918,6 +918,46 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.54 four legs running the same battery four times (2026-09-05)
+
+Measured rather than assumed, and the measurement corrected the plan twice.
+
+CI ran a four-leg matrix - two Windows images by two link modes - and **every leg ran the whole
+battery**. Step timings on 5ce3a62: the audit step was 3050 s of a 3203 s leg, 95 % of it, against
+79 s of compile. The legs run in parallel, so that was one battery of waiting and four batteries
+of billing.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.54.1 | `[ ]` `bash tools/shard_check.sh 4` | 89 units, 4 shards, each unit on exactly one shard |
+| 3.54.2 | `[ ]` **Mutation:** change the modulus in `mine()` | 15 units run on no shard, each named, exit 1 |
+| 3.54.3 | `[ ]` `bash tools/run_audits.sh` with a broken partition | refuses to start |
+| 3.54.4 | `[ ]` `AUDIT_SHARD=0/4 bash tools/run_audits.sh` | ~76 s locally against ~400 s for the full battery |
+| 3.54.5 | `[ ]` `bash tools/run_audits.sh` unsharded | 77 suites, 0 failed - unchanged |
+| 3.54.6 | `[ ]` A tag build | `AUDIT_SHARD` empty, so the release still gets the whole battery on all four legs |
+
+**The first plan was wrong and would have bought nothing.** "Run the battery on the shipping leg
+only" was proposed twice in this session on the belief it would take CI from 54 minutes to 20. It
+would not: the legs are parallel, so the shipping leg still runs the whole battery and the wall
+clock stays at 53 minutes. It cuts the bill and not the wait. Sharding cuts both.
+
+**The first implementation was also wrong, and only timing it showed that.** Sharding the C suites
+alone took a local quarter-run from 400 s to 376 s - almost no change - because the twelve python
+GUI gates run outside the suite lists and every leg still ran all of them. With those sharded too:
+76 s and 113 s. The lesson is the same one as the rest of this file: the mechanism looked correct
+and did nothing, and running it was the only thing that said so.
+
+**The partition is checked, not trusted.** A shard that drops a suite prints a shorter list of
+passes and a green summary - the same shape as a suite in no list, which went unnoticed here for
+months. `tools/shard_check.sh` compares the union of the shards against the unsharded list and
+fails if any unit runs on none or on two, and `run_audits.sh` refuses to start if it fails.
+
+**What it costs, plainly:** a suite now runs on one leg per push rather than all four, so a fault
+that appears only on windows-2022, or only in a shared build, is caught only if that suite landed
+there. Tags still run the full cross-product, which is the build that ships.
+
+---
+
 ### 3.53 a wire that runs through a node it is not joined to (2026-09-05)
 
 `--pin-test` asks whether something is drawn AT a terminal. Nothing asked the inverse, which is
