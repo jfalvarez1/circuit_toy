@@ -498,6 +498,153 @@ static void roundtrip_leg(Circuit *a, const char *path,
  * printing a number from a solve that did not converge - a confident wrong answer is worse than
  * none, and worst of all when someone else is going to trust it.
  */
+/* --netlist-trace FILE TSTOP NPOINTS: a transient on a written-down circuit, reported as numbers.
+ *
+ * --netlist-solve answers a DC question and the templates answer their own; there was no way to
+ * ask this program "drive THIS line with THIS edge and tell me what the far end does" from
+ * outside it. A screenshot is not a measurement, so this prints the waveform and the three
+ * figures a termination decision actually turns on: how far it overshoots, where it settles,
+ * and when it stops moving.
+ *
+ * What this is NOT: the line model is lossless. No skin effect, no dielectric loss, no
+ * dispersion, so an edge stays as sharp as it started and ringing is damped only by the
+ * resistances actually in the netlist. Overshoot and ring-down come out PESSIMISTIC against a
+ * real board - the safe direction for deciding whether to terminate, and the wrong direction
+ * for claiming a margin. The banner says so on every run rather than in documentation nobody
+ * reads at the moment they need it.
+ */
+static int netlist_trace(const char *path, double t_stop, int npoints) {
+    if (!path || !path[0]) { printf("netlist-trace: no file given\n"); return 2; }
+    if (!(t_stop > 0)) { printf("netlist-trace: stop time must be positive\n"); return 2; }
+    if (npoints < 2) npoints = 2;
+    if (npoints > 400) npoints = 400;
+
+    Circuit *c = circuit_create();
+    if (!c) return 1;
+    char err[256] = "";
+    int placed = netlist_build_file(c, path, err, sizeof err);
+    if (placed <= 0) {
+        printf("netlist-trace: %s: placed nothing (%s)\n", path, err[0] ? err : "no reason given");
+        circuit_free(c);
+        return 1;
+    }
+    if (err[0]) printf("netlist-trace: %s: %s\n", path, err);
+
+    /* Enough steps that the edge is resolved, not just the sample grid: a delay line answers on
+       its own delay, so step far finer than the points asked for and report every Nth. */
+    int steps = npoints * 40;
+    if (steps < 2000) steps = 2000;
+    if (steps > 400000) steps = 400000;
+    double dt = t_stop / (double)steps;
+
+    Simulation *sim = simulation_create(c);
+    if (!sim || !simulation_dc_analysis(sim)) {
+        printf("netlist-trace: %s: no DC starting point; the transient would begin from nowhere\n", path);
+        if (sim) simulation_free(sim);
+        circuit_free(c);
+        return 1;
+    }
+    printf("netlist-trace: %s: %d parts, %d nodes, dt = %.4g s, to %.4g s\n",
+           path, placed, c->num_nodes, dt, t_stop);
+    printf("  LOSSLESS line model: no skin effect, dielectric loss or dispersion. Overshoot and\n"
+           "  ring-down are pessimistic against a real board - safe for deciding to terminate,\n"
+           "  not for claiming a margin.\n");
+
+    /* the named nodes, in netlist order, are the columns */
+    /* One column per NET, not per node record. A netlist joins by name, so a net that several
+       parts land on has several Node entries carrying that name - reporting them all printed
+       every column twice over. */
+    int col[16], ncol = 0;
+    for (int i = 0; i < c->num_nodes && ncol < 16; i++) {
+        const char *nm = c->nodes[i].name;
+        if (!nm[0] || strcmp(nm, "0") == 0) continue;
+        bool seen = false;
+        for (int k = 0; k < ncol && !seen; k++) {
+            Node *p = circuit_get_node(c, col[k]);
+            if (p && strcmp(p->name, nm) == 0) seen = true;
+        }
+        if (!seen) col[ncol++] = c->nodes[i].id;
+    }
+    if (!ncol) {
+        printf("  no named nets to report - name them in the netlist and they become the columns\n");
+        simulation_free(sim);
+        circuit_free(c);
+        return 1;
+    }
+
+    double vmin[16], vmax[16], vfinal[16], tpeak[16], vstart[16];
+    for (int k = 0; k < ncol; k++) {
+        Node *n = circuit_get_node(c, col[k]);
+        vstart[k] = n ? n->voltage : 0.0;
+        vmin[k] = vmax[k] = vfinal[k] = vstart[k];
+        tpeak[k] = 0.0;
+    }
+
+    printf("\n  %-14s", "time (s)");
+    for (int k = 0; k < ncol; k++) {
+        Node *n = circuit_get_node(c, col[k]);
+        printf(" %12s", n && n->name[0] ? n->name : "?");
+    }
+    printf("\n");
+
+    simulation_set_time_step(sim, dt);
+    simulation_start(sim);
+    int every = steps / npoints; if (every < 1) every = 1;
+    for (int s = 0; s < steps; s++) {
+        if (!simulation_step(sim)) {
+            printf("  STEP FAILED at t = %.6g s - nothing after this line is a result\n", sim->time);
+            simulation_free(sim);
+            circuit_free(c);
+            return 1;
+        }
+        for (int k = 0; k < ncol; k++) {
+            Node *n = circuit_get_node(c, col[k]);
+            double v = n ? n->voltage : 0.0;
+            if (!isfinite(v)) {
+                printf("  DIVERGED at t = %.6g s\n", sim->time);
+                simulation_free(sim);
+                circuit_free(c);
+                return 1;
+            }
+            /* A margin, so a flat line does not keep "peaking" on floating-point dust and
+               report its last sample as the moment it got there. */
+            if (v > vmax[k] + 1e-9) { vmax[k] = v; tpeak[k] = sim->time; }
+            else if (v > vmax[k]) vmax[k] = v;
+            if (v < vmin[k]) vmin[k] = v;
+            vfinal[k] = v;
+        }
+        if (s % every == 0) {
+            printf("  %-14.6g", sim->time);
+            for (int k = 0; k < ncol; k++) {
+                Node *n = circuit_get_node(c, col[k]);
+                printf(" %12.5f", n ? n->voltage : 0.0);
+            }
+            printf("\n");
+        }
+    }
+
+    printf("\n  %-12s %10s %10s %10s %10s %12s\n",
+           "net", "start", "final", "peak", "min", "overshoot");
+    for (int k = 0; k < ncol; k++) {
+        Node *n = circuit_get_node(c, col[k]);
+        double swing = vfinal[k] - vstart[k];
+        /* Overshoot only means something against a step that went somewhere. */
+        if (fabs(swing) > 1e-9) {
+            double over = (vmax[k] - vfinal[k]) / fabs(swing) * 100.0;
+            printf("  %-12s %10.5f %10.5f %10.5f %10.5f %10.1f %% (peak at %.4g s)\n",
+                   n && n->name[0] ? n->name : "?", vstart[k], vfinal[k], vmax[k], vmin[k],
+                   over, tpeak[k]);
+        } else {
+            printf("  %-12s %10.5f %10.5f %10.5f %10.5f %12s\n",
+                   n && n->name[0] ? n->name : "?", vstart[k], vfinal[k], vmax[k], vmin[k],
+                   "no step");
+        }
+    }
+    simulation_free(sim);
+    circuit_free(c);
+    return 0;
+}
+
 static int netlist_solve(const char *path) {
     if (!path || !path[0]) { printf("netlist-solve: no file given\n"); return 2; }
     Circuit *c = circuit_create();
@@ -6142,6 +6289,60 @@ static int netlist_test(void) {
         }
     }
 
+    /* The T element carries two numbers and both have to survive the reader.
+     *
+     * A DC value cannot check this one: a lossless line is a wire at DC, so a divider around it
+     * reads the same whether Z0 and the delay arrived or silently defaulted. What matters is
+     * that the caller's numbers are the ones in the part - this exists so another program can
+     * ask a reflection question with ITS impedance and ITS delay, and a default quietly
+     * substituted for either would answer a different question convincingly.
+     *
+     * An unparsable T is dropped rather than defaulted, so the second case asserts it is
+     * ABSENT: a line with a made-up impedance is worse than no line at all. */
+    {
+        static const struct { const char *what; const char *text; int want; double z0, td; } tl[] = {
+            { "T carries Z0 and the one-way delay",
+              "V1 src 0 PULSE(0 2 0 0.25n 0.25n 100n 500n)\n"
+              "Rs src near 50\n"
+              "T1 near far 75 3.5n\n", 1, 75.0, 3.5e-9 },
+            { "a T with no delay is dropped, not defaulted",
+              "V1 src 0 DC 2\n"
+              "Rs src near 50\n"
+              "T1 near far 75\n", 0, 0, 0 },
+        };
+        for (unsigned i = 0; i < sizeof tl / sizeof tl[0]; i++) {
+            const char *tmp = getenv("TEMP"); if (!tmp) tmp = ".";
+            char path[600];
+            snprintf(path, sizeof path, "%s\\ct_tline_%u.net", tmp, i);
+            FILE *f = fopen(path, "wb");
+            if (!f) continue;
+            fputs(tl[i].text, f);
+            fclose(f);
+            Circuit *c = circuit_create();
+            char err[256] = "";
+            netlist_build_file(c, path, err, sizeof err);
+            int found = 0; double gz = 0, gd = 0;
+            for (int k = 0; k < c->num_components; k++)
+                if (c->components[k] && c->components[k]->type == COMP_DELAY_LINE) {
+                    found++;
+                    gz = c->components[k]->props.delay_line.z0;
+                    gd = c->components[k]->props.delay_line.delay;
+                }
+            circuit_free(c);
+            remove(path);
+            total++;
+            int pass = (found == tl[i].want) &&
+                       (!tl[i].want || (fabs(gz - tl[i].z0) < 1e-9 && fabs(gd - tl[i].td) < 1e-15));
+            if (!pass) fails++;
+            if (tl[i].want)
+                printf("%s netlist %-28s Z0 = %g ohm, delay = %g ns  expect %g / %g\n",
+                       pass ? " OK " : "FAIL", tl[i].what, gz, gd * 1e9, tl[i].z0, tl[i].td * 1e9);
+            else
+                printf("%s netlist %-28s %d delay lines built  expect 0\n",
+                       pass ? " OK " : "FAIL", tl[i].what, found);
+        }
+    }
+
     printf("\nnetlist-test: %d written circuits, %d that did not come out right\n", total, fails);
     return fails ? 1 : 0;
 }
@@ -9247,6 +9448,9 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--pin-test")) return pin_test();
         else if (!strcmp(argv[i], "--text-test")) return text_test();
         else if (!strcmp(argv[i], "--netlist-solve") && i + 1 < argc) return netlist_solve(argv[i + 1]);
+        else if (!strcmp(argv[i], "--netlist-trace") && i + 3 < argc) {
+            const char *f = argv[++i]; double ts = atof(argv[++i]); return netlist_trace(f, ts, atoi(argv[++i]));
+        }
         else if (!strcmp(argv[i], "--span-test")) return span_test();
         else if (!strcmp(argv[i], "--geom-test")) return geom_test();
         else if (!strcmp(argv[i], "--sweep-check")) return sweep_check();

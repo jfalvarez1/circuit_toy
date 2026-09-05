@@ -132,6 +132,12 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
             case 'M': ty = COMP_NMOS;      nnodes = 3; break;
             case 'E': ty = COMP_VCVS;      nnodes = 4; break;
             case 'G': ty = COMP_VCCS;      nnodes = 4; break;
+            /* T1 near far 50 5n - a lossless line, written the way SPICE writes it except that
+               the two ports share a return. Added so a question about what a driver sees at the
+               far end of a track can be ASKED from outside this program; the model behind it is
+               the one --line-test has been holding to matched/open/short reflection amplitudes
+               and 2T timing all along. */
+            case 'T': ty = COMP_DELAY_LINE; nnodes = 2; break;
             default:
                 skipped++;
                 if (!first_bad[0]) snprintf(first_bad, sizeof first_bad, "%s", tok[0]);
@@ -190,6 +196,23 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
                 p->props.resistor.power_rating = 1e9;   /* a written-down circuit has no package */
                 break;
             case 'C': if (nl_value(model, &v)) p->props.capacitor.capacitance = v; break;
+            case 'T': {
+                /* Z0 then the ONE-WAY delay. Both are required: a line with a default impedance
+                   would answer a reflection question with a number the caller never supplied,
+                   which is the one thing this element exists not to do. */
+                double z0 = 0, td = 0;
+                bool ok = model && nl_value(model, &z0) && nt > 4 && nl_value(tok[4], &td);
+                if (!ok || z0 <= 0 || td <= 0) {
+                    circuit_delete_component(circuit, p->id);
+                    skipped++;
+                    if (!first_bad[0]) snprintf(first_bad, sizeof first_bad, "%s", tok[0]);
+                    continue;
+                }
+                p->props.delay_line.z0 = z0;
+                p->props.delay_line.delay = td;
+                p->props.delay_line.ideal = true;
+                break;
+            }
             case 'L': if (nl_value(model, &v)) p->props.inductor.inductance = v; break;
             case 'I': if (nl_value(model, &v)) p->props.dc_current.current = v; break;
             case 'E': case 'G':

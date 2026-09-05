@@ -918,6 +918,47 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.51 a transmission line you can ask about from outside (2026-09-05)
+
+The KiCad session asked what this program can simulate, and offered to send a characteristic
+impedance and a one-way delay and ask what the far end of a track does. The answer given was
+yes - and it was wrong, in the way that only shows when you go to do it. The netlist reader had
+no element letter for a delay line, and `--netlist-solve` is DC only. There was no way to accept
+the question or to hand back an answer, and a screenshot is not a measurement.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.51.1 | `[ ]` `T1 near far 50 5n` in a netlist | a delay line with that Z0 and that one-way delay |
+| 3.51.2 | `[ ]` `T1 near far 75` (no delay) | DROPPED, not defaulted. A made-up impedance answers a question nobody asked |
+| 3.51.3 | `[ ]` `--netlist-trace` on the matched case | near 1.000 V, far 1.000 V at one delay, no reflection |
+| 3.51.4 | `[ ]` The open case | far 2.000 V at 5.26 ns; the source end follows at 10.26 ns = 2T |
+| 3.51.5 | `[ ]` Against closed form, not against itself | launch 2.750, far 5.500, near at 2T 3.667, far at 2T 1.833 - to five decimals |
+| 3.51.6 | `[ ]` One column per NET | a netlist joins by name, so several node records carry one name; each net appears once |
+| 3.51.7 | `[ ]` The lossless banner | printed on every run, not left in documentation |
+| 3.51.8 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 76 suites, 0 failed |
+
+**Series termination kills the reflection rather than softening it, and the tool now shows why.**
+A 3.3 V driver of 10 ohm output impedance into an unterminated 50 ohm line peaks at 5.500 V - 82.7 %
+overshoot on a 3.3 V rail - and is still ringing at 60 ns: 5.50, 1.83, 4.28, 2.65, 3.73, 3.01.
+Adding 40 ohm in series makes the source impedance 50 = Z0, so the source reflection coefficient is
+zero, the wave returning off the open far end is absorbed, and the far end reaches 3.300 V at one
+delay and stays there. The far end doubles either way; what termination stops is the doubling
+happening again.
+
+**The model is lossless and the banner says so on every run.** No skin effect, no dielectric loss,
+no dispersion. An edge stays as sharp as it started and ringing is damped only by resistances
+actually in the netlist, so overshoot and ring-down are PESSIMISTIC against a real board - the safe
+direction for deciding to terminate, the wrong direction for claiming a margin. Putting that in
+documentation would put it somewhere nobody is looking at the moment they need it.
+
+**A T missing either number is refused rather than defaulted**, and a test pins the refusal. This
+element exists so another program can ask a reflection question with ITS impedance and ITS delay;
+a default quietly substituted for either would answer a different question convincingly. A DC value
+cannot check that - a lossless line is a wire at DC - so the check reads the parameters back out of
+the built part instead.
+
+---
+
 ### 3.50 four pins that looked identical, on a symbol pointing somewhere else (2026-09-05)
 
 Every controlled source declared four terminals at `(-+40,-+20)` - the corners - and drew its

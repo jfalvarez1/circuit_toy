@@ -1097,6 +1097,8 @@ build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for o
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (204 oracles)
 build/tools/template_smoke.exe --knob-test       # every template still converges with every value x0.5 and x2
 build/tools/template_smoke.exe --trace "87 " 0.3 # per-node min/max over a run (debugging a template)
+build/tools/template_smoke.exe --netlist-solve x.net       # DC on a written-down circuit, with the residual
+build/tools/template_smoke.exe --netlist-trace x.net 60e-9 20  # transient on one, as numbers: waveform, peak, overshoot
 build/tools/template_smoke.exe --demo-test       # every template demonstrates its DemoKind contract
 build/tools/template_smoke.exe --osc-test        # oscillators really oscillate (add --osc-dt 5e-6)
 build/tools/template_smoke.exe --tesla-test      # spark-gap firings, ring frequency, toroid peak, streamer, tuned vs detuned
