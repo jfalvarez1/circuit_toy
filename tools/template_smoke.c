@@ -1090,6 +1090,19 @@ static int ee_test(void) {
         { "V(out) after the amplifier",           2, -1, 1.2438,  0.005,  "V",  1.0    },
     };
 
+    /* EE_Review m18l06, "RTD and Thermocouple Interfaces". Probe order is raw, comp.
+       Seebeck is the course's linear 40 uV/degC, so these are exact by construction rather than
+       measured: 40 uV x (300 - 25) = 11.00 mV, x100 = 1.100 V, and the compensation adds
+       40 uV x 25 = 1.00 mV to make 1.200 V. The third row is the one worth having - the gap
+       between the two chains has to be the ambient temperature and nothing else, which stays
+       true if someone changes the gain, and would not if the compensation were wired in
+       backwards. A sign error here doubles the error instead of removing it. */
+    static const struct Expect tc_cjc[] = {
+        { "V(raw), uncompensated - 275 C",        0, -1, 1.100,  0.001, "V",  1.0    },
+        { "V(comp), cold junction added back",    1, -1, 1.200,  0.001, "V",  1.0    },
+        { "comp - raw, the 25 C it was blind to", 1,  0, 100.0,  0.5,   "mV", 1000.0 },
+    };
+
     struct Case {
         CircuitTemplateType type;
         const char *lesson;
@@ -1124,6 +1137,7 @@ static int ee_test(void) {
         { CIRCUIT_EE_STRAIN_BRIDGE, "m18l07", strain, (int)(sizeof strain / sizeof strain[0]) },
         { CIRCUIT_EE_DAC_R2R,       "m17l01", dac_r2r, (int)(sizeof dac_r2r / sizeof dac_r2r[0]) },
         { CIRCUIT_EE_DAC_STRING,    "m17l16", dac_string, (int)(sizeof dac_string / sizeof dac_string[0]) },
+        { CIRCUIT_EE_TC_CJC,        "m18l06", tc_cjc, (int)(sizeof tc_cjc / sizeof tc_cjc[0]) },
     };
     const int NCASES = (int)(sizeof cases / sizeof cases[0]);
 

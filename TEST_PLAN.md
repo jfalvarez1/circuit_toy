@@ -918,6 +918,40 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.49 a thermocouple measures a difference (2026-09-05)
+
+EE_Review module 18 lesson 06 is RTDs *and* thermocouples. The RTD half of it is already here:
+`CIRCUIT_IV_KELVIN` forces 1 A through a 10 mohm shunt with 50 mohm of lead each side and reads
+it both 2-wire and 4-wire, which is lead resistance and Kelvin sensing with a shunt on the end
+instead of a PT100. Building an RTD version would have taught the same thing twice, so it was
+not built. The cold junction had no analogue anywhere in the set, and now does.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.49.1 | `[ ]` Place **Thermocouple: Cold Junction**, read `raw` | 1.100 V - 275 C, wrong by exactly the ambient |
+| 3.49.2 | `[ ]` Read `comp` | 1.200 V = 300 C at 4 mV/degC |
+| 3.49.3 | `[ ]` Read `comp` - `raw` | 100 mV, the 25 C the raw chain is blind to |
+| 3.49.4 | `[ ]` Read `IN` | 11.00 mV = 40 uV x (300 - 25) |
+| 3.49.5 | `[ ]` **Mutation:** negate the compensation source | comp reads 1.000 V - 250 C. The error *doubles*, and `--ee-test` fails on two rows |
+| 3.49.6 | `[ ]` `--ee-test` | 16 values over four templates, 0 off |
+| 3.49.7 | `[ ]` `--pin-test` | still 68. A new template must add none |
+| 3.49.8 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 76 suites, 0 failed |
+
+**Rotation 90 does not stand a source upright - it lays it down.** A DC source is already
+vertical: its terminals are (0,-40) and (0,+40). Rotation 90 maps (dx,dy) to (-dy,dx), so it
+puts them at (+-40,0). Passing 90 and then wiring the vertical positions leaves both terminals
+with nothing drawn at them, and `--pin-test` went 68 -> 74 on the first build of this template -
+six gaps, exactly three sources' worth. Builders elsewhere in `circuits.c` do the same thing,
+which is part of what the pinned 68 is counting. The number caught this the moment it moved,
+which is the whole argument for a ratchet over a pass/fail.
+
+**Seebeck here is the course's linear 40 uV/degC, not a Type K polynomial**, and the note on the
+sheet says so rather than leaving a reader to discover it: a real Type K table gives 12.209 mV at
+300 C where the linear figure gives 12.000. The lesson is the missing 25 C, not the fourth digit,
+and an oracle that quoted a table would be checking the wrong thing.
+
+---
+
 ### 3.48 every note on every sheet drew a full line and then an orphan (2026-09-05)
 
 Found in a screenshot of the *shipped* v3.31.0 artifact, not in a test. The help text under the

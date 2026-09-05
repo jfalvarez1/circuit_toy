@@ -246,6 +246,14 @@ typedef enum {
        what produces the 1.33 LSB step the table is about. */
     CIRCUIT_EE_DAC_R2R,
     CIRCUIT_EE_DAC_STRING,
+    /* Module 18 lesson 06: the thermocouple half of the sensor front ends. The RTD half of that
+       lesson - lead resistance, and 2-wire against 4-wire - is already CIRCUIT_IV_KELVIN, which
+       forces 1 A through a 10 mohm shunt with 50 mohm leads and reads it both ways; a PT100
+       version of it would teach the same thing twice. What has no analogue anywhere in the set
+       is the cold junction: a thermocouple measures a DIFFERENCE, so it cannot say how hot
+       anything is until something tells it how cold its own terminals are. Seebeck is taken as
+       the course's linear 40 uV/degC, not a Type K table - the note on the sheet says so. */
+    CIRCUIT_EE_TC_CJC,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 

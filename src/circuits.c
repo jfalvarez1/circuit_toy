@@ -361,6 +361,8 @@ static const CircuitTemplateInfo template_info[] = {
         "the three stages of a lead-acid charger, and what each one does", TG_BMI},
     [CIRCUIT_EE_STRAIN_BRIDGE] = {"Strain Gauge Bridge", "Strain",
         "350 ohm bridge, one active gauge, and 12.4 mV out of 5 V", TG_SENSORS},
+    [CIRCUIT_EE_TC_CJC] = {"Thermocouple: Cold Junction", "TC-CJC",
+        "40 uV/degC measures a difference: 275 degC of it, until CJC adds the 25", TG_SENSORS},
     [CIRCUIT_EE_DAC_R2R] = {"R-2R Ladder DAC", "R2R",
         "code 1010 into 10k/20k rungs: every node halves, and out is 3.125 V", TG_DATACONV},
     [CIRCUIT_EE_DAC_STRING] = {"String DAC: DNL and INL", "StrDAC",
@@ -6477,6 +6479,7 @@ static int place_batt_charging(Circuit *circuit, float x, float y);
 static int place_batt_lead_stages(Circuit *circuit, float x, float y);
 static int place_batt_chemistries(Circuit *circuit, float x, float y);
 static int place_ee_strain_bridge(Circuit *circuit, float x, float y);
+static int place_ee_tc_cjc(Circuit *circuit, float x, float y);
 static int place_ee_dac_r2r(Circuit *circuit, float x, float y);
 static int place_ee_dac_string(Circuit *circuit, float x, float y);
 static int place_tline_real(Circuit *circuit, float x, float y);
@@ -6837,6 +6840,7 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_BATT_LEAD_STAGES:   return place_batt_lead_stages(circuit, x, y);
         case CIRCUIT_BATT_CHEMISTRIES:   return place_batt_chemistries(circuit, x, y);
         case CIRCUIT_EE_STRAIN_BRIDGE:   return place_ee_strain_bridge(circuit, x, y);
+        case CIRCUIT_EE_TC_CJC:          return place_ee_tc_cjc(circuit, x, y);
         case CIRCUIT_EE_DAC_R2R:         return place_ee_dac_r2r(circuit, x, y);
         case CIRCUIT_EE_DAC_STRING:      return place_ee_dac_string(circuit, x, y);
         case CIRCUIT_BMI_RAIL:           return place_bmi_rail(circuit, x, y);
@@ -8301,6 +8305,15 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][TEMPLATE_NOTE_LINES]
                                "above where its code says - that is the INL. A step over 2 LSB would",
                                "skip a code entirely and the DAC would be non-monotonic. Set R3 to",
                                "1k to see all three errors go to zero. (EE_Review m17l16)"},
+    [CIRCUIT_EE_TC_CJC] = {"THERMOCOUPLE AND THE COLD JUNCTION: a Type K junction makes about",
+                           "40 uV per degree C between its hot end and its cold end - a",
+                           "DIFFERENCE, never a temperature. Hot at 300 C with terminals at 25 C",
+                           "is 275 C of it: the loop makes 11.00 mV and a gain of 100 reads",
+                           "1.100 V, or 275 C - wrong by exactly the ambient temperature.",
+                           "The lower chain adds 1.00 mV, 40 uV/C x the 25 C its terminals sit",
+                           "at, and reads 1.200 V = 300 C. That is cold junction compensation.",
+                           "Seebeck here is the course's linear 40 uV/C; a real Type K table",
+                           "gives 12.209 mV at 300 C. PROBE: raw and comp. (EE_Review m18l06)"},
     [CIRCUIT_BATT_CHEMISTRIES] = {"CHEMISTRIES: four cells at the same state of charge into the same 10",
                                   "ohm load. The voltages differ - 1.5, 1.2, 3.2, 3.7 nominal - and so",
                                   "does what happens as they empty: the LiFePO4 holds its voltage",
@@ -15141,6 +15154,102 @@ static int place_ee_strain_bridge(Circuit *circuit, float x, float y) {
  * the termination resistor is there to define the impedance, not to divide anything. The buffer
  * is an ideal unity VCVS: the lesson's op-amp is a follower, and a follower with its loop closed
  * is a gain of one to within 1/A. */
+/* Thermocouple and the cold junction (EE_Review m18l06).
+ *
+ * Two identical chains, one above the other. Both carry the same Seebeck EMF, because both
+ * junctions are at the same 300 C with terminals at the same 25 C - what differs is only
+ * whether anything tells the amplifier how cold its own terminals are.
+ *
+ * Seebeck is the course's linear 40 uV/degC rather than a Type K polynomial. That is a real
+ * simplification and the note on the sheet says so: a Type K table gives 12.209 mV at 300 C
+ * where 40 uV/degC gives 12.000. The lesson is the missing 25 C, not the fourth digit.
+ *
+ * The RTD half of m18l06 is deliberately not here. CIRCUIT_IV_KELVIN already forces 1 A
+ * through a 10 mohm shunt with 50 mohm of lead each side and reads it 2-wire and 4-wire, which
+ * is the same lesson with a different sensor on the end of it.
+ */
+static int place_ee_tc_cjc(Circuit *circuit, float x, float y) {
+    const double seebeck = 40e-6;          /* V per degree C, the course's linear figure */
+    const double t_hot = 300.0, t_cold = 25.0;
+    const double v_tc = seebeck * (t_hot - t_cold);        /* 11.00 mV: a DIFFERENCE */
+    const double v_cj = seebeck * t_cold;                  /*  1.00 mV: what it is blind to */
+
+    Component *amp[2] = { NULL, NULL };
+    for (int leg = 0; leg < 2; leg++) {
+        const float ly = y + (leg == 0 ? -200.0f : 200.0f);
+        const float rail = ly - 220.0f;
+
+        /* The junction itself. Its low side is the instrument's ground. */
+        /* Rotation 0, NOT 90. A DC source is already vertical - its terminals are (0,-40) and
+           (0,+40) - and rotation 90 maps (dx,dy) to (-dy,dx), which lays it on its side and puts
+           the terminals at (+-40,0). Builders elsewhere pass 90 here and then wire the vertical
+           positions anyway, which is part of what --pin-test's 68 is counting. */
+        Component *tc = add_comp(circuit, COMP_DC_VOLTAGE, x - 340, ly, 0);
+        if (!tc) return 0;
+        tc->props.dc_voltage.voltage = v_tc;
+        tc->node_ids[0] = TN(x - 340, ly - 40);
+        tc->node_ids[1] = TN(x - 340, ly + 40);
+
+        Component *g0 = add_comp(circuit, COMP_GROUND, x - 340, ly + 120, 0);
+        if (!g0) return 0;
+        g0->node_ids[0] = TN(x - 340, ly + 100);
+        TW(TN(x - 340, ly + 40), TN(x - 340, ly + 100));
+
+        /* The compensation, in series above it: 40 uV/degC times the terminals' own 25 C. */
+        int top = TN(x - 340, ly - 40);
+        if (leg == 1) {
+            Component *cj = add_comp(circuit, COMP_DC_VOLTAGE, x - 340, ly - 120, 0);
+            if (!cj) return 0;
+            cj->props.dc_voltage.voltage = v_cj;
+            cj->node_ids[0] = TN(x - 340, ly - 160);
+            cj->node_ids[1] = TN(x - 340, ly - 80);
+            TW(TN(x - 340, ly - 40), TN(x - 340, ly - 80));
+            top = TN(x - 340, ly - 160);
+        }
+
+        /* Up and over to the amplifier rather than straight across the sources. */
+        TW(top, TN(x - 340, rail));
+        TW(TN(x - 340, rail), TN(x + 160, rail));
+        TW(TN(x + 160, rail), TN(x + 160, ly - 20));
+
+        /* Gain of 100, as an ideal difference amplifier: 12 mV in, 1.2 V out, 4 mV per degree. */
+        Component *e = add_comp(circuit, COMP_VCVS, x + 200, ly, 0);
+        if (!e) return 0;
+        e->props.controlled_source.gain = 100.0;
+        e->node_ids[0] = TN(x + 160, ly - 20);
+        e->node_ids[1] = TN(x + 160, ly + 20);
+        e->node_ids[2] = TN(x + 240, ly - 20);
+        e->node_ids[3] = TN(x + 240, ly + 20);
+        amp[leg] = e;
+
+        Component *gi = add_comp(circuit, COMP_GROUND, x + 100, ly + 120, 0);
+        if (!gi) return 0;
+        gi->node_ids[0] = TN(x + 100, ly + 100);
+        TW(TN(x + 160, ly + 20), TN(x + 100, ly + 20));
+        TW(TN(x + 100, ly + 20), TN(x + 100, ly + 100));
+
+        Component *go = add_comp(circuit, COMP_GROUND, x + 340, ly + 120, 0);
+        if (!go) return 0;
+        go->node_ids[0] = TN(x + 340, ly + 100);
+        TW(TN(x + 240, ly + 20), TN(x + 340, ly + 20));
+        TW(TN(x + 340, ly + 20), TN(x + 340, ly + 100));
+
+        /* A stub to probe, so the output is somewhere a probe can sit clear of the symbol. */
+        TW(TN(x + 240, ly - 20), TN(x + 340, ly - 20));
+    }
+
+    add_label(circuit, x - 460, y - 460, "no compensation: reads 275 C");
+    add_label(circuit, x - 460, y - 60,  "cold junction compensated: reads 300 C");
+    add_label(circuit, x + 300, y - 300, "x100");
+    add_label(circuit, x + 300, y + 100, "x100");
+
+    /* Both outputs, named as the note names them. The whole lesson is the gap between the two
+       numbers, so a sheet showing only the compensated one would be telling half of it. */
+    if (amp[0]) probe_named(circuit, amp[0], 2, "raw");
+    if (amp[1]) probe_named(circuit, amp[1], 2, "comp");
+    return 9;
+}
+
 static int place_ee_dac_r2r(Circuit *circuit, float x, float y) {
     /* The chain: n0 .. n3 left to right along one rail, 10k between neighbours. */
     Component *ra = hres(circuit, x - 200, y, 10e3);
@@ -16244,6 +16353,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BATT_LEAD_STAGES] = { COMP_RESISTOR, 0, 1 },    /* the bulk pack's terminal */
     [CIRCUIT_BATT_CHEMISTRIES] = { COMP_RESISTOR, 0, 0 },    /* the alkaline column */
     [CIRCUIT_EE_STRAIN_BRIDGE] = { COMP_RESISTOR, 1, 0 },    /* R3, the active gauge */
+    [CIRCUIT_EE_TC_CJC]        = { COMP_VCVS, 1, 2 },        /* the COMPENSATED chain's output */
     [CIRCUIT_EE_DAC_R2R]       = { COMP_VCVS, 0, 2 },        /* the follower's output */
     [CIRCUIT_EE_DAC_STRING]    = { COMP_VCVS, 0, 2 },        /* the follower on t2 */
     [CIRCUIT_MCU_BLINK]        = { COMP_RESISTOR, 0, 0 },    /* the driven pin: a square wave the code made */
@@ -16714,6 +16824,7 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BATT_CHEMISTRIES] = { DEMO_DC, 0 },
     [CIRCUIT_EE_STRAIN_BRIDGE] = { DEMO_DC, 0 },
     /* Both converters are bias networks with fixed codes: nothing moves, so DC is the contract. */
+    [CIRCUIT_EE_TC_CJC]        = { DEMO_DC, 0 },
     [CIRCUIT_EE_DAC_R2R]       = { DEMO_DC, 0 },
     [CIRCUIT_EE_DAC_STRING]    = { DEMO_DC, 0 },
     [CIRCUIT_MCU_BLINK]        = { DEMO_WAVEFORM, 0 },

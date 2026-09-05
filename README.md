@@ -12,7 +12,7 @@
 **Latest Release: [v3.31.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.31.0)** (auto-updating from v3.4.0 on) · [all releases](https://github.com/jfalvarez1/circuit_toy/releases)
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
-digital solver, a real-time bench oscilloscope with FFT and THD, 208 guided circuits from RC
+digital solver, a real-time bench oscilloscope with FFT and THD, 209 guided circuits from RC
 filters to power grids, SPICE import, and a 75-suite self-audit battery. Build, simulate and
 analyse circuits with a drag-and-drop schematic.
 
@@ -263,6 +263,11 @@ them transcribed twice.
   the strained half at 2.51244, so the output is 12.44 mV - a quarter of a percent of the
   excitation, which is why the x100 amplifier is not optional. Both halves drift together with
   temperature, which is the reason for the bridge at all
+- **Thermocouple: Cold Junction** (`TC-CJC`) - a Type K junction makes ~40 uV per degree between
+  its hot end and its cold end, which is a *difference* and never a temperature. Hot at 300 C
+  with terminals at 25 C is 11.00 mV, and a gain of 100 reads 1.100 V: 275 C, wrong by exactly
+  the ambient. The second chain adds 1.00 mV back and reads 1.200 V. Wire that compensation
+  backwards and the error doubles instead of vanishing, which is what `--ee-test` checks
 - **R-2R Ladder DAC** (`R2R`) - four bits set to 1010, so 10 of 16 and the output is 3.125 V.
   Looking back from any node the ladder presents the same resistance, which is the whole trick:
   each bit contributes exactly half the one above it. The four ladder nodes are the lesson.
@@ -414,7 +419,7 @@ them transcribed twice.
 Schematic text is antialiased and drawn in the notation a schematic uses - `10k`, `100nF`,
 `170V 60Hz` - and an audit checks that no label lands on a symbol or on another label.
 
-208 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+209 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -1083,7 +1088,7 @@ two longest are split into shards (`--shard 0/4`) because a battery can never fi
 its slowest single suite.
 
 ```bash
-build/tools/template_smoke.exe             # 208/208 templates passed
+build/tools/template_smoke.exe             # 209/209 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (204 oracles)
