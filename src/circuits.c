@@ -361,6 +361,8 @@ static const CircuitTemplateInfo template_info[] = {
         "the three stages of a lead-acid charger, and what each one does", TG_BMI},
     [CIRCUIT_EE_STRAIN_BRIDGE] = {"Strain Gauge Bridge", "Strain",
         "350 ohm bridge, one active gauge, and 12.4 mV out of 5 V", TG_SENSORS},
+    [CIRCUIT_EE_EMITTER_FOLLOWER] = {"Emitter Follower", "EmFol",
+        "gain 0.98, not 1: the r_e a follower cannot get rid of", TG_TRANSISTORS},
     [CIRCUIT_EE_MOS_CASCODE] = {"Cascode Current Mirror", "Cascode",
         "same 200 uA reference twice: +0.18 % of mirror error against -0.04 %", TG_TRANSISTORS},
     [CIRCUIT_EE_TC_CJC] = {"Thermocouple: Cold Junction", "TC-CJC",
@@ -6481,6 +6483,7 @@ static int place_batt_charging(Circuit *circuit, float x, float y);
 static int place_batt_lead_stages(Circuit *circuit, float x, float y);
 static int place_batt_chemistries(Circuit *circuit, float x, float y);
 static int place_ee_strain_bridge(Circuit *circuit, float x, float y);
+static int place_ee_emitter_follower(Circuit *circuit, float x, float y);
 static int place_ee_mos_cascode(Circuit *circuit, float x, float y);
 static int place_ee_tc_cjc(Circuit *circuit, float x, float y);
 static int place_ee_dac_r2r(Circuit *circuit, float x, float y);
@@ -6843,6 +6846,7 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_BATT_LEAD_STAGES:   return place_batt_lead_stages(circuit, x, y);
         case CIRCUIT_BATT_CHEMISTRIES:   return place_batt_chemistries(circuit, x, y);
         case CIRCUIT_EE_STRAIN_BRIDGE:   return place_ee_strain_bridge(circuit, x, y);
+        case CIRCUIT_EE_EMITTER_FOLLOWER: return place_ee_emitter_follower(circuit, x, y);
         case CIRCUIT_EE_MOS_CASCODE:     return place_ee_mos_cascode(circuit, x, y);
         case CIRCUIT_EE_TC_CJC:          return place_ee_tc_cjc(circuit, x, y);
         case CIRCUIT_EE_DAC_R2R:         return place_ee_dac_r2r(circuit, x, y);
@@ -8309,6 +8313,15 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][TEMPLATE_NOTE_LINES]
                                "above where its code says - that is the INL. A step over 2 LSB would",
                                "skip a code entirely and the DAC would be non-monotonic. Set R3 to",
                                "1k to see all three errors go to zero. (EE_Review m17l16)"},
+    [CIRCUIT_EE_EMITTER_FOLLOWER] = {"EMITTER FOLLOWER: the emitter follows the base, one diode drop",
+                                     "below it and a little short of all the way. 22k and 22k put the",
+                                     "base at 5.881 V, 0.681 above the emitter's 5.201, and 2.2k sets",
+                                     "2.364 mA. Gain is not 1: the emitter sees RE in parallel with the",
+                                     "1k load, 687 ohm, against an r_e of 26 mV / 2.364 mA = 11 ohm, so",
+                                     "687/(687+11) = 0.984 and a 1.000 V input comes out at 0.983.",
+                                     "That missing 1.6 % IS r_e, and it is the whole reason a follower",
+                                     "is a buffer and not a wire: it turns 1k into (beta+1) x 698 ohm",
+                                     "of input impedance. PROBE: in, out, base, emit. (m05l07)"},
     [CIRCUIT_EE_MOS_CASCODE] = {"CASCODE CURRENT MIRROR: two mirrors from one 200 uA reference.",
                                 "A mirror copies its reference only as well as it can hold the two",
                                 "drain voltages together, because channel-length modulation makes Id",
@@ -15167,6 +15180,103 @@ static int place_ee_strain_bridge(Circuit *circuit, float x, float y) {
  * the termination resistor is there to define the impedance, not to divide anything. The buffer
  * is an ideal unity VCVS: the lesson's op-amp is a follower, and a follower with its loop closed
  * is a gain of one to within 1/A. */
+/* Emitter follower (EE_Review m05l07), the lesson's table exactly.
+ *
+ * Verified against the bias equations before it was written down, not against this program's
+ * own output. With the 2N3904 model's beta of about 220 and V_BE = 0.681 V, the Thevenin bias
+ * (11k, 6 V) gives Ib = 5.319/(11k + 221*2.2k) = 10.75 uA, Ie = 2.364 mA, VE = 5.201 V - and the
+ * solver returns 10.776 uA, 2.364 mA, 5.201 V. The gain then falls out of r_e: 687.5/(687.5+11.0)
+ * = 0.9843 against a measured 0.983, the 0.14 % being r_e moving across the cycle in a large
+ * signal run where the small-signal figure holds it at the bias point.
+ */
+static int place_ee_emitter_follower(Circuit *circuit, float x, float y) {
+    const float rail_y = y - 260;
+
+    Component *vcc = dc_rail(circuit, x - 460, rail_y, 12.0);
+    if (!vcc) return 0;
+    TW(TN(x - 460, rail_y), TN(x - 120, rail_y));
+    TW(TN(x - 120, rail_y), TN(x + 80, rail_y));   /* x+80, where the collector riser lands */
+
+    /* the divider: 22k and 22k, so the base sits at half the rail before base current */
+    Component *r1 = vres(circuit, x - 120, rail_y + 100, 22e3);
+    Component *r2 = vres(circuit, x - 120, y + 60, 22e3);
+    if (!r1 || !r2) return 0;
+    int base = TN(x - 120, y - 40);
+    r1->node_ids[0] = TN(x - 120, rail_y + 60); r1->node_ids[1] = TN(x - 120, rail_y + 140);
+    r2->node_ids[0] = TN(x - 120, y + 20);      r2->node_ids[1] = TN(x - 120, y + 100);
+    TW(TN(x - 120, rail_y + 60), TN(x - 120, rail_y));
+    TW(TN(x - 120, rail_y + 140), base);
+    TW(base, TN(x - 120, y + 20));
+
+    Component *gdiv = add_comp(circuit, COMP_GROUND, x - 120, y + 120, 0);
+    if (!gdiv) return 0;
+    gdiv->node_ids[0] = TN(x - 120, y + 100);
+
+    /* Q1, collector to the rail, emitter down through RE */
+    Component *q = add_comp(circuit, COMP_NPN_BJT, x + 60, y - 40, 0);
+    if (!q) return 0;
+    component_apply_part(q, "2N3904");
+    int qb = TN(x + 40, y - 40), qc = TN(x + 80, y - 60), qe = TN(x + 80, y - 20);
+    q->node_ids[0] = qb; q->node_ids[1] = qc; q->node_ids[2] = qe;
+    TW(base, qb);
+    TW(qc, TN(x + 80, rail_y));
+
+    Component *re = vres(circuit, x + 80, y + 60, 2.2e3);
+    if (!re) return 0;
+    re->node_ids[0] = TN(x + 80, y + 20); re->node_ids[1] = TN(x + 80, y + 100);
+    TW(qe, TN(x + 80, y + 20));
+    Component *gre = add_comp(circuit, COMP_GROUND, x + 80, y + 120, 0);
+    if (!gre) return 0;
+    gre->node_ids[0] = TN(x + 80, y + 100);
+
+    /* the source, coupled in */
+    Component *vin = add_comp(circuit, COMP_AC_VOLTAGE, x - 420, y - 40, 0);
+    if (!vin) return 0;
+    vin->props.ac_voltage.amplitude = 1.0;
+    vin->props.ac_voltage.frequency = 1000.0;
+    vin->props.ac_voltage.offset = 0.0;
+    int inode = TN(x - 420, y - 80);
+    vin->node_ids[0] = inode; vin->node_ids[1] = TN(x - 420, y);
+    Component *gin = add_comp(circuit, COMP_GROUND, x - 420, y + 20, 0);
+    if (!gin) return 0;
+    gin->node_ids[0] = TN(x - 420, y);
+
+    Component *cin = hcap(circuit, x - 280, y - 120, 10e-6);
+    if (!cin) return 0;
+    cin->node_ids[0] = TN(x - 320, y - 120); cin->node_ids[1] = TN(x - 240, y - 120);
+    TW(inode, TN(x - 420, y - 120));
+    TW(TN(x - 420, y - 120), TN(x - 320, y - 120));
+    TW(TN(x - 240, y - 120), TN(x - 120, y - 120));
+    TW(TN(x - 120, y - 120), base);
+
+    /* and the load, coupled out */
+    Component *cout = hcap(circuit, x + 240, y - 20, 10e-6);
+    if (!cout) return 0;
+    cout->node_ids[0] = TN(x + 200, y - 20); cout->node_ids[1] = TN(x + 280, y - 20);
+    TW(qe, TN(x + 200, y - 20));
+    int onode = TN(x + 360, y - 20);
+    TW(TN(x + 280, y - 20), onode);
+
+    Component *rl = vres(circuit, x + 360, y + 60, 1e3);
+    if (!rl) return 0;
+    rl->node_ids[0] = TN(x + 360, y + 20); rl->node_ids[1] = TN(x + 360, y + 100);
+    TW(onode, TN(x + 360, y + 20));
+    Component *grl = add_comp(circuit, COMP_GROUND, x + 360, y + 120, 0);
+    if (!grl) return 0;
+    grl->node_ids[0] = TN(x + 360, y + 100);
+
+    add_label(circuit, x - 460, y - 320, "1 V at 1 kHz in, 0.983 V out");
+    add_label(circuit, x + 180, y - 300, "the 1.6 % is r_e");
+
+    probe_named(circuit, cin, 0, "in");
+    probe_named(circuit, rl, 0, "out");
+    /* The bias, which is the half that can be checked against closed form - in and out are AC
+       and sit at 0 V DC, so an operating-point oracle has to read the base and the emitter. */
+    probe_named(circuit, q, 0, "base");
+    probe_named(circuit, q, 2, "emit");
+    return 11;
+}
+
 /* Cascode current mirror (EE_Review m06l09), built from the lesson's own parts table.
  *
  * Every device is the course's: W/L = 90 (W 90 um over L 1 um), lambda 0.020, and NOT ideal -
@@ -16548,6 +16658,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BATT_LEAD_STAGES] = { COMP_RESISTOR, 0, 1 },    /* the bulk pack's terminal */
     [CIRCUIT_BATT_CHEMISTRIES] = { COMP_RESISTOR, 0, 0 },    /* the alkaline column */
     [CIRCUIT_EE_STRAIN_BRIDGE] = { COMP_RESISTOR, 1, 0 },    /* R3, the active gauge */
+    [CIRCUIT_EE_EMITTER_FOLLOWER] = { COMP_RESISTOR, 3, 0 },  /* RL top: the load the follower drives */
     [CIRCUIT_EE_MOS_CASCODE]   = { COMP_NMOS, 5, 1 },        /* M4C drain: the cascode output */
     [CIRCUIT_EE_TC_CJC]        = { COMP_VCVS, 1, 2 },        /* the COMPENSATED chain's output */
     [CIRCUIT_EE_DAC_R2R]       = { COMP_VCVS, 0, 2 },        /* the follower's output */
@@ -17020,6 +17131,7 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BATT_CHEMISTRIES] = { DEMO_DC, 0 },
     [CIRCUIT_EE_STRAIN_BRIDGE] = { DEMO_DC, 0 },
     /* Both converters are bias networks with fixed codes: nothing moves, so DC is the contract. */
+    [CIRCUIT_EE_EMITTER_FOLLOWER] = { DEMO_WAVEFORM, 1000.0 },
     [CIRCUIT_EE_MOS_CASCODE]   = { DEMO_DC, 0 },
     [CIRCUIT_EE_TC_CJC]        = { DEMO_DC, 0 },
     [CIRCUIT_EE_DAC_R2R]       = { DEMO_DC, 0 },

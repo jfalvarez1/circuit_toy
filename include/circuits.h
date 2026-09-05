@@ -264,6 +264,10 @@ typedef enum {
        reads lambda only when it is not, so an ideal build mirrors perfectly and the mirror error
        this lesson is entirely about does not exist. */
     CIRCUIT_EE_MOS_CASCODE,
+    /* Module 5 lesson 07, and the same circuit is what m05l23 and m07l01 ask for. The set had a
+       follower for an op-amp, a MOSFET and a Darlington, and none for a plain BJT - which is the
+       one every course teaches first. Values are the lesson's table exactly. */
+    CIRCUIT_EE_EMITTER_FOLLOWER,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 

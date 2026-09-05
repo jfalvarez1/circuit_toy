@@ -918,6 +918,41 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.55 the follower that was missing, and the audit catching its author (2026-09-05)
+
+EE_Review hands off to this program with a "Build it in Circuit Toy" parts table. 168 lessons
+carry one; 160 have an extractable title; 38 match an existing template closely and 122 do not.
+That 122 is an upper bound rather than a gap - several are covered under another name - but it is
+a work list drawn from the course rather than from guesswork.
+
+The first real hole it exposed: the set had a follower for an op-amp (`Fol`), a MOSFET (`SF`) and
+a Darlington (`Darl`), and none for a plain BJT - the one every course teaches first, and the one
+m05l07, m05l23 and m07l01 all ask for.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.55.1 | `[ ]` Place **Emitter Follower**, read `base` and `emit` | 5.881 V and 5.201 V |
+| 3.55.2 | `[ ]` V_BE across the device | 680.7 mV - one junction drop, whatever beta turns out to be |
+| 3.55.3 | `[ ]` Run it: `in` against `out` | 2.00 Vpp in, 1.96 Vpp out. Gain 0.983, not 1 |
+| 3.55.4 | `[ ]` Against closed form | Ib = (6 - 0.681)/(11k + 221 x 2.2k) = 10.75 uA, Ie = 2.364 mA, VE = 5.201 V |
+| 3.55.5 | `[ ]` The gain against r_e | 687.5/(687.5 + 11.0) = 0.9843; the 0.14 % gap is r_e moving across the cycle |
+| 3.55.6 | `[ ]` `--ee-test` | 24 values over six course templates, 0 off |
+| 3.55.7 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 77 suites, 0 failed |
+
+**`--wire-test` caught its own author on its first outing.** Loose ends went 47 -> 49 the moment
+this template was added: the supply rail was drawn to x+60 while the collector riser went to
+x+80, so the end of the rail and the top of the riser both stopped in empty space, twenty pixels
+apart and looking for all the world like a join. One typo, two loose ends, found on the first run
+of the suite rather than in a screenshot months later - which is the entire case for the suite,
+made against the person who wrote it, twice in two templates.
+
+**The oracle's third row is a law, not an arithmetic result.** Whatever beta the 2N3904 model
+turns out to carry, the base has to sit exactly one junction drop above the emitter. A follower
+whose V_BE came back at 0.3 V or 1.2 V would be a broken model rather than a different bias, and
+that row says so in a way the two absolute voltages cannot.
+
+---
+
 ### 3.54 four legs running the same battery four times (2026-09-05)
 
 Measured rather than assumed, and the measurement corrected the plan twice.

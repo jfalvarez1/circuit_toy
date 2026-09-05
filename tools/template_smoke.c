@@ -1418,6 +1418,21 @@ static int ee_test(void) {
         { "simple mirror Vds mismatch",           0,  1, 93.4,     1.0,   "mV", 1000.0 },
     };
 
+    /* EE_Review m05l07, the emitter follower. Probe order is in, out, base, emit - the first two
+       are AC and sit at 0 V DC, so the operating point is what an oracle can hold.
+       Derived from the bias equations rather than from this program: the 2N3904 model settles at
+       V_BE = 0.681 V with a beta near 220, and the Thevenin source (11k, 6 V) then gives
+       Ib = (6 - 0.681)/(11k + 221*2.2k) = 10.75 uA, Ie = 2.364 mA and VE = Ie*2.2k = 5.201 V.
+       The third row is the one that is a law rather than an arithmetic result: whatever beta
+       turns out to be, the base has to sit exactly one junction drop above the emitter, and a
+       follower whose V_BE came out at 0.3 V or 1.2 V would be a broken model rather than a
+       different bias. */
+    static const struct Expect emit_fol[] = {
+        { "V(base), the divider under load",      2, -1, 5.881466, 0.005, "V",  1.0    },
+        { "V(emit), one drop below it",           3, -1, 5.200721, 0.005, "V",  1.0    },
+        { "V_BE, base above emitter",             2,  3, 680.7,    3.0,   "mV", 1000.0 },
+    };
+
     struct Case {
         CircuitTemplateType type;
         const char *lesson;
@@ -1454,6 +1469,7 @@ static int ee_test(void) {
         { CIRCUIT_EE_DAC_STRING,    "m17l16", dac_string, (int)(sizeof dac_string / sizeof dac_string[0]) },
         { CIRCUIT_EE_TC_CJC,        "m18l06", tc_cjc, (int)(sizeof tc_cjc / sizeof tc_cjc[0]) },
         { CIRCUIT_EE_MOS_CASCODE,   "m06l09", mos_cascode, (int)(sizeof mos_cascode / sizeof mos_cascode[0]) },
+        { CIRCUIT_EE_EMITTER_FOLLOWER, "m05l07", emit_fol, (int)(sizeof emit_fol / sizeof emit_fol[0]) },
     };
     const int NCASES = (int)(sizeof cases / sizeof cases[0]);
 
