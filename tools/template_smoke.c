@@ -776,6 +776,76 @@ static int pin_test(void) {
     return 0;
 }
 
+/*
+ * --text-test: no annotation may draw a stub.
+ *
+ * Every note and caption on every sheet was rendering as a long line followed by a short
+ * orphan, on all 208 templates, and had been since the wrap was introduced. The cause was
+ * two numbers that nobody had put side by side: the text was authored at about 90 characters
+ * and CANVAS_TEXT_WRAP was 68, so each authored line was broken a second time and the
+ * remainder fell onto a line of its own. Nothing failed. Every suite passed, the geometry
+ * audit passed - the text was inside its box, the box just had a ragged edge - and the only
+ * way to see it was to look at a screenshot, which is how it was eventually found.
+ *
+ * Two fixes, because there are two populations. The notes are authored to the wrap width now,
+ * one line per slot. The 494 hand-placed captions cannot be - they sit at chosen coordinates -
+ * so label_wrap balances instead: once the number of lines is known, it uses the narrowest
+ * column that still produces that many, and the words spread evenly rather than piling into
+ * the first line. A 92-character caption draws as 46 and 46 in place of 68 and 24.
+ *
+ * This measures the result. A last line under 35 % of the widest line on the same annotation
+ * is a stub; balancing makes that impossible, so it is pinned at zero rather than ratcheted.
+ *
+ * Measured before it was pinned: 105 stubs with the greedy wrap, 0 with the balanced one, and
+ * the worst surviving last line sits at 59 % of its widest - a wide enough margin that the
+ * threshold is not load-bearing.
+ *
+ * Widening CANVAS_TEXT_WRAP instead was tried and reverted, which is worth writing down: the
+ * view fits the whole drawing, annotations included, so a wider column zooms the schematic
+ * DOWN. At 88 the RC Low Pass canvas lost enough circuit that --style could no longer find
+ * colour in the middle of it. Narrower is free; wider is never free.
+ */
+#define TEXT_STUB_RATIO 0.35
+static int text_test(void) {
+    int total = 0, annotations = 0, stubs = 0, wrapped = 0;
+    for (int t = 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        Circuit *c = circuit_create();
+        if (!c) return 1;
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        total++;
+        for (int k = 0; k < c->num_components; k++) {
+            Component *p = c->components[k];
+            if (!p || p->type != COMP_TEXT) continue;
+            const char *s = p->props.text.text;
+            if (!s[0]) continue;
+            annotations++;
+            int st[CANVAS_TEXT_MAX_LINES], ln[CANVAS_TEXT_MAX_LINES];
+            int n = label_wrap(s, CANVAS_TEXT_WRAP, st, ln, CANVAS_TEXT_MAX_LINES);
+            if (n < 2) continue;
+            wrapped++;
+            int widest = 0;
+            for (int l = 0; l < n; l++) if (ln[l] > widest) widest = ln[l];
+            if (widest > 0 && (double)ln[n - 1] < TEXT_STUB_RATIO * (double)widest) {
+                if (stubs < 12)
+                    printf("[NOTE] text  %-30s %d lines, last %d of %d wide: \"%.40s\"\n",
+                           ti ? ti->name : "?", n, ln[n - 1], widest, s);
+                stubs++;
+            }
+        }
+        circuit_free(c);
+    }
+    printf("text-test: %d templates, %d annotations, %d wrapped, %d ending in a stub\n",
+           total, annotations, wrapped, stubs);
+    if (stubs > 0) {
+        printf("[FAIL] text-test: %d annotation(s) draw a full line and then a short orphan.\n", stubs);
+        printf("       That is what a canvas note looked like on every sheet while the text was\n");
+        printf("       authored at ~90 characters and CANVAS_TEXT_WRAP was 68.\n");
+        return 1;
+    }
+    return 0;
+}
+
 static int residual_test(void) {
     double worst_abs = 0.0, worst_rel = 0.0, solver_worst = 0.0;
     char solver_worst_at[96] = "";
@@ -9161,6 +9231,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--dpdt-test")) return dpdt_test();
         else if (!strcmp(argv[i], "--residual-test")) return residual_test();
         else if (!strcmp(argv[i], "--pin-test")) return pin_test();
+        else if (!strcmp(argv[i], "--text-test")) return text_test();
         else if (!strcmp(argv[i], "--netlist-solve") && i + 1 < argc) return netlist_solve(argv[i + 1]);
         else if (!strcmp(argv[i], "--span-test")) return span_test();
         else if (!strcmp(argv[i], "--geom-test")) return geom_test();

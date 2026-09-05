@@ -53,13 +53,14 @@ static void compact_eng(double v, const char *unit, char *buf, size_t n) {
    out until the schematic is too small to read. Wrapping at a fixed column turns that into a
    paragraph the same shape as the circuit. The renderer and the geometry audit both call this,
    so what is measured is what is drawn. */
-int label_wrap(const char *s, int max_chars, int *starts, int *lens, int max_lines) {
-    int n = 0, i = 0, len = (int)strlen(s);
-    if (max_chars < 8) max_chars = 8;
+static int label_wrap_greedy(const char *s, int len, int max_chars,
+                             int *starts, int *lens, int max_lines) {
+    int n = 0, i = 0;
     while (i < len && n < max_lines) {
         int remaining = len - i;
         if (remaining <= max_chars) {
-            starts[n] = i; lens[n] = remaining; n++;
+            if (starts) { starts[n] = i; lens[n] = remaining; }
+            n++;
             break;
         }
         /* break on the last space that fits; if there is none, break at the column */
@@ -67,9 +68,44 @@ int label_wrap(const char *s, int max_chars, int *starts, int *lens, int max_lin
         for (int k = max_chars; k > 0; k--)
             if (s[i + k] == ' ') { brk = k; break; }
         if (brk <= 0) brk = max_chars;
-        starts[n] = i; lens[n] = brk; n++;
+        if (starts) { starts[n] = i; lens[n] = brk; }
+        n++;
         i += brk;
         while (s[i] == ' ') i++;    /* the space itself is not drawn at the start of a line */
+    }
+    return n;
+}
+
+int label_wrap(const char *s, int max_chars, int *starts, int *lens, int max_lines) {
+    int len = (int)strlen(s);
+    if (max_chars < 8) max_chars = 8;
+
+    int n = label_wrap_greedy(s, len, max_chars, starts, lens, max_lines);
+
+    /* Filling each line to the column and letting the remainder fall off the end puts a stub
+       under a full line: a 92-character caption at a 88-column wrap draws as 88 and then 4.
+       Once the line COUNT is known, the narrowest column that still yields that many lines
+       spreads the words evenly across them - 46 and 46 - for the same height and never a
+       wider line, so no text that fits today can start overlapping a symbol. */
+    if (n < 2 || n >= max_lines) return n;   /* one line, or truncated: nothing to balance */
+
+    int longest_word = 1;
+    for (int i = 0, run = 0; i <= len; i++) {
+        if (i < len && s[i] != ' ') { run++; if (run > longest_word) longest_word = run; }
+        else run = 0;
+    }
+
+    int lo = longest_word, hi = max_chars;   /* never break a word that fits whole */
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (label_wrap_greedy(s, len, mid, NULL, NULL, max_lines) <= n) hi = mid;
+        else lo = mid + 1;
+    }
+    if (lo < max_chars) {
+        int m = label_wrap_greedy(s, len, lo, starts, lens, max_lines);
+        if (m == n) return m;
+        /* the narrower column did not land on the same count; keep the greedy layout */
+        return label_wrap_greedy(s, len, max_chars, starts, lens, max_lines);
     }
     return n;
 }

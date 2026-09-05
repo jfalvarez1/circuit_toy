@@ -918,6 +918,59 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.48 every note on every sheet drew a full line and then an orphan (2026-09-05)
+
+Found in a screenshot of the *shipped* v3.31.0 artifact, not in a test. The help text under the
+R-2R ladder read "Every rung sees 20k / to its own bit and / 10k along the chain": a long line
+and a stub, over and over, down the whole block. It had been doing that on all 208 templates
+since the wrap was added, and nothing failed, because the text was inside its box. The box just
+had a ragged edge, and no audit looked at the shape of a paragraph.
+
+Two numbers nobody had put side by side. `template_notes` is authored at about 90 characters -
+p50 89, longest 112 - and `CANVAS_TEXT_WRAP` is 68, so every authored line was broken a second
+time and the remainder fell onto a line of its own. 1036 of 1136 note lines were over the wrap.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.48.1 | `[ ]` Open **R-2R Ladder DAC** and read the note | an even block, no line followed by a two-word orphan |
+| 3.48.2 | `[ ]` Open **555 Astable** and read both text blocks | the same, for the hand-placed captions as well as the note |
+| 3.48.3 | `[ ]` Open **87 Line Differential** | the caption across the top breaks itself in two and clears the schematic |
+| 3.48.4 | `[ ]` Compare the schematic size against v3.31.0 | unchanged. The view fits the annotations too, so a wider column shrinks the circuit |
+| 3.48.5 | `[ ]` `--text-test` | 208 templates, 2209 annotations, 445 wrapped, 0 ending in a stub |
+| 3.48.6 | `[ ]` **Mutation:** disable the balance in `label_wrap` | 105 stubs, and the battery fails |
+| 3.48.7 | `[ ]` `--geom-test` | 0 hard violations; clean templates 183 -> 184 |
+| 3.48.8 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 76 suites, 0 failed |
+
+**The wrap width is load-bearing in a way that is easy to miss.** The first fix was to widen
+`CANVAS_TEXT_WRAP` to 88 so the notes stopped wrapping twice. That worked, and broke something
+else: the view fits the whole drawing, annotations included, so a wider text column zooms the
+*schematic* down. `--style` caught it - the synthwave canvas check samples the middle half of
+the RC Low Pass canvas and found a channel spread of 36 where it wants 40, because there was
+less circuit left in the middle to be colourful. `--click` failed alongside it with "only 0
+parts are clear of the panels". Both had passed at HEAD; a stash-and-rebuild confirmed the
+change caused them rather than flakiness. The lesson is in `label.h` now: narrower is free,
+wider is never free.
+
+So the notes are authored to 68 instead - one line per slot, the array grown from 6 to 10 since
+9 is the most any note needs at that width. Same block width as before, fewer lines than before
+(a 6-slot note used to draw as 12), and no stubs. The reflow was mechanical and the script
+refused to write unless the word sequence of all 208 entries was unchanged: 19076 words in,
+19076 out, in the same order.
+
+**The 494 hand-placed captions could not be fixed that way** - they sit at chosen coordinates,
+and 314 are over 68 characters. Widening the wrap to swallow them would need 124 columns, wider
+than the circuits they annotate. So `label_wrap` balances: once the number of lines is known it
+uses the narrowest column that still yields that many, so a 92-character caption draws as 46 and
+46 rather than 68 and 24. Lines only ever get *narrower*, which is why this cannot introduce a
+geometry violation - and `--geom-test` agrees, 0 hard violations with one more clean template
+than before.
+
+One caption did need a real fix. **87 Line Differential** put 92 characters across the top of its
+schematic and depended on the 68-column wrap to break it in two; at 88 it stayed one line and ran
+into a symbol. It breaks itself now, which was never `CANVAS_TEXT_WRAP`'s job to do for it.
+
+---
+
 ### 3.47 v3.31.0 - a regulator whose feedback never reached the matrix (2026-09-04)
 
 Measuring the DC residual across every template - `max |A*x - b|` over the node rows, from the

@@ -12,7 +12,12 @@
 #include "circuit.h"
 
 /* Canvas annotations wrap at this many characters: a note is a paragraph the shape of the
-   circuit, not one line wider than it. */
+   circuit, not one line wider than it.
+   This number is load-bearing in a way that is easy to miss: the view fits the whole drawing,
+   annotations included, so a wider column zooms the schematic DOWN. Widening it to 88 to stop
+   the notes wrapping twice cost enough circuit size that --style could no longer find colour
+   in the middle of the canvas. The notes are authored to this width instead, and label_wrap
+   balances anything longer rather than filling to the column and leaving a stub. */
 #define CANVAS_TEXT_WRAP 68
 #define CANVAS_TEXT_MAX_LINES 12
 
