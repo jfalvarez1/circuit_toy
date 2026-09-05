@@ -87,6 +87,27 @@ if [ -n "$py_orphans" ]; then
     exit 2
 fi
 
+# And the third way a suite can report green without checking anything: a check written as
+# assert(), in a build that defines NDEBUG. The assertion is then not weak, not unreached - it is
+# not COMPILED, and the suite prints its pass line and exits 0 with nothing behind it.
+#
+# This is not hypothetical and it is not ours. The KiCad session next door found nine assertions
+# in its impedance suite compiled out by /O2 /Ob2 /DNDEBUG, and proved it by asserting something
+# false and watching the suite pass. A 21% stripline error had been sitting behind them; the
+# existing assertion would have caught it on day one had it existed at runtime.
+#
+# There are no assert()s in tools/ today. This is here so that stays true: a check belongs in
+# ordinary control flow that counts a failure and returns it as an exit code, which no build flag
+# can remove. Meson does not define NDEBUG by default, so the hole is one -Db_ndebug=true away
+# rather than present - which is exactly when a guard is cheap.
+bad_assert=$(grep -rln '[^_a-zA-Z]assert[[:space:]]*(' tools/*.c 2>/dev/null || true)
+if [ -n "$bad_assert" ]; then
+    echo "run_audits: assert() used as a check in:$bad_assert" >&2
+    echo "run_audits: a build with NDEBUG deletes it and the suite still prints PASS." >&2
+    echo "run_audits: count the failure and return it as an exit code instead." >&2
+    exit 2
+fi
+
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
 pids=""
