@@ -1,4 +1,4 @@
-# Prebuilt Circuit Template Audit (209 templates, 22 palette groups)
+# Prebuilt Circuit Template Audit (210 templates, 22 palette groups)
 
 ## Added since the blocks below were written
 
@@ -21,8 +21,9 @@ where every one ends with a TRY or an INTERVIEW line.
 | Interview: fundamentals | The Two-Capacitor Problem, The Miller Effect, BJT or MOSFET as a Switch, Hot-Plug Inrush |
 | Sensors & bridges | Strain Gauge Bridge, Thermocouple: Cold Junction |
 | Data conversion | R-2R Ladder DAC, String DAC: DNL and INL |
+| Transistors (EE_Review addition) | Cascode Current Mirror — the only template whose devices MUST be non-ideal: an ideal MOSFET mirrors perfectly, and a cascode of them has no DC operating point at all |
 
-The four EE_Review templates are audited a second way as well, by `--ee-test`: their node
+The five EE_Review templates are audited a second way as well, by `--ee-test`: their node
 voltages are held to the numbers the course publishes for the same netlists, so a value changed
 on either side fails. That is an agreement between two programs rather than a block here.
 

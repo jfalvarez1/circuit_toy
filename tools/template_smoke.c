@@ -924,6 +924,152 @@ static int pin_test(void) {
 }
 
 /*
+ * --wire-test: a wire has to join what it looks like it joins.
+ *
+ * --pin-test asks whether something is drawn AT a terminal. This asks the inverse, and the
+ * inverse is the one that actually shipped: a wire drawn straight THROUGH a node it is not
+ * connected to. A reader sees a T-junction, the solver sees two separate nets, and the picture
+ * and the netlist disagree about a join that is right there in the middle of the wire.
+ *
+ * The R-2R ladder shipped exactly that. Its return rail was one long wire across four bit
+ * sources, and because a wire joins its two endpoints and nothing else, not one source was on
+ * it. The ladder solved as a plain series chain, every audit passed, and the drawing looked
+ * perfectly wired - the four dots sat on the line.
+ *
+ * Two questions, both about the drawing rather than the connectivity:
+ *
+ *   FALSE JUNCTION  a node lies strictly inside a wire segment and is on a DIFFERENT net.
+ *                   Drawn as a join, solved as two nets. This is the R-2R failure.
+ *   LOOSE END       a wire endpoint with no other wire and no terminal at it - a wire that
+ *                   stops in empty space, which reads as a connection to something offscreen.
+ *
+ * A node inside a wire that IS on the same net is not reported: the drawing is then telling the
+ * truth, whatever the redundancy. What is being checked is agreement, not tidiness.
+ */
+/* Ratchets, pinned at what was standing when this was written, not targets. Both are ceilings:
+   some of the 47 loose ends are deliberate - a transmission line drawn with an open far end
+   ends in space on purpose - and sorting the intended from the forgotten is a job per template
+   rather than a number. What a ratchet does is stop the count growing, which is all that was
+   needed to catch the R-2R rail.
+   Mutation-checked at the value below: putting the cascode template's clamp back onto a
+   mid-wire point takes these to 67 and 48 and fails the battery - while --ee-test, --geom-test,
+   --conn-test and --pin-test all still pass it, because the clamp is inert at the operating
+   point and the drawing is the only thing that is wrong. */
+#define WIRE_FALSE_JUNCTION_BASELINE 66
+#define WIRE_LOOSE_END_BASELINE      47
+
+static int wf_find(int *p, int i) { while (p[i] != i) { p[i] = p[p[i]]; i = p[i]; } return i; }
+static void wf_union(int *p, int a, int b) { a = wf_find(p, a); b = wf_find(p, b); if (a != b) p[a] = b; }
+
+/* Distance from a point to a segment, and how far along it the foot lands. */
+static double wire_seg_dist(float px, float py, float ax, float ay, float bx, float by) {
+    double vx = bx - ax, vy = by - ay, L2 = vx * vx + vy * vy;
+    double t = (L2 > 1e-9) ? (((px - ax) * vx + (py - ay) * vy) / L2) : 0.0;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    double cx = ax + t * vx, cy = ay + t * vy;
+    return sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+}
+
+static int wire_idx_of(const Circuit *c, int id) {
+    for (int k = 0; k < c->num_nodes; k++) if (c->nodes[k].id == id) return k;
+    return -1;
+}
+
+static int wire_test(void) {
+    int total = 0, wires = 0, false_junctions = 0, loose_ends = 0;
+    for (int t = 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        Circuit *c = circuit_create();
+        if (!c) return 1;
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        total++;
+        wires += c->num_wires;
+
+        int n = c->num_nodes;
+        if (n <= 0 || n > 20000) { circuit_free(c); continue; }
+        int *parent = (int *)malloc((size_t)n * sizeof(int));
+
+        if (!parent) { circuit_free(c); return 1; }
+        for (int i = 0; i < n; i++) parent[i] = i;
+
+        /* node id -> index, so wires can union by index */
+        for (int w = 0; w < c->num_wires; w++) {
+            int a = wire_idx_of(c, c->wires[w].start_node_id), b = wire_idx_of(c, c->wires[w].end_node_id);
+            if (a >= 0 && b >= 0) wf_union(parent, a, b);
+        }
+        /* A net name joins wherever it appears, with no wire drawn - that is what it is for. */
+        for (int i = 0; i < n; i++)
+            for (int j = i + 1; j < n; j++)
+                if (c->nodes[i].name[0] && !strcmp(c->nodes[i].name, c->nodes[j].name))
+                    wf_union(parent, i, j);
+
+        for (int w = 0; w < c->num_wires; w++) {
+            int ai = wire_idx_of(c, c->wires[w].start_node_id), bi = wire_idx_of(c, c->wires[w].end_node_id);
+            if (ai < 0 || bi < 0) continue;
+            float ax = c->nodes[ai].x, ay = c->nodes[ai].y;
+            float bx = c->nodes[bi].x, by = c->nodes[bi].y;
+
+            for (int k = 0; k < n; k++) {
+                if (k == ai || k == bi) continue;
+                float px = c->nodes[k].x, py = c->nodes[k].y;
+                double da = sqrt((px-ax)*(px-ax) + (py-ay)*(py-ay));
+                double db = sqrt((px-bx)*(px-bx) + (py-by)*(py-by));
+                if (da <= 5.0 || db <= 5.0) continue;               /* that IS an endpoint */
+                if (wire_seg_dist(px, py, ax, ay, bx, by) > 2.0) continue;
+                if (wf_find(parent, k) == wf_find(parent, ai)) continue;   /* drawn true */
+                if (false_junctions < 12)
+                    printf("[NOTE] wire  %-30s a node at (%.0f,%.0f) sits on a wire it is not joined to\n",
+                           ti ? ti->name : "?", px, py);
+                false_junctions++;
+            }
+        }
+
+        /* loose ends: an endpoint with no second wire and no terminal against it */
+        for (int w = 0; w < c->num_wires; w++) {
+            int ends[2] = { c->wires[w].start_node_id, c->wires[w].end_node_id };
+            for (int e = 0; e < 2; e++) {
+                int ei = wire_idx_of(c, ends[e]);
+                if (ei < 0) continue;
+                if (c->nodes[ei].name[0]) continue;          /* joined by name */
+                bool held = false;
+                for (int w2 = 0; w2 < c->num_wires && !held; w2++) {
+                    if (w2 == w) continue;
+                    if (c->wires[w2].start_node_id == ends[e] || c->wires[w2].end_node_id == ends[e]) held = true;
+                }
+                for (int m = 0; m < c->num_components && !held; m++) {
+                    Component *p = c->components[m];
+                    if (!p || p->type == COMP_TEXT) continue;
+                    for (int q = 0; q < p->num_terminals && q < MAX_TERMINALS && !held; q++) {
+                        float tx = 0, ty = 0;
+                        component_get_terminal_pos(p, q, &tx, &ty);
+                        float dx = tx - c->nodes[ei].x, dy = ty - c->nodes[ei].y;
+                        if (dx*dx + dy*dy <= 25.0f) held = true;
+                    }
+                }
+                if (!held) {
+                    if (loose_ends < 12)
+                        printf("[NOTE] wire  %-30s a wire ends at (%.0f,%.0f) with nothing there\n",
+                               ti ? ti->name : "?", c->nodes[ei].x, c->nodes[ei].y);
+                    loose_ends++;
+                }
+            }
+        }
+        free(parent);
+        circuit_free(c);
+    }
+    printf("wire-test: %d templates, %d wires, %d false junctions, %d loose ends\n",
+           total, wires, false_junctions, loose_ends);
+    if (false_junctions > WIRE_FALSE_JUNCTION_BASELINE || loose_ends > WIRE_LOOSE_END_BASELINE) {
+        printf("[FAIL] wire-test: a wire that runs through a node it is not joined to is drawn as a\n"
+               "       connection and solved as two nets - that is how the R-2R ladder shipped as a\n"
+               "       series chain with every suite passing it.\n");
+        return 1;
+    }
+    return 0;
+}
+
+/*
  * --text-test: no annotation may draw a stub.
  *
  * Every note and caption on every sheet was rendering as a long line followed by a short
@@ -1250,6 +1396,28 @@ static int ee_test(void) {
         { "comp - raw, the 25 C it was blind to", 1,  0, 100.0,  0.5,   "mV", 1000.0 },
     };
 
+    /* EE_Review m06l09, "MOSFET Current Mirrors". Probe order is nout1, nref1, nout2, n1.
+       Derived before it was measured, and from the lesson's own physics rather than from this
+       program: the diode-connected reference carries 200 uA at W/L = 90 with Kp = 110 uA/V^2,
+       so (Kp/2)(W/L)Vov^2 (1 + lambda*Vgs) = Iref solves to Vgs = 0.899224 V, and the mirroring
+       device settles where its own Id equals (5 - V)/20k. Then the lesson's mirror law
+       Iout/Iref = (1 + lambda*Vds,out)/(1 + lambda*Vds,ref) reproduces both errors from the two
+       node voltages alone: +0.184 % on the simple pair and -0.045 % through the cascode.
+       The last row is the mechanism rather than a number: cascoding works by holding the
+       mirroring device's drain near the reference's, and 23 mV against 93 mV is the whole claim.
+       Mutation-checked, and it fails harder than expected: setting the devices back to `ideal`
+       does not merely zero the errors, it leaves the circuit with NO DC OPERATING POINT. A
+       cascode of devices with infinite output resistance has nothing to fix the drain voltage
+       of the upper pair, and the solve does not converge at all - which is also why the first
+       netlist of this circuit would not solve before lambda was expressible. */
+    static const struct Expect mos_cascode[] = {
+        { "V(nref1), the diode connection",       1, -1, 0.899224, 0.002, "V",  1.0    },
+        { "V(nout1), simple mirror",              0, -1, 0.992657, 0.002, "V",  1.0    },
+        { "V(nout2), through the cascode",        2, -1, 1.001782, 0.002, "V",  1.0    },
+        { "V(n1), the cascode's own reference",   3, -1, 0.899224, 0.002, "V",  1.0    },
+        { "simple mirror Vds mismatch",           0,  1, 93.4,     1.0,   "mV", 1000.0 },
+    };
+
     struct Case {
         CircuitTemplateType type;
         const char *lesson;
@@ -1285,6 +1453,7 @@ static int ee_test(void) {
         { CIRCUIT_EE_DAC_R2R,       "m17l01", dac_r2r, (int)(sizeof dac_r2r / sizeof dac_r2r[0]) },
         { CIRCUIT_EE_DAC_STRING,    "m17l16", dac_string, (int)(sizeof dac_string / sizeof dac_string[0]) },
         { CIRCUIT_EE_TC_CJC,        "m18l06", tc_cjc, (int)(sizeof tc_cjc / sizeof tc_cjc[0]) },
+        { CIRCUIT_EE_MOS_CASCODE,   "m06l09", mos_cascode, (int)(sizeof mos_cascode / sizeof mos_cascode[0]) },
     };
     const int NCASES = (int)(sizeof cases / sizeof cases[0]);
 
@@ -6202,6 +6371,70 @@ static int netlist_test(void) {
           "n", 1.5, 0.01,
           "1 A through 1R5. R multiplies by one and only stands where the point would - read as a"
           " bare suffix it was 1 ohm, which is the same 33 % error as reading 4k7 for 4k" },
+
+        /* A MOSFET's geometry, which the reader used to drop on the floor.
+         *
+         * Level 1 saturation current is linear in W/L, so these three lines are the same circuit
+         * at three geometries and the drain node reads the ratio directly. Vgs - Vth = 0.3, and
+         * Id = (Kp/2)(W/L)(0.3)^2 with Kp = 110 uA/V^2: 49.5 uA at the default W/L of 10, 445.5 uA
+         * at 90, and exactly nine times between them. Through the 1k drain load that is 49.5 mV
+         * and 445.5 mV off the 5 V rail.
+         *
+         * The third is the one that matters most. An unreadable W drops the device rather than
+         * falling back to the default geometry, so the drain sits at the rail and carries nothing
+         * - a course asking for W/L = 90 and silently given 10 would get nine times too little
+         * current out of an answer that looks entirely reasonable. */
+        { "MOSFET geometry, default",
+          "Vdd dd 0 DC 5\n"
+          "Rd dd d 1k\n"
+          "Vg g 0 DC 1.0\n"
+          "M1 d g 0 NMOS\n",
+          "d", 4.9505, 0.002,
+          "W/L = 10 as shipped: Id = 49.5 uA, so 49.5 mV across the 1k" },
+
+        { "MOSFET W and L from the netlist",
+          "Vdd dd 0 DC 5\n"
+          "Rd dd d 1k\n"
+          "Vg g 0 DC 1.0\n"
+          "M1 d g 0 NMOS W=90u L=1u\n",
+          "d", 4.5545, 0.002,
+          "W/L = 90 is nine times the default and the drain drop is nine times 49.5 mV. '=' is a"
+          " delimiter in this reader, so W and 90u arrive as two tokens and never as one string" },
+
+        /* EE_Review m06l09 is about mirror error caused by channel-length modulation, and the
+         * default MOSFET is IDEAL - the stamp reads lambda only when !ideal, so the mirror comes
+         * out perfect and the lesson cannot be shown. LAMBDA in a netlist therefore takes the
+         * device out of ideal mode as well as setting the number; otherwise it would be a
+         * parameter that is stored and never stamped, which is a fault this codebase has shipped
+         * before. Checked against closed form, not against itself: with lambda 0.02 the diode
+         * connection solves to Vgs = 1.295360 and the mirrored device lands at 1.021366 V, which
+         * is 198.932 uA into the 20k - a mirror error of -0.53 % from a 0.274 V difference in Vds. */
+        { "LAMBDA turns channel-length modulation on",
+          "Vdd vdd 0 DC 5\n"
+          "I1 vdd nref1 200u\n"
+          "M1 nref1 nref1 0 NMOS LAMBDA=0.020\n"
+          "M2 nout1 nref1 0 NMOS LAMBDA=0.020\n"
+          "R1 vdd nout1 20k\n",
+          "nout1", 1.021366, 0.002,
+          "an ideal MOSFET ignores lambda entirely and mirrors exactly 200 uA, putting this node"
+          " at 1.000 V - so this value is the whole difference between showing the lesson and not" },
+
+        { "a line with more fields than fit is refused",
+          "V1 p 0 DC 1\n"
+          "R1 p q 1k\n"
+          "R2 q 0 1k x x x x x x x x x x x x x x x x x x x x x x x x x\n",
+          "q", 1.0, 0.01,
+          "R2 is dropped rather than read as far as the token cap and used, so nothing pulls q"
+          " down and it sits at the rail instead of dividing to 0.5 V" },
+
+        { "a MOSFET width that cannot be read is refused",
+          "Vdd dd 0 DC 5\n"
+          "Rd dd d 1k\n"
+          "Vg g 0 DC 1.0\n"
+          "M1 d g 0 NMOS W=bogus L=1u\n",
+          "d", 5.0, 0.001,
+          "the device is dropped, not given the default geometry, so no current flows and the"
+          " drain sits at the rail. Silently substituting W/L = 10 would answer a different question" },
     };
 
     for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
@@ -9447,6 +9680,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--residual-test")) return residual_test();
         else if (!strcmp(argv[i], "--pin-test")) return pin_test();
         else if (!strcmp(argv[i], "--text-test")) return text_test();
+        else if (!strcmp(argv[i], "--wire-test")) return wire_test();
         else if (!strcmp(argv[i], "--netlist-solve") && i + 1 < argc) return netlist_solve(argv[i + 1]);
         else if (!strcmp(argv[i], "--netlist-trace") && i + 3 < argc) {
             const char *f = argv[++i]; double ts = atof(argv[++i]); return netlist_trace(f, ts, atoi(argv[++i]));

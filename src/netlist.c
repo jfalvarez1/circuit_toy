@@ -16,7 +16,11 @@
 #include "netlist.h"
 #include "component.h"
 
-#define NL_MAX_TOK 12
+/* A MOSFET carrying W, L and LAMBDA is already 11 tokens - "M1C n1 n1 0 NMOS W 90u L 1u LAMBDA
+   0.02", since '=' is a delimiter here. At the old cap of 12 the next parameter anyone added
+   would have been dropped in silence, taking its default and answering a different question.
+   Raised, and nl_split now REFUSES a line it could not finish rather than truncating it. */
+#define NL_MAX_TOK 24
 
 /* A value with a SPICE suffix.
 
@@ -77,6 +81,8 @@ static int nl_split(char *line, char *tok[NL_MAX_TOK]) {
         while (*p && *p != ' ') p++;
         if (*p) *p++ = 0;
     }
+    while (*p == ' ') p++;
+    if (*p) return -1;      /* more line than tokens: the caller must refuse it, not use half */
     return n;
 }
 
@@ -111,6 +117,11 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
 
         char *tok[NL_MAX_TOK];
         int nt = nl_split(line, tok);
+        if (nt < 0) {           /* too many fields to hold: refuse rather than use the first 24 */
+            skipped++;
+            if (!first_bad[0]) snprintf(first_bad, sizeof first_bad, "%.40s", line);
+            continue;
+        }
         if (nt == 0) continue;
         if (tok[0][0] == '*' || tok[0][0] == '#' || tok[0][0] == '.') continue;  /* comment / directive */
 
@@ -218,9 +229,54 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
             case 'E': case 'G':
                 if (nt > 5 && nl_value(tok[5], &v)) p->props.controlled_source.gain = v;
                 break;
-            case 'Q': case 'M':
+            case 'Q': case 'M': {
                 if (model) component_apply_part(p, model);   /* silently keeps the default if unknown */
+                if (kind != 'M') break;
+                /* W= and L= after the model, in either order, as every netlist writes them.
+                 *
+                 * The stamp works from the ratio, and the default geometry is W/L = 10. A course
+                 * that specifies W/L = 90 and is silently given 10 gets nine times too little
+                 * drain current out of an answer that looks entirely reasonable - so a W= or L=
+                 * that cannot be read, or that is not positive, DROPS the device rather than
+                 * falling back. Absent is different from unreadable: no W= at all means the
+                 * caller did not ask, and the model's own geometry stands.
+                 */
+                /* nl_split turns '=' into a space, so "W=90u" arrives as the two tokens "W" and
+                   "90u" - the keyword and its value are never one string here. That also makes
+                   "W = 90u" and "W 90u" read the same, which is free and harmless. */
+                bool bad_geom = false;
+                for (int t = 1 + nnodes; t < nt; t++) {
+                    const char *a = tok[t];
+                    if (!a || !a[0]) continue;
+                    bool is_w   = (a[0] == 'W' || a[0] == 'w') && !a[1];   /* single letter, so */
+                    bool is_l   = (a[0] == 'L' || a[0] == 'l') && !a[1];   /* L is not LAMBDA */
+                    bool is_lam = !_stricmp(a, "LAMBDA");
+                    if (!is_w && !is_l && !is_lam) continue;
+                    double g = 0;
+                    if (t + 1 >= nt || !nl_value(tok[t + 1], &g) || !(g > 0)) { bad_geom = true; break; }
+                    if (is_w)      p->props.mosfet.w = g;
+                    else if (is_l) p->props.mosfet.l = g;
+                    else {
+                        /* Channel-length modulation, and it has to take the device out of ideal
+                           mode to mean anything: the stamp reads lambda only when !ideal, and
+                           `ideal` is the default. Setting LAMBDA and leaving the flag alone would
+                           put a number in the part that the solver never looks at - an editable
+                           parameter that does not stamp, which this codebase has shipped before
+                           and now checks for. Asking for channel-length modulation is asking for
+                           the model that has it. */
+                        p->props.mosfet.lambda = g;
+                        p->props.mosfet.ideal = false;
+                    }
+                    t++;                                        /* the value is consumed */
+                }
+                if (bad_geom) {
+                    circuit_delete_component(circuit, p->id);
+                    skipped++;
+                    if (!first_bad[0]) snprintf(first_bad, sizeof first_bad, "%s", tok[0]);
+                    continue;
+                }
                 break;
+            }
             case 'V': {
                 /* DC 5 | 5 | SIN(off amp freq) | PULSE(v1 v2 td tr tf pw per) | AC 1 */
                 const char *w = model ? model : "0";

@@ -361,6 +361,8 @@ static const CircuitTemplateInfo template_info[] = {
         "the three stages of a lead-acid charger, and what each one does", TG_BMI},
     [CIRCUIT_EE_STRAIN_BRIDGE] = {"Strain Gauge Bridge", "Strain",
         "350 ohm bridge, one active gauge, and 12.4 mV out of 5 V", TG_SENSORS},
+    [CIRCUIT_EE_MOS_CASCODE] = {"Cascode Current Mirror", "Cascode",
+        "same 200 uA reference twice: +0.18 % of mirror error against -0.04 %", TG_TRANSISTORS},
     [CIRCUIT_EE_TC_CJC] = {"Thermocouple: Cold Junction", "TC-CJC",
         "40 uV/degC measures a difference: 275 degC of it, until CJC adds the 25", TG_SENSORS},
     [CIRCUIT_EE_DAC_R2R] = {"R-2R Ladder DAC", "R2R",
@@ -6479,6 +6481,7 @@ static int place_batt_charging(Circuit *circuit, float x, float y);
 static int place_batt_lead_stages(Circuit *circuit, float x, float y);
 static int place_batt_chemistries(Circuit *circuit, float x, float y);
 static int place_ee_strain_bridge(Circuit *circuit, float x, float y);
+static int place_ee_mos_cascode(Circuit *circuit, float x, float y);
 static int place_ee_tc_cjc(Circuit *circuit, float x, float y);
 static int place_ee_dac_r2r(Circuit *circuit, float x, float y);
 static int place_ee_dac_string(Circuit *circuit, float x, float y);
@@ -6840,6 +6843,7 @@ static int place_template_body(Circuit *circuit, CircuitTemplateType type, float
         case CIRCUIT_BATT_LEAD_STAGES:   return place_batt_lead_stages(circuit, x, y);
         case CIRCUIT_BATT_CHEMISTRIES:   return place_batt_chemistries(circuit, x, y);
         case CIRCUIT_EE_STRAIN_BRIDGE:   return place_ee_strain_bridge(circuit, x, y);
+        case CIRCUIT_EE_MOS_CASCODE:     return place_ee_mos_cascode(circuit, x, y);
         case CIRCUIT_EE_TC_CJC:          return place_ee_tc_cjc(circuit, x, y);
         case CIRCUIT_EE_DAC_R2R:         return place_ee_dac_r2r(circuit, x, y);
         case CIRCUIT_EE_DAC_STRING:      return place_ee_dac_string(circuit, x, y);
@@ -8305,6 +8309,15 @@ static const char *const template_notes[CIRCUIT_TYPE_COUNT][TEMPLATE_NOTE_LINES]
                                "above where its code says - that is the INL. A step over 2 LSB would",
                                "skip a code entirely and the DAC would be non-monotonic. Set R3 to",
                                "1k to see all three errors go to zero. (EE_Review m17l16)"},
+    [CIRCUIT_EE_MOS_CASCODE] = {"CASCODE CURRENT MIRROR: two mirrors from one 200 uA reference.",
+                                "A mirror copies its reference only as well as it can hold the two",
+                                "drain voltages together, because channel-length modulation makes Id",
+                                "depend on Vds. On the left the mirroring device sits at 993 mV while",
+                                "its reference sits at 899 - 93 mV apart - so it passes 200.4 uA",
+                                "instead of 200.0, an error of +0.18 %. On the right a cascode holds",
+                                "it at 877 against the same 899, 23 mV apart, and the error falls to",
+                                "-0.04 %: four times tighter for two transistors and a bias. All six",
+                                "are W/L = 90, lambda 0.020. PROBE: nout1, nout2. (EE_Review m06l09)"},
     [CIRCUIT_EE_TC_CJC] = {"THERMOCOUPLE AND THE COLD JUNCTION: a Type K junction makes about",
                            "40 uV per degree C between its hot end and its cold end - a",
                            "DIFFERENCE, never a temperature. Hot at 300 C with terminals at 25 C",
@@ -15154,6 +15167,188 @@ static int place_ee_strain_bridge(Circuit *circuit, float x, float y) {
  * the termination resistor is there to define the impedance, not to divide anything. The buffer
  * is an ideal unity VCVS: the lesson's op-amp is a follower, and a follower with its loop closed
  * is a gain of one to within 1/A. */
+/* Cascode current mirror (EE_Review m06l09), built from the lesson's own parts table.
+ *
+ * Every device is the course's: W/L = 90 (W 90 um over L 1 um), lambda 0.020, and NOT ideal -
+ * `mos_dev` already clears that flag, which matters more here than anywhere else in the set,
+ * because an ideal MOSFET has infinite output resistance and mirrors its reference exactly. The
+ * whole lesson is the error that only exists when Id depends on Vds.
+ *
+ * Both halves are the same 200 uA reference into the same 20k load, so the only difference
+ * between the numbers is the topology. Verified against closed form before it was written down:
+ * the diode-connected reference solves to Vgs = 0.899224 V, and the mirror law
+ * Iout/Iref = (1 + lambda*Vds,out)/(1 + lambda*Vds,ref) reproduces both errors from the node
+ * voltages alone - +0.184 % on the left, -0.045 % on the right.
+ */
+static Component *cascode_fet(Circuit *circuit, float x, float y) {
+    Component *m = mos_dev(circuit, x, y, 0.7, 110e-6);   /* clears `ideal` for us */
+    if (m) {
+        m->props.mosfet.w = 90e-6;
+        m->props.mosfet.l = 1e-6;
+        m->props.mosfet.lambda = 0.020;
+    }
+    return m;
+}
+
+static int place_ee_mos_cascode(Circuit *circuit, float x, float y) {
+    const float rail_y = y - 300;
+
+    /* 5 V across the top. One segment per junction: a node part-way along a longer wire is not
+       connected to it, which is how four bit sources once came back floating. */
+    Component *vdd = dc_rail(circuit, x - 700, rail_y, 5.0);
+    if (!vdd) return 0;
+    TW(TN(x - 700, rail_y), TN(x - 500, rail_y));
+    TW(TN(x - 500, rail_y), TN(x - 220, rail_y));
+    TW(TN(x - 220, rail_y), TN(x + 100, rail_y));
+    TW(TN(x + 100, rail_y), TN(x + 280, rail_y));   /* the clamp's cathode lands here, and a */
+    TW(TN(x + 280, rail_y), TN(x + 440, rail_y));   /* node part-way along a wire joins nothing */
+
+    /* ---- the simple mirror ---- */
+    Component *m1 = cascode_fet(circuit, x - 520, y);
+    Component *m2 = cascode_fet(circuit, x - 280, y);
+    if (!m1 || !m2) return 0;
+    int g1 = TN(x - 540, y), d1 = TN(x - 500, y - 20), s1 = TN(x - 500, y + 20);
+    int g2 = TN(x - 300, y), d2 = TN(x - 260, y - 20), s2 = TN(x - 260, y + 20);
+    m1->node_ids[0] = g1; m1->node_ids[1] = d1; m1->node_ids[2] = s1;
+    m2->node_ids[0] = g2; m2->node_ids[1] = d2; m2->node_ids[2] = s2;
+
+    Component *i1 = add_comp(circuit, COMP_DC_CURRENT, x - 500, y - 160, 0);
+    if (!i1) return 0;
+    i1->props.dc_current.current = 200e-6;
+    i1->node_ids[0] = TN(x - 500, rail_y);          /* + on the rail, so it feeds the node below */
+    i1->node_ids[1] = TN(x - 500, y - 120);
+    TW(TN(x - 500, y - 200), TN(x - 500, rail_y));
+    TW(TN(x - 500, y - 120), d1);
+
+    /* diode connection, taken off ABOVE the device so no wire crosses its body */
+    TW(TN(x - 500, y - 120), TN(x - 580, y - 120));
+    TW(TN(x - 580, y - 120), TN(x - 580, y));
+    TW(TN(x - 580, y), g1);
+    /* and the shared gate, along a bus below both devices */
+    TW(g1, TN(x - 540, y + 100));
+    TW(TN(x - 540, y + 100), TN(x - 300, y + 100));
+    TW(TN(x - 300, y + 100), g2);
+
+    /* Grounds placed so the terminal LANDS on the source: the ground's own pin is at (0,-20),
+       so a symbol at y+40 puts it exactly on a source at y+20. Assigning the node without that
+       draws nothing, which is what --pin-test counts. */
+    Component *gs1 = add_comp(circuit, COMP_GROUND, x - 500, y + 40, 0);
+    Component *gs2 = add_comp(circuit, COMP_GROUND, x - 260, y + 40, 0);
+    if (!gs1 || !gs2) return 0;
+    gs1->node_ids[0] = s1;
+    gs2->node_ids[0] = s2;
+
+    Component *r1 = add_comp(circuit, COMP_RESISTOR, x - 220, y - 160, 90);
+    if (!r1) return 0;
+    r1->props.resistor.resistance = 20e3;
+    r1->props.resistor.power_rating = 1.0;
+    r1->node_ids[0] = TN(x - 220, y - 200); r1->node_ids[1] = TN(x - 220, y - 120);
+    TW(TN(x - 220, y - 200), TN(x - 220, rail_y));
+    TW(TN(x - 220, y - 120), TN(x - 220, y - 20));
+    TW(TN(x - 220, y - 20), d2);
+
+    /* ---- the cascode ---- */
+    Component *m1c = cascode_fet(circuit, x + 80,  y);
+    Component *m3c = cascode_fet(circuit, x + 80,  y - 140);
+    Component *m2c = cascode_fet(circuit, x + 340, y);
+    Component *m4c = cascode_fet(circuit, x + 340, y - 140);
+    if (!m1c || !m3c || !m2c || !m4c) return 0;
+    int g1c = TN(x + 60,  y),       d1c = TN(x + 100, y - 20),   s1c = TN(x + 100, y + 20);
+    int g3c = TN(x + 60,  y - 140), d3c = TN(x + 100, y - 160), s3c = TN(x + 100, y - 120);
+    int g2c = TN(x + 320, y),       d2c = TN(x + 360, y - 20),   s2c = TN(x + 360, y + 20);
+    int g4c = TN(x + 320, y - 140), d4c = TN(x + 360, y - 160), s4c = TN(x + 360, y - 120);
+    m1c->node_ids[0] = g1c; m1c->node_ids[1] = d1c; m1c->node_ids[2] = s1c;
+    m3c->node_ids[0] = g3c; m3c->node_ids[1] = d3c; m3c->node_ids[2] = s3c;
+    m2c->node_ids[0] = g2c; m2c->node_ids[1] = d2c; m2c->node_ids[2] = s2c;
+    m4c->node_ids[0] = g4c; m4c->node_ids[1] = d4c; m4c->node_ids[2] = s4c;
+
+    TW(d1c, s3c);                                   /* the reference stack */
+    TW(d2c, s4c);                                   /* and the output stack */
+
+    Component *i2 = add_comp(circuit, COMP_DC_CURRENT, x + 100, y - 260, 0);
+    if (!i2) return 0;
+    i2->props.dc_current.current = 200e-6;
+    i2->node_ids[0] = TN(x + 100, rail_y);
+    i2->node_ids[1] = TN(x + 100, y - 220);
+    TW(TN(x + 100, y - 220), d3c);
+
+    /* M1C is the diode-connected one: its gate goes to its OWN drain, which is the stack node */
+    TW(s3c, TN(x + 40, y - 120));
+    TW(TN(x + 40, y - 120), TN(x + 40, y));
+    TW(TN(x + 40, y), g1c);
+    TW(g1c, TN(x + 60, y + 100));
+    TW(TN(x + 60, y + 100), TN(x + 320, y + 100));
+    TW(TN(x + 320, y + 100), g2c);
+
+    Component *gs1c = add_comp(circuit, COMP_GROUND, x + 100, y + 40, 0);
+    Component *gs2c = add_comp(circuit, COMP_GROUND, x + 360, y + 40, 0);
+    if (!gs1c || !gs2c) return 0;
+    gs1c->node_ids[0] = s1c;
+    gs2c->node_ids[0] = s2c;
+
+    Component *r2 = add_comp(circuit, COMP_RESISTOR, x + 440, y - 230, 90);
+    if (!r2) return 0;
+    r2->props.resistor.resistance = 20e3;
+    r2->props.resistor.power_rating = 1.0;
+    r2->node_ids[0] = TN(x + 440, y - 270); r2->node_ids[1] = TN(x + 440, y - 190);
+    TW(TN(x + 440, y - 270), TN(x + 440, rail_y));
+    TW(TN(x + 440, y - 190), TN(x + 440, y - 160));
+    TW(TN(x + 440, y - 160), d4c);
+
+    /* The cascode bias, out to both upper gates around the OUTSIDE of each stack rather than
+       between the rows, where it would have to cross both stack wires. */
+    Component *vb = add_comp(circuit, COMP_DC_VOLTAGE, x + 180, y + 240, 0);
+    if (!vb) return 0;
+    vb->props.dc_voltage.voltage = 1.80;
+    vb->node_ids[0] = TN(x + 180, y + 200);
+    vb->node_ids[1] = TN(x + 180, y + 280);
+    Component *gvb = add_comp(circuit, COMP_GROUND, x + 180, y + 300, 0);
+    if (!gvb) return 0;
+    gvb->node_ids[0] = TN(x + 180, y + 280);
+
+    TW(TN(x + 180, y + 200), TN(x + 180, y + 160));
+    TW(TN(x + 180, y + 160), TN(x + 20, y + 160));
+    TW(TN(x + 20, y + 160), TN(x + 20, y - 140));
+    TW(TN(x + 20, y - 140), g3c);
+    TW(TN(x + 180, y + 160), TN(x + 400, y + 160));
+    TW(TN(x + 400, y + 160), TN(x + 400, y - 140));
+    TW(TN(x + 400, y - 140), g4c);
+
+    /* The one part not in the lesson's table, and it is inert at the lesson's values.
+     *
+     * The cascode conducts only while Vb is high enough to hold M3C on - and 1.80 V is close to
+     * the minimum that does, since M3C needs about 0.901 V of Vgs above an n1 that already sits
+     * at 0.899. Turn Vb down and the stack switches off, and an IDEAL current source then has
+     * nowhere to put 200 uA: not a wrong answer, no answer at all, which is what --knob-test
+     * found the moment it halved the bias.
+     *
+     * A real reference cannot drive its node above the supply it is built from. This says so.
+     * Reverse-biased by 3.9 V at the operating point, so it carries leakage and nothing else -
+     * the four probed voltages are unchanged to every digit the oracle holds - and it only
+     * conducts in the case that otherwise has no solution. A shunt resistance cannot do this
+     * job: large enough to leave the mirror alone is large enough to reach 200 kV when the
+     * stack opens, and small enough to clamp is large enough to steal the reference. */
+    Component *dclamp = add_comp(circuit, COMP_DIODE, x + 240, y - 220, 0);
+    if (!dclamp) return 0;
+    dclamp->node_ids[0] = TN(x + 200, y - 220);          /* anode on nref2 */
+    dclamp->node_ids[1] = TN(x + 280, y - 220);          /* cathode on the rail */
+    TW(TN(x + 100, y - 220), TN(x + 200, y - 220));
+    TW(TN(x + 280, y - 220), TN(x + 280, rail_y));
+
+    /* Short, and starting left of R2: at about 11 px a character the first version of this
+       label was 470 px wide and ran straight across the load resistor. */
+    add_label(circuit, x + 120, y - 340, "clamp, not in the table");
+    add_label(circuit, x - 640, y - 380, "simple mirror: 200.4 uA, +0.18 %");
+    add_label(circuit, x + 20,  y - 380, "cascode: 199.9 uA, -0.04 %");
+    add_label(circuit, x + 180, y + 340, "Vb 1.80 V");
+
+    probe_named(circuit, m2,  1, "nout1");
+    probe_named(circuit, m1,  1, "nref1");
+    probe_named(circuit, m4c, 1, "nout2");
+    probe_named(circuit, m1c, 1, "n1");
+    return 18;
+}
+
 /* Thermocouple and the cold junction (EE_Review m18l06).
  *
  * Two identical chains, one above the other. Both carry the same Seebeck EMF, because both
@@ -16353,6 +16548,7 @@ static const TemplateProbeSpec template_output[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BATT_LEAD_STAGES] = { COMP_RESISTOR, 0, 1 },    /* the bulk pack's terminal */
     [CIRCUIT_BATT_CHEMISTRIES] = { COMP_RESISTOR, 0, 0 },    /* the alkaline column */
     [CIRCUIT_EE_STRAIN_BRIDGE] = { COMP_RESISTOR, 1, 0 },    /* R3, the active gauge */
+    [CIRCUIT_EE_MOS_CASCODE]   = { COMP_NMOS, 5, 1 },        /* M4C drain: the cascode output */
     [CIRCUIT_EE_TC_CJC]        = { COMP_VCVS, 1, 2 },        /* the COMPENSATED chain's output */
     [CIRCUIT_EE_DAC_R2R]       = { COMP_VCVS, 0, 2 },        /* the follower's output */
     [CIRCUIT_EE_DAC_STRING]    = { COMP_VCVS, 0, 2 },        /* the follower on t2 */
@@ -16824,6 +17020,7 @@ static const TemplateDemo template_demo[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_BATT_CHEMISTRIES] = { DEMO_DC, 0 },
     [CIRCUIT_EE_STRAIN_BRIDGE] = { DEMO_DC, 0 },
     /* Both converters are bias networks with fixed codes: nothing moves, so DC is the contract. */
+    [CIRCUIT_EE_MOS_CASCODE]   = { DEMO_DC, 0 },
     [CIRCUIT_EE_TC_CJC]        = { DEMO_DC, 0 },
     [CIRCUIT_EE_DAC_R2R]       = { DEMO_DC, 0 },
     [CIRCUIT_EE_DAC_STRING]    = { DEMO_DC, 0 },

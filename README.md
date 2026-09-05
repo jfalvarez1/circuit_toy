@@ -12,7 +12,7 @@
 **Latest Release: [v3.31.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.31.0)** (auto-updating from v3.4.0 on) · [all releases](https://github.com/jfalvarez1/circuit_toy/releases)
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
-digital solver, a real-time bench oscilloscope with FFT and THD, 209 guided circuits from RC
+digital solver, a real-time bench oscilloscope with FFT and THD, 210 guided circuits from RC
 filters to power grids, SPICE import, and a 75-suite self-audit battery. Build, simulate and
 analyse circuits with a drag-and-drop schematic.
 
@@ -422,7 +422,7 @@ you can tell the two families apart without reading the label.
 Schematic text is antialiased and drawn in the notation a schematic uses - `10k`, `100nF`,
 `170V 60Hz` - and an audit checks that no label lands on a symbol or on another label.
 
-209 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
+210 ready-made circuits live in the **Circuits** tab of the left panel, grouped by topic
 (type in the filter box to find one). Every template carries an on-canvas note with the theory,
 the governing equation and a **PROBE:** line; loading one places scope probes on its input and
 output, presets time/div and V/div, and starts the simulation. Each template also declares a
@@ -1091,7 +1091,7 @@ two longest are split into shards (`--shard 0/4`) because a battery can never fi
 its slowest single suite.
 
 ```bash
-build/tools/template_smoke.exe             # 209/209 templates passed
+build/tools/template_smoke.exe             # 210/210 templates passed
 build/tools/template_smoke.exe --verbose   # + bias voltages per active device
 build/tools/template_smoke.exe --nodes "Wien"   # + node -> matrix mapping for one template
 build/tools/template_smoke.exe --probe-test      # output node of every template vs hand calculation (204 oracles)
@@ -1121,6 +1121,7 @@ build/tools/template_smoke.exe --op-test         # the operating point the prope
 build/tools/template_smoke.exe --param-test      # scope presets: the window really shows the circuit's own frequency
 build/circuit-playground.exe --keys "^mosfet|" 24 8 --record DIR N EVERY   # scripted typing: ^ opens Spotlight, | is Enter
 build/tools/template_smoke.exe --geom-test       # schematic audit: diagonals, crossings, wires through bodies
+build/tools/template_smoke.exe --wire-test       # a wire drawn through a node it is not joined to, and wires ending nowhere
 build/tools/template_smoke.exe --scope-test      # scope time/div <-> dt mapping
 build/tools/template_smoke.exe --view-test       # every template puts something on the scope, every switch is clickable
 build/tools/template_smoke.exe --xtal-test       # the crystal's |Z| at, below and above series resonance

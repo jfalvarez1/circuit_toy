@@ -254,6 +254,16 @@ typedef enum {
        anything is until something tells it how cold its own terminals are. Seebeck is taken as
        the course's linear 40 uV/degC, not a Type K table - the note on the sheet says so. */
     CIRCUIT_EE_TC_CJC,
+    /* Module 6 lesson 09, and the lesson's own "Build it in Circuit Toy" table. Two mirrors from
+       one 200 uA reference so the comparison is topology and nothing else.
+       Two departures from the table, both deliberate and both stated on the sheet. The lesson
+       gives W/L = 90 only for the cascode devices and says nothing about the simple pair; they
+       are built at 90 as well, because otherwise the two halves differ in geometry AND topology
+       and the comparison stops being about cascoding. And every device carries lambda = 0.020
+       from the lesson's own interactive - the default MOSFET here is `ideal`, and the stamp
+       reads lambda only when it is not, so an ideal build mirrors perfectly and the mirror error
+       this lesson is entirely about does not exist. */
+    CIRCUIT_EE_MOS_CASCODE,
     CIRCUIT_TYPE_COUNT
 } CircuitTemplateType;
 

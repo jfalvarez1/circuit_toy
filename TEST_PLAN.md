@@ -918,6 +918,92 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.53 a wire that runs through a node it is not joined to (2026-09-05)
+
+`--pin-test` asks whether something is drawn AT a terminal. Nothing asked the inverse, which is
+the half that actually shipped: a wire drawn straight THROUGH a node it is not connected to. A
+wire joins its two endpoints and nothing else, so a node sitting part-way along one reads as a
+T-junction to a person and as two separate nets to the solver. The R-2R ladder shipped exactly
+that - one return rail across four bit sources, none of them on it - and it solved as a plain
+series chain while looking perfectly wired, because the four dots sat on the line.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.53.1 | `[ ]` `--wire-test` | 210 templates, 3617 wires, 66 false junctions, 47 loose ends |
+| 3.53.2 | `[ ]` A node on a wire that IS on the same net | not reported. The drawing is telling the truth |
+| 3.53.3 | `[ ]` A net-name join with no wire drawn | not a loose end. That is what a net name is for |
+| 3.53.4 | `[ ]` **Mutation:** put the cascode clamp back on a mid-wire point | 67 and 48, and the battery fails |
+| 3.53.5 | `[ ]` The same mutation against every other suite | `--ee-test`, `--geom-test`, `--conn-test`, `--pin-test` **all still pass** |
+| 3.53.6 | `[ ]` Today's templates | none reported: R-2R clean since its fix, and the new ones built to it |
+| 3.53.7 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 77 suites, 0 failed |
+
+**Row 3.53.5 is the whole argument for the suite.** The mutation moves a clamp diode's cathode
+onto a point part-way along the supply rail. The clamp is reverse-biased at the operating point,
+so it carries nothing either way and every electrical check is unmoved - all four oracle voltages
+identical to the digit. The geometry is legal, the pin has a wire on it, nothing is isolated. The
+only thing wrong is that the picture claims a join the netlist does not have, and one suite in
+seventy-seven can see it.
+
+**Pinned as a ratchet at 66 / 47, not a target.** Both are ceilings: some loose ends are
+deliberate - a transmission line drawn with an open far end stops in space on purpose - and
+sorting the intended from the forgotten is a job per template rather than a number. Stopping the
+count growing is what was needed.
+
+**Found while writing it, which is the honest part.** The cascode clamp's first version put its
+cathode at x+280 on a rail drawn as one segment from x+100 to x+440. That is the R-2R bug, in the
+template being built to demonstrate the audit that catches it, written by someone who had just
+spent the day on wire drawing. It is not in the 66 only because the wire was written and read in
+the same minute.
+
+---
+
+### 3.52 a lesson the ideal model cannot show at all (2026-09-05)
+
+EE_Review m06l09 asks for a MOSFET current mirror and prints a "Build it in Circuit Toy" table
+for it. Two things stood between that table and a solved circuit, and only the first was known.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.52.1 | `[ ]` `M1 d g s NMOS W=90u L=1u` | W/L = 90, so nine times the drain current of the default 10 |
+| 3.52.2 | `[ ]` `W=bogus` | the device is DROPPED, not given the default geometry |
+| 3.52.3 | `[ ]` `LAMBDA=0.020` | sets lambda AND clears `ideal`, because the stamp reads lambda only when it is clear |
+| 3.52.4 | `[ ]` A line with more fields than the token cap | refused, not truncated and half-used |
+| 3.52.5 | `[ ]` Place **Cascode Current Mirror** | nref1 0.899224 V, nout1 0.992657 V, nout2 1.001782 V |
+| 3.52.6 | `[ ]` The two mirror errors | +0.18 % simple, -0.04 % cascode - four times tighter |
+| 3.52.7 | `[ ]` **Mutation:** set the devices `ideal` | NO DC OPERATING POINT. Not a wrong answer, no answer |
+| 3.52.8 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 76 suites, 0 failed |
+
+**The netlist reader dropped MOSFET geometry on the floor**, and the first fix for it was wrong
+in a way only the refusal path revealed: `nl_split` turns `=` into a space, so `W=90u` arrives as
+the two tokens `W` and `90u` and a test for `a[1] == '='` can never match. Checking that a bad
+value was refused is what caught it — checking that a plausible number came out would not have,
+because a plausible number came out either way. It was the same number both times.
+
+**The lesson could not have been demonstrated even with the geometry.** MOSFETs default to
+`ideal`, and the stamp reads `lambda` only when `!ideal`, so the mirror copies its reference
+exactly and the mirror error the whole lesson is about does not exist. `LAMBDA=` therefore clears
+the flag as well as setting the number: storing a value the solver never reads is the
+editable-but-inert fault this codebase has shipped before and now greps for.
+
+**And the ideal model does not merely give the wrong answer here - it gives none.** Setting the
+template's devices back to `ideal` leaves the circuit with no DC operating point, because a
+cascode of devices with infinite output resistance has nothing to fix the upper pair's drain
+voltage. That is also why the first netlist of this circuit refused to converge, before lambda
+was expressible at all: the failure was read as a bad netlist when it was a report about the model.
+
+**Checked against the lesson's physics, not against this program.** The diode-connected reference
+solves in closed form to Vgs = 0.899224 V at W/L = 90, and the lesson's own mirror law
+`Iout/Iref = (1 + lambda*Vds,out)/(1 + lambda*Vds,ref)` reproduces both errors from the node
+voltages alone. The mechanism is the last row of the oracle rather than a number: the mirroring
+device sees 93.4 mV of drain mismatch in the simple pair and 22.7 mV through the cascode.
+
+One departure from the table, stated on the sheet and in the enum: the lesson gives W/L = 90 only
+for the cascode devices and is silent on the simple pair, which are built at 90 as well. Otherwise
+the two halves differ in geometry as well as topology and the comparison stops being about
+cascoding.
+
+---
+
 ### 3.51 a transmission line you can ask about from outside (2026-09-05)
 
 The KiCad session asked what this program can simulate, and offered to send a characteristic
