@@ -93,8 +93,14 @@ fi
 #
 # This is not hypothetical and it is not ours. The KiCad session next door found nine assertions
 # in its impedance suite compiled out by /O2 /Ob2 /DNDEBUG, and proved it by asserting something
-# false and watching the suite pass. A 21% stripline error had been sitting behind them; the
+# false and watching the suite pass. A real stripline error had been sitting behind them, and the
 # existing assertion would have caught it on day one had it existed at runtime.
+#
+# No magnitude is quoted here on purpose. The first figure for that error was retracted a few
+# hours later - the hand evaluation behind it had used a symbol with two meanings, and had been
+# compared against a reference formula outside its own stated validity window. The size of the
+# error was wrong; that an uncompiled assertion hid it was not. A number borrowed from someone
+# else's still-open investigation does not belong in a comment that will outlive the investigation.
 #
 # There are no assert()s in tools/ today. This is here so that stays true: a check belongs in
 # ordinary control flow that counts a failure and returns it as an exit code, which no build flag
