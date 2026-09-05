@@ -918,6 +918,41 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.56 the largest unit was the wall clock, so the unit divides (2026-09-05)
+
+The first sharded CI run came out 360 s, 409 s, 775 s and 2031 s. All four legs held 22 or 23 of
+the 89 units, which is a perfect balance by the only number anyone was recording, and told nobody
+anything at all.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.56.1 | `[ ]` `AUDIT_TIMES=1 bash tools/run_audits.sh` | per-unit cost, longest first |
+| 3.56.2 | `[ ]` `python tools/edge_gui.py <exe> 0/4` | 53 of the templates, not all 211 |
+| 3.56.3 | `[ ]` The four shards together | 53 + 53 + 53 + 52 = 211. Every template, none twice |
+| 3.56.4 | `[ ]` `bash tools/shard_check.sh 4` | 92 units, 23 per leg, each on exactly one |
+| 3.56.5 | `[ ]` Which leg draws what | one quarter of `edge-gui` AND one of `bounce-test` per leg |
+| 3.56.6 | `[ ]` A full unsharded run | 77 suites, 0 failed, and edge-gui.0 through .3 all report |
+| 3.56.7 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 77 suites, 0 failed |
+
+**The fix that was about to be written would not have worked.** Longest-processing-time first is
+the textbook answer to uneven units and it was minutes from being implemented on that authority.
+The timings said otherwise: the slow leg had drawn `edge-gui`, which launches the app once per
+template across all 211 and was very nearly the whole of its leg on its own. **A battery cannot
+finish faster than its largest indivisible unit**, so ordering units differently only changes
+which leg is slow. The unit had to divide, and now does.
+
+**Nothing was measuring the thing that mattered**, which is why the imbalance was invisible: unit
+count was recorded and unit cost was not, and by the number that existed the partition looked
+perfect. `AUDIT_TIMES=1` prints unit cost longest-first, and it earns its place beyond this fix -
+a suite that quietly doubles in cost cannot be seen inside a total dominated by the slowest one.
+
+**"0 failures" was not enough to believe the split had run.** A gate that is silently skipped
+produces exactly the same summary as a gate that passes, which is the failure this file keeps
+returning to, so the shards were confirmed by name and by template count rather than by the
+absence of a complaint.
+
+---
+
 ### 3.55 the follower that was missing, and the audit catching its author (2026-09-05)
 
 EE_Review hands off to this program with a "Build it in Circuit Toy" parts table. 168 lessons

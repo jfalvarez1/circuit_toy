@@ -1139,6 +1139,32 @@ static int text_test(void) {
     return 0;
 }
 
+/* Templates with no single DC operating point, DECLARED rather than exempted.
+ *
+ * The difference matters. An exemption list says "ignore this one"; a declaration says what is
+ * true about the circuit and is itself checked - if one of these ever starts solving cleanly the
+ * declaration has gone stale and the gate says so, which an exemption never would.
+ *
+ * Two different things are named here and they are not the same fault:
+ *   ASTABLE  - no operating point EXISTS. The circuit never settles, and the DC number is where
+ *              Newton stopped rather than where the circuit sits.
+ *   BISTABLE - two operating points exist, both real, and which one you land in depends on
+ *              history. A DC answer is meaningful; a UNIQUE one is not.
+ * Telling a reader a latch has no DC solution would be wrong, so they get different words.
+ */
+static const char *no_dc_reason(CircuitTemplateType t) {
+    switch (t) {
+        case CIRCUIT_NE555_ASTABLE:
+            return "astable - it never settles, so there is no operating point to find";
+        case CIRCUIT_RING_OSC:
+            return "astable - an odd ring of inverters has no stable state";
+        case CIRCUIT_SR_LATCH:
+            return "bistable - two stable states, and which one depends on history";
+        default:
+            return NULL;
+    }
+}
+
 static int residual_test(void) {
     double worst_abs = 0.0, worst_rel = 0.0, solver_worst = 0.0;
     char solver_worst_at[96] = "";
@@ -1231,9 +1257,50 @@ static int residual_test(void) {
     printf("residual-test: worst absolute %.4g A in %s; worst relative %.3g in %s\n",
            worst_abs, worst_abs_at[0] ? worst_abs_at : "-",
            worst_rel, worst_rel_at[0] ? worst_rel_at : "-");
-    /* Measuring, not gating: this reports and does not fail, because the threshold a gate should
-       use is exactly what these numbers are for. It becomes a gate once they are known. */
-    return 0;
+    /* Now a gate, and only on the SOLVER'S OWN residual.
+     *
+     * The re-stamp figure above cannot gate anything, and it is worth writing down why rather
+     * than quietly not using it. Three of its six outliers are comparators - op-amps driven into
+     * saturation on purpose - and a saturated op-amp's stamp is state-dependent: at the rail it
+     * behaves as a clamped source, so re-stamping it fresh from the node voltages asks for a
+     * current the solver never used. The 15 A on the NTC cutout is that, not a defect in the
+     * circuit. A measurement that reports a fault where there is none cannot be a gate.
+     *
+     * The solver's own residual has no such excuse. It is |A*x - b| at the iterate the solver
+     * stopped on, so a large value means the equations are not satisfied at the point being
+     * reported as an answer - which is exactly how the LM317's missing Jacobian term was found,
+     * after it had been shipping a wrong voltage for months while every other suite passed.
+     */
+    int gate_fails = 0;
+    for (int t = CIRCUIT_NONE + 1; t < CIRCUIT_TYPE_COUNT; t++) {
+        if (shard_skip(t)) continue;
+        const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
+        Circuit *c = circuit_create();
+        if (!c) return 1;
+        if (circuit_place_template(c, (CircuitTemplateType)t, 0, 0) <= 0) { circuit_free(c); continue; }
+        Simulation *sim = simulation_create(c);
+        double r = (sim && simulation_dc_analysis(sim)) ? sim->dc_residual : -1.0;
+        const char *why = no_dc_reason((CircuitTemplateType)t);
+        if (r >= 0.0) {
+            if (why && r <= 1e-6) {
+                printf("[FAIL] resid %-30s is declared to have no DC operating point (%s),\n"
+                       "       but it now solves to %.4g A. The declaration has gone stale.\n",
+                       ti ? ti->name : "?", why, r);
+                gate_fails++;
+            } else if (!why && r > 1e-6) {
+                printf("[FAIL] resid %-30s residual %.4g A: the equations are not satisfied at the\n"
+                       "       point being reported as an operating point. Either the model is wrong or\n"
+                       "       this circuit has no DC solution - if the latter, declare it in no_dc_reason.\n",
+                       ti ? ti->name : "?", r);
+                gate_fails++;
+            }
+        }
+        if (sim) simulation_free(sim);
+        circuit_free(c);
+    }
+    printf("residual-test: gate - %d template(s) whose solver residual disagrees with what is declared\n",
+           gate_fails);
+    return gate_fails ? 1 : 0;
 }
 
 

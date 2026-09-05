@@ -166,7 +166,9 @@ for m in $APP_MODES;   do mine && SEL_APP="$SEL_APP $m"; done
 # sharding only the C suites took a local quarter-run from 400 s to 376 s, because these were
 # still running in full on every leg. They are named here in a fixed order so every leg walks
 # the same sequence and the partition is the same one shard_check verifies.
-PY_GATES="prop-wiring click-wiring key-wiring style-wiring thermal-wiring stability undo-gui cli-smoke gui-smoke edge-gui svg-audit keys-gui"
+# edge-gui appears as four units, not one: it launches the app per template and was 2031 s of a
+# 2031 s CI leg on its own. The heaviest unit sets the floor for the whole battery, so it divides.
+PY_GATES="prop-wiring click-wiring key-wiring style-wiring thermal-wiring stability undo-gui cli-smoke gui-smoke edge-gui.0 edge-gui.1 edge-gui.2 edge-gui.3 svg-audit keys-gui"
 SEL_PY=""
 for g in $PY_GATES; do mine && SEL_PY="$SEL_PY $g"; done
 py_sel() { case " $SEL_PY " in *" $1 "*) return 0 ;; esac; return 1; }
@@ -203,23 +205,27 @@ trap 'rm -rf "$out"' EXIT
 pids=""
 
 run_one() {   # binary, mode
-    local bin="$1" mode="$2" name="${2#--}" args=""
+    local bin="$1" mode="$2" name="${2#--}" args="" t0
     [ "$mode" = "default" ] || args="$mode"
+    t0=$(date +%s)
     if "$bin" $args > "$out/$name.log" 2>&1; then
         echo "ok" > "$out/$name.rc"
     else
         echo "fail" > "$out/$name.rc"
     fi
+    echo $(( $(date +%s) - t0 )) > "$out/$name.sec"
 }
 
 run_shard() {   # binary, mode-without-dashes, shard index, shard count
-    local bin="$1" mode="$2" i="$3" n="$4" name="$2.$3" args=""
+    local bin="$1" mode="$2" i="$3" n="$4" name="$2.$3" args="" t0
     [ "$mode" = "default" ] || args="--$mode"
+    t0=$(date +%s)
     if "$bin" $args --shard "$i/$n" > "$out/$name.log" 2>&1; then
         echo "ok" > "$out/$name.rc"
     else
         echo "fail" > "$out/$name.rc"
     fi
+    echo $(( $(date +%s) - t0 )) > "$out/$name.sec"
 }
 
 start=$(date +%s)
@@ -416,16 +422,27 @@ fi
 
 # Nothing a template draws may run off the edge of the canvas. This existed and was in no list,
 # so from the day it was written until now nothing ran it.
-if py_sel edge-gui && command -v python >/dev/null 2>&1; then
-    if python tools/edge_gui.py "$APP" > "$out/edgegui.log" 2>&1; then
-        printf '[ OK ] %-14s %s
-' "edge-gui" "$(tail -n 1 "$out/edgegui.log" | cut -c1-100)"
-    else
-        printf '[FAIL] %-14s %s
-' "edge-gui" "$(tail -n 1 "$out/edgegui.log" | cut -c1-100)"
-        grep -m5 FAIL "$out/edgegui.log"
-        fails=$((fails + 1))
-    fi
+# Split four ways, because this one unit WAS the wall clock. It launches the app once per
+# template, and on the first sharded CI run it took 2031 s while the other three legs finished in
+# 360, 409 and 775 - so no assignment of whole units could have balanced it. A battery cannot
+# finish faster than its largest indivisible piece, and the answer to that is to divide the piece
+# rather than to shuffle it between legs.
+if command -v python >/dev/null 2>&1; then
+    for _es in 0 1 2 3; do
+        py_sel "edge-gui.$_es" || continue
+        _elog="$out/edgegui.$_es.log"
+        _t0=$(date +%s)
+        if python tools/edge_gui.py "$APP" "$_es/4" > "$_elog" 2>&1; then
+            printf '[ OK ] %-14s %s
+' "edge-gui.$_es" "$(tail -n 1 "$_elog" | cut -c1-100)"
+        else
+            printf '[FAIL] %-14s %s
+' "edge-gui.$_es" "$(tail -n 1 "$_elog" | cut -c1-100)"
+            grep -m5 FAIL "$_elog"
+            fails=$((fails + 1))
+        fi
+        echo $(( $(date +%s) - _t0 )) > "$out/edge-gui.$_es.sec"
+    done
 fi
 
 # Every template's SVG export, through a real XML parser. Also written, also in no list.
@@ -456,6 +473,25 @@ fi
 
 echo
 echo "audits: $fails of $(echo $SHARD_MODES $SEL_SMOKE $SEL_APP | wc -w) suites failed, ${JOBS} at a time, $(( $(date +%s) - start ))s"
+
+# What each unit cost, longest first.
+#
+# There is a reason this is worth printing rather than just knowing the total. The battery is
+# sharded across four CI legs by ROUND ROBIN, which balances by count and not by time - and the
+# first sharded run came out 360 s, 409 s, 775 s and 2031 s, because one leg happened to draw the
+# expensive units. All four had 22 or 23 of the 89, and that told nobody anything.
+#
+# These numbers are what a longest-first assignment needs, and they are worth having on their own:
+# a suite that quietly doubles in cost is invisible in a total that is dominated by the slowest
+# one, and shows up here immediately.
+if [ -n "${AUDIT_TIMES:-}" ]; then
+    echo "audits: unit cost, longest first -"
+    for m in $SHARD_MODES $SEL_SMOKE $SEL_APP; do
+        name="${m#--}"
+        s=$(cat "$out/$name.sec" 2>/dev/null || echo 0)
+        printf '%6s %s\n' "$s" "$m"
+    done | sort -rn | head -20
+fi
 
 # A gate that skipped is not a gate that passed.
 #

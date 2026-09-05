@@ -46,6 +46,26 @@ if not names:
     print("edge-gui: could not list templates")
     sys.exit(1)
 
+# Optional "i/n": this run takes every nth template. Launching the app once per template is what
+# makes this the most expensive unit in the battery - it was 2031 s of a 2031 s CI leg while the
+# other three legs finished in 360, 409 and 775 - and no assignment of whole units can balance a
+# battery whose largest unit IS the wall clock. So the unit itself divides.
+_shard_i, _shard_n = 0, 1
+for _a in sys.argv[2:]:
+    if "/" in _a:
+        try:
+            _i, _n = _a.split("/", 1)
+            _shard_i, _shard_n = int(_i), int(_n)
+        except ValueError:
+            print("edge-gui: bad shard %r, expected i/n" % _a)
+            sys.exit(2)
+if _shard_n < 1 or not (0 <= _shard_i < _shard_n):
+    print("edge-gui: shard %d/%d is out of range" % (_shard_i, _shard_n))
+    sys.exit(2)
+if _shard_n > 1:
+    names = names[_shard_i::_shard_n]
+    print("edge-gui: shard %d/%d - %d of the templates" % (_shard_i, _shard_n, len(names)))
+
 def check(args):
     """One template: launch, screenshot, read the canvas border. Returns (kind, message).
 
