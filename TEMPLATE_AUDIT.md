@@ -26,9 +26,16 @@ The four EE_Review templates are audited a second way as well, by `--ee-test`: t
 voltages are held to the numbers the course publishes for the same netlists, so a value changed
 on either side fails. That is an agreement between two programs rather than a block here.
 
-One is deliberately absent and written up in `docs/ROADMAP.md`: a **delay-line transmission line**
-(the L-C ladder stands in for it). **CCM vs DCM** was in that list until 2026-08-30, when the
-runaway it was blocked on turned out not to reproduce in nine measured configurations; it ships.
+Nothing on that list is outstanding any more. **CCM vs DCM** came off it on 2026-08-30, when the
+runaway it was blocked on turned out not to reproduce in nine measured configurations. The
+**delay-line transmission line** came off it too and this line went stale saying otherwise until
+2026-09-05: `COMP_DELAY_LINE` takes a characteristic impedance and a one-way delay, **Transmission
+Line (real delay)** (`TLdly`) ships it with three terminations, and `--line-test` holds it to the
+physics - matched, open and short reflect the right amplitudes, the far end lags by the cable's
+delay and the source end by 2T, and the delay follows the cable rather than the time step. The
+L-C ladder is still there as **Signal Reflections** (`Refl`), now as a comparison rather than a
+stand-in. The line is lossless: no skin effect, no dielectric loss, and Z0 is a value you give it,
+not one it derives from geometry.
 
 ---
 
