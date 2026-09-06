@@ -1,5 +1,54 @@
 # Roadmap
 
+## 66 wires that claim a join the netlist does not have (2026-09-06, SURVEYED, NOT FIXED)
+
+`--wire-test` ships as a ratchet pinned at **66 false junctions and 47 loose ends** across 211
+templates and 3632 wires. Those are ceilings to stop the numbers growing, not a clean bill: each
+one is a place where a node sits part-way along a wire it is not electrically joined to, so the
+drawing reads as a T-junction and the solver sees two nets. That is exactly how the R-2R ladder
+shipped solving as a series chain while looking perfectly wired.
+
+**Not yet triaged, and the distinction that matters is not yet known.** Each finding is one of two
+very different things and only reading the builder tells you which:
+
+- **cosmetic** - the two nets are genuinely separate and the wire merely passes over a node on its
+  way somewhere else. The picture misleads; the circuit is right.
+- **electrical** - the author meant them to join, and the circuit has been solving the wrong
+  netlist ever since. This is the R-2R case, and it is the reason the suite exists.
+
+Until each is read, the 66 must be assumed to contain both.
+
+**Where they are**, from `--wire-test` with its note cap lifted (it prints 12 by default):
+
+| count | template |
+|---|---|
+| 32 | Digital Clock (HH:MM:SS) |
+| 3 | Current Mirror · CMOS NAND (transistor level) · CMOS Inverter |
+| 2 | Wireless Link (TX/RX) · String DAC: DNL and INL · Strain Gauge Bridge · RL Step Response · RC Step Response · R-2R Ladder DAC · Peak Detector · Discrete Buck, Node by Node |
+| 1 | Non-Inv Amp · N-1 Contingency · Instr. Amp · Comparator · Common Gate (MOSFET) · Center-Tap Rect · CMOS Inverter (VTC) · 240/120 V Service · 21 Distance Zone 1 |
+
+Half of them are in one template. **Digital Clock** is the place to start: 32 findings in a single
+builder is far more likely to be one repeated wiring idiom than 32 separate mistakes, so reading
+it once probably explains — and fixes — a third of the total.
+
+Two of them are in **R-2R Ladder DAC**, which is worth noting because that template's rail bug was
+found and fixed by hand in September and it still carries two. Whatever they are, they were not
+what the earlier fix was about, and they are a good calibration case: the circuit is known to
+solve correctly now, so anything the suite still flags there is either cosmetic or a second fault
+that the first repair did not touch.
+
+**How to see them all:** the `[NOTE]` lines are capped at 12 so the battery output stays readable.
+Raise both caps in `wire_test` (`false_junctions < 12`, `loose_ends < 12`) to print the lot.
+
+**When any are fixed, lower the pins** — `WIRE_FALSE_JUNCTION_BASELINE` and
+`WIRE_LOOSE_END_BASELINE` in `tools/template_smoke.c`. A ratchet that is never tightened becomes
+a permanent allowance, which is the failure mode this file has recorded twice already.
+
+**Also open, from the same family:** `--pin-test` sits at 68 terminals with nothing drawn at them.
+A good number of those are deliberate — a programmable block's unused GPIO is 13 by itself, and a
+MOSFET's bulk several more — so that ratchet needs the same per-template reading before it can
+come down.
+
 ## A programmable block that runs pasted Arduino code (2026-09-02, BUILT)
 
 **Built the same day it was proposed.** `COMP_MCU` is on the palette as **Code**, with the
