@@ -168,7 +168,7 @@ for m in $APP_MODES;   do mine && SEL_APP="$SEL_APP $m"; done
 # the same sequence and the partition is the same one shard_check verifies.
 # edge-gui appears as four units, not one: it launches the app per template and was 2031 s of a
 # 2031 s CI leg on its own. The heaviest unit sets the floor for the whole battery, so it divides.
-PY_GATES="prop-wiring click-wiring key-wiring style-wiring thermal-wiring stability undo-gui cli-smoke gui-smoke edge-gui.0 edge-gui.1 edge-gui.2 edge-gui.3 svg-audit keys-gui"
+PY_GATES="prop-wiring click-wiring key-wiring style-wiring thermal-wiring stamp-wiring stability undo-gui cli-smoke gui-smoke edge-gui.0 edge-gui.1 edge-gui.2 edge-gui.3 svg-audit keys-gui"
 SEL_PY=""
 for g in $PY_GATES; do mine && SEL_PY="$SEL_PY $g"; done
 py_sel() { case " $SEL_PY " in *" $1 "*) return 0 ;; esac; return 1; }
@@ -356,6 +356,21 @@ if py_sel thermal-wiring && command -v python >/dev/null 2>&1; then
         printf '[FAIL] %-14s %s
 ' "thermal-wiring" "$(tail -n 1 "$out/thermalwiring.log" | cut -c1-100)"
         grep -i fail "$out/thermalwiring.log" | head -10
+        fails=$((fails + 1))
+    fi
+fi
+
+# And source-level again: a part whose stamp writes into a current row has to have been given
+# one. Two sources shipped without - each with a complete, correct stamp landing in the first
+# voltage source's equation, which converges and puts the wrong answer somewhere else entirely.
+if py_sel stamp-wiring && command -v python >/dev/null 2>&1; then
+    if python tools/stamp_wiring.py > "$out/stampwiring.log" 2>&1; then
+        printf '[ OK ] %-14s %s
+' "stamp-wiring" "$(tail -n 1 "$out/stampwiring.log" | cut -c1-100)"
+    else
+        printf '[FAIL] %-14s %s
+' "stamp-wiring" "$(tail -n 1 "$out/stampwiring.log" | cut -c1-100)"
+        grep -i fail "$out/stampwiring.log" | head -10
         fails=$((fails + 1))
     fi
 fi

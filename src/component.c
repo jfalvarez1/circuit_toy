@@ -2783,6 +2783,16 @@ Component *component_create(ComponentType type, float x, float y) {
                                type == COMP_BATTERY ||
                                type == COMP_PULSE_SOURCE ||
                                type == COMP_PWM_SOURCE ||
+                               /* Both of these have had a complete, correct stamp all along and
+                                  neither was ever given a row to put it in. Left off this list,
+                                  voltage_var_idx stays 0 and the stamp writes into row
+                                  num_nodes + 0 - the first voltage source's current equation -
+                                  so two elements share one row, the solve still converges, and
+                                  the wrong answer appears somewhere else in the circuit.
+                                  tools/stamp_wiring.py now reads this list against the stamp
+                                  switch so a part cannot be added to one and not the other. */
+                               type == COMP_PWL_SOURCE ||
+                               type == COMP_EXPR_SOURCE ||
                                type == COMP_TRANSFORMER ||
                                type == COMP_TRANSFORMER_CT ||
                                type == COMP_TLINE ||

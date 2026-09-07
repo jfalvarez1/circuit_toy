@@ -6536,6 +6536,84 @@ static int netlist_test(void) {
           "d", 5.0, 0.001,
           "the device is dropped, not given the default geometry, so no current flows and the"
           " drain sits at the rail. Silently substituting W/L = 10 would answer a different question" },
+
+        /* The DC keyword in front of a CURRENT.
+         *
+         * V has read "DC 5" since the beginning and I never did: it handed nl_value the token
+         * "DC", the read failed, and the source silently kept the part's default of 1 mA. Every
+         * one of the 37 current sources in EE_Review's corpus is written this way, and the two
+         * that bias m06l09's cascode were being given five times their stated current in a
+         * circuit that still converged and still looked entirely reasonable.
+         *
+         * 250 uA and 4k are chosen so the old behaviour is not merely wrong but visibly wrong:
+         * the default 1 mA puts this node at 4 V, not 1 V. */
+        { "DC in front of a current",
+          "I1 0 n DC 250u\n"
+          "R1 n 0 4k\n",
+          "n", 1.0, 0.01,
+          "250 uA through 4k. Unparsed, the source keeps its 1 mA default and this node reads 4 V"
+          " - a four-fold error that no part of the answer looks odd" },
+
+        /* Expect a non-zero number even though the thing under test contributes zero: the
+           tolerance here is relative, so an expectation of 0.0 would demand an exact bit and
+           any oracle written that way is one rounding away from a false failure. The divider
+           supplies the 0.5 V; the AC source's job is to leave it alone. */
+        { "an AC-only current carries no operating point",
+          "V1 s 0 DC 1\n"
+          "R0 s n 1k\n"
+          "I1 0 n AC 1\n"
+          "R1 n 0 1k\n",
+          "n", 0.5, 0.01,
+          "a source with only an AC value contributes nothing at DC, so the divider is undisturbed."
+          " The part default would push 1 mA into n through 500 ohm and answer 1.0 V" },
+
+        /* X OPAMP, and specifically which input is which.
+         *
+         * 59 of the corpus's 129 X lines are op-amps, each shipping a commented VCVS fallback
+         * because X was unavailable. The part behind the name is better than that fallback - it
+         * has rails, so a stage with broken feedback sits on one instead of reporting -165 kV -
+         * but only if the inputs go where the X line says. This program stores an op-amp
+         * minus-first and every netlist writes plus-first, so the two are swapped on the way in.
+         *
+         * Both stages are checked because only one of them can catch the swap. Swap the inputs
+         * and the inverting stage has POSITIVE feedback: it does not come out at +1 V, it rails.
+         * The tolerance is tight enough to see the finite-gain error too - -0.99989 rather than
+         * -1, which is 1/(1+AB) with A = 100k and B = 1/11, so this also fails if the gain
+         * silently became infinite. */
+        { "X OPAMP, inverting",
+          "VIN in 0 DC 0.1\n"
+          "R1 in vm 1k\n"
+          "RF vm out 10k\n"
+          "XU1 0 vm out OPAMP\n",
+          "out", -0.99989, 0.0005,
+          "gain -RF/R1 = -10 on 0.1 V. With the inputs swapped this stage has positive feedback"
+          " and slams into a rail, so the sign here is the whole test" },
+
+        { "X OPAMP, non-inverting",
+          "VIN in 0 DC 0.1\n"
+          "R1 0 vm 1k\n"
+          "RF vm out 10k\n"
+          "XU1 in vm out OPAMP\n",
+          "out", 1.09988, 0.0005,
+          "gain 1 + RF/R1 = 11. The pair matters: a reader that ignored the X node order entirely"
+          " would still pass one of these two" },
+
+        { "an X the reader has no model for is refused",
+          "V1 p 0 DC 1\n"
+          "R1 p q 1k\n"
+          "R2 q 0 1k\n"
+          "XSW1 q 0 ctl ANALOG_SWITCH\n",
+          "q", 0.5, 0.01,
+          "only OPAMP is honoured. An unknown subcircuit is dropped, not guessed at - guessing a"
+          " short here would tie q to ground and guessing an open would be luck, not a model" },
+
+        { "PWL holds its first value at t = 0",
+          "V1 in 0 PWL(0 2 1m 5)\n"
+          "R1 in mid 1k\n"
+          "R2 mid 0 1k\n",
+          "mid", 1.0, 0.01,
+          "the operating point is t = 0, where the waveform is 2 V, so the divider reads 1 V."
+          " The part's own demo waveform starts at 0 V and would answer 0" },
     };
 
     for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {

@@ -98,8 +98,9 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
     if (err && err_size) err[0] = 0;
     if (!circuit || !text) return -1;
 
-    int placed = 0, skipped = 0, needs_ground = 0;
+    int placed = 0, skipped = 0, needs_ground = 0, approx = 0;
     char first_bad[64] = "";
+    char first_approx[64] = "";
     /* below anything already on the sheet, so a paste does not land on top of it */
     float base_y = 0;
     for (int i = 0; i < circuit->num_components; i++)
@@ -149,6 +150,21 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
                the one --line-test has been holding to matched/open/short reflection amplitudes
                and 2T timing all along. */
             case 'T': ty = COMP_DELAY_LINE; nnodes = 2; break;
+            /* A subcircuit call is only worth as much as the model standing behind the name,
+               so exactly one name is honoured and every other X line is still refused. OPAMP
+               is worth honouring because the part behind it is BETTER than the two-line
+               equivalent a netlist would otherwise have to write: a bare VCVS of gain 100k
+               has no rails, so a stage whose feedback is broken reports -165 kV instead of
+               sitting on a rail where it is recognisable as saturated. That difference is not
+               cosmetic - it is the whole reason a finite-gain macromodel sees faults an ideal
+               op-amp cannot. Three nodes, written (+in, -in, out), which is the order the
+               course writes them in and the order the commented E fallback beside each X line
+               confirms. Rails come from the part: +/-15 V, because the netlist does not say. */
+            case 'X':
+                if (nt == 5 && !_stricmp(tok[4], "OPAMP")) { ty = COMP_OPAMP; nnodes = 3; break; }
+                skipped++;
+                if (!first_bad[0]) snprintf(first_bad, sizeof first_bad, "%s", tok[0]);
+                continue;
             default:
                 skipped++;
                 if (!first_bad[0]) snprintf(first_bad, sizeof first_bad, "%s", tok[0]);
@@ -189,11 +205,16 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
          * showed on the first device whose gate went somewhere else. */
         static const int bjt_order[3] = { 1, 0, 2 };    /* C B E written -> B C E stored */
         static const int fet_order[3] = { 1, 0, 2 };    /* D G S written -> G D S stored */
+        /* And once more for the op-amp, whose terminals are stored minus-first. An X line
+           writes the non-inverting input first; handing that straight across would build an
+           inverting amplifier out of a non-inverting one and still solve. */
+        static const int oa_order[3]  = { 1, 0, 2 };    /* + - OUT written -> - + OUT stored */
         bool ctl = (kind == 'E' || kind == 'G');
         bool three = (kind == 'Q' || kind == 'M');
         for (int t = 0; t < nnodes && t < p->num_terminals; t++) {
             int slot = ctl ? ctl_order[t]
                      : three ? (kind == 'Q' ? bjt_order[t] : fet_order[t])
+                     : (kind == 'X') ? oa_order[t]
                      : t;
             nl_set_net(circuit, p, slot, tok[1 + t]);
             if (nl_is_ground(tok[1 + t])) needs_ground = 1;
@@ -225,7 +246,49 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
                 break;
             }
             case 'L': if (nl_value(model, &v)) p->props.inductor.inductance = v; break;
-            case 'I': if (nl_value(model, &v)) p->props.dc_current.current = v; break;
+            case 'I': {
+                /* The same forms V takes, and it should have taken them all along.
+                 *
+                 * "IREF1 vdd nref1 DC 200u" used to hand nl_value the token "DC", which is not
+                 * a number, so the read failed and the source silently kept the part's default
+                 * of 1 mA - five times the stated current, in a circuit that still converged
+                 * and still looked entirely reasonable. That is the exact failure this reader
+                 * exists to avoid, and it survived because nothing here distinguishes "the
+                 * caller did not say" from "the caller said something I could not read". */
+                const char *w = model ? model : "0";
+                if (!_stricmp(w, "SIN") && nt >= 6) {
+                    circuit_delete_component(circuit, p->id);
+                    p = component_create(COMP_AC_CURRENT, px, py);
+                    if (!p || circuit_add_component(circuit, p) < 0) { if (p) component_free(p); skipped++; continue; }
+                    snprintf(p->label, sizeof p->label, "%s", tok[0]);
+                    nl_set_net(circuit, p, 0, tok[1]); nl_set_net(circuit, p, 1, tok[2]);
+                    double off = 0, amp = 0, f = 1000;
+                    nl_value(tok[4], &off); nl_value(tok[5], &amp);
+                    if (nt >= 7) nl_value(tok[6], &f);
+                    p->props.ac_current.offset = off;
+                    p->props.ac_current.amplitude = amp;
+                    p->props.ac_current.frequency = f;
+                } else if ((!_stricmp(w, "PULSE") || !_stricmp(w, "PWL")) && nt >= 6) {
+                    /* There is no pulsed or piecewise CURRENT part, so this keeps the value the
+                       waveform holds at t = 0. For an operating point that is not an
+                       approximation at all - it is the right number - but for a transient it
+                       throws the whole load step away. Counted, not assumed: the caller is told
+                       how many sources were flattened, because a load-step circuit answered as
+                       a steady one has answered a different question than the one asked. */
+                    if (nl_value(tok[!_stricmp(w, "PWL") ? 5 : 4], &v))
+                        p->props.dc_current.current = v;
+                    approx++;
+                    if (!first_approx[0]) snprintf(first_approx, sizeof first_approx, "%s", tok[0]);
+                } else if (!_stricmp(w, "AC")) {
+                    /* An AC-only source carries no operating-point current, so it is 0 A here
+                       rather than the 1 mA the part would otherwise keep. */
+                    p->props.dc_current.current = 0;
+                } else {
+                    const char *val = !_stricmp(w, "DC") ? (nt > 4 ? tok[4] : NULL) : w;
+                    if (nl_value(val, &v)) p->props.dc_current.current = v;
+                }
+                break;
+            }
             case 'E': case 'G':
                 if (nt > 5 && nl_value(tok[5], &v)) p->props.controlled_source.gain = v;
                 break;
@@ -307,6 +370,35 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
                     p->props.pulse_source.fall_time = a[4];
                     p->props.pulse_source.pulse_width = a[5];
                     p->props.pulse_source.period = a[6];
+                } else if (!_stricmp(w, "PWL") && nt >= 6) {
+                    /* PWL(t0 v0 t1 v1 ...) - the form a course reaches for when it wants one
+                       named edge at a named instant rather than a repeating waveform, which is
+                       why repeat is off here: SPICE holds the last value forever, and the part
+                       defaults the other way. A trailing time with no value is dropped rather
+                       than paired with a zero, since the pair is the unit. */
+                    circuit_delete_component(circuit, p->id);
+                    p = component_create(COMP_PWL_SOURCE, px, py);
+                    if (!p || circuit_add_component(circuit, p) < 0) { if (p) component_free(p); skipped++; continue; }
+                    snprintf(p->label, sizeof p->label, "%s", tok[0]);
+                    nl_set_net(circuit, p, 0, tok[1]); nl_set_net(circuit, p, 1, tok[2]);
+                    int np = 0;
+                    for (int k = 4; k + 1 < nt && np < 32; k += 2) {
+                        double tt = 0, vv = 0;
+                        if (!nl_value(tok[k], &tt) || !nl_value(tok[k + 1], &vv)) break;
+                        p->props.pwl_source.times[np] = tt;
+                        p->props.pwl_source.values[np] = vv;
+                        np++;
+                    }
+                    if (np < 1) {   /* nothing readable: a source with the part's demo waveform
+                                       in it would answer with an edge the caller never wrote */
+                        circuit_delete_component(circuit, p->id);
+                        skipped++;
+                        if (!first_bad[0]) snprintf(first_bad, sizeof first_bad, "%s", tok[0]);
+                        continue;
+                    }
+                    p->props.pwl_source.num_points = np;
+                    p->props.pwl_source.repeat = false;
+                    p->props.pwl_source.repeat_period = 0;
                 } else {
                     const char *val = (!_stricmp(w, "DC") || !_stricmp(w, "AC")) ? (nt > 4 ? tok[4] : NULL) : w;
                     if (nl_value(val, &v)) p->props.dc_voltage.voltage = v;
@@ -340,11 +432,17 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
 
     circuit->topology_dirty = true;
     if (err && err_size) {
-        if (skipped)
-            snprintf(err, err_size, "placed %d part%s, skipped %d line%s (first: %s)",
-                     placed, placed == 1 ? "" : "s", skipped, skipped == 1 ? "" : "s", first_bad);
-        else
-            snprintf(err, err_size, "placed %d part%s", placed, placed == 1 ? "" : "s");
+        int w = 0;
+        w = snprintf(err, err_size, "placed %d part%s", placed, placed == 1 ? "" : "s");
+        if (skipped && w > 0 && (size_t)w < err_size)
+            w += snprintf(err + w, err_size - (size_t)w, ", skipped %d line%s (first: %s)",
+                          skipped, skipped == 1 ? "" : "s", first_bad);
+        /* Flattened is not skipped and it is not placed-as-written either, so it gets said out
+           loud. A source whose waveform was thrown away still solves, and the operating point
+           it gives is right - which is exactly why nobody would go looking for it. */
+        if (approx && w > 0 && (size_t)w < err_size)
+            snprintf(err + w, err_size - (size_t)w, ", flattened %d source%s to DC (first: %s)",
+                     approx, approx == 1 ? "" : "s", first_approx);
     }
     return placed ? placed : -1;
 }
