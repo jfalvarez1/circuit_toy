@@ -6792,14 +6792,51 @@ static int netlist_test(void) {
           "gain 1 + RF/R1 = 11. The pair matters: a reader that ignored the X node order entirely"
           " would still pass one of these two" },
 
+        /* X ANALOG_SWITCH, both ways, because one state proves nothing.
+         *
+         * The part is a controlled resistance: r_on = 100 when the control pin is above v_on
+         * (2.5 V) and r_off = 1e9 below v_off (0.8 V). So it is a divider with a known ratio in
+         * each state, and the oracle is arithmetic rather than a recorded number:
+         *   closed  10 V x 1k/(100 + 1k)   = 9.0909 V
+         *   open    10 V x 1k/(1e9 + 1k)   = 10 uV, which is zero at any tolerance worth using
+         * A reader that ignored the control pin entirely would pass whichever of these matched
+         * its default state and fail the other, which is why both are here. */
+        { "X ANALOG_SWITCH, control high",
+          "V1 in 0 DC 10\n"
+          "VC ctl 0 DC 5\n"
+          "XSW in mid ctl ANALOG_SWITCH\n"
+          "R1 in mid 9k\n"
+          "R2 mid 0 1k\n",
+          "mid", 9.1000, 0.005,
+          "closed: 100 ohm across the 9k leaves 98.9, and 1k of 1098.9 is 9.10 V" },
+
+        { "X ANALOG_SWITCH, control low",
+          "V1 in 0 DC 10\n"
+          "VC ctl 0 DC 0\n"
+          "XSW in mid ctl ANALOG_SWITCH\n"
+          "R1 in mid 9k\n"
+          "R2 mid 0 1k\n",
+          "mid", 1.0000, 0.005,
+          "open: 1 Gohm changes the 9k by a hundred-thousandth, so the divider is 9k:1k and reads"
+          " 1.00 V. The same circuit as above with only the control moved, and R1 is there so"
+          " neither state expects zero - a relative tolerance against zero demands an exact bit" },
+
+        /* SHIFT_REGISTER, and it has to be a name that is genuinely not modelled.
+         *
+         * This case used to say ANALOG_SWITCH, and the moment that name became supported the
+         * test started passing for the wrong reason: the switch built, its control node floated
+         * to 0 V, it opened, and the divider read 0.5 V exactly as before. A guard that passes
+         * whether or not the thing it guards is present is not a guard. Any name added to the X
+         * table in future has to be taken out of this line. */
         { "an X the reader has no model for is refused",
           "V1 p 0 DC 1\n"
           "R1 p q 1k\n"
           "R2 q 0 1k\n"
-          "XSW1 q 0 ctl ANALOG_SWITCH\n",
+          "XU9 q 0 clk SHIFT_REGISTER\n",
           "q", 0.5, 0.01,
-          "only OPAMP is honoured. An unknown subcircuit is dropped, not guessed at - guessing a"
-          " short here would tie q to ground and guessing an open would be luck, not a model" },
+          "only OPAMP and ANALOG_SWITCH are honoured. An unknown subcircuit is dropped, not"
+          " guessed at - guessing a short here would tie q to ground and guessing an open would"
+          " be luck, not a model" },
 
         { "PWL holds its first value at t = 0",
           "V1 in 0 PWL(0 2 1m 5)\n"

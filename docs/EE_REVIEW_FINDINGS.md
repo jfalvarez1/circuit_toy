@@ -11,10 +11,21 @@ either a decision for whoever owns the curriculum, or a defect in the corpus bui
 
 ## State of the cross-check
 
-    167 of 194 solve clean with nothing skipped      (150 at the start of the day)
-     19 solve with some element lines skipped
-      7 refuse, and we agree on the ones that matter
+Measured on the regenerated corpus of 2026-09-07, after EE_Review's commits 3646ac0 / b17b913:
+
+    185 of 194 produce a solution
+        149 of those with nothing skipped
+         36 with at least one element line this reader could not place
+      8 refuse - no operating point, and we agree on the ones that matter
       1 not a solution - m05l11-4, which is OURS, see item 8
+     66 element lines skipped in total, almost all X
+
+CORRECTION TO AN EARLIER FIGURE. A "167 clean" number was reported before this and was wrong.
+The harness counting it matched `skipped (\d+) lines` while the reader writes the SINGULAR
+"skipped 1 line" for a single one, so 21 files with exactly one unplaced element were counted as
+having none. That is the second time today the measuring script has flattered the result rather
+than reported it - the first counted "NOT A SOLUTION" outputs as solves - and both errors ran in
+the same direction, which is the part worth remembering about instruments you wrote yourself.
 
 Their `.cir` files now run unmodified through `--netlist-solve`, and `--netlist-bode FILE FSTART
 FSTOP N NODE [AMPLITUDE]` answers AC claims from the same file. The bode path is validated
@@ -105,15 +116,46 @@ be pinned down here.
 
 ## Open questions for them
 
-**9a. Which subcircuits actually matter?** 70 X lines across roughly 30 names are still refused
-- SPDT_SWITCH, ANALOG_SWITCH, SR_LATCH, SHIFT_REGISTER and the rest. Only `X ... OPAMP` is
-honoured, because guessing a short for ANALOG_SWITCH ties a node to ground and guessing an open
-is luck rather than a model. Two or three names that the lessons lean on would be built; picking
-by frequency count would be picking by the wrong measure.
+**9a. ANSWERED, and the first one is built.** They ranked the blocks by family and said to build
+the switch first and as ONE part rather than five, since ANALOG_SWITCH / SPDT / DPDT / IDEAL /
+PWM-driven are all a controlled resistance with different pin counts.
 
-**9b. What do m05l16 and m07l04 claim?** m05l16 is distortion and m07l04 is a current limiter,
-so neither is a Bode question. Guessing the figure of merit and then confirming the guess is not
-a cross-check.
+`X ... ANALOG_SWITCH` now maps to `COMP_ANALOG_SWITCH`, which already was that model - r_on 100
+when the control pin is above v_on, r_off 1e9 below v_off. Nine lines, no new part, and the
+guard checks both states against arithmetic (a 9k/1k divider reads 9.10 V with the switch closed
+across the 9k and 1.00 V with it open).
+
+The rest of the family is NOT done, because a 4-terminal SPDT with its own control pin has no
+part behind it. Synthesising one in the reader out of two analog switches would be the reader
+inventing topology, which is the one thing it must not do. That is a real part to build, not a
+mapping to add: 8 more lines.
+
+**9b. ANSWERED, and both checked.** m07l04 confirmed on all six perturbations including their
+base-drive test (1.4022 A with Q2 off, against their ~1.4 A). m05l16 confirmed on bias, gain and
+two of three distortion ratios - the third is a same-input / same-output mismatch in the lesson,
+written up in item 10.
+
+## 10. m05l16's distortion procedure measures something its formula does not
+
+Their claim: shorting RE1 raises HD2 by 14 dB, from (1 + gm*RE1) = 5.06. Measured both ways:
+
+    baseline 10 mV in, RE1 = 100        output 0.3709 Vpk    HD2 -48.03 dBc
+    RE1 = 1 mohm, still 10 mV in        output 2.0005 Vpk    HD2 -20.33 dBc    +27.7 dB
+    RE1 = 1 mohm, drive 1.854 mV        output 0.3772 Vpk    HD2 -34.92 dBc    +13.1 dB
+
+The formula is right; the PROCEDURE measures a different comparison. Local series feedback cuts
+HD2 by (1 + gm*RE) at a fixed OUTPUT. Hold the INPUT fixed instead, as the lesson says to, and
+the output also grows by (1 + gm*RE) - and HD2 grows with output amplitude, so the two factors
+multiply and the answer is (1 + gm*RE)^2, or 29.3 dB against the 27.7 measured.
+
+Either fix works and it is a teaching decision: say "reduce the drive to 1.85 mV so the output
+stays at 377 mV" and keep +14 dB, which also keeps their line about 14 dB of distortion buying
+14 dB of gain since that framing is already the same-output one; or keep the 10 mV drive and
+state the rise as about 28 dB, noting that (1 + gm*RE) appears twice, once in the linearity and
+once in the amplitude.
+
+Measured by transient plus FFT rather than any built-in distortion analysis, so the instrument
+is outside the solver: twelve cycles at 1 kHz, the last eight Hann-windowed.
 
 ## The pattern the whole exchange kept producing
 

@@ -162,6 +162,16 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
                confirms. Rails come from the part: +/-15 V, because the netlist does not say. */
             case 'X':
                 if (nt == 5 && !_stricmp(tok[4], "OPAMP")) { ty = COMP_OPAMP; nnodes = 3; break; }
+                /* ANALOG_SWITCH is the other name worth honouring, and for the same reason: the
+                   part behind it already IS the model - a controlled resistance, r_on when the
+                   control pin is above v_on and r_off below v_off - so nothing is being guessed
+                   at. Three nodes, written (in, out, ctl), which is the order this part stores
+                   them in, so unlike the op-amp there is nothing to swap.
+                   The rest of the switch family is NOT here: a 4-terminal SPDT with its own
+                   control pin has no part behind it yet, and synthesising one in the reader out
+                   of two analog switches would be the reader inventing topology, which is the
+                   one thing it must not do. */
+                if (nt == 5 && !_stricmp(tok[4], "ANALOG_SWITCH")) { ty = COMP_ANALOG_SWITCH; nnodes = 3; break; }
                 skipped++;
                 if (!first_bad[0]) snprintf(first_bad, sizeof first_bad, "%s", tok[0]);
                 continue;
@@ -214,7 +224,9 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
         for (int t = 0; t < nnodes && t < p->num_terminals; t++) {
             int slot = ctl ? ctl_order[t]
                      : three ? (kind == 'Q' ? bjt_order[t] : fet_order[t])
-                     : (kind == 'X') ? oa_order[t]
+                     /* the op-amp only, not every X: the analog switch stores its pins in the
+                        order a netlist writes them, so remapping it would swap IN with OUT */
+                     : (kind == 'X' && ty == COMP_OPAMP) ? oa_order[t]
                      : t;
             nl_set_net(circuit, p, slot, tok[1 + t]);
             if (nl_is_ground(tok[1 + t])) needs_ground = 1;
