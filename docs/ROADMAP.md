@@ -1,5 +1,87 @@
 # Roadmap
 
+## The BJT's charge storage destabilises the transient above ~200 kHz (2026-09-07, OPEN)
+
+Found while checking EE_Review's AC claims, and it is the most serious open item here: a
+transient carrying a BJT with TF/CJE/CJC set does not just lose accuracy at high frequency, it
+diverges, and it reports the divergence as a gain.
+
+The evidence, all on EE_Review's m05l24 (a wideband common-emitter, series peaking, expected
+bandwidth about 26 MHz):
+
+  with the 2N3904 part (TF 301.2 ps, CJE 4.493 pF, CJC 3.638 pF)
+      flat and correct at 9.40 dB to about 90 kHz, then collapses; above 300 kHz the sweep
+      reports 270 dB and then 440 dB out of a stage with 9 dB of gain
+  with the generic NPN (TF = CJE = CJC = 0)
+      flat 9.35 dB to 8 MHz, rolls off smoothly, -3 dB at 27.0 MHz, phase walking 176 -> 92
+      degrees. Clean to 100 MHz.
+
+Ruled out, each by its own control: the peaking inductor (replacing it with a 1 mohm resistor
+does not help, and using 1e-15 H instead was itself a bad control - Geq = dt/L made the matrix
+conditioning worse and muddied the first attempt); the drive level (100x larger moves nothing,
+which is what says this is not a resolution floor); the floating output node (a 1 Mohm load
+does not help); the source impedance; and any general frequency ceiling - a plain RC low-pass
+sweeps to 10 MHz at exactly -20 dB/decade with -90 degrees of phase.
+
+The same circuit's DC operating point is fine and its residual is 5.6e-15 A, so this is the
+integrator and the charge companion, not the device equations.
+
+What this costs today: no RF or wideband question can be answered with a real transistor model.
+m05l24 only agreed with the course after the transistor was made charge-free, which is a
+workaround and not an answer - the very capacitances the lesson is ABOUT are the ones that have
+to be switched off to measure it.
+
+Where it is, and it is NOT where the first guess put it. stamp_junction_cap is a proper
+implicit backward-Euler companion: G = C/dt goes into A and Ieq = G*v_prev into b, with v_prev
+from the last accepted step. Nothing explicit-in-time about it. The problem is one level up, in
+the CAPACITANCE ITSELF:
+
+    cbe = tf * fabs(Gm) + junction_cj(cje, vje, Vbe)
+
+Gm and Vbe both come from the previous Newton iterate, so cbe is re-evaluated every iteration -
+and dC/dVbe is never stamped anywhere. Gm is exponential in Vbe, so a millivolt of movement in
+the base-emitter voltage moves the diffusion capacitance by 4 %, and the iteration correcting
+for that has no term in A telling it so. This is exactly the failure this codebase already has
+a name for: a term in b with no partner in A demotes Newton to fixed-point. Fixed-point
+converges while the term is small and stops converging when it dominates.
+
+Which is why the size of gm decides it. m05l24 runs at Ic = 3.83 mA against m05l15's 1.38 mA -
+2.8x the gm, so 2.8x the diffusion capacitance AND 2.8x the sensitivity of that capacitance to
+Vbe. m05l15 stays stable to 1.7 MHz; m05l24 fails at 200 kHz. The ordering fits.
+
+The fix is to stamp the derivative: the charge is q = C(V)*V, so the Jacobian entry is
+dq/dV = C + V dC/dV, not C alone. --restamp-test is the suite that should have caught a
+Jacobian entry this far from the residual it belongs to, and did not, because it has no case
+that drives a transistor with charge storage hard enough to matter.
+
+## The frequency sweep read phase off a crossing of zero (2026-09-07, FIXED)
+
+simulation_freq_sweep found the output's rising ZERO crossing to measure phase. Probe an
+amplifier's collector - 8.2 V of bias with millivolts of signal on it - and the output never
+goes negative, no crossing is ever found, and the phase is reported as 0.0 degrees at every
+frequency in the sweep. Not as an error; as a number, in the same column as the real ones.
+
+It survived because every circuit it had been tried on was probed after a coupling capacitor,
+where the output is referred to ground. It crosses the output's own mean now, taken over the
+two cycles before the measurement window.
+
+--bode-test also gained a superposition check: the same RC swept with the source on a 5 V DC
+offset must return identical dB, because a linear circuit's AC response cannot depend on its
+DC. That one passed the moment it was written - it was aimed at a suspicion that the sweep
+started each point from a zeroed state, and the suspicion was wrong.
+
+## What the corpus still cannot answer (2026-09-07)
+
+EE_Review ships 194 SPICE files. 165 solve clean, 8 refuse for reasons we agree on, and the
+rest are blocked on elements this reader has no model for:
+
+  X SPDT_SWITCH / ANALOG_SWITCH / SR_LATCH / SHIFT_REGISTER and 30 other names   70 lines
+  K L1 L2 0.98 - coupled inductors, which the transformer part could serve         6 lines
+
+Only X OPAMP is honoured. Guessing a short for ANALOG_SWITCH would tie a node to ground and
+guessing an open would be luck, not a model - so they stay refused until there is a part
+behind the name.
+
 ## 34 wires that claim a join the netlist does not have (2026-09-06, 32 FIXED, 34 LEFT)
 
 **Digital Clock is done: 32 of the original 66, now 0.** The survey below predicted that thirty-two

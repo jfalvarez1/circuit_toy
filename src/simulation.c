@@ -2636,6 +2636,21 @@ bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
         double out_zero_cross_time = 0;
         double prev_in = 0, prev_out = 0;
         bool found_in_zero = false, found_out_zero = false;
+        /* The crossing has to be of the output's OWN mean, not of zero.
+         *
+         * A probe on an amplifier's collector sits at its bias - 8.2 V on one of the course's
+         * wideband stages - with a few millivolts of signal on top. It never goes negative, so
+         * a detector looking for a rising crossing of zero never fires, found_out_zero stays
+         * false, and the phase is reported as 0.0 degrees at every frequency in the sweep. Not
+         * as an error: as a number, in the same column as the real ones. Probing after a
+         * coupling capacitor happens to work, which is why this survived - every circuit this
+         * was tried on had its output referred to ground.
+         *
+         * The mean is taken over the two cycles BEFORE the measurement window, so it is a
+         * settled figure and the window itself stays a single pass. */
+        double dc_sum = 0;
+        int dc_n = 0;
+        double out_dc = 0;
 
         // Reset simulation state
         sim->time = 0;
@@ -2665,6 +2680,14 @@ bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
             double in_voltage = amplitude * sin(2 * M_PI * freq * t + ac_source->props.ac_voltage.phase);
             double out_voltage = simulation_get_node_voltage(sim, probe_node);
 
+            /* the two cycles before the window: the output's own DC level, so the crossing
+               detector below has something to cross that is not an accident of where ground is */
+            if (t >= measure_start - 2.0 * period && t < measure_start) {
+                dc_sum += out_voltage;
+                dc_n++;
+                out_dc = dc_n ? dc_sum / dc_n : 0.0;
+            }
+
             // Only measure during last 2 cycles
             if (t >= measure_start) {
                 if (in_voltage < in_min) in_min = in_voltage;
@@ -2677,8 +2700,9 @@ bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
                     in_zero_cross_time = t - dt * prev_in / (in_voltage - prev_in);
                     found_in_zero = true;
                 }
-                if (!found_out_zero && prev_out <= 0 && out_voltage > 0) {
-                    out_zero_cross_time = t - dt * prev_out / (out_voltage - prev_out);
+                if (!found_out_zero && prev_out <= out_dc && out_voltage > out_dc) {
+                    double a = prev_out - out_dc, b = out_voltage - out_dc;
+                    out_zero_cross_time = t - dt * a / (b - a);
                     found_out_zero = true;
                 }
             }

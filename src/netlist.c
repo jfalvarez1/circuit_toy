@@ -399,8 +399,31 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
                     p->props.pwl_source.num_points = np;
                     p->props.pwl_source.repeat = false;
                     p->props.pwl_source.repeat_period = 0;
+                } else if (!_stricmp(w, "AC") && nt > 4) {
+                    /* "VIN in 0 AC 1" is a small-signal drive, not a 1 V battery.
+                     *
+                     * SPICE gives it a DC value of zero and an AC magnitude for .AC to use, and
+                     * this reader used to build a 1 V DC source instead - which biases the
+                     * circuit the source was supposed to leave alone. 18 of EE_Review's corpus
+                     * are written this way and every one of them is an amplifier input.
+                     *
+                     * It becomes an AC source carrying the magnitude and no offset, which makes
+                     * the operating point right. The FREQUENCY is the part the line does not
+                     * state, because in SPICE it never has to - a magnitude with no frequency is
+                     * exactly what .AC consumes. So the part keeps its own default and any
+                     * caller doing a sweep sets it; nothing here invents a number and reports it
+                     * as the caller's. */
+                    circuit_delete_component(circuit, p->id);
+                    p = component_create(COMP_AC_VOLTAGE, px, py);
+                    if (!p || circuit_add_component(circuit, p) < 0) { if (p) component_free(p); skipped++; continue; }
+                    snprintf(p->label, sizeof p->label, "%s", tok[0]);
+                    nl_set_net(circuit, p, 0, tok[1]); nl_set_net(circuit, p, 1, tok[2]);
+                    double mag = 0;
+                    nl_value(tok[4], &mag);
+                    p->props.ac_voltage.amplitude = mag;
+                    p->props.ac_voltage.offset = 0;
                 } else {
-                    const char *val = (!_stricmp(w, "DC") || !_stricmp(w, "AC")) ? (nt > 4 ? tok[4] : NULL) : w;
+                    const char *val = !_stricmp(w, "DC") ? (nt > 4 ? tok[4] : NULL) : w;
                     if (nl_value(val, &v)) p->props.dc_voltage.voltage = v;
                 }
                 break;

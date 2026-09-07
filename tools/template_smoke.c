@@ -498,6 +498,152 @@ static void roundtrip_leg(Circuit *a, const char *path,
  * printing a number from a solve that did not converge - a confident wrong answer is worse than
  * none, and worst of all when someone else is going to trust it.
  */
+/* --netlist-bode FILE FSTART FSTOP NPOINTS NODE [AMPLITUDE]: a frequency response on a
+ * written-down circuit, and the three numbers a course actually prints about one.
+ *
+ * The companion course states a midband gain and two corner frequencies for several amplifiers
+ * it has never simulated - its own solver stops at the operating point. This is the way to
+ * check those claims from outside both programs, so a disagreement is between two methods
+ * rather than between a program and its own arithmetic.
+ *
+ * What this is NOT, and it matters more here than anywhere else in this file: this is a
+ * TIME-DOMAIN sweep. It drives the circuit at each frequency, waits ten cycles, and measures
+ * peak-to-peak - so unlike a .AC analysis, which linearises about the operating point and has
+ * no amplitude at all, the answer here depends on how hard the circuit is driven. A netlist
+ * that says AC 1 on the input of an amplifier with 40 dB of gain is not asking for a 1 V
+ * drive; it is stating a magnitude for a linear analysis. Drive that literally and what comes
+ * back is a clipped stage's large-signal behaviour, correctly measured and answering a
+ * different question. AMPLITUDE overrides the source so the caller can stay in small signal,
+ * and the banner reports what was actually used.
+ *
+ * The corners are read off the measured points either side of the peak, so they are only as
+ * fine as the sweep: with N points per decade the corner is located to about a point's width,
+ * and the printed number says which two points it fell between rather than pretending to more.
+ */
+static int netlist_bode(const char *path, double f0, double f1, int npoints,
+                        const char *node_name, double amplitude) {
+    if (!path || !path[0]) { printf("netlist-bode: no file given\n"); return 2; }
+    if (!(f0 > 0) || !(f1 > f0)) { printf("netlist-bode: need 0 < fstart < fstop\n"); return 2; }
+    if (npoints < 4) npoints = 4;
+    if (npoints > MAX_FREQ_POINTS) npoints = MAX_FREQ_POINTS;
+    if (!node_name || !node_name[0]) { printf("netlist-bode: no output node named\n"); return 2; }
+
+    Circuit *c = circuit_create();
+    if (!c) return 1;
+    char err[256] = "";
+    int placed = netlist_build_file(c, path, err, sizeof err);
+    if (placed <= 0) {
+        printf("netlist-bode: %s: placed nothing (%s)\n", path, err[0] ? err : "no reason given");
+        circuit_free(c);
+        return 1;
+    }
+    if (err[0]) printf("netlist-bode: %s: %s\n", path, err);
+
+    int probe = -1;
+    for (int i = 0; i < c->num_nodes; i++)
+        if (_stricmp(c->nodes[i].name, node_name) == 0) { probe = c->nodes[i].id; break; }
+    if (probe < 0) {
+        printf("netlist-bode: %s: no net named '%s'. The nets in this circuit are:", path, node_name);
+        for (int i = 0, shown = 0; i < c->num_nodes && shown < 20; i++) {
+            if (!c->nodes[i].name[0]) continue;
+            bool dup = false;
+            for (int k = 0; k < i && !dup; k++)
+                if (strcmp(c->nodes[k].name, c->nodes[i].name) == 0) dup = true;
+            if (!dup) { printf(" %s", c->nodes[i].name); shown++; }
+        }
+        printf("\n");
+        circuit_free(c);
+        return 1;
+    }
+
+    Component *ac = NULL;
+    for (int i = 0; i < c->num_components; i++)
+        if (c->components[i]->type == COMP_AC_VOLTAGE) { ac = c->components[i]; break; }
+    if (!ac) {
+        printf("netlist-bode: %s: no AC source. Write the input as 'VIN in 0 AC <magnitude>'\n", path);
+        circuit_free(c);
+        return 1;
+    }
+    if (amplitude > 0) ac->props.ac_voltage.amplitude = amplitude;
+    double drive = ac->props.ac_voltage.amplitude;
+
+    Simulation *sim = simulation_create(c);
+    if (!sim || !simulation_dc_analysis(sim)) {
+        printf("netlist-bode: %s: no operating point, so there is nothing to be small about\n", path);
+        if (sim) simulation_free(sim);
+        circuit_free(c);
+        return 1;
+    }
+
+    printf("netlist-bode: %s: %d parts, probe '%s', drive %.4g Vpk on %s, %d points %.4g - %.4g Hz\n",
+           path, placed, node_name, drive, ac->label, npoints, f0, f1);
+    printf("  TIME-DOMAIN sweep, not a linearised .AC: ten cycles per point, peak-to-peak over the\n"
+           "  last two. The answer therefore depends on the drive level - too large and this\n"
+           "  measures a clipped stage, correctly, and answers a different question than the one\n"
+           "  a small-signal gain figure asks.\n");
+
+    if (!simulation_freq_sweep(sim, f0, f1, 0, probe, npoints)) {
+        printf("netlist-bode: the sweep did not run: %s\n", simulation_get_error(sim));
+        simulation_free(sim); circuit_free(c);
+        return 1;
+    }
+    FreqResponsePoint pts[MAX_FREQ_POINTS];
+    int n = simulation_get_freq_response(sim, pts, MAX_FREQ_POINTS);
+    if (n < 4) {
+        printf("netlist-bode: %d points came back\n", n);
+        simulation_free(sim); circuit_free(c);
+        return 1;
+    }
+
+    int peak = 0;
+    for (int i = 1; i < n; i++) if (pts[i].magnitude_db > pts[peak].magnitude_db) peak = i;
+    double mid = pts[peak].magnitude_db;
+
+    printf("\n  %-14s %12s %12s\n", "freq (Hz)", "gain (dB)", "phase (deg)");
+    for (int i = 0; i < n; i++)
+        printf("  %-14.5g %12.3f %12.1f%s\n", pts[i].frequency, pts[i].magnitude_db,
+               pts[i].phase_deg, i == peak ? "   <- peak" : "");
+
+    /* The corners, by walking out from the peak until the response has fallen 3 dB. Reported as
+       the bracketing pair as well as the interpolated value, because a corner located between
+       two sweep points is known to a point's width and no better. */
+    /* A peak sitting on the first or last point is not a midband, it is the edge of the range.
+       This suite reported 177 dB as the "midband" of a stage with 20 dB of gain, because the
+       transient had gone unstable above 50 MHz and the largest number in the column won. The
+       peak of a band-limited response is INSIDE the band; if it is at an endpoint the sweep has
+       either not reached the flat region or has run past where it can still integrate. */
+    if (peak == 0 || peak == n - 1)
+        printf("\n  NOT A MIDBAND: the largest response is the %s point of the sweep, so this is\n"
+               "  the edge of the range and not a plateau. Either the flat region is outside the\n"
+               "  range, or the transient has stopped being solvable at this step size - ten\n"
+               "  cycles at %.4g Hz is %.3g s in steps of %.3g s. Move the range before reading\n"
+               "  anything below as a gain.\n",
+               peak == 0 ? "lowest" : "highest", pts[peak].frequency,
+               10.0 / pts[peak].frequency, 1.0 / (100.0 * pts[peak].frequency));
+
+    printf("\n  midband %.2f dB at %.5g Hz\n", mid, pts[peak].frequency);
+    for (int dir = -1; dir <= 1; dir += 2) {
+        int i = peak;
+        while (i + dir >= 0 && i + dir < n && pts[i + dir].magnitude_db > mid - 3.0) i += dir;
+        int j = i + dir;
+        if (j < 0 || j >= n) {
+            printf("  %s corner: not inside the swept range - the response is still within 3 dB at %.5g Hz\n",
+                   dir < 0 ? "lower" : "upper", pts[i].frequency);
+            continue;
+        }
+        double a = pts[i].magnitude_db, b = pts[j].magnitude_db;
+        double t = (a - b) > 1e-9 ? (a - (mid - 3.0)) / (a - b) : 0.0;
+        double fa = log10(pts[i].frequency), fb = log10(pts[j].frequency);
+        printf("  %s corner: %.5g Hz  (between the %.5g and %.5g Hz points)\n",
+               dir < 0 ? "lower" : "upper", pow(10.0, fa + t * (fb - fa)),
+               pts[i].frequency, pts[j].frequency);
+    }
+
+    simulation_free(sim);
+    circuit_free(c);
+    return 0;
+}
+
 /* --netlist-trace FILE TSTOP NPOINTS: a transient on a written-down circuit, reported as numbers.
  *
  * --netlist-solve answers a DC question and the templates answer their own; there was no way to
@@ -8180,6 +8326,135 @@ static int bode_test(void) {
         printf("[ OK ] bode  the source is back the way the sweep found it\n");
     }
 
+    /* Superposition: the same sweep with the source sitting on a DC offset.
+     *
+     * This is a law, not a second table of numbers. The circuit is linear, so its response to
+     * the AC part cannot depend on the DC part - move the source up 5 V and every magnitude in
+     * dB must come back identical. Anything else is not a transfer function being measured.
+     *
+     * It is here because the sweep starts each frequency point from a ZEROED solution rather
+     * than from the operating point, so what it measures is the circuit turning on. With no
+     * offset there is nothing to turn on and the RC test above passes; with an offset the
+     * output has 5 V to charge through RC = 100 us, and at the top of this sweep ten cycles is
+     * only 500 us, so a decaying DC ramp is still running through the two cycles being measured
+     * and inflates the peak-to-peak it reads. Every AC-coupled amplifier has exactly that
+     * shape and a much longer time constant, which is the case this suite never had.
+     *
+     * The tolerance is tight on purpose: these are two measurements of the same thing by the
+     * same method, so they should agree far better than either agrees with the closed form. */
+    checks++;
+    {
+        FreqResponsePoint zero_pts[MAX_FREQ_POINTS];
+        int nz = n;
+        for (int i = 0; i < n && i < MAX_FREQ_POINTS; i++) zero_pts[i] = pts[i];
+
+        Component *ac = NULL;
+        for (int i = 0; i < c->num_components; i++)
+            if (c->components[i]->type == COMP_AC_VOLTAGE) { ac = c->components[i]; break; }
+
+        double worst_sup = 0, worst_sup_at = 0;
+        int compared = 0;
+        if (!ac) {
+            printf("[FAIL] bode  no AC source to offset, so superposition went unchecked\n");
+            fails++;
+        } else {
+            double orig_offset = ac->props.ac_voltage.offset;
+            ac->props.ac_voltage.offset = 5.0;
+            simulation_dc_analysis(sim);
+            if (!simulation_freq_sweep(sim, 100.0, 20000.0, 0, probe_node, 40)) {
+                printf("[FAIL] bode  the offset sweep did not run: %s\n", simulation_get_error(sim));
+                fails++;
+            } else {
+                FreqResponsePoint off_pts[MAX_FREQ_POINTS];
+                int no = simulation_get_freq_response(sim, off_pts, MAX_FREQ_POINTS);
+                for (int i = 0; i < no && i < nz; i++) {
+                    if (fabs(off_pts[i].frequency - zero_pts[i].frequency) > 1e-6) continue;
+                    double d = fabs(off_pts[i].magnitude_db - zero_pts[i].magnitude_db);
+                    compared++;
+                    if (d > worst_sup) { worst_sup = d; worst_sup_at = off_pts[i].frequency; }
+                }
+                if (compared < 10) {
+                    printf("[FAIL] bode  only %d points lined up between the two sweeps\n", compared);
+                    fails++;
+                } else if (worst_sup > 0.30) {
+                    printf("[FAIL] bode  a 5 V DC offset moved the AC response by %.2f dB at %.0f Hz."
+                           " The circuit is linear, so it cannot - the sweep is measuring the"
+                           " circuit charging, not its transfer function\n", worst_sup, worst_sup_at);
+                    fails++;
+                } else {
+                    printf("[ OK ] bode  a 5 V DC offset moves the response by %.3f dB over %d points"
+                           " - superposition holds, so the sweep is measuring steady state\n",
+                           worst_sup, compared);
+                }
+            }
+            ac->props.ac_voltage.offset = orig_offset;
+        }
+    }
+
+    /* The same RC, lifted off ground, so the probe sits on a bias the way a collector does.
+     *
+     * The sweep used to read phase from the output's rising crossing of ZERO. The template
+     * above has its output referred to ground, so the crossing is always there and the check
+     * passes - and every circuit this sweep had ever been pointed at was the same shape. Put a
+     * DC offset under the whole network and the output never goes negative: no crossing is
+     * found, and the phase comes back 0.0 degrees at every frequency, as a number rather than
+     * as an error.
+     *
+     * A shifted RC has the same transfer function it had before, so the oracle is the one
+     * already used above - and this is why the offset goes under the DIVIDER rather than on the
+     * source, which superposition already showed the sweep is immune to. */
+    checks++;
+    {
+        Circuit *sc = circuit_create();
+        char err[160] = "";
+        /* R to a 4 V rail instead of to the source's own return: the output sits at 4 V plus
+           the signal, and the transfer function from the AC source to it is unchanged. */
+        int placed = sc ? netlist_build(sc,
+            "VB bias 0 DC 4\n"
+            "VIN in bias SIN 0 1 1000\n"
+            "R1 in mid 1k\n"
+            "C1 mid bias 100n\n", err, sizeof err) : 0;
+        Simulation *ss = (placed > 0) ? simulation_create(sc) : NULL;
+        int pnode = -1;
+        if (sc) for (int i = 0; i < sc->num_nodes; i++)
+            if (strcmp(sc->nodes[i].name, "mid") == 0) { pnode = sc->nodes[i].id; break; }
+
+        if (!ss || pnode < 0 || !simulation_dc_analysis(ss) ||
+            !simulation_freq_sweep(ss, 200.0, 8000.0, 0, pnode, 16)) {
+            printf("[FAIL] bode  the biased RC would not sweep (%s)\n", err[0] ? err : "no reason");
+            fails++;
+        } else {
+            FreqResponsePoint bp[MAX_FREQ_POINTS];
+            int bn = simulation_get_freq_response(ss, bp, MAX_FREQ_POINTS);
+            int dead = 0;
+            double worst_bp = 0, worst_bp_at = 0;
+            for (int i = 0; i < bn; i++) {
+                if (bp[i].phase_deg == 0.0) dead++;
+                double want = -atan(bp[i].frequency / fc) * 180.0 / M_PI;
+                double d = fabs(bp[i].phase_deg - want);
+                if (d > worst_bp) { worst_bp = d; worst_bp_at = bp[i].frequency; }
+            }
+            if (bn < 8) {
+                printf("[FAIL] bode  the biased sweep returned %d points\n", bn);
+                fails++;
+            } else if (dead > 1) {
+                printf("[FAIL] bode  %d of %d points on a biased output report exactly 0.0 degrees."
+                       " The phase detector is looking for a crossing of ground on a node that"
+                       " never reaches it\n", dead, bn);
+                fails++;
+            } else if (worst_bp > 12.0) {
+                printf("[FAIL] bode  phase on a biased output is %.1f degrees out at %.0f Hz\n",
+                       worst_bp, worst_bp_at);
+                fails++;
+            } else {
+                printf("[ OK ] bode  a 4 V bias under the network leaves phase within %.1f degrees"
+                       " of -atan(f/fc) - the crossing is of the output's own mean\n", worst_bp);
+            }
+        }
+        if (ss) simulation_free(ss);
+        if (sc) circuit_free(sc);
+    }
+
     printf("\nbode-test: %d checks against the RC transfer function (fc = %.1f Hz), %d failed\n",
            checks, fc, fails);
     simulation_free(sim);
@@ -9861,6 +10136,15 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--text-test")) return text_test();
         else if (!strcmp(argv[i], "--wire-test")) return wire_test();
         else if (!strcmp(argv[i], "--netlist-solve") && i + 1 < argc) return netlist_solve(argv[i + 1]);
+        else if (!strcmp(argv[i], "--netlist-bode") && i + 5 < argc) {
+            const char *f = argv[i + 1];
+            double lo = atof(argv[i + 2]);
+            double hi = atof(argv[i + 3]);
+            int np = atoi(argv[i + 4]);
+            const char *nd = argv[i + 5];
+            double amp = (i + 6 < argc) ? atof(argv[i + 6]) : 0.0;
+            return netlist_bode(f, lo, hi, np, nd, amp);
+        }
         else if (!strcmp(argv[i], "--netlist-trace") && i + 3 < argc) {
             const char *f = argv[++i]; double ts = atof(argv[++i]); return netlist_trace(f, ts, atoi(argv[++i]));
         }
