@@ -1,8 +1,37 @@
 # Roadmap
 
-## 66 wires that claim a join the netlist does not have (2026-09-06, SURVEYED, NOT FIXED)
+## 34 wires that claim a join the netlist does not have (2026-09-06, 32 FIXED, 34 LEFT)
 
-`--wire-test` ships as a ratchet pinned at **66 false junctions and 47 loose ends** across 211
+**Digital Clock is done: 32 of the original 66, now 0.** The survey below predicted that thirty-two
+findings in one builder would be one repeated idiom rather than thirty-two mistakes, and that is
+what it was - one shape, two nets drawn down the same column, from four causes that all trace to
+the same root. The 760 px digit pitch makes offsets collide that look nowhere near each other in
+the source:
+
+| collision | cause |
+|---|---|
+| DP tie-off vs segment g | the tie-off turned out at `dpx+40` = dx+380, which is where `digit_block` brings segment g back up |
+| RST risers vs the previous digit's segment g | `cx-180` IS the previous digit's `dx+380`, because 760 - 620 = 140 |
+| the 24-hour reset line vs the same | identical offset, missed because it is written separately from the RST loop |
+| consecutive carries | all five shared one bus row and overlapped by the 100 px between their risers |
+
+Nothing electrical changed - no `node_ids` moved, only routing - and `--demo-test` still passes
+211/211, which is what says the clock still counts.
+
+**The first repair made it worse, which is worth recording.** Moving the RST risers to `cx-200`
+put them on the ground rail's LINE but not on a JUNCTION, and four of them hung in space: loose
+ends went 47 -> 51. A wire joins its two endpoints and nothing else - the rule the whole suite
+exists for, applied to the repair rather than the template. The fix was to split the rail at
+`cx-200` so the landing point is a real junction.
+
+**Two things were added while working, because the findings were hard to act on:** `WIRE_NOTES=200`
+lifts the note cap (12 by default so the battery stays readable), and each finding now names the
+WIRE it crosses as well as the node - without that you can see the problem on the canvas but
+cannot find the `TW()` that drew it.
+
+### What is left: 34 across 20 templates
+
+`--wire-test` ships as a ratchet, now pinned at **34 false junctions and 47 loose ends** across 211
 templates and 3632 wires. Those are ceilings to stop the numbers growing, not a clean bill: each
 one is a place where a node sits part-way along a wire it is not electrically joined to, so the
 drawing reads as a T-junction and the solver sees two nets. That is exactly how the R-2R ladder
@@ -16,20 +45,21 @@ very different things and only reading the builder tells you which:
 - **electrical** - the author meant them to join, and the circuit has been solving the wrong
   netlist ever since. This is the R-2R case, and it is the reason the suite exists.
 
-Until each is read, the 66 must be assumed to contain both.
+Until each is read, the remaining 34 must be assumed to contain both. Digital Clock's 32 all turned
+out to be the first kind — the drawing misled and the circuit was right — but that is one template's
+answer and not evidence about the others.
 
 **Where they are**, from `--wire-test` with its note cap lifted (it prints 12 by default):
 
 | count | template |
 |---|---|
-| 32 | Digital Clock (HH:MM:SS) |
 | 3 | Current Mirror · CMOS NAND (transistor level) · CMOS Inverter |
 | 2 | Wireless Link (TX/RX) · String DAC: DNL and INL · Strain Gauge Bridge · RL Step Response · RC Step Response · R-2R Ladder DAC · Peak Detector · Discrete Buck, Node by Node |
 | 1 | Non-Inv Amp · N-1 Contingency · Instr. Amp · Comparator · Common Gate (MOSFET) · Center-Tap Rect · CMOS Inverter (VTC) · 240/120 V Service · 21 Distance Zone 1 |
 
-Half of them are in one template. **Digital Clock** is the place to start: 32 findings in a single
-builder is far more likely to be one repeated wiring idiom than 32 separate mistakes, so reading
-it once probably explains — and fixes — a third of the total.
+**Digital Clock has been cleared** — see above. No single template dominates the rest, so they have
+to be read one builder at a time, though Current Mirror, CMOS NAND and CMOS Inverter at three each
+are the next most likely to be one idiom rather than three separate faults.
 
 Two of them are in **R-2R Ladder DAC**, which is worth noting because that template's rail bug was
 found and fixed by hand in September and it still carries two. Whatever they are, they were not

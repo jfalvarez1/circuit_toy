@@ -954,8 +954,15 @@ static int pin_test(void) {
    Mutation-checked at the value below: putting the cascode template's clamp back onto a
    mid-wire point takes these to 67 and 48 and fails the battery - while --ee-test, --geom-test,
    --conn-test and --pin-test all still pass it, because the clamp is inert at the operating
-   point and the drawing is the only thing that is wrong. */
-#define WIRE_FALSE_JUNCTION_BASELINE 66
+   point and the drawing is the only thing that is wrong.
+
+   Tightened 66 -> 34 on 2026-09-06 by fixing Digital Clock, which held 32 of the 66 on its own.
+   All of them were one shape - two nets drawn down the same column - and all four causes came
+   from the 760 px digit pitch making distant offsets collide: segment g returns at dx+380 while
+   the DP tie-off turned at dpx+40, the RST risers sat at cx-180 which is the PREVIOUS digit's
+   dx+380, the same for the 24-hour reset line, and consecutive carries shared one bus row and
+   overlapped by the 100 px between their risers. Nothing electrical changed; no node_ids moved. */
+#define WIRE_FALSE_JUNCTION_BASELINE 34
 #define WIRE_LOOSE_END_BASELINE      47
 
 static int wf_find(int *p, int i) { while (p[i] != i) { p[i] = p[p[i]]; i = p[i]; } return i; }
@@ -978,6 +985,14 @@ static int wire_idx_of(const Circuit *c, int id) {
 
 static int wire_test(void) {
     int total = 0, wires = 0, false_junctions = 0, loose_ends = 0;
+    /* Twelve by default so the battery output stays readable; WIRE_NOTES=200 to read the lot.
+       Whoever works this list down needs to see all of it, and editing the source to do that is
+       the sort of friction that leaves a ratchet permanently untightened. */
+    int note_cap = 12;
+    {
+        const char *e = getenv("WIRE_NOTES");
+        if (e && *e) { int v = atoi(e); if (v > 0) note_cap = v; }
+    }
     for (int t = 1; t < CIRCUIT_TYPE_COUNT; t++) {
         const CircuitTemplateInfo *ti = circuit_template_get_info((CircuitTemplateType)t);
         Circuit *c = circuit_create();
@@ -1018,9 +1033,12 @@ static int wire_test(void) {
                 if (da <= 5.0 || db <= 5.0) continue;               /* that IS an endpoint */
                 if (wire_seg_dist(px, py, ax, ay, bx, by) > 2.0) continue;
                 if (wf_find(parent, k) == wf_find(parent, ai)) continue;   /* drawn true */
-                if (false_junctions < 12)
-                    printf("[NOTE] wire  %-30s a node at (%.0f,%.0f) sits on a wire it is not joined to\n",
-                           ti ? ti->name : "?", px, py);
+                /* The wire's own endpoints as well as the node's position: without them the
+                   finding says where to look on the canvas but not which TW() drew it, and
+                   locating that by eye in a builder of two hundred wires is most of the work. */
+                if (false_junctions < note_cap)
+                    printf("[NOTE] wire  %-26s node (%.0f,%.0f) sits on the wire (%.0f,%.0f)-(%.0f,%.0f)\n",
+                           ti ? ti->name : "?", px, py, ax, ay, bx, by);
                 false_junctions++;
             }
         }
@@ -1048,7 +1066,7 @@ static int wire_test(void) {
                     }
                 }
                 if (!held) {
-                    if (loose_ends < 12)
+                    if (loose_ends < note_cap)
                         printf("[NOTE] wire  %-30s a wire ends at (%.0f,%.0f) with nothing there\n",
                                ti ? ti->name : "?", c->nodes[ei].x, c->nodes[ei].y);
                     loose_ends++;

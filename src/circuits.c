@@ -16304,12 +16304,16 @@ static int place_digital_clock(Circuit *circuit, float x, float y) {
         TW(TN(comx, gnd_rail), TN(cx - 140, gnd_rail));
         disp[i]->node_ids[4] = gnd_node;
 
-        /* the DP of every digit is off: tie it to the cathode it sits above */
+        /* The DP of every digit is off: tie it to the cathode it sits above.
+           Out to +100 and not +40. digit_block brings segments e, f and g back up the far side
+           of the display at dx+420, dx+400 and dx+380, and dx+380 is exactly where a +40 turn
+           put this one - so the DP tie-off and segment g ran down the same line, two nets on one
+           wire, in all six digits. That is 12 of --wire-test's 66 false junctions. */
         float dpx, dpy;
         component_get_terminal_pos(disp[i], 8, &dpx, &dpy);
-        TW(TN(dpx, dpy), TN(dpx + 40.0f, dpy));
-        TW(TN(dpx + 40.0f, dpy), TN(dpx + 40.0f, y + 240));
-        TW(TN(dpx + 40.0f, y + 240), TN(comx, y + 240));
+        TW(TN(dpx, dpy), TN(dpx + 100.0f, dpy));
+        TW(TN(dpx + 100.0f, dpy), TN(dpx + 100.0f, y + 240));
+        TW(TN(dpx + 100.0f, y + 240), TN(comx, y + 240));
         TW(TN(comx, y + 240), TN(comx, y + 200));
         disp[i]->node_ids[8] = gnd_node;
 
@@ -16319,7 +16323,12 @@ static int place_digital_clock(Circuit *circuit, float x, float y) {
     /* the bottom rail, chained left to right between the columns that land on it */
     for (int i = 0; i < 6; i++) {
         float cx = x + i * pitch;
-        TW(TN(cx - 140, gnd_rail), TN(i == 0 ? x - 260 : cx - pitch - 140, gnd_rail));
+        /* Split at cx-200, because that is where the RST risers come down and a wire joins its
+           two endpoints and nothing else - landing part-way along this rail would leave them
+           hanging. cx-140 cannot be used for them: the previous digit's segment e comes back up
+           there, 760 - 620 away. */
+        TW(TN(cx - 140, gnd_rail), TN(cx - 200, gnd_rail));
+        TW(TN(cx - 200, gnd_rail), TN(i == 0 ? x - 260 : cx - pitch - 140, gnd_rail));
     }
 
     /* one second in, at the right-hand end */
@@ -16348,11 +16357,15 @@ static int place_digital_clock(Circuit *circuit, float x, float y) {
             cnt[i]->node_ids[0] = tick;
         } else {
             float sx2 = cx + pitch;                     /* the digit to the right */
+            /* Each carry gets its own row on the bus. They all shared one, and each spans from
+               its own riser at cx-100 across to the next digit at cx+760 - so consecutive carries
+               overlapped by the 100 px between them, two nets on one line, five times over. */
+            float bus_y = carry_bus + 20.0f * (float)i;
             int cy = TN(sx2, y + 70);
             cnt[i + 1]->node_ids[6] = cy;
-            TW(cy, TN(sx2, carry_bus));
-            TW(TN(sx2, carry_bus), TN(riser, carry_bus));
-            TW(TN(riser, carry_bus), TN(riser, clk_y));
+            TW(cy, TN(sx2, bus_y));
+            TW(TN(sx2, bus_y), TN(riser, bus_y));
+            TW(TN(riser, bus_y), TN(riser, clk_y));
             TW(TN(riser, clk_y), TN(clk_x, clk_y));
             cnt[i]->node_ids[0] = cy;
         }
@@ -16362,8 +16375,11 @@ static int place_digital_clock(Circuit *circuit, float x, float y) {
        them - so they sit on the rail. */
     for (int i = 2; i < 6; i++) {
         float cx = x + i * pitch;
-        TW(TN(cx - 40, y + 40), TN(cx - 180, y + 40));
-        TW(TN(cx - 180, y + 40), TN(cx - 180, gnd_rail));
+        /* -200 and not -180. The pitch is 760, and digit_block brings segment g back up the far
+           side of the display at dx+380, which is cx+580 - exactly 760 - 180. So every RST riser
+           was drawn down the same line as the PREVIOUS digit's segment g. */
+        TW(TN(cx - 40, y + 40), TN(cx - 200, y + 40));
+        TW(TN(cx - 200, y + 40), TN(cx - 200, gnd_rail));
         TW(TN(cx - 180, gnd_rail), TN(cx - 140, gnd_rail));
         cnt[i]->node_ids[1] = gnd_node;
     }
@@ -16384,14 +16400,17 @@ static int place_digital_clock(Circuit *circuit, float x, float y) {
 
     int rst_out = TN(x + pitch + 380.0f, y - 260.0f);
     rst->node_ids[2] = rst_out;
+    /* -200, the same column the other four RST risers use. At -180 the hours-units riser landed
+       on x + pitch - 180 = 580, which is where the hours-tens digit brings segment g back up:
+       the reset line and a lit segment shared one wire down the sheet. */
     TW(rst_out, TN(x + pitch + 380.0f, y - 320.0f));
-    TW(TN(x + pitch + 380.0f, y - 320.0f), TN(x - 180, y - 320.0f));
-    TW(TN(x - 180, y - 320.0f), TN(x - 180, y + 40));
-    TW(TN(x - 180, y + 40), TN(x - 40, y + 40));
+    TW(TN(x + pitch + 380.0f, y - 320.0f), TN(x - 200, y - 320.0f));
+    TW(TN(x - 200, y - 320.0f), TN(x - 200, y + 40));
+    TW(TN(x - 200, y + 40), TN(x - 40, y + 40));
     cnt[0]->node_ids[1] = rst_out;
-    TW(TN(x - 180, y - 320.0f), TN(x + pitch - 180, y - 320.0f));
-    TW(TN(x + pitch - 180, y - 320.0f), TN(x + pitch - 180, y + 40));
-    TW(TN(x + pitch - 180, y + 40), TN(x + pitch - 40, y + 40));
+    TW(TN(x - 200, y - 320.0f), TN(x + pitch - 200, y - 320.0f));
+    TW(TN(x + pitch - 200, y - 320.0f), TN(x + pitch - 200, y + 40));
+    TW(TN(x + pitch - 200, y + 40), TN(x + pitch - 40, y + 40));
     cnt[1]->node_ids[1] = rst_out;
 
     /* The hours' carry is where a day counter would go. Brought out to a marked pin rather than
