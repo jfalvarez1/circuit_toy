@@ -27,9 +27,33 @@ not the iteration cap - raising MAX_ITERATIONS from 50 to 500 changes the answer
 Newton is in a limit cycle rather than converging slowly. The suspicion is the circuit's output
 node, where a PNP mirror's collector faces an NPN collector: two current sources, with the
 voltage between them set only by the Early effect, so the Jacobian is nearly singular there and
-GMIN at 1e-12 does nothing to condition it. The standard answers are gmin stepping and source
-stepping, neither of which this solver has. That is the next thing to build if operating points
-on high-impedance nodes matter.
+GMIN at 1e-12 does nothing to condition it.
+
+GMIN STEPPING WAS THE OBVIOUS ANSWER AND IT MADE THINGS WORSE. Written, measured, reverted, and
+recorded here because a negative result nobody wrote down gets re-derived by the next person.
+
+The version tried was the naive one: a fixed schedule 1e-3, 1e-4 ... 1e-11 and back to GMIN,
+each pass starting from the previous pass's solution, engaged only when the ordinary solve had
+already failed so nothing working could pay for it. Result:
+
+    m05l11-4     residual 0.000518 A  ->  24.02 A
+    corpus       no circuit changed status at all, in either direction
+
+So it helped nothing and cost a factor of 46000 on the one circuit it was written for. Two
+likely reasons, neither verified: the first rung at 1e-3 S is a 1 kohm resistor from every node
+to ground, which against a 100 uA tail is not a perturbation of this circuit but a different
+one, so the path being followed does not start near anything relevant; and a fixed decade march
+has no backtracking, where real implementations halve the step when a rung fails to converge
+rather than pressing on to the next.
+
+What to try instead, in order: SOURCE stepping, which ramps the supplies from zero and keeps
+the topology honest at every rung; adaptive rung size with backtracking if gmin stepping is
+attempted again; and, before either, simply asking whether the answer should be REFUSED. This
+circuit's output node may genuinely have no well-determined voltage at this model's accuracy -
+the residual gate already says NOT A SOLUTION, and that is not the wrong answer to give.
+
+Keep the pattern in mind from the sweep bug two entries down: the fix that presents itself for
+a symptom is not evidence about the cause.
 
 A note on the guard, because the first one written for this was worthless: a diode-connected
 transistor converges without limiting, and so does a bare differential pair with a mirror load.

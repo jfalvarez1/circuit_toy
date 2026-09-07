@@ -823,6 +823,13 @@ static int netlist_solve(const char *path) {
        because every number below is worth exactly what this is: the convergence test measures
        the last step, not the residual, so "converged" on its own means very little. */
     printf("  residual (A*x - b at the solver's own final iterate): %.4g A\n", sim->dc_residual);
+    /* Whether Newton MET its tolerance is a different fact from how far the answer is from
+       solving, and printing only the second hides which of the two failed. A stalled iteration
+       reports convergence a long way from a root; one stopped by the iteration cap may be
+       sitting on one. */
+    printf("  Newton: %s\n", sim->dc_converged
+           ? "met its step tolerance"
+           : "ran out of iterations without meeting its step tolerance");
     if (sim->dc_residual > 1e-6)
         printf("  NOT A SOLUTION - the equations are not satisfied at this point. Nothing below\n"
                "  is an operating point; treat it as where Newton stopped, not where the circuit sits.\n");

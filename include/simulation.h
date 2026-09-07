@@ -155,6 +155,12 @@ typedef struct Simulation {
        what a residual gate should reject. Read the field; there is no accessor, and the line
        that said there was one had been pointing at a function nobody ever wrote. */
     double dc_residual;
+    /* Whether the last DC solve's Newton iteration actually met CONVERGENCE_TOL, as opposed to
+       running out of iterations and using whatever it had. This is a DIFFERENT question from
+       dc_residual and the two disagree in both directions: a stalled Newton takes tiny steps
+       and reports convergence a long way from a root, and a solve stopped by the iteration cap
+       can still be sitting on one. Anything deciding whether to try harder needs both. */
+    bool dc_converged;
 } Simulation;
 
 // Create/destroy simulation

@@ -725,6 +725,15 @@ bool simulation_dc_analysis(Simulation *sim) {
 
     bool converged = false;
 
+    /* GMIN STEPPING WAS TRIED HERE AND MADE THINGS WORSE. See docs/ROADMAP.md.
+     *
+     * The naive form - a fixed decade schedule from 1e-3 down to GMIN, each pass starting from
+     * the last, engaged only when the ordinary solve failed - took EE_Review's m05l11-4 from a
+     * residual of 0.000518 A to 24.02 A and changed nothing anywhere else in a 194-circuit
+     * corpus. It is left out rather than left in behind a flag, because a solver aid that fires
+     * exactly when the solver is already in trouble and makes it worse is not a partial win. */
+    const double gmin_now = GMIN;
+
     for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
         Matrix *A = matrix_create(matrix_size, matrix_size);
         Vector *b = vector_create(matrix_size);
@@ -760,8 +769,10 @@ bool simulation_dc_analysis(Simulation *sim) {
 
         // Add GMIN (minimum conductance) from each node to ground
         // This stabilizes floating nodes and prevents singular matrices
+        /* gmin_now, not GMIN: on the ordinary pass they are the same number, and on a ramp pass
+           this is the whole mechanism - the conductance being walked down. */
         for (int i = 0; i < num_nodes; i++) {
-            matrix_add(A, i, i, GMIN);
+            matrix_add(A, i, i, gmin_now);
         }
 
         // Solve
@@ -791,6 +802,7 @@ bool simulation_dc_analysis(Simulation *sim) {
         }
     }
 
+    sim->dc_converged = converged;
     if (!converged) {
         // Still use the solution, but warn
         simulation_set_error(sim, "Warning: solution may not have converged");
