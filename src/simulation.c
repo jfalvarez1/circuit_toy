@@ -2591,6 +2591,7 @@ bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
     sim->freq_sweep_complete = false;
     sim->freq_sweep_cancel = false;
     sim->freq_response_count = 0;
+    sim->freq_points_failed = 0;
     sim->freq_sweep_progress = 0;
     sim->freq_sweep_total = num_points;
 
@@ -2652,28 +2653,41 @@ bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
         int dc_n = 0;
         double out_dc = 0;
 
-        // Reset simulation state
+        /* Back to the OPERATING POINT for each frequency, not to zero volts.
+         *
+         * Zeroing every node is the initial condition of a circuit with the power off. For a
+         * divider it costs nothing - the RC low-pass this sweep was written against settles
+         * within a couple of cycles at every frequency in its range, which is why zeroing
+         * survived. For anything biased it is a different circuit: a transistor at 0 V is cut
+         * off, and ten cycles at 4 MHz is 2.5 us, which is not enough time for the bias to
+         * re-establish through parts of the network that were never meant to carry a step. The
+         * measurement then reports the amplifier's turn-on, correctly, as its gain.
+         *
+         * The operating point is the right initial condition for a small-signal measurement by
+         * definition - it is the point the response is small ABOUT. */
         sim->time = 0;
-        if (sim->solution) {
-            for (int j = 0; j < sim->solution_size; j++) {
-                vector_set(sim->solution, j, 0);
-            }
-        }
-        if (sim->prev_solution) {
-            for (int j = 0; j < sim->solution_size; j++) {
-                vector_set(sim->prev_solution, j, 0);
-            }
-        }
+        if (sim->solution && keep_solution)
+            for (int j = 0; j < sim->solution_size && j < keep_solution->size; j++)
+                vector_set(sim->solution, j, vector_get(keep_solution, j));
+        if (sim->prev_solution && keep_solution)
+            for (int j = 0; j < sim->solution_size && j < keep_solution->size; j++)
+                vector_set(sim->prev_solution, j, vector_get(keep_solution, j));
 
         // Run simulation
         double measure_start = (num_cycles - 2) * period;
+        bool stepped_ok = true;
         for (int step = 0; step < num_steps; step++) {
             sim->time_step = dt;
             /* simulation_step advances sim->time by dt itself. Adding it again here ran the clock
                at 2 dt per solve: the companion models integrated one dt while the source's phase
                and the analytic reference below moved two, so magnitude and phase were both read
                off a circuit being driven at twice the rate the integrator thought. */
-            simulation_step(sim);
+            /* What this returns is the whole difference between a measurement and a number.
+               A rejected step leaves sim->time where it was, so the loop runs out before
+               reaching measure_start, out_min and out_max keep their sentinels, and their
+               difference is reported as a gain. --netlist-trace has always checked this; the
+               sweep threw it away. */
+            if (!simulation_step(sim)) { stepped_ok = false; break; }
 
             // Get input (AC source output) and output voltages
             double t = sim->time;
@@ -2708,6 +2722,14 @@ bool simulation_freq_sweep(Simulation *sim, double start_freq, double stop_freq,
             }
             prev_in = in_voltage;
             prev_out = out_voltage;
+        }
+
+        /* Nothing to report for a point that did not run, or that ran and never reached the
+           window it was going to be measured in. Dropped rather than stored with a placeholder:
+           a gap in a Bode plot is read as a gap, where -120 dB is read as a measurement. */
+        if (!stepped_ok || in_max < in_min || out_max < out_min) {
+            sim->freq_points_failed++;
+            continue;
         }
 
         // Calculate magnitude and phase

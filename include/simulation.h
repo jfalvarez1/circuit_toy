@@ -128,6 +128,13 @@ typedef struct Simulation {
     // Threading support for frequency sweep
     int freq_sweep_progress;        // Current point being processed (0 to num_points-1)
     int freq_sweep_total;           // Total number of points
+    /* Frequencies whose transient would not step. The sweep used to discard what
+       simulation_step returned, so a point the solver could not compute still produced a
+       number: sim->time never reached the measurement window, out_min and out_max kept their
+       +/-1e30 sentinels, and the peak-to-peak of those came out as 270 dB, 440 dB, or the
+       -120 dB floor - printed in the same column as the measured ones. A point that could not
+       be solved is not stored now, and this says how many there were. */
+    int freq_points_failed;
     bool freq_sweep_cancel;         // Request to cancel sweep
 
     /* Compiled programs for the programmable blocks on the sheet. They live here rather than in

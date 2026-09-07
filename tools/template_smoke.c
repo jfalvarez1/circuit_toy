@@ -589,8 +589,13 @@ static int netlist_bode(const char *path, double f0, double f1, int npoints,
     }
     FreqResponsePoint pts[MAX_FREQ_POINTS];
     int n = simulation_get_freq_response(sim, pts, MAX_FREQ_POINTS);
+    if (sim->freq_points_failed)
+        printf("\n  %d of %d frequencies would not step and are NOT in the table below. The\n"
+               "  transient did not converge there, so there is no measurement to report - the\n"
+               "  response is not flat across the gap, it is unknown across the gap.\n",
+               sim->freq_points_failed, npoints);
     if (n < 4) {
-        printf("netlist-bode: %d points came back\n", n);
+        printf("netlist-bode: only %d points could be measured out of %d\n", n, npoints);
         simulation_free(sim); circuit_free(c);
         return 1;
     }
@@ -8453,6 +8458,70 @@ static int bode_test(void) {
         }
         if (ss) simulation_free(ss);
         if (sc) circuit_free(sc);
+    }
+
+    /* A BIASED amplifier, because everything above this line is a passive network and a passive
+     * network cannot see the bug this is here for.
+     *
+     * The sweep used to zero every node at the start of each frequency point - the initial
+     * condition of a circuit with the power off. A divider does not care: it settles in a
+     * couple of cycles. An amplifier does: its transistor is cut off at 0 V, and ten cycles at
+     * a megahertz is not enough time for the bias to come back, so what gets measured is the
+     * stage turning on. On EE_Review's m05l24 that read as 270 dB of gain out of a stage with
+     * nine.
+     *
+     * The oracle is arithmetic done outside the solver: an emitter-degenerated common emitter
+     * has a gain of -RC/(RE + 1/gm), and with RE = 330 swamping 1/gm = 6.8 ohm that is
+     * -1000/337 = -2.97, or 9.5 dB, and it is deliberately insensitive to the transistor model
+     * - which is what makes it a usable expected value rather than a recording of today's
+     * answer. The frequency is well below any corner, so this is the midband and nothing else.
+     */
+    checks++;
+    {
+        Circuit *ac2 = circuit_create();
+        char err2[160] = "";
+        int placed2 = ac2 ? netlist_build(ac2,
+            "VCC vcc 0 DC 12\n"
+            "VIN in 0 SIN 0 0.001 100000\n"
+            "R1 vcc base 47k\n"
+            "R2 base 0 10k\n"
+            "RC vcc col 1k\n"
+            "RE emitter 0 330\n"
+            "CIN in base 1u\n"
+            "Q1 col base emitter 2N3904\n", err2, sizeof err2) : 0;
+        Simulation *as = (placed2 > 0) ? simulation_create(ac2) : NULL;
+        int cnode = -1;
+        if (ac2) for (int i = 0; i < ac2->num_nodes; i++)
+            if (strcmp(ac2->nodes[i].name, "col") == 0) { cnode = ac2->nodes[i].id; break; }
+
+        if (!as || cnode < 0 || !simulation_dc_analysis(as) ||
+            !simulation_freq_sweep(as, 100e3, 2e6, 0, cnode, 10)) {
+            printf("[FAIL] bode  the biased amplifier would not sweep (%s)\n", err2[0] ? err2 : "no reason");
+            fails++;
+        } else {
+            FreqResponsePoint ap[MAX_FREQ_POINTS];
+            int an = simulation_get_freq_response(as, ap, MAX_FREQ_POINTS);
+            double worst_g = 0, worst_g_at = 0;
+            for (int i = 0; i < an; i++) {
+                double d = fabs(ap[i].magnitude_db - 9.5);
+                if (d > worst_g) { worst_g = d; worst_g_at = ap[i].frequency; }
+            }
+            if (an < 8) {
+                printf("[FAIL] bode  the amplifier sweep returned %d of 10 points (%d would not step)\n",
+                       an, as->freq_points_failed);
+                fails++;
+            } else if (worst_g > 1.0) {
+                printf("[FAIL] bode  a biased common-emitter reads %.2f dB at %.0f Hz against"
+                       " -RC/(RE + 1/gm) = 9.5 dB. The sweep is not measuring it about its"
+                       " operating point\n", 9.5 + (worst_g), worst_g_at);
+                fails++;
+            } else {
+                printf("[ OK ] bode  a biased common-emitter is within %.2f dB of -RC/(RE + 1/gm)"
+                       " over %d points - the sweep starts from the operating point\n", worst_g, an);
+            }
+        }
+        if (as) simulation_free(as);
+        if (ac2) circuit_free(ac2);
     }
 
     printf("\nbode-test: %d checks against the RC transfer function (fc = %.1f Hz), %d failed\n",

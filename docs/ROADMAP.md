@@ -1,6 +1,69 @@
 # Roadmap
 
-## The BJT's charge storage destabilises the transient above ~200 kHz (2026-09-07, OPEN)
+## The frequency sweep measured every amplifier's turn-on (2026-09-07, FIXED)
+
+The entry below this one is kept deliberately, wrong diagnosis and all, because the way it was
+wrong is the useful part. Read it as a record of a wrong turn, not as an open item - the
+finding it describes is real and the cause it names is not.
+
+simulation_freq_sweep set every node to zero volts at the start of each frequency point. That
+is the initial condition of a circuit with the power off. For the RC low-pass this suite was
+written against it costs nothing, because a divider settles within a couple of cycles at every
+frequency in its range - which is exactly why it survived. For anything BIASED it is a
+different circuit: a transistor at 0 V is cut off, and ten cycles at 4 MHz is 2.5 us, nowhere
+near long enough for the bias to re-establish. What came back was the amplifier's turn-on,
+measured correctly, reported as its gain.
+
+It restores the operating point instead now, which is the right initial condition for a
+small-signal measurement by definition - it is the point the response is small ABOUT.
+
+EE_Review's m05l24 with the real 2N3904 model, before and after:
+
+    before   flat to 90 kHz, then collapse; 270 dB and 440 dB above 300 kHz
+    after    smooth to 200 MHz, -3 dB at 18.0 MHz, phase walking 172 -> 21 degrees
+
+Two other things in the sweep, both found while chasing this and both real:
+
+  It discarded what simulation_step returned. A rejected step leaves sim->time where it was,
+  so the loop ran out before reaching the measurement window, out_min and out_max kept their
+  +/-1e30 sentinels, and the difference of THOSE was reported as a gain. --netlist-trace has
+  always checked this. A point that cannot be solved is now dropped and counted, because a gap
+  in a Bode plot reads as a gap where -120 dB reads as a measurement.
+
+  It assigns sim->time_step directly rather than calling simulation_set_time_step. Harmless
+  today because adaptive stepping defaults off, and a trap the moment anyone turns it on:
+  simulation_step reads dt_actual when adaptive is enabled, so the step the sweep chose would
+  be ignored. Left as written, noted here.
+
+## What that first diagnosis got wrong, and why it is worth keeping (2026-09-07, CLOSED)
+
+The reasoning below was careful, checked against the source, consistent with every measurement
+taken at the time, and wrong. It is kept because the failure was not in the evidence but in
+what was never tested.
+
+The observation was real: with the 2N3904 part the sweep diverged above ~200 kHz, and with a
+chargeless NPN the same circuit was clean to 100 MHz. From there the argument ran to
+stamp_junction_cap, found that cbe = TF*Gm + Cje(Vbe) is evaluated from the previous Newton
+iterate with dC/dVbe stamped nowhere, and concluded - correctly, as a fact about the code -
+that this is a term in b with no partner in A. It even predicted the right ordering: m05l24
+runs at 2.8x m05l15's gm and failed at 200 kHz where m05l15 survived to 1.7 MHz.
+
+Every step of that is true. It is still not why the sweep was broken. The charge-free
+transistor helped for a different reason than the one assumed: a cut-off transistor with no
+charge storage re-establishes its bias fast enough to be measured within ten cycles, and one
+with charge storage does not. The capacitances were a symptom of the zeroed initial condition,
+not a cause.
+
+What would have caught it, and what was skipped: the SAME CIRCUIT THROUGH THE OTHER PATH.
+--netlist-trace at 5 MHz on m05l24, with the real 2N3904, is stable and reads 9.16 dB. One
+command. It was run eventually and it ended the investigation immediately, because it isolates
+the sweep from the model - and the model had been the suspect for an hour by then.
+
+The missing dC/dVbe term in the Jacobian is still real and is still unstamped. It is not
+causing this, and there is now no measurement that says it causes anything, so it is not an
+open item - it is a note for whoever next sees Newton stall on a transistor at high current.
+
+## The BJT's charge storage destabilises the transient above ~200 kHz (2026-09-07, WRONG - see above)
 
 Found while checking EE_Review's AC claims, and it is the most serious open item here: a
 transient carrying a BJT with TF/CJE/CJC set does not just lose accuracy at high frequency, it
