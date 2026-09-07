@@ -1119,9 +1119,30 @@ static int pin_test(void) {
    from the 760 px digit pitch making distant offsets collide: segment g returns at dx+380 while
    the DP tie-off turned at dpx+40, the RST risers sat at cx-180 which is the PREVIOUS digit's
    dx+380, the same for the 24-hour reset line, and consecutive carries shared one bus row and
-   overlapped by the 100 px between their risers. Nothing electrical changed; no node_ids moved. */
-#define WIRE_FALSE_JUNCTION_BASELINE 34
-#define WIRE_LOOSE_END_BASELINE      47
+   overlapped by the 100 px between their risers. Nothing electrical changed; no node_ids moved.
+
+   Tightened 34 -> 24 and 47 -> 27 on 2026-09-07, and again the findings were idioms rather than
+   incidents - three of them, each repeated across templates:
+
+     A WIRE RUN TO A GROUND'S ORIGIN. A ground's pin is at (0,-20) from where it is placed, so a
+     wire drawn to the placement point passes straight THROUGH the pin and hangs 20 px past it:
+     a false junction at the pin and a loose end beyond, from one line. Four templates.
+
+     A DC SOURCE AT ROTATION 90. The part is already vertical - its pins are (0,-40) and (0,+40)
+     - so 90 lays it on its side and its pins move to (-40,0) and (+40,0) while the wires below
+     still run to where a vertical source's pins would be. The node_ids override kept every one
+     of these electrically correct, so they solved perfectly while drawing leads that end in
+     open space beside the symbol. Strain Gauge Bridge, R-2R (four sources), String DAC.
+
+     A NODE MADE AND NEVER USED. series_series_shunt declared all six of its nodes up front and
+     used four; TN() creates a node whether or not anything wires to it, so the two spare ones
+     sat in the middle of the single wire that spans them. Two templates, four findings, and
+     nothing wrong with either picture except the two nodes nobody had asked for.
+
+   211/211 demo checks still pass and the residual gate is unchanged, which is what says none of
+   this moved a net. */
+#define WIRE_FALSE_JUNCTION_BASELINE 24
+#define WIRE_LOOSE_END_BASELINE      27
 
 static int wf_find(int *p, int i) { while (p[i] != i) { p[i] = p[p[i]]; i = p[i]; } return i; }
 static void wf_union(int *p, int a, int b) { a = wf_find(p, a); b = wf_find(p, b); if (a != b) p[a] = b; }

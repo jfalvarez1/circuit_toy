@@ -9758,10 +9758,21 @@ static Component *square_source(Circuit *circuit, float x, float y, double f) {
 }
 // source(0,20) -> series part A (horizontal at x+60) -> series part B (x+160) -> node (x+220) -> shunt part (vertical) -> gnd
 static int series_series_shunt(Circuit *circuit, float x, float y, Component *src, Component *a, Component *b, Component *sh) {
-    int sp = TN(x, y + 20), al = TN(x + 20, y + 20), ar = TN(x + 100, y + 20), bl = TN(x + 120, y + 20), br = TN(x + 200, y + 20), n = TN(x + 220, y + 20);
-    TW(sp, al); if (b) { TW(ar, bl); TW(br, n); } else TW(ar, n);
+    /* bl and br are created only when there IS a middle part. TN() makes a node whether or not
+       anything ends up using it, so declaring all six up front left two unused nodes at
+       (120,20) and (200,20) - sitting in the middle of the single wire that spans 100 to 220
+       when b is NULL. Two false junctions on a picture with nothing wrong in it, in the two
+       step-response templates and anything else that passes NULL here. */
+    int sp = TN(x, y + 20), al = TN(x + 20, y + 20), ar = TN(x + 100, y + 20), n = TN(x + 220, y + 20);
+    TW(sp, al);
+    if (b) {
+        int bl = TN(x + 120, y + 20), br = TN(x + 200, y + 20);
+        TW(ar, bl); TW(br, n);
+        b->node_ids[0] = bl; b->node_ids[1] = br;
+    } else {
+        TW(ar, n);
+    }
     src->node_ids[0] = sp; a->node_ids[0] = al; a->node_ids[1] = ar;
-    if (b) { b->node_ids[0] = bl; b->node_ids[1] = br; }
     sh->node_ids[0] = n;
     Component *g = add_comp(circuit, COMP_GROUND, x + 220, y + 120, 0);
     connect_terminals(circuit, sh, 1, g, 0);
@@ -15108,7 +15119,11 @@ static int place_ee_strain_bridge(Circuit *circuit, float x, float y) {
 
     /* 5 V excitation, out to the left. Its two rails join the bridge's rails end-on, so nothing
        doubles back along a segment that is already there. */
-    Component *vex = add_comp(circuit, COMP_DC_VOLTAGE, x - 340, y - 60, 90);
+    /* Rotation 0, because a DC source is ALREADY vertical - its pins are (0,-40) and (0,+40).
+       At 90 it lies down, its pins move to (-40,0) and (+40,0), and the two wires below run to
+       where the pins would have been. The node_ids override kept it electrically right, so it
+       solved perfectly while drawing two wires that end beside the symbol in open space. */
+    Component *vex = add_comp(circuit, COMP_DC_VOLTAGE, x - 340, y - 60, 0);
     if (!vex) return 0;
     vex->props.dc_voltage.voltage = 5.0;
     vex->node_ids[0] = TN(x - 340, y - 100);
@@ -15118,8 +15133,11 @@ static int place_ee_strain_bridge(Circuit *circuit, float x, float y) {
     TW(TN(x - 340, y - 20), TN(x - 340, y + 160));
     TW(TN(x - 340, y + 160), TN(x - 120, y + 160));
 
+    /* A ground's PIN is at (0,-20) from its origin, so a wire run to the origin passes straight
+       through the pin and carries on 20 px past it: a false junction at the pin and a loose end
+       beyond. The wire stops at the pin. */
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 220, 0);
-    if (gnd) { gnd->node_ids[0] = TN(x, y + 220); TW(botm, TN(x, y + 220)); }
+    if (gnd) { gnd->node_ids[0] = TN(x, y + 200); TW(botm, TN(x, y + 200)); }
 
     /* The instrumentation amplifier the lesson uses, as an ideal difference amplifier of gain
        100: control terminals sense vplus against vminus, output drives `out` against ground.
@@ -15149,8 +15167,8 @@ static int place_ee_strain_bridge(Circuit *circuit, float x, float y) {
     if (g2) {
         int aret = TN(x + 440, y + 20);
         e->node_ids[3] = aret;
-        g2->node_ids[0] = TN(x + 440, y + 80);
-        TW(aret, TN(x + 440, y + 80));
+        g2->node_ids[0] = TN(x + 440, y + 60);
+        TW(aret, TN(x + 440, y + 60));
     } else {
         e->node_ids[3] = botm;
     }
@@ -15590,7 +15608,10 @@ static int place_ee_dac_r2r(Circuit *circuit, float x, float y) {
     static const double bit[4] = { 0.0, 5.0, 0.0, 5.0 };     /* b0, b1, b2, b3 */
     for (int i = 0; i < 4; i++) {
         float bx = x - 300 + 200.0f * i;
-        Component *v = add_comp(circuit, COMP_DC_VOLTAGE, bx, y + 220, 90);
+        /* Rotation 0: a DC source is already vertical, pins at (0,-40) and (0,+40). At 90 it
+           lies down and its pins move to (-40,0) and (+40,0), leaving all eight wire ends below
+           in open space beside the four symbols. */
+        Component *v = add_comp(circuit, COMP_DC_VOLTAGE, bx, y + 220, 0);
         if (!v) return 0;
         v->props.dc_voltage.voltage = bit[i];
         v->node_ids[0] = TN(bx, y + 180);
@@ -15609,7 +15630,10 @@ static int place_ee_dac_r2r(Circuit *circuit, float x, float y) {
     TW(TN(x + 100, y + 300), TN(x + 300, y + 300));
 
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 360, 0);
-    if (gnd) { gnd->node_ids[0] = TN(x, y + 360); TW(TN(x, y + 300), TN(x, y + 360)); }
+    /* to the ground's PIN, which is (0,-20) from its origin, and not to the origin: a wire run
+       to the origin passes straight through the pin and hangs 20 px past it - a false junction
+       at the pin and a loose end beyond. */
+    if (gnd) { gnd->node_ids[0] = TN(x, y + 340); TW(TN(x, y + 300), TN(x, y + 340)); }
 
     /* The follower. Its + input is the ladder's output; the loop is closed by the unity gain
        itself, which is what makes 1/A the whole error. */
@@ -15622,16 +15646,18 @@ static int place_ee_dac_r2r(Circuit *circuit, float x, float y) {
     e->node_ids[1] = TN(x + 520, y - 40);
     e->node_ids[2] = TN(x + 600, y - 80);
     e->node_ids[3] = TN(x + 600, y - 40);
-    TW(TN(x + 600, y - 80), TN(x + 700, y - 80));
+    /* No output stub. A lead drawn off the buffer's output to (x+700, y-80) reaches nothing,
+       and `vout` is probed on the VCVS pin itself - so it was a wire whose only job was to look
+       like a connection. */
 
     Component *g2 = add_comp(circuit, COMP_GROUND, x + 560, y + 140, 0);
     if (g2) {
-        g2->node_ids[0] = TN(x + 560, y + 140);
+        g2->node_ids[0] = TN(x + 560, y + 120);      /* the PIN, 20 px above the origin */
         TW(TN(x + 520, y - 40), TN(x + 520, y + 80));
         TW(TN(x + 520, y + 80), TN(x + 560, y + 80));
         TW(TN(x + 600, y - 40), TN(x + 600, y + 80));
         TW(TN(x + 600, y + 80), TN(x + 560, y + 80));
-        TW(TN(x + 560, y + 80), TN(x + 560, y + 140));
+        TW(TN(x + 560, y + 80), TN(x + 560, y + 120));
     }
 
     add_label(circuit, x - 560, y - 140, "code 1010 = 10/16 of 5 V = 3.125 V");
@@ -15666,7 +15692,9 @@ static int place_ee_dac_string(Circuit *circuit, float x, float y) {
     TW(TN(x, y + 100), TN(x, y + 140));      /* t1 */
 
     /* 2.5 V reference, out to the left so its return does not run back down the string. */
-    Component *vref = add_comp(circuit, COMP_DC_VOLTAGE, x - 240, y - 180, 90);
+    /* Rotation 0: a DC source is already vertical, and at 90 its pins move to (-40,0)/(+40,0)
+       while the two wires below still run to where a vertical source's pins would be. */
+    Component *vref = add_comp(circuit, COMP_DC_VOLTAGE, x - 240, y - 180, 0);
     if (!vref) return 0;
     vref->props.dc_voltage.voltage = 2.5;
     vref->node_ids[0] = TN(x - 240, y - 220);
@@ -15677,7 +15705,10 @@ static int place_ee_dac_string(Circuit *circuit, float x, float y) {
     TW(TN(x, y + 220), TN(x, y + 300));
 
     Component *gnd = add_comp(circuit, COMP_GROUND, x, y + 360, 0);
-    if (gnd) { gnd->node_ids[0] = TN(x, y + 360); TW(TN(x, y + 300), TN(x, y + 360)); }
+    /* to the ground's PIN, which is (0,-20) from its origin, and not to the origin: a wire run
+       to the origin passes straight through the pin and hangs 20 px past it - a false junction
+       at the pin and a loose end beyond. */
+    if (gnd) { gnd->node_ids[0] = TN(x, y + 340); TW(TN(x, y + 300), TN(x, y + 340)); }
 
     /* The buffer sits on t2, the tap the lesson measures the error at. */
     Component *e = add_comp(circuit, COMP_VCVS, x + 300, y, 0);
@@ -15688,16 +15719,17 @@ static int place_ee_dac_string(Circuit *circuit, float x, float y) {
     e->node_ids[1] = TN(x + 260, y + 20);
     e->node_ids[2] = TN(x + 340, y - 20);
     e->node_ids[3] = TN(x + 340, y + 20);
-    TW(TN(x + 340, y - 20), TN(x + 440, y - 20));
+    /* No output stub: a lead to (x+440,y-20) reaches nothing, and `vout` is probed on the VCVS
+       pin itself, so its only job was to look like a connection. */
 
     Component *g2 = add_comp(circuit, COMP_GROUND, x + 300, y + 220, 0);
     if (g2) {
-        g2->node_ids[0] = TN(x + 300, y + 220);
+        g2->node_ids[0] = TN(x + 300, y + 200);      /* the PIN, 20 px above the origin */
         TW(TN(x + 260, y + 20), TN(x + 260, y + 160));
         TW(TN(x + 260, y + 160), TN(x + 300, y + 160));
         TW(TN(x + 340, y + 20), TN(x + 340, y + 160));
         TW(TN(x + 340, y + 160), TN(x + 300, y + 160));
-        TW(TN(x + 300, y + 160), TN(x + 300, y + 220));
+        TW(TN(x + 300, y + 160), TN(x + 300, y + 200));
     }
 
     add_label(circuit, x - 460, y - 280, "2.5 V reference");
