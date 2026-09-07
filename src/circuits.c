@@ -2019,8 +2019,13 @@ static int place_current_mirror(Circuit *circuit, float x, float y) {
     if (!vcc) return 0;
     vcc->props.dc_voltage.voltage = 12.0;
 
-    // Single ground at bottom center
-    Component *gnd = add_comp(circuit, COMP_GROUND, x + 100, y + 80, 0);
+    /* Single ground at bottom centre, and it has to sit BELOW the base bus.
+       The bus that ties the two bases together is routed under the transistors at
+       emit1_y + 40, and the ground pin was landing on exactly that line - so the base net and
+       the ground net were drawn down the same row, and a reader saw the bases shorted to
+       ground. Same shape as the Digital Clock's columns: two nets, one line, and nothing wrong
+       with the netlist. 60 px lower clears the bus with room to spare. */
+    Component *gnd = add_comp(circuit, COMP_GROUND, x + 100, y + 140, 0);
 
     Component *rref = add_comp(circuit, COMP_RESISTOR, x + 60, y - 60, 90);
     rref->props.resistor.resistance = 10000.0;
@@ -2279,7 +2284,14 @@ static int place_push_pull(Circuit *circuit, float x, float y) {
 
 // === CMOS INVERTER ===
 static int place_cmos_inverter(Circuit *circuit, float x, float y) {
-    Component *vdd = add_comp(circuit, COMP_DC_VOLTAGE, x - 40, y - 60, 0);
+    /* 20 px higher than it used to sit. The gate line runs from vin across to both gates along
+       y - 20, and Vdd's NEGATIVE pin was landing on exactly that line at (x-40, y-20) - so the
+       input net was drawn straight through the supply return, and a reader saw the gate shorted
+       to ground. Nothing electrical: the node_ids put every terminal on the right net, which is
+       why it solved and why only a suite reading the geometry could see it.
+       20 and not 40: at 40 the positive rail rises to y-140 and runs under the title, which
+       --geom-test calls a hard violation. This clears the gate line by 20 px and the text by 18. */
+    Component *vdd = add_comp(circuit, COMP_DC_VOLTAGE, x - 40, y - 80, 0);
     if (!vdd) return 0;
     vdd->props.dc_voltage.voltage = 5.0;
 

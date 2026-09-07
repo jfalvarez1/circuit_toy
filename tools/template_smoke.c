@@ -1140,8 +1140,23 @@ static int pin_test(void) {
      nothing wrong with either picture except the two nodes nobody had asked for.
 
    211/211 demo checks still pass and the residual gate is unchanged, which is what says none of
-   this moved a net. */
-#define WIRE_FALSE_JUNCTION_BASELINE 24
+   this moved a net.
+
+   Then 24 -> 20, and these two were worse than a stray node - they were two nets drawn on one
+   line, the Digital Clock's fault in a different template:
+
+     CURRENT MIRROR routed the base bus at emit1_y + 40, and the ground pin landed on exactly
+     that row. The base net and the ground net ran down the same line, so the drawing said the
+     bases were shorted to ground. The ground symbol is 60 px lower now.
+
+     CMOS INVERTER ran its gate line from vin across to both gates along y - 20, and Vdd's
+     NEGATIVE pin sat on that line. The input net was drawn through the supply return.
+
+   The CMOS repair is also a note on why the whole battery gets run rather than the one suite
+   being worked on: moving Vdd up by 40 cleared the wire finding and put the positive rail under
+   the title, which --geom-test calls a hard violation and --wire-test cannot see at all. 20 px
+   clears the gate line and the text both. */
+#define WIRE_FALSE_JUNCTION_BASELINE 20
 #define WIRE_LOOSE_END_BASELINE      27
 
 static int wf_find(int *p, int i) { while (p[i] != i) { p[i] = p[p[i]]; i = p[i]; } return i; }
