@@ -899,6 +899,10 @@ typedef struct Component {
     int sat_last_rail;                       // Op-amps: rail chosen in the previous Newton iteration (+1/-1/0)
     int sat_flips;
     int slew_latch;                          // Op-amps: -1/+1 while the output is slew-limited this step, 0 free
+    /* BJTs: the junction voltages the last stamp linearised at, so pn_limit can bound how far
+       the next one moves. Same role as mos_vds_lin below, and kept separate from op_vbe because
+       that one has to report the real terminal voltage to the properties panel. */
+    double bjt_vbe_lin, bjt_vbc_lin;
     double mos_vds_lin;                      // MOSFETs: the V_DS the last stamp linearised at.
                                              // Kept apart from props.mosfet.op_vds, which is the
                                              // real terminal voltage the properties panel shows -

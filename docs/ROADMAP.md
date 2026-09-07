@@ -1,5 +1,43 @@
 # Roadmap
 
+## A differential pair with a mirror load would not solve (2026-09-07, MOSTLY FIXED)
+
+EE_Review's m05l11-4 - a diff pair with a PNP current-mirror load, which is as ordinary as an
+analog circuit gets - stopped 2.876 A from satisfying KCL on a circuit whose tail current is
+1 mA. m05l11-5, the two-stage op-amp built on it, stopped 9.6 mA out.
+
+The cause was an asymmetry inside this program. A MOSFET's linearisation point has been
+limited since a 2N7000's drain came out at -42 V; mos_limit caps how far V_DS may move per
+iteration. A BJT's junction voltages had only an OVERFLOW CLAMP, [-5nVt, +40nVt], which keeps
+exp() finite and does nothing about the actual problem: a forward junction sitting at 0.6 V
+that one linear solve throws to 1.03 V is being asked for exp(0.43/0.0259) = 1.6e7 times its
+current. The next iteration answers with an equally violent swing back, and Newton rings.
+
+pn_limit is SPICE's pnjlim: above the critical voltage the junction moves by a logarithmic
+step, so the current changes by a bounded factor per iteration rather than an unbounded one.
+Like mos_limit it cannot move where Newton converges - at the fixed point vnew == vold and the
+limiter is the identity - only how it gets there.
+
+    m05l11-4   residual 2.876 A   ->   0.000518 A     still NOT A SOLUTION
+    m05l11-5   NOT A SOLUTION     ->   solved, 2.04e-10 A
+    corpus     2 not-a-solution   ->   1
+
+WHAT IS STILL OPEN: m05l11-4. A 5500x improvement and still 0.5 mA out on a 1 mA tail. It is
+not the iteration cap - raising MAX_ITERATIONS from 50 to 500 changes the answer by 20 %, so
+Newton is in a limit cycle rather than converging slowly. The suspicion is the circuit's output
+node, where a PNP mirror's collector faces an NPN collector: two current sources, with the
+voltage between them set only by the Early effect, so the Jacobian is nearly singular there and
+GMIN at 1e-12 does nothing to condition it. The standard answers are gmin stepping and source
+stepping, neither of which this solver has. That is the next thing to build if operating points
+on high-impedance nodes matter.
+
+A note on the guard, because the first one written for this was worthless: a diode-connected
+transistor converges without limiting, and so does a bare differential pair with a mirror load.
+It takes the gain stage and the output pair before the ringing shows. The check in
+--netlist-test is therefore the whole two-stage op-amp, and it asserts the RESIDUAL rather than
+any node voltage - which is the point, because the old code reported an operating point for
+that circuit with entirely plausible node voltages, and only |A*x - b| said it was not one.
+
 ## The frequency sweep measured every amplifier's turn-on (2026-09-07, FIXED)
 
 The entry below this one is kept deliberately, wrong diagnosis and all, because the way it was

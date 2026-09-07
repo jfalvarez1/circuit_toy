@@ -6779,6 +6779,69 @@ static int netlist_test(void) {
         printf("        %s\n", cases[i].why);
     }
 
+    /* A two-stage op-amp, checked on whether KCL holds rather than on any voltage.
+     *
+     * The oracle here is the residual, because convergence is the property under test and no
+     * node in this circuit has a value worth writing down by hand. A BJT's junction voltages
+     * were clamped to [-5nVt, +40nVt] - enough to keep exp() finite and nothing else. A forward
+     * junction at 0.6 V thrown to 1.03 V by one linear solve is being asked for
+     * exp(0.43/0.0259) = 1.6e7 times its current; the next iteration answers with an equally
+     * violent swing and Newton rings. MOSFETs have had mos_limit since a 2N7000's drain came
+     * out at -42 V. The BJT had nothing until pn_limit.
+     *
+     * It takes a circuit of this size to show it, which is why it is here and not in the table
+     * above: a diode-connected transistor converges fine either way, and so does a bare
+     * differential pair with a mirror load. This is EE_Review's m05l11-5 - diff pair, PNP
+     * mirror, gain stage with 30 pF of compensation, push-pull output - which stopped 9.6 mA
+     * from satisfying KCL and now lands at 2e-10 A. The tolerance is set well below the broken
+     * value and well above the working one, so it is testing convergence and not recording a
+     * number.
+     *
+     * The unusual thing about this check is that a FAILURE here is silent everywhere else: the
+     * old code reported an operating point for this circuit, with plausible node voltages, and
+     * only the residual said it was not a solution. */
+    {
+        total++;
+        Circuit *oc = circuit_create();
+        char oerr[160] = "";
+        int oplaced = oc ? netlist_build(oc,
+            "VCC vcc 0 DC 15\n"
+            "VEE 0 vee DC 15\n"
+            "Q1 c1 inm e12 2N3904\n"
+            "Q2 s2out inp e12 2N3904\n"
+            "Q3 c1 c1 vcc 2N3906\n"
+            "Q4 s2out c1 vcc 2N3906\n"
+            "ITAIL1 e12 vee DC 100u\n"
+            "Q5 s3in s2out vee 2N3904\n"
+            "R5 vcc s3in 10k\n"
+            "CC s2out s3in 30p\n"
+            "Q6 vcc s3in out 2N3904\n"
+            "Q7 vee s3in out 2N3906\n"
+            "RLOAD out 0 10k\n"
+            "RF inm out 10k\n"
+            "RI inp inm 10k\n", oerr, sizeof oerr) : 0;
+        Simulation *os = (oplaced > 0) ? simulation_create(oc) : NULL;
+        bool solved = os && simulation_dc_analysis(os);
+        double res = (os && solved) ? os->dc_residual : 1e30;
+        if (!solved) {
+            printf("FAIL netlist %-28s did not solve at all (%s)\n", "two-stage op-amp", oerr);
+            fails++;
+        } else if (!(res < 1e-6)) {
+            printf("FAIL netlist %-28s |A*x - b| = %.4g A. Newton stopped somewhere that is not a\n"
+                   "        solution - without limiting the junction voltages it rings instead of\n"
+                   "        converging, and reports plausible node voltages while doing it\n",
+                   "two-stage op-amp", res);
+            fails++;
+        } else {
+            printf(" OK  netlist %-28s |A*x - b| = %.3g A, so KCL actually holds at the answer\n",
+                   "two-stage op-amp", res);
+        }
+        printf("        a diff pair and a mirror alone converge without limiting; it takes the"
+               " gain stage and the output pair to show it\n");
+        if (os) simulation_free(os);
+        if (oc) circuit_free(oc);
+    }
+
     /* A table pasted onto a sheet that already has something on it must not land on top of it,
        and must not join to it by accident. */
     {

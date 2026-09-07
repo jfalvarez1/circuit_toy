@@ -2568,6 +2568,7 @@ static Component *subcircuit_instance(Component *comp, SubCircuitDef *def, int *
         arr[i].tline_ic_prev[0] = arr[i].tline_ic_prev[1] = 0;
         arr[i].sat_last_rail = 0; arr[i].sat_flips = 0; arr[i].slew_latch = 0;
         arr[i].mos_vds_lin = 0;
+        arr[i].bjt_vbe_lin = 0; arr[i].bjt_vbc_lin = 0;
         if (arr[i].type == COMP_SUBCIRCUIT) {
             /* never share the template's pointer - the nested block builds its own copies the
                first time it is stamped, so its state belongs to this instance too */
@@ -3393,6 +3394,41 @@ static double mos_limit(double vnew, double vold) {
     return vnew;
 }
 
+/* The same idea for a PN junction, where it matters far more, and where this program had only
+   an overflow guard.
+ *
+ * A BJT's junction voltages were clamped to [-5 nVt, +40 nVt] - about [-0.13, +1.03] V - which
+ * keeps exp() finite and does nothing about the actual problem. A forward junction sitting at
+ * 0.6 V that one linear solve throws to 1.03 V is being asked for exp(0.43/0.0259) = 1.6e7
+ * times the current it was carrying. The next iteration answers with an equally violent swing
+ * the other way, and Newton oscillates instead of converging. EE_Review's m05l11-4 - an
+ * ordinary differential pair with a PNP current-mirror load - stopped 2.876 A away from
+ * satisfying KCL, on a circuit whose tail current is 1 mA.
+ *
+ * This is SPICE's pnjlim. Above the critical voltage it lets the junction move by a
+ * LOGARITHMIC step rather than a linear one, so the current changes by a bounded factor per
+ * iteration instead of an unbounded one. Like mos_limit it cannot move where Newton converges,
+ * only how it gets there: the fixed point is where vnew == vold, and there the limiter is the
+ * identity.
+ *
+ * vcrit is the junction voltage at which the exponential's curvature starts to outrun a linear
+ * extrapolation - vt ln(vt / (sqrt(2) Is)) - so below it the ordinary Newton step is already
+ * well behaved and nothing is touched. */
+static double pn_limit(double vnew, double vold, double vt, double is) {
+    if (!(vt > 0) || !(is > 0)) return vnew;
+    double vcrit = vt * log(vt / (1.41421356 * is));
+    if (vnew > vcrit && fabs(vnew - vold) > 2.0 * vt) {
+        if (vold > 0) {
+            double arg = 1.0 + (vnew - vold) / vt;
+            vnew = (arg > 0) ? vold + vt * log(arg) : vcrit;
+        } else if (vnew > 0) {
+            /* coming up from cut-off: land on the exponential rather than leap over it */
+            vnew = vt * log(vnew / vt);
+        }
+    }
+    return vnew;
+}
+
 /* Capacitor branch companion: theta-method C, plus ESR / ESL / leakage when the part is
    not in ideal mode. Derivation (i = terminal 0 -> 1, K = (1-theta)/theta):
 
@@ -3928,6 +3964,13 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 Vbc = sign * (vB - vC);
                 Vce_real = sign * (vC - vE);
                 Vbe_raw = Vbe; Vbc_raw = Vbc;
+                /* Limit BEFORE the clamp. The clamp is an overflow guard and always was; on its
+                   own it lets a forward junction jump 0.6 -> 1.03 V in one iteration, which is
+                   a factor of 1.6e7 in current, and Newton rings instead of converging. */
+                Vbe = pn_limit(Vbe, comp->bjt_vbe_lin, nf * Vt, Is);
+                Vbc = pn_limit(Vbc, comp->bjt_vbc_lin, nf * Vt, Is);
+                comp->bjt_vbe_lin = Vbe;
+                comp->bjt_vbc_lin = Vbc;
                 Vbe = CLAMP(Vbe, -5*nf*Vt, 40*nf*Vt);
                 Vbc = CLAMP(Vbc, -5*nf*Vt, 40*nf*Vt);
             }

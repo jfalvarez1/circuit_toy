@@ -152,7 +152,8 @@ typedef struct Simulation {
        The convergence test measures how far the last Newton step moved, which is a different
        question - against a near-singular Jacobian Newton stalls with tiny steps a long way from
        any root. Recording this does not change any verdict yet; it is the measurement that says
-       what a residual gate should reject. Read it with simulation_dc_residual(). */
+       what a residual gate should reject. Read the field; there is no accessor, and the line
+       that said there was one had been pointing at a function nobody ever wrote. */
     double dc_residual;
 } Simulation;
 
