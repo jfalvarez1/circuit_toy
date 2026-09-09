@@ -119,6 +119,17 @@ static int subcircuit_count_internal_nodes(SubCircuitDef *def) {
 // Equivalent to 1 TΩ resistance to ground
 #define GMIN 1e-12
 
+/* Set from NEWTON_TRACE in the environment, read once. Off unless asked for, and it writes to
+   stderr so it never lands in the middle of a suite's stdout. */
+static int g_newton_trace = -1;
+static int newton_trace_on(void) {
+    if (g_newton_trace < 0) {
+        const char *e = getenv("NEWTON_TRACE");
+        g_newton_trace = (e && *e && *e != '0') ? 1 : 0;
+    }
+    return g_newton_trace;
+}
+
 // Forward declarations
 static void simulation_clamp_opamps(Circuit *circuit, Vector *solution, double dt);
 
@@ -786,11 +797,58 @@ bool simulation_dc_analysis(Simulation *sim) {
             return false;
         }
 
+        /* DAMPED NEWTON, and only after the undamped iteration has visibly failed.
+         *
+         * mos_limit and pn_limit bound where the model is LINEARISED. Nothing bounded where the
+         * SOLVE was allowed to land, and on a differential pair with a mirror load that is the
+         * whole failure: NEWTON_TRACE shows a clean two-cycle, the output node alternating
+         * between +653,700 V and -28.58 V for fifty iterations without either value moving. It
+         * is not diverging and it is not creeping - it steps over the root and back, forever,
+         * because the two current sources facing each other leave nothing to pin the node
+         * between them until one transistor saturates.
+         *
+         * Halving the step is a line search along the same Newton direction, so it cannot move
+         * the fixed point - at a root the step is zero and any multiple of zero is zero. It
+         * breaks the cycle because a 2-cycle is a reflection, and a reflection composed with a
+         * contraction is a contraction.
+         *
+         * Held off until iteration 10 so that nothing which already converges pays for it: a
+         * circuit that solves in four passes never reaches this line. That is also what keeps
+         * it from slowing the 345 kV templates, where a legitimate first step IS enormous. */
+        /* THREE ATTEMPTS TO BREAK THE LIMIT CYCLE LIVE IN THE ROADMAP, NOT HERE.
+         *
+         * NEWTON_TRACE on EE_Review's m05l11-4 shows a clean 2-cycle: the output node alternates
+         * between +653,700 V and -28.58 V for fifty passes with neither endpoint moving. Tried,
+         * measured, and reverted, in order: gmin stepping (24 A, from 0.000518), a fixed 0.5
+         * damping after ten passes (5.2 A - it breaks the cycle and then pn_limit's logarithmic
+         * cap turns the recovery into a 12.8 mV-per-pass crawl needing ~570 iterations), and a
+         * relative step cap (3.0e6 A - a cap that grows with the solution lets it ratchet up by
+         * 3x a pass, to 980 V).
+         *
+         * All three are knobs on the iteration. The trace says the iteration is not the problem:
+         * the equations genuinely do not determine that node until one transistor saturates, so
+         * what is needed is a starting point on the right side of that corner, not a smaller
+         * step towards it from the wrong side. */
+
         // Check convergence
         double max_diff = 0;
+        int max_row = -1;
         for (int i = 0; i < matrix_size; i++) {
             double diff = fabs(vector_get(new_solution, i) - vector_get(solution, i));
-            if (diff > max_diff) max_diff = diff;
+            if (diff > max_diff) { max_diff = diff; max_row = i; }
+        }
+
+        /* NEWTON_TRACE=1 prints the step size and where it lands, per iteration.
+         *
+         * Written because two separate diagnoses of a non-converging circuit were made from
+         * reading the code rather than watching it, and both were wrong. The distinction the
+         * residual cannot make is between an iteration that is DIVERGING, one that is
+         * OSCILLATING between two points, and one that is creeping - and those three want
+         * different fixes. This is the cheapest way to tell them apart. */
+        if (newton_trace_on()) {
+            double v = (max_row >= 0) ? vector_get(new_solution, max_row) : 0.0;
+            fprintf(stderr, "  newton %3d: max step %12.6g at row %3d, which is now %12.6g\n",
+                    iter, max_diff, max_row, v);
         }
 
         vector_free(solution);

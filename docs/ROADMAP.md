@@ -29,6 +29,41 @@ node, where a PNP mirror's collector faces an NPN collector: two current sources
 voltage between them set only by the Early effect, so the Jacobian is nearly singular there and
 GMIN at 1e-12 does nothing to condition it.
 
+WHAT IT IS, MEASURED RATHER THAN REASONED (2026-09-09). NEWTON_TRACE=1 prints the step size and
+where it lands per iteration, and one run ends the guesswork:
+
+    newton   8: max step  653785 at row 5, which is now  653756
+    newton   9: max step  653785 at row 5, which is now  -28.5753
+    newton  10: max step  653785 at row 5, which is now  653756     ...for fifty passes
+
+A clean TWO-CYCLE. The output node steps to +653,700 V and back to -28.58 V and neither endpoint
+moves. Not diverging and not creeping: it steps over the root and back, forever. Worth having as
+a fact, because three separate diagnoses of this circuit were made by reading code and all three
+were wrong.
+
+EE_Review solves it, and their answer says why: V(out) = -508.22 mV with Q2 SATURATED at
+Vce = 139 mV. While both transistors stay in forward-active the output node is two current
+sources facing each other and the equations genuinely do not determine it - the corner the
+solution sits on is a region change. Their identity V(out) = V(emit) + Vce(Q2) holds against
+these numbers too: -647 + 139 = -508.
+
+A THIRD AND FOURTH FIX WERE TRIED ON 2026-09-09 AND BOTH MADE IT WORSE:
+
+    damped Newton, 0.5 after ten passes    0.000518 A -> 5.234 A
+    relative step cap, 10 V + 2x scale     0.000518 A -> 3.037e6 A
+
+The damping is the instructive failure. It DOES break the cycle - the trace shows a clean
+geometric walk down from 653 kV - and then pn_limit's logarithmic cap turns the last stretch
+into a crawl of 12.8 mV per pass, needing about 570 iterations to arrive. Raising
+MAX_ITERATIONS to SPICE's itl1 of 100 only gets it to 6.17 V. The step cap fails the other way:
+a cap that grows with the solution lets the node ratchet up 3x a pass, to 980 V.
+
+The pattern across all three attempts is the useful part: every one is a knob on the ITERATION,
+and the trace says the iteration is not what is broken. The solution is on the far side of a
+region change, so what is needed is a STARTING POINT already on that side, not a smaller step
+towards it from the wrong one. Source stepping remains the candidate - ramp the supplies from
+zero and the transistors cross their region boundaries in the order the physical circuit would.
+
 GMIN STEPPING WAS THE OBVIOUS ANSWER AND IT MADE THINGS WORSE. Written, measured, reverted, and
 recorded here because a negative result nobody wrote down gets re-derived by the next person.
 

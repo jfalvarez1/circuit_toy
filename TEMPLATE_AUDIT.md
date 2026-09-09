@@ -27,6 +27,34 @@ The six EE_Review templates are audited a second way as well, by `--ee-test`: th
 voltages are held to the numbers the course publishes for the same netlists, so a value changed
 on either side fails. That is an agreement between two programs rather than a block here.
 
+## Drawings corrected, no nets changed (2026-09-09, v3.32.0)
+
+`--wire-test` reads GEOMETRY rather than nets, and the ten templates below were drawing
+something their netlists did not say. Every one of them solved correctly before and after -
+each carried a `node_ids` assignment putting every terminal on the right net - so `--pin-test`,
+`--conn-test` and `--demo-test` all passed them and the answers were right. Only the picture
+was wrong, which is the whole reason that suite exists.
+
+Three idioms, repeated:
+
+| Idiom | Templates | What a reader saw |
+|---|---|---|
+| A wire run to a ground's ORIGIN, 20 px past its pin | Strain Gauge Bridge, R-2R Ladder DAC, String DAC (x2 each) | a junction at the pin and a lead hanging past it |
+| A DC source at rotation 90, which lays it on its side | Strain Gauge Bridge, R-2R (four sources), String DAC | two leads ending in open space beside the symbol |
+| Two NETS drawn down one LINE | Current Mirror, CMOS Inverter | the mirror's bases shorted to ground; the input shorted to the supply return |
+
+The last row is the serious one and it is the Digital Clock's fault in new places. Current
+Mirror routed its base bus at `emit1_y + 40` and the ground pin landed on that exact row; CMOS
+Inverter ran its gate line along `y - 20` with Vdd's negative pin sitting on it.
+
+Also fixed once in a shared helper rather than twice in templates: `series_series_shunt`
+declared six nodes and used four, and `TN()` creates a node whether or not anything wires to it,
+so the two spares sat in the middle of the wire that spans them - RC Step Response and RL Step
+Response, and any future template that passes NULL for the middle part.
+
+Ratchet: 66 -> 34 -> 24 -> 20 false junctions, 47 -> 27 loose ends. 211/211 demo checks and an
+unchanged residual gate are what say no net moved.
+
 Nothing on that list is outstanding any more. **CCM vs DCM** came off it on 2026-08-30, when the
 runaway it was blocked on turned out not to reproduce in nine measured configurations. The
 **delay-line transmission line** came off it too and this line went stale saying otherwise until

@@ -918,6 +918,44 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.57 a second implementation read the same 194 circuits (2026-09-09, v3.32.0)
+
+The companion course shipped its corpus as SPICE. Running it here is a cross-check between two
+independent implementations, and it found six faults on this side that no suite had - every one
+of which produced a PLAUSIBLE ANSWER rather than an error, which is why they had survived.
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.57.1 | `[ ]` `--netlist-solve` on a file with `I1 0 n DC 250u` | 1.0 V across 4k, not 4.0 V from the part's 1 mA default |
+| 3.57.2 | `[ ]` A source written `V1 in 0 AC 1` | an AC source at 0 V DC, not a 1 V battery |
+| 3.57.3 | `[ ]` `XU1 0 vm out OPAMP` inverting, `XU1 in vm out` non-inverting | -0.99989 V and +1.09988 V: the pair, since one alone cannot catch a swap |
+| 3.57.4 | `[ ]` `XSW in mid ctl ANALOG_SWITCH`, control high then low | 9.10 V and 1.00 V on a 9k/1k divider |
+| 3.57.5 | `[ ]` `XU9 q 0 clk SHIFT_REGISTER` | dropped, not guessed at - q stays at 0.5 V |
+| 3.57.6 | `[ ]` `V1 in 0 PWL(0 2 1m 5)` | 2 V at t = 0, and the part's own demo waveform not used |
+| 3.57.7 | `[ ]` `python tools/stamp_wiring.py` | 27 part types stamp a current row, 27 own one |
+| 3.57.8 | `[ ]` `--bode-test` | 6 checks: magnitude, phase, source restored, superposition, a biased output's phase, a biased common-emitter |
+| 3.57.9 | `[ ]` A two-stage op-amp through `--netlist-test` | \|A·x - b\| below 1e-6, which is 0.15 A without junction limiting |
+| 3.57.10 | `[ ]` `NEWTON_TRACE=1 --netlist-solve` on a circuit that will not converge | per-pass step size and where it lands |
+| 3.57.11 | `[ ]` `--netlist-bode FILE 100 1e5 25 out` on an RC | corner within a sweep point of 1/(2πRC) |
+| 3.57.12 | `[ ]` **Automated:** the battery | `bash tools/run_audits.sh` - 77 suites, 0 failed |
+
+**Three of the six were invisible to every existing suite, and the reason is worth keeping.**
+The PWL and expression sources each had a complete, correct stamp and had never been allocated a
+matrix row for it, so both wrote into the first voltage source's current equation. The matrix
+was the right SIZE, the solve converged, and the wrong answer appeared somewhere else in the
+circuit. `tools/stamp_wiring.py` is the law rather than the incident: read the stamp switch,
+require every case that touches `voltage_var_idx` to appear in the list that hands those rows
+out. It found the second one immediately.
+
+**The frequency sweep had three faults and the RC it was tested against could see none of them.**
+It zeroed every node at each frequency point - the initial condition of a circuit with the power
+off - so an amplifier's turn-on was measured as its gain. It read phase from a crossing of
+ZERO, so any output sitting on a bias reported 0.0 degrees at every frequency. And it discarded
+what `simulation_step` returned, so a point that could not be solved still produced a number
+from the ±1e30 sentinels. A divider settles in two cycles and has no operating point to be
+wrong about; the new checks put a bias under the network and a biased common-emitter beside it,
+because **no passive network can see any of these at any tolerance**.
+
 ### 3.56 the largest unit was the wall clock, so the unit divides (2026-09-05)
 
 The first sharded CI run came out 360 s, 409 s, 775 s and 2031 s. All four legs held 22 or 23 of

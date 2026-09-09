@@ -9,11 +9,11 @@
      alongside the versioned one, so the link never needs editing and never goes stale. The
      versioned copy stays because the updater asks for it by name. -->
 
-**Latest Release: [v3.31.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.31.0)** (auto-updating from v3.4.0 on) · [all releases](https://github.com/jfalvarez1/circuit_toy/releases)
+**Latest Release: [v3.32.0](https://github.com/jfalvarez1/circuit_toy/releases/tag/v3.32.0)** (auto-updating from v3.4.0 on) · [all releases](https://github.com/jfalvarez1/circuit_toy/releases)
 
 A fully featured native desktop circuit simulator written in C with SDL2: an MNA analog +
 digital solver, a real-time bench oscilloscope with FFT and THD, 211 guided circuits from RC
-filters to power grids, SPICE import, and a 75-suite self-audit battery. Build, simulate and
+filters to power grids, SPICE import, and a 77-suite self-audit battery. Build, simulate and
 analyse circuits with a drag-and-drop schematic.
 
 The look is deliberately **synthwave** - magenta and cyan on deep violet, a CRT-style graticule
@@ -1099,6 +1099,8 @@ build/tools/template_smoke.exe --knob-test       # every template still converge
 build/tools/template_smoke.exe --trace "87 " 0.3 # per-node min/max over a run (debugging a template)
 build/tools/template_smoke.exe --netlist-solve x.net       # DC on a written-down circuit, with the residual
 build/tools/template_smoke.exe --netlist-trace x.net 60e-9 20  # transient on one, as numbers: waveform, peak, overshoot
+build/tools/template_smoke.exe --netlist-bode x.net 100 5e6 31 out 0.001  # frequency response: midband, both -3 dB corners, phase
+NEWTON_TRACE=1 build/tools/template_smoke.exe --netlist-solve x.net   # per-pass step size and where it lands, when a solve will not converge
 build/tools/template_smoke.exe --demo-test       # every template demonstrates its DemoKind contract
 build/tools/template_smoke.exe --osc-test        # oscillators really oscillate (add --osc-dt 5e-6)
 build/tools/template_smoke.exe --tesla-test      # spark-gap firings, ring frequency, toroid peak, streamer, tuned vs detuned
