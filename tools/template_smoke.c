@@ -830,7 +830,8 @@ static int netlist_solve(const char *path) {
     printf("  Newton: %s\n", sim->dc_converged
            ? "met its step tolerance"
            : "ran out of iterations without meeting its step tolerance");
-    if (sim->dc_residual > 1e-6)
+    bool invalid_solution = !isfinite(sim->dc_residual) || sim->dc_residual > 1e-6;
+    if (invalid_solution)
         printf("  NOT A SOLUTION - the equations are not satisfied at this point. Nothing below\n"
                "  is an operating point; treat it as where Newton stopped, not where the circuit sits.\n");
 
@@ -880,22 +881,18 @@ static int netlist_solve(const char *path) {
      * both be true of any solution. Summing the terminal currents at every node says which it
      * is - a genuinely bad solve, or a good solve being reported wrongly - and that distinction
      * is the whole difference between a bug in the solver and a bug in the display. */
-    /* Grouped by net NAME, not by node id.
-     *
-     * A written-down circuit is joined by its net names - every part keeps its own node and the
-     * name pass in circuit_build_node_map merges them - so two terminals on the same net hold
-     * DIFFERENT node ids. Summing by id caught one terminal of each net and declared Kirchhoff
-     * broken on a ten-volt divider, which is how this check got caught being wrong before it
-     * was believed about anything harder. */
-    double kcl_worst = 0.0, kcl_scale = 0.0;
+    /* Audit the solver's actual equivalence classes. Net names are case-insensitive,
+       and wires can join nodes with different names; either can fool a name-only sum. */
+    double kcl_worst = 0.0, kcl_scale = 0.0, kcl_ratio = 0.0;
     char kcl_where[NET_NAME_MAX] = "";
     for (int i = 0; i < c->num_nodes; i++) {
         const char *net = c->nodes[i].name;
         if (!net[0]) continue;
-        if (!_stricmp(net, "0") || !_stricmp(net, "gnd") || !_stricmp(net, "ground")) continue;
-        bool seen = false;                      /* one pass per distinct name */
+        int mapped = circuit_node_net(c, c->nodes[i].id);
+        if (mapped <= 0) continue;
+        bool seen = false;
         for (int j = 0; j < i && !seen; j++)
-            if (c->nodes[j].name[0] && !strcmp(c->nodes[j].name, net)) seen = true;
+            if (c->nodes[j].name[0] && circuit_node_net(c, c->nodes[j].id) == mapped) seen = true;
         if (seen) continue;
 
         double sum = 0.0, mag = 0.0;
@@ -903,21 +900,24 @@ static int netlist_solve(const char *path) {
             Component *p = c->components[k];
             if (!p) continue;
             for (int t = 0; t < p->num_terminals && t < MAX_TERMINALS; t++) {
-                Node *tn = circuit_get_node(c, p->node_ids[t]);
-                if (!tn || !tn->name[0] || strcmp(tn->name, net) != 0) continue;
+                if (circuit_node_net(c, p->node_ids[t]) != mapped) continue;
+                if (!isfinite(p->terminal_current[t])) invalid_solution = true;
                 sum += p->terminal_current[t];
                 if (fabs(p->terminal_current[t]) > mag) mag = fabs(p->terminal_current[t]);
             }
         }
-        if (fabs(sum) > kcl_worst) {
+        double ratio = fabs(sum) / (1e-6 * fmax(mag, 1.0) + 1e-9);
+        if (ratio > kcl_ratio) {
+            kcl_ratio = ratio;
             kcl_worst = fabs(sum); kcl_scale = mag;
             snprintf(kcl_where, sizeof kcl_where, "%s", net);
         }
     }
-    if (kcl_where[0] && kcl_worst > 1e-6 * (kcl_scale > 1.0 ? kcl_scale : 1.0) + 1e-9) {
+    if (kcl_where[0] && kcl_ratio > 1.0) {
+        invalid_solution = true;
         printf("  KCL VIOLATED at %s: terminal currents sum to %.4g A against a largest branch\n",
                kcl_where, kcl_worst);
-        printf("  of %.4g A. The solve reported success without satisfying its own equations.\n", kcl_scale);
+        printf("  of %.4g A. Terminal-current readback disagrees with the solved node currents.\n", kcl_scale);
     }
 
     /* A node far outside every supply in the circuit.
@@ -973,7 +973,7 @@ static int netlist_solve(const char *path) {
     }
     simulation_free(sim);
     circuit_free(c);
-    return 0;
+    return invalid_solution ? 1 : 0;
 }
 
 
@@ -6610,6 +6610,74 @@ static double nl_solve_net(const char *text, const char *net, int *ok) {
     return v;
 }
 
+/* Read terminal currents from a BJT stamp at an un-limited bias point. Keeping the
+   limiter at that point lets a finite difference measure the device equations themselves. */
+static void bjt_dc_stamp_at(Component *q, const double v[3], double jac[3][3], double current[3]) {
+    Matrix *a = matrix_create(3, 3);
+    Vector *b = vector_create(3), *x = vector_create(3);
+    if (!a || !b || !x) {
+        for (int r = 0; r < 3; r++) {
+            current[r] = NAN;
+            for (int c = 0; c < 3; c++) jac[r][c] = NAN;
+        }
+        matrix_free(a); vector_free(b); vector_free(x);
+        return;
+    }
+    int map[4] = {0, 1, 2, 3};
+    double sign = q->type == COMP_PNP_BJT ? -1.0 : 1.0;
+    q->bjt_vbe_lin = sign * (v[0] - v[2]);
+    q->bjt_vbc_lin = sign * (v[0] - v[1]);
+    for (int i = 0; i < 3; i++) vector_set(x, i, v[i]);
+    component_stamp(q, a, b, map, 3, 0.0, x, 1e9);
+    for (int r = 0; r < 3; r++) {
+        current[r] = -vector_get(b, r);
+        for (int c = 0; c < 3; c++) {
+            jac[r][c] = matrix_get(a, r, c);
+            current[r] += jac[r][c] * v[c];
+        }
+    }
+    matrix_free(a); vector_free(b); vector_free(x);
+}
+
+static int bjt_early_jacobian_test(void) {
+    int fails = 0;
+    for (int pnp = 0; pnp < 2; pnp++) {
+        Component *q = component_create(pnp ? COMP_PNP_BJT : COMP_NPN_BJT, 0, 0);
+        if (!q) { fails++; continue; }
+        component_apply_part(q, pnp ? "2N3906" : "2N3904");
+        for (int i = 0; i < 3; i++) q->node_ids[i] = i + 1;
+        double sign = pnp ? -1.0 : 1.0;
+        bool ok = true;
+        /* Saturation and forward active, at a nonzero emitter potential. Check every
+           row/column so a wrong sign or an omitted emitter stamp cannot hide. */
+        for (int active = 0; active < 2; active++) {
+            double v[3] = {sign * 0.94, sign * (active ? 5.3 : 0.44), sign * 0.3};
+            double jac[3][3], cur[3], ignored[3][3], hi[3], lo[3];
+            bjt_dc_stamp_at(q, v, jac, cur);
+            const double h = 1e-6;
+            for (int c = 0; c < 3; c++) {
+                double saved = v[c];
+                v[c] = saved + h; bjt_dc_stamp_at(q, v, ignored, hi);
+                v[c] = saved - h; bjt_dc_stamp_at(q, v, ignored, lo);
+                v[c] = saved;
+                for (int r = 0; r < 3; r++) {
+                    double numeric = (hi[r] - lo[r]) / (2*h);
+                    if (!isfinite(numeric) || !isfinite(jac[r][c]) || fabs(jac[r][c] - numeric) > fmax(1e-10, fabs(numeric)*1e-4)) {
+                        ok = false;
+                        printf("FAIL netlist %s %s Jacobian[%d,%d] stamp %.9g S, finite difference %.9g S\n",
+                               pnp ? "PNP" : "NPN", active ? "active" : "saturated", r, c, jac[r][c], numeric);
+                    }
+                }
+            }
+        }
+        if (!ok) fails++;
+        else printf(" OK  netlist %s Jacobian: all terminal derivatives match in active and saturation\n",
+                    pnp ? "PNP" : "NPN");
+        component_free(q);
+    }
+    return fails;
+}
+
 static int netlist_test(void) {
     int fails = 0, total = 0;
     printf("netlist-test: circuits written as text, placed, solved and checked\n\n");
@@ -6859,6 +6927,88 @@ static int netlist_test(void) {
         printf("        %s\n", cases[i].why);
     }
 
+    total += 2;
+    fails += bjt_early_jacobian_test();
+
+    /* EE_Review m05l11-4: an unloaded differential pair with a PNP mirror. The
+       missing Early derivative left the output cycling between +654 kV and -28.6 V.
+       Supplies and tail current must remain at full strength; a small residual alone
+       would also bless a solver that accidentally left its sources ramped down. */
+    {
+        total++;
+        Circuit *c = circuit_create();
+        char err[160] = "";
+        int placed = c ? netlist_build(c,
+            "VCC vcc 0 DC 6\nVEE 0 vee DC 6\n"
+            "VINP inp 0 SIN(0 5m 1k) AC 5m\nVINN inm 0 DC 0\n"
+            "Q3 c1 c1 vcc 2N3906\nQ4 out c1 vcc 2N3906\n"
+            "Q1 c1 inp emit 2N3904\nQ2 out inm emit 2N3904\n"
+            "ITAIL emit vee DC 1m\n", err, sizeof err) : 0;
+        Simulation *sim = placed > 0 ? simulation_create(c) : NULL;
+        bool ok = placed == 10 && sim && simulation_dc_analysis(sim);
+        double residual = ok ? sim->dc_residual : INFINITY;
+        if (ok) {
+            ok = sim->dc_converged && isfinite(residual) && residual < 1e-9;
+            int positive_rails = 0, negative_rails = 0, tails = 0;
+            for (int i = 0; i < c->num_nodes; i++) {
+                Node *node = &c->nodes[i];
+                if (!strcmp(node->name, "vcc")) {
+                    positive_rails++;
+                    if (fabs(node->voltage - 6.0) > 1e-8) ok = false;
+                }
+                if (!strcmp(node->name, "vee")) {
+                    negative_rails++;
+                    if (fabs(node->voltage + 6.0) > 1e-8) ok = false;
+                }
+            }
+            for (int i = 0; i < c->num_components; i++) {
+                Component *part = c->components[i];
+                if (part->type == COMP_DC_CURRENT) {
+                    tails++;
+                    if (fabs(part->terminal_current[0] - 1e-3) > 1e-9) ok = false;
+                }
+            }
+            if (!positive_rails || !negative_rails || tails != 1) ok = false;
+        }
+        if (!ok) fails++;
+        printf("%s netlist mirror-loaded differential pair: residual %.4g A at full source strength\n",
+               ok ? " OK " : "FAIL", residual);
+        if (sim) simulation_free(sim);
+        if (c) circuit_free(c);
+    }
+
+    /* An AC current source has a nonzero DC offset. Readback must use t=0 at the
+       operating point, then the accepted step's start time during the transient. */
+    {
+        total++;
+        Circuit *c = circuit_create();
+        char err[160] = "";
+        int placed = c ? netlist_build(c, "I1 0 n SIN(3m 100m 60)\nR1 n 0 100\n",
+                                       err, sizeof err) : 0;
+        Simulation *sim = placed > 0 ? simulation_create(c) : NULL;
+        Component *source = NULL;
+        if (c) for (int i = 0; i < c->num_components; i++)
+            if (c->components[i]->type == COMP_AC_CURRENT) source = c->components[i];
+        bool ok = source && sim && simulation_dc_analysis(sim);
+        double dc_current = ok ? source->terminal_current[0] : NAN;
+        if (!isfinite(dc_current) || fabs(dc_current - 0.003) > 1e-10) ok = false;
+        if (ok) {
+            simulation_set_time_step(sim, 2.5e-4);
+            for (int i = 0; i < 5 && ok; i++) {
+                double stamp_time = sim->time;
+                if (!simulation_step(sim)) { ok = false; break; }
+                double expected = 0.003 + 0.1 * sin(2 * M_PI * 60 * stamp_time);
+                double got = source->terminal_current[0];
+                if (!isfinite(got) || fabs(got - expected) > 1e-10) ok = false;
+            }
+        }
+        if (!ok) fails++;
+        printf("%s netlist AC-current readback: DC %.9g A (expect .003), five transient samples\n",
+               ok ? " OK " : "FAIL", dc_current);
+        if (sim) simulation_free(sim);
+        if (c) circuit_free(c);
+    }
+
     /* A two-stage op-amp, checked on whether KCL holds rather than on any voltage.
      *
      * The oracle here is the residual, because convergence is the property under test and no
@@ -6869,9 +7019,14 @@ static int netlist_test(void) {
      * violent swing and Newton rings. MOSFETs have had mos_limit since a 2N7000's drain came
      * out at -42 V. The BJT had nothing until pn_limit.
      *
+     * This floating-input stress fixture is derived from the course circuit; unlike the
+     * actual m05l11-5 corpus file it omits VINP. The full grounded-input circuit is checked
+     * separately by the CLI audit, which must reject its implausible source current.
+     * This check establishes only the numerical residual for the floating-input variant.
+     *
      * It takes a circuit of this size to show it, which is why it is here and not in the table
      * above: a diode-connected transistor converges fine either way, and so does a bare
-     * differential pair with a mirror load. This is EE_Review's m05l11-5 - diff pair, PNP
+     * differential pair with a mirror load. This is based on EE_Review's m05l11-5 - diff pair, PNP
      * mirror, gain stage with 30 pF of compensation, push-pull output - which stopped 9.6 mA
      * from satisfying KCL and now lands at 2e-10 A. The tolerance is set well below the broken
      * value and well above the working one, so it is testing convergence and not recording a
@@ -7049,7 +7204,7 @@ static int netlist_test(void) {
         }
     }
 
-    printf("\nnetlist-test: %d written circuits, %d that did not come out right\n", total, fails);
+    printf("\nnetlist-test: %d checks, %d that did not come out right\n", total, fails);
     return fails ? 1 : 0;
 }
 

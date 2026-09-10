@@ -77,6 +77,7 @@ py_orphans=""
 for f in tools/*.py; do
     [ -f "$f" ] || continue
     case "$f" in
+        tools/spice_run.py) continue ;;   # external corpus runner; classifier checked by cli-smoke
         tools/copy_file.py|tools/make_media.py) continue ;;   # a file copier and the media script
     esac
     grep -q "$f" "$0" || py_orphans="$py_orphans $f"

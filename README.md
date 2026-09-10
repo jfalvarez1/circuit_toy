@@ -40,6 +40,11 @@ blank sheet, and no wrong way to start.
 
 ![Spotlight Search](gifs/spotlight_search.gif)
 
+For the current development state and next steps, see [the handoff](docs/HANDOFF.md).
+The external course corpus can be checked with
+`python tools/spice_run.py <corpus-directory> --output build/corpus.json`; the JSON report keeps
+raw diagnostics, including results rejected after the solver prints a small residual.
+
 ## Gallery
 
 | | |

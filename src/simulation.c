@@ -736,15 +736,6 @@ bool simulation_dc_analysis(Simulation *sim) {
 
     bool converged = false;
 
-    /* GMIN STEPPING WAS TRIED HERE AND MADE THINGS WORSE. See docs/ROADMAP.md.
-     *
-     * The naive form - a fixed decade schedule from 1e-3 down to GMIN, each pass starting from
-     * the last, engaged only when the ordinary solve failed - took EE_Review's m05l11-4 from a
-     * residual of 0.000518 A to 24.02 A and changed nothing anywhere else in a 194-circuit
-     * corpus. It is left out rather than left in behind a flag, because a solver aid that fires
-     * exactly when the solver is already in trouble and makes it worse is not a partial win. */
-    const double gmin_now = GMIN;
-
     for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
         Matrix *A = matrix_create(matrix_size, matrix_size);
         Vector *b = vector_create(matrix_size);
@@ -780,10 +771,8 @@ bool simulation_dc_analysis(Simulation *sim) {
 
         // Add GMIN (minimum conductance) from each node to ground
         // This stabilizes floating nodes and prevents singular matrices
-        /* gmin_now, not GMIN: on the ordinary pass they are the same number, and on a ramp pass
-           this is the whole mechanism - the conductance being walked down. */
         for (int i = 0; i < num_nodes; i++) {
-            matrix_add(A, i, i, gmin_now);
+            matrix_add(A, i, i, GMIN);
         }
 
         // Solve
@@ -797,38 +786,9 @@ bool simulation_dc_analysis(Simulation *sim) {
             return false;
         }
 
-        /* DAMPED NEWTON, and only after the undamped iteration has visibly failed.
-         *
-         * mos_limit and pn_limit bound where the model is LINEARISED. Nothing bounded where the
-         * SOLVE was allowed to land, and on a differential pair with a mirror load that is the
-         * whole failure: NEWTON_TRACE shows a clean two-cycle, the output node alternating
-         * between +653,700 V and -28.58 V for fifty iterations without either value moving. It
-         * is not diverging and it is not creeping - it steps over the root and back, forever,
-         * because the two current sources facing each other leave nothing to pin the node
-         * between them until one transistor saturates.
-         *
-         * Halving the step is a line search along the same Newton direction, so it cannot move
-         * the fixed point - at a root the step is zero and any multiple of zero is zero. It
-         * breaks the cycle because a 2-cycle is a reflection, and a reflection composed with a
-         * contraction is a contraction.
-         *
-         * Held off until iteration 10 so that nothing which already converges pays for it: a
-         * circuit that solves in four passes never reaches this line. That is also what keeps
-         * it from slowing the 345 kV templates, where a legitimate first step IS enormous. */
-        /* THREE ATTEMPTS TO BREAK THE LIMIT CYCLE LIVE IN THE ROADMAP, NOT HERE.
-         *
-         * NEWTON_TRACE on EE_Review's m05l11-4 shows a clean 2-cycle: the output node alternates
-         * between +653,700 V and -28.58 V for fifty passes with neither endpoint moving. Tried,
-         * measured, and reverted, in order: gmin stepping (24 A, from 0.000518), a fixed 0.5
-         * damping after ten passes (5.2 A - it breaks the cycle and then pn_limit's logarithmic
-         * cap turns the recovery into a 12.8 mV-per-pass crawl needing ~570 iterations), and a
-         * relative step cap (3.0e6 A - a cap that grows with the solution lets it ratchet up by
-         * 3x a pass, to 980 V).
-         *
-         * All three are knobs on the iteration. The trace says the iteration is not the problem:
-         * the equations genuinely do not determine that node until one transistor saturates, so
-         * what is needed is a starting point on the right side of that corner, not a smaller
-         * step towards it from the wrong side. */
+        /* The mirror-load two-cycle was a missing BJT Early-effect derivative,
+           fixed in component_stamp. The rejected continuation experiments are recorded
+           in docs/ROADMAP.md; ordinary Newton remains the DC solve path. */
 
         // Check convergence
         double max_diff = 0;
@@ -1508,6 +1468,9 @@ void simulation_compute_terminal_currents(Simulation *sim) {
     g_subcircuit_internal_node_offset = num_nodes + num_volt_vars + 1;
 
     double dt = (sim->dt_actual > 0) ? sim->dt_actual : sim->time_step;
+    /* DC's large pseudo-step opens storage elements; it is not elapsed time. Reading
+       a sine current at time - 1e9 introduced microamps of argument-reduction error. */
+    double stamp_time = sim->prev_step_solution ? sim->time - dt : 0.0;
     if (!sim->prev_step_solution) dt = 1e9;      // DC operating point: storage elements idle
     g_stamp_prev_step = sim->prev_step_solution;
 
@@ -1571,7 +1534,7 @@ void simulation_compute_terminal_currents(Simulation *sim) {
         Vector *lin = (sim->last_linearization && sim->last_linearization->size == M)
                       ? sim->last_linearization : sim->solution;
         g_stamp_read_only = true;    /* reading a current out, not advancing the circuit */
-        component_stamp(comp, A, b, circuit->node_map, num_nodes, sim->time - dt, lin, dt);   /* the accepted step was stamped before time advanced */
+        component_stamp(comp, A, b, circuit->node_map, num_nodes, stamp_time, lin, dt);   /* the accepted step was stamped before time advanced */
         g_stamp_read_only = false;
 
         int ground_t = -1, ground_count = 0; double sum = 0.0;

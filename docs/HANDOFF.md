@@ -1,4 +1,4 @@
-# Handoff — where this is and what to do next (2026-09-09, after v3.32.0)
+# Handoff — where this is and what to do next (2026-09-09, development follow-up to v3.32.0)
 
 Written for whoever picks this up next, with no assumed context. Everything below is either a
 fact you can re-verify in one command or a decision with its reasoning attached.
@@ -23,7 +23,26 @@ On Windows the compiler needs its environment first:
 v3.32.0 is released, tagged, CI green, and the shipped zip has been downloaded and run - it
 renders, simulates, and reads 10.89 V where its own on-canvas note says to expect 10.9.
 
-Working tree clean, `main` == `origin/main`, tag `v3.32.0` pushed.
+The release remains v3.32.0. Development changes after that release fix the BJT Early-effect Jacobian,
+correct DC current readback and Kirchhoff diagnostics, add four netlist checks, and add
+`tools/spice_run.py` with seven real CLI checks. These changes are not yet in a tagged release.
+The source-stepping experiment was removed after the actual defect was measured; there is no
+continuation fallback in the final implementation.
+
+Validation completed locally: **0 of 77 suites failed**, 15 at a time, 406 seconds.
+`--netlist-test` passes all 30 checks; the classifier passes 13 checks and the real CLI audit
+passes seven. The full audit includes the numerical suites, scope stability, 33 CLI options,
+GUI smoke, all 211 template edge/export checks, and ten keyboard shortcuts. Deliberate mutations
+confirmed the new numerical, current-readback, KCL, classifier and rejection guards fail when
+their faults are restored. These are local validation results; GitHub workflow results are
+tracked against each pushed commit.
+
+## Maintenance authorization
+
+On 2026-09-09, the project owner authorized ongoing project maintenance and GitHub pushes.
+Carry tested fixes through commit and push without asking for confirmation again. Check the
+workflows for the pushed commit and resolve regressions. Follow the release checks below when
+publishing a new release.
 
 ## The collaboration that is driving most of the work
 
@@ -35,57 +54,65 @@ is a cross-check between two independent implementations.
 **That corpus has found more real bugs in this program than any suite has.** Six in v3.32.0
 alone. Run it:
 
-    python <scratch>/spice_run.py --tag whatever        # see docs/EE_REVIEW_FINDINGS.md for what it checks
+    python tools/spice_run.py <corpus-directory> --output build/corpus.json
 
-The runner itself lives only in a scratch directory and is worth rewriting rather than hunting
-for. It is thirty lines: walk `index.json`, run `--netlist-solve` on each file, classify the
-output. **Two warnings, because both bit me and both flattered the result:**
+The runner now lives in the repository:
 
-- `--netlist-solve` prints a residual and THEN says `NOT A SOLUTION` if the equations are not
-  satisfied there. Counting any output containing "residual" as a solve is wrong.
-- the reader writes `skipped 1 line` in the SINGULAR for exactly one. A regex matching
-  `skipped (\d+) lines` misses 21 files.
+    python tools/spice_run.py "C:/Users/zerav/OneDrive/Desktop/EE_Review/_audit/review/spice" --output build/corpus.json
+    python tools/spice_run.py --self-test
 
-Current numbers, measured correctly: **185 of 194 produce a solution, 149 with nothing skipped**,
-36 with at least one element the reader cannot place, 8 refuse, 1 is not a solution.
+It records every file's stdout/stderr, exit code, residual, and skipped-line count. Its 13
+classifier checks and seven real CLI checks run inside `cli-smoke`, so the battery still has
+77 suites. The corpus command returns 1 when any circuit is rejected; the report distinguishes those outcomes from a crash.
+
+The older count was **185 of 194 with a small solver residual, 149 with nothing skipped**.
+Fixing m05l11-4 raises that same measure to **186 / 150**, but it is not a sufficient success
+criterion: m05l11-5 already printed IMPLAUSIBLE (and exited 1), and m24l06 already printed KCL
+VIOLATED (despite exiting 0). Both were counted as solutions in the old handoff.
+
+With all diagnostics honored, the baseline was **183 accepted, 147 without skips**; the new
+result is **185 accepted: 149 without skips and 36 with skips**, plus 8 refused
+and 1 implausible result. **m05l11-4 and m24l06 improve; no circuit regresses.**
+
+The extra improvement is a reporting fix: DC terminal-current readback stamped time -1e9
+rather than time zero. A 60 Hz current source consequently reported 4.213 uA from floating-point
+sine argument reduction even when its DC value was zero, giving m24l06 a false KCL violation.
+Readback now uses zero for DC and the accepted step's start time for transient.
+
+Warnings for anyone changing the classifier:
+
+- A residual can precede `NOT A SOLUTION`, `IMPLAUSIBLE`, or `KCL VIOLATED`.
+- Exactly one skipped element is printed as `skipped 1 line`, in the singular.
+- Exit 0 alone is insufficient, and nonzero exit must not be counted as success.
 
 `docs/EE_REVIEW_FINDINGS.md` is the full cross-project record: what was found on each side, what
 is theirs to decide, what is ours.
 
 ## Next work, in the order I would do it
 
-### 1. Source stepping, for m05l11-4
+### Resolved: m05l11-4 and the missing Early derivative
 
-A differential pair with a PNP current-mirror load that will not solve. This is the most
-valuable open item because it is a solver limitation, not one circuit's problem.
+Source stepping was tried with adaptive backtracking from zero. It got past the original
+large-voltage cycle but stalled near 10.4% source strength. Before adding more iteration knobs,
+a central finite difference was compared with the BJT's stamped Jacobian. Both NPN and PNP
+collector derivatives disagreed: the model included `1 + Vce/Vaf` in collector current but
+omitted its derivative `Go = Is * (exp(Vbe/nVt) - 1) / Vaf` from the matrix.
 
-**Do not try these. All four are already done, measured, and reverted:**
+Stamping Go between collector and emitter, and subtracting Go*Vce from the equivalent current,
+fixes the original circuit using ordinary Newton. Its residual falls from **0.0005183 A to
+2.429e-17 A**, at full ±6 V supplies and 1 mA tail current. No source stepping or larger iteration
+limit is needed. `--netlist-test` now has 30 checks, including both transistor Jacobians in
+active and saturated operation and the original circuit. Removing Go makes all three new
+checks fail; restoring it makes them pass.
 
-| attempt | residual, from a baseline of 0.000518 A |
-|---|---|
-| gmin stepping, fixed decade schedule | 24.02 A |
-| damped Newton, 0.5 after ten passes | 5.234 A |
-| relative step cap, 10 V + 2x scale | 3.037e6 A |
-| MAX_ITERATIONS 50 -> 500 | 0.000617 A, i.e. nothing |
+The local named models give V(out) = **4.887035 V**, V(emit) = **-0.641160 V**, with Q2 active.
+This does **not** confirm EE_Review's reported -0.50822 V saturated solution. The models are
+not matched: the corpus comments and this repository's named-part defaults contain different
+Is/BF/BR values, and this model includes Early effect. A parameter-matched comparison is still
+open. The earlier conclusion that this circuit must cross a saturation boundary was a hypothesis,
+not a property established for the local equations. ROADMAP.md preserves the investigation.
 
-Use the instrument that exists rather than reasoning from the source - three separate diagnoses
-were made by reading code and all three were wrong:
-
-    NEWTON_TRACE=1 build/tools/template_smoke.exe --netlist-solve <the .cir>
-
-It shows a clean **two-cycle**: the output node steps to +653,700 V and back to -28.58 V for
-fifty passes with neither endpoint moving. Not diverging, not creeping.
-
-EE_Review solves it and gave the mechanism: V(out) = -508.22 mV with **Q2 saturated** at
-Vce = 139 mV, and V(out) = V(emit) + Vce(Q2) checks out (-647 + 139 = -508). The solution is on
-the far side of a REGION CHANGE. That is why every knob on the iteration fails - a smaller step
-from the wrong side still never crosses a corner. Source stepping (ramp the supplies from zero,
-so devices cross their region boundaries in the order the physical circuit does) is the
-candidate that addresses the actual shape of the problem.
-
-`docs/ROADMAP.md` has the full write-up at the top.
-
-### 2. A 4-terminal SPDT switch part
+### 1. A 4-terminal SPDT switch part
 
 8 more corpus lines. `X ... SPDT_SWITCH` is written `Xname A B common control`, e.g.
 `XS0 vref 0 b0_sw b0_in SPDT_SWITCH`. There is no part behind it: `COMP_SPDT_SWITCH` has three
@@ -99,7 +126,7 @@ topology, which is the one thing it must not do.
 `COMP_ANALOG_SWITCH`, which already was a controlled resistance (r_on 100 above v_on, r_off 1e9
 below v_off). See `src/netlist.c`, the `case 'X'` block.
 
-### 3. The rest of the false junctions
+### 2. The rest of the false junctions
 
 20 false junctions and 27 loose ends remain, down from 66/47. `--wire-test` reads GEOMETRY, not
 nets, so everything it reports is a drawing that disagrees with a netlist that is correct.
@@ -115,6 +142,18 @@ Three idioms account for most of what has been fixed so far, and the remainder l
 
 Tighten `WIRE_FALSE_JUNCTION_BASELINE` / `WIRE_LOOSE_END_BASELINE` in `tools/template_smoke.c`
 when you fix some. A ratchet never tightened is a permanent allowance.
+
+### 3. The grounded-input two-stage op-amp remains implausible
+
+`m05l11-5` has a tiny reported solver residual but prints IMPLAUSIBLE (roughly 278 kA source
+current). It is rejected by the CLI, and the new CLI audit checks the actual grounded-input
+circuit. The older residual-only test omits VINP: it is a different, floating-input fixture,
+now labeled as such. Do not mistake that test passing for the corpus circuit working.
+
+The Kirchhoff auditor now groups actual solver nodes, so `Rail` and `rail` do not produce
+false violations. It selects the worst error relative to each node's tolerance, so a large
+branch cannot hide a smaller branch's violation. A genuine bad residual or KCL diagnostic
+now causes a nonzero CLI exit. All these guards were checked by reintroducing their faults.
 
 ## Traps specific to this repo
 
@@ -180,8 +219,7 @@ messages sent to it are LOST rather than queued. Four were, which is why
 `docs/EE_REVIEW_FINDINGS.md` exists: the findings are worth more than the transcript they were
 stranded in.
 
-Open questions with them, both asked and unanswered as of this writing: whether to do source
-stepping or the SPDT part first, and their m05l16 lesson needs one edit (its distortion
+Open questions with them: a parameter-matched comparison for m05l11-4, and their m05l16 lesson needs one edit (its distortion
 procedure holds the input fixed while its formula assumes fixed output - the two differ by
 (1 + gm*RE) squared rather than once; measured +27.7 dB against a stated +14, and +13.1 dB when
 the output is held constant instead).

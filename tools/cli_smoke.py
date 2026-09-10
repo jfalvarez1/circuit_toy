@@ -25,6 +25,8 @@ import subprocess
 import sys
 import tempfile
 
+from spice_run import self_test as spice_classifier_test, cli_test as netlist_cli_test
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "build", "circuit-playground.exe")
 TMP = None
@@ -569,6 +571,11 @@ def main():
 
     fails = 0
 
+    fails += spice_classifier_test()
+    if not a.only:
+        smoke = os.path.join(os.path.dirname(APP), "tools", "template_smoke" + os.path.splitext(APP)[1])
+        fails += netlist_cli_test(smoke)
+
     # The guard: every option the app accepts has to be exercised by something here. Suites are
     # excluded because run_audits.sh already refuses to run with one of them unlisted - except
     # --update-check, which is an option that happens to end in "-check".
@@ -582,12 +589,14 @@ def main():
         print("cli-smoke: add a case for each to tools/cli_smoke.py.")
         fails += len(missing)
 
+    exercised = 0
     with tempfile.TemporaryDirectory(prefix="cli_smoke_") as tmp:
         TMP = tmp
         seen = set()
         for flag, fn in CASES:
             if a.only and a.only not in flag:
                 continue
+            exercised += 1
             key = fn.__name__
             if key in seen:
                 print("%-18s  ok   (with %s)" % (flag, key))
@@ -603,7 +612,7 @@ def main():
             else:
                 print("%-18s  ok" % flag)
 
-    print("\ncli-smoke: %d options exercised, %d failures" % (len(CASES), fails))
+    print("\ncli-smoke: %d options exercised, %d failures" % (exercised, fails))
     return 1 if fails else 0
 
 

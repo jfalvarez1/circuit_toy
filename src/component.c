@@ -3976,6 +3976,7 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             }
 
             double Gbe, Gbc, Gm, Gmr, Ieq_be, Ieq_bc, Ieq_c;
+            double Go = 0.0;
             double op_ic = 0, op_ib = 0;   /* for the operating point the panel reports */
 
             if (ideal) {
@@ -4031,9 +4032,14 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 double Ic_f = Is * (expBE - 1) * early_factor;
                 double Ic_r = Is * (expBC - 1);
                 double Ic = Ic_f - Ic_r;
+                /* The Early factor depends on the actual Vce as well as Vbe. Omitting
+                   its derivative turns Newton into a fixed-point iteration at a mirror's
+                   output, where this conductance is what determines the voltage. */
+                if (Vaf > 0 && 1.0 + Vce_real / Vaf > 0.1)
+                    Go = Is * (expBE - 1) / Vaf;
                 Gm = (Is / (nf * Vt)) * expBE * early_factor;       // dIc/dVbe
                 Gmr = -(Is / (nr * Vt)) * expBC;                     // dIc/dVbc
-                Ieq_c = Ic - Gm * Vbe - Gmr * Vbc;
+                Ieq_c = Ic - Gm * Vbe - Gmr * Vbc - Go * Vce_real;
                 op_ic = Ic; op_ib = Ibe + Ibc;
             }
 
@@ -4092,6 +4098,7 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
                 if (n[2] > 0 && n[0] > 0) matrix_add(A, n[2]-1, n[0]-1, -Gmr);
                 if (n[2] > 0 && n[1] > 0) matrix_add(A, n[2]-1, n[1]-1, Gmr);
             }
+            STAMP_CONDUCTANCE(n[1], n[2], Go);
             // Newton equivalent current source for the collector current
             if (n[1] > 0) vector_add(b, n[1]-1, -Ieq_c);
             if (n[2] > 0) vector_add(b, n[2]-1, Ieq_c);

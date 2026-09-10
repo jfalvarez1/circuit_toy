@@ -11,14 +11,37 @@ either a decision for whoever owns the curriculum, or a defect in the corpus bui
 
 ## State of the cross-check
 
-Measured on the regenerated corpus of 2026-09-07, after EE_Review's commits 3646ac0 / b17b913:
+Local follow-up on 2026-09-09, using the same 194-file corpus and the new checked runner:
 
-    185 of 194 produce a solution
+    185 of 194 accepted after inspecting every diagnostic and the exit status
         149 of those with nothing skipped
          36 with at least one element line this reader could not place
-      8 refuse - no operating point, and we agree on the ones that matter
-      1 not a solution - m05l11-4, which is OURS, see item 8
-     66 element lines skipped in total, almost all X
+      8 refuse
+      1 implausible - m05l11-5; source current about 278 kA, despite a small residual
+     66 element lines skipped in total
+
+The pre-fix baseline under that same classification is 183 accepted, 147 without skips.
+**m05l11-4 and m24l06 improve, with no regressions.** The former goes from NOT A SOLUTION
+to an accepted solution; the latter had a false KCL warning from a DC current-readback bug.
+The old 185/149 count included both that KCL warning and the implausible result. After these
+fixes the old residual-only measure is 186/150, whereas the strict measure is 185/149. Those
+are different measures and must not be mixed.
+
+**m24l06 was a reporting bug, now fixed.** The DC solver stamped sources at time zero, but
+terminal-current readback re-stamped at -1e9 seconds, confusing the large DC storage pseudo-step
+with elapsed time. Evaluating a 60 Hz sine there introduced 4.213 uA of roundoff. The solved
+currents were correct; the displayed source current was not. Readback now uses time zero, and
+DC plus five transient samples are checked against the source equation.
+
+The auditor also now groups solver-node equivalence classes rather than case-sensitive net
+names, compares KCL errors against each node's own tolerance, and returns a failing exit for
+bad residuals or KCL diagnostics. Seven CLI cases check accepted and rejected circuits, including
+the actual grounded-input m05l11-5; all regression guards were mutation-checked.
+
+Run `python tools/spice_run.py <corpus-directory> --output build/corpus.json`. The report keeps
+all diagnostics so the instrument can be checked against the actual output. Its classifier
+self-checks run in `cli-smoke` and cover singular/plural skips, explicit refusal and failure
+messages, nonfinite residuals, missing output and nonzero exit codes.
 
 CORRECTION TO AN EARLIER FIGURE. A "167 clean" number was reported before this and was wrong.
 The harness counting it matched `skipped (\d+) lines` while the reader writes the SINGULAR
@@ -105,14 +128,17 @@ because the duplicate is still there and nothing complains.
 
 ## Ours, not theirs
 
-**8. m05l11-4 still does not solve here.** An ordinary differential pair with a PNP
-current-mirror load. Adding SPICE's pnjlim took it from a residual of 2.876 A to 0.000518 A on a
-1 mA tail, and it is still not a solution: Newton is in a limit cycle, not converging slowly
-(raising MAX_ITERATIONS from 50 to 500 moves the answer 20 %). Gmin stepping made it 24 A and
-was reverted. Source stepping is the next candidate. See ROADMAP.md.
+**8. m05l11-4 now solves locally.** Source stepping was tried but stalled near 10.4% supply.
+A finite-difference check exposed a missing derivative of the Early-effect collector current.
+Adding that term and its equivalent-current correction makes ordinary Newton converge, lowering
+residual from 0.0005183 A to 2.429e-17 A. Both transistor polarities and the original circuit now
+have mutation-checked regressions in `--netlist-test`.
 
-If their solver handles that circuit, its V(out) would be useful - that is the node that cannot
-be pinned down here.
+This repository's named models give V(out) = 4.887035 V, V(emit) = -0.641160 V, with Q2 active.
+That differs from EE_Review's -0.50822 V saturated result. The corpus comments and the local
+named parts have different Is/BF/BR values, and the local model includes Early effect. We have
+not yet done a parameter-matched comparison, so convergence here must not be reported as
+agreement between the two simulators. See the new top entry in ROADMAP.md.
 
 ## Open questions for them
 

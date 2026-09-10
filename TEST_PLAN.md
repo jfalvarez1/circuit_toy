@@ -918,6 +918,40 @@ scope's readout row sliced by the status bar, and the channel tag clipped at the
 fourth was a fixed *time* offset doing the same thing: a step chosen from what the sources do,
 standing in for what the circuit does.
 
+### 3.59 Current readback and CLI auditors (2026-09-09, unreleased)
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.59.1 | `[P]` AC current `SIN(3m 100m 60)` into 100 ohm | DC current exactly 3 mA within 1e-10 A, then five transient samples match the source equation |
+| 3.59.2 | `[P]` `python tools/spice_run.py --check-cli`, mixed-case `Rail`/`rail` and `mid`/`MID` | 5 V divider, no false KCL diagnostic, exit 0 |
+| 3.59.3 | `[P]` CLI audit, clamped BJT | Reject inconsistent current readback with nonzero exit |
+| 3.59.4 | `[P]` The same BJT with a separate 100 A branch | The large branch's tolerable residual cannot hide the small branch's violation |
+| 3.59.5 | `[P]` CLI audit, overdriven diode and actual grounded-input two-stage op-amp | Both rejected despite small numerical residuals |
+| 3.59.6 | `[P]` Reintroduce wrong DC time, case-sensitive KCL, absolute-error selection, ignored error exits and disabled current rejection | Each mutant fails its regression checks; restored checks pass |
+| 3.59.7 | `[P]` Full external corpus, using all diagnostics and exit codes | 185 accepted, 149 without skips; baseline 183/147; only m05l11-4 and m24l06 improve |
+| 3.59.8 | `[P]` `bash tools/run_audits.sh` after rebuilding the final changes | 0 of 77 suites failed; 406 seconds, 15 at a time |
+
+`cli-smoke` now runs the corpus classifier's 13 checks and seven actual netlist CLI cases.
+`--netlist-test` has 30 checks. `cli_smoke.py --only version` reports one exercised option rather
+than claiming the whole option table ran. m05l11-5 remains a rejected, implausible operating
+point; its old C fixture omitted VINP and did not validate the actual corpus circuit.
+
+### 3.58 BJT Early-effect Jacobian (2026-09-09, unreleased)
+
+| # | Check | Expected |
+|---|-------|----------|
+| 3.58.1 | `[P]` `--netlist-test`, NPN and PNP at active and saturated biases | Every terminal-current derivative matches a central difference within 0.01% or 1e-10 S |
+| 3.58.2 | `[P]` `--netlist-test`, m05l11-4 embedded with no external file dependency | Newton converges; residual below 1e-9 A; ±6 V supplies and 1 mA tail stay at full strength |
+| 3.58.3 | `[P]` Remove the Early output-conductance term, rebuild and rerun | Both Jacobian checks and the mirror-loaded pair fail; restoration passes all 30 checks |
+| 3.58.4 | `[P]` `python tools/spice_run.py --self-test` (also inside `cli-smoke`) | 13 classifier checks; neither failure messages after a residual nor singular skipped lines are missed |
+| 3.58.5 | `[P]` Break singular-line and NOT A SOLUTION recognition separately | Each mutant makes the classifier checks fail; restored checks pass |
+| 3.58.6 | `[P]` Run the 194-file EE_Review corpus and compare saved diagnostics | Accepted results improve 183 to 184, imports without skips 147 to 148; only m05l11-4 changes status |
+
+The old residual-only corpus total included an implausible current in m05l11-5 and a KCL
+violation in m24l06. The new runner preserves those diagnostics and excludes those results.
+Source stepping was explored and removed; the local implementation uses the corrected
+ordinary Newton stamp. Release version remains v3.32.0 until a release is requested.
+
 ### 3.57 a second implementation read the same 194 circuits (2026-09-09, v3.32.0)
 
 The companion course shipped its corpus as SPICE. Running it here is a cross-check between two

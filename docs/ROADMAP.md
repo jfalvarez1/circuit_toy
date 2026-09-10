@@ -1,5 +1,52 @@
 # Roadmap
 
+## Mirror-load DC convergence: measured cause and fix (2026-09-09, FIXED LOCALLY)
+
+The source-stepping candidate below was implemented as an experiment: supplies and independent
+currents ramped together from zero, with smaller retries after failed rungs. It escaped the
+654 kV cycle but stalled near source scale 0.104. It was removed.
+
+A finite-difference check then found a missing BJT Jacobian term. At Vbe = 0.64 V and Vce =
+0.14 V, the NPN collector derivative was stamped as 0.000147703299 S, while perturbing its
+collector voltage measured 0.000153666793 S. The PNP showed the same missing contribution:
+0.000308633758 S stamped versus 0.000317854919 S measured.
+
+The current already included the Early factor `(1 + Vce/Vaf)`. Its derivative with respect to
+Vce did not appear in the stamp. The fix adds `Go = Is * (exp(Vbe/nVt) - 1) / Vaf` between
+collector and emitter, and subtracts `Go*Vce` from the equivalent current so the device equations
+stay the same. Go is zero in ideal mode, with no Early voltage, or while the Early factor's
+lower clamp is active.
+
+Ordinary Newton now solves m05l11-4 at **2.429e-17 A residual**, previously **0.0005183 A**.
+All 18 Jacobian entries per polarity (active and saturated biases) match central differences.
+Removing Go makes both polarity checks and the actual differential-pair regression fail.
+
+The result with this repository's named models is V(out) = 4.887035 V, with Q2 active. The
+-0.50822 V saturated answer reported by EE_Review is not an oracle for unmatched device models;
+a parameter-matched cross-check remains open. In particular, the earlier claim that the
+iteration was not the problem is superseded by the measured Jacobian defect.
+
+`tools/spice_run.py` replaces the scratch harness. Honoring all CLI diagnostics, the full corpus
+improves from **183 to 184 accepted circuits**, with **147 to 148 importing without skips**.
+At that stage only m05l11-4 changed status. The former residual-only counts (185 to 186) also
+included an IMPLAUSIBLE result in m05l11-5 and a KCL VIOLATED result in m24l06.
+
+The subsequent auditor investigation fixed m24l06: DC current readback was evaluating sources
+at time -1e9 instead of zero. A 60 Hz sine gained 4.213 uA of numerical argument-reduction error,
+which the KCL audit correctly noticed as a mismatch with the solved zero current. Readback now
+uses t=0 for DC and the accepted step's starting time in transient. The final strict corpus
+count is **185 accepted / 149 without skips**, with no regressions; m05l11-5 remains implausible.
+
+The same audit also found that grouping by case-sensitive net names falsely rejected a valid
+`Rail`/`rail` divider, and selecting the largest absolute current error could hide a smaller but
+out-of-tolerance error. It now uses the solver's node map and each node's normalized tolerance.
+Genuine bad residuals and KCL violations produce nonzero CLI exits. Four C checks, 13 classifier
+checks, and seven real CLI cases cover the follow-up; the actual grounded-input m05l11-5 is
+among the rejected CLI cases. Its old numerical fixture omitted VINP and is now labeled clearly.
+
+The historical investigation below is retained as evidence about the unsuccessful approaches,
+not as a current diagnosis.
+
 ## A differential pair with a mirror load would not solve (2026-09-07, MOSTLY FIXED)
 
 EE_Review's m05l11-4 - a diff pair with a PNP current-mirror load, which is as ordinary as an
