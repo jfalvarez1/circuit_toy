@@ -1,4 +1,4 @@
-# Handoff — where this is and what to do next (2026-09-09, development follow-up to v3.32.0)
+# Handoff — where this is and what to do next (2026-09-10, v3.33.0)
 
 Written for whoever picks this up next, with no assumed context. Everything below is either a
 fact you can re-verify in one command or a decision with its reasoning attached.
@@ -20,18 +20,17 @@ On Windows the compiler needs its environment first:
 
 ## State
 
-v3.32.0 is released, tagged, CI green, and the shipped zip has been downloaded and run - it
-renders, simulates, and reads 10.89 V where its own on-canvas note says to expect 10.9.
-
-The release remains v3.32.0. Development changes after that release fix the BJT Early-effect Jacobian,
-correct DC current readback and Kirchhoff diagnostics, add four netlist checks, and add
-`tools/spice_run.py` with seven real CLI checks. These changes are not yet in a tagged release.
+v3.33.0 adds live scope mouse measurements, trace selection, and the rendering/input fixes
+described below. It also includes the BJT Early-effect Jacobian fix, correct DC current readback
+and Kirchhoff diagnostics, four additional netlist checks, and `tools/spice_run.py` with seven
+real CLI checks. The portable Windows release is built and published by the tag workflow;
+`gh release view v3.33.0` reports its publication state and attached downloads.
 The source-stepping experiment was removed after the actual defect was measured; there is no
 continuation fallback in the final implementation.
 
-Validation completed locally: **0 of 77 suites failed**, 15 at a time, 406 seconds.
+Validation of the v3.33.0 build completed locally: **0 of 77 suites failed**, 15 at a time, 458 seconds.
 `--netlist-test` passes all 30 checks; the classifier passes 13 checks and the real CLI audit
-passes seven. The full audit includes the numerical suites, scope stability, 33 CLI options,
+passes seven. The full audit includes the numerical suites, scope stability, 34 CLI options,
 GUI smoke, all 211 template edge/export checks, and ten keyboard shortcuts. Deliberate mutations
 confirmed the new numerical, current-readback, KCL, classifier and rejection guards fail when
 their faults are restored. These are local validation results; GitHub workflow results are
@@ -68,6 +67,7 @@ EE_Review task, "Improve EE lessons with references"; do not resume editing the 
 ## Maintenance authorization
 
 On 2026-09-09, the project owner authorized ongoing project maintenance and GitHub pushes.
+On 2026-09-10, the owner also specified that pushes should always go directly to `main`.
 Carry tested fixes through commit and push without asking for confirmation again. Check the
 workflows for the pushed commit and resolve regressions. Follow the release checks below when
 publishing a new release.

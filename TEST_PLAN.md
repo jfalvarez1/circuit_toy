@@ -2075,6 +2075,24 @@ small at the sweep start etc.).
 
 ---
 
+## 11. v3.33.0 release checks (2026-09-10)
+
+This release includes the scope interaction coverage at the top of this document and the
+BJT/current-readback/netlist fixes developed after v3.32.0. No templates or drawings changed.
+The rebuilt 3.33.0 executable passed all 77 local suites in 458 seconds.
+
+| ID | Check | Pass condition |
+|----|-------|----------------|
+| 11.1 | Rebuild and run `--version` | Binary reports 3.33.0, matching `include/version.h` |
+| 11.2 | Run `tools/run_audits.sh` against that build | 0 of 77 suites fail; CLI coverage includes all 34 options |
+| 11.3 | Check the pushed commit's GitHub workflows | All four Windows jobs and CodeQL pass before tagging |
+| 11.4 | Download both published ZIP names | Versioned and stable downloads have identical SHA-256 hashes |
+| 11.5 | Extract the downloaded ZIP into a fresh directory | App runs without separately installed SDL files |
+| 11.6 | Run downloaded `--version`, `--layout-test`, and the hover CLI smoke | Correct version, layout/pixel guards pass, divider readout is 5 V, and trace clicks preserve the trigger |
+| 11.7 | Render RC Low Pass using the downloaded executable | Inspect the actual bitmap: schematic, waveform, and mouse readout render correctly |
+
+---
+
 ## Execution order (suggested)
 
 1. §0 pre-flight — especially decide on the debug prints (0.3), they affect everything.
