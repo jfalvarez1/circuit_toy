@@ -1552,8 +1552,146 @@ static int shot_test(void) {
     return fails ? 1 : 0;
 }
 
-static int layout_test(void) {
+/* Independent screen-coordinate oracle, with nonuniform times, unequal channel
+   scales and nonzero shifts. These are volts/time picked on graph paper, not a
+   second copy of the renderer's formula. Also exercise the real input path. */
+static int scope_pointer_test(void) {
+    UIState *ui = calloc(1, sizeof *ui);
+    InputState *in = calloc(1, sizeof *in);
+    if (!ui || !in) { free(ui); free(in); return 1; }
+    ui_init(ui); input_init(in);
     int fails = 0;
+#define POINTER_CHECK(ok, name) do { if (!(ok)) { printf("[FAIL] scope pointer: %s\n", name); fails++; } } while (0)
+    ui->scope_rect = ui->scope_view_rect = (Rect){100, 100, 400, 240};
+    ui->scope_view_valid = ui->scope_capture_valid = true;
+    ui->scope_view_t0 = 10; ui->scope_view_span = 10;
+    ui->scope_num_channels = 2;
+    ui->scope_capture_count = 3;
+    ui->scope_capture_times[0] = 10; ui->scope_capture_times[1] = 12; ui->scope_capture_times[2] = 15;
+    const double a[] = {1, 3, 9}, b[] = {2, 6, 12};
+    for (int i = 0; i < 3; i++) { ui->scope_capture_values[0][i] = a[i]; ui->scope_capture_values[1][i] = b[i]; }
+    for (int ch = 0; ch < 2; ch++) {
+        ui->scope_channels[ch].enabled = true;
+        ui->scope_ch_top[ch] = 100; ui->scope_ch_height[ch] = 240; ui->scope_ch_center[ch] = 220;
+    }
+    ui->scope_ch_scale[0] = 10; ui->scope_ch_scale[1] = 20;
+    ui->scope_ch_shift[0] = -5; ui->scope_ch_shift[1] = -8;
+    ui->scope_channels[0].offset = 1; ui->scope_channels[1].offset = 0.5;
+    ui->scope_volt_div = 123; /* deliberately unrelated to either channel */
+    ScopeReadout m;
+    POINTER_CHECK(ui_scope_readout_at(ui, 240, 190, &m) && m.channel == 1 && m.near_trace &&
+                  m.has_sample && fabs(m.trace_volts - 9) < 1e-12 && fabs(m.pointer_volts - 9) < 1e-12 &&
+                  fabs(m.time - 13.5) < 1e-12 && fabs(m.time_from_left - 3.5) < 1e-12 &&
+                  fabs(m.volt_div - 1.5) < 1e-12 && m.time_div == 1,
+                  "overlay: nearest input, interpolated signal, mouse volts and division units");
+    POINTER_CHECK(ui_scope_readout_at(ui, 240, 180, &m) && m.channel == 0 && !m.near_trace &&
+                  fabs(m.pointer_volts - 8) < 1e-12 && fabs(m.trace_volts - 6) < 1e-12,
+                  "away from traces: distinguish pointer voltage from signal voltage");
+    ui->scope_stacked = ui->scope_stack_fit = ui->scope_ac_coupling = true;
+    ui->scope_ch_height[0] = ui->scope_ch_height[1] = 120;
+    ui->scope_ch_top[1] = 220; ui->scope_ch_center[0] = 160; ui->scope_ch_center[1] = 280;
+    ui->scope_ch_scale[0] = 20; ui->scope_ch_scale[1] = 10;
+    POINTER_CHECK(ui_scope_readout_at(ui, 240, 265, &m) && m.channel == 1 && m.near_trace &&
+                  fabs(m.pointer_volts - 9) < 1e-12 && fabs(m.volt_div - 1.5) < 1e-12 && m.trace_y == 265,
+                  "stacked AC/Fit: use the band's actual transform, preserve DC volts");
+    POINTER_CHECK(ui_scope_readout_at(ui, 380, 265, &m) && !m.has_sample && !m.near_trace,
+                  "unrecorded time must not extrapolate a signal");
+    ui->scope_channels[1].enabled = false;
+    POINTER_CHECK(!ui_scope_readout_at(ui, 240, 265, &m), "disabled channel is not measurable");
+    ui->scope_channels[1].enabled = true;
+    ui->scope_capture_values[1][2] = NAN;
+    POINTER_CHECK(ui_scope_readout_at(ui, 240, 265, &m) && !m.has_sample, "nonfinite samples are unavailable");
+    ui->scope_capture_values[1][2] = 12;
+    ui->scope_fft_mode = true;
+    POINTER_CHECK(!ui_scope_readout_at(ui, 240, 265, &m), "FFT does not report time/voltage coordinates");
+    ui->scope_fft_mode = false; ui->display_mode = SCOPE_MODE_XY;
+    POINTER_CHECK(!ui_scope_readout_at(ui, 240, 265, &m), "XY does not report time coordinates");
+    ui->display_mode = SCOPE_MODE_YT; ui->scope_rect.w++;
+    POINTER_CHECK(!ui_scope_readout_at(ui, 240, 265, &m), "resize cannot reuse old pixel transforms");
+    ui->scope_rect.w--; ui->scope_capture_valid = false;
+    POINTER_CHECK(!ui_scope_readout_at(ui, 240, 265, &m), "reset data is unavailable");
+    ui->scope_capture_valid = true;
+    ui_handle_motion(ui, 240, 265, false);
+    POINTER_CHECK(ui->scope_pointer_inside, "docked pointer motion reaches the scope");
+    ui_handle_motion(ui, 40, 40, false);
+    POINTER_CHECK(!ui->scope_pointer_inside, "pointer leaving the graph clears the crosshair");
+    ui->scope_popped_out = true;
+    ui_handle_motion(ui, 240, 265, false);
+    POINTER_CHECK(!ui->scope_pointer_inside && !ui_scope_readout_at(ui, 240, 265, &m),
+                  "main-window motion cannot activate a popped-out scope");
+    ui->scope_panel_active = true;
+    ui_handle_motion(ui, 240, 265, true);
+    POINTER_CHECK(ui->scope_pointer_inside && ui_scope_readout_at(ui, 240, 265, &m), "popup coordinates work");
+    ui->scope_popped_out = ui->scope_panel_active = false;
+    SDL_Event ev; memset(&ev, 0, sizeof ev);
+    ev.type = SDL_MOUSEBUTTONDOWN; ev.button.button = SDL_BUTTON_LEFT; ev.button.x = 240; ev.button.y = 265;
+    ui->trigger_level = 19;
+    input_handle_event(in, &ev, NULL, NULL, ui);
+    POINTER_CHECK(ui->scope_selected_channel == 1 && !ui->scope_scale_all && ui->trigger_level == 19 &&
+                  ui->scope_capture_valid, "trace click selects input without changing the trigger or capture");
+    in->pending_ui_action = 0;
+    ui->scope_cursor_mode = true; ui->scope_cursor_type = 1;
+    input_handle_event(in, &ev, NULL, NULL, ui);
+    POINTER_CHECK(ui->scope_cursor_drag == 1 && fabs(ui->cursor1_time - 0.35) < 1e-12 &&
+                  ui->trigger_level == 19 && ui->scope_capture_valid,
+                  "A/B cursor click must not also drag the trigger");
+    /* A real 2 mV peak-to-peak triangle must retain its extrema and slopes.
+       Checking both catches flattened signals and corrupted segment endpoints. */
+    SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormat(0, 640, 480, 32, SDL_PIXELFORMAT_ARGB8888);
+    SDL_Renderer *ren = surface ? SDL_CreateSoftwareRenderer(surface) : NULL;
+    Simulation *sim = calloc(1, sizeof *sim);
+    POINTER_CHECK(ren && sim, "software renderer for small-signal regression");
+    if (ren && sim) {
+        ui_init(ui);
+        ui->scope_rect = (Rect){100,100,400,240};
+        ui->scope_num_channels = 1; ui->scope_channels[0].enabled = true;
+        ui->scope_channels[0].probe_idx = 0;
+        ui->scope_volt_div = 0.001; ui->scope_time_div = 0.1;
+        ui->scope_capture_count = sim->history_count = 5;
+        ui->scope_capture_valid = ui->triggered = true;
+        ui->trigger_mode = TRIG_SINGLE; ui->scope_last_trigger_time = 0.5;
+        const double triangle[] = {0, 0.001, 0, -0.001, 0};
+        for (int i = 0; i < 5; i++) {
+            ui->scope_capture_times[i] = sim->history[i].time = 0.25 * i;
+            ui->scope_capture_values[0][i] = sim->history[i].values[0] = triangle[i];
+        }
+        ui_render_oscilloscope(ui, ren, sim, NULL);
+        SDL_RenderPresent(ren);
+        const int points[][2] = {{200,190},{400,250},{150,205},{250,205},{350,235},{450,235}};
+        for (unsigned i = 0; i < sizeof points / sizeof points[0]; i++) {
+            Uint32 pixel; Uint8 red, green, blue;
+            memcpy(&pixel, (Uint8 *)surface->pixels + points[i][1] * surface->pitch + points[i][0] * 4, 4);
+            SDL_GetRGB(pixel, surface->format, &red, &green, &blue);
+            POINTER_CHECK(red > 180 && green > 180 && blue < 100, "sub-10 mV extrema and slopes retain their samples");
+        }
+        POINTER_CHECK(ui_scope_readout_at(ui, 200, 190, &m) && m.near_trace &&
+                      fabs(m.trace_volts - 0.001) < 1e-12 && fabs(m.pointer_volts - 0.001) < 1e-12,
+                      "rendered small-signal peak agrees with mouse readout");
+        ui->scope_stacked = true;
+        ui->scope_num_channels = 2; ui->scope_channels[1].enabled = true;
+        ui->scope_channels[1].probe_idx = 1;
+        ui_render_oscilloscope(ui, ren, sim, NULL);
+        SDL_RenderPresent(ren);
+        /* Both 120 px bands need a main grid line 15 px below their top. */
+        for (int y = 115; y <= 235; y += 120) {
+            Uint32 pixel; Uint8 red, green, blue;
+            memcpy(&pixel, (Uint8 *)surface->pixels + y * surface->pitch + 111 * 4, 4);
+            SDL_GetRGB(pixel, surface->format, &red, &green, &blue);
+            POINTER_CHECK(red == 0x30 && green == 0x50 && blue == 0x30,
+                          "stacked graticule shows eight voltage divisions per band");
+        }
+    }
+    free(sim);
+    if (ren) SDL_DestroyRenderer(ren);
+    if (surface) SDL_FreeSurface(surface);
+    printf("scope pointer: coordinate, availability and input checks, %d failures\n", fails);
+    free(in); free(ui);
+#undef POINTER_CHECK
+    return fails;
+}
+
+static int layout_test(void) {
+    int fails = scope_pointer_test();
     UIState *ui = calloc(1, sizeof *ui);
     ui_init(ui);
     /* The UI sizes that can actually occur. A display taller than 900 is scaled rather than
@@ -1947,6 +2085,7 @@ static void usage(void) {
            "  --scroll PX          scroll the left palette by PX pixels (screenshots)\n"
            "  --keys S FRAME EVERY type S one char every EVERY frames from FRAME (^ opens Spotlight, | is Enter)\n"
            "  --click X,Y,FRAME    left-click at X,Y on that frame (repeatable, up to 12)\n"
+           "  --hover X,Y,FRAME    move pointer without clicking (same coordinate space as --click)\n"
            "  --drag X1,Y1,X2,Y2,FRAME  press at X1,Y1, move to X2,Y2 and release, on that frame\n"
            "  --xy FILE            load 'x y' coordinate pairs into the X-Y Plotter template\n"
            "  --tab parts|circuits left panel tab\n"
@@ -2045,7 +2184,7 @@ int main(int argc, char *argv[]) {
     const char *cli_state = NULL;
     int cli_frame = 90, cli_rec_n = 0, cli_rec_every = 1, cli_scroll = -1, cli_tab = -1; bool cli_exit = false, no_update = false, no_auto_update = false;
     const char *cli_keys = NULL; int cli_keys_frame = 30, cli_keys_every = 6;
-    struct { int x, y, x2, y2, frame; bool drag; } cli_mouse[12]; int cli_mouse_n = 0;
+    struct { int x, y, x2, y2, frame; bool drag, hover; } cli_mouse[12]; int cli_mouse_n = 0;
     const char *cli_xy = NULL;
     bool cli_popout = false;
     bool cli_dump_layout = false;         /* --dump-layout; see below */
@@ -2086,8 +2225,9 @@ int main(int argc, char *argv[]) {
         }
         else if (!strcmp(argv[i], "--scroll") && i + 1 < argc) cli_scroll = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--keys") && i + 3 < argc) { cli_keys = argv[++i]; cli_keys_frame = atoi(argv[++i]); cli_keys_every = atoi(argv[++i]); }
-        else if ((!strcmp(argv[i], "--click") || !strcmp(argv[i], "--drag")) && i + 1 < argc) {
+        else if ((!strcmp(argv[i], "--click") || !strcmp(argv[i], "--drag") || !strcmp(argv[i], "--hover")) && i + 1 < argc) {
             bool drag = !strcmp(argv[i], "--drag");
+            bool hover = !strcmp(argv[i], "--hover");
             if (cli_mouse_n < (int)(sizeof cli_mouse / sizeof cli_mouse[0])) {
                 int a = 0, b = 0, c2 = 0, d = 0, f = 60;
                 int got = drag ? sscanf(argv[i + 1], "%d,%d,%d,%d,%d", &a, &b, &c2, &d, &f)
@@ -2096,6 +2236,7 @@ int main(int argc, char *argv[]) {
                     cli_mouse[cli_mouse_n].x = a; cli_mouse[cli_mouse_n].y = b;
                     cli_mouse[cli_mouse_n].x2 = drag ? c2 : a; cli_mouse[cli_mouse_n].y2 = drag ? d : b;
                     cli_mouse[cli_mouse_n].frame = f; cli_mouse[cli_mouse_n].drag = drag;
+                    cli_mouse[cli_mouse_n].hover = hover;
                     cli_mouse_n++;
                 } else fprintf(stderr, "bad %s argument: %s\n", argv[i], argv[i + 1]);
             }
@@ -2281,6 +2422,7 @@ int main(int argc, char *argv[]) {
         app.cli_mouse[i].x = cli_mouse[i].x; app.cli_mouse[i].y = cli_mouse[i].y;
         app.cli_mouse[i].x2 = cli_mouse[i].x2; app.cli_mouse[i].y2 = cli_mouse[i].y2;
         app.cli_mouse[i].frame = cli_mouse[i].frame; app.cli_mouse[i].drag = cli_mouse[i].drag;
+        app.cli_mouse[i].hover = cli_mouse[i].hover;
     }
     app.cli_mouse_n = cli_mouse_n;
     app.skip_update_check = no_update || cli_shot || cli_record;   // scripted runs never phone home

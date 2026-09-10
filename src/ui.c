@@ -578,6 +578,8 @@ void ui_init(UIState *ui) {
     ui->cursor_b_channel = -1;
     ui->scope_view_t0 = 0.0;
     ui->scope_view_span = 0.0;
+    ui->scope_view_valid = false;
+    ui->scope_pointer_inside = false;
     ui->scope_fft_mode = false;
     ui->scope_stacked = false;
     ui->scope_track_sweep = false;
@@ -4138,6 +4140,7 @@ static void fmt_volt_eng(char *buf, size_t size, double v) {
     if (a >= 1.0)        snprintf(buf, size, "%.3gV", v);
     else if (a >= 1e-3)  snprintf(buf, size, "%.3gmV", v * 1e3);
     else if (a >= 1e-6)  snprintf(buf, size, "%.3guV", v * 1e6);
+    else if (a > 0)      snprintf(buf, size, "%.3gnV", v * 1e9);
     else                 snprintf(buf, size, "0V");
 }
 static void fmt_freq_eng(char *buf, size_t size, double f) {
@@ -4148,9 +4151,10 @@ static void fmt_freq_eng(char *buf, size_t size, double f) {
 
 // Linear interpolation of the captured trace of channel ch at absolute time t.
 // Returns false when t is outside the captured span.
-static bool scope_value_at(UIState *ui, int ch, double t, double *out) {
+static bool scope_value_at(const UIState *ui, int ch, double t, double *out) {
     int n = ui->scope_capture_count;
-    if (ch < 0 || ch >= MAX_PROBES || n < 2) return false;
+    if (ch < 0 || ch >= ui->scope_num_channels || ch >= MAX_PROBES ||
+        !ui->scope_channels[ch].enabled || n < 2 || n > SCOPE_CAPTURE_SIZE || !isfinite(t)) return false;
     if (t < ui->scope_capture_times[0] || t > ui->scope_capture_times[n - 1]) return false;
     int lo = 0, hi = n - 1;
     while (hi - lo > 1) {
@@ -4161,7 +4165,116 @@ static bool scope_value_at(UIState *ui, int ch, double t, double *out) {
     double v0 = ui->scope_capture_values[ch][lo], v1 = ui->scope_capture_values[ch][hi];
     double f = (t1 > t0) ? (t - t0) / (t1 - t0) : 0.0;
     *out = v0 + (v1 - v0) * f;
-    return true;
+    return isfinite(*out);
+}
+
+bool ui_scope_readout_at(const UIState *ui, int x, int y, ScopeReadout *out) {
+    if (!ui || !out) return false;
+    memset(out, 0, sizeof *out);
+    out->channel = -1;
+    const Rect *r = &ui->scope_rect, *drawn = &ui->scope_view_rect;
+    if (!ui->scope_view_valid || !ui->scope_capture_valid ||
+        ui->display_mode != SCOPE_MODE_YT || ui->scope_fft_mode ||
+        (ui->scope_popped_out && !ui->scope_panel_active) ||
+        r->w <= 0 || r->h <= 0 || x < r->x || x >= r->x + r->w ||
+        y < r->y || y >= r->y + r->h ||
+        r->x != drawn->x || r->y != drawn->y || r->w != drawn->w || r->h != drawn->h ||
+        !(ui->scope_view_span > 0) || !isfinite(ui->scope_view_span)) return false;
+
+    out->time_from_left = (double)(x - r->x) / r->w * ui->scope_view_span;
+    out->time = ui->scope_view_t0 + out->time_from_left;
+    out->time_div = ui->scope_view_span / 10.0;
+    int fallback = -1, nearest = -1;
+    double best = 9.0;
+    for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
+        if (!ui->scope_channels[ch].enabled || !(ui->scope_ch_scale[ch] > 0) ||
+            !isfinite(ui->scope_ch_scale[ch]) || ui->scope_ch_height[ch] <= 0) continue;
+        int top = ui->scope_ch_top[ch], height = ui->scope_ch_height[ch];
+        if (y < top || y >= top + height) continue;
+        if (fallback < 0 || ch == ui->scope_selected_channel) fallback = ch;
+        double v;
+        if (!scope_value_at(ui, ch, out->time, &v)) continue;
+        double py = ui->scope_ch_center[ch] -
+            (v + ui->scope_channels[ch].offset + ui->scope_ch_shift[ch]) * ui->scope_ch_scale[ch];
+        /* A clipped trace is not a measurement at the rail it was clipped to. */
+        if (!isfinite(py) || py < top || py > top + height) continue;
+        double distance = fabs(py - y);
+        if (distance < best || (distance == best && ch == ui->scope_selected_channel)) {
+            best = distance; nearest = ch;
+        }
+    }
+    int ch = nearest >= 0 ? nearest : fallback;
+    if (ch < 0) return false;
+    out->channel = ch;
+    out->near_trace = nearest >= 0;
+    out->band_top = ui->scope_ch_top[ch];
+    out->band_height = ui->scope_ch_height[ch];
+    double scale = ui->scope_ch_scale[ch];
+    double offset = ui->scope_channels[ch].offset + ui->scope_ch_shift[ch];
+    out->pointer_volts = (ui->scope_ch_center[ch] - y) / scale - offset;
+    out->volt_div = (out->band_height / 8.0) / scale;
+    out->has_sample = scope_value_at(ui, ch, out->time, &out->trace_volts);
+    if (out->has_sample) {
+        double py = ui->scope_ch_center[ch] - (out->trace_volts + offset) * scale;
+        out->trace_visible = isfinite(py) && py >= out->band_top && py <= out->band_top + out->band_height;
+        if (out->trace_visible) out->trace_y = (int)py;
+    }
+    return isfinite(out->pointer_volts) && isfinite(out->time);
+}
+
+static void scope_draw_pointer(UIState *ui, SDL_Renderer *renderer) {
+    ScopeReadout m;
+    if (!ui->scope_pointer_inside || ui->scope_cursor_drag || ui->scope_resizing ||
+        ui->dragging_trigger_level || ui->dragging_trigger_position ||
+        !ui_scope_readout_at(ui, ui->scope_pointer_x, ui->scope_pointer_y, &m)) return;
+    Rect *r = &ui->scope_rect;
+    int x = ui->scope_pointer_x, y = ui->scope_pointer_y;
+    SDL_SetRenderDrawColor(renderer, 0x90, 0xa0, 0x90, 0xff);
+    for (int gy = r->y; gy < r->y + r->h; gy += 6)
+        SDL_RenderDrawLine(renderer, x, gy, x, MIN(gy + 2, r->y + r->h));
+    for (int gx = r->x; gx < r->x + r->w; gx += 6)
+        SDL_RenderDrawLine(renderer, gx, y, MIN(gx + 2, r->x + r->w), y);
+    style_set_trace_color(renderer, m.channel, ui->scope_channels[m.channel].color.r,
+                          ui->scope_channels[m.channel].color.g, ui->scope_channels[m.channel].color.b);
+    if (m.trace_visible) {
+        SDL_Rect marker = {x - 4, m.trace_y - 4, 9, 9};
+        SDL_RenderDrawRect(renderer, &marker);
+    }
+    char lines[6][64], ts[24], vs[24], sample[24], td[24], vd[24];
+    /* Preserve fine time differences even after the simulation has run for seconds. */
+    snprintf(ts, sizeof ts, "%.9gs", m.time);
+    fmt_volt_eng(vs, sizeof vs, m.pointer_volts);
+    if (m.has_sample) fmt_volt_eng(sample, sizeof sample, m.trace_volts);
+    else snprintf(sample, sizeof sample, "no sample");
+    fmt_time_eng(td, sizeof td, m.time_div); fmt_volt_eng(vd, sizeof vd, m.volt_div);
+    snprintf(lines[0], sizeof lines[0], "%s CH%d %s", m.near_trace ? "TRACE" : "MOUSE",
+             m.channel + 1, ui_channel_name(ui, m.channel));
+    snprintf(lines[1], sizeof lines[1], "t %s  mouse %s", ts, vs);
+    snprintf(lines[2], sizeof lines[2], "signal %s%s", sample,
+             ui->scope_ac_coupling || (ui->scope_stacked && ui->scope_stack_fit) ? " (DC)" : "");
+    snprintf(lines[3], sizeof lines[3], "%s/div  %s/div", td, vd);
+    fmt_time_eng(ts, sizeof ts, m.time_from_left);
+    snprintf(lines[4], sizeof lines[4], "from left %s", ts);
+    snprintf(lines[5], sizeof lines[5], "%s", ui->scope_cursor_mode ? "Drag a/b to measure deltas" : "Click trace: select input");
+    int bw = 0, bh = 6 * 12 + 8;
+    for (int i = 0; i < 6; i++) bw = MAX(bw, (int)strlen(lines[i]) * 8 + 12);
+    bw = MIN(bw, r->w - 8);
+    if (bw < 32 || r->h < bh + 8) return;
+    int bx = r->x + 4;
+    int by = y < r->y + r->h / 2 ? r->y + r->h - bh - 4 : r->y + 4;
+    /* The manual cursor's own report occupies the top-right. */
+    if (ui->scope_cursor_mode) by = r->y + r->h - bh - 4;
+    SDL_Rect box = {bx, by, bw, bh};
+    SDL_SetRenderDrawColor(renderer, 0x08, 0x14, 0x18, 0xff); SDL_RenderFillRect(renderer, &box);
+    SDL_SetRenderDrawColor(renderer, 0x70, 0x90, 0xa0, 0xff); SDL_RenderDrawRect(renderer, &box);
+    int chars = (bw - 12) / 8;
+    for (int i = 0; i < 6; i++) {
+        lines[i][MIN(chars, (int)sizeof lines[i] - 1)] = '\0';
+        if (i == 0) style_set_trace_color(renderer, m.channel, ui->scope_channels[m.channel].color.r,
+                                        ui->scope_channels[m.channel].color.g, ui->scope_channels[m.channel].color.b);
+        else SDL_SetRenderDrawColor(renderer, 0xd8, 0xe8, 0xf0, 0xff);
+        ui_draw_text(renderer, lines[i], bx + 6, by + 4 + i * 12);
+    }
 }
 
 // Gated measurements of channel ch between absolute times ta..tb (Tek "gate to cursors")
@@ -4327,6 +4440,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     AnalysisState *analysis = (AnalysisState *)analysis_ptr;
     Rect *r = &ui->scope_rect;
     char buf[64];
+    ui->scope_view_valid = false;
 
     /* The screen is part of the document; the knobs are not.
      *
@@ -4394,22 +4508,29 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
         }
     }
 
-    int div_x = r->w / 10;
-    int div_y = r->h / 8;
+    // Each stacked band has its own eight voltage divisions.
+    int y_divisions = 8;
+    if (ui->scope_stacked && ui->display_mode == SCOPE_MODE_YT && !ui->scope_fft_mode) {
+        int enabled = 0;
+        for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++)
+            if (ui->scope_channels[ch].enabled) enabled++;
+        if (enabled > 1) y_divisions *= enabled;
+    }
+    // Divide the whole screen; rounding a division first loses pixels on every grid line.
 
     // Draw dotted subdivision lines (5 subdivisions per division)
     SDL_SetRenderDrawColor(renderer, 0x20, 0x30, 0x20, 0xff);
     for (int i = 0; i < 10; i++) {
         for (int sub = 1; sub < 5; sub++) {
-            int x = r->x + i * div_x + (sub * div_x / 5);
+            int x = r->x + ((i * 5 + sub) * r->w) / 50;
             for (int y = r->y; y < r->y + r->h; y += 4) {
                 SDL_RenderDrawPoint(renderer, x, y);
             }
         }
     }
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < y_divisions; i++) {
         for (int sub = 1; sub < 5; sub++) {
-            int y = r->y + i * div_y + (sub * div_y / 5);
+            int y = r->y + ((i * 5 + sub) * r->h) / (y_divisions * 5);
             for (int x = r->x; x < r->x + r->w; x += 4) {
                 SDL_RenderDrawPoint(renderer, x, y);
             }
@@ -4419,10 +4540,10 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
     // Main grid lines
     SDL_SetRenderDrawColor(renderer, 0x30, 0x50, 0x30, 0xff);
     for (int i = 0; i <= 10; i++) {
-        SDL_RenderDrawLine(renderer, r->x + i * div_x, r->y, r->x + i * div_x, r->y + r->h);
+        SDL_RenderDrawLine(renderer, r->x + (i * r->w) / 10, r->y, r->x + (i * r->w) / 10, r->y + r->h);
     }
-    for (int i = 0; i <= 8; i++) {
-        SDL_RenderDrawLine(renderer, r->x, r->y + i * div_y, r->x + r->w, r->y + i * div_y);
+    for (int i = 0; i <= y_divisions; i++) {
+        SDL_RenderDrawLine(renderer, r->x, r->y + (i * r->h) / y_divisions, r->x + r->w, r->y + (i * r->h) / y_divisions);
     }
 
     // Center crosshair (brighter, with tick marks)
@@ -4434,11 +4555,11 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
 
     // Draw small tick marks on center lines
     for (int i = 0; i <= 10; i++) {
-        int x = r->x + i * div_x;
+        int x = r->x + (i * r->w) / 10;
         SDL_RenderDrawLine(renderer, x, center_y - 3, x, center_y + 3);
     }
-    for (int i = 0; i <= 8; i++) {
-        int y = r->y + i * div_y;
+    for (int i = 0; i <= y_divisions; i++) {
+        int y = r->y + (i * r->h) / y_divisions;
         SDL_RenderDrawLine(renderer, center_x - 3, y, center_x + 3, y);
     }
 
@@ -4454,7 +4575,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
        scale; the rest of stacked is no better off. The volts per division is in the readout row
        under the scope, and each band carries its own label when Fit is on. */
     for (int i = 0; i <= 8 && !ui->scope_stacked; i++) {   // Fit: every band has its ownscale (tag per band)
-        int y = r->y + i * div_y;
+        int y = r->y + (i * r->h) / 8;
         // Calculate voltage value: top is +4*V/div, center is 0, bottom is -4*V/div
         double voltage = (4 - i) * ui->scope_volt_div;
 
@@ -4728,7 +4849,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 use_capture = true;
             } else {
                 // No trigger found
-                if (ui->trigger_mode == TRIG_AUTO) {
+                if (ui->trigger_mode == TRIG_AUTO && trig_count >= 2) {
                     // AUTO mode: free-run, show latest data without triggering
                     // (NORMAL mode should hold last capture, not free-run)
 
@@ -4850,6 +4971,8 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 // Remember the drawn window so cursor readouts map screen -> time
                 ui->scope_view_t0 = t_reference;
                 ui->scope_view_span = display_time_span;
+                ui->scope_view_rect = *r;
+                ui->scope_view_valid = true;
 
                 // Stacked view: give every enabled channel its own horizontal band with its
                 // own zero line and 8 divisions, so identical signals can be told apart.
@@ -4933,8 +5056,6 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                         v_sum += v;
                     }
                     double v_avg = v_sum / ui->scope_capture_count;
-                    double v_range = v_max - v_min;
-                    bool is_dc = (v_range < 0.01);  // Less than 10mV variation = DC
                     /* AC view / fitted band: centre on the channel's own DC level, taken over
                        whole cycles rather than over the ragged captured window - ui_scope_dc_level. */
                     if (ui->scope_ac_coupling || fit)
@@ -4943,6 +5064,8 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                     ui->scope_ch_shift[ch] = offset - ui->scope_channels[ch].offset;
                     ui->scope_ch_center[ch] = ch_center;
                     ui->scope_ch_scale[ch] = ch_scale;
+                    ui->scope_ch_top[ch] = band_y;
+                    ui->scope_ch_height[ch] = band_h;
                     /* SCOPE_DEBUG=1 prints what each band decided: where it is, what it is
                        scaled at and what it centred on. Reading this off the screen is guesswork
                        - it is how the "the buck's ripple goes flat" report was settled. */
@@ -4954,38 +5077,24 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                                 ch_center, ch_scale, ui->scope_band_vdiv[ch], v_avg, v_min, v_max,
                                 offset, ui->scope_capture_count);
 
-                    // Calculate x range for the captured data
-                    double x_frac_start = (ui->scope_capture_times[0] - t_reference) / display_time_span;
-                    double x_frac_end = (ui->scope_capture_times[ui->scope_capture_count - 1] - t_reference) / display_time_span;
-                    int x_start = r->x + (int)(x_frac_start * r->w);
-                    int x_end = r->x + (int)(x_frac_end * r->w);
-                    x_start = CLAMP(x_start, r->x, r->x + r->w);
-                    x_end = CLAMP(x_end, r->x, r->x + r->w);
-
-                    if (is_dc && ui->scope_capture_count >= 2) {
-                        // For DC signals, draw a horizontal line at the average voltage
-                        // DC signals should ALWAYS span the full visible width since the value is constant
-                        int y_dc = ch_center - (int)((v_avg + offset) * ch_scale);
-                        y_dc = CLAMP(y_dc, band_y, band_y + band_h);
-
-                        // Always draw DC line across full scope width
-                        // DC voltage is constant, so there's no reason to limit the line length
-                        SDL_RenderDrawLine(renderer, r->x, y_dc, r->x + r->w, y_dc);
-                    } else {
-                        // Simple linear waveform rendering - accurate amplitude display
-                        for (int i = 1; i < ui->scope_capture_count; i++) {
-                            double x_frac1 = (ui->scope_capture_times[i-1] - t_reference) / display_time_span;
-                            double x_frac2 = (ui->scope_capture_times[i] - t_reference) / display_time_span;
-                            int x1 = r->x + (int)(x_frac1 * r->w);
-                            int x2 = r->x + (int)(x_frac2 * r->w);
-                            int y1 = ch_center - (int)((ui->scope_capture_values[ch][i-1] + offset) * ch_scale);
-                            int y2 = ch_center - (int)((ui->scope_capture_values[ch][i] + offset) * ch_scale);
-                            x1 = CLAMP(x1, r->x, r->x + r->w);
-                            x2 = CLAMP(x2, r->x, r->x + r->w);
-                            y1 = CLAMP(y1, band_y, band_y + band_h);
-                            y2 = CLAMP(y2, band_y, band_y + band_h);
-                            SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
-                        }
+                    // Draw every captured signal, including sub-10 mV ripple. The old
+                    // absolute DC threshold erased real waveforms and disagreed with cursors.
+                    for (int i = 1; i < ui->scope_capture_count; i++) {
+                        double x_frac1 = (ui->scope_capture_times[i-1] - t_reference) / display_time_span;
+                        double x_frac2 = (ui->scope_capture_times[i] - t_reference) / display_time_span;
+                        if (x_frac2 < 0.0 || x_frac1 > 1.0) continue;
+                        int x1 = r->x + (int)(x_frac1 * r->w);
+                        int x2 = r->x + (int)(x_frac2 * r->w);
+                        int y1 = ch_center - (int)((ui->scope_capture_values[ch][i-1] + offset) * ch_scale);
+                        int y2 = ch_center - (int)((ui->scope_capture_values[ch][i] + offset) * ch_scale);
+                        x1 = CLAMP(x1, r->x, r->x + r->w);
+                        x2 = CLAMP(x2, r->x, r->x + r->w);
+                        y1 = CLAMP(y1, band_y, band_y + band_h);
+                        y2 = CLAMP(y2, band_y, band_y + band_h);
+                        SDL_RenderDrawLine(renderer, x1, y1, x2, y2);
+                        if (!ui->scope_scale_all && ui->scope_selected_channel == ch)
+                            SDL_RenderDrawLine(renderer, x1, MIN(y1 + 1, band_y + band_h),
+                                               x2, MIN(y2 + 1, band_y + band_h));
                     }
 
                     // Draw ground reference arrow on left side (channel color)
@@ -5252,7 +5361,12 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             if (fabs(dt) > 0) { char fs[24]; fmt_freq_eng(fs, sizeof fs, 1.0 / fabs(dt)); snprintf(line[nl++], 40, "1/dt %s", fs); }
         }
 
-        int box_w = 150, box_h = nl * 12 + 6;
+        int box_w = 0;
+        for (int i = 0; i < nl; i++) box_w = MAX(box_w, (int)strlen(line[i]) * 8 + 10);
+        box_w = MIN(box_w, MAX(24, r->w - 8));
+        nl = MIN(nl, MAX(0, (r->h - 22) / 12));
+        int box_h = nl * 12 + 6;
+        for (int i = 0; i < nl; i++) line[i][MIN(39, (box_w - 10) / 8)] = '\0';
         int meas_x = r->x + r->w - box_w - 4;
         int meas_y = r->y + 14;
         SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xc0);
@@ -5268,6 +5382,8 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
             ui_draw_text(renderer, line[i], meas_x, meas_y + i * 12);
         }
     }
+
+    scope_draw_pointer(ui, renderer);
 
     // Border (scope bezel)
     SDL_SetRenderDrawColor(renderer, 0x40, 0x40, 0x40, 0xff);
@@ -7520,6 +7636,26 @@ int ui_handle_click(UIState *ui, int x, int y, bool is_down) {
             if (point_in_rect(x, y, &mc_panel_rect)) return UI_ACTION_NONE;
         }
 
+        /* A trace click chooses the vertical controls' input. Leave explicit A/B
+           cursor mode and the trigger handles alone; a DC trace can coincide with
+           a trigger line, so the trace takes precedence in the screen interior. */
+        if (!ui->scope_cursor_mode && x > ui->scope_rect.x + 15 &&
+            x < ui->scope_rect.x + ui->scope_rect.w - 15 &&
+            y > ui->scope_rect.y + 15 && y < ui->scope_rect.y + ui->scope_rect.h - 15) {
+            ScopeReadout reading;
+            if (ui_scope_readout_at(ui, x, y, &reading) && reading.near_trace) {
+                char msg[160], volts[24], time[24];
+                fmt_volt_eng(volts, sizeof volts, reading.trace_volts);
+                fmt_time_eng(time, sizeof time, reading.time);
+                snprintf(msg, sizeof msg, "CH%d %s: %s at %s; V/div now controls this input. CUR: A/B measurements",
+                         reading.channel + 1, ui_channel_name(ui, reading.channel), volts, time);
+                ui_set_status(ui, msg);
+                ui->scope_selected_channel = reading.channel;
+                ui->scope_scale_all = false;
+                return UI_ACTION_NONE;
+            }
+        }
+
         // Handle trigger position and level dragging in scope area
         if (ui->display_mode == SCOPE_MODE_YT && ui->scope_num_channels > 0) {
             Rect *sr = &ui->scope_rect;
@@ -8059,6 +8195,10 @@ int ui_handle_right_click(UIState *ui, int x, int y) {
 
 int ui_handle_motion(UIState *ui, int x, int y, bool popup_mode) {
     if (!ui) return UI_ACTION_NONE;
+    ui->scope_pointer_x = x;
+    ui->scope_pointer_y = y;
+    ui->scope_pointer_inside = popup_mode == ui->scope_popped_out &&
+                               point_in_rect(x, y, &ui->scope_rect);
 
     // Handle scope resizing
     if (ui->scope_resizing) {

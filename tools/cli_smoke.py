@@ -386,6 +386,93 @@ def c_click_drag():
     return None
 
 
+def c_scope_hover():
+    """Move/click on an actual rendered 10 V / 5 V divider; no guessed plot coordinates.
+    Numeric oracles come from the divider, and the click must not move the trigger.
+    """
+    common = ["--template", "Voltage Divider", "--size", "1400x900", "--ui-scale", "1"]
+
+    def run(name, extra=()):
+        sj = os.path.join(TMP, name + ".json")
+        bmp = os.path.join(TMP, name + ".bmp")
+        proc = app(common + list(extra) + ["--frame", "80", "--state-out", sj,
+                   "--shot", bmp, "--exit", "--no-update-check"], env_extra={"SDL_VIDEODRIVER": "dummy"})
+        if proc is None or proc.returncode or not os.path.exists(sj) or not os.path.exists(bmp):
+            raise RuntimeError("scope interaction produced no successful state/screenshot")
+        return json.load(open(sj, encoding="utf-8")), bmp
+
+    try:
+        base, _ = run("scope_base")
+        stack = base["scope"]["stack_button"]
+        stacked = ["--click", "%d,%d,20" % tuple(stack)]
+        base, base_bmp = run("scope_stacked", stacked)
+        x, y, w, h = base["scope"]["rect"]
+        # Pick the actual cyan output trace in the lower band, away from labels/handles.
+        px = x + w // 3
+        _, _, pixels = bmp_pixels(base_bmp)
+        ys = [row for row in range(y + h // 2 + 16, y + h - 16)
+              if pixels[row][px][0] < 90 and pixels[row][px][1] > 180 and pixels[row][px][2] > 180]
+        if not ys:
+            return "no visible output trace in the stacked divider"
+        py = ys[len(ys) // 2]
+        hover, hover_bmp = run("scope_hover", stacked + ["--hover", "%d,%d,50" % (px, py)])
+        m = hover["scope"]["pointer"]
+        if not m or not m["near_trace"] or m["channel"] != 1 or not m["has_sample"]:
+            return "hover does not identify the actual cyan output trace"
+        if abs(m["signal_volts"] - 5.0) > 0.001 or abs(m["pointer_volts"] - 5.0) > m["volt_div"] * 0.1:
+            return "divider hover does not report 5 V in the fitted/AC frame"
+        if abs(m["time_div"] - hover["time_div"]) > 1e-12:
+            return "pointer's time/div disagrees with the scope setting"
+        if hover["trigger_level"] != base["trigger_level"] or not hover["scope"]["scale_all"]:
+            return "hover changes the trigger or selects an input"
+        # Gray dashed crosshair pixels must actually reach the glass, not only JSON.
+        _, _, hpixels = bmp_pixels(hover_bmp)
+        crosshair = sum(1 for row in range(y + 10, y + h - 10)
+                        if all(abs(hpixels[row][px][i] - c) <= 3 for i, c in enumerate((144,160,144))))
+        if crosshair < 12:
+            return "live mouse crosshair is not drawn"
+        clicked, _ = run("scope_click", stacked + ["--click", "%d,%d,50" % (px, py)])
+        if clicked["scope"]["selected"] != 1 or clicked["scope"]["scale_all"]:
+            return "clicking the output trace does not select its vertical controls"
+        if clicked["trigger_level"] != base["trigger_level"]:
+            return "trace click changes trigger level"
+        cursor = base["scope"]["cursor_button"]
+        cur, _ = run("scope_cursor", stacked + ["--click", "%d,%d,35" % tuple(cursor),
+                         "--click", "%d,%d,50" % (px, py)])
+        if cur["scope"]["cursor_mode"] != 1 or abs(cur["scope"]["cursor_a"] - (px - x) / w) > 1e-6:
+            return "A/B cursor cannot be placed at the pointer"
+        if cur["trigger_level"] != base["trigger_level"]:
+            return "cursor positioning also changes trigger level"
+        away, _ = run("scope_leave", stacked + ["--hover", "%d,%d,40" % (px, py), "--hover", "300,200,60"])
+        if away["scope"]["pointer"] is not None:
+            return "scope hover persists after the pointer leaves"
+        # Popup pixels are independent of the main window's UI scale.
+        pop_flags = ["--popout", "--ui-scale", "1.5"]
+        popup, _ = run("scope_popup_base", pop_flags)
+        st = popup["scope"]["stack_button"]
+        pop_stack = pop_flags + ["--click", "%d,%d,20" % tuple(st)]
+        popup, _ = run("scope_popup_stacked", pop_stack)
+        x, y, w, h = popup["scope"]["rect"]
+        px = x + w // 3
+        _, _, pixels = bmp_pixels(os.path.join(TMP, "scope_popup_stacked_scope.bmp"))
+        ys = [row for row in range(y + h // 2 + 16, y + h - 16)
+              if pixels[row][px][0] < 90 and pixels[row][px][1] > 180 and pixels[row][px][2] > 180]
+        if not ys:
+            return "no output trace drawn in the popup lower band"
+        py = ys[len(ys) // 2]
+        popup, _ = run("scope_popup_hover", pop_stack + ["--hover", "%d,%d,50" % (px, py)])
+        m = popup["scope"]["pointer"]
+        if not m or m["channel"] != 1 or not m["near_trace"] or abs(m["signal_volts"] - 5) > 0.001:
+            return "scaled main window misplaces the popup mouse or its channel readout"
+        popup, _ = run("scope_popup_click", pop_stack + ["--click", "%d,%d,50" % (px, py)])
+        if popup["scope"]["selected"] != 1 or popup["scope"]["scale_all"] or popup["trigger_level"] != 0:
+            return "popup trace click does not select the input while preserving the trigger"
+
+    except (KeyError, TypeError, ValueError, RuntimeError, OSError) as exc:
+        return str(exc)
+    return None
+
+
 def c_netlist():
     f = write("n.txt", "R1 in out 1k\nV1 in 0 5\nR2 out 0 2k\n")
     got = state_of(["--netlist", f], "n.json")
@@ -541,7 +628,7 @@ CASES = [
     ("--shot", c_frame_shot_exit), ("--frame", c_frame_shot_exit), ("--exit", c_frame_shot_exit),
     ("--state-out", c_state_out), ("--template", c_template), ("--tab", c_tab),
     ("--scroll", c_scroll), ("--record", c_record), ("--keys", c_keys),
-    ("--click", c_click_drag), ("--drag", c_click_drag), ("--netlist", c_netlist),
+    ("--click", c_click_drag), ("--drag", c_click_drag), ("--hover", c_scope_hover), ("--netlist", c_netlist),
     ("--xy", c_xy), ("--sketch", c_sketch), ("--import-spice", c_import_spice),
     ("--inspect", c_inspect), ("--popout", c_popout), ("--dump-layout", c_dump_layout),
     ("--shard", c_shard), ("--no-update-check", c_no_update_check),

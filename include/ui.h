@@ -174,6 +174,15 @@ typedef struct {
     char name[8];       // the probe's label - "CH3", or whatever the user typed instead
 } ScopeChannel;
 
+/* A pointer reading uses the frame that was actually drawn, including each band's
+   scale and AC/Fit shift. Voltages remain the original signal's DC-referenced volts. */
+typedef struct {
+    int channel, trace_y, band_top, band_height;
+    bool has_sample, near_trace, trace_visible;
+    double time, time_from_left, pointer_volts, trace_volts;
+    double time_div, volt_div;
+} ScopeReadout;
+
 // Predefined probe colors for oscilloscope channels
 static const Color PROBE_COLORS[MAX_PROBES] = {
     {0xff, 0xff, 0x00, 0xff},  // Yellow (CH1)
@@ -378,6 +387,11 @@ typedef struct {
     int cursor_b_channel;            // Source channel for cursor b (-1 = same as a)
     double scope_view_t0;            // Simulation time at the left edge of the last drawn Y-T window
     double scope_view_span;          // Seconds spanned by the last drawn Y-T window
+    bool scope_view_valid;           // Last render produced a measurable Y-T trace
+    Rect scope_view_rect;            // Geometry belonging to those recorded transforms
+    bool scope_pointer_inside;
+    int scope_pointer_x, scope_pointer_y;
+    int scope_ch_top[MAX_PROBES], scope_ch_height[MAX_PROBES];
 
     // FFT display state
     bool scope_fft_mode;             // FFT display active
@@ -556,6 +570,7 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
 bool probe_label_is_default(const char *label);   // "CH2" or empty: safe to renumber
 const char *ui_channel_name(const UIState *ui, int ch);   // the probe's name, or CHn
 double ui_channel_volt_div(const UIState *ui, int ch);    // that channel's own V/div, or the main one
+bool ui_scope_readout_at(const UIState *ui, int x, int y, ScopeReadout *out);
 void ui_render_measurements(UIState *ui, SDL_Renderer *renderer, Simulation *sim);
 void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim, void *analysis);
 void ui_render_bode_plot(UIState *ui, SDL_Renderer *renderer, Simulation *sim);

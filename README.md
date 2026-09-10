@@ -734,6 +734,8 @@ Full-featured virtual oscilloscope with:
 - **Display Modes**
   - Y-T (voltage vs time)
   - X-Y (Lissajous patterns)
+- **Live mouse readout** - move over the Y-T screen for a crosshair, simulation time, pointer voltage, signal voltage, and the input's actual V/div and time/div. Near a trace it identifies the channel; click the trace (with CUR off) to select and highlight that input. Works in stacked, AC/Fit and popped-out views. Missing samples are shown as unavailable.
+- **Small-signal visibility** - millivolt ripple is drawn from the captured samples, with no 10 mV flattening threshold. Division marks stay aligned when the scope is resized; stacked channels each get eight voltage divisions.
 - **Measurement Cursors** (Tektronix-style) - `CUR` cycles Off → Waveform → Screen. Waveform cursors a/b ride the source (trigger-channel) trace and read t, V, Δt, 1/Δt, ΔV and dV/dt, plus gated Vpp / mean / RMS between the cursors; Screen cursors add independent horizontal amplitude bars. Drag any bar; the active cursor is marked `*`
 - **Waveform Measurements** - Vpp, Vrms, Vavg, frequency, period, duty cycle
 - **FFT Analysis** - Frequency spectrum view with THD and SNR

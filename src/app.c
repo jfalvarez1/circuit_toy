@@ -256,7 +256,11 @@ void app_handle_events(App *app) {
            clicking somewhere that does nothing. */
         {
             float us = app->render ? app->render->ui_scale : 1.0f;
-            if (us > 1.0f) {
+            bool popup_pointer = app->ui.scope_popped_out &&
+                ((event.type == SDL_MOUSEMOTION && event.motion.windowID == app->ui.scope_popup_window_id) ||
+                 ((event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP) &&
+                  event.button.windowID == app->ui.scope_popup_window_id));
+            if (us > 1.0f && !popup_pointer) {
                 if (event.type == SDL_MOUSEMOTION) {
                     event.motion.x = (int)(event.motion.x / us);
                     event.motion.y = (int)(event.motion.y / us);
@@ -274,6 +278,10 @@ void app_handle_events(App *app) {
                 break;
 
             case SDL_WINDOWEVENT:
+                if (event.window.event == SDL_WINDOWEVENT_LEAVE ||
+                    event.window.event == SDL_WINDOWEVENT_FOCUS_LOST ||
+                    event.window.event == SDL_WINDOWEVENT_CLOSE)
+                    app->ui.scope_pointer_inside = false;
                 // Check if this event is for the popup window
                 if (app->ui.scope_popped_out &&
                     event.window.windowID == app->ui.scope_popup_window_id) {
@@ -2813,16 +2821,21 @@ static void app_cli_capture(App *app) {
         app->cli_mouse[i].done = true;
         int x1 = app->cli_mouse[i].x, y1 = app->cli_mouse[i].y;
         int x2 = app->cli_mouse[i].x2, y2 = app->cli_mouse[i].y2;
+        Uint32 pointer_window = app->ui.scope_popped_out ? app->ui.scope_popup_window_id : SDL_GetWindowID(app->window);
         SDL_Event ev;
         memset(&ev, 0, sizeof ev);
+        ev.motion.windowID = pointer_window;
         ev.type = SDL_MOUSEMOTION; ev.motion.x = x1; ev.motion.y = y1; SDL_PushEvent(&ev);
+        if (app->cli_mouse[i].hover) continue;
         memset(&ev, 0, sizeof ev);
         ev.type = SDL_MOUSEBUTTONDOWN; ev.button.button = SDL_BUTTON_LEFT;
+        ev.button.windowID = pointer_window;
         ev.button.x = x1; ev.button.y = y1; ev.button.clicks = 1; SDL_PushEvent(&ev);
         if (app->cli_mouse[i].drag) {
             for (int k = 1; k <= 4; k++) {
                 memset(&ev, 0, sizeof ev);
                 ev.type = SDL_MOUSEMOTION;
+                ev.motion.windowID = pointer_window;
                 ev.motion.x = x1 + (x2 - x1) * k / 4; ev.motion.y = y1 + (y2 - y1) * k / 4;
                 ev.motion.state = SDL_BUTTON_LMASK;
                 SDL_PushEvent(&ev);
@@ -2830,6 +2843,7 @@ static void app_cli_capture(App *app) {
         }
         memset(&ev, 0, sizeof ev);
         ev.type = SDL_MOUSEBUTTONUP; ev.button.button = SDL_BUTTON_LEFT;
+        ev.button.windowID = pointer_window;
         ev.button.x = x2; ev.button.y = y2; ev.button.clicks = 1; SDL_PushEvent(&ev);
     }
 
@@ -3128,6 +3142,29 @@ void app_write_state(App *app, const char *path) {
             fprintf(f, "%s\"%s\": [%d, %d]", i ? ", " : "", tb[i].name,
                     tb[i].b.x + tb[i].b.w / 2, tb[i].b.y + tb[i].b.h / 2);
         fprintf(f, "}");
+    }
+    {
+        ScopeCoordsBackup backup = {0};
+        if (app->ui.scope_popped_out) backup = ui_setup_popup_scope_coords(&app->ui);
+        UIState *u = &app->ui;
+        Rect r = u->scope_rect;
+        fprintf(f, ", \"scope\": {\"rect\": [%d,%d,%d,%d], \"selected\": %d, \"scale_all\": %s, "
+                   "\"cursor_a\": %.9g, \"cursor_mode\": %d, \"pointer\": ",
+                r.x, r.y, r.w, r.h, u->scope_selected_channel, u->scope_scale_all ? "true" : "false",
+                u->cursor1_time, u->scope_cursor_type);
+        ScopeReadout m;
+        if (u->scope_pointer_inside && ui_scope_readout_at(u, u->scope_pointer_x, u->scope_pointer_y, &m))
+            fprintf(f, "{\"channel\": %d, \"near_trace\": %s, \"has_sample\": %s, \"time\": %.12g, "
+                       "\"pointer_volts\": %.12g, \"signal_volts\": %.12g, \"time_div\": %.12g, \"volt_div\": %.12g}",
+                    m.channel, m.near_trace ? "true" : "false", m.has_sample ? "true" : "false",
+                    m.time, m.pointer_volts, m.has_sample ? m.trace_volts : 0.0, m.time_div, m.volt_div);
+        else fprintf(f, "null");
+        fprintf(f, ", \"stack_button\": [%d,%d], \"cursor_button\": [%d,%d]}",
+                u->btn_scope_stack.bounds.x + u->btn_scope_stack.bounds.w / 2,
+                u->btn_scope_stack.bounds.y + u->btn_scope_stack.bounds.h / 2,
+                u->btn_scope_cursor.bounds.x + u->btn_scope_cursor.bounds.w / 2,
+                u->btn_scope_cursor.bounds.y + u->btn_scope_cursor.bounds.h / 2);
+        if (u->scope_popped_out) ui_restore_popup_scope_coords(u, &backup);
     }
     fprintf(f, "}");
     fclose(f);

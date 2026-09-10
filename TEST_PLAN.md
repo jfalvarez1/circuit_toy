@@ -9,6 +9,13 @@ Status legend: `[ ]` not run · `[P]` pass · `[F]` fail (link issue/notes) · `
 
 ---
 
+## Scope mouse readout (2026-09-10, development after v3.32.0)
+
+- `--layout-test` checks screen-to-time/voltage mapping using nonuniform times, nonzero DC shifts, unequal scales, stacked AC/Fit bands, unavailable/nonfinite data, disabled channels, FFT/XY exclusion, resizing, and docked/popup pointer ownership. Real input events check that trace/cursor clicks preserve the trigger.
+- It also renders a 2 mV peak-to-peak triangle to an SDL software surface, checking yellow extrema, intervening slopes, and the mouse measurement at its peak. The old 10 mV flattening shortcut fails this check. A two-band render verifies eight voltage divisions per band; restoring the old global grid fails the pixel check.
+- `tools/cli_smoke.py --only=--hover` moves through the actual app event loop, locates the divider's cyan 5 V output from pixels, verifies crosshair pixels and numbers, selects the trace, places cursor A, and moves out of the graph. Popup checks use main-window UI scale 1.5 to catch double-scaling pointer coordinates. SDL's dummy driver keeps desktop pointer events from interfering with scripted events.
+- These extend the existing `layout` and `cli-smoke` suites; the battery remains 77 suites.
+
 ## Current state (2026-08-29, v3.16.0)
 
 The per-test notes further down carry the counts they were written with (96/96, 86 oracles and

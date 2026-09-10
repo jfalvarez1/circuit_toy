@@ -48,10 +48,10 @@ typedef struct {
     int  cli_frame;              // frames rendered since start
     char cli_keys[64];           // --keys "^mosfet" FRAME EVERY : from FRAME, one char every EVERY frames ('^' opens Spotlight, '|' = Enter)
     int  cli_keys_frame, cli_keys_every, cli_keys_pos;
-    /* --click and --drag: scripted mouse, so a GUI smoke test can press the buttons a user
+    /* --click, --drag and --hover: scripted mouse, so a GUI smoke test can press the buttons a user
        presses instead of calling the functions behind them. Events go through SDL_PushEvent,
        so they take exactly the path a real pointer takes. */
-    struct { int x, y, x2, y2, frame; bool drag, done; } cli_mouse[12];
+    struct { int x, y, x2, y2, frame; bool drag, hover, done; } cli_mouse[12];
     int  cli_mouse_n;
     int  cli_mod_until;          // frame at which a scripted Ctrl release takes effect
     char cli_state_path[260];    // --state-out FILE: what the app is, in numbers, at the shot

@@ -37,6 +37,34 @@ confirmed the new numerical, current-readback, KCL, classifier and rejection gua
 their faults are restored. These are local validation results; GitHub workflow results are
 tracked against each pushed commit.
 
+## Scope interaction follow-up (2026-09-10)
+
+The Y-T scope now has a live mouse crosshair/readout and direct trace selection. Readouts use the
+last drawn channel transform, including AC/Fit shifts, interpolate nonuniform capture times,
+and distinguish pointer voltage from signal voltage. Disabled, nonfinite and missing data do
+not produce samples. A trace click selects its vertical controls with CUR off; CUR on keeps A/B
+positioning. Explicit trigger handles still work. Popup pointer coordinates use popup pixels,
+independently of the main window's UI scale.
+
+Removed the unconditional trigger-level fallback on docked scope clicks. Popup input-row clicks
+now restore temporary coordinates. Signals below 10 mV are drawn from their actual samples,
+not flattened to their mean. The graticule divides its full dimensions without accumulating
+rounding errors and gives each stacked band eight voltage divisions. Manual cursor report boxes now fit their text and the available plot space.
+
+Coverage extends `--layout-test` and `tools/cli_smoke.py --only=--hover`. `--hover X,Y,FRAME`
+injects motion without clicking; with `--popout`, scripted pointer events target that window.
+`--state-out` includes scope/readout state. The complete battery remains 77 suites.
+Twelve deliberate mutations were caught: interpolation, absolute time origin, AC shift,
+per-channel scale, finite-sample validation, FFT exclusion, trace selection, competing trigger
+clicks, small-signal segment flattening, missing crosshair painting, popup double scaling,
+and a stacked graticule with the wrong number of divisions.
+The rendering check includes slopes as well as extrema so partial endpoint corruption fails.
+The full local audit passed all 77 suites in 449 seconds. Layout and real mouse checks were
+repeated successfully after the final stacked-grid correction.
+
+This task owns Circuit Toy simulator work. Course diagram edits were handed to the separate
+EE_Review task, "Improve EE lessons with references"; do not resume editing the course here.
+
 ## Maintenance authorization
 
 On 2026-09-09, the project owner authorized ongoing project maintenance and GitHub pushes.
