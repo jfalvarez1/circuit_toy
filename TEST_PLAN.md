@@ -2085,6 +2085,8 @@ The rebuilt 3.33.0 executable passed all 77 local suites in 458 seconds.
 |----|-------|----------------|
 | 11.1 | Rebuild and run `--version` | Binary reports 3.33.0, matching `include/version.h` |
 | 11.2 | Run `tools/run_audits.sh` against that build | 0 of 77 suites fail; CLI coverage includes all 34 options |
+| 11.2a | Run the partition checker with an inherited branch shard | Full reference contains all 93 work units; no missing, duplicate, or unexpected units |
+| 11.2b | Set a release tag ref and a nonempty audit shard, with `AUDIT_LIST=1` | Configuration is rejected with exit 2 before any tests are dispatched |
 | 11.3 | Check the pushed commit's GitHub workflows | All four Windows jobs and CodeQL pass before tagging |
 | 11.4 | Download both published ZIP names | Versioned and stable downloads have identical SHA-256 hashes |
 | 11.5 | Extract the downloaded ZIP into a fresh directory | App runs without separately installed SDL files |

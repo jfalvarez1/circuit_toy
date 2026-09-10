@@ -8,6 +8,15 @@
 # there is no reason to run them one after another. In CI they took seventeen minutes of a
 # twenty-minute job that spends thirty-five seconds compiling.
 set -u
+# A tag is a release gate on each platform/link variant, never a quarter-run.
+# Apply this even to AUDIT_LIST so the configuration can be checked without executing suites.
+case "${GITHUB_REF:-}" in
+    refs/tags/*)
+        if [ -n "${AUDIT_SHARD:-}" ]; then
+            echo "run_audits: release tags require the full battery; unset AUDIT_SHARD" >&2
+            exit 2
+        fi ;;
+esac
 tree="${1:-build}"
 SMOKE="$tree/tools/template_smoke.exe"
 APP="$tree/circuit-playground.exe"
@@ -194,7 +203,7 @@ fi
 # the AUDIT_LIST exit above, which is what stops this recursing: shard_check calls back into this
 # script with AUDIT_LIST set, and that returns before reaching here.
 if [ -f tools/shard_check.sh ]; then
-    if ! bash tools/shard_check.sh 4 >/dev/null 2>&1; then
+    if ! TREE="$tree" bash tools/shard_check.sh 4 >/dev/null 2>&1; then
         echo "run_audits: the AUDIT_SHARD partition is not a partition - some suite would run on" >&2
         echo "run_audits: no leg, or on two. Run: bash tools/shard_check.sh 4" >&2
         exit 2

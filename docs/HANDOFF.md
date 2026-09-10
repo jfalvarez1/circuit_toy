@@ -225,6 +225,21 @@ varied the suspect, and a self-consistent theory only generates confirming exper
 week, both of which made the results look better than they were. The solver was checked hard
 against the harness and the harness was never checked against the solver.
 
+## Release audit configuration
+
+The v3.33.0 release preparation fixes two audit-control bugs. The workflow used
+`tag && '' || shard`, which always selected the nonempty shard, including on tags. Its condition
+now selects a shard only for non-tag refs, and `run_audits.sh` refuses a tagged run with a shard.
+That rejection is checked without executing suites using `AUDIT_LIST=1`.
+
+The partition check now clears the inherited shard when reading its full reference list,
+checks for unexpected units as well as omissions/duplicates, and honors the requested build
+tree. Its per-shard lists explicitly model branch runs even when the caller is a release tag.
+The manifests contain 93 work units (including split suites); the public battery count remains
+77 suites. Three deliberate mutations were caught: an inherited partial reference list,
+a release tag accepting a shard, and an unexpected work unit. The corrected checker passes
+with both an inherited branch shard and a release-tag context.
+
 ## Release process
 
 1. bump `include/version.h` (single source of truth; `tools/make_release.ps1` reads it)

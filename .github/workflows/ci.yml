@@ -69,7 +69,8 @@ jobs:
         env:
           SDL_VIDEODRIVER: dummy
           CIRCUIT_TOY_NO_UPDATE: '1'
-          AUDIT_SHARD: ${{ startsWith(github.ref, 'refs/tags/') && '' || matrix.shard }}
+          # The truthy arm must be the nonempty shard; an empty true arm falls through ||.
+          AUDIT_SHARD: ${{ !startsWith(github.ref, 'refs/tags/') && matrix.shard || '' }}
         run: bash tools/run_audits.sh build
 
       # Start the binary this job is about to ship: window, renderer, a template placed, frames
