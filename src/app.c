@@ -783,6 +783,11 @@ void app_handle_events(App *app) {
             case UI_ACTION_SCOPE_AUTOSET:
                 // Auto-configure scope settings based on signal analysis
                 ui_scope_autoset(&app->ui, app->simulation);
+                /* Re-match dt to the time base even when Autoset kept the same time/div. The sync
+                   only runs on a change, so a dt turned down to 1 ns stayed there under 1 ms/div:
+                   ten million steps per screen, and a DC level crept in from the left edge so
+                   slowly that the scope looked empty. */
+                app->synced_time_div = 0;
                 ui_set_status(&app->ui, "Scope autoset complete");
                 break;
 

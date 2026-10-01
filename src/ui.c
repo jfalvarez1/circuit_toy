@@ -4982,6 +4982,7 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                 bool stacked = ui->scope_stacked && n_enabled > 1;
                 bool fit = stacked && ui->scope_stack_fit;
                 int band_index = 0;
+                int n_off_above = 0, n_off_below = 0;   /* off-screen markers placed so far */
                 for (int ch = 0; ch < MAX_PROBES; ch++) { ui->scope_ch_shift[ch] = 0; ui->scope_ch_scale[ch] = scale; ui->scope_band_vdiv[ch] = ui->scope_volt_div; }
 
                 for (int ch = 0; ch < ui->scope_num_channels && ch < MAX_PROBES; ch++) {
@@ -5095,6 +5096,31 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                         if (!ui->scope_scale_all && ui->scope_selected_channel == ch)
                             SDL_RenderDrawLine(renderer, x1, MIN(y1 + 1, band_y + band_h),
                                                x2, MIN(y2 + 1, band_y + band_h));
+                    }
+
+                    /* A trace that lies wholly above or below its band is clamped onto the
+                       border, where it vanishes into the graticule: a 10 V rail at 1 V/div looked
+                       exactly like a dead probe. Mark it at that edge with its level, the way a
+                       bench scope shows an off-screen arrow, so V/div or Autoset is the obvious
+                       next move. */
+                    {
+                        double y_hi = ch_center - (v_max + offset) * ch_scale;   /* highest point */
+                        double y_lo = ch_center - (v_min + offset) * ch_scale;   /* lowest point */
+                        bool above = y_lo < band_y, below = y_hi > band_y + band_h;
+                        if (above || below) {
+                            int slot = stacked ? 0 : (above ? n_off_above++ : n_off_below++);
+                            int mx = r->x + r->w / 4 + slot * 96;
+                            int my = above ? band_y + 3 : band_y + band_h - 11;
+                            int tip = above ? band_y + 2 : band_y + band_h - 2;
+                            for (int k = 0; k < 6; k++) {       /* filled arrowhead at the edge */
+                                int yy = above ? tip + k : tip - k;
+                                SDL_RenderDrawLine(renderer, mx - k, yy, mx + k, yy);
+                            }
+                            char lv[16], tag[40];
+                            format_volt_value(lv, sizeof lv, v_avg);
+                            snprintf(tag, sizeof tag, "%s %s", ui_channel_name(ui, ch), lv);
+                            ui_draw_text(renderer, tag, mx + 8, my);
+                        }
                     }
 
                     // Draw ground reference arrow on left side (channel color)
@@ -9153,7 +9179,14 @@ static void scope_autoset_trigger(UIState *ui, Simulation *sim) {
         if (!ui->scope_channels[ch].enabled) continue;
         double times[MAX_HISTORY], values[MAX_HISTORY];
         int n = simulation_get_history(sim, ui->scope_channels[ch].probe_idx, times, values, MAX_HISTORY);
-        if (n < 1) continue;
+        if (n < 1) {
+            /* history just restarted (a dt change): the live voltage is still this channel's */
+            int p = ui->scope_channels[ch].probe_idx;
+            if (!sim->circuit || p < 0 || p >= sim->circuit->num_probes) continue;
+            values[0] = simulation_get_probe_voltage(sim, p);
+            if (!isfinite(values[0])) continue;
+            n = 1;
+        }
         double lo = values[0], hi = values[0];
         for (int i = 1; i < n; i++) { if (values[i] < lo) lo = values[i]; if (values[i] > hi) hi = values[i]; }
         if (hi - lo > best_swing) { best_swing = hi - lo; best = ch; best_mid = (lo + hi) / 2.0; }
@@ -9186,7 +9219,19 @@ void ui_scope_autoset(UIState *ui, Simulation *sim) {
         int probe_idx = ui->scope_channels[ch].probe_idx;
         int count = simulation_get_history(sim, probe_idx, times, values, MAX_HISTORY);
 
-        if (count < 10) continue;  // Need enough samples
+        /* Too little history to analyse, which is exactly the state right after dt changes: the
+           recorder starts over, and at dt = 1 ns with heavy decimation it takes several frames to
+           collect ten samples. Skipping the channel sent Autoset to its 1 V/div defaults, and a
+           10 V rail went straight back off the top of the screen. The probe's present voltage is
+           always known; use it as the level, which is all a flat trace has to offer anyway. */
+        if (count < 10) {
+            double v = simulation_get_probe_voltage(sim, probe_idx);
+            if (isfinite(v) && sim->circuit && probe_idx >= 0 && probe_idx < sim->circuit->num_probes) {
+                if (v < global_min) global_min = v;
+                if (v > global_max) global_max = v;
+            }
+            continue;
+        }
 
         // Find min/max
         double ch_min = values[0], ch_max = values[0];

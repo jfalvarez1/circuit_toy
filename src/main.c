@@ -1137,6 +1137,47 @@ static int autoset_test(void) {
         simulation_free(sim);
         circuit_free(c);
     }
+    /* Autoset straight after dt is turned down. The recorder starts over on a finer spacing, so
+       for the next few frames a DC rail has fewer than ten samples - and Autoset used to skip the
+       channel, fall back to 1 V/div, and leave the divider's 10 V input above the screen. */
+    {
+        Circuit *c = circuit_create();
+        circuit_place_template(c, CIRCUIT_VOLTAGE_DIVIDER, 0, 0);
+        Simulation *sim = simulation_create(c);
+        ui_scope_apply_template_preset(ui, CIRCUIT_VOLTAGE_DIVIDER);
+        ui->scope_num_channels = c->num_probes < MAX_PROBES ? c->num_probes : MAX_PROBES;
+        for (int ch = 0; ch < MAX_PROBES; ch++) {
+            ui->scope_channels[ch].enabled = ch < ui->scope_num_channels;
+            ui->scope_channels[ch].probe_idx = ch;
+        }
+        ui->scope_volt_div = 1.0;
+        char why[160] = "";
+        if (!simulation_dc_analysis(sim)) snprintf(why, sizeof why, "no operating point");
+        else {
+            simulation_start(sim);
+            simulation_set_time_step(sim, 1e-9);
+            simulation_set_history_span(sim, 20.0 * ui->scope_time_div);
+            for (int i = 0; i < 4000; i++) if (!simulation_step(sim)) break;   /* 2 samples */
+            ui_scope_autoset(ui, sim);
+            double vmax = 0;
+            for (int ch = 0; ch < ui->scope_num_channels; ch++) {
+                double v = fabs(simulation_get_probe_voltage(sim, ch) + ui->scope_channels[ch].offset);
+                if (v > vmax) vmax = v;
+            }
+            if (sim->history_count >= 10)
+                snprintf(why, sizeof why, "the history already had %d samples; the case needs fewer than 10",
+                         sim->history_count);
+            else if (vmax <= 0 || vmax / ui->scope_volt_div > 4.0)
+                snprintf(why, sizeof why, "a %.4g V rail at %.4g V/div is off the screen",
+                         vmax, ui->scope_volt_div);
+        }
+        printf("[%s] autoset %-28s vdiv=%-9.4g (dt just lowered to 1 ns, %d samples) %s\n",
+               why[0] ? "FAIL" : " OK ", "DC rail, fresh history", ui->scope_volt_div,
+               sim->history_count, why);
+        if (why[0]) fails++;
+        simulation_free(sim);
+        circuit_free(c);
+    }
     free(ui);
     printf("\nautoset-test: %d templates, %d where Autoset leaves something off the screen or untriggerable\n",
            total, fails);
