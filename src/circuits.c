@@ -9412,7 +9412,10 @@ static int place_3ph_345_line(Circuit *circuit, float x, float y) {
         float ry = y + k * 140;
         Component *v = ph_source(circuit, x, ry, 281700.0, deg[k]); if (!v) return 0;
         Component *tl = add_tline(circuit, x + 130, ry + 20, 0, 100.0, 0.06, 0.55, 8.0, 1);   // (90,20)-(170,20)
-        Component *ld = add_comp(circuit, COMP_RESISTOR, x + 280, ry + 20, 0);   // (240,20)-(320,20)
+        /* at x+240, where its wires end. It sat at x+280, pins at 240 and 320, while the nodes
+           it was given are at 200 and 280: the line's wire stopped 40 px short of anything and
+           the bus wire started inside the resistor body - six loose ends, one per phase end. */
+        Component *ld = add_comp(circuit, COMP_RESISTOR, x + 240, ry + 20, 0);   // (200,20)-(280,20)
         ld->props.resistor.resistance = 198.4;
         int sp = TN(x, ry + 20), a = TN(x + 90, ry + 20), b = TN(x + 170, ry + 20), c = TN(x + 200, ry + 20), d = TN(x + 280, ry + 20), bus = TN(x + 320, ry + 20);
         TW(sp, a); TW(b, c); TW(d, bus);
@@ -11190,13 +11193,16 @@ static Component *curve_device(Circuit *circuit, float x, float y, int gate_node
     Component *g = add_comp(circuit, COMP_GROUND, x + 40, y + 160, 0);
     int gt = TN(x - 20, y), d = TN(x + 20, y - 20), sN = TN(x + 20, y + 20);
     int dj = TN(x + 40, y - 20), dt = TN(x + 40, y - 60), rt = TN(x + 40, y - 140);
-    int sj = TN(x + 40, y + 20), st = TN(x + 40, y + 60), sb = TN(x + 40, y + 140), gnd = TN(x + 40, y + 160);
+    int sj = TN(x + 40, y + 20), st = TN(x + 40, y + 60), sb = TN(x + 40, y + 140);
     TW(gate_node, gt); TW(d, dj); TW(dj, dt); TW(rt, rail_node);
-    TW(sN, sj); TW(sj, st); TW(sb, gnd);
+    TW(sN, sj); TW(sj, st);
     m->node_ids[0] = gt; m->node_ids[1] = d; m->node_ids[2] = sN;
     rdr->node_ids[0] = rt; rdr->node_ids[1] = dt;
     rsr->node_ids[0] = st; rsr->node_ids[1] = sb;
-    g->node_ids[0] = gnd;
+    /* The ground's pin is 20 px above where it is placed, which is exactly sb. A wire to
+       (x+40, y+160) ran past the pin into the symbol - a loose end per device, six across the
+       two curve-tracer templates that share this. */
+    g->node_ids[0] = sb;
     return m;
 }
 

@@ -1185,9 +1185,20 @@ static int pin_test(void) {
    The CMOS repair is also a note on why the whole battery gets run rather than the one suite
    being worked on: moving Vdd up by 40 cleared the wire finding and put the positive rail under
    the title, which --geom-test calls a hard violation and --wire-test cannot see at all. 20 px
-   clears the gate line and the text both. */
+   clears the gate line and the text both.
+
+   Then loose ends 27 -> 15 (2026-10-18), twelve of them in two places:
+
+     3-PHASE 345 kV LINE placed each phase's load at x+280 while the wires were built for one at
+     x+240 - the line's wire stopped 40 px short of any pin and the bus wire started inside the
+     resistor body, at both ends of all three phases.
+
+     THE CURVE TRACERS (transfer and output curves share curve_device) ran the sense resistor's
+     wire to the ground's ORIGIN, 20 px past its pin - the first idiom above, once per device.
+
+   208/208 probe oracles unchanged; node_ids were explicit in both, so no net moved. */
 #define WIRE_FALSE_JUNCTION_BASELINE 20
-#define WIRE_LOOSE_END_BASELINE      27
+#define WIRE_LOOSE_END_BASELINE      15
 
 static int wf_find(int *p, int i) { while (p[i] != i) { p[i] = p[p[i]]; i = p[i]; } return i; }
 static void wf_union(int *p, int a, int b) { a = wf_find(p, a); b = wf_find(p, b); if (a != b) p[a] = b; }

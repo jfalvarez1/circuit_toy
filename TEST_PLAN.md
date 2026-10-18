@@ -11,7 +11,7 @@ Status legend: `[ ]` not run · `[P]` pass · `[F]` fail (link issue/notes) · `
 
 ## Development after v3.33.0 (2026-10-18, unreleased)
 
-Seven commits on top of v3.33.0, all checked on Linux (Ubuntu 24.04, GCC 13), which builds the
+Eight commits on top of v3.33.0, all checked on Linux (Ubuntu 24.04, GCC 13), which builds the
 project for the first time: `meson setup build && meson compile -C build`, then
 `SDL_VIDEODRIVER=dummy bash tools/run_audits.sh` runs the whole battery with no display. Every
 new guard below was mutation-checked: break what it guards, watch it fail, restore.
@@ -31,7 +31,8 @@ new guard below was mutation-checked: break what it guards, watch it fail, resto
 | D.11 | `[P]` `--netlist-test` floating nets | A capacitor's far plate is flagged FLOATING; a node at 0.5 V between two gigohms and a source's node are not |
 | D.12 | `[P]` EE_Review corpus (63a2f5c), `tools/spice_run.py` | 185 accepted, 151 with nothing skipped (was 149: m17l15 and m17l17 now import), 58 skipped lines (was 66), 8 refused, m05l11-5 still implausible. m17l15 V(n3) = 2.198383 V against nodal analysis to six figures |
 | D.13 | `[P]` `--prop-test`, `--prop-gap`, `--value-sweep` | The analog switch offers On above / R_on / R_off: 190 typed rows over 73 parts, all applicable; prop-gap 54 (baseline lowered from 55); 1801 swept values, none breaking a circuit |
-| D.14 | `[P]` Full battery, final state | 0 of 77 suites failed, stability gate run with numpy and pillow installed |
+| D.14 | `[P]` `--wire-test` | 15 loose ends (baseline lowered from 27): none left in the 3-Phase 345 kV Line or the two MOSFET curve templates; 208/208 probe oracles and the geometry findings unchanged |
+| D.15 | `[P]` Full battery, final state | 0 of 77 suites failed, stability gate run with numpy and pillow installed |
 
 ## Scope mouse readout (2026-09-10, development after v3.32.0)
 

@@ -1,4 +1,4 @@
-# Handoff — where this is and what to do next (2026-10-18, v3.33.0 + seven unreleased commits)
+# Handoff — where this is and what to do next (2026-10-18, v3.33.0 + eight unreleased commits)
 
 Written for whoever picks this up next, with no assumed context. Everything below is either a
 fact you can re-verify in one command or a decision with its reasoning attached.
@@ -26,7 +26,7 @@ from subprojects/ if the system has none, and the battery runs with no display:
 
 ## State
 
-**2026-10-18: seven commits on top of v3.33.0, plus one of documentation, not released and not
+**2026-10-18: eight commits on top of v3.33.0, plus one of documentation, not released and not
 pushed.** They are on branch `claude/fix-dc-voltage-scope-016GJrXXHEuEuNrUDwdtVW7U`; the cloud
 session that wrote them had no GitHub write access, so pushing them, CI, and tagging v3.34.0 are
 the first job (Release process below). In order:
@@ -50,6 +50,8 @@ the first job (Release process below). In order:
    measurement. Twenty corpus circuits have one; six are genuine (see EE_REVIEW_FINDINGS.md).
 6. **The analog switch's panel.** It offered no rows; now threshold, state, R_on and R_off.
    prop-gap 55 -> 54.
+7. **Twelve loose wire ends** (wire-test 27 -> 15): the 3-Phase 345 kV Line's loads sat 40 px off
+   their wiring, and the two curve-tracer templates ran wires to a ground's origin.
 
 Validation on Linux: every guard mutation-checked; corpus 185 accepted / 151 clean; full battery
 in the TEST_PLAN "Development after v3.33.0" table.
@@ -193,8 +195,10 @@ below v_off). See `src/netlist.c`, the `case 'X'` block.
 
 ### 2. The rest of the false junctions
 
-20 false junctions and 27 loose ends remain, down from 66/47. `--wire-test` reads GEOMETRY, not
-nets, so everything it reports is a drawing that disagrees with a netlist that is correct.
+20 false junctions and 15 loose ends remain, down from 66/47 (27 loose ends until 2026-10-18,
+when the 345 kV line's misplaced loads and the curve tracers' ground stubs went). `--wire-test`
+reads GEOMETRY, not nets, so everything it reports is a drawing that disagrees with a netlist that
+is correct.
 
     WIRE_NOTES=200 build/tools/template_smoke.exe --wire-test
 
