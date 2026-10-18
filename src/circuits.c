@@ -17289,6 +17289,10 @@ static const int template_scope_flags[CIRCUIT_TYPE_COUNT] = {
     [CIRCUIT_HW_CUK] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_HW_INTERLEAVED] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_CENTERTAP_RECT] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
+    /* The bridge's real ripple, now that it is a bridge: 0.72 Vpp at 120 Hz on 10.4 V, which at a
+       shared 5 V/div is a seventh of a division and reads as a flat line. The half-wave fault it
+       had before rippled twice as much and so never needed this. */
+    [CIRCUIT_FULLWAVE_BRIDGE] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_AC_DC_AMERICAN] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_GS_PIDS] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
     [CIRCUIT_MOS_MIRROR] = SCOPE_FLAG_STACK | SCOPE_FLAG_FIT,
