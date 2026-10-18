@@ -5159,9 +5159,16 @@ void ui_render_oscilloscope(UIState *ui, SDL_Renderer *renderer, Simulation *sim
                         bool above = y_lo < band_y, below = y_hi > band_y + band_h;
                         if (above || below) {
                             int slot = stacked ? 0 : (above ? n_off_above++ : n_off_below++);
-                            int mx = r->x + r->w / 4 + slot * 96;
-                            int my = above ? band_y + 3 : band_y + band_h - 11;
-                            int tip = above ? band_y + 2 : band_y + band_h - 2;
+                            /* As many markers as fit across the three quarters right of the
+                               ground arrow, then the next row in. One row of 96 px slots ran
+                               the fourth label past the docked scope's right edge - and four
+                               flat battery rails above a 1 V/div screen is a real case. */
+                            int per_row = (r->w * 3 / 4) / 96;
+                            if (per_row < 1) per_row = 1;
+                            int row = slot / per_row, col = slot % per_row;
+                            int mx = r->x + r->w / 4 + col * 96;
+                            int my = above ? band_y + 3 + row * 11 : band_y + band_h - 11 - row * 11;
+                            int tip = above ? band_y + 2 + row * 11 : band_y + band_h - 2 - row * 11;
                             for (int k = 0; k < 6; k++) {       /* filled arrowhead at the edge */
                                 int yy = above ? tip + k : tip - k;
                                 SDL_RenderDrawLine(renderer, mx - k, yy, mx + k, yy);
