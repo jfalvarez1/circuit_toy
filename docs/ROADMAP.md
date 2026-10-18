@@ -294,6 +294,14 @@ behind the name.
 accepted, 151 with nothing skipped, 58 skipped lines; the largest remaining blocks are the six K
 lines (coupled inductors), REGULATOR / BUCK_REGULATOR (11 lines) and the logic blocks.
 
+The K lines are NOT a mapping onto COMP_TRANSFORMER, whatever the note above says about the
+transformer serving: its stamp is an ideal turns ratio plus winding resistances and a resistive
+magnetising leak. It has no inductance and no coupling coefficient to put L1, L2 and k into (the
+panel rows for both were removed for exactly that reason). Coupled inductors need their own
+stamp - the inverse inductance matrix as a 4-terminal companion conductance plus history
+currents, k clamped below 1 so the matrix stays invertible - checked against the closed-form
+open-circuit ratio sqrt(L2/L1)*k and the leakage-limited short-circuit current.
+
 ## 34 wires that claim a join the netlist does not have (2026-09-06, 32 FIXED, 34 LEFT)
 
 **Digital Clock is done: 32 of the original 66, now 0.** The survey below predicted that thirty-two
