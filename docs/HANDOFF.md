@@ -1,4 +1,4 @@
-# Handoff — where this is and what to do next (2026-09-10, v3.33.0)
+# Handoff — where this is and what to do next (2026-10-18, v3.33.0 + seven unreleased commits)
 
 Written for whoever picks this up next, with no assumed context. Everything below is either a
 fact you can re-verify in one command or a decision with its reasoning attached.
@@ -18,7 +18,41 @@ On Windows the compiler needs its environment first:
 
     cmd /c '"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul && ninja -C build'
 
+On Linux - which is what a cloud session runs on - it builds with GCC since 2026-10-18, SDL2 coming
+from subprojects/ if the system has none, and the battery runs with no display:
+
+    meson setup build && meson compile -C build
+    SDL_VIDEODRIVER=dummy bash tools/run_audits.sh        # pip install pillow numpy first
+
 ## State
+
+**2026-10-18: seven commits on top of v3.33.0, plus one of documentation, not released and not
+pushed.** They are on branch `claude/fix-dc-voltage-scope-016GJrXXHEuEuNrUDwdtVW7U`; the cloud
+session that wrote them had no GitHub write access, so pushing them, CI, and tagging v3.34.0 are
+the first job (Release process below). In order:
+
+1. **DC levels on the scope after dt is turned down.** A trace wholly off the screen is marked at
+   the edge with its level (the markers wrap into rows, a later commit); Autoset with under ten
+   history samples (the state right after a dt change) uses the probe's live voltage; Autoset
+   re-matches dt to the time base.
+2. **Linux build, and what GCC found.** Five portability faults fixed. GCC's -Wunused-value found
+   twelve `c ? SYNTH_X : SYNTH_Y` colour picks drawing a colour nobody wrote (a bare list of
+   numbers is a comma expression); style_wiring.py check 4 now refuses the pattern. Seven test
+   suites now flush their renderer before destroying it, which SDL's debug assertions require.
+3. **Saved files name their parts.** Files said only `"type": 65`. 96f00a8 (v3.31.0) inserted a
+   type mid-enum and 62 parts moved, so every circuit saved by v3.30.0 or earlier opened as other
+   parts. Version 4 files write `"kind": "transformer"`; older files are remapped (version 3 is
+   decided per file by terminal counts). types.h now says new types go at the end, and
+   --parts-file-test fails if one does not.
+4. **A driven SPDT (COMP_SPDT_DRIVEN)**, one pole of the driven DPDT, and `X ... SPDT_SWITCH` in
+   the netlist reader. Corpus 149 -> 151 clean.
+5. **FLOATING nets in --netlist-solve.** A node nothing sets at DC used to print GMIN's 0 V like a
+   measurement. Twenty corpus circuits have one; six are genuine (see EE_REVIEW_FINDINGS.md).
+6. **The analog switch's panel.** It offered no rows; now threshold, state, R_on and R_off.
+   prop-gap 55 -> 54.
+
+Validation on Linux: every guard mutation-checked; corpus 185 accepted / 151 clean; full battery
+in the TEST_PLAN "Development after v3.33.0" table.
 
 v3.33.0 adds live scope mouse measurements, trace selection, and the rendering/input fixes
 described below. It also includes the BJT Early-effect Jacobian fix, correct DC current readback
@@ -140,7 +174,10 @@ Is/BF/BR values, and this model includes Early effect. A parameter-matched compa
 open. The earlier conclusion that this circuit must cross a saturation boundary was a hypothesis,
 not a property established for the local equations. ROADMAP.md preserves the investigation.
 
-### 1. A 4-terminal SPDT switch part
+### DONE 2026-10-18: a 4-terminal SPDT switch part
+
+COMP_SPDT_DRIVEN, appended at the end of the enum; `X a b common control SPDT_SWITCH` maps onto
+it with a high control selecting A. The original note is kept for the reasoning:
 
 8 more corpus lines. `X ... SPDT_SWITCH` is written `Xname A B common control`, e.g.
 `XS0 vref 0 b0_sw b0_in SPDT_SWITCH`. There is no part behind it: `COMP_SPDT_SWITCH` has three
@@ -171,6 +208,14 @@ Three idioms account for most of what has been fixed so far, and the remainder l
 Tighten `WIRE_FALSE_JUNCTION_BASELINE` / `WIRE_LOOSE_END_BASELINE` in `tools/template_smoke.c`
 when you fix some. A ratchet never tightened is a permanent allowance.
 
+*2026-10-18, read but not fixed:* CMOS NAND's three findings and CMOS Inverter's two are one
+fourth idiom, and cosmetic - their node_ids are assigned explicitly and --probe-test passes. This
+program's PMOS symbol has its DRAIN on top (same pin layout as the NMOS), so a pull-up's source
+is at the bottom: the builders run the source's wire straight up to the rail through the drain
+pin, and the drain's straight down to the output through the source pin. The drawing therefore
+shows each PMOS with drain and source on one line. The fix is a re-layout with the source routed
+round the device (a plain crossing is fine; a dot on a wire is not), checked by rendering it.
+
 ### 3. The grounded-input two-stage op-amp remains implausible
 
 `m05l11-5` has a tiny reported solver residual but prints IMPLAUSIBLE (roughly 278 kA source
@@ -185,6 +230,17 @@ now causes a nonzero CLI exit. All these guards were checked by reintroducing th
 
 ## Traps specific to this repo
 
+- **Saved files carry enum numbers.** A new ComponentType goes at the END of the enum (after
+  COMP_SPDT_DRIVEN today), never into the section it belongs to - see the comment in types.h and
+  `frozen_type_keys` in template_smoke.c, which must be extended in step. And give it a key in
+  `component_type_keys`; a key is permanent once a file has been written with it.
+- **A mutation harness that restores a file by moving a backup over it restores an OLD mtime.**
+  ninja then keeps the objects compiled from the mutant, and the next "pristine" run is not. It
+  happened here: a mid-enum mutation left objects disagreeing about COMP_DELAY_LINE and an
+  unrelated suite failed. Touch what you restore, and rerun the pristine build at the end.
+- **SDL keeps its debug assertions in unoptimised GCC builds and drops them under MSVC's /MT.**
+  Something that only fails on Linux at an `Abort/Retry` prompt is SDL telling you about misuse
+  Windows never reports - teardown with an unflushed queue was the one found so far.
 - **Sources are CRLF.** `sed -i` will silently rewrite a whole file to LF. Use the editing
   tools, and if you do use sed, convert back.
 - **`TN(x, y)` creates a node whether or not anything wires to it.** Declaring nodes you might

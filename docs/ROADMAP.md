@@ -289,6 +289,11 @@ Only X OPAMP is honoured. Guessing a short for ANALOG_SWITCH would tie a node to
 guessing an open would be luck, not a model - so they stay refused until there is a part
 behind the name.
 
+*2026-10-18:* X OPAMP, ANALOG_SWITCH and SPDT_SWITCH are honoured now, each by a real part
+(the SPDT by COMP_SPDT_DRIVEN, built for it). At EE_Review 63a2f5c the corpus stands at 185
+accepted, 151 with nothing skipped, 58 skipped lines; the largest remaining blocks are the six K
+lines (coupled inductors), REGULATOR / BUCK_REGULATOR (11 lines) and the logic blocks.
+
 ## 34 wires that claim a join the netlist does not have (2026-09-06, 32 FIXED, 34 LEFT)
 
 **Digital Clock is done: 32 of the original 66, now 0.** The survey below predicted that thirty-two

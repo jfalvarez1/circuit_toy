@@ -9,6 +9,44 @@ This file exists because the EE_Review session was not running when these were f
 message to a closed session is lost rather than queued. It is the handoff. Everything here is
 either a decision for whoever owns the curriculum, or a defect in the corpus build.
 
+## Follow-up 2026-10-18 (corpus at EE_Review 63a2f5c)
+
+    185 of 194 accepted, 151 with nothing skipped (was 149), 8 refused, 1 implausible (m05l11-5)
+     58 element lines skipped (was 66)
+
+**SPDT_SWITCH is honoured now**, by a driven SPDT part (one pole of the driven DPDT), so m17l15
+and m17l17 import whole. m17l15's ladder at code 0111 reads V(n3) = 2.198383 V; nodal analysis of
+the netlist gives the same to six figures. Ideal would be 2.1875 V, so the 2.02k MSB leg puts 0111
+10.9 mV high - worth stating in the lesson next to whatever it says about 1000.
+
+**Item 5 is resolved on their side**: m05l24's `out` now has `RL out 0 1MEG`.
+
+**A new diagnostic found six more nodes of that kind.** `--netlist-solve` now prints a FLOATING
+line for any net that nothing sets at DC (it re-solves with the solver's 1 pA leak pulled to +1 V
+instead of ground; a net that follows the leak was only ever where the leak put it). Twenty corpus
+circuits have such nets. Fourteen are downstream of an X line this reader skips - an SR latch's q,
+a regulator's pgood - and say nothing about the course. Six are the circuits themselves:
+
+- **m17l17 `vcm`** - the charge-redistribution summing node. It has no DC operating point at all;
+  only a transient with the plates' initial charge can answer the lesson's question.
+- **m17l02 `hold`, and `out` through it** - the hold capacitor behind a switch that is off at t = 0.
+  Separately, `XU1 hold 0 out OPAMP` (and its E fallback, gain 100k from hold to out) is open
+  loop with the inverting input on ground, so it compares the held sample with 0 V - and the
+  input never goes below 0.15 V, so that output can never change. If the table means a buffer
+  after the hold capacitor, that is `XU1 hold out out OPAMP`; if it means a comparator, its
+  reference is probably not meant to be ground.
+- **m21l03 `out1 out2`** and **m21l04 `if_out_p if_out_n`** - outputs reached only through
+  capacitors. Harmless in an RF lesson, but the DC values printed for them mean nothing.
+- **m14l12-2 `rail drain`** - the rail has no source, only C1 = 2.2 mF with no initial condition.
+  If the lesson is a charged capacitor discharging, it needs that charge written down.
+- **m23l08 `d1 d2 bias`** - every transistor in the class-AB stage is off at the operating point.
+  `Q3 d1 bias bias NPN` has base and emitter on the same net, a shorted junction; a working VBE
+  multiplier would be `Q3 d1 bias d2`. And nothing feeds the bias string a current: Q1 and Q2 are
+  followers from the same input, d1 a Vbe below it and d2 a Vbe above, which reverse-biases the
+  string. As written the output stage has no quiescent current at all. This is a REPAIR case
+  study, so a dead bias network may be the fault the lesson wants found - in which case the
+  table should say so, because their own solve-op reports it "solved".
+
 ## State of the cross-check
 
 Local follow-up on 2026-09-09, using the same 194-file corpus and the new checked runner:

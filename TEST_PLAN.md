@@ -9,6 +9,30 @@ Status legend: `[ ]` not run · `[P]` pass · `[F]` fail (link issue/notes) · `
 
 ---
 
+## Development after v3.33.0 (2026-10-18, unreleased)
+
+Seven commits on top of v3.33.0, all checked on Linux (Ubuntu 24.04, GCC 13), which builds the
+project for the first time: `meson setup build && meson compile -C build`, then
+`SDL_VIDEODRIVER=dummy bash tools/run_audits.sh` runs the whole battery with no display. Every
+new guard below was mutation-checked: break what it guards, watch it fail, restore.
+
+| ID | Check | Pass condition |
+|----|-------|----------------|
+| D.1 | `[P]` `--autoset-test`, new last case: a DC rail with dt just lowered to 1 ns (fewer than ten history samples) | Autoset scales from the probe's live voltage: the divider's 10 V input lands on screen (5 V/div). Removing that fallback leaves it at 1 V/div, off the top |
+| D.2 | `[ ]` Manual: DC divider at 1 V/div | The 10 V and 5 V traces, wholly above the screen, are marked by an arrow at the top edge with name and level instead of vanishing into the border; five such rails on the docked scope wrap into two rows inside the graticule |
+| D.3 | `[P]` `tools/style_wiring.py` check 4 | No bare-list colour (`SYNTH_PINK` is three numbers) is a `?:` operand. Restoring one of the twelve fixed ternaries fails it; the pattern in a comment or string does not |
+| D.4 | `[ ]` Manual: select a palette item, focus the subcircuit name field | Selected item border is orange, focused field border cyan (they were dark blue and pink) |
+| D.5 | `[P]` `--prop-test`, `--value-sweep`, `--bounce-test` shards, `cli-smoke --shard / --prop-gap` on Linux | Exit 0. They queued drawing, never presented, and SDL's teardown assertion stopped them at an Abort/Retry prompt; test renderers are now flushed before they are destroyed |
+| D.6 | `[P]` `--parts-file-test` type identity: names complete, distinct, reversible | Every type has a key and `component_type_from_key(key)` returns it |
+| D.7 | `[P]` `--parts-file-test` frozen positions | The first 128 enum positions match the recorded keys. Inserting a type mid-enum fails it |
+| D.8 | `[P]` `--parts-file-test` legacy files | A version 2 and a version 3 file numbered as before 2026-09-03 reopen as transformer / AND / NOT / 555 / resistor (not driven DPDT / NOT / logic output / full adder); a version 3 file numbered since also reopens right; a name outranks a number and an unknown name is dropped |
+| D.9 | `[P]` `--dpdt-test` | 20 checks: DPDT and SPDT (driven) at 0, 2.4, 2.5 and 5 V of control; both contacts against arithmetic and the drawn blade |
+| D.10 | `[P]` `--netlist-test` X SPDT_SWITCH | Control high puts the common on A (10 V), low on B (2 V) |
+| D.11 | `[P]` `--netlist-test` floating nets | A capacitor's far plate is flagged FLOATING; a node at 0.5 V between two gigohms and a source's node are not |
+| D.12 | `[P]` EE_Review corpus (63a2f5c), `tools/spice_run.py` | 185 accepted, 151 with nothing skipped (was 149: m17l15 and m17l17 now import), 58 skipped lines (was 66), 8 refused, m05l11-5 still implausible. m17l15 V(n3) = 2.198383 V against nodal analysis to six figures |
+| D.13 | `[P]` `--prop-test`, `--prop-gap`, `--value-sweep` | The analog switch offers On above / R_on / R_off: 190 typed rows over 73 parts, all applicable; prop-gap 54 (baseline lowered from 55); 1801 swept values, none breaking a circuit |
+| D.14 | `[P]` Full battery, final state | 0 of 77 suites failed, stability gate run with numpy and pillow installed |
+
 ## Scope mouse readout (2026-09-10, development after v3.32.0)
 
 - `--layout-test` checks screen-to-time/voltage mapping using nonuniform times, nonzero DC shifts, unequal scales, stacked AC/Fit bands, unavailable/nonfinite data, disabled channels, FFT/XY exclusion, resizing, and docked/popup pointer ownership. Real input events check that trace/cursor clicks preserve the trigger.

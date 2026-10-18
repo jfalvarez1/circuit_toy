@@ -1054,7 +1054,8 @@ meson compile -C build
 ### Linux
 
 ```bash
-# Install dependencies (Ubuntu/Debian)
+# Install dependencies (Ubuntu/Debian). libsdl2-dev is optional: without it the SDL2 copy in
+# subprojects/ is built instead.
 sudo apt-get install meson ninja-build libsdl2-dev
 
 # Setup and build
@@ -1063,6 +1064,9 @@ meson compile -C build
 
 # Run
 ./build/circuit-playground
+
+# The whole audit battery, with no display (pip install pillow numpy for the image gates)
+SDL_VIDEODRIVER=dummy bash tools/run_audits.sh
 ```
 
 ### macOS
