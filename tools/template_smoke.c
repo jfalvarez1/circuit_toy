@@ -1202,9 +1202,13 @@ static int pin_test(void) {
    10 px short of a ground pin, and following it showed the bridge was not a bridge: the source
    was grounded as well as DC-, so D2 sat across it on every negative half-cycle (6 kA) and D3/D4
    never conducted - half-wave, under a description that says full-wave and 120 Hz ripple. The
-   source floats across the AC junctions now and DC- has its own ground. */
+   source floats across the AC junctions now and DC- has its own ground.
+
+   Then 14 -> 12: AC-DC SUPPLY and US 120V-12V (one layout, two builders) put the left AC
+   junction 10 px right of the diode column, so the secondary's wire overshot it and doubled back.
+   Both bridges were checked for the fault above and conduct on all four diodes. */
 #define WIRE_FALSE_JUNCTION_BASELINE 20
-#define WIRE_LOOSE_END_BASELINE      14
+#define WIRE_LOOSE_END_BASELINE      12
 
 static int wf_find(int *p, int i) { while (p[i] != i) { p[i] = p[p[i]]; i = p[i]; } return i; }
 static void wf_union(int *p, int a, int b) { a = wf_find(p, a); b = wf_find(p, b); if (a != b) p[a] = b; }

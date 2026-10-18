@@ -200,9 +200,9 @@ below v_off). See `src/netlist.c`, the `case 'X'` block.
 
 ### 2. The rest of the false junctions
 
-20 false junctions and 14 loose ends remain, down from 66/47 (27 loose ends until 2026-10-18,
-when the 345 kV line's misplaced loads, the curve tracers' ground stubs and the Bridge Rectifier's
-DC- stub went - that last one was hiding a real fault, so read each one before calling it cosmetic). `--wire-test`
+20 false junctions and 12 loose ends remain, down from 66/47 (27 loose ends until 2026-10-18,
+when the 345 kV line's misplaced loads, the curve tracers' ground stubs, the two supply bridges'
+offset junction and the Bridge Rectifier's DC- stub went - that last one was hiding a real fault, so read each one before calling it cosmetic). `--wire-test`
 reads GEOMETRY, not nets, so everything it reports is a drawing that disagrees with a netlist that
 is correct.
 

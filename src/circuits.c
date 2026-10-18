@@ -3271,8 +3271,9 @@ static int place_ac_dc_supply(Circuit *circuit, float x, float y) {
     int prim_bot = circuit_find_or_create_node(circuit, p2_x, p2_y, 5.0f);
     trans->node_ids[1] = prim_bot;
 
-    // Left AC junction (D1 anode / D2 cathode)
-    int left_junc = circuit_find_or_create_node(circuit, x + 230, y + 50, 5.0f);
+    // Left AC junction (D1 anode / D2 cathode), on the diodes' own column. It was 10 px right of
+    // it at x+230, so the secondary's wire ran past the column and doubled back - a loose end.
+    int left_junc = circuit_find_or_create_node(circuit, d1_a_x, y + 50, 5.0f);
 
     // S1 to left junction (route down to y+50, then right)
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, s1_x, s1_y, 5.0f),
@@ -3438,8 +3439,9 @@ static int place_ac_dc_american(Circuit *circuit, float x, float y) {
     int prim_bot = circuit_find_or_create_node(circuit, p2_x, p2_y, 5.0f);
     trans->node_ids[1] = prim_bot;
 
-    // Left AC junction (D1 anode / D2 cathode)
-    int left_junc = circuit_find_or_create_node(circuit, x + 230, y + 50, 5.0f);
+    // Left AC junction (D1 anode / D2 cathode), on the diodes' own column. It was 10 px right of
+    // it at x+230, so the secondary's wire ran past the column and doubled back - a loose end.
+    int left_junc = circuit_find_or_create_node(circuit, d1_a_x, y + 50, 5.0f);
 
     // S1 to left junction
     circuit_add_wire(circuit, circuit_find_or_create_node(circuit, s1_x, s1_y, 5.0f),
