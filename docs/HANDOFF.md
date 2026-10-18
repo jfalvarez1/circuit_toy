@@ -1,4 +1,4 @@
-# Handoff — where this is and what to do next (2026-10-18, v3.33.0 + nine unreleased commits)
+# Handoff — where this is and what to do next (2026-10-18, v3.33.0 plus unreleased work)
 
 Written for whoever picks this up next, with no assumed context. Everything below is either a
 fact you can re-verify in one command or a decision with its reasoning attached.
@@ -26,7 +26,7 @@ from subprojects/ if the system has none, and the battery runs with no display:
 
 ## State
 
-**2026-10-18: nine commits on top of v3.33.0, plus one of documentation, not released and not
+**2026-10-18: ten code commits on top of v3.33.0, plus documentation, not released and not
 pushed.** They are on branch `claude/fix-dc-voltage-scope-016GJrXXHEuEuNrUDwdtVW7U`; the cloud
 session that wrote them had no GitHub write access, so pushing them, CI, and tagging v3.34.0 are
 the first job (Release process below). In order:
@@ -57,6 +57,12 @@ the first job (Release process below). In order:
    never conducted; the DC probe could not tell. Found by following a loose wire end (15 -> 14).
    The source now floats across the AC junctions: all four diodes conduct, ripple is 120 Hz.
    --burn-test did not notice 6 kA in a diode, which is worth a look of its own.
+9. **Two more loose ends** (14 -> 12): AC-DC Supply and US 120V-12V placed their left AC junction
+   10 px off the diode column. Both bridges measured healthy.
+
+A sweep of every template's peak part current (ten scope screens at each template's own step)
+found nothing else of the Bridge Rectifier's kind: everything above 100 A is a power-system
+template or a physical inrush (Hot-Plug's 12 V into 62.5 mohm is 192 A).
 
 Validation on Linux: every guard mutation-checked; corpus 185 accepted / 151 clean; full battery
 in the TEST_PLAN "Development after v3.33.0" table.

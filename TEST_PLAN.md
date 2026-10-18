@@ -11,7 +11,7 @@ Status legend: `[ ]` not run · `[P]` pass · `[F]` fail (link issue/notes) · `
 
 ## Development after v3.33.0 (2026-10-18, unreleased)
 
-Nine commits on top of v3.33.0, all checked on Linux (Ubuntu 24.04, GCC 13), which builds the
+Ten commits on top of v3.33.0, all checked on Linux (Ubuntu 24.04, GCC 13), which builds the
 project for the first time: `meson setup build && meson compile -C build`, then
 `SDL_VIDEODRIVER=dummy bash tools/run_audits.sh` runs the whole battery with no display. Every
 new guard below was mutation-checked: break what it guards, watch it fail, restore.
