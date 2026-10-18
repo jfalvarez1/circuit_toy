@@ -82,6 +82,8 @@ static void thread_join(thread_t thread) {
 
 #else // POSIX
 
+#include <unistd.h>     /* sysconf */
+
 static void* worker_thread(void* arg);
 
 int threadpool_get_optimal_threads(void) {

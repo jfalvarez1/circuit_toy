@@ -21,9 +21,24 @@
 #include "crashlog.h"
 #ifdef _WIN32
 #include <windows.h>
-/* Last, because it redefines the two SDL colour calls everything draws through. */
-#include "style.h"
 #endif
+/* Last, because it redefines the two SDL colour calls everything draws through. Not inside the
+   _WIN32 block: this file reads g_draw_style on every platform, and with the include there no
+   other compiler could build it. */
+#include "style.h"
+
+/* Every suite here that draws gives its renderer back through this. They queue their drawing
+   and never present it, and SDL 2.32 destroying a renderer with a full queue drops the queue
+   but not its byte count: the first cached glyph texture it then destroys flushes that phantom
+   queue and trips an assertion. SDL keeps its assertions in any unoptimised GCC build, so on
+   Linux five suites stopped at an Abort/Retry prompt nobody was there to answer, after their
+   checks had all passed. Windows builds compile the assertion out, which is why CI never saw
+   it. */
+static void destroy_test_renderer(SDL_Renderer *ren) {
+    if (!ren) return;
+    SDL_RenderFlush(ren);
+    SDL_DestroyRenderer(ren);
+}
 
 static bool rects_overlap(const Rect *a, const Rect *b) {
     return a->x < b->x + b->w && b->x < a->x + a->w && a->y < b->y + b->h && b->y < a->y + a->h;
@@ -302,7 +317,7 @@ static int bounce_test(double dt_force) {
     }
 
     free(ui);
-    SDL_DestroyRenderer(ren);
+    destroy_test_renderer(ren);
     SDL_DestroyWindow(win);
     SDL_Quit();
     printf("\nbounce-test: %d templates judged, %d skipped, %d with a channel not judged "
@@ -358,7 +373,7 @@ static int prop_gap(void) {
         component_free(comp);
     }
     free(in); free(ui);
-    SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
+    destroy_test_renderer(ren); SDL_DestroyWindow(win); SDL_Quit();
     printf("\nprop-gap: %d creatable types - %d offer rows, %d offer none "
            "(%d of those correctly, being structural)\n",
            total, with_rows, empty, expected_empty);
@@ -613,7 +628,7 @@ static int value_sweep_test(void) {
            st.types, st.rows, st.points, st.fails, st.benched);
 
     free(ui); free(in);
-    SDL_DestroyRenderer(ren);
+    destroy_test_renderer(ren);
     SDL_DestroyWindow(win);
     SDL_Quit();
     return st.fails ? 1 : 0;
@@ -760,7 +775,7 @@ static int prop_test(void) {
 
     free(in);
     free(ui);
-    SDL_DestroyRenderer(ren);
+    destroy_test_renderer(ren);
     SDL_DestroyWindow(win);
     SDL_Quit();
     return fails;
@@ -1233,7 +1248,7 @@ static int symbol_test(void) {
         checked++;
         component_free(c);
     }
-    SDL_DestroyRenderer(ren);
+    destroy_test_renderer(ren);
     SDL_FreeSurface(surf);
     SDL_Quit();
     printf("symbol-test: %d part types drawn, %d with no symbol, %d not applicable\n",
@@ -1426,7 +1441,7 @@ static int style_test(void) {
             }
         }
         if (tex) SDL_DestroyTexture(tex);
-        if (ren) SDL_DestroyRenderer(ren);
+        destroy_test_renderer(ren);
         if (surf) SDL_FreeSurface(surf);
         SDL_Quit();
     }
@@ -1723,7 +1738,7 @@ static int scope_pointer_test(void) {
         }
     }
     free(sim);
-    if (ren) SDL_DestroyRenderer(ren);
+    destroy_test_renderer(ren);
     if (surface) SDL_FreeSurface(surface);
     printf("scope pointer: coordinate, availability and input checks, %d failures\n", fails);
     free(in); free(ui);

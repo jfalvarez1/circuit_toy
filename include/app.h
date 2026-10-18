@@ -17,8 +17,9 @@
 #include "analysis.h"
 #include "threadpool.h"
 
-// Application state
-typedef struct {
+// Application state. Tagged, because settings.h forward-declares `struct App` to avoid including
+// this header; an anonymous struct is a different type from that, which MSVC only warns about.
+typedef struct App {
     // SDL handles
     SDL_Window *window;
     SDL_Renderer *renderer;

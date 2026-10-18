@@ -18,6 +18,14 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+/* The case-insensitive compares under MSVC's names. POSIX has the same functions in <strings.h>
+   as strcasecmp / strncasecmp, and without this nothing outside Windows could link. */
+#ifndef _WIN32
+#include <strings.h>
+#define _stricmp  strcasecmp
+#define _strnicmp strncasecmp
+#endif
+
 // Window dimensions
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720

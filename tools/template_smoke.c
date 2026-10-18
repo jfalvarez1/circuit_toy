@@ -27,6 +27,7 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#include <ctype.h>
 
 #include "types.h"
 #include "component.h"
@@ -42,6 +43,13 @@
 
 /* Defined by the UI layer in the real app; the engine only reads it. */
 WirelessState g_wireless = {0};
+
+/* Defined further down but called from suites above their definitions. Without these the calls
+   were implicit declarations: MSVC guesses `int f()` and checks none of the arguments, and GCC
+   refuses outright once the static definition arrives. */
+static int shard_skip(int t);
+static int pt_build_series(Circuit *c, ComponentType dev, double amp, double f, double rload,
+                           Component **dev_out, Component **src_out);
 
 static int is_active_device(ComponentType t) {
     switch (t) {

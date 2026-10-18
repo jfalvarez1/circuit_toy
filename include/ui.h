@@ -27,6 +27,13 @@ typedef enum {
 // ============================================
 // SYNTHWAVE COLOR THEME
 // ============================================
+/* Each SYNTH_ colour is three bare numbers, made to be spliced into an argument list - which means
+   one can never be an operand of ?:. `c ? SYNTH_PINK : SYNTH_TEXT` parses as
+   `(c ? (0xff, 0x29, 0x75) : 0xff), 0xff, 0xff`: with c true, red is pink's BLUE and green and
+   blue are still the text colour's. Only the false branch draws what was written, and twelve
+   widgets drew their highlighted state wrong like that. Choose between two with if/else;
+   tools/style_wiring.py refuses the pattern. */
+
 // Background colors
 #define SYNTH_BG_DARK       0x0d, 0x02, 0x21  // Deep purple-black
 #define SYNTH_BG_MID        0x1a, 0x0a, 0x2e  // Dark purple

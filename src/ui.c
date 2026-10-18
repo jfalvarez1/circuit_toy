@@ -1007,7 +1007,8 @@ static void draw_palette_header(SDL_Renderer *renderer, int screen_y, const char
     SDL_SetRenderDrawColor(renderer, collapsed ? 0x1c : 0x2e, collapsed ? 0x10 : 0x16,
                                      collapsed ? 0x32 : 0x50, 0xff);
     SDL_RenderFillRect(renderer, &bar);
-    SDL_SetRenderDrawColor(renderer, accent ? SYNTH_PINK : SYNTH_BORDER_LIGHT, 0xff);
+    if (accent) SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
+    else SDL_SetRenderDrawColor(renderer, SYNTH_BORDER_LIGHT, 0xff);
     SDL_RenderDrawRect(renderer, &bar);
 
     /* the triangle: right when it is closed, down when it is open */
@@ -1021,7 +1022,8 @@ static void draw_palette_header(SDL_Renderer *renderer, int screen_y, const char
             SDL_RenderDrawLine(renderer, tx - 4 + i, ty + i - 2, tx + 4 - i, ty + i - 2);
     }
 
-    SDL_SetRenderDrawColor(renderer, accent ? SYNTH_PINK : SYNTH_TEXT, 0xff);
+    if (accent) SDL_SetRenderDrawColor(renderer, SYNTH_PINK, 0xff);
+    else SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
     /* The bar is the label's whole world now. "Interview: instrumentation & scope" is 34
        characters at 8 px each - two hundred and seventy pixels in a hundred and thirty pixel
        panel - and it used to run straight out over the canvas. Anything that does not fit is
@@ -1054,21 +1056,24 @@ static void draw_palette_tabs(UIState *ui, SDL_Renderer *renderer) {
         SDL_RenderFillRect(renderer, &r);
         /* the active one gets a brighter border and a thicker underline, so which tab you are
            on is legible at a glance rather than by comparing two dark fills */
-        SDL_SetRenderDrawColor(renderer, active ? SYNTH_CYAN : SYNTH_BORDER_LIGHT, 0xff);
+        if (active) SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+        else SDL_SetRenderDrawColor(renderer, SYNTH_BORDER_LIGHT, 0xff);
         SDL_RenderDrawRect(renderer, &r);
         if (active) {
             SDL_Rect under = { r.x + 1, r.y + r.h - 3, r.w - 2, 2 };
             SDL_RenderFillRect(renderer, &under);
         }
         int tx = r.x + (r.w - (int)strlen(names[t]) * 8) / 2;     /* the font advances 8 */
-        SDL_SetRenderDrawColor(renderer, active ? SYNTH_CYAN : SYNTH_TEXT_DIM, 0xff);
+        if (active) SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+        else SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
         ui_draw_text(renderer, names[t], tx, r.y + (r.h - 8) / 2);
     }
     // filter box
     SDL_Rect box = { 4, TOOLBAR_HEIGHT + 31, PALETTE_WIDTH - 18, 19 };
     SDL_SetRenderDrawColor(renderer, 0x0c, 0x08, 0x18, 0xff);
     SDL_RenderFillRect(renderer, &box);
-    SDL_SetRenderDrawColor(renderer, ui->palette_filter_active ? SYNTH_CYAN : SYNTH_BORDER, 0xff);
+    if (ui->palette_filter_active) SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+    else SDL_SetRenderDrawColor(renderer, SYNTH_BORDER, 0xff);
     SDL_RenderDrawRect(renderer, &box);
     if (ui->palette_filter[0]) {
         SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
@@ -1274,7 +1279,8 @@ void ui_render_palette(UIState *ui, SDL_Renderer *renderer) {
                     SDL_RenderFillRect(renderer, &bg);
 
                     // Border
-                    SDL_SetRenderDrawColor(renderer, item->selected ? SYNTH_ORANGE : SYNTH_BORDER, 0xff);
+                    if (item->selected) SDL_SetRenderDrawColor(renderer, SYNTH_ORANGE, 0xff);
+                    else SDL_SetRenderDrawColor(renderer, SYNTH_BORDER, 0xff);
                     SDL_RenderDrawRect(renderer, &bg);
 
                     // Subcircuit icon (IC chip with notch)
@@ -6949,7 +6955,8 @@ void ui_render_spotlight(UIState *ui, SDL_Renderer *renderer) {
             ui_draw_text(renderer, prefix_str, dx + 15, result_y + 4);
 
             // Component name
-            SDL_SetRenderDrawColor(renderer, i == ui->spotlight_selected ? SYNTH_TEXT : SYNTH_TEXT_DIM, 0xff);
+            if (i == ui->spotlight_selected) SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
+            else SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DIM, 0xff);
             ui_draw_text(renderer, info->name, dx + 60, result_y + 4);
 
             result_y += 28;
@@ -7275,7 +7282,8 @@ void ui_render_subcircuit_dialog(UIState *ui, SDL_Renderer *renderer) {
     SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
     SDL_Rect name_bg = {dx + 70, dy + 45, dw - 90, 28};
     SDL_RenderFillRect(renderer, &name_bg);
-    SDL_SetRenderDrawColor(renderer, name_focused ? SYNTH_CYAN : SYNTH_BORDER, 0xff);
+    if (name_focused) SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+    else SDL_SetRenderDrawColor(renderer, SYNTH_BORDER, 0xff);
     SDL_RenderDrawRect(renderer, &name_bg);
 
     SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
@@ -7324,7 +7332,8 @@ void ui_render_subcircuit_dialog(UIState *ui, SDL_Renderer *renderer) {
         SDL_SetRenderDrawColor(renderer, SYNTH_BG_DARK, 0xff);
         SDL_Rect pin_bg = {px + 25, py, 110, 20};
         SDL_RenderFillRect(renderer, &pin_bg);
-        SDL_SetRenderDrawColor(renderer, pin_focused ? SYNTH_CYAN : SYNTH_BORDER, 0xff);
+        if (pin_focused) SDL_SetRenderDrawColor(renderer, SYNTH_CYAN, 0xff);
+        else SDL_SetRenderDrawColor(renderer, SYNTH_BORDER, 0xff);
         SDL_RenderDrawRect(renderer, &pin_bg);
 
         SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
@@ -7352,12 +7361,15 @@ void ui_render_subcircuit_dialog(UIState *ui, SDL_Renderer *renderer) {
 
     // Create/Save button - different text for edit mode
     bool can_create = (ui->subcircuit_name[0] != '\0');
-    SDL_SetRenderDrawColor(renderer, can_create ? SYNTH_PURPLE_DIM : SYNTH_BG_LIGHT, 0xff);
+    if (can_create) SDL_SetRenderDrawColor(renderer, SYNTH_PURPLE_DIM, 0xff);
+    else SDL_SetRenderDrawColor(renderer, SYNTH_BG_LIGHT, 0xff);
     SDL_Rect create_btn = {dx + dw - 90, btn_y, 80, 30};
     SDL_RenderFillRect(renderer, &create_btn);
-    SDL_SetRenderDrawColor(renderer, can_create ? SYNTH_PURPLE : SYNTH_BORDER, 0xff);
+    if (can_create) SDL_SetRenderDrawColor(renderer, SYNTH_PURPLE, 0xff);
+    else SDL_SetRenderDrawColor(renderer, SYNTH_BORDER, 0xff);
     SDL_RenderDrawRect(renderer, &create_btn);
-    SDL_SetRenderDrawColor(renderer, can_create ? SYNTH_TEXT : SYNTH_TEXT_DARK, 0xff);
+    if (can_create) SDL_SetRenderDrawColor(renderer, SYNTH_TEXT, 0xff);
+    else SDL_SetRenderDrawColor(renderer, SYNTH_TEXT_DARK, 0xff);
     ui_draw_text(renderer, is_editing ? "Save" : "Create", is_editing ? (dx + dw - 67) : (dx + dw - 75), btn_y + 10);
 
     // Hint at bottom - different text for edit mode
