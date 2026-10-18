@@ -1631,7 +1631,74 @@ static int dpdt_test(void) {
         simulation_free(sim);
         circuit_free(c);
     }
-    printf("dpdt-test: %d checks over %d control levels, %d wrong\n", checks, N, fails);
+    /* And the single pole, which shares that stamp. Its control is terminal 3 rather than 6, so
+       a stamp that read the DPDT's control pin on the SPDT would never throw at all; and with
+       only one pole there is no second pole to agree with, so each case checks both contacts
+       against arithmetic: 10 V on the selected one, nothing on the other. */
+    for (int i = 0; i < N; i++) {
+        Circuit *c = circuit_create();
+        if (!c) return 1;
+        Component *vs = component_create(COMP_DC_VOLTAGE, -300, 0);
+        Component *sw = component_create(COMP_SPDT_DRIVEN, 0, 0);
+        Component *ra = component_create(COMP_RESISTOR, 250, -120);
+        Component *rb = component_create(COMP_RESISTOR, 350, -120);
+        Component *vc = component_create(COMP_DC_VOLTAGE, -300, 300);
+        Component *g  = component_create(COMP_GROUND, 0, 400);
+        if (!vs || !sw || !ra || !rb || !vc || !g) { circuit_free(c); return 1; }
+        vs->rotation = ra->rotation = rb->rotation = vc->rotation = 90;
+        vs->props.dc_voltage.voltage = 10.0;
+        vc->props.dc_voltage.voltage = cases[i].v_ctl;
+        ra->props.resistor.resistance = 1000.0;
+        rb->props.resistor.resistance = 2000.0;
+        circuit_add_component(c, vs); circuit_add_component(c, sw);
+        circuit_add_component(c, ra); circuit_add_component(c, rb);
+        circuit_add_component(c, vc); circuit_add_component(c, g);
+        /* 0=C 1=NC 2=NO 3=CTL */
+        circuit_add_wire(c, vs->node_ids[0], sw->node_ids[0]);
+        circuit_add_wire(c, sw->node_ids[1], ra->node_ids[0]);
+        circuit_add_wire(c, sw->node_ids[2], rb->node_ids[0]);
+        circuit_add_wire(c, sw->node_ids[3], vc->node_ids[0]);
+        circuit_add_wire(c, ra->node_ids[1], g->node_ids[0]);
+        circuit_add_wire(c, rb->node_ids[1], g->node_ids[0]);
+        circuit_add_wire(c, vs->node_ids[1], g->node_ids[0]);
+        circuit_add_wire(c, vc->node_ids[1], g->node_ids[0]);
+
+        Simulation *sim = simulation_create(c);
+        if (!sim || !simulation_dc_analysis(sim)) {
+            printf("[FAIL] spdt  %s: no operating point\n", cases[i].what);
+            fails++;
+            if (sim) simulation_free(sim);
+            circuit_free(c);
+            continue;
+        }
+        Node *A = circuit_get_node(c, ra->node_ids[0]), *B = circuit_get_node(c, rb->node_ids[0]);
+        if (!A || !B) {
+            printf("[FAIL] spdt  %s: a contact node is missing\n", cases[i].what);
+            fails++; simulation_free(sim); circuit_free(c); continue;
+        }
+        double closed = cases[i].expect_thrown ? B->voltage : A->voltage;
+        double open   = cases[i].expect_thrown ? A->voltage : B->voltage;
+        checks += 2;
+        if (fabs(closed - 10.0) > 0.01) {
+            printf("[FAIL] spdt  %-32s the selected contact is at %.4g V, not 10\n",
+                   cases[i].what, closed);
+            fails++;
+        }
+        if (fabs(open) > 1e-3) {
+            printf("[FAIL] spdt  %-32s the other contact sits at %.4g V - still connected\n",
+                   cases[i].what, open);
+            fails++;
+        }
+        if (sw->props.dpdt_driven.thrown != cases[i].expect_thrown) {
+            printf("[FAIL] spdt  %-32s the symbol would draw the blade on the wrong contact\n",
+                   cases[i].what);
+            fails++;
+        }
+        simulation_free(sim);
+        circuit_free(c);
+    }
+    printf("dpdt-test: %d checks over %d control levels on the DPDT and the SPDT, %d wrong\n",
+           checks, N, fails);
     return fails ? 1 : 0;
 }
 
@@ -2412,6 +2479,7 @@ static const char *const frozen_type_keys[] = {
     "led_array", "led_matrix", "dc_motor", "antenna_tx", "antenna_rx", "bus", "bus_tap",
     "voltmeter", "ammeter", "wattmeter", "test_point", "text", "label", "pin", "subcircuit",
     "toroid", "tline", "delay_line", "source_3ph", "load_hp", "arb_source", "mcu",
+    "spdt_driven",
 };
 
 static char *slurp(const char *path) {
@@ -7106,6 +7174,31 @@ static int netlist_test(void) {
           " 1.00 V. The same circuit as above with only the control moved, and R1 is there so"
           " neither state expects zero - a relative tolerance against zero demands an exact bit" },
 
+        /* X SPDT_SWITCH, both ways, and with two different voltages on the contacts so the
+         * answer says WHICH contact the common is on, not merely that it is on one. Written
+         * (A, B, common, control); a high control selects A. A reader that ignored the control
+         * passes one of these; one that swapped A and B, or put the common on a contact,
+         * passes neither. The switch is ideal (1 uohm / 1 Tohm), so the common is the contact's
+         * voltage to better than a part in a million. */
+        { "X SPDT_SWITCH, control high",
+          "V1 a 0 DC 10\n"
+          "V2 b 0 DC 2\n"
+          "VC ctl 0 DC 5\n"
+          "XS a b com ctl SPDT_SWITCH\n"
+          "RL com 0 1k\n",
+          "com", 10.0, 0.001,
+          "the high control throws the common to A, the 10 V contact" },
+
+        { "X SPDT_SWITCH, control low",
+          "V1 a 0 DC 10\n"
+          "V2 b 0 DC 2\n"
+          "VC ctl 0 DC 0\n"
+          "XS a b com ctl SPDT_SWITCH\n"
+          "RL com 0 1k\n",
+          "com", 2.0, 0.001,
+          "the low control leaves it on B, the 2 V contact. The same circuit with only the"
+          " control moved" },
+
         /* SHIFT_REGISTER, and it has to be a name that is genuinely not modelled.
          *
          * This case used to say ANALOG_SWITCH, and the moment that name became supported the
@@ -7119,7 +7212,7 @@ static int netlist_test(void) {
           "R2 q 0 1k\n"
           "XU9 q 0 clk SHIFT_REGISTER\n",
           "q", 0.5, 0.01,
-          "only OPAMP and ANALOG_SWITCH are honoured. An unknown subcircuit is dropped, not"
+          "only OPAMP, ANALOG_SWITCH and SPDT_SWITCH are honoured. An unknown subcircuit is dropped, not"
           " guessed at - guessing a short here would tie q to ground and guessing an open would"
           " be luck, not a model" },
 

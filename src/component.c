@@ -1180,6 +1180,21 @@ static const ComponentTypeInfo component_info[COMP_TYPE_COUNT] = {
             .ideal = true
         }}
     },
+    /* One pole of the above. The common sits between its two contacts and the control enters
+       from below, as on the DPDT; NC is the contact it rests on, NO the one a high control
+       throws it to. */
+    [COMP_SPDT_DRIVEN] = {
+        "SPDT (driven)", "SPDTd", 4,
+        {{ -50, 0, "C" }, { 50, -20, "NC" }, { 50, 20, "NO" }, { 0, 40, "CTL" }},
+        100, 80,
+        { .dpdt_driven = {
+            .v_on = 2.5,
+            .r_on = 1.0,
+            .r_off = 1e9,
+            .thrown = false,
+            .ideal = true
+        }}
+    },
     [COMP_ANALOG_SWITCH] = {
         "Analog Switch", "ASW", 3,
         {{ -40, 0, "IN" }, { 40, 0, "OUT" }, { 0, 20, "CTL" }},
@@ -2022,6 +2037,7 @@ const char *component_search_keywords(ComponentType type) {
         case COMP_TOROID:          return "toroid tesla top load";
         case COMP_SPST_SWITCH: case COMP_SPDT_SWITCH: case COMP_DPDT_SWITCH: return "switch";
         case COMP_ANALOG_SWITCH:   return "switch analog";
+        case COMP_DPDT_DRIVEN: case COMP_SPDT_DRIVEN: return "switch changeover driven mux";
         case COMP_MCU:             return "mcu arduino microcontroller code sketch program gpio";
         case COMP_CRYSTAL:         return "crystal xtal quartz";
         case COMP_FUSE:            return "fuse";
@@ -2654,7 +2670,7 @@ static const char *const component_type_keys[COMP_TYPE_COUNT] = {
     [COMP_LABEL] = "label", [COMP_PIN] = "pin", [COMP_SUBCIRCUIT] = "subcircuit",
     [COMP_TOROID] = "toroid", [COMP_TLINE] = "tline", [COMP_DELAY_LINE] = "delay_line",
     [COMP_SOURCE_3PH] = "source_3ph", [COMP_LOAD_HP] = "load_hp", [COMP_ARB_SOURCE] = "arb_source",
-    [COMP_MCU] = "mcu",
+    [COMP_MCU] = "mcu", [COMP_SPDT_DRIVEN] = "spdt_driven",
 };
 
 const char *component_type_key(ComponentType type) {
@@ -5700,17 +5716,21 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             break;
         }
 
-        case COMP_DPDT_DRIVEN: {
+        case COMP_DPDT_DRIVEN:
+        case COMP_SPDT_DRIVEN: {
             /* Both poles throw together on the control input. Terminals are
-               0=1C 1=1NC 2=1NO 3=2C 4=2NC 5=2NO 6=CTL.
+               0=1C 1=1NC 2=1NO 3=2C 4=2NC 5=2NO 6=CTL; the SPDT is the first pole alone,
+               0=C 1=NC 2=NO 3=CTL.
 
                Break-before-make comes out of the stamp rather than being imposed on it: each
                pole stamps exactly one throw at r_on and the other at r_off, so there is no
                solution in which a common is connected to both of its throws. A mechanical
                changeover has a real overlap-free interval; this has no interval at all, which is
                the same thing as far as the circuit is concerned. */
+            bool two_pole = comp->type == COMP_DPDT_DRIVEN;
+            int ctl = two_pole ? n[6] : n[3];
             double v_ctl = 0;
-            if (prev_solution && n[6] > 0) v_ctl = vector_get(prev_solution, n[6] - 1);
+            if (prev_solution && ctl > 0) v_ctl = vector_get(prev_solution, ctl - 1);
             bool thrown = v_ctl >= comp->props.dpdt_driven.v_on;
             comp->props.dpdt_driven.thrown = thrown;      /* so the symbol draws where it is */
 
@@ -5723,10 +5743,12 @@ void component_stamp(Component *comp, Matrix *A, Vector *b,
             /* pole 1: common n[0] to NC n[1] / NO n[2]; pole 2: common n[3] to n[4] / n[5] */
             STAMP_CONDUCTANCE(n[0], n[1], thrown ? g_open   : g_closed);
             STAMP_CONDUCTANCE(n[0], n[2], thrown ? g_closed : g_open);
-            STAMP_CONDUCTANCE(n[3], n[4], thrown ? g_open   : g_closed);
-            STAMP_CONDUCTANCE(n[3], n[5], thrown ? g_closed : g_open);
+            if (two_pole) {
+                STAMP_CONDUCTANCE(n[3], n[4], thrown ? g_open   : g_closed);
+                STAMP_CONDUCTANCE(n[3], n[5], thrown ? g_closed : g_open);
+            }
             /* The control input takes no current, like every other logic input here. */
-            if (n[6] > 0) matrix_add(A, n[6] - 1, n[6] - 1, 1e-12);
+            if (ctl > 0) matrix_add(A, ctl - 1, ctl - 1, 1e-12);
             break;
         }
 

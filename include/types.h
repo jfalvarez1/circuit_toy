@@ -247,6 +247,11 @@ typedef enum {
        later part in every older file into its neighbour - which COMP_DPDT_DRIVEN did, to 62
        types. --parts-file-test fails if one moves. */
 
+    /* One pole of COMP_DPDT_DRIVEN: a common thrown between two contacts by a logic level. The
+       part a DAC's bit switch is, or a 2:1 analog multiplexer - and what `X a b common control
+       SPDT_SWITCH` in a netlist means. It shares the DPDT's properties. */
+    COMP_SPDT_DRIVEN,       // Logic-driven SPDT changeover: C to NC below threshold, to NO above
+
     COMP_TYPE_COUNT
 } ComponentType;
 

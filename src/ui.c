@@ -361,6 +361,7 @@ void ui_init(UIState *ui) {
     ADD_COMP(COMP_RELAY, "Relay");
     ADD_COMP(COMP_ANALOG_SWITCH, "AnaSw");
     ADD_COMP(COMP_DPDT_DRIVEN, "DPDTd");
+    ADD_COMP(COMP_SPDT_DRIVEN, "SPDTd");
 
     // === TRANSFORMERS SECTION (index 57) ===
     NEW_SECTION(PCAT_TRANSFORMERS);
@@ -1780,8 +1781,9 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 break;
             }
 
-            /* The logic-driven changeover: where it throws, and what the contacts are worth. */
-            case COMP_DPDT_DRIVEN: {
+            /* The logic-driven changeovers: where they throw, and what the contacts are worth. */
+            case COMP_DPDT_DRIVEN:
+            case COMP_SPDT_DRIVEN: {
                 bool ed_th = input && input->editing_property && input->editing_prop_type == PROP_V_THRESHOLD;
                 format_engineering(selected->props.dpdt_driven.v_on, "V", buf, sizeof(buf));
                 draw_property_field(renderer, x + 10, prop_y, prop_w, "Throw at:", buf, ed_th, edit_buf, cursor);
@@ -1791,7 +1793,8 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 prop_y += 18;
 
                 SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
-                ui_draw_text(renderer, "Poles:", x + 10, prop_y + 2);
+                ui_draw_text(renderer, selected->type == COMP_SPDT_DRIVEN ? "Pole:" : "Poles:",
+                             x + 10, prop_y + 2);
                 SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
                 ui_draw_text(renderer, selected->props.dpdt_driven.thrown ? "on NO" : "on NC",
                              x + 100, prop_y + 2);

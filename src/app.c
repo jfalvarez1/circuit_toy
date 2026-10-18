@@ -1500,6 +1500,7 @@ void app_handle_events(App *app) {
                                                                             : "Real (leakage, winding R)";
                                     break;
                                 case COMP_DPDT_DRIVEN:
+                                case COMP_SPDT_DRIVEN:
                                     c->props.dpdt_driven.ideal = !c->props.dpdt_driven.ideal;
                                     model_name = c->props.dpdt_driven.ideal ? "Ideal (no contact R)"
                                                                             : "Real (R_on, R_off)";

@@ -59,6 +59,7 @@ void render_dpdt_switch(RenderContext *ctx, float x, float y, int rotation, int 
 void render_relay(RenderContext *ctx, float x, float y, int rotation, bool energized);
 void render_analog_switch(RenderContext *ctx, float x, float y, int rotation, bool closed);
 void render_dpdt_driven(RenderContext *ctx, float x, float y, int rotation, bool thrown);
+void render_spdt_driven(RenderContext *ctx, float x, float y, int rotation, bool thrown);
 void render_delay_line(RenderContext *ctx, Component *comp);
 void render_lamp(RenderContext *ctx, float x, float y, int rotation);
 void render_speaker(RenderContext *ctx, float x, float y, int rotation);
@@ -1533,6 +1534,9 @@ void render_component(RenderContext *ctx, Component *comp) {
             break;
         case COMP_DPDT_DRIVEN:
             render_dpdt_driven(ctx, comp->x, comp->y, comp->rotation, comp->props.dpdt_driven.thrown);
+            break;
+        case COMP_SPDT_DRIVEN:
+            render_spdt_driven(ctx, comp->x, comp->y, comp->rotation, comp->props.dpdt_driven.thrown);
             break;
         case COMP_LAMP:
             render_lamp(ctx, comp->x, comp->y, comp->rotation);
@@ -4198,6 +4202,22 @@ void render_dpdt_driven(RenderContext *ctx, float x, float y, int rotation, bool
     render_draw_line_rotated(ctx, x, y, 0, 80, 0, 62, rotation);
     render_draw_line_rotated(ctx, x, y, -4, 68, 0, 62, rotation);
     render_draw_line_rotated(ctx, x, y, 4, 68, 0, 62, rotation);
+}
+
+/* One pole of the above: C at (-50, 0) between NC (50, -20) and NO (50, 20), the control coming
+   up from (0, 40) to an arrow under the blade. The blade lies on whichever contact the control
+   has selected, so a DAC's bit switches read their code off the schematic. */
+void render_spdt_driven(RenderContext *ctx, float x, float y, int rotation, bool thrown) {
+    render_draw_line_rotated(ctx, x, y, -50, 0, -20, 0, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, -20, 50, -20, rotation);
+    render_draw_line_rotated(ctx, x, y, 20, 20, 50, 20, rotation);
+    render_draw_circle_rotated(ctx, x, y, -20, 0, 3, rotation);
+    render_draw_circle_rotated(ctx, x, y, 20, -20, 3, rotation);
+    render_draw_circle_rotated(ctx, x, y, 20, 20, 3, rotation);
+    render_draw_line_rotated(ctx, x, y, -20, 0, 20, thrown ? 20.0f : -20.0f, rotation);
+    render_draw_line_rotated(ctx, x, y, 0, 40, 0, 22, rotation);
+    render_draw_line_rotated(ctx, x, y, -4, 28, 0, 22, rotation);
+    render_draw_line_rotated(ctx, x, y, 4, 28, 0, 22, rotation);
 }
 
 // Lamp - circle with X inside

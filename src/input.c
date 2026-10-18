@@ -2405,7 +2405,7 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             if (component_is_logic_gate(comp->type)) {
                 comp->props.logic_gate.v_threshold = value;
                 applied = true;
-            } else if (comp->type == COMP_DPDT_DRIVEN && value > 0 && value <= 1000) {
+            } else if ((comp->type == COMP_DPDT_DRIVEN || comp->type == COMP_SPDT_DRIVEN) && value > 0 && value <= 1000) {
                 comp->props.dpdt_driven.v_on = value;      /* where the poles throw */
                 applied = true;
             }
@@ -2795,7 +2795,7 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                 /* Every other value row tests what it was given; this one took anything,
                    including the zero that reaches the switch stamp as a division. */
                 if (value > 0) { comp->props.switch_spst.r_on = value; applied = true; }
-            } else if (comp->type == COMP_DPDT_DRIVEN && value > 0 && value <= 1e9) {
+            } else if ((comp->type == COMP_DPDT_DRIVEN || comp->type == COMP_SPDT_DRIVEN) && value > 0 && value <= 1e9) {
                 comp->props.dpdt_driven.r_on = value; applied = true;
             }
             break;
@@ -2804,7 +2804,7 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                  comp->type == COMP_DPDT_SWITCH || comp->type == COMP_PUSH_BUTTON) &&
                 value > 0 && value <= 1e12) {
                 comp->props.switch_spst.r_off = value; applied = true;
-            } else if (comp->type == COMP_DPDT_DRIVEN && value > 0 && value <= 1e12) {
+            } else if ((comp->type == COMP_DPDT_DRIVEN || comp->type == COMP_SPDT_DRIVEN) && value > 0 && value <= 1e12) {
                 comp->props.dpdt_driven.r_off = value; applied = true;
             }
             break;

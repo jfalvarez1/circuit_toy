@@ -168,10 +168,15 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
                    at. Three nodes, written (in, out, ctl), which is the order this part stores
                    them in, so unlike the op-amp there is nothing to swap.
                    The rest of the switch family is NOT here: a 4-terminal SPDT with its own
-                   control pin has no part behind it yet, and synthesising one in the reader out
-                   of two analog switches would be the reader inventing topology, which is the
-                   one thing it must not do. */
+                   control pin had no part behind it, and synthesising one in the reader out of
+                   two analog switches would be the reader inventing topology, which is the one
+                   thing it must not do. */
                 if (nt == 5 && !_stricmp(tok[4], "ANALOG_SWITCH")) { ty = COMP_ANALOG_SWITCH; nnodes = 3; break; }
+                /* SPDT_SWITCH now has one: COMP_SPDT_DRIVEN, the driven changeover. Written
+                   (A, B, common, control), where A is the contact a high control selects - the
+                   course's DAC bit switches put vref there and ground on B. Stored (C, NC, NO,
+                   CTL), so the order is remapped below. */
+                if (nt == 6 && !_stricmp(tok[5], "SPDT_SWITCH")) { ty = COMP_SPDT_DRIVEN; nnodes = 4; break; }
                 skipped++;
                 if (!first_bad[0]) snprintf(first_bad, sizeof first_bad, "%s", tok[0]);
                 continue;
@@ -219,6 +224,7 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
            writes the non-inverting input first; handing that straight across would build an
            inverting amplifier out of a non-inverting one and still solve. */
         static const int oa_order[3]  = { 1, 0, 2 };    /* + - OUT written -> - + OUT stored */
+        static const int spdt_order[4] = { 2, 1, 0, 3 }; /* A B C CTL written -> C NC NO CTL stored */
         bool ctl = (kind == 'E' || kind == 'G');
         bool three = (kind == 'Q' || kind == 'M');
         for (int t = 0; t < nnodes && t < p->num_terminals; t++) {
@@ -227,6 +233,7 @@ int netlist_build(Circuit *circuit, const char *text, char *err, size_t err_size
                      /* the op-amp only, not every X: the analog switch stores its pins in the
                         order a netlist writes them, so remapping it would swap IN with OUT */
                      : (kind == 'X' && ty == COMP_OPAMP) ? oa_order[t]
+                     : (kind == 'X' && ty == COMP_SPDT_DRIVEN) ? spdt_order[t]
                      : t;
             nl_set_net(circuit, p, slot, tok[1 + t]);
             if (nl_is_ground(tok[1 + t])) needs_ground = 1;
