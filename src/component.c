@@ -2596,6 +2596,81 @@ const ComponentTypeInfo *component_get_info(ComponentType type) {
     return &component_info[COMP_NONE];
 }
 
+/* What each part type is called in a saved file.
+
+   The files used to say only "type": 65, and 65 is a position in an enum, not a name. On
+   2026-09-03 COMP_DPDT_DRIVEN went into the middle of the switches and every type after it moved
+   up one: a transformer saved the day before reopened as a driven DPDT, every logic gate as the
+   gate beside it, a 555 as a full adder - 62 parts, with nothing to say the file was any
+   different. Positions cannot carry identity across a release; these can. Keyed by enum name,
+   so the table cannot drift out of step with the enum, and --parts-file-test refuses a gap or a
+   duplicate. A key is permanent: files written with it exist. */
+static const char *const component_type_keys[COMP_TYPE_COUNT] = {
+    [COMP_NONE] = "none", [COMP_GROUND] = "ground", [COMP_RESISTOR] = "resistor",
+    [COMP_CAPACITOR] = "capacitor", [COMP_CAPACITOR_ELEC] = "capacitor_elec",
+    [COMP_INDUCTOR] = "inductor", [COMP_POTENTIOMETER] = "potentiometer",
+    [COMP_PHOTORESISTOR] = "photoresistor", [COMP_THERMISTOR] = "thermistor",
+    [COMP_MEMRISTOR] = "memristor", [COMP_FUSE] = "fuse", [COMP_CRYSTAL] = "crystal",
+    [COMP_SPARK_GAP] = "spark_gap", [COMP_DC_VOLTAGE] = "dc_voltage",
+    [COMP_AC_VOLTAGE] = "ac_voltage", [COMP_DC_CURRENT] = "dc_current",
+    [COMP_AC_CURRENT] = "ac_current", [COMP_CLOCK] = "clock", [COMP_VADC_SOURCE] = "vadc_source",
+    [COMP_AM_SOURCE] = "am_source", [COMP_FM_SOURCE] = "fm_source", [COMP_BATTERY] = "battery",
+    [COMP_SQUARE_WAVE] = "square_wave", [COMP_TRIANGLE_WAVE] = "triangle_wave",
+    [COMP_SAWTOOTH_WAVE] = "sawtooth_wave", [COMP_NOISE_SOURCE] = "noise_source",
+    [COMP_PULSE_SOURCE] = "pulse_source", [COMP_PWM_SOURCE] = "pwm_source",
+    [COMP_PWL_SOURCE] = "pwl_source", [COMP_EXPR_SOURCE] = "expr_source", [COMP_DIODE] = "diode",
+    [COMP_ZENER] = "zener", [COMP_SCHOTTKY] = "schottky", [COMP_LED] = "led",
+    [COMP_VARACTOR] = "varactor", [COMP_TUNNEL_DIODE] = "tunnel_diode",
+    [COMP_PHOTODIODE] = "photodiode", [COMP_NPN_BJT] = "npn_bjt", [COMP_PNP_BJT] = "pnp_bjt",
+    [COMP_NPN_DARLINGTON] = "npn_darlington", [COMP_PNP_DARLINGTON] = "pnp_darlington",
+    [COMP_NMOS] = "nmos", [COMP_PMOS] = "pmos", [COMP_NJFET] = "njfet", [COMP_PJFET] = "pjfet",
+    [COMP_SCR] = "scr", [COMP_DIAC] = "diac", [COMP_TRIAC] = "triac", [COMP_UJT] = "ujt",
+    [COMP_OPAMP] = "opamp", [COMP_OPAMP_FLIPPED] = "opamp_flipped",
+    [COMP_OPAMP_REAL] = "opamp_real", [COMP_OTA] = "ota", [COMP_CCII_PLUS] = "ccii_plus",
+    [COMP_CCII_MINUS] = "ccii_minus", [COMP_VCVS] = "vcvs", [COMP_VCCS] = "vccs",
+    [COMP_CCVS] = "ccvs", [COMP_CCCS] = "cccs", [COMP_SPST_SWITCH] = "spst_switch",
+    [COMP_SPDT_SWITCH] = "spdt_switch", [COMP_DPDT_SWITCH] = "dpdt_switch",
+    [COMP_PUSH_BUTTON] = "push_button", [COMP_RELAY] = "relay",
+    [COMP_ANALOG_SWITCH] = "analog_switch", [COMP_DPDT_DRIVEN] = "dpdt_driven",
+    [COMP_TRANSFORMER] = "transformer", [COMP_TRANSFORMER_CT] = "transformer_ct",
+    [COMP_LOGIC_INPUT] = "logic_input", [COMP_LOGIC_OUTPUT] = "logic_output",
+    [COMP_NOT_GATE] = "not_gate", [COMP_AND_GATE] = "and_gate", [COMP_OR_GATE] = "or_gate",
+    [COMP_NAND_GATE] = "nand_gate", [COMP_NOR_GATE] = "nor_gate", [COMP_XOR_GATE] = "xor_gate",
+    [COMP_XNOR_GATE] = "xnor_gate", [COMP_BUFFER] = "buffer", [COMP_TRISTATE_BUF] = "tristate_buf",
+    [COMP_SCHMITT_INV] = "schmitt_inv", [COMP_SCHMITT_BUF] = "schmitt_buf",
+    [COMP_D_FLIPFLOP] = "d_flipflop", [COMP_JK_FLIPFLOP] = "jk_flipflop",
+    [COMP_T_FLIPFLOP] = "t_flipflop", [COMP_SR_LATCH] = "sr_latch", [COMP_COUNTER] = "counter",
+    [COMP_SHIFT_REG] = "shift_reg", [COMP_MUX_2TO1] = "mux_2to1", [COMP_DEMUX_1TO2] = "demux_1to2",
+    [COMP_DECODER] = "decoder", [COMP_BCD_DECODER] = "bcd_decoder",
+    [COMP_HALF_ADDER] = "half_adder", [COMP_FULL_ADDER] = "full_adder",
+    [COMP_555_TIMER] = "555_timer", [COMP_DAC] = "dac", [COMP_ADC] = "adc", [COMP_VCO] = "vco",
+    [COMP_PLL] = "pll", [COMP_MONOSTABLE] = "monostable", [COMP_OPTOCOUPLER] = "optocoupler",
+    [COMP_LM317] = "lm317", [COMP_7805] = "7805", [COMP_TL431] = "tl431", [COMP_LAMP] = "lamp",
+    [COMP_7SEG_DISPLAY] = "7seg_display", [COMP_LED_ARRAY] = "led_array",
+    [COMP_LED_MATRIX] = "led_matrix", [COMP_DC_MOTOR] = "dc_motor",
+    [COMP_ANTENNA_TX] = "antenna_tx", [COMP_ANTENNA_RX] = "antenna_rx", [COMP_BUS] = "bus",
+    [COMP_BUS_TAP] = "bus_tap", [COMP_VOLTMETER] = "voltmeter", [COMP_AMMETER] = "ammeter",
+    [COMP_WATTMETER] = "wattmeter", [COMP_TEST_POINT] = "test_point", [COMP_TEXT] = "text",
+    [COMP_LABEL] = "label", [COMP_PIN] = "pin", [COMP_SUBCIRCUIT] = "subcircuit",
+    [COMP_TOROID] = "toroid", [COMP_TLINE] = "tline", [COMP_DELAY_LINE] = "delay_line",
+    [COMP_SOURCE_3PH] = "source_3ph", [COMP_LOAD_HP] = "load_hp", [COMP_ARB_SOURCE] = "arb_source",
+    [COMP_MCU] = "mcu",
+};
+
+const char *component_type_key(ComponentType type) {
+    if (type < 0 || type >= COMP_TYPE_COUNT) return NULL;
+    return component_type_keys[type];
+}
+
+ComponentType component_type_from_key(const char *key, size_t len) {
+    if (!key || !len) return COMP_NONE;
+    for (int t = COMP_NONE + 1; t < COMP_TYPE_COUNT; t++) {
+        const char *k = component_type_keys[t];
+        if (k && strlen(k) == len && !memcmp(k, key, len)) return (ComponentType)t;
+    }
+    return COMP_NONE;
+}
+
 double toroid_capacitance(const Component *comp) {
     // Bert Pool's toroid formula, D and d in inches, result in pF:
     //   C = (1 + (0.2781 - d/D)) * 2.8 * sqrt(pi * (D - d) * d / 4)

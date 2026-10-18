@@ -2388,6 +2388,211 @@ static int undo_test(void) {
    built when it is created rather than stored - a logic block's engine, a delay line's ring
    buffer - can come back different, and the first person to find out is whoever saved a circuit
    with one in it. The parts sit 200 px apart so no two terminals merge into one node. */
+/* The component enum as it stands at file version 4, in order. A saved file used to identify each
+   part only by its position in this list, and on 2026-09-03 a type was inserted into the middle
+   of it: 62 parts moved, and files saved the day before opened as other parts. Files written
+   from now on carry names as well (see component_type_key), but every file written before
+   that is numbers alone, so the positions here are permanent. A new type goes at the END of
+   the enum, and then at the end of this list. Inserting one anywhere else fails here. */
+static const char *const frozen_type_keys[] = {
+    "none", "ground", "resistor", "capacitor", "capacitor_elec", "inductor", "potentiometer",
+    "photoresistor", "thermistor", "memristor", "fuse", "crystal", "spark_gap", "dc_voltage",
+    "ac_voltage", "dc_current", "ac_current", "clock", "vadc_source", "am_source", "fm_source",
+    "battery", "square_wave", "triangle_wave", "sawtooth_wave", "noise_source", "pulse_source",
+    "pwm_source", "pwl_source", "expr_source", "diode", "zener", "schottky", "led", "varactor",
+    "tunnel_diode", "photodiode", "npn_bjt", "pnp_bjt", "npn_darlington", "pnp_darlington", "nmos",
+    "pmos", "njfet", "pjfet", "scr", "diac", "triac", "ujt", "opamp", "opamp_flipped", "opamp_real",
+    "ota", "ccii_plus", "ccii_minus", "vcvs", "vccs", "ccvs", "cccs", "spst_switch", "spdt_switch",
+    "dpdt_switch", "push_button", "relay", "analog_switch", "dpdt_driven", "transformer",
+    "transformer_ct", "logic_input", "logic_output", "not_gate", "and_gate", "or_gate", "nand_gate",
+    "nor_gate", "xor_gate", "xnor_gate", "buffer", "tristate_buf", "schmitt_inv", "schmitt_buf",
+    "d_flipflop", "jk_flipflop", "t_flipflop", "sr_latch", "counter", "shift_reg", "mux_2to1",
+    "demux_1to2", "decoder", "bcd_decoder", "half_adder", "full_adder", "555_timer", "dac", "adc",
+    "vco", "pll", "monostable", "optocoupler", "lm317", "7805", "tl431", "lamp", "7seg_display",
+    "led_array", "led_matrix", "dc_motor", "antenna_tx", "antenna_rx", "bus", "bus_tap",
+    "voltmeter", "ammeter", "wattmeter", "test_point", "text", "label", "pin", "subcircuit",
+    "toroid", "tline", "delay_line", "source_3ph", "load_hp", "arb_source", "mcu",
+};
+
+static char *slurp(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *buf = (n >= 0) ? malloc((size_t)n + 1) : NULL;
+    size_t got = buf ? fread(buf, 1, (size_t)n, f) : 0;
+    if (buf) buf[got] = '\0';
+    fclose(f);
+    return buf;
+}
+
+/* Rewrite a file the current writer produced into what an older one would have written:
+   the given version, no "kind" lines, and - for the numbering before 2026-09-03 - every type
+   number at or past the insertion one lower. */
+static int write_legacy(const char *src, const char *dst, int version, int old_numbers) {
+    char *in = slurp(src);
+    if (!in) return 0;
+    FILE *f = fopen(dst, "wb");
+    if (!f) { free(in); return 0; }
+    for (char *line = in; line && *line; ) {
+        char *nl = strchr(line, '\n');
+        size_t len = nl ? (size_t)(nl - line + 1) : strlen(line);
+        int t;
+        const char *k = strstr(line, "\"kind\":");
+        const char *ty = strstr(line, "\"type\": ");
+        const char *ve = strstr(line, "\"version\": ");
+        if (k && k < line + len) {
+            /* dropped */
+        } else if (ty && ty < line + len && sscanf(ty, "\"type\": %d", &t) == 1) {
+            if (old_numbers && t >= CIRCUIT_TYPES_INSERTED_AT) t -= 1;
+            fprintf(f, "%.*s\"type\": %d,\n", (int)(ty - line), line, t);
+        } else if (ve && ve < line + len) {
+            fprintf(f, "%.*s\"version\": %d,\n", (int)(ve - line), line, version);
+        } else {
+            fwrite(line, 1, len, f);
+        }
+        line = nl ? nl + 1 : NULL;
+    }
+    fclose(f);
+    free(in);
+    return 1;
+}
+
+/* Load a file and say which types came back, in order, against what was saved. */
+static int legacy_leg(const char *what, const char *path, const ComponentType *want, int n_want,
+                      int expect_count) {
+    Circuit *b = circuit_create();
+    int ok = file_import_json(b, path);
+    int bad = !ok || b->num_components != expect_count;
+    char got[200] = ""; size_t gl = 0;
+    for (int i = 0; i < b->num_components && i < n_want; i++) {
+        const char *key = component_type_key(b->components[i]->type);
+        if (gl < sizeof got - 24)
+            gl += (size_t)snprintf(got + gl, sizeof got - gl, "%s%s", gl ? " " : "", key ? key : "?");
+        if (b->components[i]->type != want[i]) bad = 1;
+    }
+    printf("[%s] parts-file  %-44s %s\n", bad ? "FAIL" : " OK ", what,
+           bad ? got : "every part came back as itself");
+    if (bad && !ok) printf("        (the load failed: %s)\n", file_get_error());
+    circuit_free(b);
+    return bad;
+}
+
+/* Saved circuits have to open as the parts that were saved, whichever release wrote them. */
+static int type_identity_test(void) {
+    int fails = 0;
+
+    /* 1. Every type has a name, the names are distinct, and each one leads back to its type. */
+    int unnamed = 0, dup = 0, astray = 0;
+    for (int t = COMP_NONE; t < COMP_TYPE_COUNT; t++) {
+        const char *k = component_type_key((ComponentType)t);
+        if (!k || !k[0]) { unnamed++; continue; }
+        if (t > COMP_NONE && component_type_from_key(k, strlen(k)) != (ComponentType)t) astray++;
+        for (int u = COMP_NONE; u < t; u++) {
+            const char *j = component_type_key((ComponentType)u);
+            if (j && !strcmp(j, k)) dup++;
+        }
+    }
+    if (unnamed || dup || astray) {
+        printf("[FAIL] parts-file  type names: %d types with none, %d duplicates, %d that lead "
+               "elsewhere\n", unnamed, dup, astray);
+        fails++;
+    } else {
+        printf("[ OK ] parts-file  type names: all %d types named, distinct, and reversible\n",
+               COMP_TYPE_COUNT - 1);
+    }
+
+    /* 2. Nothing has moved since names went into the files. */
+    int frozen = (int)(sizeof frozen_type_keys / sizeof frozen_type_keys[0]), moved = -1;
+    for (int i = 0; i < frozen && i < COMP_TYPE_COUNT && moved < 0; i++) {
+        const char *k = component_type_key((ComponentType)i);
+        if (!k || strcmp(k, frozen_type_keys[i])) moved = i;
+    }
+    if (moved >= 0 || COMP_TYPE_COUNT < frozen) {
+        const char *k = moved >= 0 ? component_type_key((ComponentType)moved) : NULL;
+        printf("[FAIL] parts-file  type %d is now \"%s\", where every file before it says \"%s\": "
+               "a type went into the middle of the enum. New ones go at the end.\n",
+               moved, k ? k : "?", moved >= 0 ? frozen_type_keys[moved] : "?");
+        fails++;
+    } else {
+        printf("[ OK ] parts-file  the first %d type numbers are where the files say they are\n",
+               frozen);
+    }
+
+    /* 3. Files from before the names. Parts chosen from past the insertion, each with a different
+          pin count from its neighbour where that is what decides a version 3 file. */
+    static const ComponentType parts[] = { COMP_TRANSFORMER, COMP_AND_GATE, COMP_NOT_GATE,
+                                           COMP_555_TIMER, COMP_RESISTOR, COMP_DPDT_DRIVEN };
+    const int n_parts = (int)(sizeof parts / sizeof parts[0]);
+    Circuit *a = circuit_create();
+    for (int i = 0; i < n_parts; i++) {
+        Component *comp = component_create(parts[i], 200.0f * (float)i, 0);
+        if (comp && circuit_add_component(a, comp) < 0) component_free(comp);
+    }
+    const char *cur = "type_identity_now.json", *leg = "type_identity_then.json";
+    if (a->num_components != n_parts || !file_export_json(a, cur)) {
+        printf("[FAIL] parts-file  could not build the circuit the legacy files are made from\n");
+        circuit_free(a);
+        return fails + 1;
+    }
+    char *text = slurp(cur);
+    if (!text || !strstr(text, "\"kind\": \"transformer\"")) {
+        printf("[FAIL] parts-file  a saved file does not name its parts\n");
+        fails++;
+    }
+    free(text);
+
+    /* The numbering from before 2026-09-03 had no driven DPDT, so a file of then cannot hold
+       one: those are made from the first five parts only. */
+    Circuit *five = circuit_create();
+    for (int i = 0; i < n_parts - 1; i++) {
+        Component *comp = component_create(parts[i], 200.0f * (float)i, 0);
+        if (comp && circuit_add_component(five, comp) < 0) component_free(comp);
+    }
+    const char *cur5 = "type_identity_now5.json";
+    file_export_json(five, cur5);
+
+    write_legacy(cur5, leg, 2, 1);
+    fails += legacy_leg("version 2, numbered as before 2026-09-03", leg, parts, n_parts - 1, n_parts - 1);
+    write_legacy(cur5, leg, 3, 1);
+    fails += legacy_leg("version 3, numbered as before 2026-09-03", leg, parts, n_parts - 1, n_parts - 1);
+    write_legacy(cur, leg, 3, 0);
+    fails += legacy_leg("version 3, numbered as since", leg, parts, n_parts, n_parts);
+
+    /* A name outranks a number, and a name that means nothing here is not guessed at. */
+    {
+        char *t2 = slurp(cur);
+        FILE *f = t2 ? fopen(leg, "wb") : NULL;
+        if (f) {
+            /* every number in the file pointed at the wrong part, the names left alone */
+            for (char *p = t2; *p; p++) {
+                int t;
+                if (!strncmp(p, "\"type\": ", 8) && sscanf(p, "\"type\": %d", &t) == 1) {
+                    fprintf(f, "\"type\": %d", t == COMP_RESISTOR ? COMP_CAPACITOR : COMP_RESISTOR);
+                    p += 8;
+                    while (isdigit((unsigned char)p[1])) p++;
+                } else if (!strncmp(p, "\"kind\": \"555_timer\"", 19)) {
+                    fputs("\"kind\": \"flux_capacitor\"", f);
+                    p += 18;
+                } else {
+                    fputc(*p, f);
+                }
+            }
+            fclose(f);
+        }
+        free(t2);
+        static const ComponentType named[] = { COMP_TRANSFORMER, COMP_AND_GATE, COMP_NOT_GATE,
+                                               COMP_RESISTOR, COMP_DPDT_DRIVEN };
+        fails += legacy_leg("names over numbers, an unknown name dropped", leg, named, 5, 5);
+    }
+
+    remove(cur); remove(cur5); remove(leg);
+    circuit_free(five);
+    circuit_free(a);
+    return fails;
+}
+
 static int parts_file_test(void) {
     Circuit *a = circuit_create();
     int placed = 0, uncreatable = 0;
@@ -2440,8 +2645,12 @@ static int parts_file_test(void) {
     remove("parts_roundtrip.cpg");
     remove("parts_roundtrip.json");
     circuit_free(a);
+
+    int identity = type_identity_test();
+    fails += identity;
     printf("\nparts-file-test: %d of %d component types on one canvas (%d cannot be created), "
-           "%d formats failed\n", placed, COMP_TYPE_COUNT - 1, uncreatable, fails);
+           "%d formats failed, %d type-identity checks failed\n", placed, COMP_TYPE_COUNT - 1,
+           uncreatable, fails - identity, identity);
     return fails;
 }
 

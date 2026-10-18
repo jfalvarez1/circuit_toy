@@ -17,8 +17,17 @@
    tied to the ground net, a display's common cathode, every rail a builder assigns by node id -
    came back unconnected, and 44 of the templates settled at different voltages after a save
    and a load. Version 1 files still load: their terminals are recovered by position, which is
-   what they always were. */
-#define CIRCUIT_FILE_VERSION 3
+   what they always were.
+   3: node net names.
+   4: each part's type is also written as a name ("kind": "transformer"), which the loader
+   believes over the number. Before this the number was all a file had, and the numbers moved
+   once already without the version changing - see file_import_json. */
+#define CIRCUIT_FILE_VERSION 4
+
+/* Where the enum stood before 2026-09-03 (v3.30.0 and everything earlier back to December
+   2025): COMP_DPDT_DRIVEN did not exist, so every type at or after its position was one lower.
+   A file from then still says those numbers. */
+#define CIRCUIT_TYPES_INSERTED_AT COMP_DPDT_DRIVEN
 
 // Save circuit to file (binary format)
 bool file_save_circuit(Circuit *circuit, const char *filename);

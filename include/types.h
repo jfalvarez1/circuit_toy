@@ -242,6 +242,11 @@ typedef enum {
     // === PROGRAMMABLE ===
     COMP_MCU,               // Runs Arduino-shaped code and drives its pins from it (see sketch.h)
 
+    /* New types go HERE, after everything else, never into the section they belong to. A saved
+       file used to identify a part by this number alone, so a type inserted mid-list turns every
+       later part in every older file into its neighbour - which COMP_DPDT_DRIVEN did, to 62
+       types. --parts-file-test fails if one moves. */
+
     COMP_TYPE_COUNT
 } ComponentType;
 

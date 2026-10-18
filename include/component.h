@@ -932,6 +932,13 @@ typedef struct {
 
 // Get info for component type
 const ComponentTypeInfo *component_get_info(ComponentType type);
+/* A name for each part type that stays put when the enum does not ("transformer", "555_timer").
+   A saved file says what each part IS with this rather than with the enum's number - see
+   file_import_json. Never rename one: files written with it exist. NULL for an invalid type. */
+const char *component_type_key(ComponentType type);
+/* The type a key names, or COMP_NONE if none does. len bytes of key are compared, so it can be
+   pointed straight into a file buffer. */
+ComponentType component_type_from_key(const char *key, size_t len);
 // Extra search words for the Spotlight / palette filter ("mosfet", "coil", "transistor" ...); "" if none
 const char *component_search_keywords(ComponentType type);
 

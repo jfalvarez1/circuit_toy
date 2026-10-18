@@ -322,6 +322,9 @@ bool file_export_json(Circuit *circuit, const char *filename) {
         Component *comp = circuit->components[i];
         fprintf(f, "    {\n");
         fprintf(f, "      \"type\": %d,\n", comp->type);
+        /* and what it is by name, which the loader trusts over the number (version 4) */
+        if (component_type_key(comp->type))
+            fprintf(f, "      \"kind\": \"%s\",\n", component_type_key(comp->type));
         fprintf(f, "      \"x\": %.2f,\n", comp->x);
         fprintf(f, "      \"y\": %.2f,\n", comp->y);
         fprintf(f, "      \"rotation\": %d,\n", comp->rotation);
@@ -481,6 +484,62 @@ bool file_export_json(Circuit *circuit, const char *filename) {
     return true;
 }
 
+/* How many numbers a "[a, b, c]" list holds, starting just after its '['. */
+static int json_list_length(const char *q) {
+    int n = 0;
+    while (*q && *q != ']') {
+        while (*q == ' ' || *q == ',' || *q == '\n' || *q == '\r' || *q == '\t') q++;
+        if (*q == ']' || !*q) break;
+        if (*q == '-' || isdigit((unsigned char)*q)) {
+            n++;
+            if (*q == '-') q++;
+            while (isdigit((unsigned char)*q)) q++;
+        } else {
+            q++;
+        }
+    }
+    return n;
+}
+
+/* Whether a file's bare type numbers are the ones from before 2026-09-03, when
+   COMP_DPDT_DRIVEN was put into the middle of the enum and every type at or after it moved up
+   one. Nothing in the file changed with it - the version stayed 3 - so a transformer saved by
+   v3.30.0 opened in v3.31.0 as a driven DPDT, a 555 as a full adder, every gate as its
+   neighbour.
+
+   Version 1 and 2 files are all from before (3 began on 2026-09-02). Version 4 files carry
+   names and do not depend on this. Version 3 was written two days before the change and five
+   weeks after, so the file has to say which, and it can: every part records how many
+   terminals it has, and at most positions past the insertion the two readings name parts with
+   different pin counts. The reading the terminals agree with wins. A file whose parts cannot
+   tell the two apart - nothing past the insertion, or only runs of parts with equal pin counts -
+   is read the newer way, which is what most version 3 files were written in. */
+static bool json_uses_old_numbering(const char *buffer, int version) {
+    if (version >= 4) return false;
+    if (version <= 2) return true;
+    int votes_old = 0, votes_new = 0;
+    const char *comps = strstr(buffer, "\"components\"");
+    const char *end = comps ? strstr(comps, "\"nodes\"") : NULL;
+    for (const char *p = comps; p && (p = strstr(p, "\"type\":")) != NULL && (!end || p < end); p++) {
+        int t;
+        if (sscanf(p, "\"type\": %d", &t) != 1 || t < CIRCUIT_TYPES_INSERTED_AT) continue;
+        /* COMP_MCU was the last type then, one lower; nothing above that was a number yet */
+        if (t + 1 > COMP_MCU) { votes_new++; continue; }
+        const char *next = strstr(p + 1, "\"type\":");
+        const char *tp = strstr(p, "\"terminals\": [");
+        if (!tp || (next && tp > next)) continue;
+        int pins = json_list_length(tp + strlen("\"terminals\": ["));
+        ComponentType now = (ComponentType)t, then = (ComponentType)(t + 1);
+        if (now == COMP_SUBCIRCUIT || then == COMP_SUBCIRCUIT) continue;   /* pins vary */
+        int pins_now = component_get_info(now)->num_terminals;
+        int pins_then = component_get_info(then)->num_terminals;
+        if (pins_now == pins_then) continue;
+        if (pins == pins_then) votes_old++;
+        else if (pins == pins_now) votes_new++;
+    }
+    return votes_old > votes_new;
+}
+
 bool file_import_json(Circuit *circuit, const char *filename) {
     // Simplified JSON parser - for production use a proper JSON library
     if (!circuit || !filename) {
@@ -520,6 +579,13 @@ bool file_import_json(Circuit *circuit, const char *filename) {
 
     circuit_clear(circuit);
 
+    int file_version = 1;   /* a file that does not say is from before anything said */
+    {
+        const char *vp = strstr(buffer, "\"version\":");
+        if (vp) sscanf(vp, "\"version\": %d", &file_version);
+    }
+    bool old_numbering = json_uses_old_numbering(buffer, file_version);
+
     // Parse components (simplified)
     char *ptr = strstr(buffer, "\"components\"");
     if (ptr) {
@@ -531,6 +597,24 @@ bool file_import_json(Circuit *circuit, const char *filename) {
             int rotation;
 
             if (sscanf(ptr, "\"type\": %d", &type) == 1) {
+                /* What the part is. Its name when the file has one - and a name this build does
+                   not know is a part it cannot make, so it is dropped rather than built as
+                   whatever its number happens to mean here. Without a name, the number, read in
+                   the numbering the file was written in. */
+                {
+                    const char *next_obj = strstr(ptr + 1, "\"type\":");
+                    const char *kp = strstr(ptr, "\"kind\": \"");
+                    if (kp && (!next_obj || kp < next_obj)) {
+                        const char *k0 = kp + strlen("\"kind\": \"");
+                        const char *k1 = strchr(k0, '"');
+                        ComponentType named = k1 ? component_type_from_key(k0, (size_t)(k1 - k0))
+                                                 : COMP_NONE;
+                        type = (named != COMP_NONE) ? (int)named : -1;
+                    } else if (old_numbering && type >= CIRCUIT_TYPES_INSERTED_AT) {
+                        /* COMP_MCU was the last type then; past it there was nothing to name */
+                        type = (type + 1 <= COMP_MCU) ? type + 1 : -1;
+                    }
+                }
                 char *x_ptr = strstr(ptr, "\"x\":");
                 char *y_ptr = strstr(ptr, "\"y\":");
                 char *rot_ptr = strstr(ptr, "\"rotation\":");
