@@ -26,10 +26,11 @@ from subprojects/ if the system has none, and the battery runs with no display:
 
 ## State
 
-**2026-10-18: ten code commits on top of v3.33.0, plus documentation, not released and not
-pushed.** They are on branch `claude/fix-dc-voltage-scope-016GJrXXHEuEuNrUDwdtVW7U`; the cloud
-session that wrote them had no GitHub write access, so pushing them, CI, and tagging v3.34.0 are
-the first job (Release process below). In order:
+**2026-10-18: the commits below sit on top of v3.33.0, not released.** They are on branch
+`claude/fix-dc-voltage-scope-016GJrXXHEuEuNrUDwdtVW7U`, pushed, and not yet on main. CI only
+builds main, tags and pull requests into main, so a pull request (or the merge) is what first
+compiles them with MSVC - everything here was built with GCC only. Then tag v3.34.0 (Release
+process below). In order:
 
 1. **DC levels on the scope after dt is turned down.** A trace wholly off the screen is marked at
    the edge with its level (the markers wrap into rows, a later commit); Autoset with under ten
@@ -56,7 +57,9 @@ the first job (Release process below). In order:
    DC-, so D2 shorted the source on every negative half-cycle (6 kA peaks) and the right-hand pair
    never conducted; the DC probe could not tell. Found by following a loose wire end (15 -> 14).
    The source now floats across the AC junctions: all four diodes conduct, ripple is 120 Hz.
-   --burn-test did not notice 6 kA in a diode, which is worth a look of its own.
+   --burn-test did not notice: it watched only resistor power and LED current. It now also
+   fails any part above 1 kA outside the power-system, grid-standard and high-voltage groups
+   (largest legitimate elsewhere: Hot-Plug Inrush, 192 A); the old bridge trips it.
 9. **Two more loose ends** (14 -> 12): AC-DC Supply and US 120V-12V placed their left AC junction
    10 px off the diode column. Both bridges measured healthy.
 

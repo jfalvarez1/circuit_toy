@@ -6470,6 +6470,7 @@ static int burn_test(void) {
         total++;
         int n = c->num_components;
         double *pmax = calloc(n, sizeof *pmax);
+        double *imax = calloc(n, sizeof *imax);   /* largest |current| at any terminal */
         Simulation *sim = simulation_create(c);
         int ok = simulation_dc_analysis(sim);
         double td = circuit_template_scope_time_div((CircuitTemplateType)t);
@@ -6488,8 +6489,26 @@ static int burn_test(void) {
                 else if (comp->type == COMP_LED) v = comp->props.led.current;
                 if (v > pmax[i]) pmax[i] = v;
             }
+            if ((steps & 3) == 0) {
+                simulation_update_flow_display(sim);
+                for (int i = 0; i < n; i++) {
+                    Component *comp = c->components[i];
+                    for (int k = 0; k < comp->num_terminals && k < MAX_TERMINALS; k++) {
+                        double a = fabs(comp->terminal_current[k]);
+                        if (isfinite(a) && a > imax[i]) imax[i] = a;
+                    }
+                }
+            }
         }
         int hv = ti && (ti->group == TG_POWER_SYSTEMS || ti->group == TG_HIGH_VOLTAGE || strstr(ti->name, "Tesla"));
+        /* Kiloamps, in a circuit that is not a utility. Only resistors and LEDs carry ratings, so
+           every other part was invisible here - and the Bridge Rectifier ran for its whole life
+           with D2 shorting the source at 6.1 kA every negative half-cycle (205 kA through the
+           source), which this suite printed as "0 overloaded parts". No rating is needed to call
+           that wrong: outside the power-system, grid-standard and high-voltage groups the largest
+           current any template legitimately draws is Hot-Plug Inrush's 192 A, so 1 kA is a short
+           circuit with five times margin, whatever the part is. */
+        int utility = hv || (ti && ti->group == TG_GRID_STD);
         for (int i = 0; i < n; i++) {
             Component *comp = c->components[i];
             double ratio = 0;
@@ -6502,8 +6521,17 @@ static int burn_test(void) {
                        comp->type == COMP_RESISTOR ? "W" : "A", ratio * 100, ok ? "" : "  [sim failed]");
             }
         }
+        for (int i = 0; i < n && !utility; i++) {
+            Component *comp = c->components[i];
+            if (imax[i] > 1e3) {
+                flagged++;
+                printf("     %-34s %-6s %-14s carries %.3g A - kiloamps in a circuit of this size "
+                       "is a short, not a load%s\n", ti ? ti->name : "?", comp->label,
+                       component_get_info(comp->type)->name, imax[i], ok ? "" : "  [sim failed]");
+            }
+        }
         if (!ok) printf("     %-34s sim failed at t=%.3g\n", ti ? ti->name : "?", sim->time);
-        free(pmax); simulation_free(sim); circuit_free(c);
+        free(pmax); free(imax); simulation_free(sim); circuit_free(c);
     }
     printf("burn-test: %d templates, %d overloaded parts (%d in HV/power/Tesla templates)\n", total, flagged, hv_flagged);
     /* Any overloaded part fails, not just the ones in high-voltage templates.

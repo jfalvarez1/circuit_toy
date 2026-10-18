@@ -11,7 +11,7 @@ Status legend: `[ ]` not run · `[P]` pass · `[F]` fail (link issue/notes) · `
 
 ## Development after v3.33.0 (2026-10-18, unreleased)
 
-Ten commits on top of v3.33.0, all checked on Linux (Ubuntu 24.04, GCC 13), which builds the
+Every commit since v3.33.0 was checked on Linux (Ubuntu 24.04, GCC 13), which builds the
 project for the first time: `meson setup build && meson compile -C build`, then
 `SDL_VIDEODRIVER=dummy bash tools/run_audits.sh` runs the whole battery with no display. Every
 new guard below was mutation-checked: break what it guards, watch it fail, restore.
@@ -33,7 +33,8 @@ new guard below was mutation-checked: break what it guards, watch it fail, resto
 | D.13 | `[P]` `--prop-test`, `--prop-gap`, `--value-sweep` | The analog switch offers On above / R_on / R_off: 190 typed rows over 73 parts, all applicable; prop-gap 54 (baseline lowered from 55); 1801 swept values, none breaking a circuit |
 | D.14 | `[P]` `--wire-test` | 15 loose ends (baseline lowered from 27): none left in the 3-Phase 345 kV Line or the two MOSFET curve templates; 208/208 probe oracles and the geometry findings unchanged |
 | D.15 | `[P]` Bridge Rectifier, peak currents over 50 ms, and `--probe-test` | All four diodes conduct; source peak 0.45 A (was 205 kA, D2 6.1 kA, D3/D4 2 nA); scope OUT ripple 120 Hz; a new ripple oracle reads amp 0.36 V in 0.40 +/- 0.10, and the old grounded-source wiring fails it at 0.79 while still passing the DC oracle; 209/209 probe checks; wire-test 14 loose ends, then 12 after the two transformer-fed bridges' junction offset |
-| D.16 | `[P]` Full battery, final state | 0 of 77 suites failed, stability gate run with numpy and pillow installed |
+| D.16 | `[P]` `--burn-test` kiloamp bound | No part above 1 kA in any template outside the power-system, grid-standard and high-voltage groups; restoring the Bridge Rectifier's grounded source fails it (1.85 MA through the source) |
+| D.17 | `[P]` Full battery, final state | 0 of 77 suites failed, stability gate run with numpy and pillow installed |
 
 ## Scope mouse readout (2026-09-10, development after v3.32.0)
 
