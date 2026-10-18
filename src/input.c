@@ -2408,6 +2408,9 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
             } else if ((comp->type == COMP_DPDT_DRIVEN || comp->type == COMP_SPDT_DRIVEN) && value > 0 && value <= 1000) {
                 comp->props.dpdt_driven.v_on = value;      /* where the poles throw */
                 applied = true;
+            } else if (comp->type == COMP_ANALOG_SWITCH && value > 0 && value <= 1000) {
+                comp->props.analog_switch.v_on = value;    /* where it closes */
+                applied = true;
             }
             break;
 
@@ -2797,6 +2800,8 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                 if (value > 0) { comp->props.switch_spst.r_on = value; applied = true; }
             } else if ((comp->type == COMP_DPDT_DRIVEN || comp->type == COMP_SPDT_DRIVEN) && value > 0 && value <= 1e9) {
                 comp->props.dpdt_driven.r_on = value; applied = true;
+            } else if (comp->type == COMP_ANALOG_SWITCH && value > 0 && value <= 1e9) {
+                comp->props.analog_switch.r_on = value; applied = true;
             }
             break;
         case PROP_R_OFF:
@@ -2806,6 +2811,8 @@ bool input_apply_property_edit(InputState *input, Component *comp) {
                 comp->props.switch_spst.r_off = value; applied = true;
             } else if ((comp->type == COMP_DPDT_DRIVEN || comp->type == COMP_SPDT_DRIVEN) && value > 0 && value <= 1e12) {
                 comp->props.dpdt_driven.r_off = value; applied = true;
+            } else if (comp->type == COMP_ANALOG_SWITCH && value > 0 && value <= 1e12) {
+                comp->props.analog_switch.r_off = value; applied = true;
             }
             break;
 

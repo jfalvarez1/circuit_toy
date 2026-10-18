@@ -1781,6 +1781,47 @@ void ui_render_properties(UIState *ui, SDL_Renderer *renderer, Component *select
                 break;
             }
 
+            /* The analog switch had no rows at all, so its threshold and both resistances - every
+               number its stamp reads - could only be set by a template builder. Its v_off is NOT
+               here: the stamp has no hysteresis and never reads it, and a row for a number that
+               changes nothing would be a row that lies. Nor is "ideal": the stamp uses r_on
+               whatever that flag says. */
+            case COMP_ANALOG_SWITCH: {
+                bool ed_th = input && input->editing_property && input->editing_prop_type == PROP_V_THRESHOLD;
+                format_engineering(selected->props.analog_switch.v_on, "V", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "On above:", buf, ed_th, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_V_THRESHOLD;
+                ui->num_properties++;
+                prop_y += 18;
+
+                SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+                ui_draw_text(renderer, "State:", x + 10, prop_y + 2);
+                SDL_SetRenderDrawColor(renderer, 0x00, 0xd9, 0xff, 0xff);
+                ui_draw_text(renderer, selected->props.analog_switch.state
+                                 ? (selected->props.analog_switch.manual ? "ON (manual)" : "ON")
+                                 : (selected->props.analog_switch.manual ? "OFF (manual)" : "OFF"),
+                             x + 100, prop_y + 2);
+                prop_y += 18;
+
+                bool ed_on = input && input->editing_property && input->editing_prop_type == PROP_R_ON;
+                format_engineering(selected->props.analog_switch.r_on, "Ohm", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "R_on:", buf, ed_on, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_R_ON;
+                ui->num_properties++;
+                prop_y += 18;
+
+                bool ed_off = input && input->editing_property && input->editing_prop_type == PROP_R_OFF;
+                format_engineering(selected->props.analog_switch.r_off, "Ohm", buf, sizeof(buf));
+                draw_property_field(renderer, x + 10, prop_y, prop_w, "R_off:", buf, ed_off, edit_buf, cursor);
+                (*ui_prop_slot(ui)).bounds = (Rect){x + 100, prop_y, prop_w - 90, 14};
+                (*ui_prop_slot(ui)).prop_type = PROP_R_OFF;
+                ui->num_properties++;
+                prop_y += 18;
+                break;
+            }
+
             /* The logic-driven changeovers: where they throw, and what the contacts are worth. */
             case COMP_DPDT_DRIVEN:
             case COMP_SPDT_DRIVEN: {
