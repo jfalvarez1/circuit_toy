@@ -232,6 +232,14 @@ carries an on-canvas "how it works / PROBE" note.
 - **V:** C→1000µ ⇒ ripple 0.088 · R→100 ⇒ ripple 8.8 V (deep) · f→50 Hz ⇒ ripple 1.06 · amp→170 V ⇒ elec cap max_voltage check (should flag over-voltage).
 - **M:** M3 electrolytic ESR ⇒ small step at diode turn-on; M1 vs M0 ripple bottom shape.
 - **Trap:** two grounds in template — confirm both on the same net (isolated ground = floating output).
+- **Fixed 2026-10-18 — the trap above was nearly the fault.** The source was grounded from its
+  negative pin AND DC− was grounded, so this was never a bridge: the right-hand diode pair had
+  nothing to drive, and on every negative half-cycle D2 sat forward-biased from ground straight
+  across the source (6.1 kA peaks, 205 kA in the source). Output was half-wave, ripple 60 Hz,
+  while the DC oracle (10.2 V) passed. The source now floats across the two AC junctions and DC−
+  has its own ground. Measured: all four diodes conduct, ripple 120 Hz, ~0.72 Vpp (the 0.88 above
+  is the I/(fC) bound — the cap recharges before the half-period ends), and `probe_cases[]` now
+  checks the ripple, which a half-wave bridge fails at twice the amplitude.
 
 ### 12. Center-Tap Rectifier — 120 Vpk 60 Hz, CT xfmr ratio 0.1, 2×D, 470µ, 1k
 - **N:** verify how `turns_ratio` applies to CT: full secondary 12 Vpk ⇒ each half 6 Vpk ⇒ Vout ≈ 5.3 V; **or** each half 12 ⇒ 11.3 V. Read the model, then hand-calc ripple = I/(120·470µ).

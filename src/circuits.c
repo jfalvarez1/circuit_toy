@@ -2891,8 +2891,13 @@ static int place_fullwave_bridge(Circuit *circuit, float x, float y) {
     vsrc->props.ac_voltage.amplitude = 12.0;
     vsrc->props.ac_voltage.frequency = 60.0;
 
-    // Ground for source
-    Component *gnd1 = add_comp(circuit, COMP_GROUND, x, y + 130, 0);
+    /* The source is NOT grounded. It used to be, from its negative pin, with DC- grounded as
+       well - and then a bridge is not a bridge. Its right-hand pair had nothing to drive (the
+       right AC junction reached only D3 and D4), so it never conducted, and on every negative
+       half-cycle D2 sat forward-biased from ground straight across the source: 6 kA peaks in
+       D2, 205 kA in the source, and a half-wave output that the DC probe could not tell from a
+       full-wave one. The source floats across the two AC junctions, the way a transformer
+       secondary drives a bridge, and DC- is the output's ground. */
 
     // Bridge diodes - horizontal layout, all pointing right
     // Row 1: D1 and D3 (cathodes to DC+)
@@ -2914,8 +2919,6 @@ static int place_fullwave_bridge(Circuit *circuit, float x, float y) {
     Component *gnd2 = add_comp(circuit, COMP_GROUND, x + 340, y + 130, 0);
     Component *gnd3 = add_comp(circuit, COMP_GROUND, x + 410, y + 130, 0);
 
-    // Connect source negative to ground
-    connect_terminals(circuit, vsrc, 1, gnd1, 0);
 
     // Get all terminal positions
     float d1_a_x, d1_a_y, d1_k_x, d1_k_y;
@@ -3002,8 +3005,26 @@ static int place_fullwave_bridge(Circuit *circuit, float x, float y) {
     connect_terminals(circuit, cap, 1, gnd2, 0);
     connect_terminals(circuit, rload, 1, gnd3, 0);
 
-    // Connect DC- to ground rail
-    circuit_add_wire(circuit, dc_minus, circuit_find_or_create_node(circuit, x + 340, y + 120, 5.0f));
+    /* DC- is the ground reference, with a ground symbol of its own right under the rail - the
+       old wire toward the capacitor's ground ended 10 px short of the pin, in the symbol. */
+    Component *gnd_dc = add_comp(circuit, COMP_GROUND, x + 280, y + 140, 0);   // pin (x+280, y+120)
+    gnd_dc->node_ids[0] = dc_minus;
+
+    /* The source's negative pin goes to the RIGHT AC junction: down, across under the bridge,
+       and up into D4's cathode, which is that junction. It crosses the DC- rail on the way, as a
+       plain crossing - there is no node where they meet. */
+    {
+        float vneg_x, vneg_y;
+        component_get_terminal_pos(vsrc, 1, &vneg_x, &vneg_y);
+        int vneg = circuit_find_or_create_node(circuit, vneg_x, vneg_y, 5.0f);
+        int under = circuit_find_or_create_node(circuit, vneg_x, y + 160, 5.0f);
+        int across = circuit_find_or_create_node(circuit, d4_k_x, y + 160, 5.0f);
+        int d4k = circuit_find_or_create_node(circuit, d4_k_x, d4_k_y, 5.0f);
+        circuit_add_wire(circuit, vneg, under);
+        circuit_add_wire(circuit, under, across);
+        circuit_add_wire(circuit, across, d4k);
+        vsrc->node_ids[1] = vneg;
+    }
 
     return 11;
 }

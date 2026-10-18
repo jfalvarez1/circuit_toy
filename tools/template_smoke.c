@@ -1196,9 +1196,15 @@ static int pin_test(void) {
      THE CURVE TRACERS (transfer and output curves share curve_device) ran the sense resistor's
      wire to the ground's ORIGIN, 20 px past its pin - the first idiom above, once per device.
 
-   208/208 probe oracles unchanged; node_ids were explicit in both, so no net moved. */
+   208/208 probe oracles unchanged; node_ids were explicit in both, so no net moved.
+
+   Then 15 -> 14, and that one was hiding an ELECTRICAL fault. BRIDGE RECTIFIER's DC- wire ended
+   10 px short of a ground pin, and following it showed the bridge was not a bridge: the source
+   was grounded as well as DC-, so D2 sat across it on every negative half-cycle (6 kA) and D3/D4
+   never conducted - half-wave, under a description that says full-wave and 120 Hz ripple. The
+   source floats across the AC junctions now and DC- has its own ground. */
 #define WIRE_FALSE_JUNCTION_BASELINE 20
-#define WIRE_LOOSE_END_BASELINE      15
+#define WIRE_LOOSE_END_BASELINE      14
 
 static int wf_find(int *p, int i) { while (p[i] != i) { p[i] = p[p[i]]; i = p[i]; } return i; }
 static void wf_union(int *p, int a, int b) { a = wf_find(p, a); b = wf_find(p, b); if (a != b) p[a] = b; }
@@ -4889,6 +4895,12 @@ static const ProbeCase probe_cases[] = {
     { CIRCUIT_SUMMING_AMP,      COMP_OPAMP,     0, 2, "dc",  -6.0,  0.03, 2e-3, "-(1+2+3)" },
     { CIRCUIT_COMPARATOR,       COMP_OPAMP,     0, 2, "amp", 15.0,  0.05, 30e-3, "rail to rail" },
     { CIRCUIT_FULLWAVE_BRIDGE,  COMP_CAPACITOR_ELEC, 0, 0, "dc", 10.2, 0.10, 60e-3, "10.6 pk - half ripple" },
+    /* The ripple, because the DC level alone passed a bridge that was a half-wave rectifier for
+       its whole life (source grounded as well as DC-; D2 shorted every negative half-cycle). Full
+       wave, I/(fC) at 120 Hz bounds it at 10.6 mA / (120 Hz x 100 uF) = 0.88 Vpp; the cap
+       recharges before each half-period ends, so it measures nearer 0.72 Vpp (amp 0.36). Half
+       wave measures 0.79 amp - twice, and outside this band whichever way the step falls. */
+    { CIRCUIT_FULLWAVE_BRIDGE,  COMP_CAPACITOR_ELEC, 0, 0, "amp", 0.40, 0.25, 60e-3, "full-wave ripple, 120 Hz" },
     { CIRCUIT_CENTERTAP_RECT,   COMP_CAPACITOR_ELEC, 0, 0, "dc", 5.2,  0.15, 60e-3, "6 pk - 0.7" },
     { CIRCUIT_AC_DC_SUPPLY,     COMP_CAPACITOR_ELEC, 0, 0, "dc", 15.0, 0.10, 60e-3, "17 - 1.4 - ripple/2" },
     { CIRCUIT_AC_DC_AMERICAN,   COMP_CAPACITOR_ELEC, 0, 0, "dc", 15.3, 0.10, 60e-3, "17 - 1.4 - 0.3" },

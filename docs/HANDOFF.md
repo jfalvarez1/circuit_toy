@@ -1,4 +1,4 @@
-# Handoff — where this is and what to do next (2026-10-18, v3.33.0 + eight unreleased commits)
+# Handoff — where this is and what to do next (2026-10-18, v3.33.0 + nine unreleased commits)
 
 Written for whoever picks this up next, with no assumed context. Everything below is either a
 fact you can re-verify in one command or a decision with its reasoning attached.
@@ -26,7 +26,7 @@ from subprojects/ if the system has none, and the battery runs with no display:
 
 ## State
 
-**2026-10-18: eight commits on top of v3.33.0, plus one of documentation, not released and not
+**2026-10-18: nine commits on top of v3.33.0, plus one of documentation, not released and not
 pushed.** They are on branch `claude/fix-dc-voltage-scope-016GJrXXHEuEuNrUDwdtVW7U`; the cloud
 session that wrote them had no GitHub write access, so pushing them, CI, and tagging v3.34.0 are
 the first job (Release process below). In order:
@@ -52,6 +52,11 @@ the first job (Release process below). In order:
    prop-gap 55 -> 54.
 7. **Twelve loose wire ends** (wire-test 27 -> 15): the 3-Phase 345 kV Line's loads sat 40 px off
    their wiring, and the two curve-tracer templates ran wires to a ground's origin.
+8. **The Bridge Rectifier template was a half-wave rectifier.** Its source was grounded as well as
+   DC-, so D2 shorted the source on every negative half-cycle (6 kA peaks) and the right-hand pair
+   never conducted; the DC probe could not tell. Found by following a loose wire end (15 -> 14).
+   The source now floats across the AC junctions: all four diodes conduct, ripple is 120 Hz.
+   --burn-test did not notice 6 kA in a diode, which is worth a look of its own.
 
 Validation on Linux: every guard mutation-checked; corpus 185 accepted / 151 clean; full battery
 in the TEST_PLAN "Development after v3.33.0" table.
@@ -195,8 +200,9 @@ below v_off). See `src/netlist.c`, the `case 'X'` block.
 
 ### 2. The rest of the false junctions
 
-20 false junctions and 15 loose ends remain, down from 66/47 (27 loose ends until 2026-10-18,
-when the 345 kV line's misplaced loads and the curve tracers' ground stubs went). `--wire-test`
+20 false junctions and 14 loose ends remain, down from 66/47 (27 loose ends until 2026-10-18,
+when the 345 kV line's misplaced loads, the curve tracers' ground stubs and the Bridge Rectifier's
+DC- stub went - that last one was hiding a real fault, so read each one before calling it cosmetic). `--wire-test`
 reads GEOMETRY, not nets, so everything it reports is a drawing that disagrees with a netlist that
 is correct.
 
