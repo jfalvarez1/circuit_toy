@@ -820,6 +820,7 @@ static int netlist_solve(const char *path) {
 
     Simulation *sim = simulation_create(c);
     if (!sim) { circuit_free(c); return 1; }
+    sim->want_floating = true;
     bool ok = simulation_dc_analysis(sim);
     if (!ok) {
         printf("  NO OPERATING POINT - the DC solve did not converge\n");
@@ -857,6 +858,27 @@ static int netlist_solve(const char *path) {
         Node *n = &c->nodes[i];
         if (!n->name[0]) continue;              /* unnamed joins carry no meaning to compare */
         printf("  %-16s %12.6f V\n", n->name, n->voltage);
+    }
+    /* And which of those numbers the circuit did not decide. A net that only a capacitor or an
+       op-amp input reaches has no DC voltage at all; the solver's 1 pA leak to ground parks it
+       at 0 V, and printed in the list above that 0 V looks exactly like a measurement. EE_Review
+       met it twice - m05l24's output between two capacitors, m17l17's charge-redistribution
+       summing node - so it is said in words, on a line of its own: the lines above keep their
+       format for anything that parses them, and the verdict does not change, because the rest
+       of the circuit may be solved perfectly well. */
+    if (sim->dc_floating_count > 0) {
+        printf("  FLOATING - nothing at DC sets these nets. Each sits where the solver's own leak to\n"
+               "  ground left it, so its voltage above is the regularisation, not the circuit:");
+        for (int i = 0; i < c->num_nodes; i++) {
+            Node *n = &c->nodes[i];
+            int m = circuit_node_net(c, n->id);
+            if (!n->name[0] || m <= 0 || m >= MAX_NODES || !sim->dc_floating[m]) continue;
+            bool seen = false;
+            for (int j = 0; j < i && !seen; j++)
+                if (c->nodes[j].name[0] && circuit_node_net(c, c->nodes[j].id) == m) seen = true;
+            if (!seen) printf(" %s", n->name);
+        }
+        printf("\n");
     }
     /* and what each part is carrying, which is where a class-AB answer actually lives */
     simulation_update_flow_display(sim);
@@ -7283,6 +7305,40 @@ static int netlist_test(void) {
         if (!ok) fails++;
         printf("%s netlist mirror-loaded differential pair: residual %.4g A at full source strength\n",
                ok ? " OK " : "FAIL", residual);
+        if (sim) simulation_free(sim);
+        if (c) circuit_free(c);
+    }
+
+    /* A net nothing sets at DC is FLOATING, and one set through a gigohm is not.
+       f is a capacitor's far plate and has no DC voltage at all; the solver's leak parks it at
+       0 V. g sits at 0.5 V between two gigohms, which is a real voltage however weakly held, and
+       a detector that called it floating would bury every high-impedance node in noise. a is a
+       source's node, the control case. All three are needed: drop the detection and f fails,
+       set the line too low and g does. */
+    {
+        total++;
+        Circuit *c = circuit_create();
+        char err[160] = "";
+        int placed = c ? netlist_build(c,
+            "V1 a 0 DC 1\nR1 a 0 1k\n"
+            "C1 a f 1n\n"
+            "R2 a g 1G\nR3 g 0 1G\n", err, sizeof err) : 0;
+        Simulation *sim = placed > 0 ? simulation_create(c) : NULL;
+        bool ok = sim != NULL;
+        if (sim) { sim->want_floating = true; ok = simulation_dc_analysis(sim); }
+        int f_flag = -1, g_flag = -1, a_flag = -1;
+        double g_volts = NAN;
+        for (int i = 0; ok && i < c->num_nodes; i++) {
+            int m = circuit_node_net(c, c->nodes[i].id);
+            int flag = (m > 0 && m < MAX_NODES) ? sim->dc_floating[m] : 0;
+            if (!strcmp(c->nodes[i].name, "f")) f_flag = flag;
+            if (!strcmp(c->nodes[i].name, "g")) { g_flag = flag; g_volts = c->nodes[i].voltage; }
+            if (!strcmp(c->nodes[i].name, "a")) a_flag = flag;
+        }
+        bool pass = ok && f_flag == 1 && g_flag == 0 && a_flag == 0 && fabs(g_volts - 0.5) < 1e-3;
+        if (!pass) fails++;
+        printf("%s netlist a capacitor's far plate is FLOATING, a gigohm divider is not"
+               " (f %d, g %d at %.4f V, a %d)\n", pass ? " OK " : "FAIL", f_flag, g_flag, g_volts, a_flag);
         if (sim) simulation_free(sim);
         if (c) circuit_free(c);
     }

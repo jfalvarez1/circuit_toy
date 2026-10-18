@@ -863,6 +863,41 @@ bool simulation_dc_analysis(Simulation *sim) {
                 if (isfinite(resid) && resid > sim->dc_residual) sim->dc_residual = resid;
                 else if (!isfinite(resid)) sim->dc_residual = 1e30;
             }
+
+            /* Which of these voltages the circuit sets, and which only GMIN does.
+               The same linearised system solved twice, once as stamped and once with every
+               node's GMIN leak pulled to +1 V instead of to ground. A node the circuit holds
+               moves by GMIN times its Thevenin resistance - a microvolt behind a megohm, a
+               millivolt behind a gigohm. A node nothing but GMIN reaches moves the whole volt,
+               because it was never anywhere except where the leak put it. A quarter of the
+               way is the line, which is a node held through more than about 330 Gohm: nothing
+               a measurement could tell from open. An open switch contact, its 1 Tohm splitting
+               the volt with GMIN's 1 Tohm, is over it, and for any purpose a reader has an
+               open contact is floating. */
+            sim->dc_floating_count = 0;
+            memset(sim->dc_floating, 0, sizeof sim->dc_floating);
+            if (sim->want_floating) {
+                Vector *x0 = linear_solve(A, b);
+                Vector *b_leak = vector_create(matrix_size);
+                Vector *x1 = NULL;
+                if (x0 && b_leak) {
+                    for (int r = 0; r < matrix_size; r++)
+                        vector_set(b_leak, r, vector_get(b, r) + (r < num_nodes ? GMIN * 1.0 : 0.0));
+                    x1 = linear_solve(A, b_leak);
+                }
+                if (x1) {
+                    for (int r = 0; r < num_nodes && r + 1 < MAX_NODES; r++) {
+                        double moved = vector_get(x1, r) - vector_get(x0, r);
+                        if (!(fabs(moved) < 0.25)) {
+                            sim->dc_floating[r + 1] = 1;
+                            sim->dc_floating_count++;
+                        }
+                    }
+                }
+                if (x0) vector_free(x0);
+                if (x1) vector_free(x1);
+                if (b_leak) vector_free(b_leak);
+            }
         }
         matrix_free(A);
         vector_free(b);

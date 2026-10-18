@@ -161,6 +161,17 @@ typedef struct Simulation {
        and reports convergence a long way from a root, and a solve stopped by the iteration cap
        can still be sitting on one. Anything deciding whether to try harder needs both. */
     bool dc_converged;
+    /* Set before simulation_dc_analysis to have it also find which node voltages the CIRCUIT
+       sets. Every node carries GMIN to ground so a singular matrix still solves; a node nothing
+       else reaches at DC - a capacitor's far plate, an op-amp input between two capacitors - is
+       then held at 0 V by GMIN alone, and that 0 V reads exactly like a measured one. Off by
+       default: it costs two more solves, and only a report meant for a person needs it. */
+    bool want_floating;
+    /* dc_floating[k] is 1 for solver node k (1-based, as node_map numbers them) whose voltage
+       followed the regularisation when its leak was pulled to +1 V instead of ground: the
+       circuit does not determine it. dc_floating_count is how many there were. */
+    unsigned char dc_floating[MAX_NODES];
+    int dc_floating_count;
 } Simulation;
 
 // Create/destroy simulation
